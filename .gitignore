@@ -1,0 +1,26 @@
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Dependencias y compilados
+node_modules/
+dist/
+build/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# Pruebas
+playwright-report/
+test-results/
+
+# Datos locales y secretos
+*.sqlite
+*.sqlite-journal
+*.db
+.env
+.env.*
+!.env.example
+
+# Configuración local de Claude Code
+.claude/settings.local.json

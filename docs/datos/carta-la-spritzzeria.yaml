@@ -1,0 +1,1118 @@
+# La Spritzzería · carta exportada
+# 2026-10-23T20:13:02.948Z
+# Los precios están en pesos colombianos, sin separadores.
+
+ajustes:
+  brunch_desc_en: Ask for our brunch menu on Sundays.
+  brunch_desc_es: Pregunta por nuestra carta de brunch los domingos.
+  brunch_image: images/brunch.jpg
+  brunch_tag_en: Sundays
+  brunch_tag_es: Domingos
+  brunch_title_en: Sunday Brunch
+  brunch_title_es: Domingos de Brunch
+  footer_brand: La Spritzzería · Envigado
+  footer_note_en: Prices in COP, include the National Consumption Tax (INC). Alcohol sold only to adults 18+. Excessive alcohol consumption is harmful to health · Law 30 of 1986.
+  footer_note_es: Precios en COP, incluyen INC. Venta de bebidas alcohólicas solo para mayores de 18 años. El exceso de alcohol es perjudicial para la salud · Ley 30 de 1986.
+  footer_tag_en: Live without pause.
+  footer_tag_es: Vive sin pausa.
+  hero_bar: images/heroBar.jpg
+  hero_food: images/heroFood-v2.jpg
+  subtitle: Pizza · Spritz · Amici
+  tagline_en: One slice, toast high, live without pause
+  tagline_es: Un slice, brinda alto, vive sin pausa
+
+secciones:
+  - clave: ENTRADAS
+    nombre: Antipasti
+    grupo: comida
+    antetitulo:
+      es: Entradas
+      en: Starters
+    boton:
+      es: Entradas
+      en: Starters
+    foto: images/entradas.jpg
+    visible: true
+    platos:
+      - nombre:
+          es: Tramonto Rosso
+          en: Tramonto Rosso
+        descripcion:
+          es: Crema de pomodoro con tomate concassé, pesto y bocconcino.
+          en: Pomodoro cream soup with tomato concassé, pesto and bocconcino.
+        precio: 20900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Pinsa
+          en: Pinsa
+        descripcion:
+          es: Masa de pizza con rúgula, durazno en almíbar, stracciatella, tomate cherry y balsámico.
+          en: Pizza dough with arugula, syrup-poached peach, stracciatella, cherry tomato and balsamic.
+        precio: 20900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Tentazione di Formaggio
+          en: Tentazione di Formaggio
+        descripcion:
+          es: Cubos de mozzarella apanados en panko, servidos con miel y reducción balsámica.
+          en: Panko-breaded mozzarella cubes, served with honey and balsamic reduction.
+        precio: 30900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Polpette d’Amore
+          en: Polpette d’Amore
+        descripcion:
+          es: Albóndigas en pomodoro con stracciatella acompañada de focaccia.
+          en: Meatballs in pomodoro with stracciatella, served with focaccia.
+        precio: 30900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Tagliata di Manzo
+          en: Tagliata di Manzo
+        descripcion:
+          es: Lonjas finas de solomito selladas
+          en: Thin slices of seared beef tenderloin.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Burrata Spritz
+          en: Burrata Spritz
+        descripcion:
+          es: Burrata fresca con rúgula, durazno en almíbar, tomate cherry y reducción balsámica.
+          en: Fresh burrata with arugula, syrup-poached peach, cherry tomato and balsamic reduction.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Patatine al Tartufo
+          en: Patatine al Tartufo
+        descripcion:
+          es: Papas fritas con aceite de trufa real, queso y trozos de tocineta.
+          en: French fries with real truffle oil, cheese and bacon bits.
+        precio: 27900
+        picante: false
+        disponible: true
+
+  - clave: PIZZAS
+    nombre: Al Forno
+    grupo: comida
+    antetitulo:
+      es: Pizzas al horno
+      en: Wood-Fired Pizzas
+    boton:
+      es: Pizzas
+      en: Pizzas
+    foto: images/pizzas.jpg
+    visible: true
+    platos:
+      - nombre:
+          es: Quattro Formaggi
+          en: Quattro Formaggi
+        descripcion:
+          es: Pizza de cuatro quesos con base de salsa de quesos y miel de aperol.
+          en: Four-cheese pizza on a cheese-sauce base with Aperol honey.
+        precio: 44900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Perla Bianca
+          en: Perla Bianca
+        descripcion:
+          es: Pizza de pesto con pera en almíbar, prosciutto, stracciatella y pistacho.
+          en: Pesto pizza with syrup-poached pear, prosciutto, stracciatella and pistachio.
+        precio: 48900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Bella Italiana
+          en: Bella Italiana
+        descripcion:
+          es: Pizza pomodoro con mozzarella, chorizo vela, chorizo español y jalapeños.
+          en: Pomodoro pizza with mozzarella, dry-cured chorizo, Spanish chorizo and jalapeños.
+        precio: 47900
+        picante: true
+        disponible: true
+      - nombre:
+          es: Funghi e Tartufo
+          en: Funghi e Tartufo
+        descripcion:
+          es: Pizza de pesto con pollo, champiñones, mozzarella y trufa.
+          en: Pesto pizza with chicken, mushrooms, mozzarella and truffle.
+        precio: 47900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Panceta Stellata
+          en: Panceta Stellata
+        descripcion:
+          es: Pizza pomodoro con tocineta, cebolla caramelizada, queso crema y champiñon.
+          en: Pomodoro pizza with bacon, caramelized onion, cream cheese and mushroom.
+        precio: 42900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Vulcano Hawaiano
+          en: Vulcano Hawaiano
+        descripcion:
+          es: Pizza pomodoro con jamón y piña calada sobre mozzarella.
+          en: Pomodoro pizza with ham and candied pineapple over mozzarella.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Garden Margarita
+          en: Garden Margarita
+        descripcion:
+          es: Pizza margarita clásica con tomate cherry, bocconcino y albahaca fresca.
+          en: Classic margherita pizza with cherry tomato, bocconcino and fresh basil.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Suprema Burrata
+          en: Suprema Burrata
+        descripcion:
+          es: Pizza con burrata, jamón serrano, nueces, rúgula y reducción balsámica.
+          en: Pizza with burrata, serrano ham, walnuts, arugula and balsamic reduction.
+        precio: 60900
+        picante: false
+        disponible: true
+
+  - clave: PASTAS
+    nombre: Pasta
+    grupo: comida
+    antetitulo:
+      es: Pastas frescas
+      en: Fresh Pasta
+    boton:
+      es: Pastas
+      en: Pasta
+    foto: images/pastas-v2.jpg
+    visible: true
+    platos:
+      - nombre:
+          es: Dolce Carbonara
+          en: Dolce Carbonara
+        descripcion:
+          es: Pasta con tocineta, cebolla caramelizada, crema y parmesano.
+          en: Pasta with bacon, caramelized onion, cream and parmesan.
+        precio: 39900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Sogno Verde
+          en: Sogno Verde
+        descripcion:
+          es: Pasta al pesto con burrata fresca, tomate cherry, pistacho y reducción de balsámico.
+          en: Pesto pasta with fresh burrata, cherry tomato, pistachio and balsamic reduction.
+        precio: 51900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Pesto e Manzo
+          en: Pesto e Manzo
+        descripcion:
+          es: Pasta al pesto con medallones de solomito, tomate cherry y bocconcino en salsa cremosa.
+          en: Pesto pasta with beef tenderloin medallions, cherry tomato and bocconcino in a creamy sauce.
+        precio: 56900
+        picante: false
+        disponible: true
+      - nombre:
+          es: La Vera Puttanesca
+          en: La Vera Puttanesca
+        descripcion:
+          es: Pasta en salsa pomodoro con aceitunas, alcaparras, tomate concassé y un toque picante.
+          en: Pasta in pomodoro sauce with olives, capers, tomato concassé and a spicy kick.
+        precio: 39900
+        picante: true
+        disponible: true
+      - nombre:
+          es: Rosso di Bologna
+          en: Rosso di Bologna
+        descripcion:
+          es: Pasta con salsa boloñesa, pomodoro, mozzarella y parmesano.
+          en: Pasta with bolognese sauce, pomodoro, mozzarella and parmesan.
+        precio: 45900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Pollo alla Tartufata
+          en: Pollo alla Tartufata
+        descripcion:
+          es: Pasta con pollo y champiñones en salsa cremosa de trufa, perfumada con vino blanco y parmesano.
+          en: Pasta with chicken and mushrooms in a creamy truffle sauce, perfumed with white wine and parmesan.
+        precio: 42900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Gambero Imperiale
+          en: Gambero Imperiale
+        descripcion:
+          es: Pasta a los cuatro quesos con langostinos envuelto en tocineta y un crocante de quinoa frita.
+          en: Four-cheese pasta with bacon-wrapped prawns and a crispy fried-quinoa crunch.
+        precio: 60900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Fuoco Italiano
+          en: Fuoco Italiano
+        descripcion:
+          es: Pasta en pomodoro cremoso con chorizo vela e italiano, albahaca y un toque picante.
+          en: Pasta in creamy pomodoro with dry-cured and Italian chorizo, basil and a spicy kick.
+        precio: 45900
+        picante: true
+        disponible: true
+
+  - clave: LASAÑAS
+    nombre: Lasagne
+    grupo: comida
+    antetitulo:
+      es: Lasañas
+      en: Lasagna
+    boton:
+      es: Lasañas
+      en: Lasagna
+    foto: images/lasanas-v2.jpg
+    visible: true
+    platos:
+      - nombre:
+          es: Bolognesa
+          en: Bolognese
+        descripcion:
+          es: Lasaña de boloñesa con bechamel, mozzarella y parmesano.
+          en: Bolognese lasagna with béchamel, mozzarella and parmesan.
+        precio: 39900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Lasaña Mixta
+          en: Mixed Lasagna
+        descripcion:
+          es: Lasaña de boloñesa y pollo al champiñón con mozzarella y parmesano.
+          en: Bolognese and mushroom-chicken lasagna with mozzarella and parmesan.
+        precio: 42900
+        picante: false
+        disponible: true
+
+  - clave: HAMBURGUESAS
+    nombre: Hamburger
+    grupo: comida
+    antetitulo:
+      es: Hamburguesas
+      en: Hamburger
+    boton:
+      es: Hamburguesas
+      en: Burgers
+    foto: images/hamburguesas.jpg
+    visible: true
+    platos:
+      - nombre:
+          es: Spritz Burguer
+          en: Spritz Burguer
+        descripcion:
+          es: Hamburguesa artesanal con cebolla caramelizada, fusión de quesos y Tocineta en panini recién horneado
+          en: Artisan burger with caramelized onion, a cheese blend and bacon on a freshly baked panini.
+        precio: 39900
+        picante: false
+        disponible: true
+
+  - clave: SPRITZ
+    nombre: Spritz
+    grupo: barra
+    antetitulo:
+      es: Aperitivi · el alma de la casa
+      en: Aperitivi · the soul of the house
+    boton:
+      es: Spritz
+      en: Spritz
+    foto: images/spritz.jpg
+    visible: true
+    platos:
+      - nombre:
+          es: Margarita Spritz
+          en: Margarita Spritz
+        descripcion:
+          es: Tequila, Aperol y prosecco. Inspiración en la margarita clásica, con burbujas y carácter mediterráneo.
+          en: Tequila, Aperol and prosecco. A take on the classic margarita, bubbly with a Mediterranean character.
+        precio: 43900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Negroni Rosato
+          en: Negroni Rosato
+        descripcion:
+          es: Gin, Campari, vermut rosso y prosecco. Interpretación ligera y refrescante del clásico italiano.
+          en: Gin, Campari, vermut rosso and prosecco. A light, refreshing take on the Italian classic.
+        precio: 45900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Passion Spritz
+          en: Passion Spritz
+        descripcion:
+          es: Vodka y prosecco. Maracuyá, cítricos y burbujas.
+          en: Vodka and prosecco. Passion fruit, citrus and bubbles.
+        precio: 46900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Basilico Spritz
+          en: Basilico Spritz
+        descripcion:
+          es: Gin, licor de albahaca y prosecco. Perfil herbal y fresco con albahaca.
+          en: Gin, basil liqueur and prosecco. Herbal and fresh with basil.
+        precio: 46900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Limoncello Tonic Spritz
+          en: Limoncello Tonic Spritz
+        descripcion:
+          es: Limoncello, prosecco y tónica. Notas cítricas y burbujas premium.
+          en: Limoncello, prosecco and tonic. Citrus notes and premium bubbles.
+        precio: 43900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Bianco 75
+          en: Bianco 75
+        descripcion:
+          es: Gin, Martini Bianco, miel con romero y prosecco; elegante, burbujeante y floral.
+          en: Gin, Martini Bianco, rosemary honey and prosecco; elegant, bubbly and floral.
+        precio: 47900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Peach Venezia
+          en: Peach Venezia
+        descripcion:
+          es: Aperol y prosecco. Durazno rostizado inspirado en la costa italiana.
+          en: Aperol and prosecco. Roasted peach inspired by the Italian coast.
+        precio: 46900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Nero Tonic Spritz
+          en: Nero Tonic Spritz
+        descripcion:
+          es: Amaro, prosecco y tónica. Cold brew y amargos italianos.
+          en: Amaro, prosecco and tonic. Cold brew and Italian bitters.
+        precio: 45900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Paloma Spritz
+          en: Paloma Spritz
+        descripcion:
+          es: Tequila y prosecco. Toronja rosada y burbujas mediterráneas.
+          en: Tequila and prosecco. Pink grapefruit and Mediterranean bubbles.
+        precio: 45900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Aperol Spritz
+          en: Aperol Spritz
+        descripcion:
+          es: Aperol, prosecco y tónica. El clásico aperitivo, burbujeante y ligero.
+          en: Aperol, prosecco and tonic. The classic aperitivo, bubbly and light.
+        precio: 30900
+        picante: false
+        disponible: true
+
+  - clave: NUEVA_SECCION
+    nombre: Dolci
+    grupo: comida
+    antetitulo:
+      es: Postres
+      en: Desserts
+    boton:
+      es: Postres
+      en: Desserts
+    foto: images/dolci.jpg
+    visible: true
+    platos:
+      - nombre:
+          es: Panna Cotta de Limoncello
+          en: Limoncello Panna Cotta
+        descripcion:
+          es: Postre cremoso a base de limoncello culminado con frutilla fresca y polvo de limón
+          en: Creamy limoncello-based dessert topped with fresh strawberries and lemon dust.
+        precio: 24900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Pera Tentazione
+          en: Pera Tentazione
+        descripcion:
+          es: Rellena de stracciatella cocida en vino y caramelizada con miel de  Aperol servida con gelato y nueces garrapiñadas
+          en: Filled with stracciatella cooked in wine and caramelized with Aperol honey, served with gelato and candied nuts.
+        precio: 24900
+        picante: false
+        disponible: true
+
+  - clave: AUTOR
+    nombre: Firma
+    grupo: barra
+    antetitulo:
+      es: Cócteles de autor
+      en: Signature Cocktails
+    boton:
+      es: De Autor
+      en: Signature
+    foto: images/autor-v2.jpg
+    visible: true
+    platos:
+      - nombre:
+          es: Venere Nera
+          en: Venere Nera
+        descripcion:
+          es: Bourbon, amaro y cordial de romero y miel. Café cold brew y notas herbales.
+          en: Bourbon, amaro and rosemary-honey cordial. Cold-brew coffee and herbal notes.
+        precio: 53900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Fiori Rossi
+          en: Fiori Rossi
+        descripcion:
+          es: Gin con cordial de hibiscus. Lychee, frutos rojos y un perfil floral.
+          en: Gin with hibiscus cordial. Lychee, red berries and a floral profile.
+        precio: 49900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Fragola Velluto
+          en: Fragola Velluto
+        descripcion:
+          es: Vodka con cordial de fresa y romero. Textura sedosa y aterciopelada.
+          en: Vodka with strawberry-rosemary cordial. A silky, velvety texture.
+        precio: 53900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Notte Bianca
+          en: Notte Bianca
+        descripcion:
+          es: Gin, St Germain y cordial de pera. Cítrico, floral y delicado.
+          en: Gin, St Germain and pear cordial. Citrusy, floral and delicate.
+        precio: 53900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Rosato Sour
+          en: Rosato Sour
+        descripcion:
+          es: Pisco y Aperol. Toronja rosada y una espuma suave.
+          en: Pisco and Aperol. Pink grapefruit and a soft foam.
+        precio: 53900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Carajillo della Casa
+          en: Carajillo della Casa
+        descripcion:
+          es: Amaro de la casa y café espresso; notas especiadas, intensas y sofisticadas.
+          en: House amaro and espresso; spicy, intense, and sophisticated notes.
+        precio: 49900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Notte Rosa
+          en: Notte Rosa
+        descripcion:
+          es: "Ron, lychee, cordial de fresa y romero; notas afrutadas, florales y sutiles.  "
+          en: Rum, lychee, strawberry and rosemary cordial; fruity, floral, and subtle notes.
+        precio: 49900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Espresso Napoli
+          en: Espresso Napoli
+        descripcion:
+          es: Vodka de vainilla, café espresso y amaro; una mezcla intensa, cremosa y sedosa.
+          en: Vanilla vodka, espresso, and amaro; an intense, creamy, and silky blend.
+        precio: 49900
+        picante: false
+        disponible: true
+
+  - clave: CLASICOS
+    nombre: Classici
+    grupo: barra
+    antetitulo:
+      es: Cócteles clásicos
+      en: Classic Cocktails
+    boton:
+      es: Clásicos
+      en: Classics
+    foto: images/clasicos.jpg
+    visible: true
+    platos:
+      - nombre:
+          es: Mojito Cubano
+          en: Mojito Cubano
+        descripcion:
+          es: Ron blanco, hierbabuena, limón y soda.
+          en: White rum, spearmint, lime and soda.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Moscow Mule
+          en: Moscow Mule
+        descripcion:
+          es: Vodka, ginger beer y limón.
+          en: Vodka, ginger beer and lime.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Whisky Sour
+          en: Whisky Sour
+        descripcion:
+          es: Bourbon, limón fresco y espuma sedosa.
+          en: Bourbon, fresh lemon and a silky foam.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Margarita Clásica
+          en: Classic Margarita
+        descripcion:
+          es: Tequila, triple sec y limón fresco.
+          en: Tequila, triple sec and fresh lime.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Negroni
+          en: Negroni
+        descripcion:
+          es: Gin, Campari y vermouth rosso.
+          en: Gin, Campari and vermouth rosso.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Old Fashioned
+          en: Old Fashioned
+        descripcion:
+          es: Bourbon, azúcar y bitters aromáticos.
+          en: Bourbon, sugar and aromatic bitters.
+        precio: 45900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Garibaldi
+          en: Garibaldi
+        descripcion:
+          es: Campari y jugo de naranja; una combinación refrescante, frutal y ligera.
+          en: Campari and orange juice; a refreshing, fruity and light combination.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Negroni Sbagliato
+          en: Negroni Sbagliato
+        descripcion:
+          es: Campari, vermouth rosso y prosecco; un clásico amargo, vibrante y burbujeante.
+          en: Campari, vermouth rosso and prosecco; a bitter, vibrant and bubbly classic.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Boulevardier
+          en: Boulevardier
+        descripcion:
+          es: Bourbon, Campari y vermouth rosso; un trago elegante, profundo y amargo.
+          en: Bourbon, Campari and vermouth rosso; an elegant, deep and bitter drink.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Pisco Sour
+          en: Pisco Sour
+        descripcion:
+          es: Pisco, zumo de limón y clara de huevo; un perfil cítrico, espumoso y tradicional.
+          en: Pisco, lemon juice and egg white; a citrusy, frothy and traditional profile.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: New York Sour
+          en: New York Sour
+        descripcion:
+          es: Whiskey, limón, clara de huevo y vino tinto; un cóctel complejo, seductor y estructurado.
+          en: Whiskey, lemon, egg white and red wine; a complex, seductive and structured cocktail.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Gin Basil Smash
+          en: Gin Basil Smash
+        descripcion:
+          es: Gin, albahaca fresca y zumo de limón; una opción herbal, fresca y vibrante.
+          en: Gin, fresh basil and lemon juice; a herbal, fresh and vibrant option.
+        precio: 40900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Paper Plane della Casa
+          en: Paper Plane della Casa
+        descripcion:
+          es: Bourbon, Aperol, amaro y limón; un perfil equilibrado, agridulce y sumamente sofisticado.
+          en: Bourbon, Aperol, amaro and lemon; a balanced, bittersweet and deeply sophisticated profile.
+        precio: 40900
+        picante: false
+        disponible: true
+
+  - clave: MOCKTAILS
+    nombre: Analcolici
+    grupo: barra
+    antetitulo:
+      es: Mocktails · sin alcohol
+      en: Mocktails · alcohol-free
+    boton:
+      es: Mocktails
+      en: Mocktails
+    foto: images/mocktails.jpg
+    visible: true
+    platos:
+      - nombre:
+          es: Nero Amalfi
+          en: Nero Amalfi
+        descripcion:
+          es: Cordial de té negro, cold brew, naranja y hierbabuena con soda; notas amargas, efervescentes y vigorosas.
+          en: Black tea cordial, cold brew, orange and mint with soda; bitter, effervescent and bold notes.
+        precio: 32900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Sole Rosato
+          en: Sole Rosato
+        descripcion:
+          es: Durazno, cítricos y un fresco perfil mediterráneo.
+          en: Peach, citrus and a fresh Mediterranean profile.
+        precio: 32900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Mediterráneo Spritz
+          en: Mediterráneo Spritz
+        descripcion:
+          es: Cordial de romero y miel con maracuyá y notas cítricas.
+          en: Rosemary-honey cordial with passion fruit and citrus notes.
+        precio: 34900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Sunset Nero
+          en: Sunset Nero
+        descripcion:
+          es: Cordial de hibiscus con toronja y flores comestibles.
+          en: Hibiscus cordial with grapefruit and edible flowers.
+        precio: 34900
+        picante: false
+        disponible: true
+
+  - clave: SANGRIA
+    nombre: Sangria
+    grupo: barra
+    antetitulo:
+      es: Sangrías de la casa
+      en: House Sangrias
+    boton:
+      es: Sangrías
+      en: Sangrias
+    foto: images/sangria.jpg
+    visible: true
+    platos:
+      - nombre:
+          es: La Costa Nera
+          en: La Costa Nera
+        descripcion:
+          es: Vino tinto, ron, amaro y jamaica con frutos rojos; una sangría especiada y frutal.
+          en: Red wine, rum, amaro and hibiscus with red berries; a spiced and fruity sangria.
+        precio: 149900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Bolla Bianca
+          en: Bolla Bianca
+        descripcion:
+          es: Lambrusco blanco, gin, amaretto y cordial de pera; dulce, frutal y muy refrescante.
+          en: White Lambrusco, gin, amaretto and pear cordial; sweet, fruity and very refreshing.
+        precio: 149900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Rosé Amalfi
+          en: Rosé Amalfi
+        descripcion:
+          es: Vino rosado, ron, Aperol y maracuyá con frutas; una experiencia tropical, vibrante y jugosa.
+          en: Rosé wine, rum, Aperol and passion fruit with fresh fruit; a tropical, vibrant and juicy experience.
+        precio: 149900
+        picante: false
+        disponible: true
+
+  - clave: VINI
+    nombre: Vini
+    grupo: barra
+    antetitulo:
+      es: Vinos
+      en: Wines
+    boton:
+      es: Vinos
+      en: Wines
+    foto: ""
+    visible: true
+    platos:
+      - nombre:
+          es: Botella Lambrusco Rosé
+          en: Rosé Lambrusco Bottle
+        descripcion:
+          es: ""
+          en: ""
+        precio: 99900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Ramón Bilbao Crianza Botella
+          en: Ramón Bilbao Crianza Bottle
+        descripcion:
+          es: ""
+          en: ""
+        precio: 129900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Ramón Bilbao Verdejo Botella
+          en: Ramón Bilbao Verdejo Bottle
+        descripcion:
+          es: ""
+          en: ""
+        precio: 139900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Ramón Bilbao Verdejo Copa
+          en: Ramón Bilbao Verdejo Glass
+        descripcion:
+          es: ""
+          en: ""
+        precio: 30900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Ramón Bilbao Crianza Copa
+          en: Ramón Bilbao Crianza Glass
+        descripcion:
+          es: ""
+          en: ""
+        precio: 30900
+        picante: false
+        disponible: true
+
+  - clave: TRAGOS
+    nombre: Liquori
+    grupo: barra
+    antetitulo:
+      es: Tragos
+      en: Spirits
+    boton:
+      es: Tragos
+      en: Spirits
+    foto: ""
+    visible: true
+    platos:
+      - nombre:
+          es: Trago Jack Daniel's
+          en: Jack Daniel's (shot)
+        descripcion:
+          es: ""
+          en: ""
+        precio: 36000
+        picante: false
+        disponible: true
+      - nombre:
+          es: Trago Bulleit Bourbon
+          en: Bulleit Bourbon (shot)
+        descripcion:
+          es: ""
+          en: ""
+        precio: 36000
+        picante: false
+        disponible: true
+      - nombre:
+          es: Trago Ron Caldas 5 años
+          en: Ron Caldas 5-Year (shot)
+        descripcion:
+          es: ""
+          en: ""
+        precio: 30000
+        picante: false
+        disponible: true
+      - nombre:
+          es: Botella Aguardiente Azul/Rojo
+          en: Aguardiente Bottle (Blue/Red)
+        descripcion:
+          es: ""
+          en: ""
+        precio: 135900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Botella Amarillo Manzanares
+          en: Amarillo Manzanares Bottle
+        descripcion:
+          es: ""
+          en: ""
+        precio: 145900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Heineken
+          en: Heineken
+        descripcion:
+          es: 330 ml
+          en: 330 ml
+        precio: 14900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Stella Artois
+          en: Stella Artois
+        descripcion:
+          es: 330 ml
+          en: 330 ml
+        precio: 14900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Corona
+          en: Corona
+        descripcion:
+          es: 330 ml
+          en: 330 ml
+        precio: 13900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Club Dorada
+          en: Club Dorada
+        descripcion:
+          es: 330 ml
+          en: 330 ml
+        precio: 12900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Águila
+          en: Águila
+        descripcion:
+          es: 330 ml
+          en: 330 ml
+        precio: 10900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Corona Cero
+          en: Corona Cero
+        descripcion:
+          es: 330 ml
+          en: 330 ml
+        precio: 13900
+        picante: false
+        disponible: true
+
+  - clave: SODAS
+    nombre: Soda
+    grupo: barra
+    antetitulo:
+      es: Sodas de la casa
+      en: House Sodas
+    boton:
+      es: Sodas
+      en: Sodas
+    foto: ""
+    visible: true
+    platos:
+      - nombre:
+          es: Fresa, Romero & Pimienta
+          en: Strawberry, Rosemary & Pepper
+        descripcion:
+          es: Cordial de fresa y romero con un delicado toque de pimienta negra. Frutal, herbal y especiado.
+          en: Strawberry-rosemary cordial with a delicate touch of black pepper. Fruity, herbal and spiced.
+        precio: 19900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Durazno & Vainilla
+          en: Peach & Vanilla
+        descripcion:
+          es: Puré de durazno y vainilla natural; dulce, cremoso y refrescante.
+          en: Peach purée and natural vanilla; sweet, creamy and refreshing.
+        precio: 20900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Flor de Jamaica & Toronja
+          en: Hibiscus & Grapefruit
+        descripcion:
+          es: Cordial de hibiscus y toronja rosada; floral y cítrico.
+          en: Hibiscus cordial and pink grapefruit; floral and citrusy.
+        precio: 20900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Romero & Miel
+          en: Rosemary & Honey
+        descripcion:
+          es: Cordial de romero y miel con limón amarillo; herbal, cítrico y refrescante.
+          en: Rosemary-honey cordial with lemon; herbal, citrusy and refreshing.
+        precio: 19900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Pera & Limón
+          en: Pear & Lemon
+        descripcion:
+          es: Cordial de pera y limón amarillo; frutal, ligero y elegante.
+          en: Pear and lemon cordial; fruity, light and elegant.
+        precio: 20900
+        picante: false
+        disponible: true
+
+  - clave: BEBIDAS
+    nombre: Bibite
+    grupo: barra
+    antetitulo:
+      es: Refrescos
+      en: Soft drinks
+    boton:
+      es: Refrescos
+      en: Soft drinks
+    foto: ""
+    visible: true
+    platos:
+      - nombre:
+          es: Soda
+          en: Club Soda
+        descripcion:
+          es: 300 ml
+          en: 300 ml
+        precio: 8900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Coca-Cola Zero
+          en: Coca-Cola Zero
+        descripcion:
+          es: 400 ml
+          en: 400 ml
+        precio: 8900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Coca-Cola
+          en: Coca-Cola
+        descripcion:
+          es: 400 ml
+          en: 400 ml
+        precio: 8900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Agua sin Gas
+          en: Still Water
+        descripcion:
+          es: 500 ml
+          en: 500 ml
+        precio: 8900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Agua con Gas
+          en: Sparkling Water
+        descripcion:
+          es: 300 ml
+          en: 300 ml
+        precio: 8900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Sprite
+          en: Sprite
+        descripcion:
+          es: 400 ml
+          en: 400 ml
+        precio: 8900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Quatro
+          en: Quatro
+        descripcion:
+          es: 400 ml
+          en: 400 ml
+        precio: 8900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Ginger Ale
+          en: Ginger Ale
+        descripcion:
+          es: 400 ml
+          en: 400 ml
+        precio: 8900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Brisa Manzana
+          en: Brisa Apple
+        descripcion:
+          es: 600 ml
+          en: 600 ml
+        precio: 8900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Té Hatsu
+          en: Hatsu Tea
+        descripcion:
+          es: Rojo/Amarillo/Blanco
+          en: Red/Yellow/White
+        precio: 13900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Soda Hatsu
+          en: Hatsu Soda
+        descripcion:
+          es: Limon/Sandía
+          en: Lemon/Watermelon
+        precio: 11900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Limonada
+          en: Lemonade
+        descripcion:
+          es: Natural
+          en: Natural
+        precio: 11900
+        picante: false
+        disponible: true
+      - nombre:
+          es: Limonada de Coco
+          en: Coconut Lemonade
+        descripcion:
+          es: ""
+          en: ""
+        precio: 14900
+        picante: false
+        disponible: true
