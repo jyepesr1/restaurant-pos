@@ -1,0 +1,422 @@
+import { useEffect, useRef, useState } from 'react'
+import {
+  borrarEventos,
+  leerEventos,
+  probarIndexedDb,
+  purgarEventosAntiguos,
+  registrarEvento,
+} from './registro'
+import { type ResumenDiagnostico, resumirEventos } from './resumen'
+import { type EstadoCanal, useConexionWs } from './useConexionWs'
+
+const CLAVE_NOMBRE = 'pos-diagnostico-nombre'
+const INTERVALO_RESUMEN_MS = 3000
+const LATENCIA_IDEAL_MS = 200
+
+type EstadoEnvio = 'listo' | 'enviando' | 'enviado' | 'error' | 'falta-nombre'
+type Nivel = 'ok' | 'error' | 'aviso' | 'midiendo' | 'info'
+
+function detectarCapacidades() {
+  return {
+    contextoSeguro: window.isSecureContext,
+    serviceWorker: 'serviceWorker' in navigator,
+    vibracion: 'vibrate' in navigator,
+    pantallaEncendida: 'wakeLock' in navigator,
+    // Sin HTTPS el navegador no deja pedir permiso, aunque la API exista.
+    notificaciones: 'Notification' in window && window.isSecureContext,
+    almacenamientoPersistente: typeof navigator.storage?.persist === 'function',
+  }
+}
+
+// Se registra una sola vez por carga de la página, aunque React monte el componente dos veces.
+let cargaRegistrada = false
+function registrarCarga() {
+  if (cargaRegistrada) return
+  cargaRegistrada = true
+  const navegacion = performance.getEntriesByType('navigation')[0] as
+    | PerformanceNavigationTiming
+    | undefined
+  registrarEvento('carga', {
+    tipoNavegacion: navegacion?.type ?? 'desconocido',
+    descartada: (document as Document & { wasDiscarded?: boolean }).wasDiscarded === true,
+  })
+}
+
+function leerNombre(): string {
+  try {
+    return localStorage.getItem(CLAVE_NOMBRE) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+let contextoAudio: AudioContext | undefined
+function sonar() {
+  // Un solo contexto: los navegadores móviles limitan cuántos puede haber abiertos.
+  contextoAudio ??= new AudioContext()
+  contextoAudio.resume()
+  const oscilador = contextoAudio.createOscillator()
+  oscilador.frequency.value = 880
+  oscilador.connect(contextoAudio.destination)
+  oscilador.start()
+  oscilador.stop(contextoAudio.currentTime + 0.25)
+}
+
+function formatearDuracion(ms: number): string {
+  const segundos = Math.round(ms / 1000)
+  return segundos < 60 ? `${segundos} s` : `${Math.floor(segundos / 60)} min ${segundos % 60} s`
+}
+
+const plural = (n: number, singular: string, varios: string) =>
+  `${n} ${n === 1 ? singular : varios}`
+
+const estilosNivel: Record<Nivel, { icono: string; clase: string }> = {
+  ok: { icono: '✓', clase: 'text-green-700 dark:text-green-400' },
+  error: { icono: '✕', clase: 'text-red-700 dark:text-red-400' },
+  aviso: { icono: '⚠', clase: 'text-amber-700 dark:text-amber-400' },
+  midiendo: { icono: '…', clase: 'text-amber-700 dark:text-amber-400' },
+  info: { icono: '', clase: 'text-slate-700 dark:text-slate-300' },
+}
+
+function Fila({ titulo, nivel, texto }: { titulo: string; nivel: Nivel; texto: string }) {
+  const { icono, clase } = estilosNivel[nivel]
+  return (
+    <li className="flex items-start justify-between gap-4 border-b border-slate-200 py-3 dark:border-slate-800">
+      <span className="font-medium">{titulo}</span>
+      <span className={`text-right ${clase}`}>
+        {icono && <span aria-hidden="true">{icono} </span>}
+        {texto}
+      </span>
+    </li>
+  )
+}
+
+const textoCanal: Record<EstadoCanal, { nivel: Nivel; texto: string }> = {
+  conectando: { nivel: 'midiendo', texto: 'Conectando' },
+  conectado: { nivel: 'ok', texto: 'Conectado' },
+  'sin-respuesta': { nivel: 'error', texto: 'Sin respuesta, reconectando' },
+  desconectado: { nivel: 'error', texto: 'Desconectado, reintentando' },
+}
+
+interface Veredicto {
+  nivel: 'ok' | 'aviso' | 'error'
+  titulo: string
+  puntos: string[]
+}
+
+function calcularVeredicto(
+  canal: EstadoCanal,
+  indexedDb: boolean | null,
+  medianaMs: number | null,
+  resumen: ResumenDiagnostico,
+): Veredicto {
+  const errores: string[] = []
+  const avisos: string[] = []
+  if (canal !== 'conectado') errores.push('No hay conexión en tiempo real con el hub.')
+  if (indexedDb === false) errores.push('Este navegador no puede guardar datos locales.')
+  if (resumen.descartes > 0) avisos.push('El navegador recargó la página solo al volver.')
+  if (resumen.ocultamientos.some((o) => o.conexionPerdida)) {
+    avisos.push('En segundo plano se pierde la conexión (se recupera al volver).')
+  }
+  if (medianaMs !== null && medianaMs >= LATENCIA_IDEAL_MS) {
+    avisos.push('El tiempo de respuesta es alto: revisa la señal del Wi-Fi.')
+  }
+
+  if (errores.length > 0) {
+    return {
+      nivel: 'error',
+      titulo: `Revisar: ${plural(errores.length, 'punto', 'puntos')}`,
+      puntos: errores,
+    }
+  }
+  if (indexedDb === null || medianaMs === null || resumen.ocultamientos.length === 0) {
+    return { nivel: 'aviso', titulo: 'Prueba en curso: sigue los pasos', puntos: avisos }
+  }
+  if (avisos.length > 0) {
+    return { nivel: 'aviso', titulo: 'Funciona, con avisos', puntos: avisos }
+  }
+  return { nivel: 'ok', titulo: 'Listo para operar', puntos: [] }
+}
+
+const claseVeredicto: Record<Veredicto['nivel'], string> = {
+  ok: 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200',
+  aviso: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
+  error: 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200',
+}
+const iconoVeredicto: Record<Veredicto['nivel'], string> = { ok: '✓', aviso: '⚠', error: '✕' }
+
+const claseBoton =
+  'min-h-12 rounded-lg px-4 font-semibold transition active:scale-[0.98] disabled:opacity-50'
+const claseSecundario = `${claseBoton} bg-slate-200 dark:bg-slate-800`
+
+export function Diagnostico() {
+  const capacidades = detectarCapacidades()
+  const { canal, latencia } = useConexionWs()
+  const [indexedDb, setIndexedDb] = useState<boolean | null>(null)
+  const [resumen, setResumen] = useState<ResumenDiagnostico>(() => resumirEventos([]))
+  const [nombre, setNombre] = useState(leerNombre)
+  const [envio, setEnvio] = useState<EstadoEnvio>('listo')
+  const [confirmarBorrado, setConfirmarBorrado] = useState(false)
+  const campoNombre = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    registrarCarga()
+    purgarEventosAntiguos()
+    probarIndexedDb().then(setIndexedDb)
+
+    const actualizar = () => leerEventos().then((eventos) => setResumen(resumirEventos(eventos)))
+    actualizar()
+    const intervalo = setInterval(actualizar, INTERVALO_RESUMEN_MS)
+    return () => clearInterval(intervalo)
+  }, [])
+
+  function cambiarNombre(valor: string) {
+    setNombre(valor)
+    if (envio === 'falta-nombre') setEnvio('listo')
+    try {
+      localStorage.setItem(CLAVE_NOMBRE, valor)
+    } catch {
+      // Sin almacenamiento local el nombre solo vive en esta pantalla.
+    }
+  }
+
+  async function enviar() {
+    if (nombre.trim() === '') {
+      setEnvio('falta-nombre')
+      campoNombre.current?.focus()
+      return
+    }
+    setEnvio('enviando')
+    try {
+      const eventos = await leerEventos()
+      const res = await fetch('/api/diagnostico', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre: nombre.trim(),
+          navegador: navigator.userAgent,
+          pantalla: `${screen.width}x${screen.height}`,
+          capacidades,
+          indexedDb,
+          latencia,
+          resumen: resumirEventos(eventos),
+          eventos,
+        }),
+      })
+      setEnvio(res.ok ? 'enviado' : 'error')
+      if (res.ok) navigator.vibrate?.(100)
+    } catch {
+      setEnvio('error')
+    }
+  }
+
+  async function borrar() {
+    await borrarEventos()
+    setResumen(resumirEventos([]))
+    setEnvio('listo')
+    setConfirmarBorrado(false)
+  }
+
+  const veredicto = calcularVeredicto(canal, indexedDb, latencia?.medianaMs ?? null, resumen)
+  const ultimo = resumen.ocultamientos.at(-1)
+
+  return (
+    <div className="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <main className="mx-auto max-w-xl p-4 pb-44">
+        <header className="mb-4 flex items-center justify-between gap-4">
+          <h1 className="text-xl font-semibold">Diagnóstico del dispositivo</h1>
+          <a
+            href="/"
+            className="min-h-12 content-center px-2 text-blue-700 underline dark:text-blue-400"
+          >
+            Volver
+          </a>
+        </header>
+
+        <section
+          className={`mb-4 rounded-lg p-4 ${claseVeredicto[veredicto.nivel]}`}
+          aria-live="polite"
+        >
+          <p className="text-lg font-semibold">
+            <span aria-hidden="true">{iconoVeredicto[veredicto.nivel]} </span>
+            {veredicto.titulo}
+          </p>
+          {veredicto.puntos.length > 0 && (
+            <ul className="mt-2 list-disc pl-5">
+              {veredicto.puntos.map((punto) => (
+                <li key={punto}>{punto}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <ol className="mb-4 list-decimal space-y-1 pl-5 text-slate-700 dark:text-slate-300">
+          <li>Escribe un nombre para este equipo.</li>
+          <li>Toca «Probar vibración» y «Probar sonido».</li>
+          <li>Bloquea el equipo 30 segundos y vuelve a esta pantalla. Repite con 5 minutos.</li>
+          <li>Toca «Enviar resultados al hub».</li>
+        </ol>
+
+        <label className="mb-4 block">
+          <span className="mb-1 block font-medium">Nombre de este equipo</span>
+          <input
+            ref={campoNombre}
+            value={nombre}
+            onChange={(e) => cambiarNombre(e.target.value)}
+            placeholder="Ej.: iPhone de caja, Android mesero 1"
+            aria-invalid={envio === 'falta-nombre'}
+            className="min-h-12 w-full rounded-lg border border-slate-400 bg-white px-3 placeholder:text-slate-500 dark:border-slate-600 dark:bg-slate-900"
+          />
+        </label>
+
+        <h2 className="mt-2 font-semibold text-slate-600 dark:text-slate-400">
+          Conexión con el hub
+        </h2>
+        <ul>
+          <Fila titulo="Canal en tiempo real" {...textoCanal[canal]} />
+          <Fila
+            titulo="Tiempo de respuesta"
+            nivel={
+              latencia === null
+                ? 'midiendo'
+                : latencia.medianaMs < LATENCIA_IDEAL_MS
+                  ? 'ok'
+                  : 'aviso'
+            }
+            texto={
+              latencia === null
+                ? 'Midiendo'
+                : `${latencia.medianaMs} ms (ideal: menos de ${LATENCIA_IDEAL_MS} ms)`
+            }
+          />
+          <Fila titulo="Veces que se reconectó" nivel="info" texto={String(resumen.reconexiones)} />
+          <Fila
+            titulo="Última vez en segundo plano"
+            nivel={ultimo ? (ultimo.conexionPerdida ? 'aviso' : 'ok') : 'info'}
+            texto={
+              ultimo
+                ? `${formatearDuracion(ultimo.duracionMs)}, ${
+                    ultimo.recargada
+                      ? 'la página se recargó'
+                      : ultimo.conexionPerdida
+                        ? 'se perdió la conexión'
+                        : 'sin cortes'
+                  }`
+                : 'Aún no ha pasado'
+            }
+          />
+          <Fila
+            titulo="El navegador recargó la página solo"
+            nivel={resumen.descartes === 0 ? 'ok' : 'aviso'}
+            texto={`${plural(resumen.descartes, 'vez', 'veces')} en ${plural(resumen.cargas, 'carga', 'cargas')}`}
+          />
+        </ul>
+
+        <h2 className="mt-6 font-semibold text-slate-600 dark:text-slate-400">
+          Capacidades del navegador
+        </h2>
+        <ul>
+          <Fila
+            titulo="Datos locales (IndexedDB)"
+            nivel={indexedDb === null ? 'midiendo' : indexedDb ? 'ok' : 'error'}
+            texto={indexedDb === null ? 'Probando' : indexedDb ? 'Funciona' : 'No funciona'}
+          />
+          <Fila
+            titulo="Dirección segura (HTTPS)"
+            nivel={capacidades.contextoSeguro ? 'ok' : 'info'}
+            texto={
+              capacidades.contextoSeguro
+                ? 'Sí'
+                : 'No: normal al abrir por IP; algunas funciones no estarán'
+            }
+          />
+          <Fila
+            titulo="Vibración"
+            nivel={capacidades.vibracion ? 'ok' : 'info'}
+            texto={capacidades.vibracion ? 'Disponible' : 'No disponible en este equipo'}
+          />
+          <Fila
+            titulo="Mantener pantalla encendida"
+            nivel={capacidades.pantallaEncendida ? 'ok' : 'info'}
+            texto={capacidades.pantallaEncendida ? 'Disponible' : 'Se configura en el equipo'}
+          />
+          <Fila
+            titulo="Notificaciones del sistema"
+            nivel={capacidades.notificaciones ? 'ok' : 'info'}
+            texto={capacidades.notificaciones ? 'Disponible' : 'No disponible (requiere HTTPS)'}
+          />
+        </ul>
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => navigator.vibrate?.(200)}
+            disabled={!capacidades.vibracion}
+            className={claseSecundario}
+          >
+            {capacidades.vibracion ? 'Probar vibración' : 'Vibración no disponible'}
+          </button>
+          <button type="button" onClick={sonar} className={claseSecundario}>
+            Probar sonido
+          </button>
+        </div>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+          Si no suena, revisa que el equipo no esté en silencio.
+        </p>
+
+        <div className="mt-8 border-t border-slate-200 pt-4 dark:border-slate-800">
+          {confirmarBorrado ? (
+            <div className="rounded-lg bg-red-50 p-3 dark:bg-red-950">
+              <p className="mb-3 font-medium">
+                ¿Borrar los resultados guardados en este equipo? No se puede deshacer.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmarBorrado(false)}
+                  className={claseSecundario}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={borrar}
+                  className={`${claseBoton} bg-red-700 text-white`}
+                >
+                  Borrar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmarBorrado(true)}
+              className={`${claseBoton} w-full text-red-700 underline dark:text-red-400`}
+            >
+              Borrar registro y empezar de nuevo
+            </button>
+          )}
+        </div>
+      </main>
+
+      <footer className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+        <div className="mx-auto max-w-xl">
+          <button
+            type="button"
+            onClick={enviar}
+            disabled={envio === 'enviando'}
+            className={`${claseBoton} w-full bg-blue-700 text-white`}
+          >
+            {envio === 'enviando' ? 'Enviando…' : 'Enviar resultados al hub'}
+          </button>
+          <p role="status" className="mt-2 min-h-6 text-center">
+            {envio === 'enviado' && '✓ Resultados enviados'}
+            {envio === 'error' &&
+              '✕ No llegó al hub. Revisa que el equipo esté en el Wi-Fi del local.'}
+            {envio === 'falta-nombre' && 'Escribe un nombre para identificar este equipo.'}
+          </p>
+        </div>
+      </footer>
+    </div>
+  )
+}

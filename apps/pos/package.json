@@ -10,6 +10,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "dexie": "^4.4.7",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

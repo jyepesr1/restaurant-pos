@@ -5,6 +5,7 @@ import { crearServidor } from './servidor'
 
 const PUERTO_POR_DEFECTO = 4000
 const dirApp = fileURLToPath(new URL('../../pos/dist', import.meta.url))
+const dirDatos = fileURLToPath(new URL('../datos', import.meta.url))
 
 function leerPuerto(): number {
   const valor = process.env.PUERTO
@@ -28,7 +29,7 @@ function ipsLocales(): string[] {
 }
 
 const puerto = leerPuerto()
-const app = crearServidor({ dirApp, logger: true })
+const app = crearServidor({ dirApp, diagnostico: { dirDatos }, logger: true })
 
 try {
   await app.listen({ host: '0.0.0.0', port: puerto })

@@ -24,3 +24,6 @@ test-results/
 
 # Configuración local de Claude Code
 .claude/settings.local.json
+
+# Datos que genera el hub en desarrollo
+apps/hub/datos/

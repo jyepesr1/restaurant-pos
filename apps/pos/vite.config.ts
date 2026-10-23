@@ -6,6 +6,6 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     // En desarrollo, la API la atiende el hub.
-    proxy: { '/api': 'http://localhost:4000' },
+    proxy: { '/api': { target: 'http://localhost:4000', ws: true } },
   },
 })

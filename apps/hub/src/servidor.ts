@@ -1,15 +1,28 @@
 import { existsSync } from 'node:fs'
 import fastifyStatic from '@fastify/static'
+import fastifyWebsocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance } from 'fastify'
+import { type OpcionesDiagnostico, rutasDiagnostico } from './diagnostico'
 
 export interface OpcionesServidor {
   /** Carpeta con la app compilada (`apps/pos/dist`). Sin ella, el hub solo expone la API. */
   dirApp?: string
+  /** Sin esta opción no se exponen las rutas de diagnóstico. */
+  diagnostico?: OpcionesDiagnostico
   logger?: boolean
 }
 
-export function crearServidor({ dirApp, logger = false }: OpcionesServidor = {}): FastifyInstance {
+export function crearServidor({
+  dirApp,
+  diagnostico,
+  logger = false,
+}: OpcionesServidor = {}): FastifyInstance {
   const app = Fastify({ logger })
+  app.register(fastifyWebsocket)
+
+  if (diagnostico) {
+    app.register(rutasDiagnostico, diagnostico)
+  }
 
   // Cada dispositivo consulta la salud cada pocos segundos: no llenar el log con eso.
   app.get('/api/salud', { logLevel: 'silent' }, async () => ({
