@@ -12,6 +12,8 @@ export interface Ocultamiento {
   conexionPerdida: boolean
   /** El navegador recargó la página al volver. */
   recargada: boolean
+  /** Si la conexión se perdió: cuánto tardó en volver tras regresar a la pantalla. */
+  recuperacionMs: number | null
 }
 
 export interface ResumenDiagnostico {
@@ -33,6 +35,9 @@ export function resumirEventos(eventos: EventoDiagnostico[]): ResumenDiagnostico
   let reconexiones = 0
   let ocultaDesde: number | null = null
   let perdidaMientrasOculta = false
+  // La reconexión puede registrarse antes que el evento "visible" (que espera la comprobación).
+  let recuperacionPendiente: number | null = null
+  let cargaTrasRecarga: number | null = null
 
   for (const { tipo, hora, detalle } of [...eventos].sort(porOrdenDeRegistro)) {
     switch (tipo) {
@@ -44,7 +49,9 @@ export function resumirEventos(eventos: EventoDiagnostico[]): ResumenDiagnostico
             duracionMs: hora - ocultaDesde,
             conexionPerdida: true,
             recargada: true,
+            recuperacionMs: null,
           })
+          cargaTrasRecarga = hora
         }
         if (trasOcultar || detalle?.descartada === true) descartes += 1
         ocultaDesde = null
@@ -53,26 +60,45 @@ export function resumirEventos(eventos: EventoDiagnostico[]): ResumenDiagnostico
       case 'oculta':
         ocultaDesde = hora
         perdidaMientrasOculta = false
+        recuperacionPendiente = null
         break
       case 'visible':
         if (ocultaDesde !== null) {
           // El evento se registra tras comprobar la conexión: la duración real viene en el detalle.
           const duracionMs =
             typeof detalle?.duracionMs === 'number' ? detalle.duracionMs : hora - ocultaDesde
+          const conexionPerdida = perdidaMientrasOculta || detalle?.conexionMantenida === false
           ocultamientos.push({
             duracionMs,
-            conexionPerdida: perdidaMientrasOculta || detalle?.conexionMantenida === false,
+            conexionPerdida,
             recargada: false,
+            recuperacionMs: conexionPerdida ? recuperacionPendiente : null,
           })
         }
         ocultaDesde = null
+        recuperacionPendiente = null
         break
       case 'ws-cerrado':
         if (ocultaDesde !== null) perdidaMientrasOculta = true
         break
-      case 'ws-abierto':
+      case 'ws-abierto': {
         if (typeof detalle?.reconexiones === 'number' && detalle.reconexiones > 0) reconexiones += 1
+        const ultimo = ocultamientos.at(-1)
+        if (cargaTrasRecarga !== null && ultimo?.recargada) {
+          ultimo.recuperacionMs = hora - cargaTrasRecarga
+          cargaTrasRecarga = null
+        } else if (typeof detalle?.msDesdeVisible === 'number') {
+          if (ocultaDesde !== null) {
+            recuperacionPendiente = detalle.msDesdeVisible
+          } else if (ultimo?.conexionPerdida && ultimo.recuperacionMs === null) {
+            ultimo.recuperacionMs = detalle.msDesdeVisible
+          }
+        } else if (ocultaDesde !== null && perdidaMientrasOculta) {
+          // Se reconectó sola antes de que el usuario volviera.
+          recuperacionPendiente = 0
+        }
         break
+      }
     }
   }
 

@@ -12,6 +12,7 @@ import { type EstadoCanal, useConexionWs } from './useConexionWs'
 const CLAVE_NOMBRE = 'pos-diagnostico-nombre'
 const INTERVALO_RESUMEN_MS = 3000
 const LATENCIA_IDEAL_MS = 200
+const RECUPERACION_IDEAL_MS = 3000
 
 type EstadoEnvio = 'listo' | 'enviando' | 'enviado' | 'error' | 'falta-nombre'
 type Nivel = 'ok' | 'error' | 'aviso' | 'midiendo' | 'info'
@@ -63,6 +64,7 @@ function sonar() {
 }
 
 function formatearDuracion(ms: number): string {
+  if (ms < 1000) return 'menos de 1 s'
   const segundos = Math.round(ms / 1000)
   return segundos < 60 ? `${segundos} s` : `${Math.floor(segundos / 60)} min ${segundos % 60} s`
 }
@@ -117,6 +119,9 @@ function calcularVeredicto(
   if (resumen.descartes > 0) avisos.push('El navegador recargó la página solo al volver.')
   if (resumen.ocultamientos.some((o) => o.conexionPerdida)) {
     avisos.push('En segundo plano se pierde la conexión (se recupera al volver).')
+  }
+  if (resumen.ocultamientos.some((o) => (o.recuperacionMs ?? 0) > RECUPERACION_IDEAL_MS)) {
+    avisos.push(`Al volver tardó más de ${RECUPERACION_IDEAL_MS / 1000} s en reconectar.`)
   }
   if (medianaMs !== null && medianaMs >= LATENCIA_IDEAL_MS) {
     avisos.push('El tiempo de respuesta es alto: revisa la señal del Wi-Fi.')
@@ -301,6 +306,12 @@ export function Diagnostico() {
                       : ultimo.conexionPerdida
                         ? 'se perdió la conexión'
                         : 'sin cortes'
+                  }${
+                    ultimo.conexionPerdida
+                      ? ultimo.recuperacionMs === null
+                        ? ' (aún reconectando)'
+                        : ` (volvió en ${formatearDuracion(ultimo.recuperacionMs)})`
+                      : ''
                   }`
                 : 'Aún no ha pasado'
             }
