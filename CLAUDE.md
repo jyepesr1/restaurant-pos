@@ -38,6 +38,34 @@ Los subagentes del proyecto están en `.claude/agents/`.
 
 No hacer push ni abrir PR sin que el usuario lo pida.
 
-## Estructura y comandos
+## Estructura
 
-Se completan en la tarea 0.2 de la Fase 0.
+Monorepo con pnpm workspaces y Turborepo. TypeScript estricto en todo.
+
+| Carpeta | Qué contiene |
+|---|---|
+| `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador |
+| `apps/hub` (`@pos/hub`) | Servidor local (Fastify) que corre en el PC de caja: sirve la app y la API en la red local |
+| `packages/core` (`@pos/core`) | Lógica de negocio compartida, sin dependencias de navegador ni de Node |
+| `tests/e2e` | Pruebas Playwright de punta a punta (celular Android y caja) |
+| `docs/` | Brief, decisiones, roadmap, modelo de datos y datos del piloto |
+
+Los paquetes internos se consumen como código fuente TypeScript (`exports` apunta a `src/index.ts`); no se compilan por separado. Paquetes nuevos (`ui`, `sync`, `db`, `printing`, `dian`, `payments`) se crean en la tarea que los necesita, no antes.
+
+## Comandos
+
+Requiere Node 24 (`.nvmrc`) y pnpm por corepack (`corepack enable pnpm`).
+
+| Comando | Qué hace |
+|---|---|
+| `pnpm install` | Instala dependencias |
+| `pnpm dev` | Levanta hub (puerto 4000) y app (Vite) en modo desarrollo |
+| `pnpm --filter @pos/app build && pnpm --filter @pos/hub start` | Compila la app y la sirve desde el hub, como en el restaurante. Imprime las IP para abrir desde el celular |
+| `pnpm check` | Lint y formato (Biome), tipos y pruebas unitarias. Debe pasar antes de cada commit |
+| `pnpm format` | Corrige formato y orden de imports |
+| `pnpm test` | Pruebas unitarias (Vitest) de todos los paquetes |
+| `pnpm test:e2e` | Pruebas Playwright; compila la app y levanta el hub en el puerto 4100 |
+
+Biome no formatea los archivos Markdown (están excluidos en `biome.json`).
+
+Las dependencias que ejecutan scripts al instalarse deben aprobarse con `pnpm approve-builds <paquete>`; quedan en `allowBuilds` de `pnpm-workspace.yaml`.

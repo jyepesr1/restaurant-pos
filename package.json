@@ -1,0 +1,26 @@
+{
+  "name": "restaurant-pos",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "playwright test",
+    "check": "biome check . && tsc -p tsconfig.json && turbo run typecheck test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.2",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.19.2",
+    "turbo": "^2.11.10",
+    "typescript": "^7.0.2"
+  }
+}
