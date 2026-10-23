@@ -27,3 +27,4 @@ test-results/
 
 # Datos que genera el hub en desarrollo
 apps/hub/datos/
+.e2e/

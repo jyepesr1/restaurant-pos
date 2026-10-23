@@ -4,8 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { crearServidor } from './servidor'
 
 const PUERTO_POR_DEFECTO = 4000
-const dirApp = fileURLToPath(new URL('../../pos/dist', import.meta.url))
-const dirDatos = fileURLToPath(new URL('../datos', import.meta.url))
+// Se pueden cambiar con variables de entorno; las pruebas e2e usan carpetas propias para no
+// pisar la app ni los datos de un hub que esté sirviendo a celulares reales.
+const dirApp = process.env.DIR_APP || fileURLToPath(new URL('../../pos/dist', import.meta.url))
+const dirDatos = process.env.DIR_DATOS || fileURLToPath(new URL('../datos', import.meta.url))
 
 function leerPuerto(): number {
   const valor = process.env.PUERTO

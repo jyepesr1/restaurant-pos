@@ -1,9 +1,9 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, type Page, test, type WebSocketRoute } from '@playwright/test'
+import { DIR_DATOS_E2E } from './rutas'
 
-const ARCHIVO = fileURLToPath(new URL('../../apps/hub/datos/diagnosticos.jsonl', import.meta.url))
+const ARCHIVO = join(DIR_DATOS_E2E, 'diagnosticos.jsonl')
 const MENSAJE_ERROR = '✕ No llegó al hub. Revisa que el equipo esté en el Wi-Fi del local.'
 
 /**
@@ -618,43 +618,24 @@ test.describe('pantalla de diagnóstico', () => {
   })
 })
 
-// Esta prueba usa el hub real y deja constancia en apps/hub/datos. Corre en un solo
-// proyecto para que nadie más escriba en el archivo mientras se limpia su línea.
+// Usa el hub real, que en las pruebas guarda en su propia carpeta (.e2e/datos). Corre en un
+// solo proyecto para no depender del orden con que escriben los dos.
 test('el hub guarda el informe enviado desde la pantalla en diagnosticos.jsonl', async ({
   page,
 }, testInfo) => {
-  test.skip(testInfo.project.name !== 'caja', 'Una sola ejecución para no competir por el archivo')
+  test.skip(testInfo.project.name !== 'caja', 'Una sola ejecución basta')
 
   const nombre = `e2e-diagnostico-${Date.now()}`
-  let existia = true
-  let original = ''
-  try {
-    original = await readFile(ARCHIVO, 'utf8')
-  } catch {
-    existia = false
-  }
+  await page.goto('/diagnostico')
+  await expect(fila(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
+  await page.getByLabel('Nombre de este equipo').fill(nombre)
+  await envio(page).click()
+  await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
 
-  try {
-    await page.goto('/diagnostico')
-    await expect(fila(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
-    await page.getByLabel('Nombre de este equipo').fill(nombre)
-    await envio(page).click()
-    await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
-
-    const lineas = (await readFile(ARCHIVO, 'utf8')).split('\n').filter(Boolean)
-    const registros = lineas.map((linea) => JSON.parse(linea))
-    const mio = registros.find((registro) => registro.datos?.nombre === nombre)
-    expect(mio).toBeDefined()
-    expect(mio.datos.indexedDb).toBe(true)
-    expect(new Date(mio.recibidoEn).getTime()).not.toBeNaN()
-    expect(mio.datos.eventos.length).toBeGreaterThan(0)
-  } finally {
-    // Devuelve el archivo a como estaba antes de la prueba.
-    if (existia) {
-      await mkdir(dirname(ARCHIVO), { recursive: true })
-      await writeFile(ARCHIVO, original)
-    } else {
-      await rm(ARCHIVO, { force: true })
-    }
-  }
+  const lineas = (await readFile(ARCHIVO, 'utf8')).split('\n').filter(Boolean)
+  const mio = lineas.map((linea) => JSON.parse(linea)).find((r) => r.datos?.nombre === nombre)
+  expect(mio).toBeDefined()
+  expect(mio.datos.indexedDb).toBe(true)
+  expect(new Date(mio.recibidoEn).getTime()).not.toBeNaN()
+  expect(mio.datos.eventos.length).toBeGreaterThan(0)
 })

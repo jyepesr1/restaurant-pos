@@ -6,7 +6,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 
 | # | Tarea | Estado |
 |---|---|---|
-| 0.1 | Prueba de conexión en dispositivos reales | 🚧 |
+| 0.1 | Prueba de conexión en dispositivos reales | ✅ |
 | 0.2 | Monorepo, herramientas y CI | ✅ |
 | 0.3 | Documentos vivos (DECISIONES, MODELO_DATOS, SYNC) | ⏳ |
 | 0.4 | Modelo de datos y migraciones | ⏳ |
@@ -18,7 +18,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 | 0.10 | Pantalla mínima para la demo de sincronización | ⏳ |
 | 0.11 | Demo guiada | ⏳ |
 
-### 0.1 — Prueba de conexión en dispositivos reales 🚧
+### 0.1 — Prueba de conexión en dispositivos reales ✅
 
 Pantalla **Diagnóstico del dispositivo** en `/diagnostico` (queda como herramienta para instalar restaurantes). Comprueba en cada celular o tablet abierto por IP con HTTP:
 - canal en tiempo real con el hub (WebSocket con latidos, reconexión y detección de conexión muerta) y tiempo de respuesta;
@@ -27,16 +27,11 @@ Pantalla **Diagnóstico del dispositivo** en `/diagnostico` (queda como herramie
 
 Los resultados se envían al hub y quedan en `apps/hub/datos/diagnosticos.jsonl` (máximo 5 MB).
 
-**Resultados (23-oct-2026, hub en el Mac):**
+**Resultado:** la app funciona por IP con HTTP en Android (Chrome) y en iPhone (Safari) sin instalar nada. Decisión, evidencia y consecuencias para el diseño en [ADR-001](DECISIONES.md#adr-001--los-dispositivos-abren-la-app-por-la-ip-del-hub-con-http-y-sin-instalar-nada). Lo más importante: la conexión se pierde cada vez que se bloquea la pantalla y el reloj de los celulares no es confiable.
 
-| Equipo | Resultado |
-|---|---|
-| Android Mesero 1 (Android 10, Chrome 155) | ✅ Abre por IP, IndexedDB funciona, tiempo de respuesta 34 ms (máx. 430 ms), vibra. Sin notificaciones, sin pantalla encendida ni instalación (esperado por HTTP). ⚠ Chrome **cierra la conexión ~5 s después de bloquear la pantalla**; al volver tardó ~30 s en reconectar (falla de la herramienta, corregida: ahora reconecta al volver). ⚠ Reloj del equipo **59 s atrasado** frente al hub. |
-| iPhone | ⏳ No llegó ninguna petición al hub |
-
-Conclusión parcial: la app del mesero debe asumir que pierde la conexión cada vez que se bloquea la pantalla y ponerse al día sola al volver; el orden de los eventos no puede depender del reloj del celular.
-
-**Pendiente:** repetir con la versión corregida (bloqueos de 30 s y 5 min) y probar un iPhone del restaurante, primero con el hub en el Mac y luego en el PC de caja con Windows 11, y registrar la decisión en `docs/DECISIONES.md`.
+**Queda pendiente:**
+- Confirmar en Android la reconexión de menos de 1 s con la versión corregida (el Android probó la versión anterior).
+- Fase 1: repetir la prueba con el hub en el PC de caja (Windows 11), cuando exista el instalador del hub.
 
 **Cómo probarlo a mano:**
 
@@ -55,5 +50,7 @@ Monorepo pnpm + Turborepo con `apps/pos`, `apps/hub` y `packages/core`; Biome, T
 3. Ejecuta `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver `Hub en marcha` y una o más direcciones `http://192.168…:4000`.
 4. Abre esa dirección en el navegador del computador. Debes ver "POS" y el indicador verde **✓ Conectado al hub**.
 5. Detén el hub con `Ctrl+C`. En unos 3 segundos el indicador cambia a rojo **✕ Sin conexión con el hub**.
+
+Las pruebas e2e compilan la app en `.e2e/app` y guardan datos en `.e2e/datos`, para no tocar un hub de desarrollo que esté sirviendo a celulares reales.
 
 El CI de GitHub corre cuando el repositorio se suba a GitHub (pendiente: se verificará en la primera corrida).
