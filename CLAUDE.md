@@ -1,13 +1,22 @@
 # POS para restaurantes (Colombia)
 
-Sistema POS para restaurantes de servicio a la mesa. El brief completo está en `docs/BRIEF.md`; las decisiones de arquitectura en `docs/DECISIONES.md` y el estado de cada fase en `docs/ROADMAP.md`.
+Sistema POS para restaurantes de servicio a la mesa. Documentos:
+
+- `docs/BRIEF.md`: brief completo del proyecto.
+- `docs/DECISIONES.md`: decisiones de arquitectura y de negocio (ADR), con alternativas y evidencia.
+- `docs/MODELO_DATOS.md`: entidades, tipos, eventos del pedido y categorías de sincronización.
+- `docs/SYNC.md`: protocolo de sincronización dispositivo ↔ hub ↔ nube.
+- `docs/DINERO.md`: fórmulas exactas de todo cálculo de dinero y las pruebas que deben cubrirlas.
+- `docs/ROADMAP.md`: estado de cada tarea y cómo probarla a mano.
+
+Antes de cambiar el modelo, la sincronización o una regla de negocio, leer el ADR correspondiente; si la decisión cambia, actualizar el ADR.
 
 Restaurante piloto: **La Spritzzería** (Envigado). Su carta real está en `docs/datos/carta-la-spritzzeria.yaml`.
 
 ## Convenciones
 
 - **Idioma**: el dominio va en español (`Pedido`, `Comanda`, `Mesa`, eventos como `ItemAnulado`); la parte técnica en inglés (`useSyncStatus`, `retryWithBackoff`). Interfaz, documentación y mensajes de commit en español.
-- **Dinero**: pesos enteros en todo el sistema. Los decimales solo existen dentro del cálculo fiscal DIAN, con aritmética exacta. Repartos por mayor residuo.
+- **Dinero**: pesos enteros en todo el sistema. Los decimales solo existen dentro del cálculo fiscal DIAN, con aritmética exacta. Repartos por mayor residuo. Toda fórmula sigue `docs/DINERO.md`.
 - **IDs**: ULID generados en el dispositivo.
 - **Nada se borra** en entidades transaccionales: se anula con motivo, usuario y dispositivo.
 - **Todo cambio de un pedido es un evento** append-only con usuario, dispositivo y hora.

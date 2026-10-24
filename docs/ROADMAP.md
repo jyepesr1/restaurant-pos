@@ -8,7 +8,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 |---|---|---|
 | 0.1 | Prueba de conexión en dispositivos reales | ✅ |
 | 0.2 | Monorepo, herramientas y CI | ✅ |
-| 0.3 | Documentos vivos (DECISIONES, MODELO_DATOS, SYNC) | ⏳ |
+| 0.3 | Documentos vivos (DECISIONES, MODELO_DATOS, SYNC, DINERO) | ✅ |
 | 0.4 | Modelo de datos y migraciones | ⏳ |
 | 0.5 | Núcleo de dominio: dinero y eventos del pedido | ⏳ |
 | 0.6 | Motor de sincronización | ⏳ |
@@ -38,6 +38,21 @@ Los resultados se envían al hub y quedan en `apps/hub/datos/diagnosticos.jsonl`
 1. Inicia el hub: `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver `Hub en marcha` y la dirección `http://192.168…:4000`.
 2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/diagnostico`. Debes ver **Diagnóstico del dispositivo** y **✓ Conectado** en «Canal en tiempo real».
 3. Sigue los cuatro pasos numerados de la pantalla. Al enviar debes ver **✓ Resultados enviados**.
+
+### 0.3 — Documentos vivos ✅
+
+- [DECISIONES.md](DECISIONES.md): ADR-001 a ADR-011, con alternativas descartadas y lo que queda **(validar)** con el contador o el proveedor DIAN.
+- [MODELO_DATOS.md](MODELO_DATOS.md): entidades por fase, tipos (todo entero), una sola tabla de eventos, catálogo de eventos v1, matriz de permisos por rol y configuración del restaurante.
+- [SYNC.md](SYNC.md): protocolo dispositivo ↔ hub (modo normal conectado, sin conexión como respaldo), rechazos, cuarentena y conflictos, seguridad de sesiones y PIN, fallas, y 14 escenarios de aceptación para la 0.6.
+- [DINERO.md](DINERO.md): fórmulas exactas de descuentos, desglose fiscal, propina, división, pagos, efectivo, caja y fondo de propinas, con la lista de pruebas para la 0.5.
+
+Revisado dos veces por `revisor-codigo` y `auditor-dinero`; sus hallazgos están incorporados.
+
+**Decisiones del dueño en esta tarea:** propina sugerida sobre la base sin INC; propinas en un fondo común; efectivo redondeado a $100; propinas de tarjeta pagadas desde caja o acumuladas según el día; sin conexión es solo un respaldo.
+
+**Pendiente de validar con el contador y el proveedor DIAN** (no bloquea la Fase 0): ver "Pendiente de validar" en ADR-004.
+
+**Cómo revisarlo:** abre los cuatro documentos en GitHub (cuando el repositorio esté subido) o en el editor; los diagramas se ven en GitHub.
 
 ### 0.2 — Monorepo, herramientas y CI ✅
 

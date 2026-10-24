@@ -59,4 +59,256 @@ Notas sobre la prueba:
 3. **El navegador no descartó la página** en bloqueos largos, así que el estado en memoria suele sobrevivir; igual todo se persiste en IndexedDB antes de mostrarse como hecho.
 4. **Los datos locales no son permanentes.** Sin HTTPS no se puede pedir almacenamiento persistente, así que el navegador puede borrar IndexedDB si le falta espacio, y Safari borra los datos de sitios que no se abren en varios días. Por eso **el hub es la fuente de verdad** y el celular solo guarda una copia de trabajo: cada evento se muestra como hecho al guardarse en el celular, pero se sigue reenviando al hub hasta que este lo confirme, y el celular avisa si tiene eventos sin confirmar.
 5. **Sin avisos con el celular bloqueado** (sin notificaciones del sistema por HTTP). El aviso de "pedido listo" funciona solo con la app abierta; en iPhone, sin vibración.
-6. **Pendiente:** confirmar en Android la reconexión de menos de 1 s con la versión corregida, y repetir con el hub en el PC de caja (Windows 11) cuando exista el instalador del hub (Fase 1); la prueba con el hub en el Mac ya valida la parte del navegador.
+6. **Sin service worker** (requiere HTTPS): si el hub está caído y el usuario cierra la app o el navegador la descarta, no vuelve a abrir hasta que el hub responda. Se acepta: lo normal es estar conectado al hub, y el modo sin conexión es solo un respaldo para caídas de la red (aclaración del dueño).
+7. **Pendiente:** confirmar en Android la reconexión de menos de 1 s con la versión corregida, y repetir con el hub en el PC de caja (Windows 11) cuando exista el instalador del hub (Fase 1); la prueba con el hub en el Mac ya valida la parte del navegador.
+
+---
+
+## ADR-002 · Monorepo TypeScript con la lógica de negocio compartida
+
+**Fecha:** 23-oct-2026 · **Estado:** aceptada · **Tarea:** Fase 0.2
+
+### Decisión
+
+- Un solo repositorio con pnpm workspaces y Turborepo. TypeScript estricto en todo (Node 24 LTS, TypeScript 7).
+- `apps/pos` (app del navegador para meseros, caja y KDS), `apps/hub` (servidor local), `packages/core` (lógica de negocio pura, sin dependencias de navegador ni de Node).
+- Los paquetes se crean en la tarea que los necesita (`ui`, `sync`, `db`, `printing`, `dian`, `payments`, `apps/cloud`), no antes.
+- Herramientas: Biome (lint y formato), Vitest (unitarias), Playwright (de punta a punta, perfiles celular Android y caja), GitHub Actions.
+
+### Por qué
+
+La misma función que aplica un evento al estado de un pedido debe correr idéntica en el celular (para mostrarlo al instante), en el hub (autoridad) y en la nube (reportes). Un solo lenguaje y un solo paquete `core` lo garantizan.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Hub en Go o Rust | Un binario más robusto, pero duplica la lógica de negocio en dos lenguajes. |
+| Nx | Más pesado que Turborepo para este tamaño. |
+| ESLint + Prettier | Dos herramientas y más lentas; Biome hace ambas cosas. |
+
+---
+
+## ADR-003 · El hub es un servicio de Windows en el PC de caja
+
+**Fecha:** 23-oct-2026 · **Estado:** aceptada · **Tarea:** Fase 0 (instalador en Fase 1)
+
+### Decisión
+
+- El hub es un proceso Node (Fastify + WebSocket + SQLite) instalado como **servicio de Windows** en el PC de caja del restaurante (Windows 11 en el piloto). Arranca con el equipo y no depende de ninguna ventana abierta.
+- La caja usa la misma app en Chrome o Edge en modo aplicación sobre `localhost`.
+- El cajón monedero se abre con un comando ESC/POS a la impresora; las impresoras USB se usan por la cola de Windows en modo RAW.
+- Requisitos del equipo: sin suspensión, Windows Update fuera del horario de servicio y, **recomendado antes del piloto, una UPS** para el PC de caja, el router y las impresoras (hoy no hay).
+
+### Por qué
+
+Si el hub cae, el salón se detiene (no imprimen comandas ni llega nada al KDS). Un servicio sobrevive a que cierren la ventana y arranca solo.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Electron | Si el cajero cierra la ventana, se cae el salón. Se revisa solo si un periférico lo exige. |
+| Tauri | Su backend es Rust; correr Node exige un proceso aparte, sin beneficio. |
+| Mini-PC dedicado | Más robusto, pero el dueño eligió usar el PC de caja actual. |
+
+### Riesgo abierto
+
+Un corte de luz sin UPS apaga todo el salón. SQLite en modo WAL protege la base, pero no la operación.
+
+---
+
+## ADR-004 · Dinero en pesos enteros; decimales solo dentro del cálculo fiscal
+
+**Fecha:** 23-oct-2026 · **Estado:** aceptada · **(validar)** con contador y proveedor DIAN
+
+### Decisión
+
+- **Todo monto operativo es un entero de pesos**: precios, totales, descuentos en valor, pagos, propinas, base de caja, arqueos y reportes. Nunca `number` con fracciones.
+- **Porcentajes en puntos básicos enteros** (1 % = 100; 8 % = 800): tarifas de impuesto, descuentos y propina sugerida.
+- **Repartos por mayor residuo**: al dividir una cuenta, un ítem compartido o prorratear un descuento, las partes suman exactamente el total ($100.000 ÷ 3 = 33.334 + 33.333 + 33.333).
+- Los precios de carta **incluyen el impuesto** (INC en el piloto, confirmado en la carta de La Spritzzería).
+- El desglose fiscal (base gravable e impuesto, que la DIAN pide con 2 decimales) se calcula **solo al generar el documento electrónico**, con enteros escalados en **centésimas de peso**, y no cambia lo que paga el cliente.
+- Tarifas, reglas de redondeo y qué entra en la base son configurables, nunca cableadas. La propina va fuera de la base gravable.
+
+### Por qué
+
+El peso colombiano no usa centavos en la operación; los flotantes generan descuadres. El desglose de un precio con impuesto incluido sí produce fracciones, así que se aísla en el módulo fiscal.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Centavos en todo el sistema | Nadie ve ni cobra centavos; complica toda la operación por un cálculo que solo necesita el documento DIAN. |
+| `number` con decimales o librería decimal en todo | Riesgo de flotantes y de redondeos inconsistentes entre pantallas y reportes. |
+
+### Reglas de cálculo
+
+Las fórmulas exactas, con ejemplos y la lista de pruebas de la tarea 0.5, están en [DINERO.md](DINERO.md). Resumen:
+
+| Tema | Regla |
+|---|---|
+| Desglose fiscal | En centésimas, por línea neta: `base = redondeo(neto × 100 × 10000 / (10000 + tarifa))`, `impuesto = neto × 100 − base`. El impuesto del ítem se copia al venderlo. |
+| Descuentos | En pesos con impuesto incluido, fijados al aplicarse; el del pedido se reparte por mayor residuo sobre el neto de las líneas; ninguna línea queda negativa. |
+| División | Montos fijos en el evento, calculados sobre el saldo; lo agregado después va a "sin asignar". |
+| Propina sugerida | 10 % sobre la base sin INC, neta de descuentos, con un solo redondeo (decisión del dueño). Va a un fondo común. |
+| Efectivo | El pago que deja el saldo en 0 se redondea a $100 (al más cercano; la mitad a favor del cliente); la diferencia queda en `ajuste_redondeo` (decisión del dueño). |
+| Redondeo | A la mitad hacia arriba, configurable. Todo con enteros y `BigInt`, un solo redondeo por cálculo. |
+
+### Pendiente de validar
+
+Con el contador y el proveedor DIAN: granularidad del desglose (línea o documento); si el impuesto calculado como diferencia (que a veces difiere en 1 centésima de base × tarifa) es aceptado; trato fiscal de cortesías y descuentos al pedido; cómo va un ítem compartido (1/3 de botella) en el documento; si la propina aparece en el documento y su tope legal; cómo se informa el redondeo del efectivo.
+
+---
+
+## ADR-005 · Los pedidos son eventos que solo se agregan; nada se borra
+
+**Fecha:** 23-oct-2026 · **Estado:** aceptada
+
+### Decisión
+
+- Todo cambio de un pedido (abrir, agregar, enviar a cocina, anular, mover, descontar, cobrar, cerrar, reabrir) es un **evento** que se agrega a la tabla `Evento` y nunca se edita ni se borra.
+- El estado actual del pedido, sus ítems, cuentas y pagos es una **proyección**: se calcula aplicando los eventos en orden con una función pura de `packages/core`, y se puede reconstruir en cualquier momento.
+- Cada evento lleva usuario, dispositivo, hora del dispositivo y, si aplica, quién lo autorizó y el motivo. Así la auditoría sale sola.
+- Las entidades transaccionales (pagos, movimientos de caja e inventario, documentos fiscales) tampoco se borran: se anulan con otro registro.
+- El catálogo y la configuración no se borran: se archivan (`activo = false`).
+- Los eventos tienen versión de esquema; cuando un esquema cambie se agrega una conversión de la versión vieja a la nueva, nunca se reescriben eventos guardados.
+
+### Por qué
+
+Cumple a la vez la trazabilidad total del brief, la sincronización sin pérdida (dos dispositivos pueden agregar eventos al mismo pedido sin pisarse) y reportes que siempre cuadran (todos salen de los mismos eventos).
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Tablas editables + bitácora aparte | La bitácora y el estado pueden divergir; sincronizar ediciones concurrentes obliga a elegir un ganador y perder cambios. |
+| CRDT (Yjs, Automerge) | Resuelven texto colaborativo, no reglas de dinero (no se puede "fusionar" un pago duplicado). |
+
+---
+
+## ADR-006 · IDs ULID del dispositivo; el orden lo da la secuencia del hub
+
+**Fecha:** 23-oct-2026 · **Estado:** aceptada · **Evidencia:** ADR-001 (reloj del Android ~59 s atrasado)
+
+### Decisión
+
+- Todo registro sincronizable tiene un ID **ULID** generado en el dispositivo que lo crea (`packages/core`, forma canónica en mayúsculas). Funciona sin conexión y sin colisiones.
+- El **hub asigna un número de secuencia** a cada evento que acepta, consecutivo por restaurante. Ese número es el orden oficial.
+- La hora del dispositivo nunca ordena. La hora oficial de recepción es la del hub (`recibido_en`); para el día operativo de un evento que llega tarde se usa la hora del dispositivo corregida con el desfase que conoce el hub, acotada a una ventana de 12 h ([SYNC.md](SYNC.md#sobre-del-evento)).
+- Los números visibles para las personas (número de comanda, de pedido del día) los asigna el hub al aceptar el evento y viajan en sus `asignaciones`. Un dispositivo sin hub muestra un número provisional (`P` + iniciales del dispositivo + contador local, p. ej. `P-AM1-3`) que se reemplaza al confirmar.
+- **Los consecutivos DIAN solo los asigna la caja dueña de la resolución**, nunca un celular.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| UUID v4 | Sin componente de tiempo: peores índices y depuración. (El ULID tampoco ordena entre dispositivos; para eso está la secuencia del hub.) |
+| UUID v7 | Equivalente a ULID; ULID ya estaba en el brief y se lee mejor. |
+| Ordenar por hora del dispositivo | Los relojes de los celulares no son confiables (medido). |
+
+---
+
+## ADR-007 · Sincronización propia, con el mismo protocolo en dos niveles
+
+**Fecha:** 23-oct-2026 · **Estado:** aceptada · **Detalle:** [SYNC.md](SYNC.md)
+
+### Decisión
+
+- Mismo mecanismo entre **dispositivo ↔ hub** (Fase 0) y **hub ↔ nube** (Fase 2): cola local de salida, envío idempotente por ID, secuencia asignada por quien recibe y lectura de lo nuevo desde el último número conocido.
+- El hub es la autoridad del salón y funciona sin nube.
+- Conflictos: los eventos que no se contradicen se conservan todos; los que no se pueden fusionar solos no se descartan, se **marcan para que los resuelva una persona** en caja.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| PowerSync, ElectricSQL, Zero, Replicache | Suponen un servidor central en la nube; aquí la autoridad es el hub local y debe operar sin internet. |
+| CRDT | Ver ADR-005. |
+
+---
+
+## ADR-008 · Inicio de sesión solo con PIN generado por el sistema
+
+**Fecha:** 23-oct-2026 · **Estado:** aceptada
+
+### Decisión
+
+- El usuario entra **solo con su PIN** de 4 a 6 dígitos (decisión del dueño: un toque menos).
+- Como el PIN identifica a la persona, debe ser único en el restaurante. Para que un PIN repetido no delate el de otro, **el sistema genera los PIN al azar**; el administrador no los escoge.
+- El PIN se verifica **en el hub**, que abre una sesión. El hub guarda solo una huella del PIN con clave secreta (HMAC-SHA256), en tablas que **solo existen en el hub** y nunca se sincronizan. Con un millón de combinaciones, un hash lento no protege a quien tenga la base y la clave; lo que protege es que la clave no salga del hub y que el respaldo se cifre.
+- La clave HMAC vive en la carpeta de datos del hub y va dentro del respaldo (que se protege como dato sensible); sin ella, restaurar el hub obliga a regenerar todos los PIN.
+- Unicidad entre usuarios activos; al desactivar un usuario su PIN se libera. El administrador regenera el PIN de quien lo olvide.
+- Espera creciente tras intentos fallidos **por dispositivo** (tope de 60 s), también para el PIN de supervisor. Por restaurante no se bloquea, para que un celular no deje sin acceso a todo el local: se avisa al administrador. La auditoría guarda conteos, nunca el PIN escrito.
+- El hub **no confía** en el usuario, dispositivo ni restaurante que diga el evento: los toma de la sesión y del token.
+- Cada dispositivo se empareja con un QR de un solo uso (vence en 5 min, aprobado con PIN de administrador) y recibe un **token propio y revocable**.
+- Autorización de supervisor en el momento: el gerente escribe su PIN en el dispositivo del mesero sin cerrarle la sesión; el hub emite un **comprobante de un solo uso** para esa acción y ese pedido, y el evento lo lleva. El supervisor debe tener el permiso y no puede autorizarse a sí mismo.
+- Sin conexión con el hub no hay inicio de sesión nuevo ni autorizaciones: el dispositivo conserva la sesión abierta y las acciones que piden supervisor esperan a que vuelva la red.
+- Riesgo aceptado: con HTTP (ADR-001) el PIN viaja sin cifrar por el Wi-Fi; por eso debe ser una red solo del personal.
+
+Detalle del protocolo en [SYNC.md](SYNC.md#seguridad).
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Tocar el nombre o la foto y luego el PIN | Más seguro y permite PIN repetidos; el dueño prefirió un toque menos. |
+| Verificar el PIN en el celular | Un PIN de 6 dígitos (un millón de combinaciones) se adivina en minutos si su hash está en el teléfono. |
+
+---
+
+## ADR-009 · Nube en Cloudflare (desde la Fase 2)
+
+**Fecha:** 23-oct-2026 · **Estado:** aceptada (se implementa en la Fase 2)
+
+### Decisión
+
+- La nube corre en **Cloudflare Workers** con un **Durable Object con SQLite por restaurante**: el mismo dialecto SQL que el hub, WebSocket para dashboards en vivo, y webhooks (Bold) y tareas programadas incluidos.
+- La nube recibe los eventos del hub con el protocolo de ADR-007.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Postgres administrado + API Node | Estándar y portable, pero otro dialecto SQL distinto al del hub; el dueño eligió Cloudflare. |
+
+### Riesgo abierto
+
+Más amarre a un proveedor. Los reportes comparativos entre sedes (Fase 5) necesitarán otra capa de datos.
+
+---
+
+## ADR-010 · Idioma: dominio en español, técnica en inglés
+
+**Fecha:** 23-oct-2026 · **Estado:** aceptada
+
+- Entidades, eventos y reglas de negocio en español (`Pedido`, `Comanda`, `ItemAnulado`, `aplicarEvento`).
+- Infraestructura y utilidades técnicas en inglés (`useSyncStatus`, `retryWithBackoff`) cuando no hay un término de negocio.
+- Interfaz, documentación y mensajes de commit en español.
+
+---
+
+## ADR-011 · Reglas de operación acordadas para el piloto
+
+**Fecha:** 23-oct-2026 · **Estado:** aceptada
+
+Reglas de negocio confirmadas por el dueño; todas quedan configurables por restaurante.
+
+Dos de ellas cambian lo que dice el brief:
+- §4.5 pedía registrar la propina "por mesero": ahora va a un **fondo común**.
+- §2 pide cobrar en efectivo "sin internet", y eso se mantiene, porque el hub funciona sin internet. Lo que no se puede es cobrar **sin el hub**, que corre en el mismo PC de la caja.
+
+| Regla | Cómo queda |
+|---|---|
+| Quién cierra mesas | **Solo el cajero** (permiso `cerrar_mesa`). |
+| Quién registra pagos | **Solo el cajero**, en efectivo y con datáfono. El mesero lleva el efectivo o el voucher a caja de inmediato. Los meseros no manejan saldo propio. |
+| Bloqueo de mesa por mesero | Opcional por restaurante. La mesa queda asignada a quien la abrió; los demás meseros la ven sin poder modificarla. **Reasignan el cajero y el gerente.** Toda reasignación queda auditada. |
+| Día operativo | Configurable; por defecto de 6:00 a. m. a 5:59 a. m. (una venta a la 1 a. m. cuenta para el día anterior). El piloto a veces cierra pasada la medianoche. |
+| Propinas | Se suman en un **fondo común** del día; el equipo decide cómo repartirlas (también van para cocina y caja). Las de tarjeta se pueden pagar en efectivo desde la caja (queda como salida) o acumular, según el día. |
+| Propina sugerida | 10 % sobre la base sin INC. |
+| Redondeo del efectivo | A $100, con el ajuste registrado. |
+| Ventas por mesero (reportes) | A quien agregó cada ítem, aunque la mesa se reasigne después (valor por defecto; configurable). |
+| Modo normal | Conectado al hub por la red local. Sin conexión es solo un respaldo: se toman pedidos, pero no se cobra, no se autoriza ni se edita el catálogo hasta que vuelva la red. |
+| Estaciones del piloto | Cocina y barra. |
+| Productos con opciones | Un solo producto con opciones (Ramón Bilbao copa o botella con su precio; Té Hatsu con sabor obligatorio sin costo). |
+| Modificadores | Término de la carne, quitar ingredientes, adicionales con precio y notas libres. La lista real con precios se pide antes de la Fase 1. |
