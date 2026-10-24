@@ -14,7 +14,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 | 0.6 | Motor de sincronización | ✅ |
 | 0.7 | Autenticación con PIN, roles y permisos | ✅ |
 | 0.8 | Seed con la carta de La Spritzzería | ✅ |
-| 0.9 | Design system y bocetos de las 5 pantallas | ⏳ |
+| 0.9 | Design system y bocetos de las 5 pantallas | 🚧 esperando tu aprobación |
 | 0.10 | Pantalla mínima para la demo de sincronización | ⏳ |
 | 0.11 | Demo guiada | ⏳ |
 
@@ -45,6 +45,78 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 0.9 — Design system y bocetos de las 5 pantallas 🚧
+
+**Falta tu aprobación:** ábrelos en tu celular y en una tablet (pasos abajo) y dime qué cambiarías.
+
+**Design system** (`apps/pos/src/estilos.css` y `apps/pos/src/ui`), según la sección 5 del brief:
+- **Colores con significado fijo:** verde = libre o listo, ámbar = en proceso, rojo = demora o alerta, azul = acción principal, gris = lo demás. Siempre con ícono y texto, nunca solo color.
+- **Contraste y tamaños:** contraste AA en claro y en oscuro, que una prueba automática mide en cada cambio. Botones de al menos 48 px.
+- **Modo oscuro:** sigue al sistema, se puede elegir y se recuerda. Se aplica antes de pintar para que no haya destello blanco.
+- **Componentes:**
+  - botón;
+  - etiqueta de estado;
+  - opciones que se eligen tocando;
+  - **panel lateral** (sube desde abajo en el celular y sale por la derecha en tablet y caja);
+  - **avisos con Deshacer** (hasta tres a la vez);
+  - **teclado PIN** de 4 dígitos;
+  - **indicador de conexión** y de impresoras;
+  - **búsqueda tolerante** («hamburgesa» encuentra la Spritz Burguer; «quatro formagi», la Quattro Formaggi).
+
+**Bocetos navegables** en `/bocetos`, con la carta real (98 productos) y los cálculos de dinero reales de `packages/core`:
+- **Plano de mesas:** estados con color, ícono y texto, y tiempo y saldo en cada mesa. Plano o lista. En tablet y caja, las cuentas abiertas al lado.
+- **Toma de pedido:**
+  - tocar mesa → tocar producto → Enviar, en 3 toques;
+  - el mismo producto suma a su línea;
+  - copa o botella, sabor y término con un toque en el panel lateral;
+  - deshacer lo agregado o quitado;
+  - anular lo ya enviado, con motivo y confirmación;
+  - botón «Cuenta».
+- **Cocina y barra (KDS):** tarjetas por mesa y estación, tiempo desde el envío (a tiempo, atención a los 10 min, demora a los 20). Tocar un ítem lo marca listo; «Todo listo» deja la mesa «Lista para servir» en el plano.
+- **Precuenta y división:** propina sugerida sobre la base sin INC, en partes iguales o por ítems (con ítems compartidos). Cada cuenta tiene su propina y su botón para cobrarla.
+- **Cobro:**
+  - efectivo con redondeo a $100 y cambio;
+  - propina en efectivo sugerida redondeada y editable (tu decisión), con «deja el cambio de propina»;
+  - tarjeta con número de aprobación;
+  - pagos parciales por cuenta;
+  - confirmación antes de registrar;
+  - atajos F2, F3, Enter y Esc;
+  - la mesa se cierra sola al quedar en $0.
+
+Revisado por `revisor-ux`, `revisor-codigo`, `auditor-dinero` y `qa-pruebas`. Se corrigieron, entre otros:
+- escribir notas hacía perder el foco en cada letra;
+- el teclado del PIN se trababa con dos errores iguales seguidos;
+- Enter sobre «Cancelar» registraba el pago;
+- no había forma de pedir la cuenta desde el celular;
+- quitar una cuenta en la división hacía caer la pantalla;
+- dividir usaba el total en vez del saldo;
+- el tiempo de una comanda se reiniciaba al enviar otra;
+- la propina en efectivo daba totales imposibles de pagar con billetes.
+
+**Pruebas:** 95 unitarias en `apps/pos` (contraste AA, búsqueda, formatos, y división y cobro con pruebas de propiedades). Hay además unas 185 pruebas de navegador en `tests/e2e/bocetos.spec.ts`, cada una en celular y en caja. En su última corrida pasaron 370 de 371; la única falla era un error real (dos paneles abiertos), que ya quedó corregido. Por pedido tuyo, la corrida completa de las pruebas e2e se deja para el final.
+
+**Decisiones abiertas para cuando revises:**
+- «Por cobrar» va en gris; el revisor de UX propone ámbar.
+- Modo oscuro automático de noche, o solo siguiendo al sistema.
+- Sonido al enviar una comanda.
+
+**Ojo para la Fase 1:** los datos de los bocetos viven en memoria y se simplifican, porque los ítems se borran y los pagos no son eventos. No son el modelo: allí todo es un evento (ADR-005). Las reglas de término y sabor de la carta (`CON_TERMINO`, `CON_SABOR`) deben pasar a la configuración del catálogo.
+
+**Cómo verlo en tu celular y tu tablet:**
+
+1. En la terminal, compila la app y arranca el hub:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+   Debes ver `Hub en marcha` y una dirección como `http://192.168…:4000`.
+2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/bocetos`. Debes ver **Bocetos del POS** con seis tarjetas.
+3. Prueba el flujo del mesero: **Plano de mesas** → toca una mesa libre → toca un producto → **Enviar**. Debes volver al plano con la mesa en «En preparación».
+4. Abre **Cocina y barra**, toca **Todo listo** en esa mesa y vuelve al plano: la mesa debe decir «Listo para servir».
+5. En la tablet, abre **Precuenta y división** → **Partes iguales** → **Cobrar** en la cuenta 1 → **Cobrar** → **Confirmar**. Debes volver a la precuenta con «Ya pagado».
+6. Toca el ícono de la luna arriba a la derecha: todo debe pasar a modo oscuro y quedarse así al recargar.
 
 ### 0.8 — Seed con la carta de La Spritzzería ✅
 

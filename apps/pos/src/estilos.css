@@ -1,1 +1,148 @@
 @import "tailwindcss";
+
+/*
+ * Design system del POS (tarea 0.9). Los colores tienen un significado fijo en toda la app
+ * (brief §5):
+ *   libre   verde  · libre, listo, pagado
+ *   proceso ámbar  · en proceso, en espera
+ *   alerta  rojo   · demora, error, acción destructiva
+ *   accion  azul   · la acción principal de la pantalla
+ *   neutro  gris   · lo demás
+ * Cada uno tiene tres tonos: `-fuerte` (fondo de botón o etiqueta, con texto blanco), `-suave`
+ * (fondo tenue) y `-texto` (texto sobre `-suave`). Todas las parejas cumplen contraste AA
+ * (4,5:1) en modo claro y oscuro. El color nunca va solo: siempre con ícono y texto.
+ *
+ * El modo oscuro sigue al sistema, salvo que la persona elija otro (ui/tema.ts). Lo aplica la
+ * clase `oscuro` en <html>, que pone un script en index.html antes de pintar.
+ *
+ * Tipografía: la del sistema (no hay que descargar nada). Escala: 14 px para lo secundario
+ * (`text-sm`), 16 px para el cuerpo, 18 px para productos y botones grandes (`text-lg`), 20 a
+ * 24 px para títulos y números de mesa, 36 px para el saldo. Nada por debajo de 14 px.
+ *
+ * Los bordes de los controles tienen 3:1 contra su fondo (WCAG 1.4.11).
+ */
+
+@custom-variant dark (&:where(.oscuro, .oscuro *));
+
+:root {
+  --fondo: #f4f5f7;
+  --superficie: #ffffff;
+  --superficie-2: #eceef2;
+  --borde: #7b8494;
+  --texto: #111827;
+  --texto-suave: #4b5563;
+  /* Anillo de foco del teclado. */
+  --foco: #1d4ed8;
+
+  --accion-fuerte: #1d4ed8;
+  --accion-suave: #dbeafe;
+  --accion-texto: #1e3a8a;
+  --libre-fuerte: #15803d;
+  --libre-suave: #dcfce7;
+  --libre-texto: #14532d;
+  --proceso-fuerte: #b45309;
+  --proceso-suave: #fef3c7;
+  --proceso-texto: #78350f;
+  --alerta-fuerte: #b91c1c;
+  --alerta-suave: #fee2e2;
+  --alerta-texto: #7f1d1d;
+  --neutro-fuerte: #475569;
+  --neutro-suave: #e2e8f0;
+  --neutro-texto: #1e293b;
+
+  color-scheme: light;
+}
+
+:root.oscuro {
+  --fondo: #0b0f14;
+  --superficie: #151b23;
+  --superficie-2: #1f2731;
+  --borde: #6b7a8e;
+  --texto: #e6edf3;
+  --texto-suave: #a3b0bd;
+  --foco: #60a5fa;
+
+  --accion-fuerte: #2563eb;
+  --accion-suave: #172554;
+  --accion-texto: #bfdbfe;
+  --libre-fuerte: #15803d;
+  --libre-suave: #052e16;
+  --libre-texto: #86efac;
+  --proceso-fuerte: #b45309;
+  --proceso-suave: #422006;
+  --proceso-texto: #fcd34d;
+  --alerta-fuerte: #b91c1c;
+  --alerta-suave: #450a0a;
+  --alerta-texto: #fca5a5;
+  --neutro-fuerte: #5b6b80;
+  --neutro-suave: #1e293b;
+  --neutro-texto: #cbd5e1;
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-fondo: var(--fondo);
+  --color-superficie: var(--superficie);
+  --color-superficie-2: var(--superficie-2);
+  --color-borde: var(--borde);
+  --color-texto: var(--texto);
+  --color-texto-suave: var(--texto-suave);
+  --color-foco: var(--foco);
+  --color-accion-fuerte: var(--accion-fuerte);
+  --color-accion-suave: var(--accion-suave);
+  --color-accion-texto: var(--accion-texto);
+  --color-libre-fuerte: var(--libre-fuerte);
+  --color-libre-suave: var(--libre-suave);
+  --color-libre-texto: var(--libre-texto);
+  --color-proceso-fuerte: var(--proceso-fuerte);
+  --color-proceso-suave: var(--proceso-suave);
+  --color-proceso-texto: var(--proceso-texto);
+  --color-alerta-fuerte: var(--alerta-fuerte);
+  --color-alerta-suave: var(--alerta-suave);
+  --color-alerta-texto: var(--alerta-texto);
+  --color-neutro-fuerte: var(--neutro-fuerte);
+  --color-neutro-suave: var(--neutro-suave);
+  --color-neutro-texto: var(--neutro-texto);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* La barra que muestra cuánto le queda a un aviso. */
+.aviso-tiempo {
+  width: 100%;
+  animation-name: aviso-tiempo;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes aviso-tiempo {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0;
+  }
+}
+
+/* Cifras de dinero y tiempos: dígitos del mismo ancho para que no "bailen". */
+.cifras {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Quien pide menos movimiento no ve animaciones. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: debe ganarle a cualquier animación */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: debe ganarle a cualquier transición */
+    transition-duration: 0.01ms !important;
+  }
+}

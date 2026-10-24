@@ -9,6 +9,17 @@ export {
   SOLO_DESDE_CAJA,
 } from './acceso/permisos'
 export { jsonCanonico, PROFUNDIDAD_MAXIMA } from './canonico'
+export {
+  type CategoriaCarta,
+  CON_SABOR,
+  CON_TERMINO,
+  convertirCarta,
+  type Estacion,
+  type GrupoCarta,
+  type ProductoCarta,
+  reglasSinPlato,
+  TERMINO,
+} from './catalogo/carta'
 export { ConfigRestaurante, configCompleta } from './config'
 export * from './dinero'
 export * from './eventos/comun'

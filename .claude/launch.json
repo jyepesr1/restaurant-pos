@@ -9,6 +9,15 @@
         "source ~/.nvm/nvm.sh >/dev/null && nvm use 24 >/dev/null && pnpm --filter @pos/app build && pnpm --filter @pos/hub start"
       ],
       "port": 4000
+    },
+    {
+      "name": "app",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "source ~/.nvm/nvm.sh >/dev/null && nvm use 24 >/dev/null && pnpm --filter @pos/app exec vite --port 5173 --strictPort"
+      ],
+      "port": 5173
     }
   ]
 }

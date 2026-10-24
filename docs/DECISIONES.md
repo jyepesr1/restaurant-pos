@@ -320,6 +320,7 @@ Dos de ellas cambian lo que dice el brief:
 | Estaciones del piloto | Cocina y barra. |
 | Productos con opciones | Un solo producto con opciones (Ramón Bilbao copa o botella con su precio; Té Hatsu con sabor obligatorio sin costo). |
 | Modificadores | Término de la carne, quitar ingredientes, adicionales con precio y notas libres. La lista real con precios se pide antes de la Fase 1. |
+| Propina en efectivo | Se sugiere redondeada a $100 para poder pagarla con billetes; el cajero la puede cambiar y el cambio que deja el cliente pasa a propina. Con tarjeta, exacta (24-oct-2026, [DINERO.md](DINERO.md#propina-sugerida)). |
 
 ---
 

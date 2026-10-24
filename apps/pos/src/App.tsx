@@ -1,4 +1,7 @@
+import { lazy, Suspense } from 'react'
 import { Diagnostico } from './diagnostico/Diagnostico'
+import { claseBoton } from './ui/Boton'
+import { useRuta } from './ui/ruta'
 import { type EstadoHub, useEstadoHub } from './useEstadoHub'
 
 const indicador: Record<EstadoHub, { icono: string; texto: string; clase: string }> = {
@@ -37,18 +40,30 @@ function Inicio() {
           esté encendido.
         </p>
       )}
-      <a
-        href="/diagnostico"
-        className="mt-6 inline-flex min-h-12 items-center rounded-lg bg-slate-200 px-4 font-semibold dark:bg-slate-800"
-      >
-        Diagnóstico del dispositivo
-      </a>
+      <nav className="mt-6 flex flex-wrap gap-3">
+        <a href="/bocetos" className={claseBoton('principal')}>
+          Bocetos de las pantallas
+        </a>
+        <a href="/diagnostico" className={claseBoton('secundario')}>
+          Diagnóstico del dispositivo
+        </a>
+      </nav>
     </main>
   )
 }
 
-// Todavía no hay router: solo dos pantallas.
+// Los bocetos (con la carta y sus datos) solo se descargan si se abren, y un error en ellos no
+// tumba el resto de la app.
+const Bocetos = lazy(() => import('./bocetos/Bocetos'))
+
 export function App() {
-  const ruta = location.pathname.replace(/\/+$/, '')
-  return ruta === '/diagnostico' ? <Diagnostico /> : <Inicio />
+  const { ruta } = useRuta()
+  if (ruta === '/diagnostico') return <Diagnostico />
+  if (ruta === '/bocetos' || ruta.startsWith('/bocetos/'))
+    return (
+      <Suspense fallback={<p className="p-6 text-texto-suave">Cargando…</p>}>
+        <Bocetos ruta={ruta} />
+      </Suspense>
+    )
+  return <Inicio />
 }

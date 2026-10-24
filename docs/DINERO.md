@@ -82,6 +82,7 @@ propina = redondeo( Σ_líneas neto_linea × 10000 / (10000 + t_linea) × tasa /
 
 - En cuentas divididas se calcula la propina **sobre el saldo que se divide** (sin la cuenta `general` ya pagada) y se reparte por mayor residuo en proporción al `monto` de cada cuenta; cada precuenta guarda el monto impreso (`PrecuentaImpresa` con `cuenta_id`). Ejemplo: pedido de $100.000 al 8 % con $40.000 ya pagados y el saldo de $60.000 en 2 cuentas → propina de las dos cuentas 5.556 → 2.778 + 2.778.
 - La propina va fuera de la base gravable y fuera del documento como venta. Tope legal y si aparece en el documento: **(validar)**.
+- **En efectivo**, la propina se sugiere redondeada al múltiplo del efectivo (`redondeo_efectivo`, con `redondeo_efectivo_modo`): $23.843 → **$23.800**, para que el total se pueda pagar con billetes. El cajero la puede cambiar, y si el cliente deja el cambio, ese cambio pasa a `propina`. Con tarjeta va exacta. Es un redondeo de la propina, no de la venta: no toca `ajuste_redondeo` ni el documento DIAN (decisión del dueño, 24-oct-2026).
 
 ## División de la cuenta
 

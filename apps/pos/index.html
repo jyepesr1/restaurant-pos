@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>POS</title>
+    <script>
+      // Modo oscuro antes de pintar: sin destello blanco en el bar de noche (ver src/ui/tema.ts).
+      try {
+        const t = localStorage.getItem('pos-tema')
+        if (t === 'oscuro' || (t !== 'claro' && matchMedia('(prefers-color-scheme: dark)').matches))
+          document.documentElement.classList.add('oscuro')
+      } catch {}
+    </script>
   </head>
   <body>
     <div id="raiz"></div>

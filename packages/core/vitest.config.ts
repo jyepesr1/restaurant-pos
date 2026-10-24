@@ -12,6 +12,7 @@ export default defineConfig({
         'src/pedido/**',
         'src/eventos/**',
         'src/acceso/**',
+        'src/catalogo/**',
         'src/canonico.ts',
         'src/config.ts',
         'src/tiempo.ts',
