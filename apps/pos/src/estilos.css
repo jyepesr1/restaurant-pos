@@ -22,8 +22,9 @@
  * Los bordes de los controles tienen 3:1 contra su fondo (WCAG 1.4.11).
  *
  * Marca del restaurante (`data-marca` en <html>, ver ui/marca.ts): cambia superficies,
- * tipografías y el color de acción, nunca el significado de los colores de estado. Sin marca, el
- * POS es neutro (es un producto para varios restaurantes). Las de La Spritzzería salen de su
+ * tipografías y el color de acción, nunca el significado de los colores de estado. Por defecto el
+ * POS es neutro (decisión del dueño, 24-oct-2026; es un producto para varios restaurantes): lo de
+ * `:root` es el estilo de la app, y las marcas quedan como opción configurable. Las de La Spritzzería salen de su
  * sistema "Bagno" (la-spritzzeria-menu/DESIGN.md): `--marca` es el naranja Aperol y solo vale para
  * títulos grandes (3,27:1 sobre la arena, "la regla del naranja que no lee").
  */

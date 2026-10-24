@@ -8,8 +8,8 @@ export type Marca = 'neutra' | 'bagno' | 'taller' | 'noche'
 
 export const MARCAS: readonly Marca[] = ['bagno', 'taller', 'noche', 'neutra']
 const CLAVE = 'pos-marca'
-/** La del piloto mientras no haya configuración. */
-export const MARCA_POR_DEFECTO: Marca = 'bagno'
+/** Sin marca: el POS neutro (decisión del dueño, 24-oct-2026). Las de La Spritzzería quedan como opción. */
+export const MARCA_POR_DEFECTO: Marca = 'neutra'
 
 function leer(): Marca {
   try {

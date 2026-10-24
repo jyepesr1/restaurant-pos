@@ -28,7 +28,14 @@ const PANTALLAS: { ruta: string; titulo: string; para: string; icono: NombreIcon
   },
 ]
 
+// Neutra es la elegida; las de La Spritzzería quedan para cuando cada restaurante configure su marca.
 const DIRECCIONES: { marca: Marca; nombre: string; idea: string; muestras: string[] }[] = [
+  {
+    marca: 'neutra',
+    nombre: 'Neutra',
+    idea: 'La elegida: sin marca, gris claro, letra del sistema y azul en la acción principal.',
+    muestras: ['#f4f5f7', '#ffffff', '#1d4ed8', '#111827'],
+  },
   {
     marca: 'bagno',
     nombre: 'Bagno',
@@ -46,12 +53,6 @@ const DIRECCIONES: { marca: Marca; nombre: string; idea: string; muestras: strin
     nombre: 'Noche en la terraza',
     idea: 'Bagno en oscuro siempre: el marino del pie de la carta como suelo, para el bar de noche y la cocina.',
     muestras: ['#0f1b2b', '#172a40', '#c24e14', '#eedecb'],
-  },
-  {
-    marca: 'neutra',
-    nombre: 'Neutra (producto)',
-    idea: 'Sin marca: la base que vería otro restaurante antes de configurar la suya.',
-    muestras: ['#f4f5f7', '#ffffff', '#1d4ed8', '#111827'],
   },
 ]
 
@@ -76,7 +77,9 @@ export function Indice() {
             Dirección visual
           </h2>
           <p className="mb-3 text-sm text-texto-suave">
-            Elige una y abre las pantallas: todas cambian. Se recuerda en este equipo.
+            La neutra es la de la app. Las otras muestran cómo se vería con la marca de La
+            Spritzzería: en la Fase 1 cada restaurante podrá poner la suya. Se recuerda en este
+            equipo.
           </p>
           <Grupo etiqueta="Dirección visual" className="grid gap-2 sm:grid-cols-2">
             {DIRECCIONES.map((d) => (

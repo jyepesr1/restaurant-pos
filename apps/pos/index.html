@@ -9,8 +9,8 @@
     <script>
       // Modo oscuro antes de pintar: sin destello blanco en el bar de noche (ver src/ui/tema.ts).
       try {
-        // Marca (src/ui/marca.ts): Bagno de La Spritzzería mientras no haya configuración.
-        const m = localStorage.getItem('pos-marca') || 'bagno'
+        // Marca (src/ui/marca.ts): neutra salvo que se haya elegido otra.
+        const m = localStorage.getItem('pos-marca') || 'neutra'
         if (m !== 'neutra') document.documentElement.dataset.marca = m
       } catch {}
       try {
