@@ -171,8 +171,8 @@ describe('mensajes del hub fuera de orden', () => {
 })
 
 // Cientos de ítems en un solo pedido: cada evento copia el pedido entero, así que tardan unos
-// segundos (más en el servidor de CI). Un pedido real tiene decenas de ítems.
-describe('traer con varias páginas', { timeout: 60_000 }, () => {
+// segundos. Un pedido real tiene decenas de ítems.
+describe('traer con varias páginas', () => {
   it.each([
     // [eventos en el hub, páginas de `eventos` esperadas]
     [TAMANO_PAGINA - 1, 1],
