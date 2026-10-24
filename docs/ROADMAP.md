@@ -13,7 +13,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 | 0.5 | Núcleo de dominio: dinero y eventos del pedido | ✅ |
 | 0.6 | Motor de sincronización | ✅ |
 | 0.7 | Autenticación con PIN, roles y permisos | ✅ |
-| 0.8 | Seed con la carta de La Spritzzería | ⏳ |
+| 0.8 | Seed con la carta de La Spritzzería | ✅ |
 | 0.9 | Design system y bocetos de las 5 pantallas | ⏳ |
 | 0.10 | Pantalla mínima para la demo de sincronización | ⏳ |
 | 0.11 | Demo guiada | ⏳ |
@@ -45,6 +45,56 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 0.8 — Seed con la carta de La Spritzzería ✅
+
+Comando `pnpm seed` (código en `apps/hub/src/seed`). Lee [la carta](datos/carta-la-spritzzeria.yaml) y carga en la base del hub:
+- el restaurante «La Spritzzería» (sede Envigado), con la configuración del piloto (esquema `ConfigRestaurante` en `packages/core/src/config.ts`);
+- un salón con **25 mesas** en cuadrícula: es provisional, el plano real se dibuja con el editor (Fase 1);
+- las estaciones **Cocina** y **Barra**: la comida va a cocina y las bebidas a barra;
+- el impuesto **INC 8 %**, **(validar)** con el contador;
+- **15 categorías y 98 productos** (los 100 platos de la carta). Según ADR-011:
+  - copa y botella del Ramón Bilbao son un solo producto con dos opciones;
+  - el sabor del Té Hatsu y de la Soda Hatsu es obligatorio y sin costo;
+  - la hamburguesa y la Tagliata llevan el término de la carne;
+- **personal de ejemplo**: Gerente, Caja, Mesero 1 a 3, Cocina y Barra, cada uno con su PIN. Son cuentas para el piloto: el restaurante pone luego los nombres reales. `pnpm seed --sin-personal` no las crea.
+
+**Reglas al volver a correrlo:**
+- da siempre el mismo resultado: cada registro tiene un identificador estable y lo que ya está igual no se toca;
+- solo cambia lo que cambió en la carta;
+- lo que ya no está en la carta, o quedó «no disponible», se archiva (nunca se borra);
+- lo que cambió una persona (con el futuro editor) se respeta;
+- el impuesto se crea una sola vez: si el contador lo cambia, el seed no lo devuelve;
+- cada persona conserva su PIN; quien se archive no vuelve;
+- todo va en una sola transacción: si algo falla o se corta, no queda nada a medias.
+
+Revisado por `revisor-codigo`, `qa-pruebas` (unas 50 pruebas: repetir el seed, varios hubs, cambios en la carta, procesos cortados a mitad y un pedido real con lo sembrado) y `auditor-dinero` (ningún precio se pierde ni cambia; sin decimales). Corregido, entre otros:
+- los PIN se podían perder si la carga fallaba a mitad;
+- un plato renombrado o quitado de la carta quedaba activo y duplicado;
+- un plato «no disponible» se cargaba como vendible;
+- volver a correr el seed devolvía el impuesto al 8 % aunque se hubiera cambiado;
+- un sabor repetido en la carta hacía que cada corrida cambiara la base;
+- la configuración aceptaba una propina sugerida por encima del 10 % (tope legal, **(validar)** con el contador) y un desglose fiscal que aún no existe.
+
+**Queda para otras tareas:**
+- `CatalogoCambiado` en cada cambio del catálogo, antes de validar precios copiados (`precio_distinto`, Fase 1);
+- que el hub exija elegir la variante en un producto con copa y botella (Fase 1, ver [DINERO.md](DINERO.md#precio-copiado));
+- los modificadores reales con precio (quitar ingredientes, adicionales), que el restaurante enviará antes de la Fase 1;
+- el plano real del salón y los nombres reales del personal.
+
+**Cómo probarlo a mano:**
+
+1. Cierra el hub si está abierto (Ctrl+C en su ventana). El seed necesita la base solo para él.
+2. Carga los datos:
+
+```bash
+pnpm seed
+```
+
+   Debes ver `Datos de La Spritzzería cargados en …`, una línea por tabla (por ejemplo `producto  98 nuevos, 0 cambiados, 0 iguales`) y, al final, `PIN nuevos:` con un PIN de 4 dígitos para cada persona. Anótalos.
+
+3. Vuelve a correr el mismo comando. Ahora todas las líneas deben decir `0 nuevos, 0 cambiados` y al final `No se creó personal nuevo: cada quien conserva su PIN.`
+4. Si quieres probarlo sin tocar tu hub, usa una carpeta aparte: `DIR_DATOS=/tmp/hub-piloto pnpm seed`.
 
 ### 0.7 — Autenticación con PIN, roles y permisos ✅
 

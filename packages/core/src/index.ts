@@ -9,6 +9,7 @@ export {
   SOLO_DESDE_CAJA,
 } from './acceso/permisos'
 export { jsonCanonico, PROFUNDIDAD_MAXIMA } from './canonico'
+export { ConfigRestaurante, configCompleta } from './config'
 export * from './dinero'
 export * from './eventos/comun'
 export {

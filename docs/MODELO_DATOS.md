@@ -143,7 +143,7 @@ Una acción está permitida si el usuario tiene el permiso **o** si el evento tr
 |---|---|---|---|
 | `Categoria` | 0 | V | `nombre`, `orden`, `estacion_id` por defecto, `foto` |
 | `Producto` | 0 | V | `categoria_id`, `nombre`, `descripcion`, `precio` (pesos, ≥ 0, **incluye impuesto**), `impuesto_id`, `foto`, `favorito` |
-| `Variante` | 0 | V | `producto_id`, `nombre` ("Copa", "Botella"), `precio` (reemplaza el del producto), `orden` |
+| `Variante` | 0 | V | `producto_id`, `nombre` ("Copa", "Botella"), `precio` (reemplaza el del producto), `orden`. Si un producto tiene variantes, el ítem del pedido **debe** elegir una ([DINERO.md](DINERO.md#precio-copiado)) |
 | `GrupoModificador` | 0 | V | `nombre` ("Término", "Sabor", "Adicionales"), `minimo`, `maximo` (sabor obligatorio: 1 y 1) |
 | `ProductoGrupoModificador` | 0 | V | `producto_id`, `grupo_id`, `orden` |
 | `Modificador` | 0 | V | `grupo_id`, `nombre`, `precio_extra` (pesos, **≥ 0**; no hay modificadores que resten) |

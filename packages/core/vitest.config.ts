@@ -13,6 +13,7 @@ export default defineConfig({
         'src/eventos/**',
         'src/acceso/**',
         'src/canonico.ts',
+        'src/config.ts',
         'src/tiempo.ts',
       ],
       exclude: ['**/*.test.ts', 'src/**/index.ts'],

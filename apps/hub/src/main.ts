@@ -1,13 +1,8 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
-import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { aplicarMigraciones, type BaseSqlite, versionActual } from '@pos/db'
-import { abrirBase } from '@pos/db/node'
-import { asegurarAdministrador, asegurarRestaurante, asegurarRoles } from './acceso/inicial'
-import { Intentos } from './acceso/intentos'
-import { cargarClave } from './acceso/secretos'
-import { ServicioAcceso } from './acceso/servicio'
+import { type BaseSqlite, versionActual } from '@pos/db'
+import { abrirDatos, dirDatosDe, mostrarPines, prepararAcceso } from './arranque'
 import { crearServidor } from './servidor'
 
 const PUERTO_POR_DEFECTO = 4000
@@ -15,7 +10,7 @@ const ARCHIVO_PIN_ADMIN = 'pin-administrador.txt'
 // Se pueden cambiar con variables de entorno; las pruebas e2e usan carpetas propias para no
 // pisar la app ni los datos de un hub que esté sirviendo a celulares reales.
 const dirApp = process.env.DIR_APP || fileURLToPath(new URL('../../pos/dist', import.meta.url))
-const dirDatos = process.env.DIR_DATOS || fileURLToPath(new URL('../datos', import.meta.url))
+const dirDatos = dirDatosDe()
 
 function leerPuerto(): number {
   const valor = process.env.PUERTO
@@ -41,9 +36,7 @@ function ipsLocales(): string[] {
 /** Abre la base en exclusiva (un solo hub por carpeta de datos) y la lleva a la última versión. */
 function prepararBase(): BaseSqlite {
   try {
-    mkdirSync(dirDatos, { recursive: true })
-    const base = abrirBase(join(dirDatos, 'pos.sqlite'), { exclusiva: true })
-    const aplicadas = aplicarMigraciones(base)
+    const { db: base, aplicadas } = abrirDatos(dirDatos)
     console.log(
       aplicadas.length > 0
         ? `Base de datos actualizada a la versión ${versionActual(base)}.`
@@ -58,17 +51,10 @@ function prepararBase(): BaseSqlite {
 }
 
 /** Restaurante, roles, administrador y la clave de los PIN (tarea 0.7). */
-function prepararAcceso(db: BaseSqlite) {
+function prepararTodo(db: BaseSqlite) {
   try {
-    const { clave, nueva, creadaEn } = cargarClave(dirDatos)
-    const ahora = new Date().toISOString()
-    const restauranteId = asegurarRestaurante(db, ahora)
-    const roles = asegurarRoles(db, restauranteId, ahora)
     // Por ahora el aviso al administrador va a la ventana del hub; con la caja (Fase 1), a su pantalla.
-    const intentos = new Intentos(Date.now, (aviso) => console.warn(`⚠ Seguridad: ${aviso}`))
-    const acceso = new ServicioAcceso({ db, restauranteId, clave, intentos, claveDesde: creadaEn })
-    const admin = asegurarAdministrador(db, acceso, roles.admin, nueva)
-    return { acceso, ...admin }
+    return prepararAcceso(db, dirDatos, (aviso) => console.warn(`⚠ Seguridad: ${aviso}`))
   } catch (error) {
     const detalle = error instanceof Error ? error.message : String(error)
     console.error(`No se pudo preparar el acceso del hub: ${detalle}`)
@@ -79,7 +65,7 @@ function prepararAcceso(db: BaseSqlite) {
 const puerto = leerPuerto()
 // La sincronización por WebSocket se conecta en la tarea 0.10.
 const db = prepararBase()
-const { acceso, pin: pinAdmin, avisos } = prepararAcceso(db)
+const { acceso, pin: pinAdmin, avisos } = prepararTodo(db)
 const app = crearServidor({
   dirApp,
   diagnostico: { dirDatos },
@@ -114,18 +100,16 @@ if (!existsSync(dirApp)) {
 }
 
 for (const aviso of avisos) console.warn(`⚠ ${aviso}`)
-if (pinAdmin) {
-  // Se muestra una sola vez: el hub guarda solo su huella. Si la salida no es una ventana (el
-  // servicio de Windows la manda a un archivo de log), va a un archivo aparte para borrar.
-  if (process.stdout.isTTY) {
-    console.log(`\nPIN del administrador: ${pinAdmin}`)
-    console.log('Anótalo en un lugar seguro: no se vuelve a mostrar.')
-  } else {
-    const ruta = join(dirDatos, ARCHIVO_PIN_ADMIN)
-    writeFileSync(ruta, `${pinAdmin}\n`, { mode: 0o600 })
-    console.log(`\nEl PIN del administrador quedó en ${ruta}: anótalo y borra ese archivo.`)
-  }
-}
+if (pinAdmin)
+  mostrarPines(dirDatos, {
+    ventana: [
+      `\nPIN del administrador: ${pinAdmin}`,
+      'Anótalo en un lugar seguro: no se vuelve a mostrar.',
+    ],
+    archivo: ARCHIVO_PIN_ADMIN,
+    contenido: `${pinAdmin}\n`,
+    aviso: (ruta) => `\nEl PIN del administrador quedó en ${ruta}: anótalo y borra ese archivo.`,
+  })
 
 console.log('\nHub en marcha. Abre en los dispositivos de la misma red:')
 for (const ip of ipsLocales()) {

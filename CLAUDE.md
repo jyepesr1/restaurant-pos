@@ -76,6 +76,7 @@ Requiere Node 24 (`.nvmrc`) y pnpm por corepack (`corepack enable pnpm`). En una
 | `pnpm format` | Corrige formato y orden de imports |
 | `pnpm test` | Pruebas unitarias (Vitest) de todos los paquetes; en `@pos/core` exige 90 % de cobertura |
 | `pnpm test:e2e` | Pruebas Playwright; compila la app y levanta el hub en el puerto 4100 |
+| `pnpm seed` | Carga en la base del hub los datos de La Spritzzería (carta, salón, personal de ejemplo). Con el hub cerrado; se puede repetir sin duplicar. `--sin-personal` omite las cuentas de ejemplo |
 
 Biome no formatea los archivos Markdown (están excluidos en `biome.json`).
 

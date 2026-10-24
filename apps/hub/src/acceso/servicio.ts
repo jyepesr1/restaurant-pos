@@ -480,7 +480,15 @@ export class ServicioAcceso implements ControlAcceso {
 
   /** Crea un usuario con un PIN nuevo. El PIN se devuelve solo esta vez: no se guarda en claro. */
   crearUsuario(
-    datos: { nombre: string; rolId: string },
+    datos: { nombre: string; rolId: string; id?: string },
+    autor: Autor = SISTEMA,
+  ): { usuarioId: string; pin: string } {
+    return enTransaccion(this.db, () => this.insertarUsuario(datos, autor))
+  }
+
+  /** Como `crearUsuario`, dentro de una transacción que ya abrió quien llama. */
+  insertarUsuario(
+    datos: { nombre: string; rolId: string; id?: string },
     autor: Autor = SISTEMA,
   ): { usuarioId: string; pin: string } {
     const nombre = datos.nombre.trim()
@@ -492,24 +500,23 @@ export class ServicioAcceso implements ControlAcceso {
     if (!rol) throw new Error('Ese rol no existe o está archivado')
 
     const ahora = this.reloj()
-    return enTransaccion(this.db, () => {
-      const usuarioId = insertarVersionado(
-        this.db,
-        'usuario',
-        this.restauranteId,
-        { nombre, rol_id: datos.rolId },
-        autor,
-        ahora,
+    const usuarioId = insertarVersionado(
+      this.db,
+      'usuario',
+      this.restauranteId,
+      { nombre, rol_id: datos.rolId },
+      autor,
+      ahora,
+      datos.id,
+    )
+    const pin = this.pinLibre()
+    this.db
+      .prepare(
+        `INSERT INTO usuario_credencial (usuario_id, restaurante_id, pin_huella, pin_generado_en)
+         VALUES (?, ?, ?, ?)`,
       )
-      const pin = this.pinLibre()
-      this.db
-        .prepare(
-          `INSERT INTO usuario_credencial (usuario_id, restaurante_id, pin_huella, pin_generado_en)
-           VALUES (?, ?, ?, ?)`,
-        )
-        .run(usuarioId, this.restauranteId, huellaPin(this.clave, this.restauranteId, pin), ahora)
-      return { usuarioId, pin }
-    })
+      .run(usuarioId, this.restauranteId, huellaPin(this.clave, this.restauranteId, pin), ahora)
+    return { usuarioId, pin }
   }
 
   /**

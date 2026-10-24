@@ -152,6 +152,8 @@ Un `PagoAnulado` o reembolso cae en el turno en que se registra, no en el del pa
 
 - El celular copia en `ItemAgregado` el precio, los extras y el impuesto vigentes en su catálogo, con la `catalogo_version` y el `precio_canal_id` (happy hour, brunch).
 - El hub compara esos valores con el **historial del catálogo** en esa versión y con su propia hora para las franjas horarias. Cualquier diferencia → conflicto `precio_distinto` para la caja. La tarifa siempre se valida contra `Impuesto`.
+- **Un producto con variantes exige `variante_id`**, y `precio_unitario` es el `precio` de esa variante. `producto.precio` de un producto con variantes (el de la más barata) solo sirve para mostrar. Ejemplo: Ramón Bilbao Crianza sin variante sería una botella de $129.900 cobrada a $30.900. La pantalla obliga a elegir; el hub lo rechazará cuando valide contra el catálogo (con `precio_distinto`, Fase 1). Prueba pendiente para entonces: un ítem de Ramón Bilbao sin variante se rechaza.
+- El historial requiere que **cada cambio del catálogo deje un `CatalogoCambiado`**. El seed de la tarea 0.8 todavía no lo emite (solo sube la `version`): debe hacerlo antes de implementar `precio_distinto`.
 
 ## Datáfonos
 
