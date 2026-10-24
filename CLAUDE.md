@@ -56,11 +56,12 @@ Monorepo con pnpm workspaces y Turborepo. TypeScript estricto en todo.
 | `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador |
 | `apps/hub` (`@pos/hub`) | Servidor local (Fastify) que corre en el PC de caja: sirve la app y la API en la red local |
 | `packages/core` (`@pos/core`) | Lógica de negocio compartida, sin dependencias de navegador ni de Node: dinero (`src/dinero`), esquemas de eventos (`src/eventos`) y reductor del pedido (`src/pedido`) |
+| `packages/sync` (`@pos/sync`) | Sincronización dispositivo ↔ hub: `HubSync` y `SalaSync` (hub), `ClienteSync` y `GestorConexion` (dispositivo), almacén del hub sobre SQLite en `@pos/sync/sqlite` |
 | `packages/db` (`@pos/db`) | Esquema SQLite, migraciones y la interfaz `BaseSqlite`; `@pos/db/node` abre la base con `node:sqlite` (solo Node) |
 | `tests/e2e` | Pruebas Playwright de punta a punta (celular Android y caja) |
 | `docs/` | Brief, decisiones, roadmap, modelo de datos y datos del piloto |
 
-Los paquetes internos se consumen como código fuente TypeScript (`exports` apunta a `src/index.ts`); no se compilan por separado. Paquetes nuevos (`ui`, `sync`, `printing`, `dian`, `payments`) se crean en la tarea que los necesita, no antes.
+Los paquetes internos se consumen como código fuente TypeScript (`exports` apunta a `src/index.ts`); no se compilan por separado. Paquetes nuevos (`ui`, `printing`, `dian`, `payments`) se crean en la tarea que los necesita, no antes.
 
 ## Comandos
 

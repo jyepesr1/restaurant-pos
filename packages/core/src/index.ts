@@ -42,3 +42,4 @@ export {
   totalesItem,
   totalesPedido,
 } from './pedido/totales'
+export { diaOperativo } from './tiempo'

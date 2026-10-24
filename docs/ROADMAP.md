@@ -11,7 +11,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 | 0.3 | Documentos vivos (DECISIONES, MODELO_DATOS, SYNC, DINERO) | ✅ |
 | 0.4 | Modelo de datos y migraciones | ✅ |
 | 0.5 | Núcleo de dominio: dinero y eventos del pedido | ✅ |
-| 0.6 | Motor de sincronización | ⏳ |
+| 0.6 | Motor de sincronización | ✅ |
 | 0.7 | Autenticación con PIN, roles y permisos | ⏳ |
 | 0.8 | Seed con la carta de La Spritzzería | ⏳ |
 | 0.9 | Design system y bocetos de las 5 pantallas | ⏳ |
@@ -38,6 +38,28 @@ Los resultados se envían al hub y quedan en `apps/hub/datos/diagnosticos.jsonl`
 1. Inicia el hub: `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver `Hub en marcha` y la dirección `http://192.168…:4000`.
 2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/diagnostico`. Debes ver **Diagnóstico del dispositivo** y **✓ Conectado** en «Canal en tiempo real».
 3. Sigue los cuatro pasos numerados de la pantalla. Al enviar debes ver **✓ Resultados enviados**.
+
+### 0.6 — Motor de sincronización ✅
+
+Paquete `packages/sync`, según [SYNC.md](SYNC.md):
+- **Hub** (`HubSync`): valida, detecta duplicados por id y contenido, aplica el evento a los pedidos que toca, decide rechazo, conflicto o aceptación según si el dispositivo estaba al día, numera, calcula el día operativo y guarda, un evento por transacción. `SalaSync` atiende las conexiones y difunde lo aceptado. Almacén en memoria y sobre SQLite (`@pos/sync/sqlite`).
+- **Dispositivo** (`ClienteSync`): guarda cada evento como pendiente, envía lotes de 100 (uno a la vez), aplica lo confirmado, avanza el cursor solo de forma contigua (pide lo que falte ante un hueco), rechaza en cascada lo que dependía de un rechazo y, si el hub se restauró, reenvía todo.
+- **Conexión** (`GestorConexion`): reconecta al instante al volver a la pantalla, abandona intentos colgados a los 4 s, descarta canales mudos (3 s tras volver, 15 s sin latidos) y reintenta con espera de 1 a 5 s.
+
+Escenarios probados con red simulada (el hub sobre SQLite real): pedidos sin conexión en dos dispositivos, ítems al mismo pedido, misma mesa (un solo conflicto, también al reenviar), respuesta perdida, hub caído a mitad de un lote y antes de responder, reloj desfasado 5 horas, rechazo en cascada, hueco en lo recibido, hub restaurado de un respaldo, dispositivo con datos borrados, 150 eventos pendientes y dispositivo revocado (cuarentena). Además: casos borde del protocolo (mensajes fuera de orden, `traer` de varias páginas, cortes con un lote en vuelo) y una prueba de propiedades que genera cientos de historias al azar con cortes, pérdidas, duplicados y caídas del hub, y exige que al final todos vean lo mismo y nada se pierda.
+
+Revisado por `revisor-codigo` y `qa-pruebas`; corregido, entre otros:
+- al reenviar a un hub restaurado de un respaldo, el hub tomaba como distintos los eventos que el respaldo ya tenía y **se perdía un ítem**;
+- un evento rechazado que se reenviaba dos veces, o uno malformado sin id, hacía fallar al hub a mitad del lote;
+- un evento enorme o muy anidado podía agotar la memoria del hub;
+- al cortarse y volver la conexión muy rápido, el dispositivo podía quedar con un lote que nunca se respondía;
+- el dispositivo no corregía su reloj con la hora del hub;
+- un dispositivo revocado seguía recibiendo los pedidos del salón;
+- los eventos del mismo dispositivo contaban como "no conocidos", lo que convertía en conflicto errores que debían rechazarse.
+
+**Queda para otras tareas:** sesiones, tokens y revocación reales (0.7); WebSocket real en el hub con límite de tamaño, almacén IndexedDB con índices y prueba Playwright con dos navegadores (0.10); foto inicial, conflictos como eventos, pedido de rescate, `afecta`, bloqueo de mesas, filtros por tipo de dispositivo y proyecciones guardadas en la base para que el hub arranque rápido con años de datos (Fase 1). Ver el detalle en [SYNC.md](SYNC.md).
+
+**Cómo probarlo a mano:** ejecuta `pnpm --filter @pos/sync test`. Debes ver todas las pruebas en verde.
 
 ### 0.5 — Núcleo de dominio: dinero y eventos del pedido ✅
 

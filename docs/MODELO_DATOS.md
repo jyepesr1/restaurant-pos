@@ -317,4 +317,4 @@ El costo teórico de un plato se calcula con fracciones exactas y se redondea **
 | `EventoRechazado` | 0 | L (hub) | Eventos rechazados con su motivo y contenido, para revisión y rescate |
 | `EventoEnCuarentena` | 0 | L (hub) | Eventos de un dispositivo revocado con `hora_estimada_hub` anterior a la revocación, o con una sesión que el hub ya no conoce tras restaurarse; esperan a que la caja los acepte o descarte |
 | `ColaSalida` | 0 | L | En cada dispositivo (IndexedDB) y en el hub hacia la nube: `evento_id`, `estado` (`pendiente`, `enviado`, `confirmado`, `rechazado`), `intentos`, `ultimo_error` |
-| `CursorSync` | 0 | L | `hub_instancia`, último `hasta` recibido y versión de catálogo, por nodo |
+| `CursorSync` | 0 | L | `hub_instancia`, último `hasta` recibido, desfase del reloj con el hub y versión de catálogo, por nodo |

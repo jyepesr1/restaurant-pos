@@ -2,7 +2,18 @@
 
 Cómo viajan los datos entre los celulares, el hub y la nube sin perder ni duplicar nada. Decisión de fondo: [ADR-007](DECISIONES.md#adr-007--sincronización-propia-con-el-mismo-protocolo-en-dos-niveles). Lo aprendido en celulares reales: [ADR-001](DECISIONES.md#adr-001--los-dispositivos-abren-la-app-por-la-ip-del-hub-con-http-y-sin-instalar-nada). Entidades y eventos: [MODELO_DATOS.md](MODELO_DATOS.md).
 
-Se implementa en la tarea 0.6 (dispositivo ↔ hub). El nivel hub ↔ nube usa el mismo protocolo desde la Fase 2.
+Se implementa en `packages/sync` (tarea 0.6, dispositivo ↔ hub). El nivel hub ↔ nube usa el mismo protocolo desde la Fase 2.
+
+**Estado de la implementación (0.6):** lógica del hub (`HubSync`, `SalaSync`), almacén SQLite, cliente del dispositivo (`ClienteSync`) y gestor de conexión (`GestorConexion`), probados con una red simulada (escenarios 1 a 13). Diferencias con este documento, por ahora:
+- **`foto`**: un dispositivo nuevo o sin datos pide `traer desde: 0`; la foto llega cuando el volumen lo justifique (Fase 1).
+- **`ConflictoDetectado`** se registra en la tabla `conflicto` del hub, no como evento; la pantalla de caja lo consultará al hub (Fase 1).
+- **Pedido de rescate**: un ítem que llega a un pedido ya cerrado queda como conflicto `pedido_cerrado` (guardado, sin aplicar); el rescate automático llega con la caja (Fase 1).
+- **Sesiones y tokens**: el hub recibe la `Conexion` de un autenticador; la verificación real del token, la sesión y el PIN es la tarea 0.7.
+- **Catálogo y suscripciones**: por ahora solo hay eventos de pedido y todos los ven; el filtro por tipo de dispositivo y `catalogo`/`comanda` llegan con esos datos.
+- **WebSocket real, IndexedDB y el escenario 14 (Playwright)** se conectan en la tarea 0.10, con la pantalla de demo. El límite de tamaño del mensaje en el WebSocket también.
+- **`afecta`** siempre va vacío: en la Fase 0 ningún evento se aplica fuera de su agregado y sus `relacionados`. Lo mismo los conflictos `item_movido`, `mesa_bloqueada` y `precio_distinto`: llegan con el bloqueo de mesas, mover ítems sin conexión y el catálogo (Fase 1).
+- **`hasta_anterior`** de `nuevo` supone que el dispositivo ve todos los eventos; cuando haya vistas por tipo de dispositivo será por dispositivo.
+- **Proyecciones del hub**: solo los pedidos abiertos quedan en memoria; los cerrados se reconstruyen de la base al consultarlos. Al arrancar, el hub repasa todos los eventos; en la Fase 1 las proyecciones se guardan en la base para no repasarlo todo.
 
 ## Idea en una frase
 
@@ -53,7 +64,7 @@ flowchart LR
 | `autorizado_por_id` | Hub | Supervisor del comprobante, copiado al aceptar; queda en el evento para siempre |
 | `hora_dispositivo` | Quien crea | Informativa; **nunca** se usa para ordenar |
 | `hora_estimada_hub` | Quien crea | `hora_dispositivo` + desfase aprendido en `bienvenido`. El hub la acepta solo si está entre 12 h antes y 1 min después de `recibido_en`; si no, usa `recibido_en` |
-| `secuencia_base` | Quien crea | Última secuencia que el dispositivo había visto. Si es mayor que la secuencia máxima del hub, el evento se rechaza (salvo en la [restauración](#fallas-y-qué-pasa)) |
+| `secuencia_base` | Quien crea | Última secuencia que el dispositivo había visto. Si es mayor que la secuencia máxima del hub, el evento se rechaza. No cuenta para la huella de idempotencia: al reenviar a un hub [restaurado](#fallas-y-qué-pasa) el dispositivo la baja a 0, y el hub reconoce como el mismo evento lo que el respaldo ya tenía |
 | `secuencia` | Hub | Consecutivo por restaurante; el orden oficial |
 | `recibido_en` | Hub | Hora oficial de recepción |
 | `dia_operativo` | Hub | Calculado con `hora_estimada_hub` (acotada como se indica arriba) y la configuración del restaurante |
@@ -82,7 +93,7 @@ sequenceDiagram
 3. **El hub valida y guarda** cada evento en su propia transacción SQLite:
    - si `(restaurante_id, id)` ya existe con el mismo contenido, responde lo mismo que la primera vez (confirmado o rechazado);
    - si existe con **contenido distinto**, lo rechaza (`id_repetido`) y lo audita;
-   - si es nuevo: valida `id` con `esIdValido`, tamaño (máx. 64 KB), token, sesión, esquema, permisos (o comprobante) y reglas; lo guarda con la siguiente `secuencia`, sus `asignaciones` y `afecta`, y actualiza las proyecciones.
+   - si es nuevo: valida `id` con `esIdValido`, tamaño (máx. 64 KB) y anidamiento (máx. 32 niveles), token, sesión, esquema, permisos (o comprobante) y reglas; lo guarda con la siguiente `secuencia`, sus `asignaciones` y `afecta`, y actualiza las proyecciones.
 4. **Confirmar.** El hub responde `confirmado` con la secuencia y las asignaciones; el dispositivo marca el evento `confirmado`.
 5. **Difundir.** El hub envía el evento a los dispositivos suscritos.
 6. **Ponerse al día.** Al conectarse, cada dispositivo pide `traer desde: N` y recibe lo que falte, por páginas.
@@ -121,7 +132,8 @@ sequenceDiagram
 
 - La conexión se pierde **cada vez que se bloquea la pantalla** (Android ~5 s después; Safari al volver). Es normal, no un error.
 - Al volver a la pantalla: si el canal no está abierto, reconectar **de inmediato**; si parece abierto, enviar `ping` y descartarlo si no hay `pong` en 3 s. Luego `hola` y `traer`. Objetivo: al día en menos de 1 s.
-- Si el canal se cierra justo después de volver, el primer reintento sale de inmediato. (Requisito nuevo para la 0.6: la herramienta de diagnóstico espera 1 s y midió 1,4 s en iPhone.)
+- Si el canal se cierra justo después de volver (en los 5 s siguientes), el **primer** reintento sale de inmediato; los siguientes esperan como siempre, para no martillar a un hub caído. (Requisito nuevo para la 0.6: la herramienta de diagnóstico espera 1 s y midió 1,4 s en iPhone.)
+- Lo que llega por una conexión que ya se cerró se descarta, y un trabajo que quedó a medias al cortarse no envía nada por la conexión nueva.
 - Un intento de conexión que no abre en 4 s se abandona y se repite. Reintentos con espera creciente: 1, 2, 3, 4, 5 s como máximo.
 - Todos estos tiempos se inyectan en el motor para poder probarlos con relojes simulados.
 
@@ -129,12 +141,16 @@ sequenceDiagram
 
 **Siempre se rechaza**, esté o no al día el dispositivo: `id` inválido o repetido con otro contenido, token o sesión inválidos, esquema incorrecto, permiso que falta (sin comprobante válido), pagos y movimientos de caja que violan las reglas de [DINERO.md](DINERO.md#pagos).
 
-Para las demás reglas, el hub decide si el dispositivo estaba **al día**: lo estaba si no hay eventos del mismo agregado (ni de sus `relacionados`) con secuencia mayor que su `secuencia_base`. Lo calcula el hub, no el dispositivo.
+Para las demás reglas, el hub decide si el dispositivo estaba **al día**: lo estaba si no hay eventos **de otros dispositivos** en el mismo agregado (ni en sus `relacionados`) con secuencia mayor que su `secuencia_base`. Los propios no cuentan: el dispositivo los conocía porque los hizo. Lo calcula el hub, no el dispositivo.
+
+Hoy son conflicto (si el dispositivo no estaba al día) el ítem inexistente, ya enviado, ya anulado o con menos cantidad de la que se quiere quitar, el pedido cerrado y la mesa ocupada. El resto de las reglas (descuentos, pagos, división) son de la caja, que siempre está conectada, y se rechazan.
+
+Si procesar un evento hace fallar al hub, pero el hub todavía puede guardar, el evento se rechaza como `error_interno` y el lote sigue: así un evento con un dato que provoca un error no tumba al hub cada vez que se reenvía. Si ni siquiera puede guardar el rechazo, el hub se detiene y el servicio lo reinicia.
 
 | Caso | Qué es | Qué hace el hub |
 |---|---|---|
 | **Rechazo** | Lo de arriba, o una regla violada por un dispositivo **al día**. | No lo aplica, lo guarda en `EventoRechazado` y responde `rechazado`. También rechaza los eventos que dependen de él: los del mismo agregado o que lo tienen en `relacionados`, en ese lote. El dispositivo extiende el rechazo a los dependientes que tenga en su cola, deshace su efecto local y lo muestra en pantalla; nunca se descarta en silencio. |
-| **Cuarentena** | Eventos de un dispositivo revocado con `hora_estimada_hub` anterior a la revocación, o con una sesión que el hub ya no conoce tras una restauración. | Los guarda en `EventoEnCuarentena` y la caja los revisa, con aviso de su origen. Un token revocado solo puede hacer este envío, una vez, con lo que ya tenía en su cola. |
+| **Cuarentena** | Eventos de un dispositivo revocado con `hora_estimada_hub` anterior a la revocación, o con una sesión que el hub ya no conoce tras una restauración. | Los guarda en `EventoEnCuarentena` y la caja los revisa, con aviso de su origen. Un token revocado solo puede entregar lo que ya tenía en su cola: no recibe `nuevo` y `traer` le responde `error token_revocado`. Como la hora la pone el dispositivo, hay un tope de 500 eventos en cuarentena por dispositivo; lo demás se rechaza. |
 | **Conflicto** | Regla violada por un dispositivo **no al día**. | Lo acepta y lo guarda; si no se puede aplicar, la proyección no cambia. Agrega **un solo** `ConflictoDetectado` por evento (un reenvío no crea otro), que aparece en la caja hasta que alguien lo resuelve. |
 
 | Situación (sin conexión) | Resultado |
@@ -177,7 +193,7 @@ Para las demás reglas, el hub decide si el dispositivo estaba **al día**: lo e
 | El hub se restaura de un respaldo o se reinstala | El comando de instalación o restauración genera una `hub_instancia` nueva, guardada fuera de la base de datos (así un respaldo no trae la vieja). El dispositivo la compara con la de su `CursorSync`: si cambió, **reenvía todos los eventos que tenga** (idempotente), recibe una `foto` y reinicia su cursor. Los eventos con sesiones que el hub ya no conoce van a cuarentena. Los dispositivos emparejados después del respaldo deben emparejarse de nuevo. |
 | El navegador borra los datos del celular | Se pierden solo los eventos no confirmados; la app pide una `foto` al reconectar. Por eso los eventos se envían de inmediato y la pantalla avisa si hay pendientes viejos. |
 | Sin hub, el usuario cierra la app o el navegador la descarta | No vuelve a abrir hasta que el hub responda: sin service worker por HTTP (ADR-001), la página no queda guardada para abrirse sin red. |
-| Reloj del celular desfasado | No afecta el orden (lo da la secuencia del hub). |
+| Reloj del celular desfasado | No afecta el orden (lo da la secuencia del hub). El dispositivo aprende el desfase con `hora_hub` de `bienvenido`, lo guarda y lo suma para la `hora_estimada_hub` de sus eventos. |
 | App del celular más vieja que el hub | `bienvenido` trae la versión mínima; la app se recarga sola. |
 
 ## Hub ↔ nube (Fase 2)
