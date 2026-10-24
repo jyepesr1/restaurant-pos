@@ -154,8 +154,8 @@ export function Precuenta() {
             )}
             <dt className="text-texto-suave">Propina sugerida (10 %, voluntaria)</dt>
             <dd className="text-right text-texto-suave">{pesos(propina)}</dd>
-            <dt className="text-xl font-bold">Con propina</dt>
-            <dd className="text-right text-xl font-bold">{pesos(saldo + propina)}</dd>
+            <dt className="font-titulo text-2xl font-bold">Con propina</dt>
+            <dd className="font-titulo text-right text-2xl font-bold">{pesos(saldo + propina)}</dd>
           </dl>
           <p className="px-4 pb-4 text-sm text-texto-suave">Precios con INC incluido.</p>
         </section>

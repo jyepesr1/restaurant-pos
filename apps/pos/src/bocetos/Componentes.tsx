@@ -29,7 +29,7 @@ export function Componentes() {
     <Marco titulo="Design system">
       <div className="mx-auto flex max-w-4xl flex-col gap-8 p-4">
         <section>
-          <h2 className="mb-3 text-xl font-semibold">Colores con significado</h2>
+          <h2 className="font-titulo mb-3 text-2xl font-semibold">Colores con significado</h2>
           <ul className="grid gap-2 sm:grid-cols-2">
             {TONOS.map((t) => (
               <li
@@ -50,7 +50,7 @@ export function Componentes() {
         </section>
 
         <section>
-          <h2 className="mb-3 text-xl font-semibold">Botones (mínimo 48 px)</h2>
+          <h2 className="font-titulo mb-3 text-2xl font-semibold">Botones (mínimo 48 px)</h2>
           <div className="flex flex-wrap gap-2">
             <Boton variante="principal" icono="enviar">
               Enviar
@@ -71,7 +71,7 @@ export function Componentes() {
         </section>
 
         <section>
-          <h2 className="mb-3 text-xl font-semibold">Estado de conexión</h2>
+          <h2 className="font-titulo mb-3 text-2xl font-semibold">Estado de conexión</h2>
           <div className="flex flex-col gap-2">
             <IndicadorConexion estado="en_linea" />
             <IndicadorConexion estado="solo_local" />
@@ -80,7 +80,9 @@ export function Componentes() {
         </section>
 
         <section>
-          <h2 className="mb-3 text-xl font-semibold">Aviso con Deshacer y panel lateral</h2>
+          <h2 className="font-titulo mb-3 text-2xl font-semibold">
+            Aviso con Deshacer y panel lateral
+          </h2>
           <div className="flex flex-wrap gap-2">
             <Boton
               onClick={() => avisar('Quitaste Aperol Spritz', () => avisar('Volvió Aperol Spritz'))}
@@ -104,7 +106,7 @@ export function Componentes() {
         </section>
 
         <section>
-          <h2 className="mb-3 text-xl font-semibold">Teclado del PIN</h2>
+          <h2 className="font-titulo mb-3 text-2xl font-semibold">Teclado del PIN</h2>
           <p className="mb-3 text-sm text-texto-suave">
             De prueba: el PIN correcto es 2468. Tras tres errores pide esperar.
           </p>

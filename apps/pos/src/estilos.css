@@ -20,6 +20,12 @@
  * 24 px para títulos y números de mesa, 36 px para el saldo. Nada por debajo de 14 px.
  *
  * Los bordes de los controles tienen 3:1 contra su fondo (WCAG 1.4.11).
+ *
+ * Marca del restaurante (`data-marca` en <html>, ver ui/marca.ts): cambia superficies,
+ * tipografías y el color de acción, nunca el significado de los colores de estado. Sin marca, el
+ * POS es neutro (es un producto para varios restaurantes). Las de La Spritzzería salen de su
+ * sistema "Bagno" (la-spritzzeria-menu/DESIGN.md): `--marca` es el naranja Aperol y solo vale para
+ * títulos grandes (3,27:1 sobre la arena, "la regla del naranja que no lee").
  */
 
 @custom-variant dark (&:where(.oscuro, .oscuro *));
@@ -50,7 +56,42 @@
   --neutro-suave: #e2e8f0;
   --neutro-texto: #1e293b;
 
+  --marca: #1d4ed8;
+  --fuente-texto: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --fuente-titulos: var(--fuente-texto);
+
   color-scheme: light;
+}
+
+/* ── La Spritzzería · Taller: la herramienta del panel de la carta (gris neutro, tarjetas
+   blancas, letra del sistema) con el naranja de acción como único color de marca. Va antes del
+   modo oscuro: en oscuro valen los grises oscuros neutros, con el naranja encima. ── */
+:root[data-marca="taller"] {
+  --fondo: #f1f2f4;
+  --superficie: #ffffff;
+  --superficie-2: #e7eaee;
+  --borde: #767d86;
+  --texto: #1a1c1e;
+  --texto-suave: #5c6166;
+  --foco: #b8491a;
+
+  --accion-fuerte: #b8491a;
+  --accion-suave: #fdf1ec;
+  --accion-texto: #8c3510;
+  --libre-fuerte: #0f7b4f;
+  --libre-suave: #e6f4ec;
+  --libre-texto: #0b5c3b;
+  --proceso-fuerte: #8a5d00;
+  --proceso-suave: #fff3da;
+  --proceso-texto: #6b4800;
+  --alerta-fuerte: #b42318;
+  --alerta-suave: #feeceb;
+  --alerta-texto: #8a1b12;
+  --neutro-fuerte: #5c6166;
+  --neutro-suave: #eceef1;
+  --neutro-texto: #2b2f33;
+
+  --marca: #b8491a;
 }
 
 :root.oscuro {
@@ -78,6 +119,83 @@
   --neutro-suave: #1e293b;
   --neutro-texto: #cbd5e1;
 
+  --marca: #60a5fa;
+
+  color-scheme: dark;
+}
+
+/* ── La Spritzzería · Bagno: el suelo de arena, el marino que escribe y actúa, el Aperol que
+   titula. League Gothic rotula, Alegreya Sans explica. ── */
+:root[data-marca="bagno"] {
+  --fondo: #f8ecda;
+  --superficie: #fff8ec;
+  --superficie-2: #efdcc0;
+  --borde: #8c7b66;
+  --texto: #1d3552;
+  --texto-suave: #3c4f66;
+  --foco: #1d3552;
+
+  --accion-fuerte: #1d3552;
+  --accion-suave: #dce4ee;
+  --accion-texto: #1d3552;
+  --libre-fuerte: #2e7d32;
+  --libre-suave: #e1efd8;
+  --libre-texto: #1f5626;
+  --proceso-fuerte: #8a5d00;
+  --proceso-suave: #f9e9be;
+  --proceso-texto: #5e3f00;
+  --alerta-fuerte: #b3261e;
+  --alerta-suave: #f8dcd5;
+  --alerta-texto: #7a1a12;
+  --neutro-fuerte: #5e6b7a;
+  --neutro-suave: #eadfcf;
+  --neutro-texto: #2b3645;
+
+  --marca: #dc5a0f;
+  --fuente-texto: "Alegreya Sans", system-ui, sans-serif;
+  --fuente-titulos: "League Gothic", "Arial Narrow", sans-serif;
+}
+
+:root[data-marca="taller"].oscuro {
+  --accion-fuerte: #b8491a;
+  --accion-suave: #3b2014;
+  --accion-texto: #f7a574;
+  --foco: #f59255;
+  --marca: #f59255;
+}
+
+/* ── La Spritzzería · Noche en la terraza: el marino del pie de la carta como suelo, para el bar
+   de noche y la cocina. Es la versión oscura de Bagno. ── */
+:root[data-marca="noche"],
+:root[data-marca="bagno"].oscuro {
+  --fondo: #0f1b2b;
+  --superficie: #172a40;
+  --superficie-2: #21364f;
+  --borde: #6a809b;
+  --texto: #eedecb;
+  --texto-suave: #b9c2ce;
+  --foco: #f59255;
+
+  --accion-fuerte: #c24e14;
+  --accion-suave: #3b2014;
+  --accion-texto: #f7a574;
+  --libre-fuerte: #2e7d32;
+  --libre-suave: #10301a;
+  --libre-texto: #9ad8a4;
+  --proceso-fuerte: #8a5d00;
+  --proceso-suave: #33280a;
+  --proceso-texto: #f2c55c;
+  --alerta-fuerte: #b3261e;
+  --alerta-suave: #3d100d;
+  --alerta-texto: #f6a69b;
+  --neutro-fuerte: #5e6b7a;
+  --neutro-suave: #1f2d3e;
+  --neutro-texto: #cbd3dd;
+
+  --marca: #f59255;
+  --fuente-texto: "Alegreya Sans", system-ui, sans-serif;
+  --fuente-titulos: "League Gothic", "Arial Narrow", sans-serif;
+
   color-scheme: dark;
 }
 
@@ -104,7 +222,9 @@
   --color-neutro-fuerte: var(--neutro-fuerte);
   --color-neutro-suave: var(--neutro-suave);
   --color-neutro-texto: var(--neutro-texto);
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --color-marca: var(--marca);
+  --font-sans: var(--fuente-texto);
+  --font-titulo: var(--fuente-titulos);
 }
 
 body {
@@ -112,6 +232,40 @@ body {
   color: var(--texto);
   font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
+}
+
+/* League Gothic es angosta y alta: se usa grande y con un poco de aire entre letras. */
+.font-titulo {
+  letter-spacing: 0.01em;
+}
+:root[data-marca="bagno"] .font-titulo,
+:root[data-marca="noche"] .font-titulo {
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* El logo del restaurante solo aparece con una marca puesta. */
+.logo-marca {
+  display: none;
+}
+:root[data-marca] .logo-marca {
+  display: block;
+}
+
+/* Bajo la barra de arriba: el toldo a rayas de la carta (Bagno) o un filete Aperol (Noche). */
+.firma-marca {
+  display: none;
+  height: 0.5rem;
+}
+:root[data-marca="bagno"] .firma-marca {
+  display: block;
+  background: repeating-linear-gradient(90deg, #dc5a0f 0 1.25rem, #fff8ec 1.25rem 2.5rem);
+}
+:root[data-marca="noche"] .firma-marca,
+:root[data-marca="bagno"].oscuro .firma-marca {
+  display: block;
+  height: 0.25rem;
+  background: #dc5a0f;
 }
 
 /* La barra que muestra cuánto le queda a un aviso. */

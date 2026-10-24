@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef } from 'react'
 import { Boton } from '../ui/Boton'
 import { IndicadorConexion } from '../ui/IndicadorConexion'
+import { useMarca } from '../ui/marca'
 import { navegar } from '../ui/ruta'
 import { useTema } from '../ui/tema'
 import { useSimulacion } from './estado'
@@ -23,6 +24,8 @@ export function Marco({
   children: ReactNode
 }) {
   const { oscuro, elegir } = useTema()
+  // "Noche" es oscura siempre: no tiene modo claro que elegir.
+  const [marca] = useMarca()
   const { conexion, pendientes, impresorasConFalla } = useSimulacion()
   const encabezado = useRef<HTMLHeadingElement>(null)
 
@@ -40,7 +43,17 @@ export function Marco({
           aria-label="Volver"
           onClick={() => navegar(volver)}
         />
-        <h1 ref={encabezado} tabIndex={-1} className="mr-auto text-lg font-semibold outline-none">
+        {/* La insignia del restaurante: el logo en su círculo crema, como en la carta. */}
+        <img
+          src="/marca/la-spritzzeria.svg"
+          alt=""
+          className="logo-marca size-10 rounded-full border-2 border-marca bg-[#fff8ec] p-0.5"
+        />
+        <h1
+          ref={encabezado}
+          tabIndex={-1}
+          className="font-titulo mr-auto text-2xl font-semibold leading-none outline-none"
+        >
           {titulo}
         </h1>
         <IndicadorConexion
@@ -50,14 +63,17 @@ export function Marco({
         />
         <span className="hidden text-texto-suave sm:inline">{usuario}</span>
         {acciones}
-        <Boton
-          variante="fantasma"
-          icono={oscuro ? 'sol' : 'luna'}
-          aria-label="Modo oscuro"
-          aria-pressed={oscuro}
-          onClick={() => elegir(oscuro ? 'claro' : 'oscuro')}
-        />
+        {marca !== 'noche' && (
+          <Boton
+            variante="fantasma"
+            icono={oscuro ? 'sol' : 'luna'}
+            aria-label="Modo oscuro"
+            aria-pressed={oscuro}
+            onClick={() => elegir(oscuro ? 'claro' : 'oscuro')}
+          />
+        )}
       </header>
+      <div className="firma-marca" aria-hidden="true" />
       <main className="flex-1">{children}</main>
     </div>
   )

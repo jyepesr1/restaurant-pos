@@ -162,7 +162,7 @@ function MesaEnPlano({ mesa, ahora, alTocar }: { mesa: Mesa; ahora: number; alTo
       className={`flex aspect-square w-full flex-col justify-between rounded-2xl border-2 p-2 text-left transition active:scale-95 focus-visible:outline-3 focus-visible:outline-foco ${claseMesa(mesa, v)}`}
     >
       <span className="flex items-start justify-between">
-        <span className="text-2xl font-bold">{mesa.numero}</span>
+        <span className="font-titulo text-3xl font-bold leading-none">{mesa.numero}</span>
         <Icono nombre={v.icono} />
       </span>
       <span className="text-sm leading-tight font-semibold">{v.texto}</span>
@@ -185,7 +185,7 @@ function MesaEnLista({ mesa, ahora, alTocar }: { mesa: Mesa; ahora: number; alTo
       onClick={alTocar}
       className="flex min-h-16 w-full items-center gap-3 rounded-2xl border border-borde bg-superficie px-3 text-left hover:bg-superficie-2"
     >
-      <span className="w-10 text-center text-2xl font-bold">{mesa.numero}</span>
+      <span className="font-titulo w-10 text-center text-3xl font-bold">{mesa.numero}</span>
       <span className="flex-1">
         <Etiqueta tono={v.tono} icono={v.icono}>
           {v.texto}

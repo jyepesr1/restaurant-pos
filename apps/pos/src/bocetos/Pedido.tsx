@@ -246,8 +246,12 @@ export function Pedido() {
                     )}
                     <span className="font-semibold leading-snug">{p.nombre}</span>
                     <span className="cifras mt-1 flex items-center justify-between text-texto-suave">
-                      {p.variantes.length > 0 ? `desde ${pesos(p.precio)}` : pesos(p.precio)}
-                      {necesitaPanel(p) && <span className="text-sm">opciones ›</span>}
+                      <span className="font-titulo text-lg">
+                        {p.variantes.length > 0 ? `desde ${pesos(p.precio)}` : pesos(p.precio)}
+                      </span>
+                      {necesitaPanel(p) && (
+                        <span className="text-sm whitespace-nowrap">opciones ›</span>
+                      )}
                     </span>
                   </button>
                 </li>
@@ -278,8 +282,14 @@ export function Pedido() {
 
       {/* Celular: barra fija abajo, al alcance del pulgar. */}
       <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-borde bg-superficie p-3 md:hidden">
-        <Boton variante="secundario" grande onClick={() => setVerPedido(true)} className="flex-1">
-          {`Pedido (${items.filter((i) => !i.anulado).length}) · ${pesos(totalMesa(mesa))}`}
+        <Boton
+          variante="secundario"
+          grande
+          onClick={() => setVerPedido(true)}
+          className="flex-1 flex-col gap-0! text-base! leading-tight"
+        >
+          <span>{`Pedido (${items.filter((i) => !i.anulado).length})`}</span>
+          <span className="cifras font-titulo text-lg">{pesos(totalMesa(mesa))}</span>
         </Boton>
         <div className="flex-1">{botonEnviar}</div>
       </div>

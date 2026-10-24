@@ -6,11 +6,27 @@ const css = readFileSync(new URL('../estilos.css', import.meta.url), 'utf8')
 // Contraste AA (4,5:1) de las parejas de color del design system, en claro y en oscuro
 // (brief §5, regla 11). Se leen de estilos.css: si alguien cambia un color, esta prueba lo mide.
 
-function variables(selector: string): Record<string, string> {
-  const bloque = css.split(`${selector} {`)[1]?.split('}')[0] ?? ''
-  return Object.fromEntries(
-    [...bloque.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1], m[2]]),
-  )
+/** Bloques `selectores { variables }` de la hoja (sin comentarios), en orden. */
+const sinComentarios = css.replace(/\/\*[\s\S]*?\*\//g, '')
+const bloques = [...sinComentarios.matchAll(/([^{};]+)\{([^{}]*)\}/g)].map((m) => ({
+  selectores: (m[1] ?? '').split(',').map((x) => x.trim()),
+  variables: Object.fromEntries(
+    [...(m[2] ?? '').matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map((v) => [v[1], v[2]]),
+  ),
+}))
+
+/** Los colores que quedan con esa marca y ese modo, aplicando la cascada en el orden de la hoja. */
+function variables(marca: string | null, oscuro: boolean): Record<string, string> {
+  const aplican = [
+    ':root',
+    ...(oscuro ? [':root.oscuro'] : []),
+    ...(marca ? [`:root[data-marca="${marca}"]`] : []),
+    ...(marca && oscuro ? [`:root[data-marca="${marca}"].oscuro`] : []),
+  ]
+  const v: Record<string, string> = {}
+  for (const b of bloques)
+    if (b.selectores.some((x) => aplican.includes(x))) Object.assign(v, b.variables)
+  return v
 }
 
 function luminancia(hex: string): number {
@@ -29,10 +45,15 @@ function contraste(a: string, b: string): number {
 const TONOS = ['accion', 'libre', 'proceso', 'alerta', 'neutro']
 
 describe.each([
-  ['claro', ':root'],
-  ['oscuro', ':root.oscuro'],
-])('contraste AA en modo %s', (_modo, selector) => {
-  const v = variables(selector)
+  ['neutro claro', null, false],
+  ['neutro oscuro', null, true],
+  ['Bagno', 'bagno', false],
+  ['Bagno oscuro', 'bagno', true],
+  ['Taller', 'taller', false],
+  ['Taller oscuro', 'taller', true],
+  ['Noche', 'noche', false],
+] as const)('contraste AA: %s', (_nombre, marca, oscuro) => {
+  const v = variables(marca, oscuro)
 
   it('define todos los colores', () => {
     for (const nombre of [
@@ -70,6 +91,10 @@ describe.each([
   it('el anillo de foco se ve sobre cualquier fondo (3:1)', () => {
     for (const fondo of ['fondo', 'superficie', 'superficie-2'])
       expect(contraste(v.foco as string, v[fondo] as string)).toBeGreaterThanOrEqual(3)
+  })
+
+  it('el color de marca alcanza para títulos grandes (3:1)', () => {
+    expect(contraste(v.marca as string, v.fondo as string)).toBeGreaterThanOrEqual(3)
   })
 
   it('el aviso (texto de superficie sobre fondo neutro) se lee', () => {

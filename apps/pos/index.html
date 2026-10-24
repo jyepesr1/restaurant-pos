@@ -5,8 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>POS</title>
+    <link rel="icon" href="/marca/la-spritzzeria.svg" />
     <script>
       // Modo oscuro antes de pintar: sin destello blanco en el bar de noche (ver src/ui/tema.ts).
+      try {
+        // Marca (src/ui/marca.ts): Bagno de La Spritzzería mientras no haya configuración.
+        const m = localStorage.getItem('pos-marca') || 'bagno'
+        if (m !== 'neutra') document.documentElement.dataset.marca = m
+      } catch {}
       try {
         const t = localStorage.getItem('pos-tema')
         if (t === 'oscuro' || (t !== 'claro' && matchMedia('(prefers-color-scheme: dark)').matches))

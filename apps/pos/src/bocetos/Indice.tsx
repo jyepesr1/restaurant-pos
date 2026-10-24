@@ -1,6 +1,7 @@
 import { claseBoton } from '../ui/Boton'
 import type { EstadoConexion } from '../ui/IndicadorConexion'
 import { Icono, type NombreIcono } from '../ui/iconos'
+import { type Marca, useMarca } from '../ui/marca'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { navegar } from '../ui/ruta'
 import { reiniciarBocetos, simular, useSimulacion } from './estado'
@@ -27,6 +28,33 @@ const PANTALLAS: { ruta: string; titulo: string; para: string; icono: NombreIcon
   },
 ]
 
+const DIRECCIONES: { marca: Marca; nombre: string; idea: string; muestras: string[] }[] = [
+  {
+    marca: 'bagno',
+    nombre: 'Bagno',
+    idea: 'El mundo de la carta: suelo de arena, marino que escribe y actúa, toldo a rayas y títulos en League Gothic. Con modo oscuro de noche.',
+    muestras: ['#f8ecda', '#1d3552', '#dc5a0f', '#fff8ec'],
+  },
+  {
+    marca: 'taller',
+    nombre: 'Taller',
+    idea: 'Como el panel de la carta: herramienta gris y neutra, letra del sistema y el naranja de marca solo en la acción principal.',
+    muestras: ['#f1f2f4', '#ffffff', '#b8491a', '#1a1c1e'],
+  },
+  {
+    marca: 'noche',
+    nombre: 'Noche en la terraza',
+    idea: 'Bagno en oscuro siempre: el marino del pie de la carta como suelo, para el bar de noche y la cocina.',
+    muestras: ['#0f1b2b', '#172a40', '#c24e14', '#eedecb'],
+  },
+  {
+    marca: 'neutra',
+    nombre: 'Neutra (producto)',
+    idea: 'Sin marca: la base que vería otro restaurante antes de configurar la suya.',
+    muestras: ['#f4f5f7', '#ffffff', '#1d4ed8', '#111827'],
+  },
+]
+
 const CONEXIONES: [EstadoConexion, string][] = [
   ['en_linea', 'En línea'],
   ['solo_local', 'Solo red local'],
@@ -35,6 +63,7 @@ const CONEXIONES: [EstadoConexion, string][] = [
 
 export function Indice() {
   const simulacion = useSimulacion()
+  const [marca, elegirMarca] = useMarca()
   return (
     <Marco titulo="Bocetos del POS" volver="/">
       <div className="mx-auto max-w-3xl p-4">
@@ -42,6 +71,38 @@ export function Indice() {
           Bocetos navegables con la carta real de La Spritzzería. Los datos son de ejemplo y no se
           guardan: recargar la página los reinicia.
         </p>
+        <section className="mb-6" aria-labelledby="direccion">
+          <h2 id="direccion" className="font-titulo mb-1 text-2xl font-semibold">
+            Dirección visual
+          </h2>
+          <p className="mb-3 text-sm text-texto-suave">
+            Elige una y abre las pantallas: todas cambian. Se recuerda en este equipo.
+          </p>
+          <Grupo etiqueta="Dirección visual" className="grid gap-2 sm:grid-cols-2">
+            {DIRECCIONES.map((d) => (
+              <Opcion
+                key={d.marca}
+                forma="tarjeta"
+                elegida={marca === d.marca}
+                alElegir={() => elegirMarca(d.marca)}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="text-lg">{d.nombre}</span>
+                  <span className="ml-auto flex" aria-hidden="true">
+                    {d.muestras.map((color) => (
+                      <span
+                        key={color}
+                        className="-ml-1 size-5 rounded-full border border-black/20"
+                        style={{ background: color }}
+                      />
+                    ))}
+                  </span>
+                </span>
+                <span className="mt-1 block text-sm font-normal">{d.idea}</span>
+              </Opcion>
+            ))}
+          </Grupo>
+        </section>
         <ul className="grid gap-3 sm:grid-cols-2">
           {PANTALLAS.map((p) => (
             <li key={p.ruta}>
@@ -57,7 +118,7 @@ export function Indice() {
                   <Icono nombre={p.icono} width="1.5em" height="1.5em" />
                 </span>
                 <span>
-                  <span className="block text-lg font-semibold">{p.titulo}</span>
+                  <span className="font-titulo block text-2xl font-semibold">{p.titulo}</span>
                   <span className="text-texto-suave">{p.para}</span>
                 </span>
               </a>

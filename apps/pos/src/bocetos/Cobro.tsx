@@ -128,7 +128,9 @@ export function Cobro() {
       <div className="mx-auto grid max-w-4xl gap-4 p-3 md:grid-cols-2">
         <section className="rounded-2xl border border-borde bg-superficie p-4" aria-label="Saldo">
           <p className="text-texto-suave">Saldo pendiente</p>
-          <p className={`cifras text-4xl font-bold ${saldo === 0 ? 'text-libre-texto' : ''}`}>
+          <p
+            className={`cifras font-titulo text-5xl font-bold ${saldo === 0 ? 'text-libre-texto' : ''}`}
+          >
             {pesos(saldo)}
           </p>
           <p className="cifras mt-1 text-texto-suave">{`de ${pesos(total)}`}</p>
@@ -223,7 +225,7 @@ export function Cobro() {
                     ? 'A cobrar (venta redondeada a $100 + propina)'
                     : 'A cobrar (venta + propina)'}
                 </p>
-                <p className="cifras text-2xl font-bold">{pesos(calculo.aEntregar)}</p>
+                <p className="cifras font-titulo text-3xl font-bold">{pesos(calculo.aEntregar)}</p>
                 <label className="mt-3 block">
                   <span className="font-semibold">El cliente entrega</span>
                   <input
@@ -263,7 +265,7 @@ export function Cobro() {
             ) : (
               <div className="rounded-2xl border border-borde bg-superficie p-4">
                 <p className="text-texto-suave">Total en el datáfono (venta + propina)</p>
-                <p className="cifras text-2xl font-bold">{pesos(aCobrar)}</p>
+                <p className="cifras font-titulo text-3xl font-bold">{pesos(aCobrar)}</p>
                 <label className="mt-3 block">
                   <span className="font-semibold">Número de aprobación</span>
                   <input

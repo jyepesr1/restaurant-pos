@@ -96,7 +96,7 @@ export function Kds() {
               >
                 <div className="flex items-center justify-between gap-2 border-b border-borde p-3">
                   <div>
-                    <p className="text-2xl font-bold">Mesa {c.mesa.numero}</p>
+                    <p className="font-titulo text-3xl font-bold">Mesa {c.mesa.numero}</p>
                     <p className="text-texto-suave">
                       {c.mesa.mesero} · <span className="capitalize">{c.estacion}</span>
                     </p>

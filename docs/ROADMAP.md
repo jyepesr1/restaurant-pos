@@ -48,7 +48,15 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 ### 0.9 — Design system y bocetos de las 5 pantallas 🚧
 
-**Falta tu aprobación:** ábrelos en tu celular y en una tablet (pasos abajo) y dime qué cambiarías.
+**Falta tu aprobación:** ábrelos en tu celular y en una tablet (pasos abajo), elige una dirección visual y dime qué cambiarías.
+
+**Direcciones visuales con la marca de La Spritzzería** (tomada de su carta web, `la-spritzzeria-menu/DESIGN.md`: paleta Bagno, League Gothic y Alegreya Sans, y el logo). Se eligen en `/bocetos` y cambian todas las pantallas:
+- **Bagno:** el mundo de la carta. Suelo de arena, marino que escribe y actúa, toldo a rayas bajo la barra, logo en su insignia, títulos, números de mesa y precios en League Gothic. En modo oscuro pasa a Noche.
+- **Taller:** como el panel de administración de la carta. Gris neutro, letra del sistema y el naranja de marca solo en la acción principal. Respeta la decisión del dueño de que las herramientas internas se vean como herramienta.
+- **Noche en la terraza:** Bagno oscuro siempre, para el bar de noche y la cocina.
+- **Neutra:** la base sin marca que vería otro restaurante.
+
+El significado de los colores de estado no cambia con la marca: verde libre, ámbar en proceso, rojo demora. El ámbar de estado es mostaza, para que no se confunda con el naranja Aperol. Las cuatro cumplen contraste AA en claro y oscuro, y la prueba las mide todas. Las fuentes van empaquetadas en la app (funciona sin internet).
 
 **Design system** (`apps/pos/src/estilos.css` y `apps/pos/src/ui`), según la sección 5 del brief:
 - **Colores con significado fijo:** verde = libre o listo, ámbar = en proceso, rojo = demora o alerta, azul = acción principal, gris = lo demás. Siempre con ícono y texto, nunca solo color.
