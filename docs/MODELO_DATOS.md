@@ -206,10 +206,10 @@ Cada tipo tiene su esquema Zod en `packages/core` (tarea 0.5). Los montos que sa
 | `PrecuentaImpresa` | `cuenta_id` (opcional), `subtotal`, `propina_sugerida` en **pesos** tal como se imprimió | `tomar_pedido` |
 | `CuentaDividida` | `cuentas`: `[{ cuenta_id, nombre, items (con fracción `{n, d}` en el ítem compartido), monto, propina_sugerida }]` en pesos, calculados sobre el saldo; lo no asignado queda en `sin_asignar` y los pagos previos en `general` ([DINERO.md](DINERO.md#división-de-la-cuenta)) | `dividir_cuenta` |
 | `DivisionDeshecha` | — (solo si ninguna cuenta tiene pagos) | `dividir_cuenta` |
-| `PagoRegistrado` | `pago_id`, `cuenta_id`, `turno_caja_id`, `medio`, `monto`, `propina`, `recibido`, `cambio`, `ajuste_redondeo`, datos del datáfono, `referencia_cobro` | `registrar_pago` |
+| `PagoRegistrado` | `pago_id`, `cuenta_id`, `turno_caja_id`, `medio`, `monto`, `propina`, `recibido`, `cambio`, `ajuste_redondeo` con la regla `redondeo` (múltiplo y modo) que lo produjo, datos del datáfono (obligatorios con tarjeta), `referencia_cobro` | `registrar_pago` |
 | `PagoAnulado` | `pago_id`, `turno_caja_id` del turno **actual** (donde cae la reversa) | `anular_pago` |
 | `ReembolsoRegistrado` | `pago_id`, `monto_venta`, `monto_propina` (topes en [DINERO.md](DINERO.md#pagos)), `medio`, `turno_caja_id` | `anular_pago` |
-| `PedidoRescateCreado` | `pedido_original_id`; lo emite el hub con un ID nuevo cuando llegan ítems a un pedido ya cerrado | — |
+| `PedidoRescateCreado` | `pedido_original_id`, `mesero_id` (el del pedido original); lo emite el hub con un ID nuevo cuando llegan ítems a un pedido ya cerrado | — |
 | `PedidoCerrado` | — (solo con saldo 0) | `cerrar_mesa` |
 | `PedidoReabierto` | — (si ya hubo documento DIAN, la diferencia va en una nota) | `reabrir_cuenta` |
 | `PedidoCancelado` | — (solo sin pagos vigentes) | `cancelar_pedido` |
@@ -233,12 +233,17 @@ Tipos de conflicto (solo situaciones causadas por un dispositivo desactualizado)
 
 ### Reglas de aplicación
 
-- `aplicarEvento(estado, evento)` es **total y determinista**: nunca lanza error y da el mismo resultado en celular, hub y nube.
+- `aplicarEvento(estado, evento)` (`packages/core/src/pedido/aplicar.ts`) es **total y determinista**: nunca lanza error y da el mismo resultado en celular, hub y nube. Cuando no puede aplicar un evento devuelve el estado sin cambios y un `problema` (`TipoProblema`); con eso el hub decide si es rechazo o conflicto.
 - Un evento válido que no se puede aplicar al estado (por ejemplo anular un ítem ya anulado) **no cambia la proyección**, se guarda igual y el hub emite un `ConflictoDetectado`.
 - Un ítem agregado a un pedido que ya estaba cerrado va a un **pedido de rescate**: el hub emite `PedidoRescateCreado` y pone el rescate en `afecta` del evento, con conflicto `pedido_cerrado`; no cuenta como venta hasta cobrarse.
 - Un evento sobre un ítem que se movió a otro pedido se aplica donde esté el ítem: el hub lo resuelve y lo pone en `afecta`, con conflicto informativo `item_movido`.
 - Con descuentos en la línea o el pedido dividido, cambiar cantidad, anular, mover o agregar extras con precio exige antes `DescuentoRetirado` o `DivisionDeshecha`.
-- Un `PagoAnulado` o `ItemAnulado` sobre un pedido cerrado exige reabrirlo primero.
+- Con el pedido cerrado o cancelado solo valen los eventos que no tocan montos (cocina: en preparación, listo, entregado, devuelto a la cola; reimpresión de comanda y de precuenta). Todo lo demás, incluidos anulaciones, pagos y reembolsos, exige reabrirlo primero.
+- Un evento con una secuencia ya aplicada se ignora (`evento_ya_aplicado`), y un evento que no toca al pedido no se aplica (`evento_ajeno`).
+- Un cambio de estado de varios ítems (enviar, listo, entregado) se aplica a los que pueden y avisa con `items_omitidos` de los demás; el mesero puede marcar entregado directo desde enviado (estaciones sin KDS).
+- Al mover o unir, la copia de cada ítem debe coincidir con el ítem real del origen (precio, extras, cantidad, anulado, estado, quién lo agregó); unir trae todos los ítems y exige que el origen no tenga pagos ni descuentos. El hub valida los dos pedidos antes de aceptar el evento.
+- Ningún pedido pasa de $10.000.000.000 en bruto.
+- Un pago con reembolsos ya no se anula, y devolver toda la venta de un pago en efectivo con ajuste de redondeo se hace anulando el pago.
 - Anular un ítem que dejaría el saldo negativo se rechaza: primero se anula el pago o se registra un reembolso.
 - No se mueven ítems que ya están pagados en una cuenta.
 

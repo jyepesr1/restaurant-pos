@@ -15,6 +15,7 @@ Cada acción es un **evento** con un código único. Se guarda primero donde se 
 - Para no complicar el caso excepcional, **sin conexión con el hub no se puede**:
   - pedir autorización de supervisor;
   - registrar pagos, cerrar mesas ni mover caja (todo eso es del cajero, que está en el PC del hub);
+  - mover ítems entre pedidos ni unir pedidos (el hub debe validar los dos pedidos a la vez);
   - editar el catálogo.
 
 ## Nodos y autoridad

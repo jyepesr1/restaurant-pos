@@ -55,7 +55,7 @@ Monorepo con pnpm workspaces y Turborepo. TypeScript estricto en todo.
 |---|---|
 | `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador |
 | `apps/hub` (`@pos/hub`) | Servidor local (Fastify) que corre en el PC de caja: sirve la app y la API en la red local |
-| `packages/core` (`@pos/core`) | Lógica de negocio compartida, sin dependencias de navegador ni de Node |
+| `packages/core` (`@pos/core`) | Lógica de negocio compartida, sin dependencias de navegador ni de Node: dinero (`src/dinero`), esquemas de eventos (`src/eventos`) y reductor del pedido (`src/pedido`) |
 | `packages/db` (`@pos/db`) | Esquema SQLite, migraciones y la interfaz `BaseSqlite`; `@pos/db/node` abre la base con `node:sqlite` (solo Node) |
 | `tests/e2e` | Pruebas Playwright de punta a punta (celular Android y caja) |
 | `docs/` | Brief, decisiones, roadmap, modelo de datos y datos del piloto |
@@ -73,7 +73,7 @@ Requiere Node 24 (`.nvmrc`) y pnpm por corepack (`corepack enable pnpm`).
 | `pnpm --filter @pos/app build && pnpm --filter @pos/hub start` | Compila la app y la sirve desde el hub, como en el restaurante. Imprime las IP para abrir desde el celular |
 | `pnpm check` | Lint y formato (Biome), tipos y pruebas unitarias. Debe pasar antes de cada commit |
 | `pnpm format` | Corrige formato y orden de imports |
-| `pnpm test` | Pruebas unitarias (Vitest) de todos los paquetes |
+| `pnpm test` | Pruebas unitarias (Vitest) de todos los paquetes; en `@pos/core` exige 90 % de cobertura |
 | `pnpm test:e2e` | Pruebas Playwright; compila la app y levanta el hub en el puerto 4100 |
 
 Biome no formatea los archivos Markdown (están excluidos en `biome.json`).

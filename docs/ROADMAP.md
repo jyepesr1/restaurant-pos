@@ -10,7 +10,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 | 0.2 | Monorepo, herramientas y CI | ✅ |
 | 0.3 | Documentos vivos (DECISIONES, MODELO_DATOS, SYNC, DINERO) | ✅ |
 | 0.4 | Modelo de datos y migraciones | ✅ |
-| 0.5 | Núcleo de dominio: dinero y eventos del pedido | ⏳ |
+| 0.5 | Núcleo de dominio: dinero y eventos del pedido | ✅ |
 | 0.6 | Motor de sincronización | ⏳ |
 | 0.7 | Autenticación con PIN, roles y permisos | ⏳ |
 | 0.8 | Seed con la carta de La Spritzzería | ⏳ |
@@ -38,6 +38,21 @@ Los resultados se envían al hub y quedan en `apps/hub/datos/diagnosticos.jsonl`
 1. Inicia el hub: `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver `Hub en marcha` y la dirección `http://192.168…:4000`.
 2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/diagnostico`. Debes ver **Diagnóstico del dispositivo** y **✓ Conectado** en «Canal en tiempo real».
 3. Sigue los cuatro pasos numerados de la pantalla. Al enviar debes ver **✓ Resultados enviados**.
+
+### 0.5 — Núcleo de dominio: dinero y eventos del pedido ✅
+
+En `packages/core`, el mismo código para celular, hub y nube:
+- **Dinero** (`src/dinero/`): redondeo, reparto por mayor residuo, línea, descuentos, desglose fiscal, propina sobre la base, redondeo del efectivo y efectivo esperado de caja, tal como los define [DINERO.md](DINERO.md).
+- **Eventos del pedido** (`src/eventos/`): los 31 tipos de la versión 1 con su esquema Zod; `validarEventoNuevo` devuelve los errores en español y nunca lanza.
+- **Reductor** (`src/pedido/`): `aplicarEvento` aplica cada evento al estado del pedido y devuelve un `problema` cuando no puede (por ejemplo `saldo_negativo` o `pedido_dividido`); `totalesPedido` calcula bruto, anulado, descuentos, neto, pagado y saldo.
+
+Pruebas: los ejemplos de DINERO.md, cada regla del reductor y pruebas de propiedades (miles de casos al azar) que exigen que las partes sumen el total, que ninguna línea quede negativa y que con cualquier secuencia de eventos el reductor no falle, sea determinista y nunca deje saldo negativo. La prueba de propiedades encontró un error real (quitar un ítem sin enviar en un pedido ya pagado dejaba saldo negativo), ya corregido. Cobertura exigida: 90 % (actual: 98,8 %).
+
+Revisado por `revisor-codigo`, `qa-pruebas` y `auditor-dinero`; corregido, entre otros: un ajuste de redondeo sin límite que permitía cerrar un pedido sin cobrar, anular un pago ya reembolsado (se devolvía dos veces), unir pedidos perdiendo descuentos, copias de ítems movidos que no coincidían con el original, eventos aplicados dos veces y acciones de cocina bloqueadas con la mesa ya pagada. Los esquemas ahora son estrictos (un campo de más se rechaza).
+
+**Queda para la Fase 1** (con caja y turnos): diferencia de arqueo por medio, efectivo esperado de otros medios, fondo de propinas con saldo entre días e informes cruzados (por medio = por mesero = documentos DIAN).
+
+**Cómo probarlo a mano:** ejecuta `pnpm --filter @pos/core test`. Debes ver todas las pruebas en verde y la tabla de cobertura sin el mensaje `ERROR: Coverage`.
 
 ### 0.4 — Base de datos y migraciones ✅
 

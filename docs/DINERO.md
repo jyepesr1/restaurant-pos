@@ -9,7 +9,7 @@ Fórmulas exactas de todo cálculo de dinero. Las implementa `packages/core` (ta
 3. **Redondeo** por defecto: a la mitad hacia arriba, `redondeo(a / b) = ⌊(2a + b) / (2b)⌋` para `a, b ≥ 0`. Parámetro `redondeo_modo`.
 4. **Repartos por mayor residuo**: las partes suman exactamente el total. Desempate por orden: el de las líneas es el orden en que se agregaron; el de las cuentas, el orden de creación.
 5. Todo monto que sale de un cálculo **se guarda ya calculado en el evento**; la proyección lo lee y nunca lo recalcula.
-6. Límites: precio y extras ≤ $100.000.000; cantidad de 1 a 999; total de un pedido ≤ $10.000.000.000. Todo resultado debe caber en `Number.MAX_SAFE_INTEGER`. Zod rechaza lo que se salga.
+6. Límites: la unidad completa (precio + extras) ≤ $100.000.000; cantidad de 1 a 999; bruto de un pedido ≤ $10.000.000.000. Todo resultado debe caber en `Number.MAX_SAFE_INTEGER`. Zod rechaza lo que se salga.
 
 Campos de dinero **con signo** (los únicos que pueden ser negativos): `ajuste_redondeo`, `diferencia` del turno por medio, `MovimientoInventario.cantidad`. Todos los demás son ≥ 0.
 
@@ -98,10 +98,10 @@ propina = redondeo( Σ_líneas neto_linea × 10000 / (10000 + t_linea) × tasa /
 | Monto | `0 < monto ≤ saldo de la cuenta`. `monto` es la parte del saldo que el pago cancela. |
 | Efectivo | `recibido = monto + ajuste_redondeo + propina + cambio`, con `cambio ≥ 0`. Si el cliente deja el cambio, el cajero lo marca y pasa a `propina`. |
 | Otros medios | Sin `recibido` ni `cambio`. En datáfono, `monto + propina` debe ser igual al total aprobado. |
-| Redondeo del efectivo | Solo en el pago en efectivo **que deja el saldo en 0**. Se cobra el saldo redondeado al múltiplo `m = redondeo_efectivo` ($100) más cercano; la mitad, a favor del cliente — parámetro `redondeo_efectivo_modo`: `cobrado = m × ⌊(2 × saldo + m − 1) / (2m)⌋`. `ajuste_redondeo = cobrado − monto`. |
+| Redondeo del efectivo | Solo en el pago en efectivo **que deja el saldo en 0**. Se cobra el saldo redondeado al múltiplo `m = redondeo_efectivo` ($100) más cercano; la mitad, a favor del cliente — parámetro `redondeo_efectivo_modo`: `cobrado = m × ⌊(2 × saldo + m − 1) / (2m)⌋`. `ajuste_redondeo = cobrado − monto`. El evento trae la regla (`redondeo`: múltiplo y modo) y el reductor exige que el ajuste sea exactamente el que da esa regla. |
 | Saldo de hasta medio múltiplo | Saldo de $30 (o de $50) tras pagar con tarjeta: se cobra $0 y el ajuste es −30 (o −50). |
 | Sin turno | `PagoRegistrado` se rechaza si la caja no tiene turno abierto. |
-| Reembolsos | Cada reembolso separa `monto_venta` y `monto_propina`. Topes: `Σ monto_venta ≤ monto` y `Σ monto_propina ≤ propina`; en efectivo, además, el total no puede pasar de lo cobrado (`monto + ajuste_redondeo + propina`). El de venta exige nota crédito si ya hubo documento DIAN; el de propina resta del fondo el día del reembolso. |
+| Reembolsos | Por el mismo medio del pago. Cada reembolso separa `monto_venta` y `monto_propina`. Topes: `Σ monto_venta ≤ monto` y `Σ monto_propina ≤ propina`; en efectivo, además, el total no puede pasar de lo cobrado (`monto + ajuste_redondeo + propina`). El de venta exige nota crédito si ya hubo documento DIAN; el de propina resta del fondo el día del reembolso. Para devolver toda la venta de un pago en efectivo con ajuste, se anula el pago (así el ajuste también se revierte); un pago con reembolsos ya no se anula. |
 
 Ejemplos de efectivo:
 
