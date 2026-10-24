@@ -9,12 +9,15 @@ export interface OpcionesServidor {
   dirApp?: string
   /** Sin esta opción no se exponen las rutas de diagnóstico. */
   diagnostico?: OpcionesDiagnostico
+  /** Versión de la base, para mostrarla en el chequeo de salud. */
+  versionBase?: number
   logger?: boolean
 }
 
 export function crearServidor({
   dirApp,
   diagnostico,
+  versionBase,
   logger = false,
 }: OpcionesServidor = {}): FastifyInstance {
   const app = Fastify({ logger })
@@ -29,6 +32,7 @@ export function crearServidor({
     estado: 'ok',
     servicio: 'hub',
     hora: new Date().toISOString(),
+    ...(versionBase === undefined ? {} : { version_base: versionBase }),
   }))
 
   if (dirApp && existsSync(dirApp)) {

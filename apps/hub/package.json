@@ -4,14 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
+    "dev": "tsx watch --disable-warning=ExperimentalWarning src/main.ts",
+    "start": "tsx --disable-warning=ExperimentalWarning src/main.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },
   "dependencies": {
     "@fastify/static": "^10.1.7",
     "@fastify/websocket": "^11.3.4",
+    "@pos/db": "workspace:*",
     "fastify": "^5.12.7"
   },
   "devDependencies": {

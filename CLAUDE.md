@@ -56,10 +56,11 @@ Monorepo con pnpm workspaces y Turborepo. TypeScript estricto en todo.
 | `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador |
 | `apps/hub` (`@pos/hub`) | Servidor local (Fastify) que corre en el PC de caja: sirve la app y la API en la red local |
 | `packages/core` (`@pos/core`) | Lógica de negocio compartida, sin dependencias de navegador ni de Node |
+| `packages/db` (`@pos/db`) | Esquema SQLite, migraciones y la interfaz `BaseSqlite`; `@pos/db/node` abre la base con `node:sqlite` (solo Node) |
 | `tests/e2e` | Pruebas Playwright de punta a punta (celular Android y caja) |
 | `docs/` | Brief, decisiones, roadmap, modelo de datos y datos del piloto |
 
-Los paquetes internos se consumen como código fuente TypeScript (`exports` apunta a `src/index.ts`); no se compilan por separado. Paquetes nuevos (`ui`, `sync`, `db`, `printing`, `dian`, `payments`) se crean en la tarea que los necesita, no antes.
+Los paquetes internos se consumen como código fuente TypeScript (`exports` apunta a `src/index.ts`); no se compilan por separado. Paquetes nuevos (`ui`, `sync`, `printing`, `dian`, `payments`) se crean en la tarea que los necesita, no antes.
 
 ## Comandos
 
@@ -76,5 +77,7 @@ Requiere Node 24 (`.nvmrc`) y pnpm por corepack (`corepack enable pnpm`).
 | `pnpm test:e2e` | Pruebas Playwright; compila la app y levanta el hub en el puerto 4100 |
 
 Biome no formatea los archivos Markdown (están excluidos en `biome.json`).
+
+Base de datos: los cambios de esquema van en una migración **nueva** en `packages/db/src/migraciones/` (nunca se edita una publicada), con la tabla agregada a su categoría en `packages/db/src/esquema.ts`. Toda tabla es `STRICT`.
 
 Las dependencias que ejecutan scripts al instalarse deben aprobarse con `pnpm approve-builds <paquete>`; quedan en `allowBuilds` de `pnpm-workspace.yaml`.

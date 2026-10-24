@@ -21,6 +21,13 @@ describe('servidor del hub', () => {
     expect(res.json()).toMatchObject({ estado: 'ok', servicio: 'hub' })
   })
 
+  it('informa la versión de la base en el chequeo de salud', async () => {
+    app = crearServidor({ versionBase: 1 })
+    const res = await app.inject({ method: 'GET', url: '/api/salud' })
+
+    expect(res.json()).toMatchObject({ version_base: 1 })
+  })
+
   it('sirve la app y devuelve index.html en rutas de la app', async () => {
     const dirApp = mkdtempSync(join(tmpdir(), 'pos-app-'))
     writeFileSync(join(dirApp, 'index.html'), '<title>POS</title>')

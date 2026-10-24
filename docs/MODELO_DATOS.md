@@ -247,7 +247,7 @@ Tipos de conflicto (solo situaciones causadas por un dispositivo desactualizado)
 | Entidad | Fase | Cat. | Campos principales |
 |---|---|---|---|
 | `Pedido` | 0 | P | `canal`, `mesa_id`, `numero_dia` (del hub, ver asignaciones), `numero_provisional`, `comensales`, `mesero_asignado_id`, `estado` (`abierto`, `cerrado`, `cancelado`), `abierto_en`, `cerrado_en`, `dia_operativo` (el del **primer** cierre), `pedido_rescate_de` |
-| `PedidoItem` | 0 | P | `pedido_id`, `producto_id`, `variante_id`, `nombre`, `precio_unitario`, `impuesto_tipo`, `tarifa`, `cantidad`, `comensal`, `curso`, `estado` (`retenido`, `pendiente`, `enviado`, `en_preparacion`, `listo`, `entregado`, `anulado`), `agregado_por` (mesero), `notas`, `estacion_ids` |
+| `PedidoItem` | 0 | P | `pedido_id`, `producto_id`, `variante_id`, `nombre`, `precio_unitario`, `impuesto_tipo`, `tarifa`, `cantidad`, `cantidad_anulada` (anulación parcial; la cantidad original se conserva para los informes), `comensal`, `curso`, `estado` (`retenido`, `pendiente`, `enviado`, `en_preparacion`, `listo`, `entregado`, `anulado`), `agregado_por` (mesero), `notas`, `estacion_ids` |
 | `PedidoItemModificador` | 0 | P | `pedido_item_id`, `modificador_id`, `nombre`, `precio_extra` |
 | `Comanda` | 1 | P | `pedido_id`, `estacion_id`, `numero` (del hub), `tipo` (`nueva`, `modificacion`, `anulacion`), `items` |
 | `Cuenta` | 1 | P | `pedido_id`, `nombre`, ítems o montos asignados, `total`, `pagado`, `saldo` |

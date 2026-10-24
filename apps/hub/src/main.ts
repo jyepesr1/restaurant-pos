@@ -1,6 +1,9 @@
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { aplicarMigraciones, type BaseSqlite, versionActual } from '@pos/db'
+import { abrirBase } from '@pos/db/node'
 import { crearServidor } from './servidor'
 
 const PUERTO_POR_DEFECTO = 4000
@@ -30,8 +33,43 @@ function ipsLocales(): string[] {
     .map((red) => red?.address as string)
 }
 
+/** Abre la base en exclusiva (un solo hub por carpeta de datos) y la lleva a la última versión. */
+function prepararBase(): BaseSqlite {
+  try {
+    mkdirSync(dirDatos, { recursive: true })
+    const base = abrirBase(join(dirDatos, 'pos.sqlite'), { exclusiva: true })
+    const aplicadas = aplicarMigraciones(base)
+    console.log(
+      aplicadas.length > 0
+        ? `Base de datos actualizada a la versión ${versionActual(base)}.`
+        : `Base de datos en la versión ${versionActual(base)}.`,
+    )
+    return base
+  } catch (error) {
+    const detalle = error instanceof Error ? error.message : String(error)
+    console.error(`No se pudo abrir la base de datos del hub: ${detalle}`)
+    process.exit(1)
+  }
+}
+
 const puerto = leerPuerto()
-const app = crearServidor({ dirApp, diagnostico: { dirDatos }, logger: true })
+// Las rutas que usan la base llegan con la sincronización (tarea 0.6); por ahora solo se abre,
+// se migra y se cierra limpia al apagar.
+const db = prepararBase()
+const app = crearServidor({
+  dirApp,
+  diagnostico: { dirDatos },
+  versionBase: versionActual(db),
+  logger: true,
+})
+
+for (const senal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(senal, async () => {
+    await app.close()
+    db.close()
+    process.exit(0)
+  })
+}
 
 try {
   await app.listen({ host: '0.0.0.0', port: puerto })

@@ -9,7 +9,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 | 0.1 | Prueba de conexión en dispositivos reales | ✅ |
 | 0.2 | Monorepo, herramientas y CI | ✅ |
 | 0.3 | Documentos vivos (DECISIONES, MODELO_DATOS, SYNC, DINERO) | ✅ |
-| 0.4 | Modelo de datos y migraciones | ⏳ |
+| 0.4 | Modelo de datos y migraciones | ✅ |
 | 0.5 | Núcleo de dominio: dinero y eventos del pedido | ⏳ |
 | 0.6 | Motor de sincronización | ⏳ |
 | 0.7 | Autenticación con PIN, roles y permisos | ⏳ |
@@ -39,6 +39,30 @@ Los resultados se envían al hub y quedan en `apps/hub/datos/diagnosticos.jsonl`
 2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/diagnostico`. Debes ver **Diagnóstico del dispositivo** y **✓ Conectado** en «Canal en tiempo real».
 3. Sigue los cuatro pasos numerados de la pantalla. Al enviar debes ver **✓ Resultados enviados**.
 
+### 0.4 — Base de datos y migraciones ✅
+
+Paquete `packages/db`: migración inicial con las tablas de la Fase 0 de [MODELO_DATOS.md](MODELO_DATOS.md), sobre el SQLite incluido en Node ([ADR-012](DECISIONES.md#adr-012--base-del-hub-sqlite-incluido-en-node-tablas-estrictas-y-migraciones-en-código)). El hub abre la base y aplica las migraciones al arrancar.
+
+Lo que hace cumplir la propia base:
+- montos y tarifas enteros y dentro de rango (un decimal o un negativo se rechazan);
+- eventos que no se pueden editar ni borrar;
+- un PIN único entre usuarios activos;
+- claves foráneas activas.
+
+- el catálogo no se borra (se archiva) y archivar un usuario libera su PIN;
+- un `INSERT OR REPLACE` tampoco puede reescribir eventos, y la secuencia es contigua;
+- un solo hub por carpeta de datos (apertura exclusiva).
+
+Las pruebas además exigen que toda tabla esté clasificada en una categoría y que las de catálogo tengan las columnas comunes. Incluyen un proceso que muere a mitad de una transacción: al reabrir no queda nada a medias.
+
+**Queda para la 0.6:** la cola de salida y el cursor viven en IndexedDB del dispositivo (no en esta base); la unicidad del número de pedido del día se aplica al asignarlo.
+
+**Cómo probarlo a mano:**
+
+1. Ejecuta `pnpm --filter @pos/db test`. Debes ver todas las pruebas en verde.
+2. Inicia el hub (`pnpm --filter @pos/app build && pnpm --filter @pos/hub start`). La primera vez debe decir `Base de datos actualizada a la versión 1.`; las siguientes, `Base de datos en la versión 1.`
+3. La base queda en `apps/hub/datos/pos.sqlite`.
+
 ### 0.3 — Documentos vivos ✅
 
 - [DECISIONES.md](DECISIONES.md): ADR-001 a ADR-011, con alternativas descartadas y lo que queda **(validar)** con el contador o el proveedor DIAN.
@@ -61,7 +85,7 @@ Monorepo pnpm + Turborepo con `apps/pos`, `apps/hub` y `packages/core`; Biome, T
 **Cómo probarlo a mano:**
 
 1. En la carpeta del proyecto, ejecuta `pnpm install` y luego `pnpm check`. Debes ver `Tasks: 6 successful, 6 total` al final.
-2. Ejecuta `pnpm test:e2e`. Debes ver `61 passed` y `1 skipped`.
+2. Ejecuta `pnpm test:e2e`. Debes ver `62 passed` y `2 skipped`.
 3. Ejecuta `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver `Hub en marcha` y una o más direcciones `http://192.168…:4000`.
 4. Abre esa dirección en el navegador del computador. Debes ver "POS" y el indicador verde **✓ Conectado al hub**.
 5. Detén el hub con `Ctrl+C`. En unos 3 segundos el indicador cambia a rojo **✕ Sin conexión con el hub**.

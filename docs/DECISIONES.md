@@ -312,3 +312,37 @@ Dos de ellas cambian lo que dice el brief:
 | Estaciones del piloto | Cocina y barra. |
 | Productos con opciones | Un solo producto con opciones (Ramón Bilbao copa o botella con su precio; Té Hatsu con sabor obligatorio sin costo). |
 | Modificadores | Término de la carne, quitar ingredientes, adicionales con precio y notas libres. La lista real con precios se pide antes de la Fase 1. |
+
+---
+
+## ADR-012 · Base del hub: SQLite incluido en Node, tablas estrictas y migraciones en código
+
+**Fecha:** 24-oct-2026 · **Estado:** aceptada · **Tarea:** Fase 0.4
+
+### Decisión
+
+- El hub usa **`node:sqlite`**, el SQLite que trae Node 24 (versión 3.50), detrás de una interfaz mínima (`BaseSqlite` en `packages/db`). Lo cumple también `better-sqlite3`, así que cambiar de motor es un cambio de un archivo.
+- **Todas las tablas son `STRICT`**: SQLite rechaza un número con decimales en una columna `INTEGER`. Junto con los `CHECK` de rango (precio entre 0 y $100.000.000, tarifa entre 0 y 10.000 puntos básicos, cantidad de 1 a 999), la regla de los pesos enteros (ADR-004) también la hace cumplir la base.
+- **Las tablas de eventos no se pueden editar, borrar ni reemplazar**: disparadores abortan `UPDATE`, `DELETE` e `INSERT OR REPLACE` (este último no dispara los de borrado en SQLite), y la secuencia de eventos debe ser contigua (ADR-005).
+- **El catálogo no se borra**: las tablas versionadas rechazan `DELETE`; se archiva con `activo = 0`. Archivar un usuario libera su PIN.
+- Restricciones de coherencia fiscal: un impuesto `exento` no puede tener tarifa.
+- **Migraciones en TypeScript con el SQL en texto**, numeradas y aplicadas al arrancar el hub, cada una en su transacción. El runner guarda la huella de cada migración y se niega a arrancar si una ya aplicada cambió. Una base más nueva que la aplicación no se abre. Las migraciones que reconstruyen tablas apagan las claves foráneas y verifican las referencias antes de confirmar.
+- Configuración de la base: modo WAL (verificado al abrir), `synchronous = FULL` (sin UPS, no perder la última transacción confirmada), claves foráneas activas. El hub la abre **en exclusiva**: un segundo hub sobre la misma carpeta de datos no arranca. Una sola conexión por proceso, porque `node:sqlite` es síncrono. El costo de `FULL` (una escritura a disco por evento) se mide en la 0.6.
+- La base vive en la carpeta de datos del hub (`pos.sqlite`).
+- Las consultas se escriben en SQL con funciones tipadas en cada paquete; un generador de consultas (Kysely o Drizzle) se reconsidera si en la 0.6 el SQL a mano se vuelve repetitivo.
+
+### Por qué
+
+`node:sqlite` no necesita compilar un módulo nativo, lo que simplifica el instalador para Windows (Fase 1). El mismo SQL sirve en la nube (Durable Objects usa SQLite, ADR-009).
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| `better-sqlite3` | Maduro y rápido, pero es un módulo nativo que hay que compilar o distribuir por plataforma. Queda como plan B detrás de la misma interfaz. |
+| Archivos `.sql` para las migraciones | No funcionan donde no hay sistema de archivos (la nube). |
+| ORM (Prisma) | Pesado para el hub y oculta el SQL que queremos controlar. |
+
+### Riesgo abierto
+
+`node:sqlite` todavía figura como experimental en Node 24: su API podría cambiar. Lo mitiga la interfaz `BaseSqlite` y las pruebas del esquema.

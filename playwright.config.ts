@@ -5,7 +5,6 @@ const PUERTO = 4100
 
 export default defineConfig({
   testDir: 'tests/e2e',
-  globalSetup: './tests/e2e/preparar.ts',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
@@ -18,7 +17,9 @@ export default defineConfig({
     { name: 'caja', use: { ...devices['Desktop Chrome'] } },
   ],
   webServer: {
-    command: `pnpm --filter @pos/app exec vite build --outDir "${DIR_APP_E2E}" --emptyOutDir && pnpm --filter @pos/hub start`,
+    // La carpeta de datos se limpia en el mismo comando, antes de arrancar el hub: Playwright
+    // arranca el servidor antes que cualquier globalSetup.
+    command: `node -e "require('node:fs').rmSync(process.argv[1], { recursive: true, force: true })" "${DIR_DATOS_E2E}" && pnpm --filter @pos/app exec vite build --outDir "${DIR_APP_E2E}" --emptyOutDir && pnpm --filter @pos/hub start`,
     url: `http://localhost:${PUERTO}/api/salud`,
     env: { PUERTO: String(PUERTO), DIR_APP: DIR_APP_E2E, DIR_DATOS: DIR_DATOS_E2E },
     // Siempre un hub nuevo: uno viejo en el puerto podría tener otra configuración de carpetas.
