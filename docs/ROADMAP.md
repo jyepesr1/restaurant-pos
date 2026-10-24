@@ -12,7 +12,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 | 0.4 | Modelo de datos y migraciones | ✅ |
 | 0.5 | Núcleo de dominio: dinero y eventos del pedido | ✅ |
 | 0.6 | Motor de sincronización | ✅ |
-| 0.7 | Autenticación con PIN, roles y permisos | ⏳ |
+| 0.7 | Autenticación con PIN, roles y permisos | ✅ |
 | 0.8 | Seed con la carta de La Spritzzería | ⏳ |
 | 0.9 | Design system y bocetos de las 5 pantallas | ⏳ |
 | 0.10 | Pantalla mínima para la demo de sincronización | ⏳ |
@@ -38,6 +38,65 @@ Los resultados se envían al hub y quedan en `apps/hub/datos/diagnosticos.jsonl`
 1. Inicia el hub: `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver `Hub en marcha` y la dirección `http://192.168…:4000`.
 2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/diagnostico`. Debes ver **Diagnóstico del dispositivo** y **✓ Conectado** en «Canal en tiempo real».
 3. Sigue los cuatro pasos numerados de la pantalla. Al enviar debes ver **✓ Resultados enviados**.
+
+## Antes de probar cualquier tarea
+
+En cada terminal nueva, desde la carpeta del proyecto:
+
+1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
+2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 0.7 — Autenticación con PIN, roles y permisos ✅
+
+Según [ADR-008](DECISIONES.md#adr-008--inicio-de-sesión-solo-con-pin-generado-por-el-sistema) y [SYNC.md](SYNC.md#seguridad):
+- **Permisos y roles** (`packages/core/src/acceso`): las 24 claves de permiso, los 6 roles de fábrica con la matriz de [MODELO_DATOS.md](MODELO_DATOS.md#permisos) y qué permiso pide cada tipo de evento. Pagos y cierres solo desde un dispositivo de caja.
+- **Acceso en el hub** (`apps/hub/src/acceso`):
+  - PIN de **4 dígitos** (decisión del dueño) generados al azar, únicos entre usuarios activos, guardados solo como HMAC con la clave del hub.
+  - Emparejar un equipo con un código de un solo uso (5 minutos), aprobado con el PIN del administrador desde la caja.
+  - Sesión con PIN; espera creciente tras errores (hasta 60 s) y aviso al administrador.
+  - Comprobante de supervisor para un evento exacto.
+  - Revocar un equipo.
+  - API HTTP: `/api/emparejamientos`, `/api/emparejar`, `/api/sesiones`, `/api/sesiones/cerrar`, `/api/autorizaciones` y `/api/dispositivos/:id/revocar`.
+- **En cada evento**, el hub de sincronización comprueba la sesión, la firma del evento, el permiso del rol al recibirlo (o el comprobante) y el tipo de equipo.
+- **Al instalar**, el hub crea el restaurante, los roles y el usuario «Administrador», y muestra su PIN una sola vez.
+
+Criterios cumplidos, con pruebas que recorren el hub completo: un dispositivo revocado es rechazado (no lee el salón y lo nuevo que envía no entra); un mesero no puede anular sin autorización; cada autorización deja registro de quién la dio (`autorizado_por_id` en el evento y el comprobante usado).
+
+Revisado por `revisor-codigo` y `qa-pruebas` (unas 140 pruebas nuevas: la matriz completa de roles por evento, carreras de comprobantes, fuerza bruta, reinicios del hub y entradas raras a la API). Corregido, entre otros:
+- **Grave:** un empleado podía alternar su propio PIN con PIN ajenos para que la espera nunca empezara y probar los diez mil PIN en minutos. Ahora un acierto no borra los fallos.
+- Desde cualquier equipo de la red, cambiando de IP, se podía probar el PIN del administrador para emparejar. Ahora solo desde la caja.
+- Un comprobante de supervisor servía para otro contenido del mismo evento (otro ítem, otro valor de descuento). Ahora está atado a la huella del evento exacto.
+- En un celular compartido, alguien podía crear eventos a nombre del mesero anterior con su sesión ya cerrada. Ahora cada evento va firmado.
+- Un mesero podía abaratar un ítem ya enviado cambiando sus modificadores. Ahora eso pide autorización.
+- El trabajo hecho sin conexión antes de que archivaran a un usuario se perdía. Ahora va a cuarentena.
+- El PIN del administrador podía quedar escrito en un archivo de log. Ahora, si no hay ventana, va a un archivo aparte para borrar.
+
+Agrega la migración 2 (comprobante atado al contenido) y la dependencia `@noble/hashes` (SHA-256 en JavaScript puro, porque por HTTP el navegador no ofrece el suyo).
+
+**Queda para otras tareas:**
+- pantallas de PIN, emparejamiento con QR y administración de usuarios (0.9 y 0.10; mientras tanto, los usuarios se crean desde el código y el seed de la 0.8);
+- conectar la API y la firma de eventos en la app, y la sala de sincronización por WebSocket en el hub (0.10);
+- auditoría como eventos `AccionAuditada` y aviso de intentos en la pantalla de caja (Fase 1).
+
+**Cómo probarlo a mano:**
+
+1. Corre las pruebas:
+
+```bash
+pnpm --filter @pos/hub test
+```
+
+   Debes ver `Tests 206 passed` en verde.
+
+2. Para ver el arranque de un hub recién instalado sin tocar los datos del tuyo (por ejemplo, los resultados de los celulares de la tarea 0.1), detén el hub si está abierto y arranca uno con una carpeta de datos aparte:
+
+```bash
+DIR_DATOS=/tmp/hub-nuevo pnpm --filter @pos/hub start
+```
+
+   En la ventana debes ver `PIN del administrador: ` seguido de 4 dígitos, y `Hub en marcha`.
+
+3. Detén ese hub con Ctrl+C y repite el mismo comando. Esta vez **no** debe aparecer el PIN: se muestra una sola vez.
 
 ### 0.6 — Motor de sincronización ✅
 

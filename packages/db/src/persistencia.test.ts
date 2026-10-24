@@ -5,7 +5,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { nuevoId } from '@pos/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { MIGRACIONES } from './migraciones'
 import { aplicarMigraciones, versionActual } from './migrar'
+
+const TODAS = MIGRACIONES.map((m) => m.version)
+const ULTIMA = TODAS.at(-1)
+
 import { abrirBase } from './node'
 import { insertarEvento, sembrar } from './pruebas/utiles'
 import type { BaseSqlite } from './sqlite'
@@ -43,7 +48,7 @@ describe('base en archivo', () => {
 
   it('reabrir un archivo ya migrado no repite migraciones y conserva los datos', () => {
     const primera = abrir()
-    expect(aplicarMigraciones(primera, undefined, () => '2026-10-24T10:00:00.000Z')).toEqual([1])
+    expect(aplicarMigraciones(primera, undefined, () => '2026-10-24T10:00:00.000Z')).toEqual(TODAS)
     const { restaurante } = sembrar(primera)
     const evento = insertarEvento(primera, restaurante)
     ;(primera as unknown as { close(): void }).close()
@@ -52,10 +57,10 @@ describe('base en archivo', () => {
     const segunda = abrir()
     expect(aplicarMigraciones(segunda, undefined, () => '2030-01-01T00:00:00.000Z')).toEqual([])
 
-    expect(versionActual(segunda)).toBe(1)
-    expect(segunda.prepare('SELECT version, aplicada_en FROM migracion').all()).toEqual([
-      { version: 1, aplicada_en: '2026-10-24T10:00:00.000Z' },
-    ])
+    expect(versionActual(segunda)).toBe(ULTIMA)
+    expect(segunda.prepare('SELECT version, aplicada_en FROM migracion').all()).toEqual(
+      TODAS.map((version) => ({ version, aplicada_en: '2026-10-24T10:00:00.000Z' })),
+    )
     expect(
       segunda.prepare('SELECT id, datos FROM evento WHERE restaurante_id = ?').all(restaurante),
     ).toEqual([{ id: evento.id, datos: '{"canal":"salon"}' }])
@@ -118,7 +123,7 @@ describe('base en archivo', () => {
 
     const reabierta = abrir()
     expect(aplicarMigraciones(reabierta)).toEqual([])
-    expect(versionActual(reabierta)).toBe(1)
+    expect(versionActual(reabierta)).toBe(ULTIMA)
     expect(
       reabierta
         .prepare('SELECT id FROM evento ORDER BY secuencia')
@@ -134,11 +139,11 @@ describe('base en archivo', () => {
     expect(() => insertarEvento(reabierta, restaurante, { secuencia: 2 })).not.toThrow()
   })
 
-  it('crear la base en una carpeta nueva deja el archivo en la versión 1', () => {
+  it('crear la base en una carpeta nueva deja el archivo en la última versión', () => {
     const db = abrir()
     aplicarMigraciones(db)
 
     expect(existsSync(ruta)).toBe(true)
-    expect(versionActual(db)).toBe(1)
+    expect(versionActual(db)).toBe(ULTIMA)
   })
 })

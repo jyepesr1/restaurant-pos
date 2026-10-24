@@ -25,16 +25,34 @@ export interface ConfigHub {
   /** Cambia al reinstalar o restaurar el hub; se guarda fuera de la base (docs/SYNC.md#fallas-y-qué-pasa). */
   instancia: string
   reloj: () => string
+  /** Sesiones, permisos y comprobantes de supervisor (docs/SYNC.md#seguridad). */
+  acceso: ControlAcceso
   /** Un evento hizo fallar al hub y se rechazó como `error_interno`: para el registro. */
   alErrorInterno?: (error: unknown, eventoId: string) => void
 }
 
-/** Lo que el hub sabe del dispositivo de una conexión (lo da la autenticación, tarea 0.7). */
+/** Lo que el hub sabe del dispositivo de una conexión (lo da su token). */
 export interface Conexion {
   dispositivoId: string
   tipo: TipoDispositivo
   /** Si el dispositivo fue revocado, cuándo. */
   revocadoEn: string | null
+}
+
+export type VeredictoAcceso =
+  | { ok: true; autorizadoPorId: string | null; autorizacionId: string | null }
+  | { ok: false; motivo: string; cuarentena?: boolean }
+
+/**
+ * Quién puede crear cada evento. El hub no confía en el usuario que dice el evento: lo compara
+ * con la sesión, que debe ser de ese dispositivo y estar abierta a la hora del evento. El permiso
+ * se evalúa con el rol al recibirlo; sin permiso, vale un comprobante de supervisor.
+ */
+export interface ControlAcceso {
+  /** `pedido`: el estado del pedido antes del evento (algunos permisos dependen de él). */
+  verificar(conexion: Conexion, evento: EventoNuevo, pedido: EstadoPedido | null): VeredictoAcceso
+  /** El evento se guardó: corre en la misma transacción (usa el comprobante y la sesión). */
+  registrarUso(evento: EventoNuevo, veredicto: Extract<VeredictoAcceso, { ok: true }>): void
 }
 
 /** Ventana en que se acepta la hora estimada del dispositivo para el día operativo. */
@@ -43,7 +61,7 @@ const DESPUES_MAX_MS = 60 * 1000
 
 /** Un evento real ocupa unos cientos de bytes; más que esto es un error o un abuso. */
 const MAX_CONTENIDO = 64 * 1024
-/** Eventos en cuarentena por dispositivo revocado: más que esto se rechaza. */
+/** Eventos en cuarentena por dispositivo: más que esto se rechaza. */
 const MAX_CUARENTENA = 500
 
 /**
@@ -298,20 +316,20 @@ export class HubSync {
       return this.rechazar(conexion, datos, 'dispositivo_distinto', recibidoEn)
     }
     if (conexion.revocadoEn) {
-      // Lo hecho antes de revocarlo lo revisa el gerente; lo de después no vale. La hora la pone
-      // el dispositivo, así que la cuarentena tiene tope.
+      // Lo hecho antes de revocarlo lo revisa el gerente; lo de después no vale.
       const antes = Date.parse(evento.hora_estimada_hub) < Date.parse(conexion.revocadoEn)
-      if (antes && this.almacen.cuarentenasDe(conexion.dispositivoId) < MAX_CUARENTENA) {
-        this.almacen.guardarCuarentena({
-          eventoId: id,
-          dispositivoId: conexion.dispositivoId,
-          motivo: 'dispositivo_revocado',
-          contenido: datos.contenido,
-          recibidoEn,
-        })
-        return { resultado: { id, estado: 'cuarentena' }, aceptado: null }
-      }
-      return this.rechazar(conexion, datos, 'dispositivo_revocado', recibidoEn)
+      return antes
+        ? this.aCuarentena(conexion, datos, 'dispositivo_revocado', recibidoEn)
+        : this.rechazar(conexion, datos, 'dispositivo_revocado', recibidoEn)
+    }
+
+    // 3b. Sesión y permiso. Una sesión que el hub no conoce (p. ej. tras restaurarlo) va a
+    // cuarentena: el evento pudo ser legítimo.
+    const acceso = this.config.acceso.verificar(conexion, evento, this.pedido(evento.agregado_id))
+    if (!acceso.ok) {
+      return acceso.cuarentena
+        ? this.aCuarentena(conexion, datos, acceso.motivo, recibidoEn)
+        : this.rechazar(conexion, datos, acceso.motivo, recibidoEn)
     }
 
     // 4. Dependencias dentro del lote y secuencia base.
@@ -340,7 +358,7 @@ export class HubSync {
           ? { numero_dia: this.almacen.aperturasDelDia(dia) + 1 }
           : {},
       afecta: [],
-      autorizado_por_id: null,
+      autorizado_por_id: acceso.autorizadoPorId,
     } as EventoPedido
 
     // 6. Aplicar a cada pedido y decidir.
@@ -367,6 +385,7 @@ export class HubSync {
 
     // 7. Guardar.
     this.almacen.guardarEvento(candidato, contenido, agregados)
+    this.config.acceso.registrarUso(evento, acceso)
     if (conflicto) {
       this.almacen.guardarConflicto({
         id: nuevoId(),
@@ -421,6 +440,25 @@ export class HubSync {
       },
       conflicto: this.almacen.conflictoDe(evento.id)?.tipo ?? null,
     }
+  }
+
+  /** La hora la pone el dispositivo: por eso la cuarentena tiene tope por dispositivo. */
+  private aCuarentena(
+    conexion: Conexion,
+    datos: Identificado,
+    motivo: string,
+    recibidoEn: string,
+  ): { resultado: ResultadoEvento; aceptado: null } {
+    if (this.almacen.cuarentenasDe(conexion.dispositivoId) >= MAX_CUARENTENA)
+      return this.rechazar(conexion, datos, motivo, recibidoEn)
+    this.almacen.guardarCuarentena({
+      eventoId: datos.id,
+      dispositivoId: conexion.dispositivoId,
+      motivo,
+      contenido: datos.contenido,
+      recibidoEn,
+    })
+    return { resultado: { id: datos.id, estado: 'cuarentena' }, aceptado: null }
   }
 
   /** Un evento sin id se identifica por su huella. */

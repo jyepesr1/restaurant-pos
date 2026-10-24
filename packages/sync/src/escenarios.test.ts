@@ -7,6 +7,7 @@ import { AlmacenMemoria } from './hub/almacen'
 import { AlmacenSqlite } from './hub/almacen-sqlite'
 import { HubSync } from './hub/hub'
 import { SalaSync } from './hub/sala'
+import { accesoLibre } from './pruebas/acceso'
 import { type Nodo, RedSimulada } from './pruebas/red'
 
 // Escenarios de aceptación de la tarea 0.6 (docs/SYNC.md#pruebas-de-aceptación-tarea-06).
@@ -55,6 +56,7 @@ function montar(opciones: { almacen?: 'sqlite' | 'memoria'; caer?: number } = {}
       restauranteId,
       zonaHoraria: 'America/Bogota',
       inicioDiaOperativo: '06:00',
+      acceso: accesoLibre,
       instancia: estado.instancia,
       reloj: red.horaIso,
     })
@@ -558,6 +560,7 @@ describe('hub: validaciones', () => {
       restauranteId: '',
       zonaHoraria: 'America/Bogota',
       inicioDiaOperativo: '06:00',
+      acceso: accesoLibre,
       instancia: 'hub-1',
       reloj: m.red.horaIso,
     })

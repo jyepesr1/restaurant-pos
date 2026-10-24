@@ -102,7 +102,7 @@ El estado de una mesa (libre, ocupada, con pedido enviado, precuenta, por pagar,
 | `Rol` | 0 | V | `nombre`, `sistema` (los de fábrica no se archivan) |
 | `RolPermiso` | 0 | V | `rol_id`, `permiso` |
 | `Sesion` | 0 | L (hub) | `usuario_id`, `dispositivo_id`, `secreto_hash`, `inicio`, `ultimo_uso` (avanza también con los eventos recibidos), `cerrada_en` |
-| `Autorizacion` | 0 | L (hub) | Comprobante de un solo uso emitido cuando un supervisor escribe su PIN: `supervisor_id`, `accion`, `agregado_id`, `evento_id` que autoriza, `emitida_en`, `usada_en`. Al aceptar el evento, el hub copia el supervisor en `autorizado_por_id` del evento. |
+| `Autorizacion` | 0 | L (hub) | Comprobante de un solo uso emitido cuando un supervisor escribe su PIN: `supervisor_id`, `accion`, `agregado_id`, `evento_id` que autoriza, `contenido_hash` (huella SHA-256 del evento exacto que se autorizó), `sesion_id` que lo pidió, `emitida_en`, `usada_en`. Al aceptar el evento, el hub copia el supervisor en `autorizado_por_id` del evento. |
 | `Marcacion` | 1 | E | Evento `MarcacionRegistrada`: `usuario_id`, `tipo` (`entrada`, `salida`) |
 
 Las tablas de credenciales **solo existen en el hub** y nunca se sincronizan (ADR-008).
@@ -132,7 +132,8 @@ Las claves de permiso son fijas y están definidas en `packages/core`; lo único
 | `agotar_producto` | ✓ | ✓ | ✓ | | ✓ | |
 | `editar_catalogo`, `editar_precios` | ✓ | ✓ | | | | |
 | `administrar_usuarios`, `administrar_dispositivos` | ✓ | | | | | |
-| `ver_reportes` | ✓ | ✓ | propios | propios | | ✓ (fiscal) |
+| `ver_reportes` | ✓ | ✓ | | | | ✓ (fiscal) |
+| `ver_reportes_propios` | | | ✓ | ✓ | | |
 
 Una acción está permitida si el usuario tiene el permiso **o** si el evento trae un comprobante válido de un supervisor que lo tiene. Reglas adicionales: pagos, cierres y movimientos de caja **solo desde un dispositivo `caja`**; el supervisor no puede autorizarse a sí mismo.
 

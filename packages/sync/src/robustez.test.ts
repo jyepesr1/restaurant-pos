@@ -6,6 +6,7 @@ import { AlmacenMemoria } from './hub/almacen'
 import { HubSync } from './hub/hub'
 import { huella, huellaEvento, jsonCanonico, PROFUNDIDAD_MAXIMA } from './huella'
 import type { MensajeDispositivo, MensajeHub } from './protocolo'
+import { accesoLibre } from './pruebas/acceso'
 import {
   AHORA,
   abrirPedido,
@@ -115,6 +116,7 @@ describe('hub: entradas que no deben tumbarlo', () => {
       restauranteId: '',
       zonaHoraria: 'America/Bogota',
       inicioDiaOperativo: '06:00',
+      acceso: accesoLibre,
       instancia: 'hub-1',
       reloj: m.red.horaIso,
       alErrorInterno: (_error, id) => errores.push(id),

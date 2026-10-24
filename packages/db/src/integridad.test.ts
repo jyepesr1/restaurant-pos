@@ -193,9 +193,7 @@ describe('runner de migraciones', () => {
   it('detecta una migración editada después de aplicarse', () => {
     const db = abrirBase(':memory:')
     aplicarMigraciones(db)
-    const editadas = [
-      { ...MIGRACIONES[0], version: 1, nombre: 'inicial', sql: `${MIGRACIONES[0]?.sql} ` },
-    ]
+    const editadas = MIGRACIONES.map((m, i) => (i === 0 ? { ...m, sql: `${m.sql} ` } : m))
 
     expect(() => aplicarMigraciones(db, editadas)).toThrow(/cambió después de aplicarse/)
   })

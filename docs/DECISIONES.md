@@ -234,17 +234,24 @@ Cumple a la vez la trazabilidad total del brief, la sincronización sin pérdida
 
 ### Decisión
 
-- El usuario entra **solo con su PIN** de 4 a 6 dígitos (decisión del dueño: un toque menos).
+- El usuario entra **solo con su PIN** de **4 dígitos** (decisión del dueño del 24-oct-2026: un toque menos; se le ofrecieron 6). Con diez mil combinaciones, lo que protege es que **solo un dispositivo emparejado puede probar PIN**, la espera creciente y el aviso al administrador; los PIN triviales (`0000`, `1234`, `9876`) no se generan.
 - Como el PIN identifica a la persona, debe ser único en el restaurante. Para que un PIN repetido no delate el de otro, **el sistema genera los PIN al azar**; el administrador no los escoge.
 - El PIN se verifica **en el hub**, que abre una sesión. El hub guarda solo una huella del PIN con clave secreta (HMAC-SHA256), en tablas que **solo existen en el hub** y nunca se sincronizan. Con un millón de combinaciones, un hash lento no protege a quien tenga la base y la clave; lo que protege es que la clave no salga del hub y que el respaldo se cifre.
 - La clave HMAC vive en la carpeta de datos del hub y va dentro del respaldo (que se protege como dato sensible); sin ella, restaurar el hub obliga a regenerar todos los PIN.
 - Unicidad entre usuarios activos; al desactivar un usuario su PIN se libera. El administrador regenera el PIN de quien lo olvide.
-- Espera creciente tras intentos fallidos **por dispositivo** (tope de 60 s), también para el PIN de supervisor. Por restaurante no se bloquea, para que un celular no deje sin acceso a todo el local: se avisa al administrador. La auditoría guarda conteos, nunca el PIN escrito.
-- El hub **no confía** en el usuario, dispositivo ni restaurante que diga el evento: los toma de la sesión y del token.
+- Espera creciente tras intentos fallidos **por dispositivo** (dos errores sin espera; luego 2, 4, 8… s hasta 60 s), también para el PIN de supervisor; para aprobar un emparejamiento, por IP. Por restaurante no se bloquea, para que un celular no deje sin acceso a todo el local: con 20 fallos en 10 minutos se avisa al administrador. La auditoría guarda conteos, nunca el PIN escrito.
+- Un PIN que no existe y uno que existe pero no tiene el permiso dan **la misma respuesta**: así nadie descubre que un PIN es de alguien del restaurante.
+- El hub **no confía** en el usuario, dispositivo ni restaurante que diga el evento: los compara con la sesión y el token, y si no cuadran rechaza el evento.
 - Cada dispositivo se empareja con un QR de un solo uso (vence en 5 min, aprobado con PIN de administrador) y recibe un **token propio y revocable**.
-- Autorización de supervisor en el momento: el gerente escribe su PIN en el dispositivo del mesero sin cerrarle la sesión; el hub emite un **comprobante de un solo uso** para esa acción y ese pedido, y el evento lo lleva. El supervisor debe tener el permiso y no puede autorizarse a sí mismo.
+- Autorización de supervisor en el momento: el gerente escribe su PIN en el dispositivo del mesero sin cerrarle la sesión; el hub emite un **comprobante de un solo uso** para ese evento exacto (su huella SHA-256) y esa sesión, y el evento lo lleva. El supervisor debe tener el permiso y no puede autorizarse a sí mismo.
+- Cada evento va firmado (HMAC) con un secreto de sesión que el hub deriva de su clave: nadie crea eventos a nombre de otro con un `sesion_id` viejo. Las operaciones con hash corren en JavaScript puro (`@noble/hashes`) porque por HTTP el navegador no ofrece `crypto.subtle`.
+- Aprobar un emparejamiento se hace desde un equipo ya emparejado (la caja); solo el primero de un hub nuevo se aprueba sin token.
 - Sin conexión con el hub no hay inicio de sesión nuevo ni autorizaciones: el dispositivo conserva la sesión abierta y las acciones que piden supervisor esperan a que vuelva la red.
 - Riesgo aceptado: con HTTP (ADR-001) el PIN viaja sin cifrar por el Wi-Fi; por eso debe ser una red solo del personal.
+- Al instalar, el hub crea el usuario «Administrador» y muestra su PIN **una sola vez** en la ventana del hub. Si la salida no es una ventana (servicio de Windows con log a archivo), lo deja en `pin-administrador.txt` en la carpeta de datos, solo legible por el hub, para leerlo y borrarlo.
+- Riesgo conocido: si alguien reemplaza el archivo de la clave por otra clave válida, el hub no lo detecta; ningún PIN funciona y hay que regenerarlos como si se hubiera perdido.
+
+**Implementación (tarea 0.7):** permisos y roles de fábrica en `packages/core/src/acceso`; emparejamiento, PIN, sesiones, comprobantes y revocación en `apps/hub/src/acceso` (API HTTP del hub); el hub de sincronización los consulta en cada evento a través de `ControlAcceso`.
 
 Detalle del protocolo en [SYNC.md](SYNC.md#seguridad).
 
@@ -254,6 +261,7 @@ Detalle del protocolo en [SYNC.md](SYNC.md#seguridad).
 |---|---|
 | Tocar el nombre o la foto y luego el PIN | Más seguro y permite PIN repetidos; el dueño prefirió un toque menos. |
 | Verificar el PIN en el celular | Un PIN de 6 dígitos (un millón de combinaciones) se adivina en minutos si su hash está en el teléfono. |
+| PIN de 6 dígitos | Cien veces más difícil de adivinar; el dueño prefirió 4 por rapidez. Se puede revisar si el piloto muestra intentos sospechosos. |
 
 ---
 

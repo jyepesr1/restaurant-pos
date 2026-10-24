@@ -1,3 +1,14 @@
+export { firmarEvento, huellaAutorizable, igualesSinFiltrarTiempo } from './acceso/firma'
+export {
+  type ClaveRol,
+  esPermiso,
+  PERMISOS,
+  type Permiso,
+  permisoPara,
+  ROLES_DE_FABRICA,
+  SOLO_DESDE_CAJA,
+} from './acceso/permisos'
+export { jsonCanonico, PROFUNDIDAD_MAXIMA } from './canonico'
 export * from './dinero'
 export * from './eventos/comun'
 export {

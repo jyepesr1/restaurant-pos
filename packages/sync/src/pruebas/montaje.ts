@@ -6,6 +6,7 @@ import { AlmacenMemoria } from '../hub/almacen'
 import { AlmacenSqlite } from '../hub/almacen-sqlite'
 import { HubSync } from '../hub/hub'
 import { SalaSync } from '../hub/sala'
+import { accesoLibre } from './acceso'
 import { type Nodo, RedSimulada } from './red'
 
 // Montaje común de las pruebas de sincronización: un hub sobre SQLite real y una red simulada.
@@ -61,6 +62,7 @@ export function montar(opciones: { almacen?: 'sqlite' | 'memoria' } = {}) {
       restauranteId,
       zonaHoraria: 'America/Bogota',
       inicioDiaOperativo: '06:00',
+      acceso: accesoLibre,
       instancia: estado.instancia,
       reloj: red.horaIso,
     })

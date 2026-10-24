@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance } from 'fastify'
+import { rutasAcceso } from './acceso/rutas'
+import type { ServicioAcceso } from './acceso/servicio'
 import { type OpcionesDiagnostico, rutasDiagnostico } from './diagnostico'
 
 export interface OpcionesServidor {
@@ -9,6 +11,8 @@ export interface OpcionesServidor {
   dirApp?: string
   /** Sin esta opción no se exponen las rutas de diagnóstico. */
   diagnostico?: OpcionesDiagnostico
+  /** Sin esta opción no se exponen emparejamiento, sesiones ni autorizaciones. */
+  acceso?: ServicioAcceso
   /** Versión de la base, para mostrarla en el chequeo de salud. */
   versionBase?: number
   logger?: boolean
@@ -17,6 +21,7 @@ export interface OpcionesServidor {
 export function crearServidor({
   dirApp,
   diagnostico,
+  acceso,
   versionBase,
   logger = false,
 }: OpcionesServidor = {}): FastifyInstance {
@@ -25,6 +30,9 @@ export function crearServidor({
 
   if (diagnostico) {
     app.register(rutasDiagnostico, diagnostico)
+  }
+  if (acceso) {
+    app.register(rutasAcceso, { acceso })
   }
 
   // Cada dispositivo consulta la salud cada pocos segundos: no llenar el log con eso.

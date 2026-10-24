@@ -8,7 +8,8 @@ Se implementa en `packages/sync` (tarea 0.6, dispositivo ↔ hub). El nivel hub 
 - **`foto`**: un dispositivo nuevo o sin datos pide `traer desde: 0`; la foto llega cuando el volumen lo justifique (Fase 1).
 - **`ConflictoDetectado`** se registra en la tabla `conflicto` del hub, no como evento; la pantalla de caja lo consultará al hub (Fase 1).
 - **Pedido de rescate**: un ítem que llega a un pedido ya cerrado queda como conflicto `pedido_cerrado` (guardado, sin aplicar); el rescate automático llega con la caja (Fase 1).
-- **Sesiones y tokens**: el hub recibe la `Conexion` de un autenticador; la verificación real del token, la sesión y el PIN es la tarea 0.7.
+- **Sesiones y tokens** (tarea 0.7): el emparejamiento, el inicio de sesión, el cierre y las autorizaciones van por la **API HTTP** del hub (`POST /api/emparejamientos`, `/api/emparejar`, `/api/sesiones`, `/api/sesiones/cerrar`, `/api/autorizaciones`, `/api/dispositivos/:id/revocar`), con el token en `Authorization: Bearer`; no por el WebSocket. El WebSocket solo lleva eventos.
+- **Cierre por inactividad**: lo hace el dispositivo (pide el PIN otra vez tras `sesion_inactividad_min`), porque el hub no ve el uso sin conexión. El hub cierra una sesión al cerrarla el usuario, al entrar otra persona en ese dispositivo, al revocar el dispositivo o al archivar al usuario.
 - **Catálogo y suscripciones**: por ahora solo hay eventos de pedido y todos los ven; el filtro por tipo de dispositivo y `catalogo`/`comanda` llegan con esos datos.
 - **WebSocket real, IndexedDB y el escenario 14 (Playwright)** se conectan en la tarea 0.10, con la pantalla de demo. El límite de tamaño del mensaje en el WebSocket también.
 - **`afecta`** siempre va vacío: en la Fase 0 ningún evento se aplica fuera de su agregado y sus `relacionados`. Lo mismo los conflictos `item_movido`, `mesa_bloqueada` y `precio_distinto`: llegan con el bloqueo de mesas, mover ítems sin conexión y el catálogo (Fase 1).
@@ -61,6 +62,7 @@ flowchart LR
 | `usuario_id`, `dispositivo_id` | **El hub** | Se toman de la sesión y del token; lo que mande el cliente se ignora |
 | `restaurante_id` | **El hub** | Se toma del token del dispositivo |
 | `autorizacion_id`, `motivo` | Quien crea | Comprobante de supervisor emitido por el hub (ver [Seguridad](#seguridad)) |
+| `firma` | Quien crea | HMAC-SHA256 del evento con el secreto de la sesión (`firmarEvento`, sin `firma` ni `secuencia_base`). Solo viaja al hub: no se guarda con el evento ni cuenta para la huella de idempotencia |
 | `autorizado_por_id` | Hub | Supervisor del comprobante, copiado al aceptar; queda en el evento para siempre |
 | `hora_dispositivo` | Quien crea | Informativa; **nunca** se usa para ordenar |
 | `hora_estimada_hub` | Quien crea | `hora_dispositivo` + desfase aprendido en `bienvenido`. El hub la acepta solo si está entre 12 h antes y 1 min después de `recibido_en`; si no, usa `recibido_en` |
@@ -113,7 +115,7 @@ sequenceDiagram
 | `comanda` | hub → KDS | Comanda de sus estaciones (nueva, modificación o anulación) con ítems y modificadores |
 | `ping` / `pong` | dispositivo ↔ hub | El dispositivo mide latencia y comprueba al instante si el canal vive al volver a la pantalla |
 | `latido` | hub → dispositivos | Cada 5 s; sin nada durante 15 s, la conexión se da por muerta |
-| `iniciar_sesion`, `autorizar` | dispositivo → hub | PIN para abrir sesión, o PIN del supervisor para una acción y un `evento_id` concretos; el hub responde con la sesión y su secreto, o con el comprobante |
+| `iniciar_sesion`, `autorizar` | dispositivo → hub | PIN para abrir sesión, o PIN del supervisor para una acción y un `evento_id` concretos; el hub responde con la sesión y su secreto, o con el comprobante. Van por HTTP (ver el estado de la implementación arriba) |
 
 **Suscripciones por tipo de dispositivo:**
 - La **caja** recibe todo.
@@ -173,11 +175,16 @@ Si procesar un evento hace fallar al hub, pero el hub todavía puede guardar, el
 
 ## Seguridad
 
-- Un dispositivo se empareja escaneando un QR de la caja con un **código de un solo uso que vence en 5 minutos**, aprobado con el PIN de un administrador. El código se cambia por un token propio del dispositivo; el token nunca va en el QR.
-- El PIN abre una **sesión** en el hub (`iniciar_sesion`). Escribir otro PIN cambia de usuario al instante. La sesión se cierra tras `sesion_inactividad_min` sin uso.
+- Un dispositivo se empareja escaneando un QR de la caja con un **código de un solo uso que vence en 5 minutos**, aprobado con el PIN de un administrador **desde un equipo ya emparejado** (la caja). El código se cambia por un token propio del dispositivo; el token nunca va en el QR. La única excepción es el primer equipo de un hub recién instalado: se aprueba sin token, con una sola espera por intentos para todo el hub (una IP se cambia fácil).
+- El PIN abre una **sesión** en el hub (`iniciar_sesion`). Escribir otro PIN cambia de usuario al instante: la sesión anterior de ese dispositivo se cierra. La sesión se cierra tras `sesion_inactividad_min` sin uso (en el dispositivo).
+- En cada evento el hub exige, en este orden: sesión conocida (si no, **cuarentena**: pudo perderse al restaurar), del mismo dispositivo, del mismo usuario que dice el evento, abierta a la hora del evento (60 s de margen), usuario activo, y el permiso del rol o un comprobante válido. Pagos y cierres, además, solo desde un dispositivo `caja`. Si algo falla, rechaza con el motivo (`sin_sesion`, `sesion_ajena`, `usuario_distinto`, `sesion_cerrada`, `usuario_inactivo`, `sin_permiso`, `autorizacion_invalida`, `solo_caja`, `solo_hub`).
 - Intentos fallidos de PIN: espera creciente **por dispositivo**, con tope de 60 s, también para el PIN de supervisor. Por restaurante no se bloquea (un celular no puede dejar sin acceso a todo el local en pleno servicio): si hay muchos fallos en 10 minutos, se avisa al administrador. La auditoría guarda conteos por ventana, nunca el PIN escrito.
-- El dispositivo guarda un **secreto de sesión** que recibe al iniciar sesión; el `sesion_id` que va en los eventos no basta para firmar como otro usuario.
-- La autorización de supervisor es un **comprobante de un solo uso** que emite el hub para una acción, un agregado y un `evento_id` concretos. Vale si el evento se creó (según su `hora_estimada_hub`) dentro de los 2 minutos siguientes a la emisión, aunque llegue al hub más tarde. El hub copia el supervisor en `autorizado_por_id`.
+- El dispositivo guarda un **secreto de sesión** que recibe al iniciar sesión y que piden el cierre, las autorizaciones y la revocación. En los eventos basta el `sesion_id`, porque viajan por la conexión del token del dispositivo y el hub exige que la sesión sea de ese dispositivo.
+- La autorización de supervisor es un **comprobante de un solo uso** que emite el hub para el **evento exacto**: la app arma el evento, manda su huella (`huellaAutorizable`, SHA-256 sin `autorizacion_id`, `firma` ni `secuencia_base`) junto con el PIN del supervisor, y el comprobante solo vale para ese contenido, desde esa sesión. Vale si el evento se creó (según su `hora_estimada_hub`, que va dentro de la huella) dentro de los 2 minutos siguientes a la emisión, y llega al hub en menos de 12 horas. El hub copia el supervisor en `autorizado_por_id`.
+- Cada evento va **firmado** con el secreto de su sesión. El secreto sale de la clave del hub (HMAC del id de la sesión), así que el hub comprueba la firma sin guardarlo; el dispositivo lo olvida al cerrar la sesión. Así nadie puede crear eventos a nombre de otro con un `sesion_id` viejo que quedó en el celular. Si el hub perdió su clave y creó otra, lo pendiente de sesiones anteriores va a cuarentena.
+- Un cambio del administrador no borra trabajo hecho antes: si el evento es anterior a que archivaran al usuario o le quitaran un permiso, va a cuarentena en vez de rechazarse.
+- Cambiar los modificadores de un ítem ya enviado de modo que cueste menos exige `anular_item_enviado`, como una anulación parcial.
+- La espera por PIN errados no se reinicia con un acierto: se olvida tras 10 minutos sin errores. Se avisa al administrador con 20 fallos en 10 minutos en el hub o 15 seguidos de un mismo equipo (por ahora en la ventana del hub).
 - Los permisos se evalúan con el rol del usuario **al recibir** el evento.
 - La sesión se valida contra la hora del evento, no contra la de recepción: un mesero que trabajó 40 minutos sin conexión no pierde sus pedidos porque su sesión "venció" mientras tanto. Los eventos recibidos también cuentan como uso de la sesión.
 - Riesgo aceptado (ADR-001): con HTTP en la red local, PIN y token viajan sin cifrar; por eso el Wi-Fi debe ser solo del personal. El hub no registra cuerpos de mensajes en su log.

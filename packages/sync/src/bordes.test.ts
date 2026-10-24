@@ -178,7 +178,7 @@ describe('traer con varias páginas', () => {
     [TAMANO_PAGINA + 1, 2],
     [2 * TAMANO_PAGINA + 203, 3],
   ])(
-    'un dispositivo nuevo con %i eventos en el hub se pone al día en %i páginas',
+    'un dispositivo nuevo con %i eventos en el hub se pone al día en %i página(s)',
     async (total, paginas) => {
       const m = montar()
       const ana = m.red.dispositivo('ana')

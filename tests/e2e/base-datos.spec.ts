@@ -13,7 +13,8 @@ test('el hub de pruebas deja su base migrada y la toma en exclusiva', async ({
 
   const salud = await request.get('/api/salud')
   expect(salud.ok()).toBe(true)
-  expect(await salud.json()).toMatchObject({ version_base: 1 })
+  // Última migración: 0002 (comprobante de supervisor atado al evento, tarea 0.7).
+  expect(await salud.json()).toMatchObject({ version_base: 2 })
 
   const ruta = join(DIR_DATOS_E2E, 'pos.sqlite')
   expect(existsSync(ruta), `falta ${ruta}`).toBe(true)

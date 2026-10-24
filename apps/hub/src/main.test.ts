@@ -1,14 +1,15 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { aplicarMigraciones, versionActual } from '@pos/db'
+import { aplicarMigraciones, MIGRACIONES, versionActual } from '@pos/db'
 import { abrirBase } from '@pos/db/node'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 const DIR_HUB = fileURLToPath(new URL('..', import.meta.url))
+const ULTIMA = MIGRACIONES.length
 
 /** Un puerto libre del sistema, para no depender del 4000 (que puede estar en uso). */
 function puertoLibre(): Promise<number> {
@@ -84,19 +85,19 @@ describe('arranque del hub (proceso real)', () => {
     PUERTO: String(await puertoLibre()),
   })
 
-  it('con DIR_DATOS en una carpeta nueva crea pos.sqlite migrada a la versión 1', async () => {
+  it('con DIR_DATOS en una carpeta nueva crea pos.sqlite migrada a la última versión', async () => {
     const dirDatos = join(carpeta, 'nueva', 'datos')
     expect(existsSync(dirDatos)).toBe(false)
 
     hub = await arrancarHub(await entorno(dirDatos))
-    expect(hub.salida()).toContain('Base de datos actualizada a la versión 1.')
+    expect(hub.salida()).toContain(`Base de datos actualizada a la versión ${ULTIMA}.`)
     await hub.detener()
     hub = undefined
 
     const ruta = join(dirDatos, 'pos.sqlite')
     expect(existsSync(ruta)).toBe(true)
     const db = abrirBase(ruta)
-    expect(versionActual(db)).toBe(1)
+    expect(versionActual(db)).toBe(ULTIMA)
     expect(aplicarMigraciones(db)).toEqual([])
     expect(
       db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name = 'evento'").get()?.n,
@@ -107,24 +108,53 @@ describe('arranque del hub (proceso real)', () => {
   it('al reiniciar con la misma carpeta no migra de nuevo y conserva los datos', async () => {
     const dirDatos = join(carpeta, 'datos')
     hub = await arrancarHub(await entorno(dirDatos))
+    expect(hub.salida()).toContain('El PIN del administrador quedó en')
     await hub.detener()
 
-    const ruta = join(dirDatos, 'pos.sqlite')
-    const db = abrirBase(ruta)
-    db.prepare(
-      "INSERT INTO restaurante (id, restaurante_id, creado_en, actualizado_en, version, nombre, config) VALUES ('01J00000000000000000000000', '01J00000000000000000000000', 'h', 'h', 1, 'Piloto', '{}')",
-    ).run()
-    ;(db as unknown as { close(): void }).close()
-
     hub = await arrancarHub(await entorno(dirDatos))
-    expect(hub.salida()).toContain('Base de datos en la versión 1.')
+    expect(hub.salida()).toContain(`Base de datos en la versión ${ULTIMA}.`)
     expect(hub.salida()).not.toContain('actualizada')
+    // El PIN se mostró una sola vez; el restaurante y sus roles no se duplican.
+    expect(hub.salida()).not.toContain('PIN del administrador quedó')
     await hub.detener()
     hub = undefined
 
-    const despues = abrirBase(ruta)
-    expect(despues.prepare('SELECT nombre FROM restaurante').all()).toEqual([{ nombre: 'Piloto' }])
+    const despues = abrirBase(join(dirDatos, 'pos.sqlite'))
+    expect(despues.prepare('SELECT nombre FROM restaurante').all()).toEqual([
+      { nombre: 'Mi restaurante' },
+    ])
+    expect(despues.prepare('SELECT count(*) AS n FROM rol').get()?.n).toBe(6)
     ;(despues as unknown as { close(): void }).close()
+  })
+
+  it('con el PIN que muestra al arrancar se empareja la caja y se entra', async () => {
+    const env = await entorno(join(carpeta, 'datos'))
+    hub = await arrancarHub(env)
+    // Sin ventana (salida a un proceso, como en un servicio) el PIN va a un archivo aparte.
+    const pin = readFileSync(join(env.DIR_DATOS, 'pin-administrador.txt'), 'utf8').trim()
+    const url = `http://127.0.0.1:${env.PUERTO}`
+    const post = (ruta: string, cuerpo: object, token?: string) =>
+      fetch(url + ruta, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(cuerpo),
+      })
+
+    const json = async (r: Promise<Response>) => (await (await r).json()) as Record<string, string>
+    const codigo = await json(post('/api/emparejamientos', { pin, nombre: 'Caja', tipo: 'caja' }))
+    const { token } = await json(post('/api/emparejar', { codigo: codigo.codigo }))
+    const sesion = await post('/api/sesiones', { pin }, token)
+
+    expect(sesion.status).toBe(201)
+    expect(((await sesion.json()) as { usuario: { rol: string } }).usuario.rol).toBe(
+      'Administrador',
+    )
+    // El log del hub no registra los cuerpos: ni el PIN ni el token quedan escritos.
+    expect(hub.salida()).not.toContain('"pin"')
+    expect(hub.salida()).not.toContain(token)
   })
 
   it('no arranca si la base es más nueva que la aplicación', async () => {

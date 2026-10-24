@@ -7,6 +7,7 @@ import {
   TABLAS_PROYECCION,
   TABLAS_VERSIONADAS,
 } from './esquema'
+import { MIGRACIONES } from './migraciones'
 import { aplicarMigraciones } from './migrar'
 import { abrirBase } from './node'
 import type { BaseSqlite, ValorSql } from './sqlite'
@@ -97,7 +98,7 @@ describe('migraciones', () => {
   it('crean la base desde cero y no repiten nada en una segunda corrida', () => {
     const db = abrirBase(':memory:')
 
-    expect(aplicarMigraciones(db)).toEqual([1])
+    expect(aplicarMigraciones(db)).toEqual(MIGRACIONES.map((m) => m.version))
     expect(aplicarMigraciones(db)).toEqual([])
   })
 

@@ -37,6 +37,26 @@ export class SalaSync {
     }
   }
 
+  /**
+   * Se revocó un dispositivo: sus conexiones abiertas dejan de recibir el salón desde ya y se
+   * le avisa. Lo que tenga pendiente todavía puede entregarlo (va a cuarentena).
+   */
+  revocar(dispositivoId: string, revocadoEn: string) {
+    for (const p of this.participantes) {
+      if (p.conexion?.dispositivoId !== dispositivoId) continue
+      p.conexion = { ...p.conexion, revocadoEn }
+      try {
+        p.enviar({
+          tipo: 'error',
+          codigo: 'token_revocado',
+          mensaje: 'Este equipo fue retirado del restaurante',
+        })
+      } catch {
+        this.participantes.delete(p)
+      }
+    }
+  }
+
   /** Latido para todas las conexiones (docs/SYNC.md: cada 5 s). */
   latir() {
     for (const p of this.participantes) if (p.conexion) p.enviar({ tipo: 'latido' })

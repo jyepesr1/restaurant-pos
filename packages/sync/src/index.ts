@@ -24,9 +24,16 @@ export {
   type Rechazo,
   type TipoConflicto,
 } from './hub/almacen'
-export { type Conexion, type ConfigHub, HubSync, pedidosDe } from './hub/hub'
+export {
+  type Conexion,
+  type ConfigHub,
+  type ControlAcceso,
+  HubSync,
+  pedidosDe,
+  type VeredictoAcceso,
+} from './hub/hub'
 export { type Autenticador, SalaSync } from './hub/sala'
-export { huella, jsonCanonico } from './huella'
+export { huella, huellaEvento, jsonCanonico } from './huella'
 export {
   type CodigoError,
   MensajeDispositivo,

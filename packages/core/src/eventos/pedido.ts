@@ -326,6 +326,14 @@ const sobre = {
   hora_dispositivo: HoraIso,
   hora_estimada_hub: HoraIso,
   secuencia_base: z.int().min(0),
+  /**
+   * HMAC del evento con el secreto de la sesión (`firmarEvento`): prueba que lo creó quien tenía
+   * la sesión abierta. Solo viaja al hub; no se guarda con el evento.
+   */
+  firma: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
 }
 
 /** Campos que agrega el hub al aceptar el evento. */
