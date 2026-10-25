@@ -155,6 +155,8 @@ Una acción está permitida si el usuario tiene el permiso **o** si el evento tr
 
 Agotado (86) no es un campo editable: son los eventos `ProductoAgotado` / `ProductoDisponible`, y la proyección `DisponibilidadProducto`.
 
+**Historial del catálogo** (tarea 1.1): cada cambio de un registro del catálogo deja una fila en la tabla inmutable `catalogo_cambio` del hub, con la versión que tomó del contador, la entidad, el registro, cómo estaba (`antes`), cómo quedó (`despues`), quién, desde qué equipo y cuándo. Ese es el `CatalogoCambiado` de la tabla de eventos de abajo. No va a la tabla `evento` ni a la secuencia de los dispositivos: a ellos les llega el aviso `catalogo` ([SYNC.md](SYNC.md#catálogo-y-configuración)). Con el historial, el hub sabe qué precio valía en cada `catalogo_version` ([DINERO.md](DINERO.md#precio-copiado)). La migración 3 lo llenó con el estado de cada registro en ese momento.
+
 ## Configuración del restaurante
 
 `Restaurante.config` es un objeto validado con Zod. Parámetros de dinero y operación (valores por defecto del piloto):
@@ -224,7 +226,7 @@ Cada tipo tiene su esquema Zod en `packages/core` (tarea 0.5). Los montos que sa
 | `ProductoAgotado` / `ProductoDisponible` | producto | `producto_id`, `variante_id` | `agotar_producto` |
 | `TurnoAbierto` | turno_caja | `caja_id`, `base` (pesos) | `abrir_turno_caja` |
 | `MovimientoCajaRegistrado` | turno_caja | `tipo` (`entrada`, `salida`, `pago_propinas`, `retiro_parcial`, `apertura_cajon`), `monto`; en `pago_propinas`, los días del fondo y a quién se pagó | `movimiento_caja` o `abrir_cajon_sin_venta` |
-| `CatalogoCambiado` | catalogo | `entidad`, `registro_id`, `antes`, `despues`, `catalogo_version` | `editar_catalogo` o `editar_precios` |
+| `CatalogoCambiado` | catalogo | `entidad`, `registro_id`, `antes`, `despues`, `catalogo_version`. Se guarda en `catalogo_cambio`, no en `evento` (ver [Catálogo](#catálogo)) | `editar_catalogo`, o `editar_precios` si solo cambian precios |
 | `ArqueoRegistrado` | turno_caja | `conteo` por denominación (`{ "50000": 3, … }`), `contado` por medio de pago | `cerrar_turno_caja` |
 | `TurnoCerrado` | turno_caja | `esperado`, `contado` y `diferencia` **por medio de pago**, `justificacion` | `cerrar_turno_caja` |
 | `ConflictoDetectado` | el del evento | `tipo` (lista cerrada abajo), `evento_id`, descripción — lo emite el hub, uno por evento | — |

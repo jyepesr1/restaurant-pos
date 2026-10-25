@@ -71,9 +71,10 @@ export function PanelLateral({
   if (!abierto) return null
   return createPortal(
     <div className="fixed inset-0 z-40">
+      {/* El fondo cierra al tocarlo; para el lector de pantalla ya está la X del panel. */}
       <button
         type="button"
-        aria-label="Cerrar"
+        aria-hidden="true"
         tabIndex={-1}
         className="absolute inset-0 bg-black/40"
         onClick={() => cerrar.current()}

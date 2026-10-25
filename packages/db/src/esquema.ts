@@ -23,7 +23,12 @@ export const TABLAS_VERSIONADAS = [
 ] as const
 
 /** Solo se agregan filas: la base rechaza UPDATE y DELETE. */
-export const TABLAS_INMUTABLES = ['evento', 'evento_agregado', 'evento_rechazado'] as const
+export const TABLAS_INMUTABLES = [
+  'evento',
+  'evento_agregado',
+  'evento_rechazado',
+  'catalogo_cambio',
+] as const
 
 /** Estado calculado a partir de los eventos; se puede borrar y reconstruir. */
 export const TABLAS_PROYECCION = [

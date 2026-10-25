@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Boton } from '../ui/Boton'
+import { Carta } from './Carta'
 import { sala, useSala } from './contexto'
 import { Emparejar } from './Emparejar'
 import { Entrar } from './Entrar'
@@ -37,6 +38,7 @@ export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLS
   if (!estado.sesion) return <Entrar />
   if (!estado.catalogo) return <SinCatalogo />
   if (ruta === '/equipos') return <Equipos />
+  if (ruta === '/carta') return <Carta />
   if (ruta === '/pedido') return <TomaPedido key={parametros.get('mesa')} />
   return <Mesas />
 }
@@ -44,6 +46,9 @@ export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLS
 function EquipoRechazado({ codigo, mensaje }: { codigo: string; mensaje: string }) {
   const { pendientes } = useSala()
   const [confirmando, setConfirmando] = useState(false)
+  useEffect(() => {
+    document.title = 'Equipo rechazado · POS'
+  }, [])
   const olvidar = () => void sala.olvidarEquipo()
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-4">

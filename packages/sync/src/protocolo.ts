@@ -47,6 +47,8 @@ export type MensajeHub =
   | { tipo: 'nuevo'; evento: EventoPedido; hasta_anterior: number; hasta: number }
   | { tipo: 'pong'; marca: string }
   | { tipo: 'latido' }
+  /** El catálogo cambió y quedó en esta versión: el dispositivo lo vuelve a pedir por HTTP. */
+  | { tipo: 'catalogo'; version: number }
 
 /** Tipos de dispositivo y lo que ve cada uno (docs/SYNC.md#mensajes-por-websocket). */
 export type TipoDispositivo = 'mesero' | 'caja' | 'kds'

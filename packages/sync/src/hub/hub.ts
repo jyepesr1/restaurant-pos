@@ -29,6 +29,16 @@ export interface ConfigHub {
   acceso: ControlAcceso
   /** Un evento hizo fallar al hub y se rechazó como `error_interno`: para el registro. */
   alErrorInterno?: (error: unknown, eventoId: string) => void
+  /**
+   * Compara lo que copió un ítem (precio, extras, impuesto) con el catálogo en su
+   * `catalogo_version` (docs/DINERO.md#precio-copiado). Sin él, no se revisa.
+   */
+  precios?: RevisorPrecios
+}
+
+/** Devuelve qué no coincide con el catálogo, o `null` si todo coincide. */
+export interface RevisorPrecios {
+  revisar(evento: EventoNuevo): string | null
 }
 
 /** Lo que el hub sabe del dispositivo de una conexión (lo da su token). */
@@ -381,6 +391,16 @@ export class HubSync {
       const mesa = this.mesaOcupada(evento)
       if (mesa === 'rechazar') return this.rechazar(conexion, datos, 'mesa_ocupada', recibidoEn)
       conflicto = mesa
+    } else if (evento.tipo === 'ItemAgregado') {
+      // Un precio que no cuadra con el catálogo se acepta (el ítem ya se pidió, quizá sin
+      // conexión) y la caja lo revisa (docs/SYNC.md#rechazos-cuarentena-y-conflictos).
+      const diferencia = this.config.precios?.revisar(evento)
+      if (diferencia)
+        conflicto = {
+          tipo: 'precio_distinto',
+          descripcion: diferencia,
+          agregadoId: evento.agregado_id,
+        }
     }
 
     // 7. Guardar.

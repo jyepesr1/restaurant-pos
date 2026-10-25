@@ -10,6 +10,7 @@ import { asegurarAdministrador, asegurarRestaurante, asegurarRoles } from './acc
 import { Intentos } from './acceso/intentos'
 import { cargarClave } from './acceso/secretos'
 import { ServicioAcceso } from './acceso/servicio'
+import { revisorPrecios } from './precios'
 
 // Lo que hacen al arrancar el hub y el seed: abrir la base de la carpeta de datos y preparar el
 // acceso. Una sola carpeta, un solo proceso: la base se abre en exclusiva.
@@ -121,6 +122,7 @@ export function prepararSincronizacion(
     reloj: () => new Date().toISOString(),
     acceso,
     alErrorInterno,
+    precios: revisorPrecios(db, restauranteId),
   })
   return new SalaSync(hub, acceso.autenticar)
 }

@@ -17,7 +17,8 @@ const ESTADOS: Record<EstadoMesaDemo, { tono: Tono; icono: NombreIcono; texto: s
 }
 
 export function Mesas() {
-  const { catalogo, equipo } = useSala()
+  const { catalogo, equipo, sesion } = useSala()
+  const editaCarta = sesion?.permisos.some((p) => p === 'editar_catalogo' || p === 'editar_precios')
   const pedidos = usePedidos()
   if (!catalogo) return null
 
@@ -33,8 +34,14 @@ export function Mesas() {
           <Etiqueta tono="proceso" icono="fuego">
             {`${conteo('tomando') + conteo('en_cocina')} atendiendo`}
           </Etiqueta>
+          <span className="flex-1" />
+          {editaCarta && (
+            <Boton variante="secundario" onClick={() => navegar('/carta')}>
+              Carta
+            </Boton>
+          )}
           {equipo?.tipo === 'caja' && (
-            <Boton variante="secundario" className="ml-auto" onClick={() => navegar('/equipos')}>
+            <Boton variante="secundario" onClick={() => navegar('/equipos')}>
               Aprobar un equipo
             </Boton>
           )}

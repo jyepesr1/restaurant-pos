@@ -103,12 +103,18 @@ export function TomaPedido() {
 
   const quitar = (estado: EstadoPedido, item: ItemPedido) =>
     enOrden(async () => {
+      // Deshacer lo vuelve a agregar igual (con otro id: el quitado no se reutiliza), con la
+      // versión de catálogo con que se agregó: el precio era el de esa carta.
+      const original = (await sala.sync?.locales())?.find(
+        (l) => l.evento.tipo === 'ItemAgregado' && l.evento.datos.item_id === item.id,
+      )?.evento
+      const copia =
+        original?.tipo === 'ItemAgregado'
+          ? { ...original.datos, item_id: nuevoId() }
+          : copiaDe(item, catalogo.version)
       await sala.registrar('ItemQuitado', estado.id, { item_id: item.id })
-      // Deshacer lo vuelve a agregar igual (con otro id: el quitado no se reutiliza).
       avisar(`Quitaste ${item.nombre}`, () =>
-        enOrden(() =>
-          sala.registrar('ItemAgregado', estado.id, copiaDe(item, catalogo.version)).then(() => {}),
-        ),
+        enOrden(() => sala.registrar('ItemAgregado', estado.id, copia).then(() => {})),
       )
     })
 

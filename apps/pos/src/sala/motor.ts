@@ -35,6 +35,52 @@ export interface Sesion {
   ultimoUso: number
 }
 
+/** Un cambio del editor de la carta: crea el registro si no existe, o cambia esos campos. */
+export interface CambioCatalogo {
+  entidad:
+    | 'impuesto'
+    | 'estacion'
+    | 'categoria'
+    | 'producto'
+    | 'variante'
+    | 'grupo_modificador'
+    | 'producto_grupo_modificador'
+    | 'modificador'
+  id: string
+  datos: Record<string, string | number | boolean | null>
+}
+
+interface Registro {
+  id: string
+  version: number
+  activo: boolean
+}
+
+/** Lo que devuelve `GET /api/catalogo/edicion`: las filas del catálogo, también las archivadas. */
+export interface CatalogoEdicion {
+  version: number
+  impuestos: (Registro & { nombre: string; tipo: 'inc' | 'iva' | 'exento'; tarifa: number })[]
+  estaciones: (Registro & { nombre: string; orden: number })[]
+  categorias: (Registro & { nombre: string; orden: number; estacion_id: string | null })[]
+  productos: (Registro & {
+    categoria_id: string
+    nombre: string
+    descripcion: string | null
+    precio: number
+    impuesto_id: string
+    favorito: boolean
+  })[]
+  variantes: (Registro & { producto_id: string; nombre: string; precio: number; orden: number })[]
+  grupos: (Registro & { nombre: string; minimo: number; maximo: number })[]
+  enlaces: (Registro & { producto_id: string; grupo_id: string; orden: number })[]
+  modificadores: (Registro & {
+    grupo_id: string
+    nombre: string
+    precio_extra: number
+    orden: number
+  })[]
+}
+
 export interface Instantanea {
   cargado: boolean
   equipo: Equipo | null
@@ -235,11 +281,44 @@ export class Sala {
   }
 
   async actualizarCatalogo() {
-    const catalogo = await this.api<Catalogo>('GET', '/api/catalogo', {
+    const catalogo = await this.api<Catalogo | undefined>('GET', '/api/catalogo', {
       token: this.equipoActual().token,
     })
+    // Una respuesta rara no reemplaza la carta buena que ya está guardada.
+    if (typeof catalogo?.version !== 'number' || !Array.isArray(catalogo.mesas))
+      throw new ErrorApi('respuesta_invalida', 'El hub respondió algo que no es la carta')
+    // Dos pedidos de la carta a la vez: la respuesta que llega tarde no pisa una más nueva.
+    if (catalogo.version < (this.estado.catalogo?.version ?? -1)) return
     await this.db.guardarAjuste(CLAVES.catalogo, catalogo)
     this.cambiar({ catalogo })
+  }
+
+  /** Todo el catálogo, también lo archivado, para el editor de la carta. */
+  catalogoParaEditar(): Promise<CatalogoEdicion> {
+    return this.api<CatalogoEdicion>('GET', '/api/catalogo/edicion', {
+      token: this.equipoActual().token,
+    })
+  }
+
+  /**
+   * Guarda cambios del catálogo (todos o ninguno) con la sesión abierta; el hub avisa a los
+   * equipos y este también trae la carta nueva.
+   */
+  async editarCatalogo(cambios: CambioCatalogo[]): Promise<number> {
+    this.usar()
+    const sesion = this.estado.sesion
+    if (!sesion) throw new Error('Sin sesión: escribe tu PIN')
+    const { version } = await this.api<{ version: number }>('POST', '/api/catalogo/cambios', {
+      cuerpo: { sesion_id: sesion.sesionId, secreto: sesion.secreto, cambios },
+      token: this.equipoActual().token,
+    })
+    await this.actualizarCatalogo().catch(avisarFallo)
+    return version
+  }
+
+  /** Trae la carta de nuevo; si falla, se queda la guardada (se reintenta al reconectar). */
+  private traerCatalogoSiHaySesion() {
+    if (this.estado.sesion) this.actualizarCatalogo().catch(avisarFallo)
   }
 
   /** Si pasó el tiempo sin uso, se cierra la sesión: el siguiente toque pide el PIN. */
@@ -285,12 +364,18 @@ export class Sala {
       alConectar: (canal) => {
         this.canal = canal
         void cliente.alConectar()
+        // Pudo cambiar mientras no había conexión.
+        this.traerCatalogoSiHaySesion()
       },
       alDesconectar: () => {
         this.canal = null
         cliente.alDesconectar()
       },
-      alMensaje: (m) => void cliente.recibir(m),
+      alMensaje: (m) => {
+        if (m.tipo === 'catalogo' && m.version !== this.estado.catalogo?.version)
+          this.traerCatalogoSiHaySesion()
+        void cliente.recibir(m)
+      },
       alCambiarEstado: (conexion) => this.cambiar({ conexion }),
     })
     this.cliente = cliente

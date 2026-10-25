@@ -1,6 +1,6 @@
 # Roadmap
 
-Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
+Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente · ⏭️ omitida
 
 ## Fase 0 — Fundaciones
 
@@ -16,7 +16,27 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 | 0.8 | Seed con la carta de La Spritzzería | ✅ |
 | 0.9 | Design system y bocetos de las 5 pantallas | ✅ |
 | 0.10 | Pantalla mínima para la demo de sincronización | ✅ |
-| 0.11 | Demo guiada | ⏳ |
+| 0.11 | Demo guiada | ⏭️ omitida |
+
+**0.11 omitida por decisión del dueño (24-oct-2026):** se pasa directo a la Fase 1. La prueba de aceptación de la Fase 0 con dos navegadores (Playwright) se escribe al cierre de la Fase 1, junto con la de la 1.11.
+
+## Fase 1 — MVP de salón (operar un servicio completo sin facturación electrónica)
+
+Orden aprobado por el dueño el 24-oct-2026.
+
+| # | Tarea | Estado |
+|---|---|---|
+| 1.1 | Catálogo completo: editor, variantes, modificadores, estaciones y catálogo sincronizado | ✅ |
+| 1.2 | Editor de plano y vista operativa de mesas | ⏳ |
+| 1.3 | Toma de pedido por comensal y curso | ⏳ |
+| 1.4 | Comandas: impresora ESC/POS por estación y KDS básico | ⏳ |
+| 1.5 | Mover ítems, cambiar y unir mesas, anular con motivo y permiso | ⏳ |
+| 1.6 | Precuenta, división, pagos mixtos y propina | ⏳ |
+| 1.7 | Apertura, cierre y arqueo de caja | ⏳ |
+| 1.8 | Datáfonos nivel 1 y conciliación en el cierre | ⏳ |
+| 1.9 | Reportes básicos y `docs/KPIS.md` | ⏳ |
+| 1.10 | Hub en el PC de caja (Windows) | ⏳ |
+| 1.11 | Prueba de aceptación: servicio de 2 horas sin internet (y la e2e de la Fase 0) | ⏳ |
 
 ### 0.1 — Prueba de conexión en dispositivos reales ✅
 
@@ -45,6 +65,68 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 1.1 — Catálogo completo ✅
+
+**Editor de la carta** en la caja (botón **Carta** en el salón, para quien tenga permiso de editar la carta o los precios):
+- **Productos:** nombre, descripción, categoría, impuesto y precio; **tamaños** con su precio (copa y botella); los grupos de opciones que pide; archivar y volver a poner en la carta. Búsqueda tolerante y lista de archivados.
+- **Grupos de opciones:** término de la carne, sabor o adicionales con precio extra, con cuántas se pueden y se deben elegir. Un grupo sirve para varios productos; la lista dice cuáles lo usan.
+- **Categorías y estaciones:** a qué estación va cada categoría (cocina o barra).
+- Con solo el permiso **editar_precios** se ve todo, pero solo se cambian precios.
+- Un precio mal escrito («53,900», «1.5») no se guarda. Al cerrar un panel con cambios, pregunta antes de descartarlos.
+
+**En el hub:**
+- `POST /api/catalogo/cambios`: los cambios de un guardado se aplican todos o ninguno, con la sesión y el permiso.
+- No deja dejar la carta rota: nada activo apunta a algo archivado. No se archiva un impuesto o una categoría con productos activos, ni una estación con categorías activas. Archivar un grupo lo quita de sus productos.
+- Repetir el mismo guardado (un reintento tras un corte) no cambia nada ni avisa a nadie.
+- **Historial de la carta** (`catalogo_cambio`, migración 3): cada cambio queda con cómo estaba, cómo quedó, quién y desde qué equipo. El seed escribe por el mismo camino.
+- **Aviso a los equipos:** al guardar, el hub manda `catalogo` y cada equipo trae la carta nueva sin recargar. También la trae al reconectarse.
+- **Revisión del precio copiado:** cada ítem que llega se compara con la carta en la versión que vio el equipo. Si algo no cuadra, el ítem se acepta (ya se pidió, quizá sin conexión) y queda como conflicto `precio_distinto` para la caja. Se revisan:
+  - el producto;
+  - la copa o botella obligatoria;
+  - los precios y el impuesto;
+  - que cada opción sea de ese producto y no venga repetida.
+
+Revisado por `revisor-codigo`, `qa-pruebas`, `auditor-dinero` y `revisor-ux`. Se corrigieron, entre otros:
+- un precio mal escrito se guardaba con el último número válido («53,900» quedaba en $53), y «1.5» se leía como 15;
+- cerrar el panel descartaba los cambios sin preguntar;
+- se podía archivar un impuesto o una categoría en uso y sus productos desaparecían de la carta sin aviso;
+- una respuesta vieja de la carta podía pisar una más nueva en el equipo;
+- abrir y guardar sin tocar nada mandaba cambios si había un tamaño archivado en medio;
+- archivar un producto y tocar uno de sus tamaños en el mismo guardado hacía que el hub lo rechazara todo;
+- un adicional de otro producto o repetido pasaba sin conflicto;
+- el Deshacer de «Quitar» en la toma de pedido marcaba un precio distinto falso.
+
+**Pruebas:** 450 en el hub y 320 en la app. Incluyen:
+- la migración sobre una base con datos;
+- 300 cambios seguidos del mismo producto;
+- un guardado de 200 cambios;
+- el aviso por WebSocket, que no llega a equipos revocados;
+- propiedades con datos al azar: guardar un borrador y volverlo a abrir da lo mismo.
+
+**Queda pendiente:**
+- Cambiar las opciones de un ítem ya enviado (`ItemModificadoTrasEnvio`) todavía no se revisa contra la carta: llega con la toma de pedido de la 1.3.
+- Un evento guarda un solo conflicto: si ya tenía otro, el de precio no se anota.
+- Agotar un producto (86) llega en la 1.3.
+- Sin Deshacer al guardar en el editor; Enter no guarda. Los dos grupos «Sabor» (Té Hatsu y Soda Hatsu) se llaman igual en los botones del producto: conviene renombrarlos desde el editor.
+- Editar la carta pide conexión con el hub; sin ella, el cambio no se guarda y el panel lo dice.
+- Los modificadores reales con precio (quitar ingredientes, adicionales) los puede cargar el restaurante desde el editor.
+
+**Cómo probarlo:**
+
+1. Cierra el hub si está abierto (**Ctrl+C** en su terminal) y arráncalo de nuevo:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+   Debes ver `Base de datos actualizada a la versión 3.` y `Hub en marcha`.
+2. En la caja, entra con tu PIN de administrador o de gerente. En el salón debes ver el botón **Carta**. Tócalo.
+3. Toca **Pinsa**, cambia el precio a `22.900` y toca **Guardar**. Debes ver «Guardaste Pinsa» y el precio nuevo en la lista.
+4. En el celular, abre una mesa: la Pinsa debe decir **$22.900** sin recargar la página.
+5. En la caja, vuelve a abrir la Pinsa, escribe `22,900` en el precio. Debes ver «Hay un precio mal escrito» y el botón sin poder tocarse. Toca la **X** y luego **Descartar**.
+6. En **Grupos de opciones**, toca **Nuevo grupo de opciones**: nombre «Adicionales», máximo 2, opción «Tocineta» con precio extra `4.000`. Guarda.
+7. Abre la **Spritz Burguer**, toca **Adicionales** en «Grupos de opciones que se piden» y guarda. En el celular, al tocar la hamburguesa debe aparecer «Adicionales» con «Tocineta + $4.000».
 
 ### 0.10 — Pantalla mínima para la demo de sincronización ✅
 

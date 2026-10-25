@@ -143,7 +143,7 @@ export class ClienteSync {
   recibir(mensaje: MensajeHub): Promise<void> {
     const generacion = this.generacion
     // Un latido o un pong no cambian nada guardado: la pantalla no tiene por qué releer.
-    const escribe = mensaje.tipo !== 'latido' && mensaje.tipo !== 'pong'
+    const escribe = !['latido', 'pong', 'catalogo'].includes(mensaje.tipo)
     return this.enEspera(async () => {
       if (generacion === this.generacion) await this.procesar(mensaje, generacion)
     }, escribe).catch((error) => this.alFallo?.(error))
@@ -292,8 +292,10 @@ export class ClienteSync {
         this.alErrorHub?.(m.codigo, m.mensaje)
         return
 
+      // Los atiende la app (el catálogo se pide por HTTP); aquí no cambian nada guardado.
       case 'pong':
       case 'latido':
+      case 'catalogo':
         return
     }
   }

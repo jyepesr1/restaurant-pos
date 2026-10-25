@@ -10,7 +10,8 @@ Se implementa en `packages/sync` (tarea 0.6, dispositivo ↔ hub). El nivel hub 
 - **Pedido de rescate**: un ítem que llega a un pedido ya cerrado queda como conflicto `pedido_cerrado` (guardado, sin aplicar); el rescate automático llega con la caja (Fase 1).
 - **Sesiones y tokens** (tarea 0.7): el emparejamiento, el inicio de sesión, el cierre y las autorizaciones van por la **API HTTP** del hub (`POST /api/emparejamientos`, `/api/emparejar`, `/api/sesiones`, `/api/sesiones/cerrar`, `/api/autorizaciones`, `/api/dispositivos/:id/revocar`), con el token en `Authorization: Bearer`; no por el WebSocket. El WebSocket solo lleva eventos.
 - **Cierre por inactividad**: lo hace el dispositivo (pide el PIN otra vez tras `sesion_inactividad_min`), porque el hub no ve el uso sin conexión. El hub cierra una sesión al cerrarla el usuario, al entrar otra persona en ese dispositivo, al revocar el dispositivo o al archivar al usuario.
-- **Catálogo y suscripciones**: por ahora solo hay eventos de pedido y todos los ven; el filtro por tipo de dispositivo y `catalogo`/`comanda` llegan con esos datos.
+- **Catálogo** (tarea 1.1): el mensaje `catalogo` solo avisa la versión nueva y el dispositivo pide la carta entera por HTTP (`GET /api/catalogo`, es pequeña); también la pide cada vez que se conecta. Mandar solo los registros cambiados queda para cuando la carta sea grande o la edite la nube (Fase 2).
+- **Suscripciones**: por ahora solo hay eventos de pedido y todos los ven; el filtro por tipo de dispositivo y `comanda` llegan con esos datos.
 - **WebSocket real e IndexedDB** quedaron conectados en la tarea 0.10: `GET /api/sync/ws` (mensajes de hasta 1 MB, latido cada 5 s, se cierra si no saluda en 10 s) y el almacén del dispositivo en IndexedDB con índices para los pendientes propios y los eventos de cada pedido. El **escenario 14 con dos navegadores (Playwright)** queda para la corrida e2e del final. Los mensajes del hub aún no se validan tipo por tipo en el dispositivo.
 - **`afecta`** siempre va vacío: en la Fase 0 ningún evento se aplica fuera de su agregado y sus `relacionados`. Lo mismo los conflictos `item_movido`, `mesa_bloqueada` y `precio_distinto`: llegan con el bloqueo de mesas, mover ítems sin conexión y el catálogo (Fase 1).
 - **`hasta_anterior`** de `nuevo` supone que el dispositivo ve todos los eventos; cuando haya vistas por tipo de dispositivo será por dispositivo.
@@ -111,7 +112,7 @@ sequenceDiagram
 | `empujar` / `resultado` | ida y vuelta | Lote de eventos / por evento `confirmado` (secuencia, asignaciones) o `rechazado` (motivo) |
 | `traer` / `eventos` | ida y vuelta | `desde` / página ordenada por secuencia y `hay_mas` |
 | `nuevo` | hub → dispositivos | Evento recién aceptado |
-| `catalogo` | hub → dispositivos | Registros de catálogo cambiados desde la versión N |
+| `catalogo` | hub → dispositivos | El catálogo cambió y quedó en la versión N; el dispositivo lo pide por HTTP |
 | `comanda` | hub → KDS | Comanda de sus estaciones (nueva, modificación o anulación) con ítems y modificadores |
 | `ping` / `pong` | dispositivo ↔ hub | El dispositivo mide latencia y comprueba al instante si el canal vive al volver a la pantalla |
 | `latido` | hub → dispositivos | Cada 5 s; sin nada durante 15 s, la conexión se da por muerta |
@@ -168,7 +169,8 @@ Si procesar un evento hace fallar al hub, pero el hub todavía puede guardar, el
 ## Catálogo y configuración
 
 - Solo los escribe el hub (Fases 0–1, editados desde la caja) o la nube (desde la Fase 2, que pasa a ser la autoridad). Como hay un solo escritor, no hay ediciones concurrentes que desempatar.
-- Cada cambio toma el siguiente valor de un **contador global de catálogo** del restaurante y lo guarda como `version` del registro. Los dispositivos piden `catalogo desde: N`.
+- Cada cambio toma el siguiente valor de un **contador global de catálogo** del restaurante y lo guarda como `version` del registro, y deja su fila en el **historial** (`catalogo_cambio`, [MODELO_DATOS.md](MODELO_DATOS.md#catálogo)).
+- Se edita desde la caja con `POST /api/catalogo/cambios`: una lista de cambios que se aplica entera o no se aplica, con la sesión y el permiso `editar_catalogo` (o `editar_precios` si solo cambian precios). Al guardar, el hub manda `catalogo` a los conectados.
 - Las filas de unión (`ProductoEstacion`, `RolPermiso`, …) también tienen `activo`: quitar un vínculo es archivarlo, y eso viaja como cualquier cambio.
 - Las credenciales (`UsuarioCredencial`, `DispositivoCredencial`) son locales del hub y **nunca** viajan.
 - Agotar un producto es un evento, no una edición, para que llegue a todos al instante.

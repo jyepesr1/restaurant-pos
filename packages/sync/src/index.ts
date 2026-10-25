@@ -31,6 +31,7 @@ export {
   type ControlAcceso,
   HubSync,
   pedidosDe,
+  type RevisorPrecios,
   type VeredictoAcceso,
 } from './hub/hub'
 export { type Autenticador, SalaSync } from './hub/sala'

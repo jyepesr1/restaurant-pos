@@ -1,5 +1,6 @@
 import { sql as inicial } from './0001_inicial'
 import { sql as comprobanteAtado } from './0002_comprobante_atado'
+import { sql as catalogoCambio } from './0003_catalogo_cambio'
 
 export interface Migracion {
   version: number
@@ -15,4 +16,5 @@ export interface Migracion {
 export const MIGRACIONES: readonly Migracion[] = [
   { version: 1, nombre: 'inicial', sql: inicial },
   { version: 2, nombre: 'comprobante_atado', sql: comprobanteAtado },
+  { version: 3, nombre: 'catalogo_cambio', sql: catalogoCambio },
 ]

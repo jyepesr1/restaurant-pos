@@ -17,6 +17,56 @@ export function siguienteVersion(db: BaseSqlite, restauranteId: string): number 
   return Number(fila?.valor)
 }
 
+/** Tablas del catálogo: cada cambio suyo queda en `catalogo_cambio` (`CatalogoCambiado`). */
+export const TABLAS_CATALOGO = [
+  'impuesto',
+  'estacion',
+  'categoria',
+  'producto',
+  'variante',
+  'grupo_modificador',
+  'producto_grupo_modificador',
+  'modificador',
+  'producto_estacion',
+] as const
+export type TablaCatalogo = (typeof TABLAS_CATALOGO)[number]
+
+const esDelCatalogo = (tabla: string): tabla is TablaCatalogo =>
+  (TABLAS_CATALOGO as readonly string[]).includes(tabla)
+
+const leerFila = (db: BaseSqlite, tabla: string, restauranteId: string, id: string) =>
+  db.prepare(`SELECT * FROM ${tabla} WHERE restaurante_id = ? AND id = ?`).get(restauranteId, id)
+
+/** Deja en el historial cómo quedó el registro (y cómo estaba), en la misma transacción. */
+function anotarCambio(
+  db: BaseSqlite,
+  tabla: string,
+  restauranteId: string,
+  id: string,
+  antes: Record<string, unknown> | undefined,
+  autor: Autor,
+  ahora: string,
+) {
+  if (!esDelCatalogo(tabla)) return
+  const despues = leerFila(db, tabla, restauranteId, id)
+  if (!despues) return
+  db.prepare(
+    `INSERT INTO catalogo_cambio
+       (restaurante_id, version, entidad, registro_id, antes, despues, usuario_id, dispositivo_id, hecho_en)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    restauranteId,
+    Number(despues.version),
+    tabla,
+    id,
+    antes ? JSON.stringify(antes) : null,
+    JSON.stringify(despues),
+    autor.usuarioId,
+    autor.dispositivoId,
+    ahora,
+  )
+}
+
 export interface Autor {
   usuarioId: string | null
   dispositivoId: string | null
@@ -49,6 +99,7 @@ export function insertarVersionado(
   db.prepare(
     `INSERT INTO ${tabla} (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`,
   ).run(...Object.values(fila))
+  anotarCambio(db, tabla, restauranteId, id, undefined, autor, ahora)
   return id
 }
 
@@ -62,6 +113,7 @@ export function actualizarVersionado(
   autor: Autor,
   ahora: string,
 ) {
+  const antes = leerFila(db, tabla, restauranteId, id)
   const todos: Record<string, ValorSql> = {
     ...campos,
     actualizado_en: ahora,
@@ -73,6 +125,7 @@ export function actualizarVersionado(
   db.prepare(
     `UPDATE ${tabla} SET ${asignaciones.join(', ')} WHERE restaurante_id = ? AND id = ?`,
   ).run(...Object.values(todos), restauranteId, id)
+  anotarCambio(db, tabla, restauranteId, id, antes, autor, ahora)
 }
 
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'

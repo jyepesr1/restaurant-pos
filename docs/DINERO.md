@@ -152,9 +152,12 @@ Un `PagoAnulado` o reembolso cae en el turno en que se registra, no en el del pa
 ## Precio copiado
 
 - El celular copia en `ItemAgregado` el precio, los extras y el impuesto vigentes en su catálogo, con la `catalogo_version` y el `precio_canal_id` (happy hour, brunch).
-- El hub compara esos valores con el **historial del catálogo** en esa versión y con su propia hora para las franjas horarias. Cualquier diferencia → conflicto `precio_distinto` para la caja. La tarifa siempre se valida contra `Impuesto`.
-- **Un producto con variantes exige `variante_id`**, y `precio_unitario` es el `precio` de esa variante. `producto.precio` de un producto con variantes (el de la más barata) solo sirve para mostrar. Ejemplo: Ramón Bilbao Crianza sin variante sería una botella de $129.900 cobrada a $30.900. La pantalla obliga a elegir; el hub lo rechazará cuando valide contra el catálogo (con `precio_distinto`, Fase 1). Prueba pendiente para entonces: un ítem de Ramón Bilbao sin variante se rechaza.
-- El historial requiere que **cada cambio del catálogo deje un `CatalogoCambiado`**. El seed de la tarea 0.8 todavía no lo emite (solo sube la `version`): debe hacerlo antes de implementar `precio_distinto`.
+- El hub compara esos valores con el **historial del catálogo** en esa versión (`apps/hub/src/precios.ts`) y, cuando existan las franjas horarias, con su propia hora. Cualquier diferencia → el ítem **se acepta** con conflicto `precio_distinto` para la caja: ya se pidió, quizá sin conexión, y no se pierde. La tarifa siempre se valida contra `Impuesto`. Una versión de catálogo que el hub no tiene también es `precio_distinto`.
+- **Un producto con variantes exige `variante_id`**, y `precio_unitario` es el `precio` de esa variante. `producto.precio` de un producto con variantes (el de la más barata) solo sirve para mostrar. Ejemplo: Ramón Bilbao Crianza sin variante sería una botella de $129.900 cobrada a $30.900. La pantalla obliga a elegir, y el hub marca `precio_distinto` un ítem sin variante, con una variante de otro producto o con el precio de otra variante (pruebas en `apps/hub/src/precios.test.ts`).
+- **Cada cambio del catálogo deja su `CatalogoCambiado`** en el historial: el editor y el seed escriben por el mismo camino (`apps/hub/src/acceso/registros.ts`).
+- Lo que se revisa: el producto activo; la variante obligatoria si tiene, y de ese producto; el precio de la variante o del producto; el impuesto activo con su tipo y tarifa; cada opción activa, una sola vez, de un grupo activo enlazado al producto, con su precio extra. Un `precio_canal_id` todavía no es válido (los precios por canal llegan después).
+- El historial empieza con la migración 3 (`historial_desde`): para una versión anterior solo se conoce el estado de cada registro en ese momento, y se compara contra él.
+- **Pendiente:** `ItemModificadoTrasEnvio` también trae precios extra y no se revisa todavía (llega con la toma de pedido de la 1.3). Un evento guarda un solo conflicto: si ya tenía otro (p. ej. `pedido_cerrado`), el de precio no se anota.
 
 ## Datáfonos
 

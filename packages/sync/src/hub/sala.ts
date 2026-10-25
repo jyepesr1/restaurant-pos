@@ -62,6 +62,12 @@ export class SalaSync {
     for (const p of this.participantes) if (p.conexion) p.enviar({ tipo: 'latido' })
   }
 
+  /** Se editó el catálogo: los conectados lo vuelven a pedir (docs/SYNC.md#catálogo-y-configuración). */
+  avisarCatalogo(version: number) {
+    for (const p of this.participantes)
+      if (p.conexion && !p.conexion.revocadoEn) p.enviar({ tipo: 'catalogo', version })
+  }
+
   private recibir(participante: Participante, crudo: unknown) {
     const lectura = MensajeDispositivo.safeParse(crudo)
     if (!lectura.success) {

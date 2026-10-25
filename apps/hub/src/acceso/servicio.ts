@@ -281,6 +281,22 @@ export class ServicioAcceso implements ControlAcceso {
     return { ok: true, revocadoEn: ahora }
   }
 
+  /**
+   * Para acciones que no son eventos (editar el catálogo): la sesión debe ser de este equipo,
+   * estar abierta y su usuario tener el permiso. Devuelve quién actúa.
+   */
+  usuarioConPermiso(
+    conexion: Conexion,
+    datos: { sesionId: string; secreto: string },
+    permiso: Permiso,
+  ): { ok: true; usuarioId: string } | ErrorAcceso {
+    const sesion = this.sesionAbierta(conexion, datos.sesionId, datos.secreto)
+    if (!sesion.ok) return sesion
+    if (!this.tienePermiso(sesion.usuarioId, permiso))
+      return error('sin_permiso', 'Tu rol no tiene permiso para esto')
+    return { ok: true, usuarioId: sesion.usuarioId }
+  }
+
   // ── Sesiones ─────────────────────────────────────────────────────────
 
   /**

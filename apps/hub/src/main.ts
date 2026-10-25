@@ -88,7 +88,7 @@ const app = crearServidor({
   diagnostico: { dirDatos },
   acceso,
   sincronizacion: { sala, alFallo: (error) => console.error('Falló la sincronización:', error) },
-  catalogo: { db, restauranteId, acceso },
+  catalogo: { db, restauranteId, acceso, alCambiar: (version) => sala.avisarCatalogo(version) },
   versionBase: versionActual(db),
   logger: true,
 })
