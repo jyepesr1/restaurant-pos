@@ -268,39 +268,6 @@ export function TomaPedido() {
       await sala.registrar('ItemCambiado', linea.estado.id, { item_id: itemId, ...cambio })
     })
 
-  /**
-   * Saca una unidad de la línea a una línea propia (3 Aperol → 2 + 1) y abre esa, para darle su
-   * nota o su persona sin cambiar las demás.
-   */
-  const separar = (itemId: string, nota: string | null) =>
-    enOrden(async () => {
-      const linea = await lineaGuardada(itemId)
-      if (!linea) return
-      const { estado, item } = linea
-      if (item.cantidad - item.cantidadAnulada < 2) return
-      // Con descuento o la cuenta dividida no se cambia la cantidad (el reductor lo rechaza):
-      // agregar la copia igual dejaría una unidad de más.
-      const conDescuento = Object.values(estado.descuentos).some(
-        (d) => d.montos[item.id] !== undefined,
-      )
-      if (conDescuento || estado.cuentas) {
-        avisar('Con descuento o la cuenta dividida no se separa: quítalo primero en caja')
-        return
-      }
-      await sala.registrar('ItemCambiado', estado.id, {
-        item_id: item.id,
-        cantidad: item.cantidad - 1,
-      })
-      // La copia entra solo si la línea de verdad bajó (otro equipo pudo enviarla antes).
-      const bajo = (await pedidoGuardado())?.items[item.id]
-      if (!bajo || bajo.cantidad !== item.cantidad - 1) {
-        avisar('No se pudo separar: la línea cambió en otro equipo')
-        return
-      }
-      const copia = { ...(await copiaActual(item)), cantidad: 1, notas: nota }
-      await sala.registrar('ItemAgregado', estado.id, copia)
-    })
-
   /** La nota de todo el pedido («alérgico al maní»): va en cada comanda y en la cocina. */
   const cambiarNotaPedido = (notas: string | null) =>
     enOrden(async () => {
@@ -804,7 +771,6 @@ export function TomaPedido() {
           alCambiar={(cambio) => cambiarItem(itemEditado.id, cambio)}
           alSumar={(delta) => sumar(itemEditado.id, delta)}
           usarCursos={usarCursos}
-          alSeparar={(nota) => separar(itemEditado.id, nota)}
           alDuplicar={() => {
             duplicar(itemEditado.id)
             setEditando(null)
@@ -1380,7 +1346,6 @@ function PanelItem({
   alCambiar,
   alSumar,
   usarCursos,
-  alSeparar,
   alDuplicar,
   alQuitar,
 }: {
@@ -1388,8 +1353,6 @@ function PanelItem({
   comensales: number
   enSalon: boolean
   usarCursos: boolean
-  /** Saca una unidad a su propia línea con esa nota; las demás se quedan como estaban. */
-  alSeparar: (nota: string) => void
   alCerrar: () => void
   alCambiar: (cambio: {
     comensal?: number | null
@@ -1402,18 +1365,14 @@ function PanelItem({
 }) {
   const sinEnviar = item.estado === 'pendiente' || item.estado === 'retenido'
   const [notas, setNotas] = useState(item.notas ?? '')
-  const unidades = item.cantidad - item.cantidadAnulada
-  // Con varias unidades, la nota puede ser para todas o solo para una (que queda en su línea).
-  const [soloUna, setSoloUna] = useState(false)
   /**
-   * La nota se aplica al cerrar el panel (o al elegir persona o curso), no al salir del campo:
-   * así elegir «Solo para 1» después de escribirla no la deja en todas.
+   * La nota se aplica al cerrar el panel (o al elegir persona o curso). Si es para una sola
+   * unidad, se escribe así en la nota («1 sin hielo»): el dueño lo prefiere a separar la línea.
    */
   const guardarNota = () => {
     if (!sinEnviar) return
     const nueva = notas.trim() || null
-    if (soloUna && unidades > 1 && nueva && nueva !== item.notas) alSeparar(nueva)
-    else if (nueva !== item.notas) alCambiar({ notas: nueva })
+    if (nueva !== item.notas) alCambiar({ notas: nueva })
   }
   const cerrar = () => {
     guardarNota()
@@ -1495,25 +1454,15 @@ function PanelItem({
               rows={2}
               maxLength={200}
               value={notas}
+              placeholder={
+                item.cantidad - item.cantidadAnulada > 1
+                  ? '1 sin hielo, salsa aparte…'
+                  : 'Sin hielo, salsa aparte…'
+              }
               onChange={(e) => setNotas(e.target.value)}
               className={claseNota}
             />
           </label>
-          {unidades > 1 && (
-            <Grupo etiqueta="Para cuántos es la nota" className="mt-3 flex flex-wrap gap-2">
-              <Opcion elegida={!soloUna} alElegir={() => setSoloUna(false)}>
-                {`Para los ${unidades}`}
-              </Opcion>
-              <Opcion elegida={soloUna} alElegir={() => setSoloUna(true)}>
-                Solo para 1
-              </Opcion>
-            </Grupo>
-          )}
-          {unidades > 1 && soloUna && (
-            <p className="mt-2 text-sm text-texto-suave">
-              {`Al cerrar, quedan ${unidades - 1} sin nota y 1 con la nota, en su propia línea.`}
-            </p>
-          )}
         </>
       )}
     </PanelLateral>

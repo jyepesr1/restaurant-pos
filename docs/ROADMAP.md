@@ -207,7 +207,7 @@ Opcional, la pantalla de cocina:
 
 Pedidos del dueño al probar la 1.4 en su iPhone:
 - **Pista para la nota**: cada línea sin enviar dice «Toca para nota»; al tocarla se abre su panel.
-- **Nota para una sola unidad**: con 3 Aperol en una línea, debajo de la nota se elige **«Para los 3»** o **«Solo para 1»**. Con «Solo para 1», al cerrar el panel quedan 2 sin nota y 1 «sin hielo» en su propia línea. (Primero fue un botón «Separar uno»; en el iPhone no quedaba claro y Safari guardaba la nota en las 3 antes de separar. La nota ahora se aplica al cerrar el panel, no al salir del campo.)
+- **Nota para una sola unidad**: se escribe en la nota de la línea («1 sin hielo»); el campo lo sugiere cuando hay varias. (Se probó separar la unidad en su propia línea, con un botón y luego con «Solo para 1»; el dueño prefirió quitarlo: en la nota se especifica.) La nota se aplica al cerrar el panel, no al salir del campo.
 - **Sin avisos al agregar**: agregar un producto o tocar + y − ya no muestra «Aperol Spritz: 3 · Deshacer» (estorbaba al tomar pedidos); el número cambia a la vista y se corrige con «−». Quitar una línea completa sí deja Deshacer, porque se pierden su nota y sus opciones.
 - **Nota del pedido**: arriba del pedido, «Nota del pedido» (alergias, cumpleaños). Sale resaltada en cada comanda y en la pantalla de cocina. Si cambia o se quita con platos ya en cocina, sale en papel una comanda «NOTA NUEVA» a cada estación con algo pendiente (una alergia no puede quedar solo en pantalla). Evento nuevo `NotaPedidoCambiada`.
 - **«Enviar» cuenta unidades**: 3 Aperol dicen «Enviar 3», no «Enviar 1».
@@ -215,8 +215,6 @@ Pedidos del dueño al probar la 1.4 en su iPhone:
 - **Cursos apagados**: «Curso», «Retener» y «Marchar» ya no se ven. Se prenden en **Cocina e impresoras → Cursos** si un restaurante los usa ([ADR-011](DECISIONES.md#adr-011--reglas-de-operación-acordadas-para-el-piloto)).
 
 Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron:
-- separar una unidad con descuento o la cuenta dividida dejaba una unidad de más; ahora avisa y no separa, y solo agrega la copia si la línea de verdad bajó;
-- la nota escrita antes de separar quedaba en todas; ahora queda solo en la separada;
 - guardar la nota del pedido vacía en una mesa libre la ocupaba;
 - con el pedido ya cerrado, la nota se perdía sin aviso;
 - cambiar la nota con platos en cocina no llegaba al papel;
@@ -228,7 +226,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron:
 **Pruebas:** 137 nuevas, todas pasan.
 - **Núcleo:** 384. La nota con propiedades al azar; se rechaza con el pedido cerrado.
 - **Hub:** 1.171. Comanda con la nota y «NOTA NUEVA» por estación; `/api/cocina/cursos` con su matriz de permisos.
-- **App:** 672. Unidades por enviar; «Separar uno» sobre el motor, sin conexión y sin fusionarse con la línea.
+- **App:** unidades por enviar; la nota del pedido sobre el motor y sin conexión.
 
 **Queda pendiente:**
 - cambiar la nota de **un plato** ya enviado: llega con la 1.5 (comanda de cambio);
@@ -245,10 +243,10 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
 2. En el celular abre una mesa y toca 3 veces **Aperol Spritz**. Abajo debe decir **Enviar 3**.
-3. Toca **Pedido (3)**. Debajo de «Aperol Spritz» debe decir «Toca para nota». Tócalo: debajo de la nota están **Para los 3** y **Solo para 1**.
-4. Escribe «sin hielo» en la nota, toca **Solo para 1** y cierra el panel con la ✕. El pedido debe mostrar 2 Aperol sin nota y 1 Aperol «sin hielo». Al agregar o tocar + y − no debe salir ningún aviso.
+3. Toca **Pedido (3)**. Debajo de «Aperol Spritz» debe decir «Toca para nota». Tócalo: el campo de la nota sugiere «1 sin hielo…».
+4. Escribe «1 sin hielo» en la nota y cierra el panel con la ✕. La línea debe mostrar «1 sin hielo». Al agregar o tocar + y − no debe salir ningún aviso.
 5. Toca **Nota del pedido**, escribe «Cumpleaños, traer vela» y toca **Guardar**. Debe verse arriba del pedido.
-6. Toca **Enviar 3**. En la impresora de barra debe salir la comanda con «NOTA DEL PEDIDO: Cumpleaños, traer vela» en negro, y la línea «sin hielo».
+6. Toca **Enviar 3**. En la impresora de barra debe salir la comanda con «NOTA DEL PEDIDO: Cumpleaños, traer vela» en negro, y «NOTA: 1 sin hielo».
 7. Cambia la nota del pedido a «Alérgico al maní» y guárdala. En la barra debe salir otra comanda, «NOTA NUEVA», con esa nota.
 8. Arriba, el encabezado debe ocupar una sola fila, con «Local» y el modo oscuro.
 

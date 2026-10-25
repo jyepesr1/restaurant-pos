@@ -1,24 +1,14 @@
 import 'fake-indexeddb/auto'
-import {
-  type EventoAplicable,
-  type EventoNuevo,
-  firmarEvento,
-  nuevoId,
-  reconstruir,
-  totalesPedido,
-} from '@pos/core'
+import { type EventoNuevo, firmarEvento, nuevoId } from '@pos/core'
 import { AlmacenMemoria, type Canal, type ControlAcceso, HubSync } from '@pos/sync'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
 import { type Equipo, Sala, type Sesion } from './motor'
-import { lineaIgual, unidadesPorEnviar } from './pedido'
 import { itemsVigentes, pedidosAbiertos } from './proyeccion'
 import { catalogoDePrueba, datosItem } from './pruebas'
 
-// Motor de la sala con lo nuevo de los ajustes del pedido: la nota de todo el pedido, «Separar
-// uno» (ItemCambiado cantidad−1 + ItemAgregado de 1) sin conexión, y el interruptor de cursos.
-// «Separar uno» vive dentro de TomaPedido (React); aquí se repite su secuencia de eventos sobre
-// el motor real (`registrar`, IndexedDB, reductor) para comprobar lo que queda guardado.
+// Motor de la sala con lo nuevo de los ajustes del pedido: la nota de todo el pedido (también
+// sin conexión) y el interruptor de cursos, sobre el motor real (`registrar`, IndexedDB, reductor).
 
 const salas: Sala[] = []
 const bases: BaseDispositivo[] = []
@@ -74,32 +64,6 @@ async function pedidoConLimonadas(
   const it = datosItem({ cantidad, ...campos })
   await sala.registrar('ItemAgregado', pedido, it)
   return { pedido, it }
-}
-
-/**
- * La secuencia de `separar` en TomaPedido.tsx: leer la línea guardada, bajarla una unidad y,
- * solo si bajó de verdad, agregar la copia de 1 con la nota escrita (o null).
- */
-async function separar(sala: Sala, pedidoId: string, itemId: string, nota: string | null) {
-  const estado = await estadoDe(sala, pedidoId)
-  const item = estado?.items[itemId]
-  if (!estado || !item || item.cantidad - item.cantidadAnulada < 2) return false
-  await sala.registrar('ItemCambiado', estado.id, { item_id: item.id, cantidad: item.cantidad - 1 })
-  const bajo = (await estadoDe(sala, pedidoId))?.items[item.id]
-  if (!bajo || bajo.cantidad !== item.cantidad - 1) return false
-  const original = (await locales(sala)).find(
-    (l) => l.evento.tipo === 'ItemAgregado' && l.evento.datos.item_id === item.id,
-  )?.evento
-  if (original?.tipo !== 'ItemAgregado') throw new Error('falta el ItemAgregado original')
-  await sala.registrar('ItemAgregado', estado.id, {
-    ...original.datos,
-    item_id: nuevoId(),
-    cantidad: 1,
-    comensal: item.comensal,
-    curso: item.curso,
-    notas: nota,
-  })
-  return true
 }
 
 describe('NotaPedidoCambiada sobre el motor', () => {
@@ -183,157 +147,6 @@ describe('NotaPedidoCambiada sobre el motor', () => {
     )
     expect(r.resultados.map((x) => x.estado)).toEqual(['confirmado', 'confirmado', 'confirmado'])
     expect(hub.pedido(pedido)?.notas).toBe('cumpleaños')
-  })
-})
-
-describe('«Separar uno» sobre el motor', () => {
-  it('3 limonadas → una línea de 2 y otra de 1 con su nota; el total no cambia', async () => {
-    const { sala } = await abrir()
-    const { pedido, it } = await pedidoConLimonadas(sala, 3)
-    const antes = await estadoDe(sala, pedido)
-    expect(await separar(sala, pedido, it.item_id, 'sin hielo')).toBe(true)
-    const estado = await estadoDe(sala, pedido)
-    const lineas = itemsVigentes(estado as never)
-    expect(lineas.map((i) => [i.cantidad, i.notas])).toEqual([
-      [2, null],
-      [1, 'sin hielo'],
-    ])
-    expect(lineas[0]?.id).toBe(it.item_id)
-    expect(lineas[1]?.id).not.toBe(it.item_id)
-    expect(unidadesPorEnviar(estado as never)).toBe(3)
-    expect(totalesPedido(estado as never).neto).toBe(totalesPedido(antes as never).neto)
-    // La copia es del mismo producto, precio, impuesto, y quedó sin enviar.
-    expect(lineas[1]).toMatchObject({
-      productoId: it.producto_id,
-      precioUnitario: it.precio_unitario,
-      impuestoTipo: it.impuesto_tipo,
-      tarifa: it.tarifa,
-      estado: 'pendiente',
-    })
-  })
-
-  it('funciona sin conexión: quedan dos eventos pendientes, en ese orden, y se ve al instante', async () => {
-    const { sala } = await abrir()
-    const { pedido, it } = await pedidoConLimonadas(sala, 2)
-    const antes = sala.instantanea().pendientes
-    expect(sala.instantanea().conexion).not.toBe('conectado')
-    await separar(sala, pedido, it.item_id, null)
-    expect(sala.instantanea().pendientes).toBe(antes + 2)
-    const nuevos = (await locales(sala)).slice(-2).map((l) => [l.evento.tipo, l.estado])
-    expect(nuevos).toEqual([
-      ['ItemCambiado', 'pendiente'],
-      ['ItemAgregado', 'pendiente'],
-    ])
-    expect(itemsVigentes((await estadoDe(sala, pedido)) as never).map((i) => i.cantidad)).toEqual([
-      1, 1,
-    ])
-  })
-
-  it('sin nota, la copia nace con null (no hereda la de la línea) y la original conserva la suya', async () => {
-    const { sala } = await abrir()
-    const { pedido, it } = await pedidoConLimonadas(sala, 3, { notas: 'bien fría' })
-    await separar(sala, pedido, it.item_id, null)
-    const lineas = itemsVigentes((await estadoDe(sala, pedido)) as never)
-    expect(lineas.map((i) => [i.cantidad, i.notas])).toEqual([
-      [2, 'bien fría'],
-      [1, null],
-    ])
-  })
-
-  it('con nota nueva, la original conserva la suya y la copia lleva la escrita', async () => {
-    const { sala } = await abrir()
-    const { pedido, it } = await pedidoConLimonadas(sala, 3, { notas: 'bien fría' })
-    await separar(sala, pedido, it.item_id, 'sin azúcar')
-    const lineas = itemsVigentes((await estadoDe(sala, pedido)) as never)
-    expect(lineas.map((i) => i.notas)).toEqual(['bien fría', 'sin azúcar'])
-  })
-
-  it('la copia conserva persona y curso de la línea', async () => {
-    const { sala } = await abrir()
-    const { pedido, it } = await pedidoConLimonadas(sala, 2, { comensal: 3, curso: 'fuerte' })
-    await separar(sala, pedido, it.item_id, 'sin hielo')
-    const lineas = itemsVigentes((await estadoDe(sala, pedido)) as never)
-    expect(lineas.map((i) => [i.comensal, i.curso])).toEqual([
-      [3, 'fuerte'],
-      [3, 'fuerte'],
-    ])
-  })
-
-  it('no se fusiona con la línea de origen: otro toque de la misma limonada suma a la primera, no a la copia', async () => {
-    const { sala } = await abrir()
-    const { pedido, it } = await pedidoConLimonadas(sala, 3)
-    await separar(sala, pedido, it.item_id, null)
-    const estado = await estadoDe(sala, pedido)
-    // Dos líneas iguales en contenido (2 y 1, ambas sin nota): siguen separadas...
-    expect(itemsVigentes(estado as never)).toHaveLength(2)
-    // ...y un toque nuevo sin nota cae en la primera (la de menor orden), no en la copia.
-    const otra = datosItem({ producto_id: it.producto_id })
-    expect(lineaIgual(estado, otra)?.id).toBe(it.item_id)
-    // Con nota, la copia nunca se usa para sumar (lineaIgual descarta toda nota).
-    expect(lineaIgual(estado, datosItem({ producto_id: it.producto_id, notas: 'x' }))).toBeNull()
-  })
-
-  it('una línea de 1 no se separa y no escribe nada', async () => {
-    const { sala } = await abrir()
-    const { pedido, it } = await pedidoConLimonadas(sala, 1)
-    const antes = sala.instantanea().pendientes
-    expect(await separar(sala, pedido, it.item_id, 'x')).toBe(false)
-    expect(sala.instantanea().pendientes).toBe(antes)
-  })
-
-  it('separar dos veces seguidas de 3 deja tres líneas de 1 y ni una unidad de más', async () => {
-    const { sala } = await abrir()
-    const { pedido, it } = await pedidoConLimonadas(sala, 3)
-    expect(await separar(sala, pedido, it.item_id, 'a')).toBe(true)
-    expect(await separar(sala, pedido, it.item_id, 'b')).toBe(true)
-    expect(await separar(sala, pedido, it.item_id, 'c')).toBe(false)
-    const estado = await estadoDe(sala, pedido)
-    expect(itemsVigentes(estado as never).map((i) => [i.cantidad, i.notas])).toEqual([
-      [1, null],
-      [1, 'a'],
-      [1, 'b'],
-    ])
-    expect(unidadesPorEnviar(estado as never)).toBe(3)
-  })
-
-  it('si la línea ya se envió (otro equipo), el ItemCambiado no baja la cantidad y la copia no entra', async () => {
-    const { sala } = await abrir()
-    const { pedido, it } = await pedidoConLimonadas(sala, 3)
-    await sala.registrar('ItemsEnviados', pedido, {
-      comandas: [{ comanda_id: nuevoId(), estacion_id: nuevoId(), item_ids: [it.item_id] }],
-    })
-    const antes = sala.instantanea().pendientes
-    expect(await separar(sala, pedido, it.item_id, 'x')).toBe(false)
-    // El ItemCambiado sí quedó guardado (el hub lo rechazará), pero la copia no.
-    expect(sala.instantanea().pendientes).toBe(antes + 1)
-    const estado = (await estadoDe(sala, pedido)) as never as {
-      items: Record<string, { cantidad: number }>
-    }
-    expect(Object.keys(estado.items)).toHaveLength(1)
-    expect(estado.items[it.item_id]?.cantidad).toBe(3)
-  })
-
-  it('después de separar y enviar, «Enviar» cuenta unidades (3), no líneas (2)', async () => {
-    const { sala } = await abrir()
-    const { pedido, it } = await pedidoConLimonadas(sala, 3)
-    await separar(sala, pedido, it.item_id, 'sin hielo')
-    const estado = await estadoDe(sala, pedido)
-    expect(unidadesPorEnviar(estado as never)).toBe(3)
-    expect(itemsVigentes(estado as never)).toHaveLength(2)
-  })
-
-  it('reconstruir el log guardado (sin secuencia: orden de registro) deja 3 y 1 unidades', async () => {
-    const { sala } = await abrir()
-    const { pedido, it } = await pedidoConLimonadas(sala, 4)
-    await separar(sala, pedido, it.item_id, 'x')
-    const log = (await locales(sala)).map((l) => l.evento as EventoAplicable)
-    const estado = reconstruir(log, pedido)
-    expect(estado?.items[it.item_id]?.cantidad).toBe(3)
-    expect(
-      Object.values(estado?.items ?? {})
-        .map((i) => i.cantidad)
-        .sort(),
-    ).toEqual([1, 3])
   })
 })
 

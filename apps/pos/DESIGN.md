@@ -80,7 +80,7 @@ Los tonos `libre`, `proceso` y `alerta` **no cambian con la marca**.
   - `×N` cuando ya va en el pedido;
   - el panel del pedido a la derecha con productos, total y «Enviar N» (N en unidades);
   - arriba del panel, «Nota del pedido» (para todo el pedido);
-  - cada línea sin enviar dice «Toca para nota»; su panel trae cantidad, persona y nota; con varias unidades, «Para los N» o «Solo para 1» (esa unidad pasa a su propia línea). La nota se aplica al cerrar el panel;
+  - cada línea sin enviar dice «Toca para nota»; su panel trae cantidad, persona y nota (para una sola unidad se escribe en la nota: «1 sin hielo»). La nota se aplica al cerrar el panel;
   - agregar y + / − no muestran aviso (el número cambia a la vista); quitar una línea sí deja Deshacer;
   - «Curso» solo se ve si el restaurante usa cursos (apagado por defecto);
   - en lo que está en cocina, «Entregar» por línea y «Todo entregado».
