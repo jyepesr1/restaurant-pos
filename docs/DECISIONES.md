@@ -458,7 +458,7 @@ Decisiones del dueño del 25-oct-2026. En La Spritzzería la cocina no tiene pan
   - el cocinero solo toca **«Listo»** (un toque por comanda); lo marcado por error se recupera;
   - se retira como cualquier equipo, en **Personal y roles → Equipos**.
 - **Sin pantalla en la estación, el mesero marca «Entregado»** al llevar el plato (uno a uno o «Todo entregado»). Puede pasar directo de enviado a entregado (ya lo permitía el reductor).
-- **Vista «Pedidos en cocina» en la caja**: lo enviado que falta entregar, por estación, con el tiempo desde el envío y su color (verde, ámbar desde `cocina_amarillo_min`, rojo desde `cocina_rojo_min`; por defecto 10 y 20 minutos). Quien tenga el permiso de marcar puede tocar «Listo» si cocina avisa. Si un plato queda listo, el mesero de la mesa recibe un aviso en su celular.
+- **Vista «Pedidos en cocina» en la caja**: lo enviado que falta entregar, por estación, con el tiempo desde el envío y su color (a tiempo sin color, solo con borde; ámbar desde `cocina_amarillo_min`, rojo desde `cocina_rojo_min`; por defecto 10 y 20 minutos). «A tiempo» no va en verde (decisión del dueño, 25-oct-2026): en cocina el verde es solo «Listo para llevar». Quien tenga el permiso de marcar puede tocar «Listo» si cocina avisa. Si un plato queda listo, el mesero de la mesa recibe un aviso en su celular.
 
 ### Por qué
 

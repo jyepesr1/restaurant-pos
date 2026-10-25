@@ -425,7 +425,9 @@ export class Sala {
       sesionCerradaPor: null,
     })
     if (r.equipo && nuevo) await this.conectar(nuevo)
-    await this.actualizarCatalogo().catch(() => {})
+    // Un equipo recién registrado puede venir de otro hub (reinstalado, o uno nuevo): su carta
+    // manda aunque su versión sea menor que la guardada aquí.
+    await this.actualizarCatalogo(r.equipo !== null).catch(() => {})
   }
 
   /**
@@ -454,7 +456,8 @@ export class Sala {
       }).catch(() => {})
   }
 
-  async actualizarCatalogo() {
+  /** Trae la carta del hub. Con `reemplazar`, aunque su versión sea menor que la guardada. */
+  async actualizarCatalogo(reemplazar = false) {
     const catalogo = await this.api<Catalogo | undefined>('GET', '/api/catalogo', {
       token: this.equipoActual().token,
     })
@@ -465,7 +468,7 @@ export class Sala {
         'La caja respondió algo que no es la carta: intenta de nuevo',
       )
     // Dos pedidos de la carta a la vez: la respuesta que llega tarde no pisa una más nueva.
-    if (catalogo.version < (this.estado.catalogo?.version ?? -1)) return
+    if (!reemplazar && catalogo.version < (this.estado.catalogo?.version ?? -1)) return
     const completo = completarCatalogo(catalogo)
     await this.db.guardarAjuste(CLAVES.catalogo, completo)
     this.cambiar({ catalogo: completo })

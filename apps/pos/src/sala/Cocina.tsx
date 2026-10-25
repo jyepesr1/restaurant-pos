@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAhora } from '../ui/ahora'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
-import { Etiqueta, TONOS_FUERTES, TONOS_SUAVES, type Tono } from '../ui/Etiqueta'
+import { TONOS_FUERTES, TONOS_SUAVES } from '../ui/Etiqueta'
 import { minutos } from '../ui/formato'
 import { IndicadorConexion } from '../ui/IndicadorConexion'
 import { Icono, type NombreIcono } from '../ui/iconos'
@@ -20,10 +20,35 @@ import { CANALES } from './pedido'
 // entregar, por estación, con su tiempo y su color; quien puede marcar toca «Listo» si cocina
 // avisa. En una pantalla de cocina es todo lo que hay: tarjetas grandes y un solo toque, «Listo».
 
-const DEMORAS: Record<Demora, { tono: Tono; icono: NombreIcono; texto: string }> = {
-  a_tiempo: { tono: 'libre', icono: 'reloj', texto: 'A tiempo' },
-  demorada: { tono: 'proceso', icono: 'reloj', texto: 'Demorada' },
-  muy_demorada: { tono: 'alerta', icono: 'alerta', texto: 'Muy demorada' },
+/**
+ * Cómo se ve cada demora. «A tiempo» va sin color, solo con borde (decisión del dueño): el verde
+ * en cocina queda para «Listo para llevar», y lo que resalta es lo demorado.
+ */
+const DEMORAS: Record<
+  Demora,
+  { icono: NombreIcono; texto: string; tarjeta: string; reloj: string; etiqueta: string }
+> = {
+  a_tiempo: {
+    icono: 'reloj',
+    texto: 'A tiempo',
+    tarjeta: 'border-borde bg-superficie text-texto',
+    reloj: 'border-2 border-borde bg-superficie text-texto',
+    etiqueta: 'border-2 border-borde bg-superficie text-texto',
+  },
+  demorada: {
+    icono: 'reloj',
+    texto: 'Demorada',
+    tarjeta: `border-proceso-fuerte/60 ${TONOS_SUAVES.proceso}`,
+    reloj: TONOS_FUERTES.proceso,
+    etiqueta: TONOS_SUAVES.proceso,
+  },
+  muy_demorada: {
+    icono: 'alerta',
+    texto: 'Muy demorada',
+    tarjeta: `border-alerta-fuerte ${TONOS_SUAVES.alerta}`,
+    reloj: TONOS_FUERTES.alerta,
+    etiqueta: TONOS_SUAVES.alerta,
+  },
 }
 
 const TODAS = '__todas'
@@ -331,9 +356,12 @@ function Tablero({
       >
         {(Object.keys(DEMORAS) as Demora[]).map((d) => (
           <li key={d} className="flex items-center gap-2">
-            <Etiqueta tono={DEMORAS[d].tono} icono={DEMORAS[d].icono}>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-semibold ${DEMORAS[d].etiqueta}`}
+            >
+              <Icono nombre={DEMORAS[d].icono} className="size-4" />
               {DEMORAS[d].texto}
-            </Etiqueta>
+            </span>
             <span className="cifras text-texto-suave">{conteo(d)}</span>
           </li>
         ))}
@@ -452,7 +480,7 @@ function Tarjeta({
   return (
     <article
       aria-label={`${destino(catalogo, c)}, ${d.texto}, ${minutos(desde)}`}
-      className={`flex h-full flex-col gap-3 rounded-2xl border-2 p-4 ${TONOS_SUAVES[d.tono]} ${d.tono === 'alerta' ? 'border-alerta-fuerte' : d.tono === 'proceso' ? 'border-proceso-fuerte/60' : 'border-transparent'}`}
+      className={`flex h-full flex-col gap-3 rounded-2xl border-2 p-4 ${d.tarjeta}`}
     >
       <header className="flex items-baseline justify-between gap-2">
         <span className={`font-bold ${grande ? 'text-3xl' : 'text-xl'}`}>
@@ -464,7 +492,7 @@ function Tarjeta({
       </header>
       <div className={`flex flex-wrap items-center gap-2 ${grande ? 'text-lg' : 'text-sm'}`}>
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full font-bold ${TONOS_FUERTES[d.tono]} ${grande ? 'px-3 py-1 text-2xl' : 'px-2.5 py-0.5 text-sm'}`}
+          className={`inline-flex items-center gap-1.5 rounded-full font-bold ${d.reloj} ${grande ? 'px-3 py-1 text-2xl' : 'px-2.5 py-0.5 text-sm'}`}
         >
           <Icono nombre={d.icono} className={grande ? 'size-6' : 'size-4'} />
           <span className="cifras">{minutos(desde)}</span>

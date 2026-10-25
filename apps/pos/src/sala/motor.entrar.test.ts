@@ -84,6 +84,26 @@ describe('Sala.entrar', () => {
     expect(sala.instantanea().catalogo).not.toBeNull()
   })
 
+  it('un equipo nuevo toma la carta del hub aunque la guardada tenga una versión mayor (otro hub)', async () => {
+    const equipo = {
+      dispositivoId: nuevoId(),
+      token: 't',
+      nombre: 'Equipo de Ana',
+      tipo: 'mesero' as const,
+    }
+    hubFalso(() => json(respuesta(equipo)))
+    const { db } = await abrir()
+    // La carta que dejó un hub anterior, más adelantada que la del hub nuevo.
+    await db.guardarAjuste('catalogo', { ...catalogoDePrueba(), version: 900 })
+    const otra = new Sala({ db, abrir: sinRed })
+    salas.push(otra)
+    await otra.cargar()
+    expect(otra.instantanea().catalogo?.version).toBe(900)
+
+    await otra.entrar('4821')
+    expect(otra.instantanea().catalogo?.version).toBe(catalogoDePrueba().version)
+  })
+
   it('con equipo, usa su token y no cambia el equipo; si pasa a caja, guarda el tipo nuevo', async () => {
     const equipo = {
       dispositivoId: nuevoId(),

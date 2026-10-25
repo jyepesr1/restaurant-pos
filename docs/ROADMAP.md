@@ -91,7 +91,7 @@ Decisiones del dueño del 25-oct-2026 ([ADR-015](DECISIONES.md#adr-015--comandas
 - **Sin pantalla en cocina**, el mesero toca **Entregar** al llevar el plato, o **Todo entregado**. Se puede deshacer unos segundos.
 - **Pedidos en cocina** (nueva sección):
   - lo enviado que falta entregar, por estación;
-  - el tiempo desde el envío y su color: verde, ámbar desde 10 minutos, rojo desde 20 (se cambian);
+  - el tiempo desde el envío y su color: sin color a tiempo (solo borde), ámbar desde 10 minutos, rojo desde 20 (se cambian); el verde queda para «Listo para llevar»;
   - quien puede marcar toca **Listo** si cocina avisa, y el mesero de la mesa recibe un aviso en su celular;
   - **Reimprimir** una comanda.
 - **Pantalla de cocina (opcional)**:
@@ -142,7 +142,9 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entr
   - el mesero ya no ve «Listo» (es de la cocina o la caja);
   - el aviso de listo no se repite al cambiar de mesero;
   - USB ya no se puede elegir;
-  - textos técnicos (IP, tabla de caracteres, ámbar y rojo) en palabras del restaurante.
+  - textos técnicos (IP, tabla de caracteres, ámbar y rojo) en palabras del restaurante;
+  - «A tiempo» va sin color, solo con borde (decisión del dueño): en cocina el verde es solo «Listo para llevar»;
+  - un equipo que vuelve a entrar en un hub reinstalado se quedaba con la carta del hub anterior.
 
 **Pruebas:**
 - **Hub:** 1.111.
@@ -168,7 +170,6 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entr
 - **Volver a cocina algo entregado** pasados los 5 s del Deshacer.
 - **El aviso de listo** no lleva al pedido; falta un contador «Listos para llevar» en el salón del celular.
 - **Indicador permanente de impresoras** (también cuando están bien): hoy solo se ve cuando una falla.
-- **«A tiempo» en verde** puede confundirse con «Listo para llevar»: validar con el dueño.
 - **Rendimiento**: «Pedidos en cocina» y el aviso de listo releen los eventos del equipo por separado.
 
 **Cómo probarlo:**
@@ -193,7 +194,7 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 7. Toca **Prueba**. La impresora de la cocina debe sacar una hoja «PRUEBA DE IMPRESIÓN»: la regla de números debe ocupar una sola línea y las tildes y eñes deben verse bien. Si salen símbolos raros, toca **Editar**, elige **Windows (1252)**, guarda y prueba otra vez.
 8. Repite los pasos 6 y 7 con la de barra («Barra», estación **Barra**). En **Si no responde, imprimir en** puedes elegir la otra como respaldo.
 9. En el celular de un mesero abre una mesa, agrega un plato y una bebida y toca **Enviar**. En la cocina debe salir la comanda del plato y en la barra la de la bebida, con la mesa y el número de comanda.
-10. En la caja toca **Pedidos en cocina**. Deben estar las dos comandas en verde, con su tiempo.
+10. En la caja toca **Pedidos en cocina**. Deben estar las dos comandas, blancas con borde (a tiempo) y con su tiempo.
 11. En el celular abre la misma mesa. Al lado de cada producto debe haber **Entregar**. Toca **Todo entregado**. En la caja, las comandas deben desaparecer de «Pedidos en cocina» y la mesa debe quedar **Servida** en el salón.
 12. Desconecta el cable de red de la impresora de barra y envía otra bebida. En unos segundos, arriba debe salir en rojo «Barra no imprime». Vuelve a conectar el cable: la comanda debe salir sola y la alerta debe desaparecer.
 
