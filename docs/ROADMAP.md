@@ -14,7 +14,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 | 0.6 | Motor de sincronización | ✅ |
 | 0.7 | Autenticación con PIN, roles y permisos | ✅ |
 | 0.8 | Seed con la carta de La Spritzzería | ✅ |
-| 0.9 | Design system y bocetos de las 5 pantallas | 🚧 esperando tu aprobación |
+| 0.9 | Design system y bocetos de las 5 pantallas | ✅ |
 | 0.10 | Pantalla mínima para la demo de sincronización | ⏳ |
 | 0.11 | Demo guiada | ⏳ |
 
@@ -46,9 +46,9 @@ En cada terminal nueva, desde la carpeta del proyecto:
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
 
-### 0.9 — Design system y bocetos de las 5 pantallas 🚧
+### 0.9 — Design system y bocetos de las 5 pantallas ✅
 
-**Falta tu aprobación:** ábrelos en tu celular y en una tablet (pasos abajo) y dime qué cambiarías.
+**Aprobados por el dueño el 24-oct-2026.**
 
 **Dirección visual elegida: neutra** (24-oct-2026): gris claro, letra del sistema, azul en la acción principal y sin logo. Las direcciones con la marca de La Spritzzería quedan como opción para cuando cada restaurante configure la suya (Fase 1).
 
