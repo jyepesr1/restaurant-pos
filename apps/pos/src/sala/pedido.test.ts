@@ -31,6 +31,7 @@ const producto = (campos: Partial<ProductoCatalogo> = {}): ProductoCatalogo => (
   id: nuevoId(),
   nombre: 'Ramón Bilbao',
   descripcion: null,
+  favorito: false,
   precio: 20_000,
   impuesto: { tipo: 'inc', tarifa: 800 },
   variantes: [],

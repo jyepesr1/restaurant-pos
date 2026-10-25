@@ -69,6 +69,9 @@ const EVENTO_DOC: Record<string, Permiso | null> = {
   ItemEntregado: 'marcar_preparacion',
   ItemDevueltoACola: 'marcar_preparacion',
   PedidoRescateCreado: null,
+  // Agotado (86): eventos del producto, no del pedido (tarea 1.3).
+  ProductoAgotado: 'agotar_producto',
+  ProductoDisponible: 'agotar_producto',
 }
 
 const SOLO_CAJA_DOC = ['PagoRegistrado', 'PagoAnulado', 'ReembolsoRegistrado', 'PedidoCerrado']

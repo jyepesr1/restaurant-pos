@@ -28,7 +28,8 @@ Orden aprobado por el dueño el 24-oct-2026.
 |---|---|---|
 | 1.1 | Catálogo completo: editor, variantes, modificadores, estaciones y catálogo sincronizado | ✅ |
 | 1.2 | Editor de plano y vista operativa de mesas | ✅ |
-| 1.3 | Toma de pedido por comensal y curso | ⏳ |
+| 1.3 | Toma de pedido por comensal y curso | ✅ |
+| 1.3b | Acceso por rol ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)): meseros con PIN desde la IP sin emparejar; admin, cajero y reportes con usuario y contraseña; roles Administrador, Cajero, Reportes y Mesero | ⏳ |
 | 1.4 | Comandas: impresora ESC/POS por estación y KDS básico | ⏳ |
 | 1.5 | Mover ítems, cambiar y unir mesas, anular con motivo y permiso | ⏳ |
 | 1.6 | Precuenta, división, pagos mixtos y propina | ⏳ |
@@ -65,6 +66,67 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 1.3 — Toma de pedido por comensal y curso ✅
+
+**Toma de pedido** (tocar una mesa en el salón):
+- Arriba: buscador tolerante a errores, **Favoritos** (lo marcado así en la carta), **Lo más pedido** (lo que más se ha pedido en este equipo) y las categorías.
+- **¿Cuántas personas?** con botones del 1 al 6 al sentar la mesa; después se ajusta con − y + en el pedido. Fuera del salón no se cuentan personas.
+- **Para** (Mesa, P1, P2…) y **Curso** (Sin curso, Entrada, Fuerte, Postre) valen para todo lo que se agregue después. En el celular cada fila se desliza.
+- Tocar un producto lo agrega. El mismo producto, para la misma persona y el mismo curso, **suma a su línea**. Cada toque deja un aviso con **Deshacer**.
+- Productos con opciones o tamaños abren un panel con cantidad y nota para cocina. Si solo hay una cosa que elegir, tocarla ya lo agrega.
+- En el buscador, **Esc** lo borra y **Enter** agrega el producto si queda uno solo.
+- **El ticket** va agrupado por curso: − y + en cada línea (dos toques seguidos cuentan dos), y al tocar la línea se cambia cantidad, persona, curso o nota, o se duplica o quita.
+- **Retener** un curso: el fuerte espera mientras la entrada sale. **Enviar** manda lo pendiente; lo retenido sale al tocar **Marchar**.
+- **Agotados (86)**: quien tiene el permiso `agotar_producto` (admin y cajero) toca **Agotados** y luego los productos. Se ve al instante en todos los equipos, también sin conexión para quien lo marcó, y se puede deshacer. Un producto con tamaños deja agotar uno solo.
+- **Pedidos sin mesa**: en el salón, **Para llevar**, **Domicilio** y **Barra** abren un pedido con número del día. Los abiertos se ven ahí con su total y su mesero.
+
+**Por dentro:**
+- Agotar y volver a ofrecer son eventos `ProductoAgotado` y `ProductoDisponible` del producto (no de un pedido), firmados y ordenados por el hub como los demás ([SYNC.md](SYNC.md)).
+- Lo agotado y lo más pedido se calculan en cada equipo a partir de los eventos que tiene guardados.
+
+Revisado por `revisor-codigo`, `qa-pruebas`, `revisor-ux` y `auditor-dinero`. Se corrigieron, entre otros:
+- **en el hub:** un evento de producto podía nombrar un pedido y contarse como suyo; dos variables con el mismo nombre impedían correr las pruebas;
+- **al tocar:** − y + usaban la cantidad de la pantalla, así que dos toques rápidos contaban uno; sumar a una línea retenida o con otro precio la mezclaba;
+- **en «Lo más pedido»:** no contaba lo sumado a una línea y contaba lo quitado;
+- **en la pantalla:** el aviso decía «el entrada»; la nota se perdía al cerrar el panel; el foco saltaba al título cuando un pedido para llevar recibía su número.
+
+**Pruebas:**
+- **Núcleo:** 340.
+- **Sincronización:** 112, con lotes mixtos sin conexión, caída del hub a mitad de lote y convergencia entre equipos.
+- **Hub:** 528, con WebSocket de verdad. Un mesero no puede agotar: el hub lo rechaza y su equipo deja de verlo agotado.
+- **App:** 435.
+- **Base:** 270.
+
+**Queda pendiente:**
+- **Acceso:** el acceso por rol (meseros con PIN desde la IP, sin emparejar; caja con usuario y contraseña) es la tarea 1.3b.
+- **Lo que el hub todavía no revisa:**
+  - el precio de un cambio después de enviado (`ItemModificadoTrasEnvio`);
+  - un producto agotado que se agrega desde un equipo que no lo sabía. Lo acepta: el aviso es solo en la pantalla.
+- **Datos:**
+  - el ítem no guarda la versión de la carta con que se agregó, así que Deshacer y Duplicar la buscan en los eventos guardados;
+  - «Lo más pedido» es por equipo: cada uno cuenta lo que ha visto.
+- **Agotar por tamaño:** no se probó a mano, porque la carta del piloto no tiene productos con tamaños (botella y copa son productos aparte).
+- **Código:** la lógica de la pantalla de pedido vive dentro del componente y no tiene pruebas unitarias propias. Conviene separarla en archivos más pequeños.
+
+**Cómo probarlo:**
+
+1. Cierra el hub si está abierto (**Ctrl+C**). Si la base no tiene la carta (el salón dice «Todavía no hay mesas»), escribe `pnpm seed` y anota los PIN que muestra.
+2. Compila y arranca:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+   Debes ver `Hub en marcha` y las direcciones.
+3. En la caja, entra con el PIN del administrador o del cajero y toca una mesa libre. Debes ver **¿Cuántas personas?** con botones del 1 al 6. Toca **2**: arriba del ticket debe decir «2 personas» y aparecen **Para: Mesa, P1, P2**.
+4. Toca **P1**, luego **Entrada**, y toca dos veces un producto. En el ticket, bajo «Entrada», debe quedar una línea con 2 y «P1 · sin enviar».
+5. Toca **P2**, luego **Fuerte**, y toca otro producto. Debe aparecer bajo «Fuerte».
+6. En la línea de la entrada toca **−**: debe quedar en 1. En «Fuerte» toca **Retener**: debe decir «Fuerte · espera» y, abajo, que «Enviar» no lo manda.
+7. Toca **Enviar 1**. Debes volver al salón con «Enviado a cocina y barra (1)». Abre la mesa otra vez y toca **Marchar 1**: debe decir «Enviado el fuerte (1)» y las dos líneas «enviado».
+8. Toca **Agotados** y un producto: debe verse tachado con «Agotado» y un aviso con **Deshacer**. Toca **Deshacer** y luego **Listo**.
+9. En el celular, con el mesero, abre la misma mesa: si agotaste algo, debe verse agotado y no deja agregarlo.
+10. Vuelve al salón y toca **Para llevar**. Agrega algo: el título debe cambiar a «Para llevar #N» y, en el salón, el pedido debe aparecer junto a los botones con su total.
 
 ### 1.2 — Editor de plano y vista operativa de mesas ✅
 

@@ -1,4 +1,5 @@
 import {
+  descuentoDeItem,
   type EstadoPedido,
   type EventoNuevo,
   type ItemPedido,
@@ -48,6 +49,13 @@ export function datosItem(
   p: ProductoCatalogo,
   varianteId: string | null,
   elegidas: Record<string, string[]>,
+  /** Para quién, en qué curso, cuántos y la nota para cocina. */
+  extras: {
+    cantidad?: number
+    comensal?: number | null
+    curso?: Curso | null
+    notas?: string
+  } = {},
 ): DatosItem {
   const faltan = faltaElegir(p, varianteId, elegidas)
   if (faltan.length > 0) throw new Error(`Falta elegir: ${faltan.join(', ')}`)
@@ -71,11 +79,11 @@ export function datosItem(
     precio_unitario: variante?.precio ?? p.precio,
     impuesto_tipo: p.impuesto.tipo,
     tarifa: p.impuesto.tipo === 'exento' ? 0 : p.impuesto.tarifa,
-    cantidad: 1,
-    comensal: null,
-    curso: null,
+    cantidad: extras.cantidad ?? 1,
+    comensal: extras.comensal ?? null,
+    curso: extras.curso ?? null,
     modificadores,
-    notas: null,
+    notas: extras.notas?.trim() || null,
     catalogo_version: catalogo.version,
     precio_canal_id: null,
   }
@@ -149,3 +157,71 @@ export function comandasPorEstacion(catalogo: Catalogo, estado: EstadoPedido): D
     })),
   }
 }
+
+export type Curso = 'entrada' | 'fuerte' | 'postre'
+export const CURSOS: { curso: Curso | null; nombre: string }[] = [
+  { curso: null, nombre: 'Sin curso' },
+  { curso: 'entrada', nombre: 'Entrada' },
+  { curso: 'fuerte', nombre: 'Fuerte' },
+  { curso: 'postre', nombre: 'Postre' },
+]
+
+/**
+ * Una línea sin enviar igual a lo que se va a agregar: el mismo producto otra vez suma a esa línea
+ * en vez de abrir otra. Igual quiere decir mismo producto, tamaño, persona, curso, sin nota y con
+ * **el mismo precio copiado** (precio, impuesto y cada opción con su precio extra): si la carta
+ * cambió entre un toque y otro, va en otra línea con su precio (docs/DINERO.md#precio-copiado).
+ * No se suma a una línea con descuento ni en un pedido dividido: el reductor no lo dejaría.
+ */
+export function lineaIgual(estado: EstadoPedido | null, d: DatosItem): ItemPedido | null {
+  if (!estado || d.notas || estado.cuentas) return null
+  const opciones = (mods: { id: string; precio: number }[]) =>
+    mods
+      .map((m) => `${m.id}:${m.precio}`)
+      .sort()
+      .join()
+  const buscadas = opciones(
+    d.modificadores.map((m) => ({ id: m.modificador_id, precio: m.precio_extra })),
+  )
+  return (
+    itemsVigentes(estado).find(
+      (i) =>
+        (i.estado === 'pendiente' || i.estado === 'retenido') &&
+        i.cantidadAnulada === 0 &&
+        !i.notas &&
+        i.productoId === d.producto_id &&
+        i.varianteId === d.variante_id &&
+        i.comensal === d.comensal &&
+        i.curso === d.curso &&
+        i.precioUnitario === d.precio_unitario &&
+        i.impuestoTipo === d.impuesto_tipo &&
+        i.tarifa === d.tarifa &&
+        descuentoDeItem(estado, i.id) === 0 &&
+        opciones(i.modificadores.map((m) => ({ id: m.modificadorId, precio: m.precioExtra }))) ===
+          buscadas,
+    ) ?? null
+  )
+}
+
+/** Comandas solo con lo de un curso (al marcharlo), por estación. */
+export function comandasDeCurso(
+  catalogo: Catalogo,
+  estado: EstadoPedido,
+  curso: Curso,
+): DatosEnvio | null {
+  const soloCurso = {
+    ...estado,
+    items: Object.fromEntries(Object.entries(estado.items).filter(([, i]) => i.curso === curso)),
+  }
+  return comandasPorEstacion(catalogo, soloCurso)
+}
+
+/** Pedidos sin mesa: para llevar, domicilio o barra. */
+export const CANALES = {
+  para_llevar: 'Para llevar',
+  domicilio: 'Domicilio',
+  barra: 'Barra',
+} as const
+
+/** "la entrada", "el fuerte": para los avisos. */
+export const elCurso = (c: Curso) => (c === 'entrada' ? 'la entrada' : `el ${c}`)

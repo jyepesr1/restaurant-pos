@@ -16,6 +16,7 @@ import {
  */
 export type TipoProblema =
   | 'evento_ajeno'
+  | 'no_es_del_pedido'
   | 'evento_ya_aplicado'
   | 'pedido_inexistente'
   | 'pedido_ya_existe'
@@ -267,6 +268,10 @@ function transicion(
 
 function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultado {
   const hora = evento.recibido_en ?? evento.hora_estimada_hub
+
+  // Un evento de producto (agotado) no cambia ningún pedido.
+  if (evento.agregado_tipo !== 'pedido')
+    return sinCambio(estado, 'no_es_del_pedido', `${evento.tipo} no es de un pedido`)
 
   if (evento.tipo === 'PedidoAbierto' || evento.tipo === 'PedidoRescateCreado') {
     if (estado) return sinCambio(estado, 'pedido_ya_existe', 'El pedido ya está abierto')
@@ -772,5 +777,10 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
       nuevo.estado = 'cancelado'
       return listo(nuevo)
     }
+
+    // Filtrados arriba; aquí solo para que el switch cubra todos los tipos.
+    case 'ProductoAgotado':
+    case 'ProductoDisponible':
+      return sinCambio(estado, 'no_es_del_pedido', `${evento.tipo} no es de un pedido`)
   }
 }

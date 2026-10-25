@@ -230,7 +230,7 @@ Cumple a la vez la trazabilidad total del brief, la sincronización sin pérdida
 
 ## ADR-008 · Inicio de sesión solo con PIN generado por el sistema
 
-**Fecha:** 23-oct-2026 · **Estado:** aceptada
+**Fecha:** 23-oct-2026 · **Estado:** reemplazada en parte por [ADR-013](#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña) (24-oct-2026): ya no se empareja cada equipo y admin, cajero y reportes entran con usuario y contraseña. Sigue vigente lo demás: PIN generados al azar y únicos, verificación en el hub, espera creciente, sesiones, firma de eventos y comprobantes de supervisor.
 
 ### Decisión
 
@@ -355,3 +355,35 @@ Dos de ellas cambian lo que dice el brief:
 ### Riesgo abierto
 
 `node:sqlite` todavía figura como experimental en Node 24: su API podría cambiar. Lo mitiga la interfaz `BaseSqlite` y las pruebas del esquema.
+
+---
+
+## ADR-013 · Acceso por rol: meseros con PIN desde la IP, caja con usuario y contraseña
+
+**Fecha:** 24-oct-2026 · **Estado:** aceptada (se implementa en la tarea 1.3b) · Reemplaza en parte el [ADR-008](#adr-008--inicio-de-sesión-solo-con-pin-generado-por-el-sistema)
+
+Decisión del dueño del 24-oct-2026: el mesero no debe pasar por emparejar su celular, y la caja entra como cualquier sistema administrativo.
+
+### Decisión
+
+- **Roles de fábrica: Administrador, Cajero, Reportes y Mesero.** Se quitan Gerente y Cocina; Contador pasa a llamarse Reportes. Cada restaurante puede ajustar sus permisos.
+- **Mesero**: abre la IP del hub en su celular y escribe su **PIN de 4 dígitos**. Entra directo a la zona de pedidos. No hay emparejamiento: con el primer PIN correcto el hub registra ese navegador como equipo de mesero y le da un token propio y revocable, para que los eventos sigan llevando dispositivo, firma y revocación (ADR-005, ADR-008).
+- **Administrador, Cajero y Reportes**: entran con **usuario y contraseña** desde cualquier equipo de la red (el PC de caja, una tablet o el celular del dueño dentro del local). Cada uno ve lo de su rol. El cajero también toma pedidos y además cobra y maneja la caja. Reportes solo ve informes. El administrador ve todo y administra personal, carta, plano y equipos.
+- **PIN de autorización**: el administrador y el cajero tienen además un PIN de 4 dígitos que **no abre sesión**. Solo sirve para autorizar en el celular del mesero (anular lo enviado, descuentos) con el comprobante de un solo uso del ADR-008. Todos los PIN del restaurante, de entrada y de autorización, son únicos y los genera el sistema.
+- **Contraseñas**: mínimo 8 caracteres. El hub guarda solo una huella lenta con sal (scrypt), en tablas que solo existen en el hub y nunca se sincronizan. Espera creciente por usuario y por IP, y aviso al administrador como con el PIN. El administrador restablece la contraseña de quien la olvide. Al instalar, el hub muestra **una sola vez** el usuario del administrador y una contraseña inicial.
+- **Multirestaurante**: usuarios, roles, PIN y contraseñas son **por restaurante** (`restaurante_id`). El nombre de usuario es único dentro del restaurante, no en todo el sistema. El hub atiende una sola sede, así que su pantalla de entrada no pide escoger restaurante. Cómo se identifica el restaurante al entrar a la nube se decide en la Fase 2.
+- La pantalla de cocina (KDS) ya no tiene rol propio: cómo se identifica se decide en la tarea 1.4.
+
+### Riesgo aceptado
+
+Sin emparejamiento, cualquier celular conectado al Wi-Fi puede intentar PIN de mesero. Lo frenan la espera creciente por IP y por navegador y el aviso al administrador, pero cambiar de IP la reinicia. Por eso el **Wi-Fi del personal debe estar separado del de los clientes**: pasa de recomendación a condición de instalación (ADR-001). Si el piloto muestra intentos sospechosos, se puede volver a emparejar solo los celulares de meseros o pasar a PIN de 6 dígitos.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Emparejar cada celular una vez y luego PIN (lo de la 0.7) | Más seguro, pero el dueño no quiere ese paso para los meseros. |
+| Mesero entra sin PIN | No quedaría quién tomó o cambió cada pedido, y cualquiera en el Wi-Fi podría pedir. |
+| Mesero toca su nombre y entra | Un mesero podría actuar a nombre de otro. |
+| Autorizar con usuario y contraseña en el celular del mesero | Más lento en hora pico que un PIN. |
+| Entrar a la caja solo desde el PC del hub | El dueño quiere ver reportes desde su celular dentro del local. |

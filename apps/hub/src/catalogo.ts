@@ -93,6 +93,7 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
             id: texto(p.id),
             nombre: texto(p.nombre),
             descripcion: p.descripcion === null ? null : texto(p.descripcion),
+            favorito: p.favorito === 1,
             precio: numero(p.precio),
             impuesto: {
               tipo: texto(impuesto.tipo) as 'inc' | 'iva' | 'exento',

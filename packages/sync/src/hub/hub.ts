@@ -281,6 +281,7 @@ export class HubSync {
     for (;;) {
       const pagina = this.almacen.eventosDesde(desde, TAMANO_PAGINA)
       for (const evento of pagina) {
+        if (evento.agregado_tipo !== 'pedido') continue
         for (const id of pedidosDe(evento)) {
           const r = aplicarEvento(todos.get(id) ?? null, evento)
           if (r.estado) todos.set(id, r.estado)
@@ -293,6 +294,7 @@ export class HubSync {
   }
 
   private aplicarAProyecciones(evento: EventoPedido) {
+    if (evento.agregado_tipo !== 'pedido') return
     for (const id of pedidosDe(evento)) {
       const r = aplicarEvento(this.pedido(id), evento)
       if (r.estado?.estado === 'abierto') this.pedidos.set(id, r.estado)
@@ -342,7 +344,9 @@ export class HubSync {
 
     // 3b. Sesión y permiso. Una sesión que el hub no conoce (p. ej. tras restaurarlo) va a
     // cuarentena: el evento pudo ser legítimo.
-    const acceso = this.config.acceso.verificar(conexion, evento, this.pedido(evento.agregado_id))
+    // Un evento de producto no tiene pedido: no hace falta reconstruir nada para juzgarlo.
+    const pedidoPrevio = evento.agregado_tipo === 'pedido' ? this.pedido(evento.agregado_id) : null
+    const acceso = this.config.acceso.verificar(conexion, evento, pedidoPrevio)
     if (!acceso.ok) {
       return acceso.cuarentena
         ? this.aCuarentena(conexion, datos, acceso.motivo, recibidoEn)
@@ -378,8 +382,11 @@ export class HubSync {
       autorizado_por_id: acceso.autorizadoPorId,
     } as EventoPedido
 
-    // 6. Aplicar a cada pedido y decidir.
-    const resultados = agregados.map((pedidoId) => aplicarEvento(this.pedido(pedidoId), candidato))
+    // 6. Aplicar a cada pedido y decidir. Un evento de producto (agotado) no toca pedidos.
+    const esDePedido = evento.agregado_tipo === 'pedido'
+    const resultados = esDePedido
+      ? agregados.map((pedidoId) => aplicarEvento(this.pedido(pedidoId), candidato))
+      : []
     const problema = resultados.find(
       (r) => r.problema && r.problema.tipo !== 'items_omitidos',
     )?.problema

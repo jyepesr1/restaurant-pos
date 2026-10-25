@@ -47,6 +47,8 @@ export interface Catalogo {
       id: string
       nombre: string
       descripcion: string | null
+      /** Sale en "Favoritos" al tomar el pedido. */
+      favorito: boolean
       precio: number
       impuesto: { tipo: 'inc' | 'iva' | 'exento'; tarifa: number }
       variantes: { id: string; nombre: string; precio: number }[]

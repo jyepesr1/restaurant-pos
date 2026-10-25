@@ -27,7 +27,7 @@ const vigente = (l: EventoLocal) => l.estado === 'confirmado' || l.estado === 'p
 export function pedidosAbiertos(locales: readonly EventoLocal[]): PedidoVisible[] {
   const porPedido = new Map<string, EventoLocal[]>()
   for (const l of locales) {
-    if (!vigente(l)) continue
+    if (!vigente(l) || l.evento.agregado_tipo !== 'pedido') continue
     const id = l.evento.agregado_id
     porPedido.set(id, [...(porPedido.get(id) ?? []), l])
   }
@@ -63,4 +63,67 @@ export function estadoMesa(pedidos: readonly PedidoVisible[]): EstadoMesaDemo {
   return items.some((i) => i.estado === 'pendiente' || i.estado === 'retenido')
     ? 'tomando'
     : 'en_cocina'
+}
+
+/** Clave de lo agotado: el producto entero, o una de sus variantes (la botella, no la copa). */
+export const claveAgotado = (productoId: string, varianteId: string | null = null) =>
+  varianteId ? `${productoId}:${varianteId}` : productoId
+
+/** Lo vigente de los tipos pedidos: lo confirmado en el orden del hub y después lo pendiente. */
+function enOrden(locales: readonly EventoLocal[], tipos: readonly string[]): EventoLocal[] {
+  const de = locales.filter((l) => vigente(l) && tipos.includes(l.evento.tipo))
+  return [
+    ...de
+      .filter((l) => l.estado === 'confirmado')
+      .sort((a, b) => (a.evento.secuencia ?? 0) - (b.evento.secuencia ?? 0)),
+    ...de.filter((l) => l.estado === 'pendiente'),
+  ]
+}
+
+/**
+ * Lo agotado (86) según los eventos guardados aquí: lo confirmado en el orden del hub y, encima,
+ * lo propio pendiente. Así quien lo marca lo ve al instante, aun sin conexión.
+ */
+export function agotados(locales: readonly EventoLocal[]): Set<string> {
+  const resultado = new Set<string>()
+  for (const { evento } of enOrden(locales, ['ProductoAgotado', 'ProductoDisponible'])) {
+    if (evento.tipo !== 'ProductoAgotado' && evento.tipo !== 'ProductoDisponible') continue
+    const clave = claveAgotado(evento.datos.producto_id, evento.datos.variante_id)
+    if (evento.tipo === 'ProductoAgotado') resultado.add(clave)
+    else resultado.delete(clave)
+  }
+  return resultado
+}
+
+/**
+ * Los productos que más se han pedido en este equipo (lo que ha visto), del más al menos. Cuenta
+ * las unidades que quedan en cada línea: lo sumado a una línea igual (`ItemCambiado`) cuenta, lo
+ * quitado o anulado no.
+ */
+export function masPedidos(locales: readonly EventoLocal[], cuantos = 12): string[] {
+  const lineas = new Map<string, { producto: string; cantidad: number }>()
+  for (const { evento: e } of enOrden(locales, [
+    'ItemAgregado',
+    'ItemCambiado',
+    'ItemQuitado',
+    'ItemAnulado',
+  ])) {
+    if (e.tipo === 'ItemAgregado') {
+      lineas.set(e.datos.item_id, { producto: e.datos.producto_id, cantidad: e.datos.cantidad })
+    } else if (e.tipo === 'ItemCambiado' || e.tipo === 'ItemQuitado' || e.tipo === 'ItemAnulado') {
+      const linea = lineas.get(e.datos.item_id)
+      if (!linea) continue
+      if (e.tipo === 'ItemQuitado') linea.cantidad = 0
+      else if (e.tipo === 'ItemAnulado')
+        linea.cantidad = Math.max(0, linea.cantidad - e.datos.cantidad)
+      else if (e.datos.cantidad !== undefined) linea.cantidad = e.datos.cantidad
+    }
+  }
+  const conteo = new Map<string, number>()
+  for (const { producto, cantidad } of lineas.values())
+    if (cantidad > 0) conteo.set(producto, (conteo.get(producto) ?? 0) + cantidad)
+  return [...conteo]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, cuantos)
+    .map(([id]) => id)
 }

@@ -40,8 +40,12 @@ export function MarcoSala({
 
   useEffect(() => {
     document.title = `${titulo} · POS`
-    encabezado.current?.focus({ preventScroll: true })
   }, [titulo])
+  // El foco va al título al llegar a la pantalla, no cada vez que el título cambia (un pedido
+  // para llevar recibe su número después): no se le roba el foco a quien está escribiendo.
+  useEffect(() => {
+    encabezado.current?.focus({ preventScroll: true })
+  }, [])
 
   return (
     <div className="flex min-h-dvh flex-col">

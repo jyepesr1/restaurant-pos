@@ -25,6 +25,7 @@ export * from './dinero'
 export * from './eventos/comun'
 export {
   Aceptacion,
+  agregadoDe,
   CopiaItem,
   type DatosAceptacion,
   type EventoAplicable,
@@ -34,6 +35,7 @@ export {
   type ResultadoValidacion,
   TIPOS_CON_MOTIVO,
   TIPOS_EVENTO_PEDIDO,
+  TIPOS_EVENTO_PRODUCTO,
   type TipoEventoPedido,
   validarEventoNuevo,
 } from './eventos/pedido'

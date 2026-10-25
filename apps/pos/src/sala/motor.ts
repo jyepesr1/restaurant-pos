@@ -1,4 +1,10 @@
-import { type EventoNuevo, firmarEvento, nuevoId, type TipoEventoPedido } from '@pos/core'
+import {
+  agregadoDe,
+  type EventoNuevo,
+  firmarEvento,
+  nuevoId,
+  type TipoEventoPedido,
+} from '@pos/core'
 import {
   type Canal,
   type Catalogo,
@@ -493,7 +499,7 @@ export class Sala {
       id: nuevoId(),
       tipo,
       version_esquema: 1,
-      agregado_tipo: 'pedido',
+      agregado_tipo: agregadoDe(tipo),
       agregado_id: pedidoId,
       relacionados: [],
       datos,

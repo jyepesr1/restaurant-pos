@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { type Instantanea, Sala } from './motor'
-import { type PedidoVisible, pedidosAbiertos } from './proyeccion'
+import { agotados, masPedidos, type PedidoVisible, pedidosAbiertos } from './proyeccion'
 
 // Una sola sala por pestaña: la abre la app al arrancar y la comparten todas las pantallas.
 
@@ -10,20 +10,41 @@ export function useSala(): Instantanea {
   return useSyncExternalStore(sala.suscribir, sala.instantanea)
 }
 
-/** Los pedidos abiertos según lo guardado aquí; se relee cada vez que algo cambia. */
-export function usePedidos(): PedidoVisible[] | null {
+export interface VistaLocal {
+  pedidos: PedidoVisible[]
+  /** Productos (o variantes) agotados: claves de `claveAgotado`. */
+  agotados: Set<string>
+  /** Ids de los productos más pedidos. */
+  masPedidos: string[]
+}
+
+/** Lo que sale de los eventos guardados aquí; se relee cada vez que algo cambia. */
+export function useVistaLocal(): VistaLocal | null {
   const { cambios } = useSala()
-  const [pedidos, setPedidos] = useState<PedidoVisible[] | null>(null)
+  const [vista, setVista] = useState<VistaLocal | null>(null)
   // biome-ignore lint/correctness/useExhaustiveDependencies: `cambios` avisa que hay que releer
   useEffect(() => {
     let vigente = true
     sala.sync
       ?.locales()
-      .then((locales) => vigente && setPedidos(pedidosAbiertos(locales)))
+      .then(
+        (locales) =>
+          vigente &&
+          setVista({
+            pedidos: pedidosAbiertos(locales),
+            agotados: agotados(locales),
+            masPedidos: masPedidos(locales),
+          }),
+      )
       .catch((error) => console.error('No se pudieron leer los pedidos:', error))
     return () => {
       vigente = false
     }
   }, [cambios])
-  return pedidos
+  return vista
+}
+
+/** Los pedidos abiertos según lo guardado aquí. */
+export function usePedidos(): PedidoVisible[] | null {
+  return useVistaLocal()?.pedidos ?? null
 }

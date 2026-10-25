@@ -9,6 +9,7 @@ import { navegar } from '../ui/ruta'
 import { usePedidos, useSala } from './contexto'
 import { FiguraElemento, Lienzo, posicion, useEscala } from './LienzoPlano'
 import { MarcoSala } from './MarcoSala'
+import { CANALES } from './pedido'
 import { limites } from './plano'
 import { type EstadoMesaDemo, estadoMesa, type PedidoVisible } from './proyeccion'
 
@@ -158,6 +159,7 @@ export function Mesas() {
           )}
         </div>
 
+        <PedidosSinMesa catalogo={catalogo} pedidos={pedidos ?? []} />
         <PedidosFueraDelPlano catalogo={catalogo} pedidos={pedidos ?? []} />
 
         {zonas.length === 0 && (
@@ -214,6 +216,41 @@ export function Mesas() {
             )}
       </div>
     </MarcoSala>
+  )
+}
+
+/**
+ * Para llevar, domicilio y barra (brief §4.1): pedidos sin mesa. Un botón por canal los abre, y
+ * los que siguen abiertos se ven aquí con su número del día.
+ */
+function PedidosSinMesa({ catalogo, pedidos }: { catalogo: Catalogo; pedidos: PedidoVisible[] }) {
+  const abiertos = pedidos.filter((p) => p.estado.mesaId === null)
+  return (
+    <section aria-label="Pedidos sin mesa" className="mb-3 flex flex-wrap items-center gap-2">
+      {(Object.keys(CANALES) as (keyof typeof CANALES)[]).map((c) => (
+        <Boton key={c} icono="mas" onClick={() => navegar(`/pedido?canal=${c}`)}>
+          {CANALES[c]}
+        </Boton>
+      ))}
+      {abiertos.map((p) => (
+        <Boton
+          key={p.estado.id}
+          variante="secundario"
+          className="border-proceso-fuerte"
+          onClick={() => navegar(`/pedido?pedido=${p.estado.id}`)}
+        >
+          <span>
+            {`${CANALES[p.estado.canal as keyof typeof CANALES] ?? 'Pedido'}${p.estado.numeroDia ? ` #${p.estado.numeroDia}` : ''}`}
+          </span>
+          <span className="cifras text-texto-suave">{pesos(p.total)}</span>
+          {catalogo.personal.find((u) => u.id === p.estado.meseroAsignadoId) && (
+            <span className="text-texto-suave">
+              {catalogo.personal.find((u) => u.id === p.estado.meseroAsignadoId)?.nombre}
+            </span>
+          )}
+        </Boton>
+      ))}
+    </section>
   )
 }
 

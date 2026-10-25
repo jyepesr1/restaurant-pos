@@ -114,6 +114,8 @@ const PERMISO_POR_TIPO: Record<TipoEventoPedido, Permiso | null> = {
   PedidoCerrado: 'cerrar_mesa',
   PedidoReabierto: 'reabrir_cuenta',
   PedidoCancelado: 'cancelar_pedido',
+  ProductoAgotado: 'agotar_producto',
+  ProductoDisponible: 'agotar_producto',
 }
 
 const sumaExtras = (precios: readonly number[]) => precios.reduce((a, b) => a + b, 0)

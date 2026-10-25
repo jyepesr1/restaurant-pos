@@ -362,6 +362,7 @@ function comoQuedaProducto(b: BorradorProducto): BorradorProducto {
     categoriaId: b.categoriaId,
     precio: activas.length > 0 ? Math.min(...activas.map((v) => v.precio)) : b.precio,
     impuestoId: b.impuestoId,
+    favorito: b.favorito,
     activo: b.activo,
     variantes: activas.map((v) => ({
       id: v.id,

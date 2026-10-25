@@ -36,6 +36,8 @@ export interface BorradorProducto {
   /** El precio si no tiene variantes; con variantes, el del producto es el de la más barata. */
   precio: number
   impuestoId: string
+  /** Sale en "Favoritos" al tomar el pedido. */
+  favorito: boolean
   activo: boolean
   variantes: BorradorVariante[]
   /** Grupos de opciones, en el orden en que se muestran. */
@@ -53,6 +55,7 @@ export function borradorDeProducto(c: CatalogoEdicion, id: string): BorradorProd
     categoriaId: p.categoria_id,
     precio: p.precio,
     impuestoId: p.impuesto_id,
+    favorito: p.favorito,
     activo: p.activo,
     variantes: c.variantes
       .filter((v) => v.producto_id === id && v.activo)
@@ -74,6 +77,7 @@ export function productoNuevo(c: CatalogoEdicion, categoriaId: string): Borrador
     categoriaId,
     precio: 0,
     impuestoId: c.impuestos.find((i) => i.activo)?.id ?? '',
+    favorito: false,
     activo: true,
     variantes: [],
     grupos: [],
@@ -194,7 +198,7 @@ export function cambiosDeProducto(c: CatalogoEdicion, b: BorradorProducto): Camb
       // Con variantes, el precio del producto solo sirve para mostrar "desde" (DINERO.md).
       precio: variantes.length > 0 ? Math.min(...variantes.map((v) => v.precio)) : b.precio,
       impuesto_id: b.impuestoId,
-      ...(b.nuevo ? { favorito: false } : {}),
+      favorito: b.favorito,
       activo: b.activo,
     }),
   )

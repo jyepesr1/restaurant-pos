@@ -295,10 +295,24 @@ const datosPorTipo = {
   PedidoCerrado: Vacio,
   PedidoReabierto: Vacio,
   PedidoCancelado: Vacio,
+  // Agotado (86) y de vuelta: no son del pedido sino del producto (agregado `producto`). Van en la
+  // misma secuencia para que lleguen a todos al instante, también a quien estaba sin conexión
+  // (docs/MODELO_DATOS.md#eventos-de-mesa-producto-y-caja). Sin variante: todo el producto.
+  ProductoAgotado: z.strictObject({ producto_id: Ulid, variante_id: Ulid.nullable() }),
+  ProductoDisponible: z.strictObject({ producto_id: Ulid, variante_id: Ulid.nullable() }),
 } as const
 
 export type TipoEventoPedido = keyof typeof datosPorTipo
 export const TIPOS_EVENTO_PEDIDO = Object.keys(datosPorTipo) as TipoEventoPedido[]
+
+/** Los eventos cuyo agregado es un producto, no un pedido. */
+export const TIPOS_EVENTO_PRODUCTO: readonly TipoEventoPedido[] = [
+  'ProductoAgotado',
+  'ProductoDisponible',
+]
+/** A qué agregado pertenece cada tipo de evento. */
+export const agregadoDe = (tipo: TipoEventoPedido): 'pedido' | 'producto' =>
+  TIPOS_EVENTO_PRODUCTO.includes(tipo) ? 'producto' : 'pedido'
 
 /** Eventos que exigen un motivo en el sobre. */
 export const TIPOS_CON_MOTIVO: readonly TipoEventoPedido[] = [
@@ -315,7 +329,7 @@ export const TIPOS_CON_MOTIVO: readonly TipoEventoPedido[] = [
 const sobre = {
   id: Ulid,
   version_esquema: z.literal(1),
-  agregado_tipo: z.literal('pedido'),
+  agregado_tipo: z.enum(['pedido', 'producto']),
   agregado_id: Ulid,
   relacionados: z.array(Ulid).max(20),
   sesion_id: Ulid.nullable(),
@@ -369,6 +383,30 @@ function otroPedido(evento: { tipo: string; datos: unknown }): string | null {
 export const EventoPedidoNuevo = z
   .discriminatedUnion('tipo', variantes)
   .superRefine((evento, ctx) => {
+    if (evento.agregado_tipo !== agregadoDe(evento.tipo)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['agregado_tipo'],
+        message: `${evento.tipo} es de un ${agregadoDe(evento.tipo)}`,
+      })
+    }
+    if (evento.tipo === 'ProductoAgotado' || evento.tipo === 'ProductoDisponible') {
+      if (evento.agregado_id !== (evento.datos as { producto_id: string }).producto_id) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['agregado_id'],
+          message: 'El agregado es el producto que se agota',
+        })
+      }
+      // Si nombrara un pedido, el hub lo contaría como evento de ese pedido.
+      if (evento.relacionados.length > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['relacionados'],
+          message: 'Un evento de producto no toca pedidos',
+        })
+      }
+    }
     if (TIPOS_CON_MOTIVO.includes(evento.tipo) && !evento.motivo) {
       ctx.addIssue({ code: 'custom', path: ['motivo'], message: `${evento.tipo} exige un motivo` })
     }

@@ -155,7 +155,7 @@ Una acción está permitida si el usuario tiene el permiso **o** si el evento tr
 | `Combo` | 1 | V | `producto_id` del combo, ítems incluidos y su reparto de precio en pesos (suma exacta) |
 | `PrecioCanal` | 1 | V | `producto_id`/`variante_id`, `canal`, `precio`, franja horaria (happy hour, brunch). La franja se evalúa con la hora del hub. |
 
-Agotado (86) no es un campo editable: son los eventos `ProductoAgotado` / `ProductoDisponible`, y la proyección `DisponibilidadProducto`.
+Agotado (86) no es un campo editable: son los eventos `ProductoAgotado` / `ProductoDisponible` (agregado `producto`, desde la tarea 1.3), y la proyección `DisponibilidadProducto`, que cada equipo calcula con los eventos que tiene: lo confirmado en el orden del hub y, encima, lo propio pendiente. Sin `variante_id` se agota el producto entero; con ella, solo esa variante.
 
 **Historial del catálogo** (tarea 1.1): cada cambio de un registro del catálogo deja una fila en la tabla inmutable `catalogo_cambio` del hub, con la versión que tomó del contador, la entidad, el registro, cómo estaba (`antes`), cómo quedó (`despues`), quién, desde qué equipo y cuándo. Ese es el `CatalogoCambiado` de la tabla de eventos de abajo. No va a la tabla `evento` ni a la secuencia de los dispositivos: a ellos les llega el aviso `catalogo` ([SYNC.md](SYNC.md#catálogo-y-configuración)). Con el historial, el hub sabe qué precio valía en cada `catalogo_version` ([DINERO.md](DINERO.md#precio-copiado)). La migración 3 lo llenó con el estado de cada registro en ese momento.
 

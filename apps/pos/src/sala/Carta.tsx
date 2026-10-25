@@ -680,6 +680,23 @@ function PanelProducto({
         )}
       </fieldset>
 
+      {puedeTodo && (
+        <label className="mb-4 flex min-h-12 items-center gap-3">
+          <input
+            type="checkbox"
+            className="size-6"
+            checked={b.favorito}
+            onChange={(e) => cambiar({ favorito: e.target.checked })}
+          />
+          <span>
+            <span className="font-semibold">Favorito</span>
+            <span className="block text-texto-suave">
+              Aparece en «Favoritos», lo primero que se ve al tomar el pedido.
+            </span>
+          </span>
+        </label>
+      )}
+
       {puedeTodo && !inicial.nuevo && (
         <Boton variante="secundario" onClick={() => cambiar({ activo: !b.activo })}>
           {b.activo ? 'Archivar (sacar de la carta)' : 'Volver a ponerlo en la carta'}
