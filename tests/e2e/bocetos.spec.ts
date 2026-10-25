@@ -251,9 +251,9 @@ test.describe('tamaño táctil de 48×48 px', () => {
     })
   }
 
-  test('inicio de la app: los enlaces a los bocetos miden al menos 48×48', async ({ page }) => {
+  test('inicio de la app (emparejar): todo mide al menos 48×48', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('link', { name: 'Bocetos de las pantallas' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Emparejar este equipo' })).toBeVisible()
     expect(await medidasPequenas(page)).toEqual([])
   })
 
@@ -412,7 +412,8 @@ test.describe('contraste AA en claro y oscuro', () => {
 
 test.describe('modo oscuro', () => {
   test.use({ colorScheme: 'light' })
-  const boton = (page: Page) => page.getByRole('button', { name: 'Modo oscuro' })
+  // Exacto: la tarjeta de la marca Bagno también menciona el modo oscuro en su descripción.
+  const boton = (page: Page) => page.getByRole('button', { name: 'Modo oscuro', exact: true })
 
   test('cambia los colores y se mantiene al recargar', async ({ page }) => {
     await page.goto('/bocetos/componentes')
@@ -2030,7 +2031,7 @@ test.describe('KDS (cocina y barra)', () => {
     await expect(comanda(page, 12, 'cocina')).toHaveCount(0)
     await expect(comanda(page, 2, 'barra')).toHaveCount(0)
 
-    const numeros = (await page.locator('main ul > li p.text-2xl').allInnerTexts()).map(numeroDe)
+    const numeros = (await page.locator('main ul > li p.font-titulo').allInnerTexts()).map(numeroDe)
     expect(numeros.filter((n, i) => n !== numeros[i - 1])).toEqual([7, 4, 21])
   })
 

@@ -144,7 +144,7 @@ test.describe('pantalla de diagnóstico', () => {
 
   test('el inicio enlaza a /diagnostico', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: 'Diagnóstico del dispositivo' }).click()
+    await page.getByRole('link', { name: 'Diagnóstico del equipo' }).click()
     await expect(page).toHaveURL(/\/diagnostico$/)
     await expect(page.getByRole('heading', { name: 'Diagnóstico del dispositivo' })).toBeVisible()
   })
