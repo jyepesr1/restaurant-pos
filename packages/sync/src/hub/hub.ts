@@ -164,6 +164,13 @@ export class HubSync {
     this.reconstruirProyecciones()
   }
 
+  /** Si la mesa tiene un pedido abierto (para no archivarla en el editor del plano). */
+  tienePedidoAbierto(mesaId: string): boolean {
+    for (const p of this.pedidos.values())
+      if (p.estado === 'abierto' && p.mesaId === mesaId) return true
+    return false
+  }
+
   /** Proyección actual de un pedido. */
   pedido(id: string): EstadoPedido | null {
     return this.pedidos.get(id) ?? reconstruir(this.almacen.eventosDeAgregado(id), id)

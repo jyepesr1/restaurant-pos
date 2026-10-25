@@ -24,6 +24,9 @@ function edicion(): CatalogoEdicion {
   const tagliata = nuevoId()
   return {
     version: 10,
+    zonas: [],
+    mesas: [],
+    elementos: [],
     impuestos: [{ ...reg, id: impuesto, nombre: 'INC 8 %', tipo: 'inc', tarifa: 800 }],
     estaciones: [],
     categorias: [{ ...reg, id: categoria, nombre: 'Vinos', orden: 0, estacion_id: null }],

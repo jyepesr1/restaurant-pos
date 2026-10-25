@@ -10,6 +10,8 @@ import type { BaseSqlite } from './sqlite'
 // queda con una fila por registro y no se puede reescribir.
 
 const HASTA_V2 = MIGRACIONES.filter((m) => m.version <= 2)
+// Hasta la 3: las pruebas de esta migración no dependen de las que vengan después.
+const HASTA_V3 = MIGRACIONES.filter((m) => m.version <= 3)
 const TABLAS_CATALOGO = [
   'impuesto',
   'estacion',
@@ -97,7 +99,7 @@ describe('migración 3 sobre una base de la versión 2', () => {
     const { db } = baseVersion2()
     expect(MIGRACIONES.find((m) => m.version === 3)?.nombre).toBe('catalogo_cambio')
     expect(versionActual(db)).toBe(2)
-    expect(aplicarMigraciones(db)).toEqual([3])
+    expect(aplicarMigraciones(db, HASTA_V3)).toEqual([3])
     expect(versionActual(db)).toBe(3)
   })
 
@@ -205,7 +207,7 @@ describe('migración 3 sobre una base de la versión 2', () => {
   it('una base de la versión 2 sin catálogo migra con el historial vacío', () => {
     const db = abrirBase(':memory:')
     aplicarMigraciones(db, HASTA_V2)
-    expect(aplicarMigraciones(db)).toEqual([3])
+    expect(aplicarMigraciones(db, HASTA_V3)).toEqual([3])
     expect(historial(db)).toEqual([])
   })
 

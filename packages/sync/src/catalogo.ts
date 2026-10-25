@@ -9,16 +9,35 @@ export interface Catalogo {
     /** Minutos sin uso tras los que el dispositivo vuelve a pedir el PIN. */
     sesionInactividadMin: number
   }
-  zonas: { id: string; nombre: string }[]
+  /** Zonas o pisos del salón, en su orden. */
+  zonas: { id: string; nombre: string; piso: number }[]
+  /** Geometría en centímetros: esquina superior izquierda, medidas y rotación en grados. */
   mesas: {
     id: string
     zonaId: string
     nombre: string
     x: number
     y: number
-    forma: string
+    ancho: number
+    alto: number
+    rotacion: number
+    forma: 'redonda' | 'cuadrada' | 'rectangular' | 'barra'
     capacidad: number
   }[]
+  /** Paredes, puertas, plantas, la barra y textos del plano, con la misma geometría. */
+  elementos: {
+    id: string
+    zonaId: string
+    tipo: 'pared' | 'puerta' | 'planta' | 'barra' | 'texto'
+    texto: string | null
+    x: number
+    y: number
+    ancho: number
+    alto: number
+    rotacion: number
+  }[]
+  /** Quién atiende (para mostrar el mesero de cada mesa); solo nombre, nada de credenciales. */
+  personal: { id: string; nombre: string }[]
   estaciones: { id: string; nombre: string }[]
   categorias: {
     id: string

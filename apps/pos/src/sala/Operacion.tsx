@@ -7,6 +7,7 @@ import { Entrar } from './Entrar'
 import { Equipos } from './Equipos'
 import { MarcoSala } from './MarcoSala'
 import { Mesas } from './Mesas'
+import { PlanoEditor } from './PlanoEditor'
 import { TomaPedido } from './TomaPedido'
 
 // La app de operación: emparejar el equipo, entrar con el PIN y trabajar (mesas y pedido). Abre
@@ -39,6 +40,7 @@ export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLS
   if (!estado.catalogo) return <SinCatalogo />
   if (ruta === '/equipos') return <Equipos />
   if (ruta === '/carta') return <Carta />
+  if (ruta === '/plano') return <PlanoEditor />
   if (ruta === '/pedido') return <TomaPedido key={parametros.get('mesa')} />
   return <Mesas />
 }

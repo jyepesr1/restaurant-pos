@@ -38,6 +38,9 @@ export interface Sesion {
 /** Un cambio del editor de la carta: crea el registro si no existe, o cambia esos campos. */
 export interface CambioCatalogo {
   entidad:
+    | 'zona'
+    | 'mesa'
+    | 'elemento_plano'
     | 'impuesto'
     | 'estacion'
     | 'categoria'
@@ -57,8 +60,25 @@ interface Registro {
 }
 
 /** Lo que devuelve `GET /api/catalogo/edicion`: las filas del catálogo, también las archivadas. */
+export type FormaMesa = 'redonda' | 'cuadrada' | 'rectangular' | 'barra'
+export type TipoElemento = 'pared' | 'puerta' | 'planta' | 'barra' | 'texto'
+
+/** Geometría en el plano, en centímetros: esquina superior izquierda, medidas y giro en grados. */
+export interface Geometria {
+  x: number
+  y: number
+  ancho: number
+  alto: number
+  rotacion: number
+}
+
 export interface CatalogoEdicion {
   version: number
+  zonas: (Registro & { nombre: string; orden: number; piso: number })[]
+  mesas: (Registro &
+    Geometria & { zona_id: string; nombre: string; forma: FormaMesa; capacidad: number })[]
+  elementos: (Registro &
+    Geometria & { zona_id: string; tipo: TipoElemento; texto: string | null })[]
   impuestos: (Registro & { nombre: string; tipo: 'inc' | 'iva' | 'exento'; tarifa: number })[]
   estaciones: (Registro & { nombre: string; orden: number })[]
   categorias: (Registro & { nombre: string; orden: number; estacion_id: string | null })[]
@@ -99,6 +119,48 @@ export interface Instantanea {
 }
 
 const MINUTOS_POR_DEFECTO = 30
+
+/** Lo que falte en el catálogo de edición (un hub de otra versión) se toma como vacío. */
+export function completarEdicion(
+  c: Partial<CatalogoEdicion> & { version: number },
+): CatalogoEdicion {
+  return {
+    version: c.version,
+    zonas: c.zonas ?? [],
+    mesas: c.mesas ?? [],
+    elementos: c.elementos ?? [],
+    impuestos: c.impuestos ?? [],
+    estaciones: c.estaciones ?? [],
+    categorias: c.categorias ?? [],
+    productos: c.productos ?? [],
+    variantes: c.variantes ?? [],
+    grupos: c.grupos ?? [],
+    enlaces: c.enlaces ?? [],
+    modificadores: c.modificadores ?? [],
+  }
+}
+
+/**
+ * Una carta guardada por una versión anterior de la app puede no traer lo que se agregó después
+ * (el plano de la 1.2): se completa con lo vacío hasta que llegue la del hub. Así una
+ * actualización no deja la pantalla en blanco.
+ */
+export function completarCatalogo(c: Catalogo): Catalogo {
+  const viejo = c as Partial<Catalogo> &
+    Pick<Catalogo, 'version' | 'restaurante' | 'estaciones' | 'categorias'>
+  return {
+    ...c,
+    zonas: (viejo.zonas ?? []).map((z) => ({ ...z, piso: z.piso ?? 1 })),
+    mesas: (viejo.mesas ?? []).map((m) => ({
+      ...m,
+      ancho: m.ancho ?? 80,
+      alto: m.alto ?? 80,
+      rotacion: m.rotacion ?? 0,
+    })),
+    elementos: viejo.elementos ?? [],
+    personal: viejo.personal ?? [],
+  }
+}
 
 /** Un trabajo de fondo falló (IndexedDB lleno o cerrado): queda en la consola. */
 const avisarFallo = (error: unknown) => console.error('Equipo:', error)
@@ -189,7 +251,7 @@ export class Sala {
       cargado: true,
       equipo: equipo ?? null,
       sesion: sesion ?? null,
-      catalogo: catalogo ?? null,
+      catalogo: catalogo ? completarCatalogo(catalogo) : null,
     })
     this.vencerSesionSiToca()
     if (equipo) await this.conectar(equipo)
@@ -289,15 +351,19 @@ export class Sala {
       throw new ErrorApi('respuesta_invalida', 'El hub respondió algo que no es la carta')
     // Dos pedidos de la carta a la vez: la respuesta que llega tarde no pisa una más nueva.
     if (catalogo.version < (this.estado.catalogo?.version ?? -1)) return
-    await this.db.guardarAjuste(CLAVES.catalogo, catalogo)
-    this.cambiar({ catalogo })
+    const completo = completarCatalogo(catalogo)
+    await this.db.guardarAjuste(CLAVES.catalogo, completo)
+    this.cambiar({ catalogo: completo })
   }
 
   /** Todo el catálogo, también lo archivado, para el editor de la carta. */
-  catalogoParaEditar(): Promise<CatalogoEdicion> {
-    return this.api<CatalogoEdicion>('GET', '/api/catalogo/edicion', {
-      token: this.equipoActual().token,
-    })
+  async catalogoParaEditar(): Promise<CatalogoEdicion> {
+    const c = await this.api<Partial<CatalogoEdicion> & { version: number }>(
+      'GET',
+      '/api/catalogo/edicion',
+      { token: this.equipoActual().token },
+    )
+    return completarEdicion(c)
   }
 
   /**

@@ -98,7 +98,7 @@ export function problemasDeProducto(b: BorradorProducto): string[] {
 }
 
 /** Los campos de `despues` que cambian respecto a `antes` (todos si no había `antes`). */
-function diferencias<T extends Record<string, unknown>>(
+export function diferencias<T extends Record<string, unknown>>(
   antes: object | undefined,
   despues: T,
 ): Partial<T> {
@@ -109,7 +109,7 @@ function diferencias<T extends Record<string, unknown>>(
   ) as Partial<T>
 }
 
-function agregar(
+export function agregar(
   cambios: CambioCatalogo[],
   entidad: CambioCatalogo['entidad'],
   id: string,

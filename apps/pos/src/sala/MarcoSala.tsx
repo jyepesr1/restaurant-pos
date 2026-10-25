@@ -21,15 +21,22 @@ const ESTADO: Record<EstadoConexion, EstadoVisible> = {
 export function MarcoSala({
   titulo,
   volver,
+  protegerSalida,
   children,
 }: {
   titulo: string
   volver?: string
+  /**
+   * Volver y Salir pasan por aquí antes de dejar la pantalla (p. ej., para avisar de cambios sin
+   * guardar): recibe lo que haría y decide si lo hace.
+   */
+  protegerSalida?: (accion: () => void) => void
   children: ReactNode
 }) {
   const { oscuro, elegir } = useTema()
   const { conexion, pendientes, sesion, simulandoSinConexion } = useSala()
   const encabezado = useRef<HTMLHeadingElement>(null)
+  const salirCon = (accion: () => void) => (protegerSalida ? protegerSalida(accion) : accion())
 
   useEffect(() => {
     document.title = `${titulo} · POS`
@@ -46,7 +53,7 @@ export function MarcoSala({
                 variante="fantasma"
                 icono="atras"
                 aria-label="Volver"
-                onClick={() => navegar(volver)}
+                onClick={() => salirCon(() => navegar(volver))}
               />
             )}
             <img
@@ -77,7 +84,7 @@ export function MarcoSala({
             </button>
             <span className="flex-1" />
             {sesion && (
-              <Boton variante="fantasma" onClick={() => void sala.salir()}>
+              <Boton variante="fantasma" onClick={() => salirCon(() => void sala.salir())}>
                 <span className="hidden max-w-40 truncate text-texto-suave sm:inline">
                   {sesion.usuario.nombre}
                 </span>

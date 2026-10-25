@@ -39,6 +39,8 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
   const grupos = new Map(activos('grupo_modificador', 'nombre').map((f) => [texto(f.id), f]))
   const modificadores = activos('modificador')
   const productos = activos('producto', 'nombre')
+  const zonas = activos('zona', 'piso, orden, nombre')
+  const idsZonas = new Set(zonas.map((f) => texto(f.id)))
 
   return {
     version,
@@ -46,15 +48,37 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
       nombre: texto(restaurante?.nombre ?? ''),
       sesionInactividadMin: config.sesion_inactividad_min,
     },
-    zonas: activos('zona').map((f) => ({ id: texto(f.id), nombre: texto(f.nombre) })),
-    mesas: activos('mesa', 'zona_id, y, x').map((f) => ({
+    zonas: zonas.map((f) => ({ id: texto(f.id), nombre: texto(f.nombre), piso: numero(f.piso) })),
+    mesas: activos('mesa', 'zona_id, y, x')
+      .filter((f) => idsZonas.has(texto(f.zona_id)))
+      .map((f) => ({
+        id: texto(f.id),
+        zonaId: texto(f.zona_id),
+        nombre: texto(f.nombre),
+        x: numero(f.x),
+        y: numero(f.y),
+        ancho: numero(f.ancho),
+        alto: numero(f.alto),
+        rotacion: numero(f.rotacion),
+        forma: texto(f.forma) as Catalogo['mesas'][number]['forma'],
+        capacidad: numero(f.capacidad),
+      })),
+    elementos: activos('elemento_plano', 'zona_id, version')
+      .filter((f) => idsZonas.has(texto(f.zona_id)))
+      .map((f) => ({
+        id: texto(f.id),
+        zonaId: texto(f.zona_id),
+        tipo: texto(f.tipo) as Catalogo['elementos'][number]['tipo'],
+        texto: f.texto === null ? null : texto(f.texto),
+        x: numero(f.x),
+        y: numero(f.y),
+        ancho: numero(f.ancho),
+        alto: numero(f.alto),
+        rotacion: numero(f.rotacion),
+      })),
+    personal: activos('usuario', 'nombre').map((f) => ({
       id: texto(f.id),
-      zonaId: texto(f.zona_id),
       nombre: texto(f.nombre),
-      x: numero(f.x),
-      y: numero(f.y),
-      forma: texto(f.forma),
-      capacidad: numero(f.capacidad),
     })),
     estaciones: activos('estacion').map((f) => ({ id: texto(f.id), nombre: texto(f.nombre) })),
     categorias: activos('categoria').map((c) => ({
@@ -107,6 +131,8 @@ export interface OpcionesCatalogo {
   acceso: ServicioAcceso
   /** El catálogo cambió (lo editaron desde la caja): avisar a los equipos conectados. */
   alCambiar?: (version: number) => void
+  /** Si una mesa tiene un pedido abierto (no se puede archivar). */
+  mesaOcupada?: (mesaId: string) => boolean
   reloj?: () => string
 }
 
@@ -128,6 +154,7 @@ export async function rutasCatalogo(
     restauranteId,
     acceso,
     alCambiar,
+    mesaOcupada,
     reloj = () => new Date().toISOString(),
   }: OpcionesCatalogo,
 ) {
@@ -178,6 +205,7 @@ export async function rutasCatalogo(
         cambios,
         { usuarioId: quien.usuarioId, dispositivoId: conexion.dispositivoId },
         reloj(),
+        mesaOcupada,
       )
       if (cambiados > 0) alCambiar?.(version)
       return reply.code(200).send({ version, cambiados })

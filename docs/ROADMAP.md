@@ -27,7 +27,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | # | Tarea | Estado |
 |---|---|---|
 | 1.1 | Catálogo completo: editor, variantes, modificadores, estaciones y catálogo sincronizado | ✅ |
-| 1.2 | Editor de plano y vista operativa de mesas | ⏳ |
+| 1.2 | Editor de plano y vista operativa de mesas | ✅ |
 | 1.3 | Toma de pedido por comensal y curso | ⏳ |
 | 1.4 | Comandas: impresora ESC/POS por estación y KDS básico | ⏳ |
 | 1.5 | Mover ítems, cambiar y unir mesas, anular con motivo y permiso | ⏳ |
@@ -65,6 +65,76 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 1.2 — Editor de plano y vista operativa de mesas ✅
+
+**Salón** (la pantalla inicial):
+- Cada zona o piso con sus mesas en su lugar real y su forma, a escala de la pantalla. Se ven también las paredes, puertas, plantas, el mostrador y los textos.
+- En cada mesa ocupada: estado, tiempo desde que se abrió y total; el mesero, si la mesa se ve grande.
+- **Ver en lista**: la misma información en filas. Es la vista por defecto en el celular y se recuerda en cada equipo.
+- Si quedó un pedido abierto en una mesa que ya no está en el plano, aparece un aviso para la caja.
+
+**Editor del plano** (botón **Editar plano**, para quien puede editar la carta):
+- **Zonas:** salón, terraza, segundo piso, con su piso.
+- **Mesas:** cuadradas, redondas, rectangulares o puestos de barra, con nombre y puestos. **Varias a la vez…** pone N mesas iguales en filas con los números siguientes; un salón de 25 mesas son unos pocos toques.
+- **Elementos:** paredes, puertas, plantas, el mostrador y textos.
+- **Edición:**
+  - se arrastra para mover y la esquina cambia el tamaño;
+  - se gira de 15 en 15 o 90°, y se duplica;
+  - todo va a una cuadrícula de 10 cm;
+  - con el teclado: las flechas mueven, la R gira y Ctrl+Z deshace.
+- **Deshacer**, **Descartar** (pregunta antes) y **Guardar**. Al cambiar de zona, volver, salir o recargar con cambios, pregunta. Ahí se puede **Guardar y seguir**.
+- Las mesas quitadas de una zona se pueden **volver a poner**.
+
+**En el hub:**
+- Zonas, mesas y elementos se editan con la misma API que la carta, con el permiso `editar_catalogo`. La tabla `elemento_plano` llega con la migración 4.
+- **Reglas:**
+  - dos mesas activas no se llaman igual, ni en zonas distintas;
+  - no se archiva una mesa con un pedido abierto, ni una zona con mesas activas.
+- La carta que reciben los equipos trae la geometría de cada mesa, los elementos y el personal (solo id y nombre, para mostrar el mesero).
+- Un equipo con una carta guardada por la versión anterior de la app la completa en vez de quedar en blanco. Este error apareció al probar.
+
+Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entre otros:
+- los campos de medidas no dejaban escribir números de varias cifras;
+- cambiar el tamaño de algo girado iba en la dirección equivocada;
+- un pedido en una mesa archivada no se veía en ninguna parte;
+- «Salir» y «Descartar» borraban los cambios sin preguntar;
+- dibujar 25 mesas costaba más de 50 toques;
+- mesas y el control de tamaño por debajo de 48 px;
+- textos por debajo de 14 px;
+- el foco se perdía al agregar o quitar;
+- al llenarse la primera fila, las mesas nuevas se apilaban en una sola columna y con unas 80 mesas el hub rechazaba el guardado;
+- el hub no veía repetidos los nombres de mesa con tildes o eñes («Ñandú» y «ñandú»).
+
+**Pruebas:**
+- **Hub:** 508. Incluyen el hub de verdad como proceso: un pedido abierto por WebSocket impide archivar su mesa, también tras reiniciar el hub. También el seed después de dibujar el salón.
+- **App:** 387, con propiedades al azar: mover, girar y medir siempre quedan en la cuadrícula y dentro de los límites; guardar y volver a abrir da lo mismo.
+- **Base:** 270, con la migración 4 sobre una base con datos.
+
+**Queda pendiente:**
+- Unir y separar mesas, y los estados precuenta, por pagar, sucia y reservada: tareas 1.5 y 1.6.
+- Pedidos sin mesa (para llevar, domicilio, barra) y los comensales: tarea 1.3.
+- Color de demora por tiempo en la mesa: con los tiempos de cocina de la 1.4.
+- El gesto de «atrás» del celular dentro de la app no pregunta por cambios sin guardar (recargar y cerrar la pestaña sí). El borrador del editor no se guarda en el equipo: si se cae el navegador, se pierde lo no guardado.
+- Una zona archivada no se puede volver a mostrar desde la pantalla todavía.
+- No avisa si dos mesas quedan una encima de otra.
+
+**Cómo probarlo:**
+
+1. Cierra el hub si está abierto (**Ctrl+C**) y arráncalo de nuevo:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+   Debes ver `Base de datos actualizada a la versión 4.` y `Hub en marcha`.
+2. En la caja, entra con tu PIN de administrador o de gerente. En el salón debes ver las 25 mesas en cuadrícula. Toca **Editar plano**.
+3. Toca **Nueva zona**, escribe «Terraza» como nombre, toca **Varias a la vez…**, elige **Redonda**, deja 10 y 5 por fila, y toca **Agregar 10**. Debes ver dos filas de mesas redondas con los números 26 a 35.
+4. Arrastra la mesa 26 a otro lugar y toca **Guardar**. Debes ver «Guardaste Terraza».
+5. Vuelve al salón (flecha arriba a la izquierda). Debes ver las pestañas **Salón** y **Terraza**. En Terraza, las mesas en su lugar.
+6. En el celular, abre la app: debe verse en lista, con las mesas de las dos zonas. Toca **Ver plano** para ver el dibujo.
+7. Toma un pedido en la mesa 5 y vuelve: en el plano, la mesa 5 debe verse en ámbar con el tiempo y el total.
+8. En el editor, elige la mesa 5, toca **Quitar del plano** y **Guardar**. Debe decir que la mesa 5 tiene un pedido abierto.
 
 ### 1.1 — Catálogo completo ✅
 

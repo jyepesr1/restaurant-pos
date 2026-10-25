@@ -80,6 +80,8 @@ export function catalogoDePrueba(campos: Partial<Catalogo> = {}): Catalogo {
     restaurante: { nombre: 'Prueba', sesionInactividadMin: 30 },
     zonas: [],
     mesas: [],
+    elementos: [],
+    personal: [],
     estaciones: [
       { id: 'E-COCINA', nombre: 'Cocina' },
       { id: 'E-BARRA', nombre: 'Barra' },

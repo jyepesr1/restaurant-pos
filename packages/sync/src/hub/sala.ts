@@ -57,6 +57,11 @@ export class SalaSync {
     }
   }
 
+  /** Si la mesa tiene un pedido abierto. */
+  tienePedidoAbierto(mesaId: string): boolean {
+    return this.hub.tienePedidoAbierto(mesaId)
+  }
+
   /** Latido para todas las conexiones (docs/SYNC.md: cada 5 s). */
   latir() {
     for (const p of this.participantes) if (p.conexion) p.enviar({ tipo: 'latido' })

@@ -86,10 +86,12 @@ erDiagram
 | `Restaurante` | 0 | V | `nombre`, `nit`, `config` (ver [Configuración](#configuración-del-restaurante)) |
 | `Sede` | 0 | V | `nombre`, `direccion`, `zona_horaria` (`America/Bogota`) |
 | `Zona` | 0 | V | `sede_id`, `nombre`, `orden`, `piso` |
-| `Mesa` | 0 | V | `zona_id`, `nombre` ("12"), `forma` (`redonda`, `cuadrada`, `rectangular`, `barra`), `x`, `y`, `ancho`, `alto` (enteros en la cuadrícula del plano), `rotacion` (grados enteros), `capacidad` |
-| `ElementoPlano` | 1 | V | `zona_id`, `tipo` (`pared`, `puerta`, `planta`, `barra`, `texto`), geometría igual que `Mesa` |
+| `Mesa` | 0 | V | `zona_id`, `nombre` ("12", único entre las mesas activas del restaurante), `forma` (`redonda`, `cuadrada`, `rectangular`, `barra`), `x`, `y` (esquina superior izquierda), `ancho`, `alto`, todo en **centímetros enteros**; `rotacion` (grados enteros, alrededor del centro), `capacidad` |
+| `ElementoPlano` | 1 | V | `zona_id`, `tipo` (`pared`, `puerta`, `planta`, `barra`, `texto`), `texto` (solo el de tipo texto), geometría igual que `Mesa`. Tabla `elemento_plano` (migración 4) |
 | `Dispositivo` | 0 | V | `sede_id`, `nombre`, `tipo` (`mesero`, `caja`, `kds`), `emparejado_en`, `revocado_en`, `secuencia_revocacion` |
 | `DispositivoCredencial` | 0 | L (hub) | `dispositivo_id`, `token_hash` |
+
+El plano se edita desde la caja con la misma API que el catálogo (`POST /api/catalogo/cambios`, permiso `editar_catalogo`). El hub no deja archivar una mesa con un pedido abierto ni una zona con mesas activas. Los cambios del plano no van al historial `catalogo_cambio` (no afectan precios).
 
 El estado de una mesa (libre, ocupada, con pedido enviado, precuenta, por pagar, sucia, unida a otra) **no se guarda en `Mesa`**: es la proyección `EstadoMesa`, calculada a partir de los pedidos abiertos y de los eventos de mesa.
 

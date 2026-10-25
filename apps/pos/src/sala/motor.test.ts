@@ -33,8 +33,10 @@ const mesaId = nuevoId()
 const catalogo: Catalogo = {
   version: 3,
   restaurante: { nombre: 'Prueba', sesionInactividadMin: 30 },
-  zonas: [{ id: nuevoId(), nombre: 'Salón' }],
+  zonas: [{ id: nuevoId(), nombre: 'Salón', piso: 1 }],
   mesas: [],
+  elementos: [],
+  personal: [],
   estaciones: [{ id: nuevoId(), nombre: 'Cocina' }],
   categorias: [],
 }

@@ -30,6 +30,9 @@ type Entidad = CambioCatalogo['entidad']
 type Registro = Record<string, string | number | boolean | null>
 
 const TABLA: Record<Entidad, keyof Omit<CatalogoEdicion, 'version'>> = {
+  zona: 'zonas',
+  mesa: 'mesas',
+  elemento_plano: 'elementos',
   impuesto: 'impuestos',
   estacion: 'estaciones',
   categoria: 'categorias',
@@ -41,6 +44,20 @@ const TABLA: Record<Entidad, keyof Omit<CatalogoEdicion, 'version'>> = {
 }
 
 const CAMPOS: Record<Entidad, string[]> = {
+  zona: ['nombre', 'orden', 'piso', 'activo'],
+  mesa: [
+    'zona_id',
+    'nombre',
+    'forma',
+    'x',
+    'y',
+    'ancho',
+    'alto',
+    'rotacion',
+    'capacidad',
+    'activo',
+  ],
+  elemento_plano: ['zona_id', 'tipo', 'texto', 'x', 'y', 'ancho', 'alto', 'rotacion', 'activo'],
   impuesto: ['nombre', 'tipo', 'tarifa', 'activo'],
   estacion: ['nombre', 'orden', 'activo'],
   categoria: ['nombre', 'orden', 'estacion_id', 'activo'],
@@ -318,6 +335,9 @@ function edicionDe(s: SemillaEdicion, contiguo = true): CatalogoEdicion {
   )
   return {
     version: 100,
+    zonas: [],
+    mesas: [],
+    elementos: [],
     impuestos,
     estaciones: [],
     categorias,

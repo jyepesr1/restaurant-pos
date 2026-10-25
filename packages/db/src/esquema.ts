@@ -7,6 +7,7 @@ export const TABLAS_VERSIONADAS = [
   'sede',
   'zona',
   'mesa',
+  'elemento_plano',
   'dispositivo',
   'rol',
   'rol_permiso',

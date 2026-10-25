@@ -3,7 +3,7 @@ import { type BaseSqlite, enTransaccion, type ValorSql } from '@pos/db'
 import { z } from 'zod'
 import { type Autor, actualizarVersionado, insertarVersionado } from './acceso/registros'
 
-// Edición del catálogo desde la caja (tarea 1.1). Un pedido de edición trae una lista de cambios
+// Edición del catálogo y del plano del salón desde la caja (tareas 1.1 y 1.2). Un pedido de edición trae una lista de cambios
 // que se aplican juntos o ninguno: así, crear un producto con sus variantes no deja nunca un
 // producto a medias. Cada registro tocado sube de versión y queda en el historial
 // (`catalogo_cambio`), del que sale la revisión del precio copiado.
@@ -16,8 +16,42 @@ const Id = z.string().refine(esIdValido, 'Debe ser un ULID')
 const Nombre = z.string().trim().min(1).max(80)
 const Orden = z.int().min(0).max(10_000)
 const Activo = z.boolean()
+/** Posición en el plano, en centímetros (un salón de hasta 100 m). */
+const Coordenada = z.int().min(-10_000).max(10_000)
+const Medida = z.int().min(5).max(10_000)
+const Rotacion = z.int().min(0).max(359)
 
 const ENTIDADES = {
+  // La sede la pone el hub al crear la zona: por ahora hay una sola.
+  zona: z.strictObject({
+    nombre: Nombre,
+    orden: Orden,
+    piso: z.int().min(-5).max(100),
+    activo: Activo,
+  }),
+  mesa: z.strictObject({
+    zona_id: Id,
+    nombre: z.string().trim().min(1).max(20),
+    forma: z.enum(['redonda', 'cuadrada', 'rectangular', 'barra']),
+    x: Coordenada,
+    y: Coordenada,
+    ancho: Medida,
+    alto: Medida,
+    rotacion: Rotacion,
+    capacidad: z.int().min(1).max(100),
+    activo: Activo,
+  }),
+  elemento_plano: z.strictObject({
+    zona_id: Id,
+    tipo: z.enum(['pared', 'puerta', 'planta', 'barra', 'texto']),
+    texto: z.string().trim().max(60).nullable(),
+    x: Coordenada,
+    y: Coordenada,
+    ancho: Medida,
+    alto: Medida,
+    rotacion: Rotacion,
+    activo: Activo,
+  }),
   impuesto: z.strictObject({
     nombre: Nombre,
     tipo: z.enum(['inc', 'iva', 'exento']),
@@ -73,6 +107,7 @@ const NOMBRES = Object.keys(ENTIDADES) as [EntidadEditable, ...EntidadEditable[]
 
 /** A qué tabla apunta cada campo que es una referencia. */
 const REFERENCIAS: Record<string, string> = {
+  zona_id: 'zona',
   estacion_id: 'estacion',
   categoria_id: 'categoria',
   impuesto_id: 'impuesto',
@@ -141,6 +176,7 @@ const PADRES: Partial<Record<EntidadEditable, readonly string[]>> = {
 const DEPENDIENTES: Partial<
   Record<EntidadEditable, { tabla: string; campo: string; que: string }>
 > = {
+  zona: { tabla: 'mesa', campo: 'zona_id', que: 'mesas' },
   impuesto: { tabla: 'producto', campo: 'impuesto_id', que: 'productos' },
   categoria: { tabla: 'producto', campo: 'categoria_id', que: 'productos' },
   estacion: { tabla: 'categoria', campo: 'estacion_id', que: 'categorías' },
@@ -155,6 +191,16 @@ function mensajeDeRestriccion(error: unknown): string | null {
   if (/exento/i.test(texto)) return 'Un impuesto exento no lleva tarifa'
   if (/FOREIGN/i.test(texto)) return 'Apunta a un registro que no existe'
   return 'No cumple las reglas de la carta'
+}
+
+function sedePrincipal(db: BaseSqlite, restauranteId: string): string {
+  const sede = db
+    .prepare(
+      'SELECT id FROM sede WHERE restaurante_id = ? AND activo = 1 ORDER BY creado_en LIMIT 1',
+    )
+    .get(restauranteId)
+  if (!sede) throw new ErrorEdicion('El restaurante no tiene sede')
+  return String(sede.id)
 }
 
 const leer = (db: BaseSqlite, restauranteId: string, tabla: string, id: string) =>
@@ -172,6 +218,8 @@ export function aplicarCambios(
   cambios: CambioCatalogo[],
   autor: Autor,
   ahora: string,
+  /** Si la mesa tiene un pedido abierto: entonces no se archiva (el pedido quedaría sin mesa). */
+  mesaOcupada: (mesaId: string) => boolean = () => false,
 ): { version: number; cambiados: number } {
   return enTransaccion(db, () => {
     const tocados: { entidad: EntidadEditable; id: string; donde: string }[] = []
@@ -208,6 +256,7 @@ export function aplicarCambios(
         datos = Object.fromEntries(Object.entries(datos).filter(([k, v]) => actual[k] !== v))
         if (Object.keys(datos).length === 0) continue
       }
+      if (!actual && c.entidad === 'zona') datos.sede_id = sedePrincipal(db, restauranteId)
       try {
         if (actual) actualizarVersionado(db, c.entidad, restauranteId, c.id, datos, autor, ahora)
         else insertarVersionado(db, c.entidad, restauranteId, datos, autor, ahora, c.id)
@@ -232,6 +281,8 @@ export function aplicarCambios(
         }
         continue
       }
+      if (t.entidad === 'mesa' && mesaOcupada(t.id))
+        throw new ErrorEdicion(`${t.donde}: la mesa ${fila.nombre} tiene un pedido abierto`)
       const dep = DEPENDIENTES[t.entidad]
       if (dep) {
         const usan = db
@@ -261,6 +312,20 @@ export function aplicarCambios(
           )
       }
     }
+    // El mesero dice "la 12": dos mesas activas no se llaman igual, aunque estén en zonas distintas.
+    // En JavaScript y no con lower() de SQLite, que no conoce tildes ni eñes ("Ñandú" = "ñandú").
+    if (tocados.some((t) => t.entidad === 'mesa')) {
+      const vistos = new Set<string>()
+      const nombres = db
+        .prepare('SELECT nombre FROM mesa WHERE restaurante_id = ? AND activo = 1')
+        .all(restauranteId)
+        .map((f) => String(f.nombre))
+      for (const nombre of nombres) {
+        const clave = nombre.trim().normalize('NFC').toLocaleLowerCase('es')
+        if (vistos.has(clave)) throw new ErrorEdicion(`Hay dos mesas que se llaman «${nombre}»`)
+        vistos.add(clave)
+      }
+    }
     const fila = db
       .prepare("SELECT valor FROM contador WHERE restaurante_id = ? AND nombre = 'catalogo'")
       .get(restauranteId)
@@ -284,6 +349,12 @@ export function catalogoParaEditar(db: BaseSqlite, restauranteId: string) {
     .get(restauranteId)
   return {
     version: Number(version?.valor ?? 0),
+    zonas: todas('zona', 'piso, orden, nombre').map((z) => {
+      const { sede_id: _s, ...resto } = z as Record<string, unknown>
+      return resto
+    }),
+    mesas: todas('mesa', 'zona_id, nombre'),
+    elementos: todas('elemento_plano', 'zona_id, version'),
     impuestos: todas('impuesto', 'nombre'),
     estaciones: todas('estacion', 'orden, nombre'),
     categorias: todas('categoria', 'orden, nombre'),
