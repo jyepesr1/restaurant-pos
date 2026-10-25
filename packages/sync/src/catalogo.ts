@@ -8,6 +8,8 @@ export interface Catalogo {
     nombre: string
     /** Minutos sin uso tras los que el dispositivo vuelve a pedir el PIN. */
     sesionInactividadMin: number
+    /** La marca con que se ve el POS (tarea 1.3c); sin ella, Faro. */
+    marca?: string | null
   }
   /** Zonas o pisos del salón, en su orden. */
   zonas: { id: string; nombre: string; piso: number }[]
@@ -49,6 +51,8 @@ export interface Catalogo {
       descripcion: string | null
       /** Sale en "Favoritos" al tomar el pedido. */
       favorito: boolean
+      /** Ruta de su foto en el hub (tarea 1.3c), o nada: entonces se muestra el ícono. */
+      foto?: string | null
       precio: number
       impuesto: { tipo: 'inc' | 'iva' | 'exento'; tarifa: number }
       variantes: { id: string; nombre: string; precio: number }[]

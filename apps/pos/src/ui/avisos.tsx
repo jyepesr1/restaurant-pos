@@ -48,9 +48,11 @@ export function ProveedorAvisos({ children }: { children: ReactNode }) {
   return (
     <Contexto.Provider value={avisar}>
       {children}
-      {/* En el celular, encima de la barra inferior (Pedido · Enviar): nunca la tapa. */}
+      {/* En el celular, encima de la barra inferior (Pedido · Enviar): nunca la tapa. En tablet y
+          caja, abajo a la izquierda, junto a la barra lateral: lejos del panel del pedido y su
+          Enviar, a la derecha. */}
       <div
-        className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex flex-col items-center gap-2 px-4 md:bottom-4"
+        className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex flex-col items-center gap-2 px-4 md:right-auto md:bottom-4 md:left-24 md:items-start md:px-0 lg:left-72"
         aria-live="polite"
       >
         {avisos.map((a) => (

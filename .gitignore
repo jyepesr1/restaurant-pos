@@ -31,3 +31,6 @@ apps/hub/datos/
 
 # Archivo temporal de las sesiones de Claude Code
 .claude/scheduled_tasks.lock
+
+# Herramienta de diseño (decisiones y capturas locales)
+.impeccable/

@@ -45,13 +45,10 @@ function contraste(a: string, b: string): number {
 const TONOS = ['accion', 'libre', 'proceso', 'alerta', 'neutro']
 
 describe.each([
-  ['neutro claro', null, false],
-  ['neutro oscuro', null, true],
-  ['Bagno', 'bagno', false],
-  ['Bagno oscuro', 'bagno', true],
-  ['Taller', 'taller', false],
-  ['Taller oscuro', 'taller', true],
-  ['Noche', 'noche', false],
+  ['Faro claro', null, false],
+  ['Faro oscuro', null, true],
+  ['La Spritzzería de día', 'la-spritzzeria', false],
+  ['La Spritzzería de noche', 'la-spritzzeria', true],
 ] as const)('contraste AA: %s', (_nombre, marca, oscuro) => {
   const v = variables(marca, oscuro)
 
@@ -109,4 +106,29 @@ describe.each([
       contraste(v[`${tono}-texto`] as string, v[`${tono}-suave`] as string),
     ).toBeGreaterThanOrEqual(4.5)
   })
+})
+
+describe('los colores de estado no cambian con la marca (ADR-014)', () => {
+  const ESTADO = ['libre', 'proceso', 'alerta'].flatMap((t) =>
+    ['fuerte', 'suave', 'texto'].map((n) => `${t}-${n}`),
+  )
+  it.each([false, true])('La Spritzzería tiene los de Faro (oscuro: %s)', (oscuro) => {
+    const faro = variables(null, oscuro)
+    const marca = variables('la-spritzzeria', oscuro)
+    for (const nombre of ESTADO) expect(marca[nombre], nombre).toBe(faro[nombre])
+  })
+
+  it.each([
+    [null, false],
+    [null, true],
+    ['la-spritzzeria', false],
+    ['la-spritzzeria', true],
+  ] as const)(
+    'texto y texto suave se leen sobre la barra lateral (%s, oscuro: %s)',
+    (m, oscuro) => {
+      const v = variables(m, oscuro)
+      expect(contraste(v.texto as string, v.lateral as string)).toBeGreaterThanOrEqual(4.5)
+      expect(contraste(v['texto-suave'] as string, v.lateral as string)).toBeGreaterThanOrEqual(4.5)
+    },
+  )
 })

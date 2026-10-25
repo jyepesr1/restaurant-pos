@@ -1,38 +1,52 @@
 import { useState } from 'react'
 
-// La marca del restaurante sobre el design system (`data-marca` en <html>, ver estilos.css). Por
-// ahora se elige en este dispositivo para comparar direcciones; en la Fase 1 sale de la
-// configuración del restaurante. index.html la aplica antes de pintar.
+// La marca del restaurante sobre el design system de Faro (`data-marca` en <html>, ver
+// estilos.css). Es opcional: sin marca, el POS se ve como Faro. La elige el administrador para todo
+// el restaurante y llega con la carta (tarea 1.3c); aquí se guarda para pintarla antes de cargar
+// (index.html la lee) y para los bocetos, que la eligen en el equipo para comparar.
 
-export type Marca = 'neutra' | 'bagno' | 'taller' | 'noche'
+export type Marca = 'faro' | 'la-spritzzeria'
 
-export const MARCAS: readonly Marca[] = ['bagno', 'taller', 'noche', 'neutra']
+export const MARCAS: readonly { marca: Marca; nombre: string; descripcion: string }[] = [
+  {
+    marca: 'faro',
+    nombre: 'Faro',
+    descripcion: 'El estilo del sistema: claro, verde azulado, para cualquier restaurante.',
+  },
+  {
+    marca: 'la-spritzzeria',
+    nombre: 'La Spritzzería',
+    descripcion: 'Arena y marino de día, la terraza de noche; títulos en League Gothic.',
+  },
+]
+export const MARCA_POR_DEFECTO: Marca = 'faro'
 const CLAVE = 'pos-marca'
-/** Sin marca: el POS neutro (decisión del dueño, 24-oct-2026). Las de La Spritzzería quedan como opción. */
-export const MARCA_POR_DEFECTO: Marca = 'neutra'
+
+export const esMarca = (valor: unknown): valor is Marca => MARCAS.some((m) => m.marca === valor)
 
 function leer(): Marca {
   try {
     const guardada = localStorage.getItem(CLAVE)
-    return MARCAS.includes(guardada as Marca) ? (guardada as Marca) : MARCA_POR_DEFECTO
+    return esMarca(guardada) ? guardada : MARCA_POR_DEFECTO
   } catch {
     return MARCA_POR_DEFECTO
   }
 }
 
+/** Pone la marca en la página y la recuerda en el equipo (para pintarla antes de cargar). */
 export function aplicarMarca(marca: Marca = leer()) {
-  if (marca === 'neutra') delete document.documentElement.dataset.marca
+  if (marca === 'faro') delete document.documentElement.dataset.marca
   else document.documentElement.dataset.marca = marca
+  try {
+    localStorage.setItem(CLAVE, marca)
+  } catch {
+    // Sin almacenamiento: vale mientras la página esté abierta.
+  }
 }
 
 export function useMarca(): [Marca, (marca: Marca) => void] {
   const [marca, setMarca] = useState<Marca>(leer)
   const elegir = (nueva: Marca) => {
-    try {
-      localStorage.setItem(CLAVE, nueva)
-    } catch {
-      // Sin almacenamiento: vale mientras la página esté abierta.
-    }
     aplicarMarca(nueva)
     setMarca(nueva)
   }

@@ -4,14 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
-    <title>POS</title>
-    <link rel="icon" href="/marca/la-spritzzeria.svg" />
+    <title>Faro</title>
+    <link rel="icon" href="/marca/faro.svg" />
     <script>
       // Modo oscuro antes de pintar: sin destello blanco en el bar de noche (ver src/ui/tema.ts).
       try {
-        // Marca (src/ui/marca.ts): neutra salvo que se haya elegido otra.
-        const m = localStorage.getItem('pos-marca') || 'neutra'
-        if (m !== 'neutra') document.documentElement.dataset.marca = m
+        // Marca del restaurante (src/ui/marca.ts, que solo guarda marcas que existen): Faro salvo
+        // que el restaurante tenga la suya.
+        const m = localStorage.getItem('pos-marca') || 'faro'
+        if (m !== 'faro') document.documentElement.dataset.marca = m
       } catch {}
       try {
         const t = localStorage.getItem('pos-tema')

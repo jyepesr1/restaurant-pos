@@ -121,7 +121,8 @@ export function sembrar(
     // Lo que el restaurante ya configuró se respeta; lo que falte toma el valor del piloto. Se
     // compara como objeto: el mismo contenido con las claves en otro orden no es un cambio.
     const actual = String(restaurante?.config ?? '{}')
-    const config = jsonCanonico(configCompleta(JSON.parse(actual)))
+    // El piloto se ve con su marca, salvo que el restaurante haya elegido otra (tarea 1.3c).
+    const config = jsonCanonico(configCompleta({ marca: 'la-spritzzeria', ...JSON.parse(actual) }))
     guardar('restaurante', restauranteId, {
       nombre: NOMBRE_RESTAURANTE,
       config: jsonCanonico(JSON.parse(actual)) === config ? actual : config,

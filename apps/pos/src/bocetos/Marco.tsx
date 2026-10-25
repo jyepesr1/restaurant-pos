@@ -1,7 +1,6 @@
 import { type ReactNode, useEffect, useRef } from 'react'
 import { Boton } from '../ui/Boton'
 import { IndicadorConexion } from '../ui/IndicadorConexion'
-import { useMarca } from '../ui/marca'
 import { navegar } from '../ui/ruta'
 import { useTema } from '../ui/tema'
 import { useSimulacion } from './estado'
@@ -24,8 +23,6 @@ export function Marco({
   children: ReactNode
 }) {
   const { oscuro, elegir } = useTema()
-  // "Noche" es oscura siempre: no tiene modo claro que elegir.
-  const [marca] = useMarca()
   const { conexion, pendientes, impresorasConFalla } = useSimulacion()
   const encabezado = useRef<HTMLHeadingElement>(null)
 
@@ -63,15 +60,13 @@ export function Marco({
         />
         <span className="hidden text-texto-suave sm:inline">{usuario}</span>
         {acciones}
-        {marca !== 'noche' && (
-          <Boton
-            variante="fantasma"
-            icono={oscuro ? 'sol' : 'luna'}
-            aria-label="Modo oscuro"
-            aria-pressed={oscuro}
-            onClick={() => elegir(oscuro ? 'claro' : 'oscuro')}
-          />
-        )}
+        <Boton
+          variante="fantasma"
+          icono={oscuro ? 'sol' : 'luna'}
+          aria-label="Modo oscuro"
+          aria-pressed={oscuro}
+          onClick={() => elegir(oscuro ? 'claro' : 'oscuro')}
+        />
       </header>
       <div className="firma-marca" aria-hidden="true" />
       <main className="flex-1">{children}</main>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ConfigRestaurante, configCompleta } from './config'
+import { ConfigRestaurante, configCompleta, MARCAS } from './config'
 import { cobradoEnEfectivo } from './dinero/efectivo'
 import { propinaSugerida } from './dinero/propina'
 
@@ -16,6 +16,51 @@ describe('configuración del restaurante', () => {
       redondeo_modo: 'mitad_arriba',
       redondeo_efectivo_modo: 'cercano_mitad_abajo',
       sesion_inactividad_min: 30,
+      marca: 'faro',
+    })
+  })
+
+  describe('marca del restaurante (tarea 1.3c)', () => {
+    it('sin marca (un hub viejo) es Faro; las dos que existen se aceptan', () => {
+      expect(configCompleta({}).marca).toBe('faro')
+      expect(configCompleta({ sesion_inactividad_min: 10 }).marca).toBe('faro')
+      expect(configCompleta({ marca: 'faro' }).marca).toBe('faro')
+      expect(configCompleta({ marca: 'la-spritzzeria' }).marca).toBe('la-spritzzeria')
+    })
+
+    it('rechaza cualquier otra marca, también las de pruebas anteriores', () => {
+      for (const marca of [
+        'bagno',
+        'taller',
+        'noche',
+        'neutra',
+        'Faro',
+        'FARO',
+        ' faro',
+        '',
+        null,
+        0,
+        true,
+        {},
+        ['faro'],
+      ])
+        expect(ConfigRestaurante.safeParse({ marca }).success, JSON.stringify(marca)).toBe(false)
+    })
+
+    it('la lista de marcas es la que acepta el esquema, sin repetidos y con Faro primero', () => {
+      expect([...MARCAS]).toEqual(['faro', 'la-spritzzeria'])
+      for (const marca of MARCAS) expect(configCompleta({ marca }).marca).toBe(marca)
+    })
+
+    it('completar dos veces no cambia nada (idempotente), con o sin marca', () => {
+      for (const parcial of [
+        {},
+        { marca: 'la-spritzzeria' },
+        { marca: 'faro', redondeo_efectivo: 50 },
+      ]) {
+        const una = configCompleta(parcial)
+        expect(configCompleta(una)).toEqual(una)
+      }
     })
   })
 

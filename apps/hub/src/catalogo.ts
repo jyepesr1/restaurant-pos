@@ -1,8 +1,9 @@
-import { configCompleta } from '@pos/core'
+import { configCompleta, jsonCanonico, MARCAS } from '@pos/core'
 import type { BaseSqlite, Fila } from '@pos/db'
 import type { Catalogo } from '@pos/sync'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
+import { actualizarVersionado } from './acceso/registros'
 import type { ServicioAcceso } from './acceso/servicio'
 import {
   aplicarCambios,
@@ -11,6 +12,7 @@ import {
   PedidoEdicion,
   soloPrecios,
 } from './edicion-catalogo'
+import { ErrorFoto, guardarFoto, leerFoto, urlFoto } from './fotos'
 
 // El catálogo y el salón para los dispositivos (lo activo de las tablas versionadas). En la Fase
 // 1 se sincroniza por versión (`catalogo desde: N`, docs/SYNC.md#catálogo-y-configuración); por
@@ -47,6 +49,7 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
     restaurante: {
       nombre: texto(restaurante?.nombre ?? ''),
       sesionInactividadMin: config.sesion_inactividad_min,
+      marca: config.marca,
     },
     zonas: zonas.map((f) => ({ id: texto(f.id), nombre: texto(f.nombre), piso: numero(f.piso) })),
     mesas: activos('mesa', 'zona_id, y, x')
@@ -94,6 +97,7 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
             nombre: texto(p.nombre),
             descripcion: p.descripcion === null ? null : texto(p.descripcion),
             favorito: p.favorito === 1,
+            foto: urlFoto(p.foto),
             precio: numero(p.precio),
             impuesto: {
               tipo: texto(impuesto.tipo) as 'inc' | 'iva' | 'exento',
@@ -134,6 +138,8 @@ export interface OpcionesCatalogo {
   alCambiar?: (version: number) => void
   /** Si una mesa tiene un pedido abierto (no se puede archivar). */
   mesaOcupada?: (mesaId: string) => boolean
+  /** Carpeta de las fotos de los productos (`datos/fotos`). Sin ella no se suben ni se sirven. */
+  dirFotos?: string
   reloj?: () => string
 }
 
@@ -156,6 +162,7 @@ export async function rutasCatalogo(
     acceso,
     alCambiar,
     mesaOcupada,
+    dirFotos,
     reloj = () => new Date().toISOString(),
   }: OpcionesCatalogo,
 ) {
@@ -217,5 +224,119 @@ export async function rutasCatalogo(
         return reply.code(400).send({ error: 'datos_invalidos', mensaje: error.message })
       throw error
     }
+  })
+
+  /** Quién hace el cambio, con su sesión y ese permiso; si no, responde el error. */
+  const conPermiso = (
+    req: FastifyRequest,
+    reply: FastifyReply,
+    cuerpo: { sesion_id: string; secreto: string },
+    permiso: 'editar_catalogo' | 'administrar_usuarios',
+  ) => {
+    const conexion = equipo(req, reply)
+    if (!conexion) return null
+    const quien = acceso.usuarioConPermiso(
+      conexion,
+      { sesionId: cuerpo.sesion_id, secreto: cuerpo.secreto },
+      permiso,
+    )
+    if (!quien.ok) {
+      reply
+        .code(quien.codigo === 'sin_permiso' ? 403 : 401)
+        .send({ error: quien.codigo, mensaje: quien.mensaje })
+      return null
+    }
+    return { usuarioId: quien.usuarioId, dispositivoId: conexion.dispositivoId }
+  }
+  const versionActual = () =>
+    Number(
+      db
+        .prepare("SELECT valor FROM contador WHERE restaurante_id = ? AND nombre = 'catalogo'")
+        .get(restauranteId)?.valor ?? 0,
+    )
+  const datosInvalidos = (reply: FastifyReply, mensaje = 'Datos con formato inesperado') =>
+    reply.code(400).send({ error: 'datos_invalidos', mensaje })
+
+  // La marca con que se ve el POS en todos los equipos (tarea 1.3c).
+  // El equipo se comprueba antes de leer el cuerpo: sin token no se recibe ni se valida nada.
+  const conEquipo = {
+    onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
+      if (!equipo(req, reply)) return reply
+    },
+  }
+
+  app.post('/api/restaurante/marca', conEquipo, async (req, reply) => {
+    const cuerpo = SesionEdicion.extend({ marca: z.enum(MARCAS) }).safeParse(req.body)
+    if (!cuerpo.success) return datosInvalidos(reply, 'Esa marca no existe')
+    const autor = conPermiso(req, reply, cuerpo.data, 'administrar_usuarios')
+    if (!autor) return reply
+    const fila = db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)
+    const actual = JSON.parse(String(fila?.config ?? '{}')) as Record<string, unknown>
+    if (actual.marca !== cuerpo.data.marca) {
+      actualizarVersionado(
+        db,
+        'restaurante',
+        restauranteId,
+        restauranteId,
+        { config: jsonCanonico(configCompleta({ ...actual, marca: cuerpo.data.marca })) },
+        autor,
+        reloj(),
+      )
+      alCambiar?.(versionActual())
+    }
+    return reply.send({ marca: cuerpo.data.marca })
+  })
+
+  if (!dirFotos) return
+
+  // Subir o quitar la foto de un producto, con el permiso de editar la carta.
+  app.post(
+    '/api/catalogo/fotos',
+    { ...conEquipo, bodyLimit: 2 * 1024 * 1024 },
+    async (req, reply) => {
+      const cuerpo = SesionEdicion.extend({
+        producto_id: z.string().length(26),
+        imagen: z.string().max(1_500_000).nullable(),
+      }).safeParse(req.body)
+      if (!cuerpo.success) return datosInvalidos(reply)
+      const autor = conPermiso(req, reply, cuerpo.data, 'editar_catalogo')
+      if (!autor) return reply
+      const producto = db
+        .prepare('SELECT foto FROM producto WHERE restaurante_id = ? AND id = ?')
+        .get(restauranteId, cuerpo.data.producto_id)
+      if (!producto) return datosInvalidos(reply, 'Ese producto no existe')
+      let nombre: string | null = null
+      try {
+        nombre = cuerpo.data.imagen === null ? null : guardarFoto(dirFotos, cuerpo.data.imagen)
+      } catch (e) {
+        if (e instanceof ErrorFoto) return datosInvalidos(reply, e.message)
+        throw e
+      }
+      if (producto.foto !== nombre) {
+        actualizarVersionado(
+          db,
+          'producto',
+          restauranteId,
+          cuerpo.data.producto_id,
+          { foto: nombre },
+          autor,
+          reloj(),
+        )
+        alCambiar?.(versionActual())
+      }
+      return reply.send({ foto: urlFoto(nombre) })
+    },
+  )
+
+  // Las fotos son de la carta, no de nadie: se sirven sin token (una <img> no lo puede mandar) y
+  // nunca cambian, porque su nombre es la huella de su contenido.
+  app.get<{ Params: { nombre: string } }>('/fotos/:nombre', async (req, reply) => {
+    const foto = leerFoto(dirFotos, req.params.nombre)
+    if (!foto) return reply.code(404).send({ error: 'No encontrado' })
+    return reply
+      .header('content-type', foto.mime)
+      .header('cache-control', 'public, max-age=31536000, immutable')
+      .header('x-content-type-options', 'nosniff')
+      .send(foto.bytes)
   })
 }

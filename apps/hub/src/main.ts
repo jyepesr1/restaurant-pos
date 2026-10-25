@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BaseSqlite, versionActual } from '@pos/db'
 import type { SalaSync } from '@pos/sync'
@@ -95,6 +96,7 @@ const app = crearServidor({
     acceso,
     alCambiar: (version) => sala.avisarCatalogo(version),
     mesaOcupada: (mesaId) => sala.tienePedidoAbierto(mesaId),
+    dirFotos: join(dirDatos, 'fotos'),
   },
   versionBase: versionActual(db),
   logger: true,

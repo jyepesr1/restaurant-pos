@@ -1,0 +1,71 @@
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+// Fotos de los productos (tarea 1.3c). La app las achica antes de subirlas; el hub las guarda en
+// su carpeta de datos con la huella del contenido como nombre, así una foto nueva tiene otro nombre
+// y los equipos guardan cada una en caché para siempre. Funciona sin internet: las sirve el hub.
+
+/** Tope de una foto ya decodificada. La app las sube achicadas (unos 100 KB). */
+export const TAMANO_MAXIMO_FOTO = 1024 * 1024
+
+const TIPOS = {
+  webp: {
+    firma: (b: Buffer) =>
+      b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP',
+    mime: 'image/webp',
+  },
+  jpg: {
+    firma: (b: Buffer) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+    mime: 'image/jpeg',
+  },
+  png: {
+    firma: (b: Buffer) =>
+      b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    mime: 'image/png',
+  },
+} as const
+type Extension = keyof typeof TIPOS
+
+/** Un nombre de foto que el hub pudo haber creado: nada de rutas ni nombres inventados. */
+export const NOMBRE_FOTO = /^[a-f0-9]{24}\.(webp|jpg|png)$/
+
+export class ErrorFoto extends Error {}
+
+/**
+ * Guarda la foto que llega como `data:image/…;base64,…` y devuelve su nombre. Se acepta por lo que
+ * es (sus primeros bytes), no por lo que dice ser: un archivo que no es imagen no se guarda.
+ */
+export function guardarFoto(dirFotos: string, imagen: string): string {
+  const partes = /^data:image\/(webp|jpeg|png);base64,([A-Za-z0-9+/=]+)$/.exec(imagen)
+  if (!partes) throw new ErrorFoto('La foto debe ser una imagen WebP, JPEG o PNG')
+  const bytes = Buffer.from(partes[2] as string, 'base64')
+  if (bytes.length === 0) throw new ErrorFoto('La foto está vacía')
+  if (bytes.length > TAMANO_MAXIMO_FOTO) throw new ErrorFoto('La foto pesa más de 1 MB')
+  const extension = (Object.keys(TIPOS) as Extension[]).find((e) => TIPOS[e].firma(bytes))
+  if (!extension) throw new ErrorFoto('El archivo no es una imagen WebP, JPEG o PNG')
+  const nombre = `${createHash('sha256').update(bytes).digest('hex').slice(0, 24)}.${extension}`
+  mkdirSync(dirFotos, { recursive: true })
+  const ruta = join(dirFotos, nombre)
+  // Se escribe aparte y se renombra: un corte de luz a mitad no deja una foto rota con su nombre
+  // definitivo (que los equipos guardarían en caché para siempre). Si ya estaba entera, no se toca.
+  if (!existsSync(ruta) || statSync(ruta).size !== bytes.length) {
+    const temporal = `${ruta}.${process.pid}.tmp`
+    writeFileSync(temporal, bytes)
+    renameSync(temporal, ruta)
+  }
+  return nombre
+}
+
+/** La foto guardada y su tipo, o `null` si el nombre no es de una foto o no está. */
+export function leerFoto(dirFotos: string, nombre: string): { bytes: Buffer; mime: string } | null {
+  if (!NOMBRE_FOTO.test(nombre)) return null
+  const ruta = join(dirFotos, nombre)
+  if (!existsSync(ruta)) return null
+  const extension = nombre.split('.').pop() as Extension
+  return { bytes: readFileSync(ruta), mime: TIPOS[extension].mime }
+}
+
+/** Ruta pública de una foto guardada (para la carta de los equipos). */
+export const urlFoto = (nombre: unknown) =>
+  typeof nombre === 'string' && NOMBRE_FOTO.test(nombre) ? `/fotos/${nombre}` : null

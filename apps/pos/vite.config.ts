@@ -7,7 +7,10 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     // En desarrollo, la API la atiende el hub.
-    proxy: { '/api': { target: 'http://localhost:4000', ws: true } },
+    proxy: {
+      '/api': { target: 'http://localhost:4000', ws: true },
+      '/fotos': 'http://localhost:4000',
+    },
   },
   test: {
     // `pnpm check` corre todos los paquetes a la vez y las pruebas del hub (procesos reales,

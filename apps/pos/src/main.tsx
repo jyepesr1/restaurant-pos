@@ -1,7 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-// Fuentes de la marca empaquetadas (la app funciona sin internet); solo el juego latino, que
-// cubre el español.
+// Fuentes empaquetadas (la app funciona sin internet): Figtree, la de Faro, y las de la marca de
+// La Spritzzería, solo el juego latino, que cubre el español.
+import '@fontsource-variable/figtree'
 import '@fontsource/alegreya-sans/latin-400.css'
 import '@fontsource/alegreya-sans/latin-500.css'
 import '@fontsource/alegreya-sans/latin-700.css'

@@ -64,7 +64,7 @@ export function Entrar() {
   const porInactividad = sesionCerradaPor === 'inactividad'
   return (
     <MarcoSala titulo={catalogo?.restaurante.nombre ?? equipo?.nombre ?? 'Entrar'}>
-      <div className="mx-auto flex max-w-sm flex-col gap-6 p-4">
+      <div className="mx-3 my-4 flex max-w-md sm:mx-auto flex-col gap-6 rounded-3xl border border-linea bg-superficie p-5 shadow-flota sm:my-10 sm:p-8">
         {modo === 'pin' ? (
           <>
             <TecladoPin

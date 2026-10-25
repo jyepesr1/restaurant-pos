@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
 import { Icono, type NombreIcono } from './iconos'
 
 // Botón del design system. Todos miden al menos 48×48 px (brief §5, regla 3); el grande, 56.
@@ -31,6 +31,8 @@ export function Boton({
   type = 'button',
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
+  /** En React 19 la referencia llega como una propiedad más (para mover el foco al botón). */
+  ref?: Ref<HTMLButtonElement>
   variante?: Variante
   grande?: boolean
   icono?: NombreIcono

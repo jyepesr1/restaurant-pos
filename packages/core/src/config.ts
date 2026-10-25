@@ -15,6 +15,9 @@ const MODOS_EFECTIVO = [
   'arriba',
 ] as const satisfies readonly ModoRedondeoEfectivo[]
 
+/** Las marcas que la app sabe dibujar (apps/pos/src/estilos.css). */
+export const MARCAS = ['faro', 'la-spritzzeria'] as const
+
 const Hora = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Hora en formato HH:MM')
 
 export const ConfigRestaurante = z.strictObject({
@@ -44,6 +47,11 @@ export const ConfigRestaurante = z.strictObject({
     .min(1)
     .max(24 * 60)
     .default(30),
+  /**
+   * Con qué marca se ve el POS en todos los equipos (tarea 1.3c). Es opcional: `faro` es el
+   * estilo del sistema; las demás son marcas de restaurantes ya preparadas en la app.
+   */
+  marca: z.enum(MARCAS).default('faro'),
 })
 
 export type ConfigRestaurante = z.infer<typeof ConfigRestaurante>

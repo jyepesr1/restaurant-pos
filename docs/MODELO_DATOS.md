@@ -150,7 +150,7 @@ Una acción está permitida si el usuario tiene el permiso **o** si el evento tr
 | Entidad | Fase | Cat. | Campos principales |
 |---|---|---|---|
 | `Categoria` | 0 | V | `nombre`, `orden`, `estacion_id` por defecto, `foto` |
-| `Producto` | 0 | V | `categoria_id`, `nombre`, `descripcion`, `precio` (pesos, ≥ 0, **incluye impuesto**), `impuesto_id`, `foto`, `favorito` |
+| `Producto` | 0 | V | `categoria_id`, `nombre`, `descripcion`, `precio` (pesos, ≥ 0, **incluye impuesto**), `impuesto_id`, `foto` (opcional, desde la 1.3c: nombre del archivo en `datos/fotos/` del hub, que es la huella de su contenido; se cambia solo con `POST /api/catalogo/fotos`), `favorito` |
 | `Variante` | 0 | V | `producto_id`, `nombre` ("Copa", "Botella"), `precio` (reemplaza el del producto), `orden`. Si un producto tiene variantes, el ítem del pedido **debe** elegir una ([DINERO.md](DINERO.md#precio-copiado)) |
 | `GrupoModificador` | 0 | V | `nombre` ("Término", "Sabor", "Adicionales"), `minimo`, `maximo` (sabor obligatorio: 1 y 1) |
 | `ProductoGrupoModificador` | 0 | V | `producto_id`, `grupo_id`, `orden` |
@@ -181,6 +181,7 @@ Agotado (86) no es un campo editable: son los eventos `ProductoAgotado` / `Produ
 | `redondeo_modo` | `'mitad_arriba'` | Redondeo de porcentajes y del desglose fiscal ([DINERO.md](DINERO.md#principios)). |
 | `redondeo_efectivo_modo` | `'cercano_mitad_abajo'` | Al múltiplo más cercano; la mitad, a favor del cliente. |
 | `sesion_inactividad_min` | `30` | Minutos sin uso para cerrar la sesión en un dispositivo compartido. |
+| `marca` | `"faro"` | Con qué marca se ve el POS en todos los equipos (ADR-014): `faro` o una marca preparada (`la-spritzzeria`). La cambia el administrador en «Marca del restaurante». |
 
 ## Eventos
 

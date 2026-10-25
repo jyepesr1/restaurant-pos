@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Faro">
+  <rect width="48" height="48" rx="13" fill="#0f766e"/>
+  <path d="M27 17 44 10v17l-17-5z" fill="#ffffff" fill-opacity=".34"/>
+  <path d="M20 16h8l2.5 23h-13z" fill="#ffffff"/>
+  <rect x="19.5" y="10" width="9" height="5" rx="1.5" fill="#ffffff"/>
+  <path d="M18.2 27.5h11.6M17.6 33.2h12.8" stroke="#0f766e" stroke-width="2.2"/>
+</svg>

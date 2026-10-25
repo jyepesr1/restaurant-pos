@@ -35,6 +35,21 @@ const trazos = {
   atras: 'M15 5l-7 7 7 7',
   lista: 'M8 6h12M8 12h12M8 18h12M4 6h.5M4 12h.5M4 18h.5',
   plano: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+  mesa: 'M4 10h16M6 10v9M18 10v9M8 6h8M12 6v4',
+  carta: 'M6 3h10l3 3v15H6zM9 8h6M9 12h6M9 16h4',
+  pedidos: 'M8 4h8l1 2h3v15H4V6h3zM8 11h8M8 15h5',
+  persona: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
+  llave: 'M15 9a4 4 0 1 1-1.2-2.8L21 3M17 5l2 2M12.2 12.2 4 20.5V21h3l1-1v-2h2v-2h2l.2-.2',
+  salir: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11',
+  menu: 'M4 7h16M4 12h16M4 17h16',
+  foto: 'M4 7h3l2-3h6l2 3h3v13H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  bolsa: 'M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2',
+  moto: 'M5 18a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm14 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 15h6l3-6h-4M15 6h3',
+  copa: 'M7 3h10c0 5-2 8-5 8s-5-3-5-8zM12 11v8M8 21h8',
+  plato: 'M3 14h18M5 14a7 7 0 0 1 14 0M12 5v2M2 18h20',
+  marca:
+    'M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-1-1.5-1-2.5 1-1.5 2-1.5h2a4 4 0 0 0 4-4c0-4.4-4-8-9-8zM7.5 12h.01M10 7.5h.01M15 7.5h.01',
+  silla: 'M7 3v9h10V3M7 12v9m10-9v9M7 16h10',
 } as const
 
 export type NombreIcono = keyof typeof trazos

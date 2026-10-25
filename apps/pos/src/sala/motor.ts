@@ -126,6 +126,8 @@ export interface CatalogoEdicion {
     precio: number
     impuesto_id: string
     favorito: boolean
+    /** Nombre del archivo de su foto en el hub (`/fotos/<nombre>`), o nada. */
+    foto?: string | null
   })[]
   variantes: (Registro & { producto_id: string; nombre: string; precio: number; orden: number })[]
   grupos: (Registro & { nombre: string; minimo: number; maximo: number })[]
@@ -451,6 +453,28 @@ export class Sala {
     })
     await this.actualizarCatalogo().catch(avisarFallo)
     return version
+  }
+
+  // ── Fotos y marca (tarea 1.3c) ───────────────────────────────────────
+
+  /** Sube (o quita, con `null`) la foto de un producto; devuelve su ruta en el hub. */
+  async subirFoto(productoId: string, imagen: string | null): Promise<string | null> {
+    const r = await this.conSesion<{ foto: string | null }>('/api/catalogo/fotos', {
+      producto_id: productoId,
+      imagen,
+    })
+    await this.actualizarCatalogo().catch(avisarFallo)
+    return r.foto
+  }
+
+  /** La marca con que se ve el POS en todos los equipos del restaurante. */
+  async cambiarMarca(marca: string): Promise<void> {
+    await this.conSesion('/api/restaurante/marca', { marca })
+    // Aquí se ve de una vez, aunque la carta nueva tarde en llegar; los demás equipos, con ella.
+    const { catalogo } = this.estado
+    if (catalogo)
+      this.cambiar({ catalogo: { ...catalogo, restaurante: { ...catalogo.restaurante, marca } } })
+    await this.actualizarCatalogo().catch(avisarFallo)
   }
 
   // ── Personal y roles (tarea 1.3b) ────────────────────────────────────

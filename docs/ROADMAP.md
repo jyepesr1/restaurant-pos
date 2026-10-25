@@ -30,6 +30,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.2 | Editor de plano y vista operativa de mesas | ✅ |
 | 1.3 | Toma de pedido por comensal y curso | ✅ |
 | 1.3b | Acceso por rol ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)): meseros con PIN desde la IP sin emparejar; caja, administración y reportes con usuario y contraseña; roles y permisos que decide cada restaurante | ✅ |
+| 1.3c | Marca del producto (**Faro**, [ADR-014](DECISIONES.md#adr-014--faro-nombre-identidad-y-estilo-del-producto)) y rediseño: barra lateral, salón con sillas y pedidos abiertos, carta en tarjetas con foto opcional, marca opcional por restaurante | ✅ |
 | 1.4 | Comandas: impresora ESC/POS por estación y KDS básico | ⏳ |
 | 1.5 | Mover ítems, cambiar y unir mesas, anular con motivo y permiso | ⏳ |
 | 1.6 | Precuenta, división, pagos mixtos y propina | ⏳ |
@@ -66,6 +67,117 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 1.3c — Faro: marca del producto y rediseño ✅
+
+Decisión del dueño del 25-oct-2026 ([ADR-014](DECISIONES.md#adr-014--faro-nombre-identidad-y-estilo-del-producto)). El POS es un producto propio para muchos restaurantes; La Spritzzería es el primer cliente.
+
+**La marca del producto:**
+- **Nombre: Faro.** Falta validar la marca registrada (SIC) y el dominio antes de usarlo en público.
+- **Color:** verde azulado. **Letra:** Figtree, empaquetada para funcionar sin internet.
+- **Logo:** un faro, también como ícono de la pestaña.
+- Lo que hace y para quién está en `apps/pos/PRODUCT.md`; cómo se ve, en `apps/pos/DESIGN.md`.
+
+**Marca opcional por restaurante:**
+- Un restaurante sin configurar se ve como Faro.
+- Quien administra el personal elige la marca en **Marca del restaurante**: hoy, Faro o La Spritzzería (sus colores, sus letras y su logo). Se puede deshacer.
+- La marca se guarda en el hub y llega a todos los equipos con la carta.
+- **Los colores de estado no cambian con la marca**: verde libre, ámbar en proceso, rojo demora. Hay una prueba que lo exige.
+
+**Pantallas nuevas:**
+- **Marco:**
+  - en la caja, barra lateral con el logo, quién entró y las secciones (Servicio; Administración: Carta, Plano del salón, Personal y roles, Marca del restaurante), según los permisos;
+  - en la tablet, la barra solo con íconos;
+  - en el celular, un menú que se abre desde la izquierda.
+- **Salón:**
+  - pestañas de zona, Plano o Lista, y la leyenda con cuántas mesas hay de cada estado;
+  - las mesas con sus sillas y teñidas del color de su estado;
+  - los pedidos abiertos en tarjetas a la derecha (abajo en el celular), con los botones de pedidos sin mesa.
+- **Toma de pedido:**
+  - la carta como tarjetas con foto o, sin foto, el ícono de su estación (copa la barra, plato la cocina);
+  - el precio, el «+» y `×N` si ya va en el pedido;
+  - el pedido en un panel a la derecha con el total grande.
+- **Fotos de productos (opcionales):**
+  - en **Carta**, cada producto tiene Subir foto, Cambiar y Quitar;
+  - el celular achica la foto antes de mandarla (800 px);
+  - el hub la guarda en `datos/fotos`.
+
+**Por dentro:**
+- Tokens de color en `apps/pos/src/estilos.css`; una marca nueva es un bloque `data-marca` en claro y oscuro, más su entrada en `MARCAS`.
+- `marca` en la configuración del restaurante (por defecto `faro`); `POST /api/restaurante/marca`.
+- Fotos:
+  - `POST /api/catalogo/fotos` (permiso de editar la carta, máximo 1 MB, solo WebP, JPEG o PNG comprobados por su contenido);
+  - se sirven en `/fotos/…` con el nombre sacado de su contenido;
+  - el token se revisa antes de leer la foto.
+- **Seed:** a La Spritzzería le pone su marca si no tenía una.
+
+Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. El skill de diseño usado (Impeccable) trae dos revisores propios que no están disponibles aquí: los reemplazó `revisor-ux`, y `DESIGN.md` se escribió a mano. Se corrigieron, entre otros:
+- **Hub**:
+  - la foto se escribía a medias si el hub se cerraba en medio (ahora se escribe aparte y se renombra);
+  - el hub leía una foto de hasta 2 MB antes de saber si el equipo podía subirla;
+  - faltaba `nosniff` al servir las fotos.
+- **Pantalla**:
+  - la marca parpadeaba al entrar;
+  - en la tablet la carta salía en una columna angosta;
+  - los avisos tapaban el panel del pedido;
+  - en el celular los pedidos abiertos tapaban el salón;
+  - la marca de La Spritzzería cambiaba los colores de estado;
+  - el menú del celular no devolvía el foco ni bloqueaba lo de atrás;
+  - el control Plano/Lista medía menos de 48 px;
+  - textos técnicos.
+
+**Pruebas:**
+- **Hub:** 779.
+  - Fotos con nombres raros y rutas que intentan salir de la carpeta.
+  - El tipo se saca del contenido, no de lo que dice el equipo.
+  - Límite de 1 MB exacto.
+  - Dos subidas iguales al tiempo.
+  - Producto de otro restaurante.
+  - Carpeta perdida y reinicio del hub.
+  - Sesiones inválidas y equipos retirados.
+  - Marca con dos restaurantes en la misma base.
+  - El seed respeta la marca elegida.
+- **App:** 531.
+  - Sillas con propiedades aleatorias: la cuenta exacta, ninguna dentro de la mesa, ninguna encima de otra.
+  - Contraste de todas las marcas, también sobre la barra lateral.
+  - La lista de marcas de la app coincide con la del hub y con `estilos.css`.
+  - Subir foto y cambiar marca sin red, con sesión vencida y con respuestas raras.
+- **Base:** 288 (más la `it.fails` de la 1.3b).
+- **Núcleo:** 345.
+- **Sincronización:** 112.
+
+**Queda pendiente:**
+- **Copia de seguridad**: la carpeta `datos/fotos` debe entrar en la copia del hub cuando se haga (1.10).
+- **Tablet**: la barra lateral muestra solo íconos, sin nombres.
+- **Celular**: los paneles dentro de paneles (opciones de un producto) se apilan.
+- Más de 6 personas en un pedido; el tiempo a partir del cual la demora sale en rojo; atajos de teclado y un salto al contenido para la caja; los nombres P1, P2 de las personas.
+- Detalles menores:
+  - un esqueleto mientras carga;
+  - el aviso de zona vacía;
+  - los comensales en la tarjeta de la mesa;
+  - el texto alternativo de la foto y pedir confirmación antes de quitarla;
+  - el ícono por categoría en vez de por estación.
+- **Sillas encimadas en planos grandes**: con un salón de más de unos 18 m visto en un celular, o una barra con más de 3 puestos, las sillas se tocan. Solo es dibujo.
+- **Marca que vuelve un momento**: si a un equipo le llega tarde una carta vieja, ve la marca anterior hasta el siguiente aviso, que la corrige sola.
+- **scrypt asíncrono** (de la 1.3b).
+
+**Cómo probarlo:**
+
+1. En la ventana del hub, ciérralo con **Ctrl+C**. Debes volver a ver la línea de comandos.
+2. Escribe `pnpm seed`. Debe terminar sin error. Desde ahora La Spritzzería tiene su marca.
+3. Compila y arranca:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+4. En el PC de la caja abre la dirección del hub. La pestaña debe mostrar el faro y la pantalla de entrar una tarjeta blanca. Entra con el usuario del administrador.
+5. Debes ver la barra lateral con el logo de La Spritzzería, tu nombre y las secciones. En el salón, las mesas con sus sillas y, a la derecha, los pedidos abiertos.
+6. En la barra lateral toca **Marca del restaurante** y luego **Usar** en Faro. Todo debe pasar a verde azulado con el logo del faro, y salir un aviso con **Deshacer**. Toca **Deshacer**: vuelve La Spritzzería.
+7. Toca **Carta**, abre un producto y toca **Subir foto**. Elige una foto del PC. Debe verse en el producto.
+8. Vuelve al **Salón** y abre una mesa libre. El producto debe salir con su foto; los demás, con el ícono de copa o de plato. Toca uno: el `×1` aparece en la tarjeta y el producto en el panel de la derecha, con el total.
+9. En el celular abre la misma dirección y entra con un PIN de mesero. Debe verse con la marca que elegiste. Toca el menú de arriba a la izquierda: se abre la barra lateral. Ciérrala con la ✕.
+10. En el salón del celular, los pedidos abiertos van debajo de las mesas. Abre una mesa: abajo debe salir la barra con las unidades y el total.
 
 ### 1.3b — Acceso por rol ✅
 

@@ -394,3 +394,40 @@ Riesgo conocido: comprobar una contraseña (scrypt, unos 50 ms) detiene al hub m
 | Autorizar con usuario y contraseña en el celular del mesero | Más lento en hora pico que un PIN. |
 | Permisos fijos por rol, elegidos ahora | El dueño quiere asignarlos él, rol por rol, y el sistema es para varios restaurantes con costumbres distintas. |
 | Entrar a la caja solo desde el PC del hub | El dueño quiere ver reportes desde su celular dentro del local. |
+
+---
+
+## ADR-014 · Faro: nombre, identidad y estilo del producto
+
+**Fecha:** 25-oct-2026 · **Estado:** aceptada · **Tarea:** 1.3c
+
+### Decisión
+
+- El producto se llama **Faro** (decisión del dueño, entre Sobremesa, Faro y Pido): lo que no se apaga y guía, como el servicio que sigue sin internet. Es un producto para muchos restaurantes; La Spritzzería es el primer cliente. **(validar)** registro de marca (SIC) y dominio antes de usarlo en público.
+- **Estilo: el de los POS modernos del mercado, con el máximo cuidado.** Las referencias del dueño son RestroBit y Tasty Station:
+  - barra lateral con secciones según el rol;
+  - modo claro y oscuro;
+  - la carta como cuadrícula de tarjetas con foto y «+»;
+  - el pedido en un panel a la derecha con su total;
+  - estados en tarjetas de color;
+  - el plano con sillas.
+- **Color de Faro: verde azulado** (`#0f766e`), una sola letra (Figtree, empaquetada) y superficies claras y frías. Los colores de estado no cambian con ninguna marca: verde libre, ámbar en proceso, rojo demora.
+- **Marca del restaurante, opcional.**
+  - Cada restaurante puede verse con su marca en todos sus equipos. Sin elegir, se ve como Faro.
+  - Se guarda en la configuración del restaurante (`marca`), llega con la carta y la cambia el administrador en **Marca del restaurante**.
+  - Por ahora las marcas son conjuntos preparados en la app (Faro y La Spritzzería). Una marca a la medida de cada cliente (sus colores y su logo) se arma desde el panel de la nube (Fase 2).
+- **Fotos de los productos, opcionales.**
+  - El administrador las sube desde la carta.
+  - El equipo las achica (unos 800 px) antes de subirlas.
+  - El hub las guarda en su carpeta de datos, con la huella del contenido como nombre, y las sirve sin token, con caché permanente. Funcionan sin internet.
+  - Sin foto, la tarjeta muestra el ícono de su estación (plato o copa).
+  - Las fotos viven fuera de SQLite, en `datos/fotos/` del hub: **el respaldo del hub y la sincronización con la nube (Fase 2) deben incluir esa carpeta**. Como cada hub atiende un solo restaurante, la carpeta no se separa por restaurante; si un hub llegara a atender varios, se guardaría en `fotos/<restaurante_id>/`.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Un mundo visual propio (carta náutica, riel de comandas) | El dueño prefiere que se vea como los POS que sus clientes ya conocen. |
+| Tasty como nombre | Es el nombre de un diseño publicado (Tasty Station), una marca de recetas muy conocida y una palabra común en inglés: difícil de registrar. |
+| Naranja como color del producto | Se confundiría con el naranja de La Spritzzería, que viste el suyo encima. |
+| Fotos obligatorias | La mayoría de restaurantes no tiene fotos de toda su carta el primer día. |

@@ -1,10 +1,12 @@
 import { nuevoId } from '@pos/core'
-import { type ReactNode, useCallback, useEffect, useId, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
 import { buscar } from '../ui/busqueda'
 import { Etiqueta } from '../ui/Etiqueta'
 import { pesos } from '../ui/formato'
+import { achicarFoto } from '../ui/foto'
+import { Icono } from '../ui/iconos'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { PanelLateral } from '../ui/PanelLateral'
 import {
@@ -126,6 +128,7 @@ export function Carta() {
           c={c}
           inicial={producto}
           puedeTodo={puedeTodo}
+          alCambiarFoto={() => void cargar()}
           alCerrar={() => setProducto(null)}
           alGuardar={async (b) => {
             const r = await guardar(cambiosDeProducto(c, b), `Guardaste ${b.nombre.trim()}`)
@@ -485,12 +488,15 @@ function PanelProducto({
   c,
   inicial,
   puedeTodo,
+  alCambiarFoto,
   alCerrar,
   alGuardar,
 }: {
   c: CatalogoEdicion
   inicial: BorradorProducto
   puedeTodo: boolean
+  /** La foto se guarda aparte: la carta del editor se vuelve a leer para que no quede vieja. */
+  alCambiarFoto: () => void
   alCerrar: () => void
   alGuardar: (b: BorradorProducto) => Promise<string | null>
 }) {
@@ -679,6 +685,14 @@ function PanelProducto({
           </div>
         )}
       </fieldset>
+
+      {puedeTodo && !inicial.nuevo && (
+        <FotoProducto
+          productoId={inicial.id}
+          foto={c.productos.find((p) => p.id === inicial.id)?.foto ?? null}
+          alCambiar={alCambiarFoto}
+        />
+      )}
 
       {puedeTodo && (
         <label className="mb-4 flex min-h-12 items-center gap-3">
@@ -1089,6 +1103,86 @@ function Categorias({
           )}
         </ul>
       </section>
+    </div>
+  )
+}
+
+/**
+ * La foto del producto (tarea 1.3c): opcional. Se guarda apenas se elige, aparte del resto del
+ * producto, y se achica en el equipo antes de subirla. Sin foto, la carta muestra un ícono.
+ */
+function FotoProducto({
+  productoId,
+  foto,
+  alCambiar,
+}: {
+  productoId: string
+  foto: string | null
+  alCambiar: () => void
+}) {
+  const [actual, setActual] = useState(foto ? `/fotos/${foto}` : null)
+  const [ocupado, setOcupado] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const entrada = useRef<HTMLInputElement>(null)
+  const subir = async (imagen: string | null) => {
+    setOcupado(true)
+    setError(null)
+    try {
+      setActual(await sala.subirFoto(productoId, imagen))
+      alCambiar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar la foto')
+    }
+    setOcupado(false)
+  }
+  return (
+    <div className="mb-4 flex flex-col gap-2">
+      <p className="font-semibold">Foto (opcional)</p>
+      <div className="flex items-center gap-3">
+        <span className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-linea bg-superficie-2">
+          {actual ? (
+            <img src={actual} alt="Foto del producto" className="size-full object-cover" />
+          ) : (
+            <Icono nombre="foto" className="size-8 text-texto-suave" />
+          )}
+        </span>
+        <span className="flex flex-col gap-2">
+          <Boton icono="foto" disabled={ocupado} onClick={() => entrada.current?.click()}>
+            {ocupado ? 'Guardando…' : actual ? 'Cambiar foto' : 'Subir foto'}
+          </Boton>
+          {actual && (
+            <Boton variante="fantasma" disabled={ocupado} onClick={() => void subir(null)}>
+              Quitar foto
+            </Boton>
+          )}
+        </span>
+      </div>
+      <input
+        ref={entrada}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={async (e) => {
+          const archivo = e.target.files?.[0]
+          e.target.value = ''
+          if (!archivo) return
+          try {
+            await subir(await achicarFoto(archivo))
+          } catch (x) {
+            setError(x instanceof Error ? x.message : 'No se pudo leer la foto')
+          }
+        }}
+      />
+      <p className="text-sm text-texto-suave">
+        Se guarda apenas la eliges y la ven todos los equipos. Mejor de cerca y con buena luz.
+      </p>
+      {error && (
+        <p className="text-sm text-alerta-texto" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

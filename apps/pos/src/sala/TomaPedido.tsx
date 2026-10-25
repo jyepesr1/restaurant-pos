@@ -4,7 +4,7 @@ import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
 import { buscar } from '../ui/busqueda'
 import { pesos } from '../ui/formato'
-import { Icono } from '../ui/iconos'
+import { Icono, type NombreIcono } from '../ui/iconos'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { PanelLateral } from '../ui/PanelLateral'
 import { navegar, useRuta } from '../ui/ruta'
@@ -115,6 +115,15 @@ export function TomaPedido() {
     ? `Mesa ${mesa.nombre}`
     : `${canal === 'salon' ? 'Pedido' : CANALES[canal]}${pedido?.estado.numeroDia ? ` #${pedido.estado.numeroDia}` : ''}`
   const productos = catalogo.categorias.flatMap((c) => c.productos)
+  // Por dónde sale cada producto (cocina o barra): da su ícono cuando no tiene foto.
+  const estacionDe = new Map(
+    catalogo.categorias.flatMap((c) =>
+      c.productos.map((p) => [
+        p.id,
+        catalogo.estaciones.find((e) => e.id === c.estacionId)?.nombre ?? '',
+      ]),
+    ),
+  )
   const agotado = (p: ProductoCatalogo) => agotados.has(claveAgotado(p.id))
 
   const enOrden = (trabajo: () => Promise<void>) => {
@@ -420,7 +429,7 @@ export function TomaPedido() {
 
   return (
     <MarcoSala titulo={titulo} volver="/">
-      <div className="mx-auto flex max-w-6xl gap-4 p-3 pb-28 md:pb-3">
+      <div className="mx-auto flex max-w-[96rem] gap-5 p-3 pb-28 md:p-5 md:pb-5">
         <section className="min-w-0 flex-1" aria-label="Carta">
           {mesaId && candidatos.length > 1 && (
             <Grupo etiqueta="Pedidos de la mesa" className="mb-3 flex flex-wrap gap-2">
@@ -461,7 +470,7 @@ export function TomaPedido() {
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
-                className="min-h-12 w-full rounded-xl border border-borde bg-superficie pr-3 pl-11 text-lg placeholder:text-texto-suave focus-visible:outline-3 focus-visible:outline-foco"
+                className="min-h-12 w-full rounded-xl border border-linea bg-superficie pr-3 pl-11 text-lg shadow-flota placeholder:text-texto-suave focus-visible:outline-3 focus-visible:outline-foco"
               />
             </label>
             {puedeAgotar && (
@@ -470,7 +479,7 @@ export function TomaPedido() {
                 aria-pressed={marcandoAgotados}
                 onClick={() => setMarcandoAgotados(!marcandoAgotados)}
               >
-                {marcandoAgotados ? 'Listo' : 'Agotados'}
+                {marcandoAgotados ? 'Listo' : 'Marcar agotados'}
               </Boton>
             )}
           </div>
@@ -524,7 +533,14 @@ export function TomaPedido() {
             alContarPersonas={(n) => cambiarComensales(n - comensales)}
           />
 
-          <ul className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-3">
+          {pedidos === null && (
+            <p className="mt-3 text-texto-suave" role="status">
+              Leyendo los pedidos de este equipo…
+            </p>
+          )}
+          {/* Las columnas salen del ancho de la carta, no de la pantalla: en tablet el panel del
+              pedido le quita espacio. */}
+          <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(10rem,1fr))]">
             {lista.slice(0, RESULTADOS).map((p) => {
               const cantidad = enPedido(p.id)
               const sinStock = agotado(p)
@@ -544,37 +560,63 @@ export function TomaPedido() {
                       ...(cantidad > 0 ? [`${cantidad} en el pedido`] : []),
                     ].join(', ')}
                     onClick={() => tocarProducto(p)}
-                    className={`relative flex min-h-20 w-full flex-col justify-between rounded-xl border p-3 text-left active:scale-[0.98] focus-visible:outline-3 focus-visible:outline-foco ${
+                    className={`group flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition active:scale-[0.98] focus-visible:outline-3 focus-visible:outline-foco ${
                       sinStock
                         ? 'border-dashed border-alerta-fuerte bg-alerta-suave text-alerta-texto'
-                        : 'border-borde bg-superficie hover:bg-superficie-2'
+                        : cantidad > 0
+                          ? 'border-accion-fuerte bg-superficie shadow-flota'
+                          : 'border-linea bg-superficie hover:border-borde hover:shadow-flota'
                     }`}
                   >
-                    {cantidad > 0 && (
-                      <span className="cifras absolute -top-2 -right-2 flex size-7 items-center justify-center rounded-full bg-accion-fuerte text-sm font-bold text-white">
-                        {cantidad}
-                      </span>
-                    )}
                     <span
-                      className={`font-semibold leading-snug ${sinStock ? 'line-through' : ''}`}
+                      className={`relative flex w-full items-center justify-center ${
+                        p.foto
+                          ? 'aspect-video bg-superficie-2 sm:aspect-[4/3]'
+                          : 'h-14 bg-superficie-2/70 sm:h-20'
+                      }`}
                     >
-                      {p.nombre}
+                      <FotoOIcono
+                        foto={p.foto ?? null}
+                        icono={iconoDe(estacionDe.get(p.id) ?? '')}
+                        apagada={sinStock}
+                      />
+                      {cantidad > 0 && (
+                        <span className="cifras absolute top-2 right-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-accion-fuerte px-2 text-sm font-bold text-white shadow-flota">
+                          {`×${cantidad}`}
+                        </span>
+                      )}
+                      {sinStock && (
+                        <span className="absolute top-2 left-2 rounded-full bg-alerta-fuerte px-2.5 py-0.5 text-sm font-semibold text-white">
+                          Agotado
+                        </span>
+                      )}
                     </span>
-                    <span className="cifras mt-1 flex items-center justify-between">
-                      {sinStock ? (
-                        <span className="font-semibold">Agotado</span>
-                      ) : (
-                        <span className="font-titulo text-lg text-texto-suave">
+                    <span className="flex flex-1 flex-col gap-2 p-3">
+                      <span
+                        className={`line-clamp-2 font-semibold leading-snug ${sinStock ? 'line-through' : ''}`}
+                      >
+                        {p.nombre}
+                      </span>
+                      <span className="mt-auto flex items-center justify-between gap-2">
+                        <span className="cifras text-lg font-bold">
                           {p.variantes.length > 0
                             ? `desde ${pesos(Math.min(...p.variantes.map((v) => v.precio)))}`
                             : pesos(p.precio)}
                         </span>
-                      )}
-                      {!sinStock && pideOpciones(p) && (
-                        <span className="text-sm whitespace-nowrap text-texto-suave">
-                          opciones ›
-                        </span>
-                      )}
+                        {!sinStock &&
+                          (pideOpciones(p) ? (
+                            <span className="text-sm whitespace-nowrap text-texto-suave">
+                              opciones ›
+                            </span>
+                          ) : (
+                            <span
+                              aria-hidden="true"
+                              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accion-fuerte text-white transition group-hover:brightness-110"
+                            >
+                              <Icono nombre="mas" className="size-5" />
+                            </span>
+                          ))}
+                      </span>
                     </span>
                   </button>
                 </li>
@@ -594,21 +636,27 @@ export function TomaPedido() {
         </section>
 
         {/* Tablet y caja: el pedido siempre a la vista. */}
-        <aside className="sticky top-20 hidden h-[calc(100dvh-6rem)] w-96 shrink-0 flex-col rounded-2xl border border-borde bg-superficie md:flex">
+        <aside className="sticky top-21 hidden h-[calc(100dvh-6.5rem)] w-80 shrink-0 lg:w-96 flex-col overflow-hidden rounded-2xl border border-linea bg-superficie shadow-flota md:flex">
+          <div className="flex items-center justify-between gap-2 border-b border-linea px-4 py-3">
+            <h2 className="text-lg font-bold">{titulo}</h2>
+            {pedido?.estado.numeroDia && (
+              <span className="cifras text-sm text-texto-suave">{`Pedido #${pedido.estado.numeroDia}`}</span>
+            )}
+          </div>
           {ticket}
-          <div className="border-t border-borde p-3">{botonEnviar}</div>
+          <div className="border-t border-linea p-4">{botonEnviar}</div>
         </aside>
       </div>
 
       {/* Celular: barra fija abajo, al alcance del pulgar. */}
-      <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-borde bg-superficie p-3 md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-linea bg-lateral p-3 shadow-flota md:hidden">
         <Boton
           variante="secundario"
           grande
           onClick={() => setVerPedido(true)}
           className="flex-1 flex-col gap-0! text-base! leading-tight"
         >
-          <span>{`Pedido (${pedido ? itemsVigentes(pedido.estado).length : 0})`}</span>
+          <span>{`Pedido (${pedido ? itemsVigentes(pedido.estado).reduce((n, i) => n + i.cantidad - i.cantidadAnulada, 0) : 0})`}</span>
           <span className="cifras font-titulo text-lg">{pesos(pedido?.total ?? 0)}</span>
         </Boton>
         <div className="flex-1">{botonEnviar}</div>
@@ -663,6 +711,39 @@ export function TomaPedido() {
     </MarcoSala>
   )
 }
+
+/** La foto del producto; si no tiene, o no carga (el hub no responde), su ícono. */
+function FotoOIcono({
+  foto,
+  icono,
+  apagada,
+}: {
+  foto: string | null
+  icono: NombreIcono
+  apagada: boolean
+}) {
+  const [rota, setRota] = useState(false)
+  if (foto && !rota)
+    return (
+      <img
+        src={foto}
+        alt=""
+        loading="lazy"
+        onError={() => setRota(true)}
+        className={`size-full object-cover ${apagada ? 'opacity-40 grayscale' : ''}`}
+      />
+    )
+  return (
+    <Icono
+      nombre={icono}
+      className={`size-9 ${apagada ? 'text-alerta-texto' : 'text-texto-suave'}`}
+    />
+  )
+}
+
+/** Sin foto, el producto muestra un ícono: copa si sale por la barra, plato si sale por cocina. */
+const iconoDe = (estacion: string): NombreIcono =>
+  /barra|bar|bebida/i.test(estacion) ? 'copa' : 'plato'
 
 const nombreComensal = (c: number | null) => (c === null ? 'Mesa' : `P${c}`)
 const etiquetaComensal = (c: number | null) =>
@@ -767,7 +848,7 @@ function Ticket({
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Fuera del salón no se cuentan personas. */}
       {enSalon && (
-        <div className="flex items-center gap-2 border-b border-borde p-3">
+        <div className="flex items-center gap-2 border-b border-linea p-3">
           <Icono nombre="personas" />
           <span className="font-semibold">
             {comensales === 0
@@ -801,7 +882,7 @@ function Ticket({
             return (
               <section key={c.curso ?? 'ninguno'} aria-label={c.nombre}>
                 {(porCurso.length > 1 || c.curso !== null) && (
-                  <div className="flex min-h-12 items-center justify-between gap-2 bg-superficie-2 px-3">
+                  <div className="flex min-h-12 items-center justify-between gap-2 bg-superficie-2/60 px-4">
                     <span className="font-semibold">
                       {c.nombre}
                       {retenidos > 0 && (
@@ -834,13 +915,21 @@ function Ticket({
           })}
       </div>
       {esperan > 0 && (
-        <p className="border-t border-borde px-3 pt-2 text-sm text-proceso-texto">
+        <p className="border-t border-linea px-3 pt-2 text-sm text-proceso-texto">
           {`${esperan} ${esperan === 1 ? 'espera' : 'esperan'} su curso: «Enviar» no ${esperan === 1 ? 'lo manda' : 'los manda'}; sale${esperan === 1 ? '' : 'n'} al tocar «Marchar».`}
         </p>
       )}
-      <div className="cifras flex justify-between p-3 text-lg font-semibold">
-        <span>Total</span>
-        <span>{pesos(pedido?.total ?? 0)}</span>
+      <div className="flex flex-col gap-1 border-t border-linea px-4 py-3">
+        <div className="flex justify-between text-sm text-texto-suave">
+          <span>Productos</span>
+          <span className="cifras">
+            {items.reduce((total, i) => total + i.cantidad - i.cantidadAnulada, 0)}
+          </span>
+        </div>
+        <div className="cifras flex items-baseline justify-between">
+          <span className="text-lg font-semibold">Total</span>
+          <span className="text-2xl font-bold">{pesos(pedido?.total ?? 0)}</span>
+        </div>
       </div>
     </div>
   )
@@ -860,7 +949,7 @@ function LineaTicket({
   const sinEnviar = i.estado === 'pendiente' || i.estado === 'retenido'
   const porConfirmar = pedido.itemsPorConfirmar.has(i.id)
   return (
-    <li className="flex min-h-14 items-center gap-1 border-b border-borde pr-2">
+    <li className="flex min-h-14 items-center gap-1 border-b border-linea pr-2">
       <button
         type="button"
         onClick={alTocar}
@@ -1171,7 +1260,7 @@ function PanelItem({
     >
       {!sinEnviar && (
         <p className="mb-4 rounded-xl bg-neutro-suave p-3 text-neutro-texto">
-          Ya se envió a cocina: aquí no se cambia. Anularlo llega con la tarea de anulaciones.
+          Ya se envió a cocina: aquí no se cambia. Para anularlo, avisa en caja.
         </p>
       )}
       {sinEnviar && (

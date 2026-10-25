@@ -62,7 +62,7 @@ export function Lienzo({
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: ver arriba */}
       <section
         aria-label={etiqueta}
-        className="relative overflow-hidden rounded-2xl border border-borde bg-superficie-2 [background-image:radial-gradient(var(--color-borde)_1px,transparent_1px)]"
+        className="relative overflow-hidden rounded-2xl border border-linea bg-superficie [background-image:radial-gradient(var(--color-linea)_1.5px,transparent_1.5px)]"
         style={{
           height: Math.max(200, caja.alto * escala),
           backgroundSize: `${50 * escala}px ${50 * escala}px`,
@@ -74,6 +74,93 @@ export function Lienzo({
         {escala > 0 && children}
       </section>
     </div>
+  )
+}
+
+/**
+ * Las sillas alrededor de una mesa, según sus puestos: en círculo si es redonda, a lo largo de los
+ * lados largos (y una en cada cabecera si caben) si es cuadrada o rectangular, y todas al frente
+ * si es un puesto de barra. Son dibujo: el botón de la mesa dice los puestos al lector.
+ */
+export function Sillas({
+  forma,
+  ancho,
+  alto,
+  puestos,
+  clase,
+}: {
+  forma: string
+  /** Medidas de la mesa en pantalla (px). */
+  ancho: number
+  alto: number
+  puestos: number
+  clase: string
+}) {
+  if (puestos <= 0) return null
+  const largo = Math.max(8, Math.min(26, Math.min(ancho, alto) * 0.32))
+  const fondo = Math.max(5, largo * 0.42)
+  const aire = Math.max(3, largo * 0.18)
+  const sillas: { x: number; y: number; giro: number }[] = []
+  if (forma === 'redonda') {
+    const radio = Math.max(ancho, alto) / 2 + aire + fondo / 2
+    for (let i = 0; i < puestos; i++) {
+      const angulo = -Math.PI / 2 + (2 * Math.PI * i) / puestos
+      sillas.push({
+        x: ancho / 2 + radio * Math.cos(angulo),
+        y: alto / 2 + radio * Math.sin(angulo),
+        giro: (angulo * 180) / Math.PI + 90,
+      })
+    }
+  } else if (forma === 'barra') {
+    for (let i = 0; i < puestos; i++)
+      sillas.push({ x: (ancho * (i + 0.5)) / puestos, y: alto + aire + fondo / 2, giro: 0 })
+  } else {
+    const horizontal = ancho >= alto
+    const [lado, cabecera] = horizontal ? [ancho, alto] : [alto, ancho]
+    const cabeceras = puestos >= 6 && cabecera >= largo * 1.3 ? 2 : 0
+    const enLados = puestos - cabeceras
+    const arriba = Math.ceil(enLados / 2)
+    const abajo = enLados - arriba
+    const fila = (cuantas: number, lejos: boolean) => {
+      for (let i = 0; i < cuantas; i++) {
+        const a = (lado * (i + 0.5)) / cuantas
+        const b = lejos ? cabecera + aire + fondo / 2 : -aire - fondo / 2
+        sillas.push(
+          horizontal
+            ? { x: a, y: b, giro: lejos ? 180 : 0 }
+            : { x: b, y: a, giro: lejos ? 90 : 270 },
+        )
+      }
+    }
+    fila(arriba, false)
+    fila(abajo, true)
+    if (cabeceras) {
+      const medio = cabecera / 2
+      const antes = -aire - fondo / 2
+      const despues = lado + aire + fondo / 2
+      sillas.push(
+        horizontal ? { x: antes, y: medio, giro: 270 } : { x: medio, y: antes, giro: 0 },
+        horizontal ? { x: despues, y: medio, giro: 90 } : { x: medio, y: despues, giro: 180 },
+      )
+    }
+  }
+  return (
+    <>
+      {sillas.map((s) => (
+        <span
+          key={`${s.x.toFixed(1)}-${s.y.toFixed(1)}`}
+          aria-hidden="true"
+          className={`pointer-events-none absolute rounded-md ${clase}`}
+          style={{
+            width: largo,
+            height: fondo,
+            left: s.x - largo / 2,
+            top: s.y - fondo / 2,
+            transform: `rotate(${s.giro}deg)`,
+          }}
+        />
+      ))}
+    </>
   )
 }
 

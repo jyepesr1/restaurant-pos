@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Boton } from '../ui/Boton'
+import { aplicarMarca, esMarca } from '../ui/marca'
 import { Carta } from './Carta'
 import { sala, useSala } from './contexto'
 import { Entrar } from './Entrar'
+import { Marca } from './Marca'
 import { MarcoSala } from './MarcoSala'
 import { Mesas } from './Mesas'
 import { Personal } from './Personal'
@@ -17,6 +19,13 @@ const REVISAR_SESION_MS = 30_000
 
 export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLSearchParams }) {
   const estado = useSala()
+  // La marca del restaurante llega con la carta: cuando cambia, todo el equipo se ve con ella.
+  // Sin carta todavía (se está leyendo, o el equipo recién entra) se deja la que pintó index.html.
+  const conCarta = estado.catalogo !== null
+  const marca = estado.catalogo?.restaurante.marca
+  useEffect(() => {
+    if (conCarta) aplicarMarca(esMarca(marca) ? marca : 'faro')
+  }, [conCarta, marca])
 
   useEffect(() => {
     sala.cargar().catch((e) => console.error('No se pudo abrir la base del equipo:', e))
@@ -40,6 +49,7 @@ export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLS
   if (!estado.catalogo) return <SinCatalogo />
   if (ruta === '/personal' && estado.sesion.permisos.includes('administrar_usuarios'))
     return <Personal />
+  if (ruta === '/marca' && estado.sesion.permisos.includes('administrar_usuarios')) return <Marca />
   if (ruta === '/carta') return <Carta />
   if (ruta === '/plano') return <PlanoEditor />
   if (ruta === '/pedido') return <TomaPedido key={parametros.get('mesa')} />

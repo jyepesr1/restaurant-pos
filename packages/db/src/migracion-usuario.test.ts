@@ -7,6 +7,7 @@ import { AHORA, insertarEnTabla, insertarVersionado, sembrar } from './pruebas/u
 // Migración 5 (tarea 1.3b, ADR-013): usuario y contraseña en la credencial del hub.
 
 const HASTA_4 = MIGRACIONES.filter((m) => m.version <= 4)
+const HASTA_5 = MIGRACIONES.filter((m) => m.version <= 5)
 
 /** Una base de la versión 4 con una persona que ya tenía PIN. */
 function baseVersion4() {
@@ -41,10 +42,10 @@ const conUsuario = (
     .run(usuario, huella, id)
 
 describe('migración 5: usuario y contraseña', () => {
-  it('es la 5, la última, y deja a quien tenía PIN sin usuario (sigue entrando con su PIN)', () => {
+  it('es la 5 y deja a quien tenía PIN sin usuario (sigue entrando con su PIN)', () => {
     const { db, ana } = baseVersion4()
-    expect(MIGRACIONES.at(-1)).toMatchObject({ version: 5, nombre: 'usuario_contrasena' })
-    expect(aplicarMigraciones(db)).toEqual([5])
+    expect(MIGRACIONES.find((m) => m.version === 5)?.nombre).toBe('usuario_contrasena')
+    expect(aplicarMigraciones(db, HASTA_5)).toEqual([5])
     expect(versionActual(db)).toBe(5)
     expect(
       db.prepare('SELECT * FROM usuario_credencial WHERE usuario_id = ?').get(ana),

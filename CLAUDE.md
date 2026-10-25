@@ -1,6 +1,6 @@
-# POS para restaurantes (Colombia)
+# Faro: POS para restaurantes (Colombia)
 
-Sistema POS para restaurantes de servicio a la mesa. Documentos:
+**Faro** es un POS para restaurantes de servicio a la mesa, pensado para venderse a muchos restaurantes (ADR-014). Documentos:
 
 - `docs/BRIEF.md`: brief completo del proyecto.
 - `docs/DECISIONES.md`: decisiones de arquitectura y de negocio (ADR), con alternativas y evidencia.
@@ -8,10 +8,11 @@ Sistema POS para restaurantes de servicio a la mesa. Documentos:
 - `docs/SYNC.md`: protocolo de sincronización dispositivo ↔ hub ↔ nube.
 - `docs/DINERO.md`: fórmulas exactas de todo cálculo de dinero y las pruebas que deben cubrirlas.
 - `docs/ROADMAP.md`: estado de cada tarea y cómo probarla a mano.
+- `apps/pos/PRODUCT.md` y `apps/pos/DESIGN.md`: qué es el producto para quien diseña, y su sistema visual.
 
 Antes de cambiar el modelo, la sincronización o una regla de negocio, leer el ADR correspondiente; si la decisión cambia, actualizar el ADR.
 
-Restaurante piloto: **La Spritzzería** (Envigado). Su carta real está en `docs/datos/carta-la-spritzzeria.yaml`.
+Restaurante piloto (primer cliente): **La Spritzzería** (Envigado). Su carta real está en `docs/datos/carta-la-spritzzeria.yaml`; se ve con su marca opcional.
 
 ## Convenciones
 
@@ -53,7 +54,7 @@ Monorepo con pnpm workspaces y Turborepo. TypeScript estricto en todo.
 
 | Carpeta | Qué contiene |
 |---|---|
-| `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador. `src/ui`: design system (colores con significado en `estilos.css`, botones, panel lateral, avisos con Deshacer, teclado PIN, búsqueda tolerante). `src/bocetos`: bocetos navegables de la tarea 0.9 (datos en memoria, no son el modelo de la Fase 1). `src/sala`: la app de operación (entrar con PIN o con usuario y contraseña, plano de mesas, pedido, editor de la carta y del plano, personal y roles) sobre IndexedDB (Dexie) y la sincronización con el hub (`Sala` en `motor.ts`) |
+| `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador. `src/ui`: design system de Faro (tokens y marcas en `estilos.css`, logo, botones, panel lateral, avisos con Deshacer, teclado PIN, búsqueda tolerante). `src/bocetos`: bocetos navegables de la tarea 0.9 (datos en memoria, no son el modelo de la Fase 1). `src/sala`: la app de operación (entrar con PIN o con usuario y contraseña, plano de mesas, pedido, editor de la carta y del plano, personal y roles) sobre IndexedDB (Dexie) y la sincronización con el hub (`Sala` en `motor.ts`) |
 | `apps/hub` (`@pos/hub`) | Servidor local (Fastify) que corre en el PC de caja: sirve la app y la API en la red local. En `src/acceso`: entrar con PIN o con usuario y contraseña sin emparejar, sesiones, comprobantes de supervisor, revocación, y personal y roles dinámicos (`personal.ts`) (ADR-008 y ADR-013). `src/sincronizacion.ts`: WebSocket de eventos; `src/catalogo.ts` y `src/edicion-catalogo.ts`: leer y editar la carta; `src/precios.ts`: historial del catálogo y revisión del precio copiado (`precio_distinto`) |
 | `packages/core` (`@pos/core`) | Lógica de negocio compartida, sin dependencias de navegador ni de Node: dinero (`src/dinero`), esquemas de eventos (`src/eventos`), reductor del pedido (`src/pedido`) y permisos, roles y firma de eventos (`src/acceso`) |
 | `packages/sync` (`@pos/sync`) | Sincronización dispositivo ↔ hub: `HubSync` y `SalaSync` (hub), `ClienteSync` y `GestorConexion` (dispositivo), almacén del hub sobre SQLite en `@pos/sync/sqlite` |
