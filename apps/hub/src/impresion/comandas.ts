@@ -9,6 +9,8 @@ import type { CambioPedido } from '@pos/sync'
 // están en la cola. Solo arma datos; la cola (`cola.ts`) las convierte en bytes al imprimir, con
 // el ancho de la impresora que finalmente la imprima (puede ser la de respaldo).
 
+const EN_COCINA = new Set(['enviado', 'en_preparacion', 'listo'])
+
 const CANALES: Record<string, string> = {
   salon: 'Mesa',
   para_llevar: 'Para llevar',
@@ -92,6 +94,22 @@ export function trabajosDeEvento(
       armar('anulacion', enviada, [
         itemComanda({ ...item, cantidad: evento.datos.cantidad, cantidadAnulada: 0 }),
       ])
+      break
+    }
+    case 'NotaPedidoCambiada': {
+      // Con platos ya en cocina, la nota nueva (o que se quitó) sale en papel a cada estación que
+      // tiene algo pendiente de ese pedido: una alergia no puede quedar solo en la pantalla.
+      if ((antes?.notas ?? null) === despues.notas) break
+      const porEstacion = new Map<string, Enviada>()
+      for (const e of enviadas(o, despues.id))
+        if (e.itemIds.some((id) => EN_COCINA.has(despues.items[id]?.estado ?? '')))
+          porEstacion.set(e.estacionId, e)
+      for (const e of porEstacion.values())
+        porCrear.push({
+          comandaId: e.comandaId,
+          estacionId: e.estacionId,
+          comanda: datosComanda(o, evento, despues, 'nota', e, []),
+        })
       break
     }
     case 'ItemModificadoTrasEnvio': {
@@ -276,6 +294,8 @@ function datosComanda(
     comensales: pedido.comensales > 0 ? pedido.comensales : null,
     items,
     retenidos: tipo === 'nueva' ? pedido.cursosRetenidos.filter((c) => tieneCurso(pedido, c)) : [],
+    // En una anulación o un cambio, la nota del pedido distrae: ya salió con la comanda original.
+    notaPedido: tipo === 'nueva' || tipo === 'reimpresion' || tipo === 'nota' ? pedido.notas : null,
   }
 }
 

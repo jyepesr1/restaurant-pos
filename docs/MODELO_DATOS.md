@@ -181,6 +181,7 @@ Agotado (86) no es un campo editable: son los eventos `ProductoAgotado` / `Produ
 | `redondeo_modo` | `'mitad_arriba'` | Redondeo de porcentajes y del desglose fiscal ([DINERO.md](DINERO.md#principios)). |
 | `redondeo_efectivo_modo` | `'cercano_mitad_abajo'` | Al múltiplo más cercano; la mitad, a favor del cliente. |
 | `sesion_inactividad_min` | `30` | Minutos sin uso para cerrar la sesión en un dispositivo compartido. |
+| `usar_cursos` | `false` | Si se toman pedidos por curso (entrada, fuerte, postre; retener y marchar). Apagado: no se ve «Curso» al tomar el pedido (ADR-011). |
 | `cocina_amarillo_min` / `cocina_rojo_min` | `10` / `20` | Minutos desde el envío tras los que lo de cocina pasa a ámbar y a rojo en «Pedidos en cocina» y en la pantalla de cocina (ADR-015). Se cambian en «Cocina e impresoras». |
 | `marca` | `"faro"` | Con qué marca se ve el POS en todos los equipos (ADR-014): `faro` o una marca preparada (`la-spritzzeria`). La cambia el administrador en «Marca del restaurante». |
 
@@ -201,6 +202,7 @@ Cada tipo tiene su esquema Zod en `packages/core` (tarea 0.5). Los montos que sa
 | `PedidoAbierto` | `canal`, `mesa_id`, `comensales` | `tomar_pedido` |
 | `MeseroAsignado` | `mesero_id` | `reasignar_mesa` si no es al abrir |
 | `ComensalesCambiados` | `comensales` | `tomar_pedido` |
+| `NotaPedidoCambiada` | `notas` (para todo el pedido: alergias, celebraciones; `null` la quita). Sale en cada comanda que se envíe después y en la pantalla de cocina | `tomar_pedido` |
 | `ItemAgregado` | `item_id`, `producto_id`, `catalogo_version`, `precio_canal_id`, `variante_id`, **copias** de nombre y `precio_unitario`, **copia del impuesto** (`impuesto_tipo`, `tarifa`), `cantidad`, `comensal`, `curso`, `modificadores` (con nombre y `precio_extra` copiados; heredan el impuesto del ítem), `notas`. Nace `retenido` si su curso está retenido. | `tomar_pedido` |
 | `ItemCambiado` | `item_id`, nueva `cantidad` / `comensal` / `curso` / `notas` — solo antes de enviar | `tomar_pedido` |
 | `ItemQuitado` | `item_id` — solo antes de enviar; es también el "deshacer" | `quitar_item_no_enviado` |

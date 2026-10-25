@@ -499,6 +499,20 @@ function Tarjeta({
         </span>
         <span>{[estacion, mesero].filter(Boolean).join(' · ')}</span>
       </div>
+      {c.pedido.estado.notas && (
+        <p
+          className={`flex items-start gap-2 rounded-lg border-2 border-borde bg-superficie px-2 py-1 text-texto ${grande ? 'text-xl' : ''}`}
+        >
+          <Icono
+            nombre="lapiz"
+            className={grande ? 'mt-0.5 size-6 shrink-0' : 'mt-0.5 size-4 shrink-0'}
+          />
+          <span>
+            <span className="block text-sm font-semibold uppercase">Para todo el pedido</span>
+            <span className="font-bold">{c.pedido.estado.notas}</span>
+          </span>
+        </p>
+      )}
       <ul className="flex flex-1 flex-col gap-3">
         {c.items.map((i) => (
           <li key={i.id} className={grande ? 'text-2xl' : ''}>

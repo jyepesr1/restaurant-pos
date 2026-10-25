@@ -81,6 +81,8 @@ export interface EstadoPedido {
   numeroDia: number | null
   rescateDe: string | null
   unidoA: string | null
+  /** Nota para todo el pedido: va en cada comanda y en la cocina. */
+  notas: string | null
   items: Record<string, ItemPedido>
   descuentos: Record<string, DescuentoPedido>
   cursosRetenidos: Curso[]

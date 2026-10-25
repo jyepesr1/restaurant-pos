@@ -18,17 +18,32 @@ export function IndicadorConexion({
   estado,
   pendientes = 0,
   impresorasConFalla = 0,
+  compacto = false,
 }: {
   estado: EstadoConexion
   /** Eventos guardados aquí que el hub aún no confirma. */
   pendientes?: number
   impresorasConFalla?: number
+  /**
+   * En el celular, lo normal («Solo red local») se abrevia «Local», para que el encabezado quepa
+   * en una fila. Lo que pide atención (sin conexión, pendientes) siempre lleva su texto completo.
+   */
+  compacto?: boolean
 }) {
   const e = ESTADOS[estado]
   return (
     <div className="flex flex-wrap items-center gap-2" role="status">
       <Etiqueta tono={e.tono} icono={e.icono}>
-        {e.texto}
+        {compacto && estado === 'solo_local' ? (
+          <>
+            <span className="sm:hidden" aria-hidden="true">
+              Local
+            </span>
+            <span className="max-sm:sr-only">{e.texto}</span>
+          </>
+        ) : (
+          e.texto
+        )}
       </Etiqueta>
       {pendientes > 0 && (
         <Etiqueta tono="proceso" icono="reloj">{`${pendientes} sin confirmar`}</Etiqueta>

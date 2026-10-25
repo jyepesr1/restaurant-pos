@@ -66,6 +66,15 @@ describe('comanda', () => {
     )
   })
 
+  it('la nota del pedido sale arriba, resaltada', () => {
+    const texto = comoTexto(
+      lineasComanda({ ...comanda, notaPedido: 'alérgico al maní' }, formato80),
+      48,
+    )
+    expect(texto).toContain('[NOTA DEL PEDIDO: alérgico al maní]')
+    expect(texto.indexOf('NOTA DEL PEDIDO')).toBeLessThan(texto.indexOf('ENTRADA'))
+  })
+
   it('avisa los cursos que siguen en espera', () => {
     const texto = comoTexto(lineasComanda({ ...comanda, retenidos: ['postre'] }, formato80), 48)
     expect(texto).toContain('En espera: Postre')
@@ -129,6 +138,11 @@ describe('caracteres', () => {
       ),
       { seed: 7, numRuns: 500 },
     )
+  })
+
+  it('pc850 imprime las comillas latinas', () => {
+    expect(codificar('«sin hielo»', 'pc850').slice(0, 1)).toEqual([0xae])
+    expect(codificar('«sin hielo»', 'pc850').at(-1)).toBe(0xaf)
   })
 
   it('emoji y lo desconocido salen como «?»', () => {

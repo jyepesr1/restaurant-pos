@@ -1,4 +1,10 @@
-import { configCompleta, jsonCanonico, nuevoId, type Permiso } from '@pos/core'
+import {
+  type ConfigRestaurante,
+  configCompleta,
+  jsonCanonico,
+  nuevoId,
+  type Permiso,
+} from '@pos/core'
 import { type BaseSqlite, enTransaccion, type Fila } from '@pos/db'
 import { PAGINAS_CODIGOS } from '@pos/printing'
 import type { Conexion } from '@pos/sync'
@@ -224,6 +230,7 @@ export async function rutasImpresion(
           ultimo_uso: f.uso === null ? null : String(f.uso),
         })),
       tiempos: { amarillo: config.cocina_amarillo_min, rojo: config.cocina_rojo_min },
+      usar_cursos: config.usar_cursos,
     }
   })
 
@@ -438,6 +445,46 @@ export async function rutasImpresion(
     return reply.code(204).send()
   })
 
+  // Prender o apagar los cursos (entrada, fuerte, postre) en todo el restaurante.
+  /**
+   * Cambia campos de la configuración del restaurante (versionada: los equipos la leen con la
+   * carta). Si no cambia nada, no escribe ni avisa.
+   */
+  const actualizarConfig = (
+    cambios: Partial<ConfigRestaurante>,
+    autor: { usuarioId: string; dispositivoId: string },
+  ) => {
+    const actual = JSON.parse(
+      String(
+        db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)?.config ??
+          '{}',
+      ),
+    ) as Record<string, unknown>
+    const antes = jsonCanonico(configCompleta(actual))
+    const despues = jsonCanonico(configCompleta({ ...actual, ...cambios }))
+    if (antes === despues) return
+    actualizarVersionado(
+      db,
+      'restaurante',
+      restauranteId,
+      restauranteId,
+      { config: despues },
+      autor,
+      reloj(),
+    )
+    avisar()
+  }
+
+  // Prender o apagar los cursos (entrada, fuerte, postre) en todo el restaurante.
+  app.post('/api/cocina/cursos', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({ usar: z.boolean() }).safeParse(req.body)
+    if (!cuerpo.success) return datosInvalidos(reply)
+    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    if (!autor) return reply
+    actualizarConfig({ usar_cursos: cuerpo.data.usar }, autor)
+    return reply.code(204).send()
+  })
+
   // Minutos para el ámbar y el rojo de lo que se demora en cocina.
   app.post('/api/cocina/tiempos', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.extend({
@@ -446,33 +493,13 @@ export async function rutasImpresion(
     }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply, 'Escribe minutos entre 1 y 240')
     if (cuerpo.data.rojo <= cuerpo.data.amarillo)
-      return datosInvalidos(reply, 'El rojo debe llegar después del ámbar')
+      return datosInvalidos(reply, '«Muy demorada» debe llegar después de «demorada»')
     const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
     if (!autor) return reply
-    const actual = JSON.parse(
-      String(
-        db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)?.config ??
-          '{}',
-      ),
-    ) as Record<string, unknown>
-    actualizarVersionado(
-      db,
-      'restaurante',
-      restauranteId,
-      restauranteId,
-      {
-        config: jsonCanonico(
-          configCompleta({
-            ...actual,
-            cocina_amarillo_min: cuerpo.data.amarillo,
-            cocina_rojo_min: cuerpo.data.rojo,
-          }),
-        ),
-      },
+    actualizarConfig(
+      { cocina_amarillo_min: cuerpo.data.amarillo, cocina_rojo_min: cuerpo.data.rojo },
       autor,
-      reloj(),
     )
-    avisar()
     return reply.code(204).send()
   })
 }

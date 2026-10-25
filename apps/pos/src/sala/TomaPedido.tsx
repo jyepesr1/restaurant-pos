@@ -23,8 +23,8 @@ import {
   lineaIgual,
   type ProductoCatalogo,
   pideOpciones,
-  porEnviar,
   precioElegido,
+  unidadesPorEnviar,
 } from './pedido'
 import { claveAgotado, itemsVigentes, type PedidoVisible } from './proyeccion'
 
@@ -83,6 +83,9 @@ export function TomaPedido() {
   const cola = useRef<Promise<void>>(Promise.resolve())
   const puedeAgotar = sesion?.permisos.includes('agotar_producto') ?? false
   const puedeEntregar = sesion?.permisos.includes('marcar_preparacion') ?? false
+  // Los cursos se usan poco en Colombia: solo se ven si el restaurante los prende.
+  const usarCursos = catalogo?.restaurante.usarCursos ?? false
+  const [editandoNota, setEditandoNota] = useState(false)
 
   // "/" lleva a la búsqueda (atajo de caja, brief §5, regla 8).
   useEffect(() => {
@@ -218,7 +221,11 @@ export function TomaPedido() {
   ) =>
     enOrden(async () => {
       // Antes de abrir el pedido: si falta elegir algo, no queda un pedido vacío en la mesa.
-      const datos = datosItem(catalogo, p, varianteId, elegidas, { ...extras, comensal, curso })
+      const datos = datosItem(catalogo, p, varianteId, elegidas, {
+        ...extras,
+        comensal,
+        curso: usarCursos ? curso : null,
+      })
       const id = await asegurarPedido()
       const igual = lineaIgual(await pedidoGuardado(), datos)
       if (igual) {
@@ -265,6 +272,59 @@ export function TomaPedido() {
       await sala.registrar('ItemCambiado', linea.estado.id, { item_id: itemId, ...cambio })
     })
 
+  /**
+   * Saca una unidad de la línea a una línea propia (3 Aperol → 2 + 1) y abre esa, para darle su
+   * nota o su persona sin cambiar las demás.
+   */
+  const separar = (itemId: string, nota: string | null) =>
+    enOrden(async () => {
+      const linea = await lineaGuardada(itemId)
+      if (!linea) return
+      const { estado, item } = linea
+      if (item.cantidad - item.cantidadAnulada < 2) return
+      // Con descuento o la cuenta dividida no se cambia la cantidad (el reductor lo rechaza):
+      // agregar la copia igual dejaría una unidad de más.
+      const conDescuento = Object.values(estado.descuentos).some(
+        (d) => d.montos[item.id] !== undefined,
+      )
+      if (conDescuento || estado.cuentas) {
+        avisar('Con descuento o la cuenta dividida no se separa: quítalo primero en caja')
+        return
+      }
+      await sala.registrar('ItemCambiado', estado.id, {
+        item_id: item.id,
+        cantidad: item.cantidad - 1,
+      })
+      // La copia entra solo si la línea de verdad bajó (otro equipo pudo enviarla antes).
+      const bajo = (await pedidoGuardado())?.items[item.id]
+      if (!bajo || bajo.cantidad !== item.cantidad - 1) {
+        avisar('No se pudo separar: la línea cambió en otro equipo')
+        return
+      }
+      const copia = { ...(await copiaActual(item)), cantidad: 1, notas: nota }
+      await sala.registrar('ItemAgregado', estado.id, copia)
+      setEditando(copia.item_id)
+      avisar(
+        nota
+          ? `Separaste un ${item.nombre}: «${nota}»`
+          : `Separaste un ${item.nombre}: ponle su nota`,
+      )
+    })
+
+  /** La nota de todo el pedido («alérgico al maní»): va en cada comanda y en la cocina. */
+  const cambiarNotaPedido = (notas: string | null) =>
+    enOrden(async () => {
+      const antes = await pedidoGuardado()
+      // Sin cambio no se escribe nada, ni se abre un pedido vacío en una mesa libre.
+      if ((antes?.notas ?? null) === notas) return
+      if (antes && antes.estado !== 'abierto') {
+        avisar('Este pedido ya se cerró: la nota no se guardó')
+        return
+      }
+      const id = await asegurarPedido()
+      await sala.registrar('NotaPedidoCambiada', id, { notas })
+    })
+
   const duplicar = (itemId: string) =>
     enOrden(async () => {
       const estado = await pedidoGuardado()
@@ -308,7 +368,7 @@ export function TomaPedido() {
     enOrden(async () => {
       const estado = await pedidoGuardado()
       if (!estado) return
-      const cuantos = porEnviar(estado).length
+      const cuantos = unidadesPorEnviar(estado)
       if (cuantos === 0) return
       const datos = comandasPorEstacion(catalogo, estado)
       if (!datos) {
@@ -409,7 +469,7 @@ export function TomaPedido() {
       : categoriaActual === MAS_PEDIDOS
         ? masPedidos
         : (catalogo.categorias.find((c) => c.id === categoriaActual)?.productos ?? [])
-  // Cuántos van sin enviar (también lo retenido, que espera su curso).
+  // Unidades por enviar ahora (lo retenido espera a que se marche su curso).
   const enPedido = (productoId: string) =>
     pedido
       ? itemsVigentes(pedido.estado)
@@ -419,7 +479,7 @@ export function TomaPedido() {
           )
           .reduce((s, i) => s + i.cantidad, 0)
       : 0
-  const faltan = pedido ? porEnviar(pedido.estado).length : 0
+  const faltan = pedido ? unidadesPorEnviar(pedido.estado) : 0
   const itemEditado = pedido && editando ? (pedido.estado.items[editando] ?? null) : null
 
   const enCocina = pedido ? itemsVigentes(pedido.estado).filter((i) => EN_COCINA.has(i.estado)) : []
@@ -446,6 +506,7 @@ export function TomaPedido() {
       alRetener={retener}
       alMarchar={marchar}
       alEntregar={puedeEntregar ? entregar : null}
+      alEditarNota={() => setEditandoNota(true)}
     />
   )
 
@@ -550,6 +611,7 @@ export function TomaPedido() {
             preguntarPersonas={canal === 'salon' && comensales === 0}
             comensal={comensal}
             curso={curso}
+            usarCursos={usarCursos}
             alElegirComensal={setComensal}
             alElegirCurso={setCurso}
             alContarPersonas={(n) => cambiarComensales(n - comensales)}
@@ -732,14 +794,28 @@ export function TomaPedido() {
         }
       />
 
+      {editandoNota && (
+        <PanelNotaPedido
+          nota={pedido?.estado.notas ?? null}
+          alCerrar={() => setEditandoNota(false)}
+          alGuardar={(nota) => {
+            cambiarNotaPedido(nota)
+            setEditandoNota(false)
+          }}
+        />
+      )}
+
       {pedido && itemEditado && (
         <PanelItem
+          key={itemEditado.id}
           item={itemEditado}
           comensales={comensales}
           alCerrar={() => setEditando(null)}
           enSalon={canal === 'salon'}
           alCambiar={(cambio) => cambiarItem(itemEditado.id, cambio)}
           alSumar={(delta) => sumar(itemEditado.id, delta)}
+          usarCursos={usarCursos}
+          alSeparar={(nota) => separar(itemEditado.id, nota)}
           alDuplicar={() => {
             duplicar(itemEditado.id)
             setEditando(null)
@@ -803,6 +879,7 @@ function ElegirPara({
   preguntarPersonas,
   comensal,
   curso,
+  usarCursos,
   alElegirComensal,
   alElegirCurso,
   alContarPersonas,
@@ -811,6 +888,7 @@ function ElegirPara({
   preguntarPersonas: boolean
   comensal: number | null
   curso: Curso | null
+  usarCursos: boolean
   alElegirComensal: (c: number | null) => void
   alElegirCurso: (c: Curso | null) => void
   alContarPersonas: (n: number) => void
@@ -844,18 +922,20 @@ function ElegirPara({
           ))}
         </Grupo>
       )}
-      <Grupo etiqueta="En qué curso va lo que agregues" className={fila}>
-        <span className="shrink-0 font-semibold text-texto-suave">Curso</span>
-        {CURSOS.map((c) => (
-          <Opcion
-            key={c.curso ?? 'ninguno'}
-            elegida={curso === c.curso}
-            alElegir={() => alElegirCurso(c.curso)}
-          >
-            {c.nombre}
-          </Opcion>
-        ))}
-      </Grupo>
+      {usarCursos && (
+        <Grupo etiqueta="En qué curso va lo que agregues" className={fila}>
+          <span className="shrink-0 font-semibold text-texto-suave">Curso</span>
+          {CURSOS.map((c) => (
+            <Opcion
+              key={c.curso ?? 'ninguno'}
+              elegida={curso === c.curso}
+              alElegir={() => alElegirCurso(c.curso)}
+            >
+              {c.nombre}
+            </Opcion>
+          ))}
+        </Grupo>
+      )}
     </div>
   )
 }
@@ -870,6 +950,7 @@ function Ticket({
   alRetener,
   alMarchar,
   alEntregar,
+  alEditarNota,
 }: {
   pedido: PedidoVisible | null
   comensales: number
@@ -882,6 +963,7 @@ function Ticket({
   alMarchar: (curso: Curso) => void
   /** Sin el permiso de marcar, no se ven los botones de entregar. */
   alEntregar: ((ids: string[], que: string) => void) | null
+  alEditarNota: () => void
 }) {
   const items = pedido ? itemsVigentes(pedido.estado) : []
   const porEntregar = items.filter((i) => EN_COCINA.has(i.estado))
@@ -917,6 +999,21 @@ function Ticket({
           />
         </div>
       )}
+      <button
+        type="button"
+        onClick={alEditarNota}
+        className="flex min-h-12 w-full items-start gap-2 border-b border-linea px-4 py-2 text-left hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
+      >
+        <Icono nombre="lapiz" className="mt-0.5 size-5 shrink-0" />
+        {pedido?.estado.notas ? (
+          <span>
+            <span className="block text-sm text-texto-suave">Nota del pedido</span>
+            <span className="font-semibold">{pedido.estado.notas}</span>
+          </span>
+        ) : (
+          <span className="font-semibold text-accion-texto">Nota del pedido</span>
+        )}
+      </button>
       <div className="flex-1 overflow-y-auto">
         {items.length === 0 && (
           <p className="p-6 text-center text-texto-suave">Toca un producto para agregarlo.</p>
@@ -1032,7 +1129,13 @@ function LineaTicket({
               {i.modificadores.map((m) => m.nombre).join(' · ')}
             </span>
           )}
-          {i.notas && <span className="block text-sm text-texto-suave">«{i.notas}»</span>}
+          {i.notas && <span className="block text-sm font-semibold">«{i.notas}»</span>}
+          {sinEnviar && !i.notas && (
+            <span className="flex items-center gap-1 whitespace-nowrap text-sm text-accion-texto">
+              <Icono nombre="lapiz" className="size-4" />
+              Toca para nota
+            </span>
+          )}
           <span className="flex flex-wrap items-center gap-1 text-sm text-texto-suave">
             {[
               ...(i.comensal === null ? [] : [nombreComensal(i.comensal)]),
@@ -1287,12 +1390,20 @@ function PanelItem({
   alCerrar,
   alCambiar,
   alSumar,
+  usarCursos,
+  alSeparar,
   alDuplicar,
   alQuitar,
 }: {
   item: ItemPedido
   comensales: number
   enSalon: boolean
+  usarCursos: boolean
+  /**
+   * Saca una unidad a su propia línea (solo con 2 o más sin enviar), con la nota que se acabe de
+   * escribir; la línea original se queda con la suya.
+   */
+  alSeparar: (nota: string | null) => void
   alCerrar: () => void
   alCambiar: (cambio: {
     comensal?: number | null
@@ -1363,20 +1474,26 @@ function PanelItem({
               ))}
             </Grupo>
           )}
-          <Grupo etiqueta="Curso" className="mb-4 flex flex-wrap items-center gap-2">
-            <p className="w-full font-semibold">Curso</p>
-            {CURSOS.map((c) => (
-              <Opcion
-                key={c.curso ?? 'ninguno'}
-                elegida={item.curso === c.curso}
-                alElegir={() => elegir({ curso: c.curso })}
-              >
-                {c.nombre}
-              </Opcion>
-            ))}
-          </Grupo>
+          {usarCursos && (
+            <Grupo etiqueta="Curso" className="mb-4 flex flex-wrap items-center gap-2">
+              <p className="w-full font-semibold">Curso</p>
+              {CURSOS.map((c) => (
+                <Opcion
+                  key={c.curso ?? 'ninguno'}
+                  elegida={item.curso === c.curso}
+                  alElegir={() => elegir({ curso: c.curso })}
+                >
+                  {c.nombre}
+                </Opcion>
+              ))}
+            </Grupo>
+          )}
           <label className="flex flex-col gap-1">
-            <span className="font-semibold">Nota para cocina</span>
+            <span className="font-semibold">
+              {item.cantidad - item.cantidadAnulada > 1
+                ? `Nota para cocina (las ${item.cantidad - item.cantidadAnulada} unidades)`
+                : 'Nota para cocina'}
+            </span>
             <textarea
               rows={2}
               maxLength={200}
@@ -1386,8 +1503,71 @@ function PanelItem({
               className={claseNota}
             />
           </label>
+          {item.cantidad - item.cantidadAnulada > 1 && (
+            <div className="mt-3 flex flex-col gap-1">
+              <Boton
+                // Sin quitarle el foco al campo: si no, al salir de él la nota se guardaría en
+                // la línea original antes de separar.
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  const escrita = notas.trim() || null
+                  alSeparar(escrita !== item.notas ? escrita : null)
+                }}
+              >
+                Separar uno
+              </Boton>
+              <span className="text-sm text-texto-suave">
+                Si la nota es solo para uno: escríbela y toca «Separar uno». Los demás quedan sin
+                ella.
+              </span>
+            </div>
+          )}
         </>
       )}
+    </PanelLateral>
+  )
+}
+
+/** La nota de todo el pedido: alergias, celebraciones, «todo junto». Va en cada comanda. */
+function PanelNotaPedido({
+  nota,
+  alCerrar,
+  alGuardar,
+}: {
+  nota: string | null
+  alCerrar: () => void
+  alGuardar: (nota: string | null) => void
+}) {
+  const [texto, setTexto] = useState(nota ?? '')
+  const nueva = texto.trim() || null
+  return (
+    <PanelLateral
+      abierto
+      titulo="Nota del pedido"
+      alCerrar={alCerrar}
+      pie={
+        <Boton variante="principal" grande className="w-full" onClick={() => alGuardar(nueva)}>
+          {nueva === null && nota !== null ? 'Quitar la nota' : 'Guardar'}
+        </Boton>
+      }
+    >
+      <label className="flex flex-col gap-1">
+        <span className="font-semibold">Para cocina y barra, en cada comanda</span>
+        <textarea
+          rows={3}
+          maxLength={300}
+          value={texto}
+          placeholder="Alérgico al maní, cumpleaños, todo junto…"
+          // biome-ignore lint/a11y/noAutofocus: el panel se abre solo para escribir la nota
+          autoFocus
+          onChange={(e) => setTexto(e.target.value)}
+          className={claseNota}
+        />
+      </label>
+      <p className="mt-2 text-sm text-texto-suave">
+        Sale en cada comanda que envíes. Si ya hay platos en cocina, la nota nueva sale además en
+        papel a cada estación que tenga algo pendiente.
+      </p>
     </PanelLateral>
   )
 }

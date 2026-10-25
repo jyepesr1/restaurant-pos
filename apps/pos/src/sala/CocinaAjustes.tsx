@@ -215,6 +215,7 @@ export function CocinaAjustes() {
 
         <Pantallas config={config} alCambiar={cargar} />
         <Tiempos config={config} alCambiar={cargar} />
+        <Cursos config={config} alCambiar={cargar} />
       </div>
 
       {editando && (
@@ -667,6 +668,52 @@ function Tiempos({ config, alCambiar }: { config: ConfiguracionCocina; alCambiar
           Escribe minutos enteros: «muy demorada» debe llegar después de «demorada», hasta 240.
         </p>
       )}
+    </section>
+  )
+}
+
+/**
+ * Cursos (entrada, fuerte, postre; retener y marchar): casi no se usan en Colombia y vienen
+ * apagados. Prenderlos muestra «Curso» al tomar el pedido.
+ */
+function Cursos({ config, alCambiar }: { config: ConfiguracionCocina; alCambiar: () => void }) {
+  const avisar = useAvisar()
+  const activo = config.usar_cursos ?? false
+  const cambiar = async () => {
+    try {
+      await sala.usarCursos(!activo)
+      avisar(activo ? 'Apagaste los cursos' : 'Prendiste los cursos')
+      alCambiar()
+    } catch (e) {
+      avisar(mensaje(e))
+    }
+  }
+  return (
+    <section aria-labelledby="titulo-cursos" className="flex flex-col gap-3">
+      <h2 id="titulo-cursos" className="text-xl font-bold tracking-tight">
+        Cursos
+      </h2>
+      <p className="text-texto-suave">
+        Entrada, fuerte y postre por separado, con «Retener» y «Marchar» para que el fuerte salga
+        cuando lo pidan. Si no los usan, déjalos apagados: el pedido se toma más rápido.
+      </p>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={activo}
+        onClick={cambiar}
+        className="inline-flex min-h-12 w-max items-center gap-3 rounded-xl border border-borde bg-superficie px-4 font-semibold focus-visible:outline-3 focus-visible:outline-foco"
+      >
+        <span
+          aria-hidden="true"
+          className={`relative h-7 w-12 rounded-full transition-colors ${activo ? 'bg-accion-fuerte' : 'bg-borde'}`}
+        >
+          <span
+            className={`absolute top-1 size-5 rounded-full bg-white transition-all ${activo ? 'left-6' : 'left-1'}`}
+          />
+        </span>
+        {`Usar cursos: ${activo ? 'sí' : 'no'}`}
+      </button>
     </section>
   )
 }

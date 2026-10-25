@@ -64,7 +64,7 @@ Los tonos `libre`, `proceso` y `alerta` **no cambian con la marca**.
 - **Caja (≥ 1024 px):** barra lateral de 256 px con el logo del restaurante («con Faro»), quién entró y las secciones agrupadas (Servicio, Administración) según sus permisos. Salir va abajo.
 - **Tablet (768 a 1023 px):** la misma barra, solo con íconos (80 px).
 - **Celular:** barra superior con menú; la barra lateral se abre como cajón desde la izquierda.
-- **Barra superior:** título de la pantalla, conexión y pendientes, acciones de la pantalla y modo oscuro.
+- **Barra superior:** título de la pantalla, conexión y pendientes, acciones de la pantalla y modo oscuro. En el celular cabe en una fila: «Solo red local» se abrevia «Local»; el modo oscuro también está en el menú.
 
 ## Pantallas
 
@@ -78,12 +78,15 @@ Los tonos `libre`, `proceso` y `alerta` **no cambian con la marca**.
   - tarjetas de producto con foto (4:3) o, sin foto, el ícono de su estación;
   - el precio y el «+»;
   - `×N` cuando ya va en el pedido;
-  - el panel del pedido a la derecha con productos, total y Enviar;
+  - el panel del pedido a la derecha con productos, total y «Enviar N» (N en unidades);
+  - arriba del panel, «Nota del pedido» (para todo el pedido);
+  - cada línea sin enviar dice «Toca para nota»; su panel trae cantidad, persona, nota y «Separar uno» (una unidad a su propia línea, con su nota);
+  - «Curso» solo se ve si el restaurante usa cursos (apagado por defecto);
   - en lo que está en cocina, «Entregar» por línea y «Todo entregado».
 - **Estados de la mesa**, de lo más urgente a lo menos: tomando pedido (ámbar), listo para llevar (verde, ícono servir), en preparación (ámbar), servida (gris), libre (verde).
 - **Pedidos en cocina** (caja): tarjetas por comanda del color de su demora (a tiempo sin color, solo con borde; ámbar y rojo según los minutos del local), con «Listo» y «Reimprimir»; abajo, lo listo para llevar, en verde, con «Volver a cocina». En cocina el verde es solo «listo». Arriba, la alerta de impresoras que no imprimen, con lo que espera y «Descartar».
-- **Pantalla de cocina**: sin barra lateral, para una tablet o un televisor; letra más grande, un solo botón «Listo» por tarjeta, reloj, conexión y sonido.
-- **Cocina e impresoras**: cómo recibe cada estación, las impresoras con su prueba y su panel de edición, las pantallas y los minutos del ámbar y el rojo.
+- **Pantalla de cocina**: sin barra lateral, para una tablet o un televisor; letra más grande, un solo botón «Listo» por tarjeta, reloj, conexión y sonido. La nota del pedido va en un recuadro neutro con lápiz y el rótulo «Para todo el pedido», sin el color de la demora.
+- **Cocina e impresoras**: cómo recibe cada estación, las impresoras con su prueba y su panel de edición, las pantallas, los minutos del ámbar y el rojo, y «Usar cursos».
 - **Marca del restaurante:** una muestra de cada marca, fuera del tema actual, y «Usar».
 
 ## Marca del restaurante

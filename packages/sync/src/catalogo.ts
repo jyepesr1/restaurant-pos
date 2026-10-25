@@ -13,6 +13,8 @@ export interface Catalogo {
     /** Minutos desde el envío tras los que lo de cocina pasa a ámbar y a rojo (ADR-015). */
     cocinaAmarilloMin?: number
     cocinaRojoMin?: number
+    /** Si se toman pedidos por curso (entrada, fuerte, postre). Sin el dato, no. */
+    usarCursos?: boolean
   }
   /** Zonas o pisos del salón, en su orden. */
   zonas: { id: string; nombre: string; piso: number }[]

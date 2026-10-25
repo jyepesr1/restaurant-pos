@@ -318,6 +318,8 @@ Dos de ellas cambian lo que dice el brief:
 | Ventas por mesero (reportes) | A quien agregó cada ítem, aunque la mesa se reasigne después (valor por defecto; configurable). |
 | Modo normal | Conectado al hub por la red local. Sin conexión es solo un respaldo: se toman pedidos, pero no se cobra, no se autoriza ni se edita el catálogo hasta que vuelva la red. |
 | Estaciones del piloto | Cocina y barra. |
+| Cursos (entrada, fuerte, postre; retener y marchar) | **Apagados por defecto** (25-oct-2026): en Colombia casi no se usan. Se prenden por restaurante en «Cocina e impresoras» (`usar_cursos`). |
+| Nota del pedido | Además de la nota de cada plato, una nota para todo el pedido (alergias, celebraciones) que sale en cada comanda y en la pantalla de cocina (`NotaPedidoCambiada`, 25-oct-2026). |
 | Productos con opciones | Un solo producto con opciones (Ramón Bilbao copa o botella con su precio; Té Hatsu con sabor obligatorio sin costo). |
 | Modificadores | Término de la carne, quitar ingredientes, adicionales con precio y notas libres. La lista real con precios se pide antes de la Fase 1. |
 | Propina en efectivo | Se sugiere redondeada a $100 para poder pagarla con billetes; el cajero la puede cambiar y el cambio que deja el cliente pasa a propina. Con tarjeta, exacta (24-oct-2026, [DINERO.md](DINERO.md#propina-sugerida)). |

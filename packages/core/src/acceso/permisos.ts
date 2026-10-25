@@ -189,6 +189,7 @@ const PERMISO_POR_TIPO: Record<TipoEventoPedido, Permiso | null> = {
   PedidoRescateCreado: null,
   MeseroAsignado: 'reasignar_mesa',
   ComensalesCambiados: 'tomar_pedido',
+  NotaPedidoCambiada: 'tomar_pedido',
   ItemAgregado: 'tomar_pedido',
   ItemCambiado: 'tomar_pedido',
   ItemQuitado: 'quitar_item_no_enviado',

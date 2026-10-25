@@ -109,7 +109,7 @@ export class SalaSync {
         participante.enviar({
           tipo: 'error',
           codigo: 'token_invalido',
-          mensaje: 'Este equipo no está emparejado',
+          mensaje: 'Este equipo ya no tiene acceso al restaurante: hay que entrar otra vez',
         })
         return
       }

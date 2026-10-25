@@ -42,6 +42,8 @@ const PC850: Record<string, number> = {
   º: 0xa7,
   '¿': 0xa8,
   '¡': 0xad,
+  '«': 0xae,
+  '»': 0xaf,
   Á: 0xb5,
   Â: 0xb6,
   À: 0xb7,

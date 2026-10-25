@@ -167,6 +167,7 @@ export interface ConfiguracionCocina {
     ultimo_uso: string | null
   }[]
   tiempos: { amarillo: number; rojo: number }
+  usar_cursos?: boolean
 }
 
 /** Una comanda que no ha salido de su impresora (`POST /api/impresion/pendientes`). */
@@ -586,6 +587,10 @@ export class Sala {
       dispositivo_id: dispositivoId,
       estacion_ids: estacionIds,
     })
+  }
+
+  async usarCursos(usar: boolean): Promise<void> {
+    await this.conSesion('/api/cocina/cursos', { usar })
   }
 
   async tiemposCocina(amarillo: number, rojo: number): Promise<void> {

@@ -508,7 +508,11 @@ export class Servicio {
           a % 3 === 0
             ? evento(id, 'MeseroAsignado', { mesero_id: b % 2 === 0 ? MESERO : nuevoId() })
             : a % 3 === 1
-              ? evento(id, 'ComensalesCambiados', { comensales: b % 20 })
+              ? b % 4 === 0
+                ? evento(id, 'NotaPedidoCambiada', {
+                    notas: b % 8 === 0 ? null : 'alérgico al maní',
+                  })
+                : evento(id, 'ComensalesCambiados', { comensales: b % 20 })
               : evento(id, 'PedidoMovidoDeMesa', { mesa_destino_id: nuevoId() }),
         )
       case 22: {

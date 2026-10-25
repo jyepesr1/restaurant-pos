@@ -93,6 +93,8 @@ const datosPorTipo = {
   }),
   MeseroAsignado: z.strictObject({ mesero_id: Ulid }),
   ComensalesCambiados: z.strictObject({ comensales: z.int().min(0).max(200) }),
+  /** Nota para todo el pedido («alérgico al maní», «cumpleaños»); `null` la quita. */
+  NotaPedidoCambiada: z.strictObject({ notas: z.string().max(500).nullable() }),
   ItemAgregado: z
     .strictObject({
       ...camposCopiaItem,

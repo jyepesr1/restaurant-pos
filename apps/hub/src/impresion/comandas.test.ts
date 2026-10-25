@@ -115,7 +115,15 @@ async function montar() {
     ])
     return r.aceptados.at(-1)
   }
-  return { m, cola, hub, cocina, barra, impresora, enviar }
+  /** Un evento más del mismo equipo, después de todo lo que ya hay. */
+  const otro = (pedido: string, tipo: Parameters<typeof m.evento>[2], datos: object) => {
+    const base = m.db.prepare('SELECT coalesce(max(secuencia), 0) AS s FROM evento').get()
+      ?.s as number
+    return hub.recibirLote(conexion, [
+      m.evento(conexion, sesion, tipo, datos, { agregado_id: pedido, secuencia_base: base }),
+    ])
+  }
+  return { m, cola, hub, cocina, barra, impresora, enviar, otro }
 }
 
 const pendientes = (m: ReturnType<typeof montarAcceso>) =>
@@ -224,5 +232,44 @@ describe('comandas impresas', () => {
     expect(cocina.prueba.recibidos).toHaveLength(2)
     expect(respaldo.prueba.recibidos).toHaveLength(0)
     expect(cola.estado().find((e) => e.id === cocina.id)?.estado).toBe('lista')
+  })
+
+  it('cambiar la nota del pedido con platos en cocina imprime «NOTA NUEVA» en cada estación con algo pendiente', async () => {
+    const t = await montar()
+    const cocina = await t.impresora('Cocina', [t.cocina])
+    const barra = await t.impresora('Barra', [t.barra])
+    const enviado = t.enviar()
+    if (!enviado) throw new Error('sin envío')
+    await t.cola.vuelta()
+    const r = t.otro(enviado.agregado_id, 'NotaPedidoCambiada', { notas: 'alérgico al maní' })
+    expect(r.resultados[0]?.estado).toBe('confirmado')
+    await t.cola.vuelta()
+    await cocina.prueba.esperar(2)
+    await barra.prueba.esperar(2)
+    const nota = leerEscpos(cocina.prueba.recibidos[1] as Uint8Array).texto
+    expect(nota).toContain('NOTA NUEVA')
+    expect(nota).toContain('NOTA DEL PEDIDO: alérgico al maní')
+    expect(leerEscpos(barra.prueba.recibidos[1] as Uint8Array).texto).toContain('alérgico al maní')
+
+    // Quitarla también se avisa en papel.
+    t.otro(enviado.agregado_id, 'NotaPedidoCambiada', { notas: null })
+    await t.cola.vuelta()
+    await cocina.prueba.esperar(3)
+    expect(leerEscpos(cocina.prueba.recibidos[2] as Uint8Array).texto).toContain(
+      'SE QUITÓ LA NOTA DEL PEDIDO',
+    )
+  })
+
+  it('la nota de un pedido sin nada en cocina no imprime nada', async () => {
+    const t = await montar()
+    await t.impresora('Cocina', [t.cocina])
+    const enviado = t.enviar()
+    if (!enviado) throw new Error('sin envío')
+    const pedido = t.hub.pedido(enviado.agregado_id)
+    const ids = Object.keys(pedido?.items ?? {})
+    t.otro(enviado.agregado_id, 'ItemEntregado', { item_ids: ids })
+    const antes = pendientes(t.m)
+    t.otro(enviado.agregado_id, 'NotaPedidoCambiada', { notas: 'cumpleaños' })
+    expect(pendientes(t.m)).toBe(antes)
   })
 })

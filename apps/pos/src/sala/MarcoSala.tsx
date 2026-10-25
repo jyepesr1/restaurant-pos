@@ -282,7 +282,7 @@ export function MarcoSala({
               >
                 {titulo}
               </h1>
-              <IndicadorConexion estado={ESTADO[conexion]} pendientes={pendientes} />
+              <IndicadorConexion estado={ESTADO[conexion]} pendientes={pendientes} compacto />
               <span aria-live="polite" className="contents">
                 {caidas.length > 0 && (
                   <button
@@ -354,6 +354,14 @@ export function MarcoSala({
             </div>
             <div className="rounded-2xl bg-superficie-2 p-3">{quien}</div>
             <div className="-mx-1 flex-1 overflow-y-auto px-1 py-1">{navegacion(false)}</div>
+            <Boton
+              variante="fantasma"
+              icono={oscuro ? 'sol' : 'luna'}
+              className="justify-start"
+              onClick={() => elegir(oscuro ? 'claro' : 'oscuro')}
+            >
+              {oscuro ? 'Modo claro' : 'Modo oscuro'}
+            </Boton>
             {salir}
           </div>
         </div>

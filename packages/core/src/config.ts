@@ -58,6 +58,11 @@ export const ConfigRestaurante = z.strictObject({
    */
   cocina_amarillo_min: z.int().min(1).max(240).default(10),
   cocina_rojo_min: z.int().min(1).max(240).default(20),
+  /**
+   * Cursos (entrada, fuerte, postre; retener y marchar). En Colombia casi no se usan: apagados por
+   * defecto, se prenden por restaurante (decisión del dueño del 25-oct-2026).
+   */
+  usar_cursos: z.boolean().default(false),
 })
 
 export type ConfigRestaurante = z.infer<typeof ConfigRestaurante>

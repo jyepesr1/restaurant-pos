@@ -289,6 +289,7 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
       numeroDia: evento.asignaciones?.numero_dia ?? null,
       rescateDe: rescate ? evento.datos.pedido_original_id : null,
       unidoA: null,
+      notas: null,
       items: {},
       descuentos: {},
       cursosRetenidos: [],
@@ -325,6 +326,12 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
     case 'ComensalesCambiados': {
       const nuevo = copiar(estado)
       nuevo.comensales = evento.datos.comensales
+      return listo(nuevo)
+    }
+
+    case 'NotaPedidoCambiada': {
+      const nuevo = copiar(estado)
+      nuevo.notas = evento.datos.notas?.trim() || null
       return listo(nuevo)
     }
 

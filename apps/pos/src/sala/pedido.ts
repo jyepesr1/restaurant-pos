@@ -133,6 +133,10 @@ export function copiaDe(item: ItemPedido, catalogoVersion: number): DatosItem {
 export const porEnviar = (estado: EstadoPedido) =>
   itemsVigentes(estado).filter((i) => i.estado === 'pendiente')
 
+/** Unidades por enviar (3 Aperol son 3, no 1 línea): lo que dice «Enviar» y el aviso. */
+export const unidadesPorEnviar = (estado: EstadoPedido) =>
+  porEnviar(estado).reduce((n, i) => n + i.cantidad - i.cantidadAnulada, 0)
+
 /**
  * Una comanda por estación con lo que falta enviar. La estación es la de la categoría del
  * producto; si no tiene, la primera del restaurante. Sin estaciones no hay a dónde enviar.

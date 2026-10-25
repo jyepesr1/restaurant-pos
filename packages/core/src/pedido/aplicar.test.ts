@@ -195,6 +195,22 @@ describe('ciclo de vida del pedido', () => {
 
     expect(final).toMatchObject({ meseroAsignadoId: otro, comensales: 6, mesaId: mesa })
   })
+
+  it('la nota del pedido se pone sin espacios de más y se quita con null o vacía', () => {
+    const { pedido, estado } = abierto()
+    expect(estado.notas).toBeNull()
+    const puesta = aplicarTodos(
+      [evento(pedido, 'NotaPedidoCambiada', { notas: '  alérgico al maní ' })],
+      estado,
+    )
+    expect(puesta.notas).toBe('alérgico al maní')
+    expect(
+      aplicarTodos([evento(pedido, 'NotaPedidoCambiada', { notas: '   ' })], puesta).notas,
+    ).toBeNull()
+    expect(
+      aplicarTodos([evento(pedido, 'NotaPedidoCambiada', { notas: null })], puesta).notas,
+    ).toBeNull()
+  })
 })
 
 describe('ítems', () => {

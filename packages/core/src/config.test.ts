@@ -19,6 +19,7 @@ describe('configuración del restaurante', () => {
       marca: 'faro',
       cocina_amarillo_min: 10,
       cocina_rojo_min: 20,
+      usar_cursos: false,
     })
   })
 

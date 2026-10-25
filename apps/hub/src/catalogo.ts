@@ -66,6 +66,7 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
       marca: config.marca,
       cocinaAmarilloMin: config.cocina_amarillo_min,
       cocinaRojoMin: config.cocina_rojo_min,
+      usarCursos: config.usar_cursos,
     },
     zonas: zonas.map((f) => ({ id: texto(f.id), nombre: texto(f.nombre), piso: numero(f.piso) })),
     mesas: activos('mesa', 'zona_id, y, x')
