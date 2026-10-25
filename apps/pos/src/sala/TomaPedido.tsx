@@ -190,9 +190,10 @@ export function TomaPedido() {
 
   /**
    * Suma o resta unidades a una línea sin enviar, a partir de lo guardado (dos toques seguidos
-   * cuentan dos). Si queda en 0, la quita con Deshacer.
+   * cuentan dos). Sin aviso: el número cambia a la vista y con «−» se corrige (decisión del
+   * dueño: el aviso estorbaba al tomar pedidos). Si queda en 0, la quita con Deshacer.
    */
-  const sumar = (itemId: string, delta: number, deshacible = true) =>
+  const sumar = (itemId: string, delta: number) =>
     enOrden(async () => {
       const linea = await lineaGuardada(itemId)
       if (!linea) {
@@ -209,8 +210,6 @@ export function TomaPedido() {
         return
       }
       await sala.registrar('ItemCambiado', linea.estado.id, { item_id: itemId, cantidad })
-      if (deshacible && delta > 0)
-        avisar(`${linea.item.nombre}: ${cantidad}`, () => sumar(itemId, -delta, false))
     })
 
   const agregar = (
@@ -236,12 +235,9 @@ export function TomaPedido() {
           return
         }
         await sala.registrar('ItemCambiado', id, { item_id: igual.id, cantidad })
-        // Deshacer resta lo que se sumó, sobre lo que haya entonces.
-        avisar(`${igual.nombre}: ${cantidad}`, () => sumar(igual.id, -sumado, false))
         return
       }
       await sala.registrar('ItemAgregado', id, datos)
-      avisar(`Agregaste ${datos.nombre}`, () => sumar(datos.item_id, -datos.cantidad, false))
     })
 
   /** Quita la línea (ya dentro de la cola) y deja Deshacer, que la vuelve a agregar como estaba. */
@@ -303,12 +299,6 @@ export function TomaPedido() {
       }
       const copia = { ...(await copiaActual(item)), cantidad: 1, notas: nota }
       await sala.registrar('ItemAgregado', estado.id, copia)
-      setEditando(copia.item_id)
-      avisar(
-        nota
-          ? `Separaste un ${item.nombre}: «${nota}»`
-          : `Separaste un ${item.nombre}: ponle su nota`,
-      )
     })
 
   /** La nota de todo el pedido («alérgico al maní»): va en cada comanda y en la cocina. */
@@ -331,7 +321,6 @@ export function TomaPedido() {
       const item = estado?.items[itemId]
       if (!estado || !item) return
       await sala.registrar('ItemAgregado', estado.id, await copiaActual(item))
-      avisar(`Duplicaste ${item.nombre}`)
     })
 
   /** Una persona más o menos, sobre lo guardado; no baja de la mayor persona que tiene algo. */
@@ -1399,11 +1388,8 @@ function PanelItem({
   comensales: number
   enSalon: boolean
   usarCursos: boolean
-  /**
-   * Saca una unidad a su propia línea (solo con 2 o más sin enviar), con la nota que se acabe de
-   * escribir; la línea original se queda con la suya.
-   */
-  alSeparar: (nota: string | null) => void
+  /** Saca una unidad a su propia línea con esa nota; las demás se quedan como estaban. */
+  alSeparar: (nota: string) => void
   alCerrar: () => void
   alCambiar: (cambio: {
     comensal?: number | null
@@ -1416,10 +1402,18 @@ function PanelItem({
 }) {
   const sinEnviar = item.estado === 'pendiente' || item.estado === 'retenido'
   const [notas, setNotas] = useState(item.notas ?? '')
-  /** La nota se guarda al salir del campo o al cerrar el panel, lo que pase primero. */
+  const unidades = item.cantidad - item.cantidadAnulada
+  // Con varias unidades, la nota puede ser para todas o solo para una (que queda en su línea).
+  const [soloUna, setSoloUna] = useState(false)
+  /**
+   * La nota se aplica al cerrar el panel (o al elegir persona o curso), no al salir del campo:
+   * así elegir «Solo para 1» después de escribirla no la deja en todas.
+   */
   const guardarNota = () => {
+    if (!sinEnviar) return
     const nueva = notas.trim() || null
-    if (sinEnviar && nueva !== item.notas) alCambiar({ notas: nueva })
+    if (soloUna && unidades > 1 && nueva && nueva !== item.notas) alSeparar(nueva)
+    else if (nueva !== item.notas) alCambiar({ notas: nueva })
   }
   const cerrar = () => {
     guardarNota()
@@ -1438,7 +1432,14 @@ function PanelItem({
       alCerrar={cerrar}
       pie={
         <div className="flex gap-2">
-          <Boton grande className="flex-1" onClick={alDuplicar}>
+          <Boton
+            grande
+            className="flex-1"
+            onClick={() => {
+              guardarNota()
+              alDuplicar()
+            }}
+          >
             Duplicar
           </Boton>
           {sinEnviar && (
@@ -1489,38 +1490,29 @@ function PanelItem({
             </Grupo>
           )}
           <label className="flex flex-col gap-1">
-            <span className="font-semibold">
-              {item.cantidad - item.cantidadAnulada > 1
-                ? `Nota para cocina (las ${item.cantidad - item.cantidadAnulada} unidades)`
-                : 'Nota para cocina'}
-            </span>
+            <span className="font-semibold">Nota para cocina</span>
             <textarea
               rows={2}
               maxLength={200}
               value={notas}
               onChange={(e) => setNotas(e.target.value)}
-              onBlur={guardarNota}
               className={claseNota}
             />
           </label>
-          {item.cantidad - item.cantidadAnulada > 1 && (
-            <div className="mt-3 flex flex-col gap-1">
-              <Boton
-                // Sin quitarle el foco al campo: si no, al salir de él la nota se guardaría en
-                // la línea original antes de separar.
-                onPointerDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  const escrita = notas.trim() || null
-                  alSeparar(escrita !== item.notas ? escrita : null)
-                }}
-              >
-                Separar uno
-              </Boton>
-              <span className="text-sm text-texto-suave">
-                Si la nota es solo para uno: escríbela y toca «Separar uno». Los demás quedan sin
-                ella.
-              </span>
-            </div>
+          {unidades > 1 && (
+            <Grupo etiqueta="Para cuántos es la nota" className="mt-3 flex flex-wrap gap-2">
+              <Opcion elegida={!soloUna} alElegir={() => setSoloUna(false)}>
+                {`Para los ${unidades}`}
+              </Opcion>
+              <Opcion elegida={soloUna} alElegir={() => setSoloUna(true)}>
+                Solo para 1
+              </Opcion>
+            </Grupo>
+          )}
+          {unidades > 1 && soloUna && (
+            <p className="mt-2 text-sm text-texto-suave">
+              {`Al cerrar, quedan ${unidades - 1} sin nota y 1 con la nota, en su propia línea.`}
+            </p>
           )}
         </>
       )}
