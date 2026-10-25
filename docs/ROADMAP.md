@@ -15,7 +15,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente
 | 0.7 | Autenticación con PIN, roles y permisos | ✅ |
 | 0.8 | Seed con la carta de La Spritzzería | ✅ |
 | 0.9 | Design system y bocetos de las 5 pantallas | ✅ |
-| 0.10 | Pantalla mínima para la demo de sincronización | ⏳ |
+| 0.10 | Pantalla mínima para la demo de sincronización | ✅ |
 | 0.11 | Demo guiada | ⏳ |
 
 ### 0.1 — Prueba de conexión en dispositivos reales ✅
@@ -45,6 +45,82 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 0.10 — Pantalla mínima para la demo de sincronización ✅
+
+La app ya no muestra la página de inicio con "Conectado al hub". Al abrirla se empareja el equipo, se entra con el PIN y se toman pedidos reales, que se sincronizan con el hub. Es la pantalla que usa la prueba de aceptación de la Fase 0.
+
+**En el hub:**
+- WebSocket de sincronización en `/api/sync/ws`:
+  - latido cada 5 s;
+  - mensajes de hasta 1 MB;
+  - cierra la conexión que no saluda en 10 s.
+- `GET /api/catalogo` (solo con un equipo emparejado): mesas, estaciones y la carta vigentes, con los minutos de inactividad de la sesión.
+- La instancia del hub se guarda en el archivo `hub-instancia` de la carpeta de datos. Si el hub se reinstala, los equipos lo notan y reenvían lo suyo.
+
+**En la app** (`apps/pos/src/sala`):
+- **Emparejar:**
+  - el primer equipo (la caja) se aprueba con el PIN del administrador;
+  - los demás escriben el código que muestra la caja en **Aprobar un equipo**.
+- **Entrar con PIN:** el PIN lo comprueba el hub, así que hace falta conexión para entrar, pero no para trabajar después. La sesión se cierra en el equipo tras 30 minutos sin uso (configurable) y lo explica al pedir el PIN.
+- **Salón:** las 25 mesas del piloto, con su estado, su total y "sin confirmar" si algo no ha llegado al hub.
+- **Pedido:**
+  - tocar productos y **Enviar**;
+  - copa o botella y término de la carne en el panel lateral;
+  - Deshacer al agregar y al quitar;
+  - una comanda por estación (cocina o barra).
+- **Barra superior:** estado de la conexión, cuántas acciones faltan por confirmar y el interruptor **Simular corte**, que corta la conexión con el hub como si se cayera el Wi-Fi.
+- **Persistir antes de mostrar:** cada toque se guarda en el equipo (IndexedDB) antes de verse. Sin conexión, el aviso dice "Guardado: llega a cocina cuando vuelva la conexión", no "Enviado".
+- Cada evento va firmado con el secreto de la sesión (ADR-008).
+
+Revisado por `revisor-codigo`, `qa-pruebas`, `revisor-ux` y `auditor-dinero`. Se corrigieron, entre otros:
+- al arrancar podían quedar dos conexiones abiertas y cada pendiente se enviaba en dos lotes;
+- **Enviar** justo después de tocar un producto dejaba ese producto sin enviar;
+- un fallo al agregar el primer producto dejaba un pedido vacío en la mesa;
+- un grupo obligatorio se daba por cumplido con una opción de otro producto, y se podía cobrar sin el extra;
+- el recorte silencioso de opciones de más cobraba distinto de lo que mostraba el botón;
+- con cada latido del hub la pantalla releía todos los pedidos;
+- la pantalla de "equipo rechazado" prometía que lo pendiente llegaría al hub, y no es así;
+- "Simular corte" no cortaba la entrada con PIN.
+
+**Pruebas** (245 unitarias en `apps/pos`, 296 en el hub):
+- **Hub:** el WebSocket de punta a punta (emparejar dos equipos, entrar con PIN, un pedido firmado que llega confirmado y el otro equipo lo recibe), mensajes de más de 1 MB, conexiones que se cortan o no saludan, equipos revocados estando conectados, y el catálogo.
+- **App:**
+  - el almacén de IndexedDB se porta igual que el de memoria con el que se probó la sincronización;
+  - dos equipos sin conexión crean pedidos y, al volver, ven lo mismo sin duplicados, contra un hub que exige la firma;
+  - hub caído a mitad de un lote, hub reiniciado, token inválido o revocado, reloj del hub desfasado dos horas y la sesión que vence por falta de uso;
+  - el armado de ítems y comandas, con el precio del botón igual al que queda guardado;
+  - la proyección de mesas.
+
+**Queda pendiente:**
+- **Pruebas e2e:** por pedido tuyo se dejan para el final. Falta escribir el escenario 14 con dos navegadores. `tests/e2e/estado-hub.spec.ts` y `conexion-hub.spec.ts` revisaban la página de inicio que ya no existe: quedan apartadas hasta reescribirlas sobre el indicador nuevo.
+- Los mensajes del hub solo se descartan si no tienen `tipo`; validar cada tipo con su esquema llega cuando el hub deje de ser solo de la red local.
+- Si se sale sin conexión, la sesión queda abierta en el hub hasta que otra persona entre en ese equipo. No es grave: el secreto ya se borró del equipo.
+- Dos pestañas de la app en el mismo equipo comparten la base y pueden desordenar la vista local. El hub no duplica nada.
+- Un producto cuyo impuesto esté archivado no aparece en la carta, y por ahora no hay aviso.
+- No hay búsqueda en la carta de la demo; las categorías bastan. La búsqueda tolerante de los bocetos llega con la toma de pedido de la Fase 1.
+- No se piden los comensales: el pedido se abre con 0.
+
+**Cómo probarlo con un celular y la caja:**
+
+1. Si el hub está abierto, ciérralo con **Ctrl+C** en su terminal.
+2. Compila la app y arranca el hub:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+   Debes ver `Hub en marcha` y una dirección como `http://192.168…:4000`.
+3. En la caja (o en tu computador), abre esa dirección. Debes ver **Emparejar este equipo**.
+4. Toca **Es el primer equipo**, deja el nombre «Caja» y el tipo **Caja**, y escribe el PIN del administrador: el que mostró el hub la primera vez que arrancó (si arrancó sin ventana, está en `apps/hub/datos/pin-administrador.txt`). Debes pasar a **Escribe tu PIN**.
+5. Escribe tu PIN (o el del administrador). Debes ver **Salón** con las 25 mesas libres y, arriba, **Solo red local**.
+6. Toca **Aprobar un equipo**, escribe «Celular» como nombre, deja **Celular o tablet de mesero** y escribe el PIN del administrador. Debes ver un código de 8 letras.
+7. En el celular, conectado al mismo Wi-Fi, abre la misma dirección, toca **Tengo un código**, escríbelo y toca **Emparejar**. Debes ver **Escribe tu PIN**. Escribe el PIN de un mesero. Debes ver el mismo salón.
+8. En el celular, toca **Simular corte**. Arriba debe aparecer **Sin conexión** en rojo.
+9. Toca la mesa 5, agrega dos productos y toca **Enviar**. Debes ver «Guardado (2): llega a cocina cuando vuelva la conexión», la mesa 5 en ámbar con «sin confirmar» y, arriba, **4 sin confirmar** (abrir el pedido, los dos productos y el envío).
+10. En la caja, mientras tanto, toma un pedido en la mesa 6. La mesa 5 debe seguir libre en la caja.
+11. En el celular, toca otra vez **Simular corte** para volver. En pocos segundos debe desaparecer «sin confirmar». Las dos pantallas deben mostrar las mesas 5 y 6 ocupadas con los mismos totales, sin pedidos repetidos.
+12. Recarga la página en el celular: todo debe seguir igual, sin pedir el PIN otra vez.
 
 ### 0.9 — Design system y bocetos de las 5 pantallas ✅
 

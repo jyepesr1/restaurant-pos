@@ -4,7 +4,9 @@ import fastifyWebsocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { rutasAcceso } from './acceso/rutas'
 import type { ServicioAcceso } from './acceso/servicio'
+import { type OpcionesCatalogo, rutasCatalogo } from './catalogo'
 import { type OpcionesDiagnostico, rutasDiagnostico } from './diagnostico'
+import { type OpcionesSincronizacion, rutasSincronizacion } from './sincronizacion'
 
 export interface OpcionesServidor {
   /** Carpeta con la app compilada (`apps/pos/dist`). Sin ella, el hub solo expone la API. */
@@ -13,6 +15,10 @@ export interface OpcionesServidor {
   diagnostico?: OpcionesDiagnostico
   /** Sin esta opción no se exponen emparejamiento, sesiones ni autorizaciones. */
   acceso?: ServicioAcceso
+  /** Sin esta opción no hay WebSocket de sincronización. */
+  sincronizacion?: OpcionesSincronizacion
+  /** Sin esta opción no se entrega el catálogo. */
+  catalogo?: OpcionesCatalogo
   /** Versión de la base, para mostrarla en el chequeo de salud. */
   versionBase?: number
   logger?: boolean
@@ -22,17 +28,26 @@ export function crearServidor({
   dirApp,
   diagnostico,
   acceso,
+  sincronizacion,
+  catalogo,
   versionBase,
   logger = false,
 }: OpcionesServidor = {}): FastifyInstance {
   const app = Fastify({ logger })
-  app.register(fastifyWebsocket)
+  // Un lote son 100 eventos de pocos cientos de bytes: 1 MB sobra y frena mensajes absurdos.
+  app.register(fastifyWebsocket, { options: { maxPayload: 1024 * 1024 } })
 
   if (diagnostico) {
     app.register(rutasDiagnostico, diagnostico)
   }
   if (acceso) {
     app.register(rutasAcceso, { acceso })
+  }
+  if (sincronizacion) {
+    app.register(rutasSincronizacion, sincronizacion)
+  }
+  if (catalogo) {
+    app.register(rutasCatalogo, catalogo)
   }
 
   // Cada dispositivo consulta la salud cada pocos segundos: no llenar el log con eso.

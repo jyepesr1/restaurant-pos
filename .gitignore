@@ -28,3 +28,6 @@ test-results/
 # Datos que genera el hub en desarrollo
 apps/hub/datos/
 .e2e/
+
+# Archivo temporal de las sesiones de Claude Code
+.claude/scheduled_tasks.lock

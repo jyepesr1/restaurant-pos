@@ -32,6 +32,8 @@ export interface OpcionesCliente {
   alErrorHub?: (codigo: CodigoError, mensaje: string) => void
   /** Falló el procesamiento de un mensaje del hub (para el registro de diagnóstico). */
   alFallo?: (error: unknown) => void
+  /** Algo pudo cambiar en lo guardado (un evento nuevo, uno confirmado…): la pantalla relee. */
+  alCambiar?: () => void
 }
 
 /**
@@ -50,6 +52,7 @@ export class ClienteSync {
   private readonly ahora: () => number
   private readonly alErrorHub: OpcionesCliente['alErrorHub']
   private readonly alFallo: OpcionesCliente['alFallo']
+  private readonly alCambiar: OpcionesCliente['alCambiar']
 
   private conectado = false
   private generacion = 0
@@ -69,6 +72,7 @@ export class ClienteSync {
     this.ahora = o.ahora ?? Date.now
     this.alErrorHub = o.alErrorHub
     this.alFallo = o.alFallo
+    this.alCambiar = o.alCambiar
   }
 
   /**
@@ -138,9 +142,11 @@ export class ClienteSync {
   /** Procesa un mensaje del hub, en orden con los demás. No rechaza: los fallos van a `alFallo`. */
   recibir(mensaje: MensajeHub): Promise<void> {
     const generacion = this.generacion
+    // Un latido o un pong no cambian nada guardado: la pantalla no tiene por qué releer.
+    const escribe = mensaje.tipo !== 'latido' && mensaje.tipo !== 'pong'
     return this.enEspera(async () => {
       if (generacion === this.generacion) await this.procesar(mensaje, generacion)
-    }).catch((error) => this.alFallo?.(error))
+    }, escribe).catch((error) => this.alFallo?.(error))
   }
 
   /** Estado de un pedido: confirmados por secuencia y, encima, los propios pendientes. */
@@ -169,9 +175,14 @@ export class ClienteSync {
 
   // ── Internos ─────────────────────────────────────────────────────────
 
-  /** Encola un trabajo. La cola sigue aunque uno falle; el fallo le llega a quien lo encoló. */
-  private enEspera(trabajo: () => Promise<void>): Promise<void> {
-    const resultado = this.cola.then(trabajo)
+  /**
+   * Encola un trabajo. La cola sigue aunque uno falle; el fallo le llega a quien lo encoló. Al
+   * terminar avisa `alCambiar`, salvo que el trabajo no pueda haber cambiado nada guardado.
+   */
+  private enEspera(trabajo: () => Promise<void>, avisar = true): Promise<void> {
+    const resultado = this.cola.then(trabajo).finally(() => {
+      if (avisar) this.alCambiar?.()
+    })
     this.cola = resultado.catch(() => {})
     return resultado
   }

@@ -53,8 +53,8 @@ Monorepo con pnpm workspaces y Turborepo. TypeScript estricto en todo.
 
 | Carpeta | Qué contiene |
 |---|---|
-| `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador. `src/ui`: design system (colores con significado en `estilos.css`, botones, panel lateral, avisos con Deshacer, teclado PIN, búsqueda tolerante). `src/bocetos`: bocetos navegables de la tarea 0.9 (datos en memoria, no son el modelo de la Fase 1) |
-| `apps/hub` (`@pos/hub`) | Servidor local (Fastify) que corre en el PC de caja: sirve la app y la API en la red local. En `src/acceso`: emparejamiento, PIN, sesiones, comprobantes de supervisor y revocación (ADR-008) |
+| `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador. `src/ui`: design system (colores con significado en `estilos.css`, botones, panel lateral, avisos con Deshacer, teclado PIN, búsqueda tolerante). `src/bocetos`: bocetos navegables de la tarea 0.9 (datos en memoria, no son el modelo de la Fase 1). `src/sala`: la app de operación (emparejar, PIN, mesas y pedido) sobre IndexedDB (Dexie) y la sincronización con el hub (`Sala` en `motor.ts`) |
+| `apps/hub` (`@pos/hub`) | Servidor local (Fastify) que corre en el PC de caja: sirve la app y la API en la red local. En `src/acceso`: emparejamiento, PIN, sesiones, comprobantes de supervisor y revocación (ADR-008). `src/sincronizacion.ts`: WebSocket de eventos; `src/catalogo.ts`: `GET /api/catalogo` |
 | `packages/core` (`@pos/core`) | Lógica de negocio compartida, sin dependencias de navegador ni de Node: dinero (`src/dinero`), esquemas de eventos (`src/eventos`), reductor del pedido (`src/pedido`) y permisos, roles y firma de eventos (`src/acceso`) |
 | `packages/sync` (`@pos/sync`) | Sincronización dispositivo ↔ hub: `HubSync` y `SalaSync` (hub), `ClienteSync` y `GestorConexion` (dispositivo), almacén del hub sobre SQLite en `@pos/sync/sqlite` |
 | `packages/db` (`@pos/db`) | Esquema SQLite, migraciones y la interfaz `BaseSqlite`; `@pos/db/node` abre la base con `node:sqlite` (solo Node) |

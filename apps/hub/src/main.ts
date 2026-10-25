@@ -2,7 +2,14 @@ import { existsSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { type BaseSqlite, versionActual } from '@pos/db'
-import { abrirDatos, dirDatosDe, mostrarPines, prepararAcceso } from './arranque'
+import type { SalaSync } from '@pos/sync'
+import {
+  abrirDatos,
+  dirDatosDe,
+  mostrarPines,
+  prepararAcceso,
+  prepararSincronizacion,
+} from './arranque'
 import { crearServidor } from './servidor'
 
 const PUERTO_POR_DEFECTO = 4000
@@ -53,8 +60,19 @@ function prepararBase(): BaseSqlite {
 /** Restaurante, roles, administrador y la clave de los PIN (tarea 0.7). */
 function prepararTodo(db: BaseSqlite) {
   try {
+    // La sala se crea después del acceso, pero la revocación de un equipo debe llegarle.
+    let sala: SalaSync | null = null
     // Por ahora el aviso al administrador va a la ventana del hub; con la caja (Fase 1), a su pantalla.
-    return prepararAcceso(db, dirDatos, (aviso) => console.warn(`⚠ Seguridad: ${aviso}`))
+    const acceso = prepararAcceso(
+      db,
+      dirDatos,
+      (aviso) => console.warn(`⚠ Seguridad: ${aviso}`),
+      (dispositivoId, revocadoEn) => sala?.revocar(dispositivoId, revocadoEn),
+    )
+    sala = prepararSincronizacion(db, dirDatos, acceso.restauranteId, acceso.acceso, (error, id) =>
+      console.error(`Un evento hizo fallar al hub y se rechazó (${id}):`, error),
+    )
+    return { ...acceso, sala }
   } catch (error) {
     const detalle = error instanceof Error ? error.message : String(error)
     console.error(`No se pudo preparar el acceso del hub: ${detalle}`)
@@ -63,13 +81,14 @@ function prepararTodo(db: BaseSqlite) {
 }
 
 const puerto = leerPuerto()
-// La sincronización por WebSocket se conecta en la tarea 0.10.
 const db = prepararBase()
-const { acceso, pin: pinAdmin, avisos } = prepararTodo(db)
+const { acceso, restauranteId, sala, pin: pinAdmin, avisos } = prepararTodo(db)
 const app = crearServidor({
   dirApp,
   diagnostico: { dirDatos },
   acceso,
+  sincronizacion: { sala, alFallo: (error) => console.error('Falló la sincronización:', error) },
+  catalogo: { db, restauranteId, acceso },
   versionBase: versionActual(db),
   logger: true,
 })

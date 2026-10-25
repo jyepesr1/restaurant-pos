@@ -387,7 +387,7 @@ test.describe('contraste AA en claro y oscuro', () => {
     await page.goto('/bocetos')
     await page.getByRole('button', { name: 'Sin conexión' }).click()
     await page.getByRole('button', { name: 'Impresora de barra caída' }).click()
-    await expect(page.getByText('3 por enviar')).toBeVisible()
+    await expect(page.getByText('3 sin confirmar')).toBeVisible()
     expect(await contrasteInsuficiente(page)).toEqual([])
   })
 
@@ -534,19 +534,19 @@ test.describe('marco de las pantallas', () => {
     await expect(page.getByRole('status')).toContainText('En línea')
     await page.getByRole('button', { name: 'Sin conexión' }).click()
     await expect(page.getByRole('status')).toContainText('Sin conexión')
-    await expect(page.getByRole('status')).toContainText('3 por enviar')
+    await expect(page.getByRole('status')).toContainText('3 sin confirmar')
     await page.getByRole('button', { name: 'Impresora de barra caída' }).click()
     await expect(page.getByRole('status')).toContainText('Una impresora no responde')
 
     await page.getByRole('link', { name: /Plano de mesas/ }).click()
     await expect(page.getByRole('status')).toContainText('Sin conexión')
-    await expect(page.getByRole('status')).toContainText('3 por enviar')
+    await expect(page.getByRole('status')).toContainText('3 sin confirmar')
     await expect(page.getByRole('status')).toContainText('Una impresora no responde')
 
     // Volver a «Solo red local» quita los pendientes; la impresora sigue marcada hasta apagarla.
     await page.getByRole('button', { name: 'Volver' }).click()
     await page.getByRole('button', { name: 'Solo red local' }).click()
-    await expect(page.getByRole('status')).not.toContainText('por enviar')
+    await expect(page.getByRole('status')).not.toContainText('sin confirmar')
     await page.getByRole('button', { name: 'Impresora de barra caída' }).click()
     await expect(page.getByRole('status')).not.toContainText('impresora')
   })

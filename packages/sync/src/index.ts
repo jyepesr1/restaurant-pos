@@ -1,3 +1,4 @@
+export type { Catalogo } from './catalogo'
 export {
   type AlmacenDispositivo,
   AlmacenDispositivoMemoria,
