@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { configCompleta, nuevoId } from '@pos/core'
 import { aplicarMigraciones, type BaseSqlite } from '@pos/db'
 import { abrirBase } from '@pos/db/node'
-import { HubSync, SalaSync } from '@pos/sync'
+import { type ConfigHub, HubSync, SalaSync } from '@pos/sync'
 import { AlmacenSqlite } from '@pos/sync/sqlite'
 import {
   type Administrador,
@@ -110,6 +110,16 @@ export function instanciaDelHub(dirDatos: string): string {
   return nueva
 }
 
+/** La zona horaria de la sede principal: la de las horas de las comandas y del día operativo. */
+export function zonaHorariaDe(db: BaseSqlite, restauranteId: string): string {
+  const sede = db
+    .prepare(
+      'SELECT zona_horaria FROM sede WHERE restaurante_id = ? AND activo = 1 ORDER BY creado_en LIMIT 1',
+    )
+    .get(restauranteId)
+  return String(sede?.zona_horaria ?? 'America/Bogota')
+}
+
 /**
  * El hub de sincronización sobre la base del restaurante (tarea 0.10): eventos con el control de
  * acceso de la tarea 0.7, zona horaria de la sede y día operativo de la configuración.
@@ -120,23 +130,20 @@ export function prepararSincronizacion(
   restauranteId: string,
   acceso: ServicioAcceso,
   alErrorInterno?: (error: unknown, eventoId: string) => void,
+  extra: Pick<ConfigHub, 'alGuardar' | 'alFalloAlGuardar'> = {},
 ): SalaSync {
-  const sede = db
-    .prepare(
-      'SELECT zona_horaria FROM sede WHERE restaurante_id = ? AND activo = 1 ORDER BY creado_en LIMIT 1',
-    )
-    .get(restauranteId)
   const restaurante = db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)
   const config = configCompleta(JSON.parse(String(restaurante?.config ?? '{}')))
   const hub = new HubSync(new AlmacenSqlite(db, restauranteId), {
     restauranteId,
-    zonaHoraria: String(sede?.zona_horaria ?? 'America/Bogota'),
+    zonaHoraria: zonaHorariaDe(db, restauranteId),
     inicioDiaOperativo: config.inicio_dia_operativo,
     instancia: instanciaDelHub(dirDatos),
     reloj: () => new Date().toISOString(),
     acceso,
     alErrorInterno,
     precios: revisorPrecios(db, restauranteId),
+    ...extra,
   })
   return new SalaSync(hub, acceso.autenticar)
 }

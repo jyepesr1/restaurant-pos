@@ -1,4 +1,4 @@
-import { MensajeDispositivo, type MensajeHub } from '../protocolo'
+import { type EstadoImpresora, MensajeDispositivo, type MensajeHub } from '../protocolo'
 import type { Conexion, HubSync } from './hub'
 
 /** Valida el token de un dispositivo (tarea 0.7). `null` si no es válido. */
@@ -18,6 +18,8 @@ export class SalaSync {
   private readonly hub: HubSync
   private readonly autenticar: Autenticador
   private readonly participantes = new Set<Participante>()
+  /** Lo último que se supo de las impresoras: se le cuenta a cada equipo que se conecta. */
+  private impresoras: EstadoImpresora[] = []
 
   constructor(hub: HubSync, autenticar: Autenticador) {
     this.hub = hub
@@ -73,6 +75,22 @@ export class SalaSync {
       if (p.conexion && !p.conexion.revocadoEn) p.enviar({ tipo: 'catalogo', version })
   }
 
+  /** Cambió el estado de alguna impresora de comandas (ADR-015): lo ven todos los conectados. */
+  avisarImpresoras(impresoras: EstadoImpresora[]) {
+    this.impresoras = impresoras
+    for (const p of this.participantes)
+      if (p.conexion && !p.conexion.revocadoEn)
+        this.enviarSeguro(p, { tipo: 'impresoras', impresoras })
+  }
+
+  private enviarSeguro(participante: Participante, mensaje: MensajeHub) {
+    try {
+      participante.enviar(mensaje)
+    } catch {
+      this.participantes.delete(participante)
+    }
+  }
+
   private recibir(participante: Participante, crudo: unknown) {
     const lectura = MensajeDispositivo.safeParse(crudo)
     if (!lectura.success) {
@@ -97,6 +115,8 @@ export class SalaSync {
       }
       participante.conexion = conexion
       participante.enviar(this.hub.bienvenida())
+      if (this.impresoras.length > 0 && !conexion.revocadoEn)
+        participante.enviar({ tipo: 'impresoras', impresoras: this.impresoras })
       return
     }
     if (mensaje.tipo === 'ping') {

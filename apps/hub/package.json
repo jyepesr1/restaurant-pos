@@ -9,13 +9,15 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "seed": "tsx --disable-warning=ExperimentalWarning src/seed/main.ts",
-    "restablecer-admin": "tsx --disable-warning=ExperimentalWarning src/restablecer.ts"
+    "restablecer-admin": "tsx --disable-warning=ExperimentalWarning src/restablecer.ts",
+    "impresora-prueba": "tsx --disable-warning=ExperimentalWarning src/impresion/impresora-prueba.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.7",
     "@fastify/websocket": "^11.3.4",
     "@pos/core": "workspace:*",
     "@pos/db": "workspace:*",
+    "@pos/printing": "workspace:*",
     "@pos/sync": "workspace:*",
     "fastify": "^5.12.7",
     "yaml": "2.9.1",

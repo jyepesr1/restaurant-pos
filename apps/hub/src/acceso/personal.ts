@@ -68,7 +68,8 @@ export function leerPersonal(
     .prepare(
       `SELECT r.id, r.nombre, r.sistema, r.activo,
          (SELECT count(*) FROM usuario u WHERE u.rol_id = r.id AND u.activo = 1) AS personas
-       FROM rol r WHERE r.restaurante_id = ? ORDER BY r.sistema DESC, r.creado_en, r.id`,
+       FROM rol r WHERE r.restaurante_id = ? AND r.oculto = 0
+       ORDER BY r.sistema DESC, r.creado_en, r.id`,
     )
     .all(restauranteId)
     .map((f) => ({
@@ -81,7 +82,8 @@ export function leerPersonal(
     }))
   const personas = db
     .prepare(
-      'SELECT id, nombre, rol_id, activo FROM usuario WHERE restaurante_id = ? ORDER BY activo DESC, nombre, id',
+      // Los usuarios técnicos de las pantallas de cocina no son personas (ADR-015).
+      'SELECT id, nombre, rol_id, activo FROM usuario WHERE restaurante_id = ? AND pantalla = 0 ORDER BY activo DESC, nombre, id',
     )
     .all(restauranteId)
     .map((f) => ({
@@ -144,6 +146,7 @@ export function guardarRol(
           .get(restauranteId, datos.id)
       : undefined
     if (datos.id && !actual) throw new ErrorPersonal('Ese rol no existe')
+    if (actual?.oculto === 1) throw new ErrorPersonal('Ese rol no existe')
     const activo = datos.activo ?? (actual ? actual.activo === 1 : true)
     if (actual?.sistema === 1) {
       if (nombre !== actual.nombre)
@@ -152,7 +155,9 @@ export function guardarRol(
     }
     if (activo) {
       const repetido = db
-        .prepare('SELECT id, nombre FROM rol WHERE restaurante_id = ? AND activo = 1')
+        .prepare(
+          'SELECT id, nombre FROM rol WHERE restaurante_id = ? AND activo = 1 AND oculto = 0',
+        )
         .all(restauranteId)
         .find(
           (f) =>
@@ -253,7 +258,7 @@ export function guardarPersona(
   const nombre = nombreValido(datos.nombre, 'de la persona')
   return enTransaccion(db, () => {
     const rol = db
-      .prepare('SELECT activo FROM rol WHERE restaurante_id = ? AND id = ?')
+      .prepare('SELECT activo FROM rol WHERE restaurante_id = ? AND id = ? AND oculto = 0')
       .get(restauranteId, datos.rolId)
     if (!rol) throw new ErrorPersonal('Ese rol no existe')
 
@@ -262,7 +267,8 @@ export function guardarPersona(
           .prepare('SELECT * FROM usuario WHERE restaurante_id = ? AND id = ?')
           .get(restauranteId, datos.id)
       : undefined
-    if (datos.id && !actual) throw new ErrorPersonal('Esa persona no existe')
+    if (datos.id && (!actual || actual.pantalla === 1))
+      throw new ErrorPersonal('Esa persona no existe')
     const activo = datos.activo ?? (actual ? actual.activo === 1 : true)
     if (activo && rol.activo !== 1) throw new ErrorPersonal('Ese rol está archivado')
 

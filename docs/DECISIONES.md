@@ -372,11 +372,11 @@ Decisión del dueño del 24-oct-2026: el mesero no debe pasar por emparejar su c
 - **Administrador, Cajero y Reportes**: entran con **usuario y contraseña** desde cualquier equipo de la red (el PC de caja, una tablet o el celular del dueño dentro del local). Cada uno ve lo de su rol. El cajero también toma pedidos y además cobra y maneja la caja. Reportes solo ve informes. El administrador ve todo y administra personal, carta, plano y equipos.
 - **Lo delicado pide contraseña**: quien tenga permisos de cobro, caja, carta, reportes o administración (`PERMISOS_CON_CONTRASENA` en `packages/core`) no puede entrar solo con un PIN, aunque el rol se lo dé. El hub lo exige al entrar y al guardar personas y roles. Un PIN de 4 dígitos se adivina más fácil que una contraseña.
 - `administrar_usuarios` **equivale a poder todo**: quien lo tiene puede darse cualquier rol. Se da solo a personas de toda confianza; la pantalla lo dice.
-- **Equipos**: con contraseña, el equipo pasa a ser de caja solo si esa persona puede cobrar (`PERMISOS_DE_COBRO`). Cada equipo registrado aparece en **Personal y roles → Equipos**, con su último uso, para **retirarlo** si se pierde. El emparejamiento por código queda solo para la pantalla de cocina (tarea 1.4) y se pide desde un equipo ya registrado.
+- **Equipos**: con contraseña, el equipo pasa a ser de caja solo si esa persona puede cobrar (`PERMISOS_DE_COBRO`). Cada equipo registrado aparece en **Personal y roles → Equipos**, con su último uso, para **retirarlo** si se pierde. El emparejamiento por código queda en el hub sin uso: la pantalla de cocina la convierte el administrador desde el propio equipo (tarea 1.4, ADR-015).
 - **PIN de autorización**: el administrador y el cajero tienen además un PIN de 4 dígitos que **no abre sesión**. Solo sirve para autorizar en el celular del mesero (anular lo enviado, descuentos) con el comprobante de un solo uso del ADR-008. Todos los PIN del restaurante, de entrada y de autorización, son únicos y los genera el sistema.
 - **Contraseñas**: mínimo 8 caracteres. El hub guarda solo una huella lenta con sal (scrypt, N = 2^15), en tablas que solo existen en el hub y nunca se sincronizan; no dependen de la clave de los PIN. Espera creciente por IP (o por equipo) y por usuario; la de usuario tiene un tope de 10 s, para que nadie pueda dejar afuera al administrador probando su usuario. Un usuario que no existe, uno archivado y una contraseña errada tardan lo mismo y dan la misma respuesta. Aviso al administrador como con el PIN. El administrador cambia la contraseña de quien la olvide en Personal y roles; si la olvida el propio administrador, `pnpm restablecer-admin` en el PC del hub le da una nueva. Al instalar, el hub muestra **una sola vez** el usuario del administrador, su contraseña y su PIN para autorizar.
 - **Multirestaurante**: usuarios, roles, PIN y contraseñas son **por restaurante** (`restaurante_id`). El nombre de usuario es único dentro del restaurante, no en todo el sistema. El hub atiende una sola sede, así que su pantalla de entrada no pide escoger restaurante. Cómo se identifica el restaurante al entrar a la nube se decide en la Fase 2.
-- La pantalla de cocina (KDS) ya no tiene rol propio: cómo se identifica se decide en la tarea 1.4.
+- La pantalla de cocina (KDS) ya no tiene rol propio: cómo se identifica lo decide el [ADR-015](#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero) (tarea 1.4).
 
 ### Riesgo aceptado
 
@@ -431,3 +431,45 @@ Riesgo conocido: comprobar una contraseña (scrypt, unos 50 ms) detiene al hub m
 | Tasty como nombre | Es el nombre de un diseño publicado (Tasty Station), una marca de recetas muy conocida y una palabra común en inglés: difícil de registrar. |
 | Naranja como color del producto | Se confundiría con el naranja de La Spritzzería, que viste el suyo encima. |
 | Fotos obligatorias | La mayoría de restaurantes no tiene fotos de toda su carta el primer día. |
+
+---
+
+## ADR-015 · Comandas impresas por estación, pantalla de cocina opcional y entrega por el mesero
+
+**Fecha:** 25-oct-2026 · **Estado:** aceptada · **Tarea:** 1.4
+
+Decisiones del dueño del 25-oct-2026. En La Spritzzería la cocina no tiene pantalla ni equipos: trabaja con la comanda en papel.
+
+### Decisión
+
+- **Cada estación decide cómo recibe** (cocina, barra, las que cree el restaurante): impresora, pantalla o las dos. Se configura en **Cocina e impresoras**, sin programar. Una estación sin ninguna de las dos no recibe nada y la pantalla lo advierte.
+- **Comandas impresas**:
+  - impresoras térmicas ESC/POS de **red** (cable al router, puerto 9100), de 58 u 80 mm;
+  - al aceptar un envío, el hub guarda en **la misma transacción** un trabajo por impresora de la estación: si se va la luz justo después, la comanda igual sale al volver;
+  - la comanda lleva número del día, mesa o canal, número de pedido, mesero, hora, y los productos por persona y curso con las opciones resaltadas y las notas;
+  - también salen las comandas de **reimpresión**, **modificación** y **anulación** cuando existan esos eventos;
+  - **cola con reintentos** (espera creciente hasta 30 s, sin rendirse); a los 3 fallos seguidos la comanda pasa a la **impresora de respaldo** si hay una, y todos los equipos ven la alerta «La impresora de Barra no responde»;
+  - la caja puede descartar un trabajo atascado (queda registrado, no se borra).
+- **Las impresoras USB** (la de la caja de La Spritzzería) son para recibos y cajón (tareas 1.6 y 1.7) y se conectan por la cola de Windows con el instalador (1.10). La comanda por USB queda para entonces.
+- **Número de comanda**: lo asigna el hub al aceptar el envío, consecutivo por día operativo, uno por estación (`asignaciones.numeros_comanda`). La reimpresión, la modificación y la anulación muestran el número de la comanda original.
+- **Pantalla de cocina (KDS), opcional**:
+  - el **administrador** entra con su contraseña en la tablet o el PC de cocina y la **convierte en pantalla** de una o varias estaciones; desde ahí queda abierta siempre, sin PIN;
+  - lo que marca queda a nombre de esa pantalla (un usuario técnico por pantalla, que no aparece en Personal ni puede entrar con PIN o contraseña) y solo puede marcar listo y agotados;
+  - el cocinero solo toca **«Listo»** (un toque por comanda); lo marcado por error se recupera;
+  - se retira como cualquier equipo, en **Personal y roles → Equipos**.
+- **Sin pantalla en la estación, el mesero marca «Entregado»** al llevar el plato (uno a uno o «Todo entregado»). Puede pasar directo de enviado a entregado (ya lo permitía el reductor).
+- **Vista «Pedidos en cocina» en la caja**: lo enviado que falta entregar, por estación, con el tiempo desde el envío y su color (verde, ámbar desde `cocina_amarillo_min`, rojo desde `cocina_rojo_min`; por defecto 10 y 20 minutos). Quien tenga el permiso de marcar puede tocar «Listo» si cocina avisa. Si un plato queda listo, el mesero de la mesa recibe un aviso en su celular.
+
+### Por qué
+
+El brief pide impresoras por estación y KDS, pero en el piloto la cocina no tiene equipos. Marcar «Entregado» es algo que el mesero ya hace al llevar el plato; así el dueño ve en la caja qué se demora sin pedirle nada a la cocina.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Pantalla con código de emparejamiento | El dueño prefiere que el administrador la convierta con su contraseña. |
+| Cada cocinero entra con su PIN | En la cocina no hay equipos ni tiempo para entrar y salir. |
+| «Empezar» y «Listo» en la pantalla | Un toque más por comanda; el piloto no necesita saber qué está en preparación. |
+| La caja marca listo y el mesero entrega | Un paso más en hora pico; queda posible pero no es el flujo normal. |
+| Generar la comanda fuera de la transacción del evento | Un corte entre las dos dejaría un pedido enviado que nunca se imprimió. |

@@ -52,6 +52,12 @@ export const ConfigRestaurante = z.strictObject({
    * estilo del sistema; las demás son marcas de restaurantes ya preparadas en la app.
    */
   marca: z.enum(MARCAS).default('faro'),
+  /**
+   * Minutos desde el envío a cocina tras los que una comanda pasa a ámbar y a rojo en «Pedidos en
+   * cocina» y en la pantalla de cocina (ADR-015).
+   */
+  cocina_amarillo_min: z.int().min(1).max(240).default(10),
+  cocina_rojo_min: z.int().min(1).max(240).default(20),
 })
 
 export type ConfigRestaurante = z.infer<typeof ConfigRestaurante>

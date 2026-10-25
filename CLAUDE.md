@@ -54,15 +54,16 @@ Monorepo con pnpm workspaces y Turborepo. TypeScript estricto en todo.
 
 | Carpeta | Qué contiene |
 |---|---|
-| `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador. `src/ui`: design system de Faro (tokens y marcas en `estilos.css`, logo, botones, panel lateral, avisos con Deshacer, teclado PIN, búsqueda tolerante). `src/bocetos`: bocetos navegables de la tarea 0.9 (datos en memoria, no son el modelo de la Fase 1). `src/sala`: la app de operación (entrar con PIN o con usuario y contraseña, plano de mesas, pedido, editor de la carta y del plano, personal y roles) sobre IndexedDB (Dexie) y la sincronización con el hub (`Sala` en `motor.ts`) |
-| `apps/hub` (`@pos/hub`) | Servidor local (Fastify) que corre en el PC de caja: sirve la app y la API en la red local. En `src/acceso`: entrar con PIN o con usuario y contraseña sin emparejar, sesiones, comprobantes de supervisor, revocación, y personal y roles dinámicos (`personal.ts`) (ADR-008 y ADR-013). `src/sincronizacion.ts`: WebSocket de eventos; `src/catalogo.ts` y `src/edicion-catalogo.ts`: leer y editar la carta; `src/precios.ts`: historial del catálogo y revisión del precio copiado (`precio_distinto`) |
+| `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador. `src/ui`: design system de Faro (tokens y marcas en `estilos.css`, logo, botones, panel lateral, avisos con Deshacer, teclado PIN, búsqueda tolerante). `src/bocetos`: bocetos navegables de la tarea 0.9 (datos en memoria, no son el modelo de la Fase 1). `src/sala`: la app de operación (entrar con PIN o con usuario y contraseña, plano de mesas, pedido, «Pedidos en cocina» y la pantalla de cocina, editor de la carta y del plano, personal y roles, cocina e impresoras) sobre IndexedDB (Dexie) y la sincronización con el hub (`Sala` en `motor.ts`) |
+| `apps/hub` (`@pos/hub`) | Servidor local (Fastify) que corre en el PC de caja: sirve la app y la API en la red local. En `src/acceso`: entrar con PIN o con usuario y contraseña sin emparejar, sesiones, comprobantes de supervisor, revocación, y personal y roles dinámicos (`personal.ts`) (ADR-008 y ADR-013). `src/sincronizacion.ts`: WebSocket de eventos; `src/catalogo.ts` y `src/edicion-catalogo.ts`: leer y editar la carta; `src/precios.ts`: historial del catálogo y revisión del precio copiado (`precio_distinto`). `src/impresion`: comandas por estación, cola de impresión con reintentos y respaldo, API de impresoras y pantallas de cocina, e impresora de prueba (ADR-015) |
 | `packages/core` (`@pos/core`) | Lógica de negocio compartida, sin dependencias de navegador ni de Node: dinero (`src/dinero`), esquemas de eventos (`src/eventos`), reductor del pedido (`src/pedido`) y permisos, roles y firma de eventos (`src/acceso`) |
 | `packages/sync` (`@pos/sync`) | Sincronización dispositivo ↔ hub: `HubSync` y `SalaSync` (hub), `ClienteSync` y `GestorConexion` (dispositivo), almacén del hub sobre SQLite en `@pos/sync/sqlite` |
+| `packages/printing` (`@pos/printing`) | La comanda en papel: líneas al ancho de la impresora (58/80 mm), tildes por tabla de caracteres y bytes ESC/POS; también lee ESC/POS como texto para las pruebas |
 | `packages/db` (`@pos/db`) | Esquema SQLite, migraciones y la interfaz `BaseSqlite`; `@pos/db/node` abre la base con `node:sqlite` (solo Node) |
 | `tests/e2e` | Pruebas Playwright de punta a punta (celular Android y caja) |
 | `docs/` | Brief, decisiones, roadmap, modelo de datos y datos del piloto |
 
-Los paquetes internos se consumen como código fuente TypeScript (`exports` apunta a `src/index.ts`); no se compilan por separado. Paquetes nuevos (`ui`, `printing`, `dian`, `payments`) se crean en la tarea que los necesita, no antes.
+Los paquetes internos se consumen como código fuente TypeScript (`exports` apunta a `src/index.ts`); no se compilan por separado. Paquetes nuevos (`ui`, `dian`, `payments`) se crean en la tarea que los necesita, no antes.
 
 ## Comandos
 
@@ -78,6 +79,7 @@ Requiere Node 24 (`.nvmrc`) y pnpm por corepack (`corepack enable pnpm`). En una
 | `pnpm test` | Pruebas unitarias (Vitest) de todos los paquetes; en `@pos/core` exige 90 % de cobertura |
 | `pnpm test:e2e` | Pruebas Playwright; compila la app y levanta el hub en el puerto 4100 |
 | `pnpm seed` | Carga en la base del hub los datos de La Spritzzería (carta, salón, personal de ejemplo: Caja y Reportes con usuario y contraseña, tres meseros con PIN). Con el hub cerrado; se puede repetir sin duplicar. `--sin-personal` omite las cuentas de ejemplo |
+| `pnpm --filter @pos/hub impresora-prueba [puerto]` | Una impresora de red de mentira (puerto 9100 por defecto) que muestra en la ventana cada comanda que recibe. Para probar sin papel |
 | `pnpm restablecer-admin` | Da una contraseña nueva al administrador (si la olvidó) y la muestra una vez. Con el hub cerrado |
 
 Biome no formatea los archivos Markdown (están excluidos en `biome.json`).

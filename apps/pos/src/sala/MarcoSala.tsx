@@ -49,7 +49,10 @@ interface Seccion {
 const SECCIONES: readonly { grupo: string; secciones: readonly Seccion[] }[] = [
   {
     grupo: 'Servicio',
-    secciones: [{ ruta: '/', nombre: 'Salón', icono: 'mesa', tambien: ['/pedido'] }],
+    secciones: [
+      { ruta: '/', nombre: 'Salón', icono: 'mesa', tambien: ['/pedido'] },
+      { ruta: '/cocina', nombre: 'Pedidos en cocina', icono: 'fuego' },
+    ],
   },
   {
     grupo: 'Administración',
@@ -66,6 +69,12 @@ const SECCIONES: readonly { grupo: string; secciones: readonly Seccion[] }[] = [
         nombre: 'Personal y roles',
         icono: 'personas',
         permisos: ['administrar_usuarios'],
+      },
+      {
+        ruta: '/cocina/ajustes',
+        nombre: 'Cocina e impresoras',
+        icono: 'impresora',
+        permisos: ['administrar_dispositivos'],
       },
       {
         ruta: '/marca',
@@ -104,7 +113,8 @@ export function MarcoSala({
   children: ReactNode
 }) {
   const { oscuro, elegir } = useTema()
-  const { conexion, pendientes, sesion, simulandoSinConexion, catalogo } = useSala()
+  const { conexion, pendientes, sesion, simulandoSinConexion, catalogo, impresoras } = useSala()
+  const caidas = impresoras.filter((i) => i.estado === 'falla')
   const { ruta } = useRuta()
   const [menuAbierto, setMenuAbierto] = useState(false)
   const encabezado = useRef<HTMLHeadingElement>(null)
@@ -273,6 +283,20 @@ export function MarcoSala({
                 {titulo}
               </h1>
               <IndicadorConexion estado={ESTADO[conexion]} pendientes={pendientes} />
+              <span aria-live="polite" className="contents">
+                {caidas.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => ir('/cocina')}
+                    className="inline-flex min-h-12 items-center gap-2 rounded-full bg-alerta-fuerte px-3 text-sm font-semibold text-white focus-visible:outline-3 focus-visible:outline-foco"
+                  >
+                    <Icono nombre="impresora" className="size-5" />
+                    {caidas.length === 1
+                      ? `${caidas[0]?.nombre} no imprime`
+                      : `${caidas.length} impresoras no imprimen`}
+                  </button>
+                )}
+              </span>
               <div className="flex items-center gap-1">
                 {acciones}
                 {(simulandoSinConexion || modoDemo()) && (

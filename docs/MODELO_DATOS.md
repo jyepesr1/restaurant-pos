@@ -88,7 +88,7 @@ erDiagram
 | `Zona` | 0 | V | `sede_id`, `nombre`, `orden`, `piso` |
 | `Mesa` | 0 | V | `zona_id`, `nombre` ("12", único entre las mesas activas del restaurante), `forma` (`redonda`, `cuadrada`, `rectangular`, `barra`), `x`, `y` (esquina superior izquierda), `ancho`, `alto`, todo en **centímetros enteros**; `rotacion` (grados enteros, alrededor del centro), `capacidad` |
 | `ElementoPlano` | 1 | V | `zona_id`, `tipo` (`pared`, `puerta`, `planta`, `barra`, `texto`), `texto` (solo el de tipo texto), geometría igual que `Mesa`. Tabla `elemento_plano` (migración 4) |
-| `Dispositivo` | 0 | V | `sede_id`, `nombre`, `tipo` (`mesero`, `caja`, `kds`), `emparejado_en` (desde la 1.3b, cuándo lo registró el hub al entrar por primera vez), `revocado_en`, `secuencia_revocacion` |
+| `Dispositivo` | 0 | V | `sede_id`, `nombre`, `tipo` (`mesero`, `caja`, `kds`), `emparejado_en` (desde la 1.3b, cuándo lo registró el hub al entrar por primera vez), `revocado_en`, `secuencia_revocacion`, `estacion_ids` (solo las pantallas de cocina: qué estaciones muestran, ADR-015) |
 | `DispositivoCredencial` | 0 | L (hub) | `dispositivo_id`, `token_hash` |
 
 El plano se edita desde la caja con la misma API que el catálogo (`POST /api/catalogo/cambios`, permiso `editar_catalogo`). El hub no deja archivar una mesa con un pedido abierto ni una zona con mesas activas. Los cambios del plano no van al historial `catalogo_cambio` (no afectan precios).
@@ -99,9 +99,9 @@ El estado de una mesa (libre, ocupada, con pedido enviado, precuenta, por pagar,
 
 | Entidad | Fase | Cat. | Campos principales |
 |---|---|---|---|
-| `Usuario` | 0 | V | `nombre`, `rol_id` |
+| `Usuario` | 0 | V | `nombre`, `rol_id`, `pantalla` (1 en el usuario técnico de una pantalla de cocina: no es una persona, no sale en Personal ni entra con PIN o contraseña, ADR-015) |
 | `UsuarioCredencial` | 0 | L (hub) | `usuario_id`, `pin_huella` (HMAC-SHA256 del PIN con la clave del hub; única entre usuarios activos), `pin_generado_en`. Desde la tarea 1.3b (migración 5): `nombre_usuario` (en minúsculas, único entre los activos **de cada restaurante**) y `contrasena_huella` (scrypt con sal), que van juntos, y `contrasena_cambiada_en`. Sin usuario, la persona entra con su PIN; con usuario, entra con usuario y contraseña y su PIN solo autoriza ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)). Ni el PIN ni la contraseña escritos se guardan o se registran. |
-| `Rol` | 0 | V | `nombre`, `sistema` (los de fábrica no se renombran ni se archivan; sus permisos sí cambian) |
+| `Rol` | 0 | V | `nombre`, `sistema` (los de fábrica no se renombran ni se archivan; sus permisos sí cambian), `oculto` (el rol «Pantalla de cocina», con `PERMISOS_PANTALLA`: no se ve, no se edita ni se asigna a personas) |
 | `RolPermiso` | 0 | V | `rol_id`, `permiso` |
 | `Sesion` | 0 | L (hub) | `usuario_id`, `dispositivo_id`, `secreto_hash`, `inicio`, `ultimo_uso` (avanza también con los eventos recibidos), `cerrada_en` |
 | `Autorizacion` | 0 | L (hub) | Comprobante de un solo uso emitido cuando un supervisor escribe su PIN: `supervisor_id`, `accion`, `agregado_id`, `evento_id` que autoriza, `contenido_hash` (huella SHA-256 del evento exacto que se autorizó), `sesion_id` que lo pidió, `emitida_en`, `usada_en`. Al aceptar el evento, el hub copia el supervisor en `autorizado_por_id` del evento. |
@@ -181,6 +181,7 @@ Agotado (86) no es un campo editable: son los eventos `ProductoAgotado` / `Produ
 | `redondeo_modo` | `'mitad_arriba'` | Redondeo de porcentajes y del desglose fiscal ([DINERO.md](DINERO.md#principios)). |
 | `redondeo_efectivo_modo` | `'cercano_mitad_abajo'` | Al múltiplo más cercano; la mitad, a favor del cliente. |
 | `sesion_inactividad_min` | `30` | Minutos sin uso para cerrar la sesión en un dispositivo compartido. |
+| `cocina_amarillo_min` / `cocina_rojo_min` | `10` / `20` | Minutos desde el envío tras los que lo de cocina pasa a ámbar y a rojo en «Pedidos en cocina» y en la pantalla de cocina (ADR-015). Se cambian en «Cocina e impresoras». |
 | `marca` | `"faro"` | Con qué marca se ve el POS en todos los equipos (ADR-014): `faro` o una marca preparada (`la-spritzzeria`). La cambia el administrador en «Marca del restaurante». |
 
 ## Eventos
@@ -292,10 +293,14 @@ Reglas: se concilia `Σ (monto + propina)` de los pagos contra `total` de la tra
 
 ## Impresión (Fase 1)
 
+Desde la tarea 1.4 ([ADR-015](DECISIONES.md#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero)), en la migración 6:
+
 | Entidad | Cat. | Campos principales |
 |---|---|---|
-| `Impresora` | V | `nombre`, `conexion` (`red`, `usb`), `direccion`, `ancho` (58/80 mm), `respaldo_id`, `estacion_ids` |
-| `TrabajoImpresion` | L (hub) | `impresora_id`, `tipo`, `contenido`, `estado`, `intentos`, `error` |
+| `Impresora` | V | `nombre`, `conexion` (`red`; `usb` llega con el instalador, 1.10), `direccion` (IP o nombre del equipo; en USB, el nombre en Windows), `puerto` (9100 por defecto), `ancho` (58/80 mm), `pagina_codigos` (`pc850`, `wpc1252` o `sin_tildes`: cómo imprime tildes y eñes cada marca), `respaldo_id`, `estacion_ids` |
+| `TrabajoImpresion` | L (hub) | `impresora_id`, `tipo` (`comanda`, `prueba`), `evento_id` y `comanda_id` (únicos con la impresora: reintentar el evento no duplica), `contenido` (la comanda ya resuelta en JSON; se convierte en bytes al imprimir, con el ancho de la impresora que la imprime), `estado` (`pendiente`, `impreso`, `descartado`; no se borra), `intentos`, `ultimo_error`, `impreso_en_id` (puede ser la de respaldo), `descartado_por_id` |
+
+Una comanda se crea en la misma transacción que el evento que la pide (`ItemsEnviados`, `ComandaReimpresa`, `ItemAnulado` de algo en cocina, `ItemModificadoTrasEnvio`), una por impresora activa de su estación. El número de comanda del día lo da el hub en `asignaciones.numeros_comanda` del envío (uno por estación); la reimpresión, la anulación y la modificación llevan el de la comanda original.
 
 ## Facturación electrónica (Fase 2) — (validar) con proveedor y contador
 

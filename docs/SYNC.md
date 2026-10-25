@@ -8,7 +8,7 @@ Se implementa en `packages/sync` (tarea 0.6, dispositivo ↔ hub). El nivel hub 
 - **`foto`**: un dispositivo nuevo o sin datos pide `traer desde: 0`; la foto llega cuando el volumen lo justifique (Fase 1).
 - **`ConflictoDetectado`** se registra en la tabla `conflicto` del hub, no como evento; la pantalla de caja lo consultará al hub (Fase 1).
 - **Pedido de rescate**: un ítem que llega a un pedido ya cerrado queda como conflicto `pedido_cerrado` (guardado, sin aplicar); el rescate automático llega con la caja (Fase 1).
-- **Sesiones y tokens** (tareas 0.7 y 1.3b): entrar, el cierre y las autorizaciones van por la **API HTTP** del hub (`POST /api/entrar`, `/api/sesiones/cerrar`, `/api/autorizaciones`, `/api/dispositivos/:id/revocar`, y el personal en `/api/personal/…`), con el token en `Authorization: Bearer`; no por el WebSocket. El WebSocket solo lleva eventos. El emparejamiento por código (`/api/emparejamientos`, `/api/emparejar`) queda en el hub para la pantalla de cocina (tarea 1.4); la app ya no lo usa.
+- **Sesiones y tokens** (tareas 0.7 y 1.3b): entrar, el cierre y las autorizaciones van por la **API HTTP** del hub (`POST /api/entrar`, `/api/sesiones/cerrar`, `/api/autorizaciones`, `/api/dispositivos/:id/revocar`, y el personal en `/api/personal/…`), con el token en `Authorization: Bearer`; no por el WebSocket. El WebSocket solo lleva eventos. El emparejamiento por código (`/api/emparejamientos`, `/api/emparejar`) queda en el hub sin uso: la pantalla de cocina la convierte el administrador con `POST /api/pantallas` (tarea 1.4, ADR-015).
 - **Cierre por inactividad**: lo hace el dispositivo (pide el PIN otra vez tras `sesion_inactividad_min`), porque el hub no ve el uso sin conexión. El hub cierra una sesión al cerrarla el usuario, al entrar otra persona en ese dispositivo, al revocar el dispositivo o al archivar al usuario.
 - **Eventos de producto** (tarea 1.3): `ProductoAgotado` y `ProductoDisponible` viajan en la misma secuencia que los pedidos (agregado `producto`). El hub los acepta con el permiso `agotar_producto` y no los pasa por el reductor del pedido. Un ítem de un producto agotado que llega de un equipo sin conexión se acepta: todavía no es conflicto.
 - **Catálogo** (tarea 1.1): el mensaje `catalogo` solo avisa la versión nueva y el dispositivo pide la carta entera por HTTP (`GET /api/catalogo`, es pequeña); también la pide cada vez que se conecta. Mandar solo los registros cambiados queda para cuando la carta sea grande o la edite la nube (Fase 2).
@@ -72,7 +72,7 @@ flowchart LR
 | `secuencia` | Hub | Consecutivo por restaurante; el orden oficial |
 | `recibido_en` | Hub | Hora oficial de recepción |
 | `dia_operativo` | Hub | Calculado con `hora_estimada_hub` (acotada como se indica arriba) y la configuración del restaurante |
-| `asignaciones` | Hub | Números que asigna el hub al aceptar: `numero_dia` del pedido, `numero` de comanda |
+| `asignaciones` | Hub | Números que asigna el hub al aceptar: `numero_dia` del pedido al abrirlo y `numeros_comanda` (por `comanda_id`, consecutivos en el día operativo) al enviar a cocina (ADR-015) |
 | `afecta` | Hub | Pedidos a los que se aplica el evento cuando no es solo su agregado: el pedido actual de un ítem movido, el pedido de rescate |
 
 ## Flujo de una acción
@@ -114,6 +114,7 @@ sequenceDiagram
 | `traer` / `eventos` | ida y vuelta | `desde` / página ordenada por secuencia y `hay_mas` |
 | `nuevo` | hub → dispositivos | Evento recién aceptado |
 | `catalogo` | hub → dispositivos | El catálogo cambió y quedó en la versión N; el dispositivo lo pide por HTTP |
+| `impresoras` | hub → dispositivos | Cómo está cada impresora de comandas (lista o falla, el error y cuántas comandas esperan). Llega al conectar y cada vez que cambia; los equipos muestran la alerta (ADR-015) |
 | `comanda` | hub → KDS | Comanda de sus estaciones (nueva, modificación o anulación) con ítems y modificadores |
 | `ping` / `pong` | dispositivo ↔ hub | El dispositivo mide latencia y comprueba al instante si el canal vive al volver a la pantalla |
 | `latido` | hub → dispositivos | Cada 5 s; sin nada durante 15 s, la conexión se da por muerta |

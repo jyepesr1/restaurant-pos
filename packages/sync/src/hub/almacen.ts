@@ -58,6 +58,8 @@ export interface AlmacenHub {
   cuarentenasDe(dispositivoId: string): number
   /** Cuántos pedidos se abrieron en el día operativo: da el número de pedido del día. */
   aperturasDelDia(dia: string): number
+  /** Cuántas comandas se numeraron en el día operativo: da el número de la siguiente. */
+  comandasDelDia(dia: string): number
   eventosDesde(desde: number, limite: number): EventoPedido[]
   guardarEvento(evento: EventoPedido, huella: string, agregados: readonly string[]): void
   /** Si ya hay un rechazo con ese id y esa huella, no hace nada. */
@@ -131,6 +133,13 @@ export class AlmacenMemoria implements AlmacenHub {
     return this.eventos.filter(
       (e) => e.evento.tipo === 'PedidoAbierto' && e.evento.dia_operativo === dia,
     ).length
+  }
+
+  comandasDelDia(dia: string): number {
+    return this.eventos
+      .map((e) => e.evento)
+      .filter((e) => e.tipo === 'ItemsEnviados' && e.dia_operativo === dia)
+      .reduce((n, e) => n + Object.keys(e.asignaciones.numeros_comanda ?? {}).length, 0)
   }
 
   eventosDesde(desde: number, limite: number): EventoPedido[] {

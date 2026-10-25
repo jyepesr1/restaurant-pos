@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { type ComandaEnCocina, comandasEnCocina } from './comandas'
 import { type Instantanea, Sala } from './motor'
 import { agotados, masPedidos, type PedidoVisible, pedidosAbiertos } from './proyeccion'
 
@@ -16,6 +17,8 @@ export interface VistaLocal {
   agotados: Set<string>
   /** Ids de los productos más pedidos. */
   masPedidos: string[]
+  /** Lo enviado a cocina que falta entregar, de lo más viejo a lo más nuevo (ADR-015). */
+  comandas: ComandaEnCocina[]
 }
 
 /** Lo que sale de los eventos guardados aquí; se relee cada vez que algo cambia. */
@@ -27,15 +30,16 @@ export function useVistaLocal(): VistaLocal | null {
     let vigente = true
     sala.sync
       ?.locales()
-      .then(
-        (locales) =>
-          vigente &&
-          setVista({
-            pedidos: pedidosAbiertos(locales),
-            agotados: agotados(locales),
-            masPedidos: masPedidos(locales),
-          }),
-      )
+      .then((locales) => {
+        if (!vigente) return
+        const pedidos = pedidosAbiertos(locales)
+        setVista({
+          pedidos,
+          agotados: agotados(locales),
+          masPedidos: masPedidos(locales),
+          comandas: comandasEnCocina(locales, pedidos),
+        })
+      })
       .catch((error) => console.error('No se pudieron leer los pedidos:', error))
     return () => {
       vigente = false

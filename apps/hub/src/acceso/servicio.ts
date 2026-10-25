@@ -8,6 +8,7 @@ import {
   nuevoId,
   PERMISOS_CON_CONTRASENA,
   PERMISOS_DE_COBRO,
+  PERMISOS_PANTALLA,
   type Permiso,
   permisoPara,
   SOLO_DESDE_CAJA,
@@ -314,6 +315,18 @@ export class ServicioAcceso implements ControlAcceso {
         ahora,
       )
       this.cerrarSesiones('dispositivo_id = ?', datos.dispositivoId, ahora)
+      // Una pantalla retirada se lleva su usuario técnico: ya no marca nada.
+      const pantalla = this.usuarioDePantalla(datos.dispositivoId)
+      if (pantalla)
+        actualizarVersionado(
+          this.db,
+          'usuario',
+          this.restauranteId,
+          pantalla,
+          { activo: 0 },
+          { usuarioId: sesion.usuarioId, dispositivoId: conexion.dispositivoId },
+          ahora,
+        )
     })
     this.alRevocar?.(datos.dispositivoId, ahora)
     return { ok: true, revocadoEn: ahora }
@@ -333,6 +346,118 @@ export class ServicioAcceso implements ControlAcceso {
     if (!this.tienePermiso(sesion.usuarioId, permiso))
       return error('sin_permiso', 'Tu rol no tiene permiso para esto')
     return { ok: true, usuarioId: sesion.usuarioId }
+  }
+
+  // ── Pantalla de cocina (ADR-015) ─────────────────────────────────────
+
+  /**
+   * El administrador convierte el equipo desde el que está en pantalla de cocina de esas
+   * estaciones. Su sesión se cierra y el equipo queda con la de un usuario técnico propio de la
+   * pantalla, que solo marca listo y agotados y nunca entra con PIN ni contraseña. Repetirlo
+   * cambia el nombre y las estaciones de la misma pantalla.
+   */
+  convertirEnPantalla(
+    conexion: Conexion,
+    datos: { sesionId: string; secreto: string; nombre: string; estacionIds: string[] },
+  ):
+    | { ok: true; sesionId: string; secreto: string; usuario: UsuarioSesion; permisos: Permiso[] }
+    | ErrorAcceso {
+    const sesion = this.sesionAbierta(conexion, datos.sesionId, datos.secreto)
+    if (!sesion.ok) return sesion
+    if (!this.tienePermiso(sesion.usuarioId, 'administrar_dispositivos'))
+      return error('sin_permiso', 'Solo un administrador puede convertir un equipo en pantalla')
+    const nombre = datos.nombre.trim().slice(0, 60)
+    if (!nombre) return error('datos_invalidos', 'Ponle un nombre a la pantalla')
+    const estaciones = [...new Set(datos.estacionIds)]
+    if (estaciones.length === 0) return error('datos_invalidos', 'Elige al menos una estación')
+    for (const id of estaciones) {
+      const existe = this.db
+        .prepare('SELECT 1 FROM estacion WHERE restaurante_id = ? AND id = ? AND activo = 1')
+        .get(this.restauranteId, id)
+      if (!existe) return error('datos_invalidos', 'Esa estación no existe')
+    }
+
+    const ahora = this.reloj()
+    const autor = { usuarioId: sesion.usuarioId, dispositivoId: conexion.dispositivoId }
+    return enTransaccion(this.db, () => {
+      actualizarVersionado(
+        this.db,
+        'dispositivo',
+        this.restauranteId,
+        conexion.dispositivoId,
+        { tipo: 'kds', nombre, estacion_ids: JSON.stringify(estaciones) },
+        autor,
+        ahora,
+      )
+      const rolId = this.rolPantalla(autor, ahora)
+      let usuarioId = this.usuarioDePantalla(conexion.dispositivoId)
+      if (usuarioId)
+        actualizarVersionado(
+          this.db,
+          'usuario',
+          this.restauranteId,
+          usuarioId,
+          { nombre, activo: 1 },
+          autor,
+          ahora,
+        )
+      else
+        usuarioId = insertarVersionado(
+          this.db,
+          'usuario',
+          this.restauranteId,
+          { nombre, rol_id: rolId, pantalla: 1 },
+          autor,
+          ahora,
+        )
+      const abierta = this.abrirSesion(conexion.dispositivoId, usuarioId, ahora)
+      return {
+        ok: true as const,
+        ...abierta,
+        usuario: { id: usuarioId, nombre, rol: 'Pantalla de cocina' },
+        permisos: this.permisosDe(usuarioId),
+      }
+    })
+  }
+
+  /** El usuario técnico de una pantalla: el de alguna sesión suya. */
+  usuarioDePantalla(dispositivoId: string): string | null {
+    const f = this.db
+      .prepare(
+        `SELECT u.id FROM sesion s JOIN usuario u ON u.id = s.usuario_id
+         WHERE s.restaurante_id = ? AND s.dispositivo_id = ? AND u.pantalla = 1
+         ORDER BY s.inicio DESC LIMIT 1`,
+      )
+      .get(this.restauranteId, dispositivoId)
+    return f ? String(f.id) : null
+  }
+
+  /** El rol oculto de las pantallas (se crea la primera vez), con `PERMISOS_PANTALLA`. */
+  private rolPantalla(autor: Autor, ahora: string): string {
+    const f = this.db
+      .prepare(
+        'SELECT id FROM rol WHERE restaurante_id = ? AND oculto = 1 ORDER BY creado_en LIMIT 1',
+      )
+      .get(this.restauranteId)
+    if (f) return String(f.id)
+    const rolId = insertarVersionado(
+      this.db,
+      'rol',
+      this.restauranteId,
+      { nombre: 'Pantalla de cocina', sistema: 1, oculto: 1 },
+      autor,
+      ahora,
+    )
+    for (const permiso of PERMISOS_PANTALLA)
+      insertarVersionado(
+        this.db,
+        'rol_permiso',
+        this.restauranteId,
+        { rol_id: rolId, permiso },
+        autor,
+        ahora,
+      )
+    return rolId
   }
 
   // ── Entrar (ADR-013) ─────────────────────────────────────────────────

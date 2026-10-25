@@ -43,6 +43,20 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
   const productos = activos('producto', 'nombre')
   const zonas = activos('zona', 'piso, orden, nombre')
   const idsZonas = new Set(zonas.map((f) => texto(f.id)))
+  const listaJson = (v: unknown): string[] => {
+    const lista = JSON.parse(String(v ?? '[]'))
+    return Array.isArray(lista) ? lista.map(String) : []
+  }
+  const impresas = new Set(activos('impresora', 'nombre').flatMap((f) => listaJson(f.estacion_ids)))
+  const pantallas = todas(
+    `SELECT id, nombre, estacion_ids FROM dispositivo
+     WHERE restaurante_id = ? AND activo = 1 AND tipo = 'kds' AND revocado_en IS NULL
+     ORDER BY nombre, id`,
+  ).map((f) => ({
+    dispositivoId: texto(f.id),
+    nombre: texto(f.nombre),
+    estacionIds: listaJson(f.estacion_ids),
+  }))
 
   return {
     version,
@@ -50,6 +64,8 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
       nombre: texto(restaurante?.nombre ?? ''),
       sesionInactividadMin: config.sesion_inactividad_min,
       marca: config.marca,
+      cocinaAmarilloMin: config.cocina_amarillo_min,
+      cocinaRojoMin: config.cocina_rojo_min,
     },
     zonas: zonas.map((f) => ({ id: texto(f.id), nombre: texto(f.nombre), piso: numero(f.piso) })),
     mesas: activos('mesa', 'zona_id, y, x')
@@ -79,11 +95,19 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
         alto: numero(f.alto),
         rotacion: numero(f.rotacion),
       })),
-    personal: activos('usuario', 'nombre').map((f) => ({
+    personal: activos('usuario', 'nombre')
+      .filter((f) => f.pantalla !== 1)
+      .map((f) => ({
+        id: texto(f.id),
+        nombre: texto(f.nombre),
+      })),
+    estaciones: activos('estacion').map((f) => ({
       id: texto(f.id),
       nombre: texto(f.nombre),
+      imprime: impresas.has(texto(f.id)),
+      pantalla: pantallas.some((p) => p.estacionIds.includes(texto(f.id))),
     })),
-    estaciones: activos('estacion').map((f) => ({ id: texto(f.id), nombre: texto(f.nombre) })),
+    pantallas,
     categorias: activos('categoria').map((c) => ({
       id: texto(c.id),
       nombre: texto(c.nombre),

@@ -36,12 +36,15 @@ import { claveAgotado, itemsVigentes, type PedidoVisible } from './proyeccion'
 // - Lo agotado (86) se ve en todos los equipos al instante; quien tiene permiso lo marca aquí.
 // La mesa queda ocupada al agregar el primer producto, no al abrirla.
 
+/** Lo que está en cocina y el mesero puede marcar entregado (ADR-015). */
+const EN_COCINA = new Set(['enviado', 'en_preparacion', 'listo'])
+
 const TEXTO_ESTADO: Record<string, string> = {
   pendiente: 'sin enviar',
   retenido: 'retenido',
-  enviado: 'enviado',
+  enviado: 'en cocina',
   en_preparacion: 'en preparación',
-  listo: 'listo',
+  listo: 'listo para llevar',
   entregado: 'entregado',
 }
 
@@ -79,6 +82,7 @@ export function TomaPedido() {
   // Los toques se guardan uno tras otro, en el orden en que se hicieron.
   const cola = useRef<Promise<void>>(Promise.resolve())
   const puedeAgotar = sesion?.permisos.includes('agotar_producto') ?? false
+  const puedeEntregar = sesion?.permisos.includes('marcar_preparacion') ?? false
 
   // "/" lleva a la búsqueda (atajo de caja, brief §5, regla 8).
   useEffect(() => {
@@ -343,6 +347,22 @@ export function TomaPedido() {
       }
     })
 
+  /**
+   * El mesero lleva el plato a la mesa (ADR-015): sale de «Pedidos en cocina». Se puede deshacer
+   * unos segundos, por si tocó el que no era.
+   */
+  const entregar = (ids: string[], que: string) =>
+    enOrden(async () => {
+      const estado = await pedidoGuardado()
+      if (!estado || ids.length === 0) return
+      await sala.registrar('ItemEntregado', estado.id, { item_ids: ids })
+      avisar(`Entregado: ${que}`, () =>
+        enOrden(async () => {
+          await sala.registrar('ItemDevueltoACola', estado.id, { item_ids: ids })
+        }),
+      )
+    })
+
   /** Marca agotado o disponible el producto entero o una variante (la botella, no la copa). */
   const alternarAgotado = (
     p: ProductoCatalogo,
@@ -402,6 +422,7 @@ export function TomaPedido() {
   const faltan = pedido ? porEnviar(pedido.estado).length : 0
   const itemEditado = pedido && editando ? (pedido.estado.items[editando] ?? null) : null
 
+  const enCocina = pedido ? itemsVigentes(pedido.estado).filter((i) => EN_COCINA.has(i.estado)) : []
   const botonEnviar = (
     <Boton
       variante="principal"
@@ -424,6 +445,7 @@ export function TomaPedido() {
       alSumar={(i, delta) => sumar(i.id, delta)}
       alRetener={retener}
       alMarchar={marchar}
+      alEntregar={puedeEntregar ? entregar : null}
     />
   )
 
@@ -659,7 +681,27 @@ export function TomaPedido() {
           <span>{`Pedido (${pedido ? itemsVigentes(pedido.estado).reduce((n, i) => n + i.cantidad - i.cantidadAnulada, 0) : 0})`}</span>
           <span className="cifras font-titulo text-lg">{pesos(pedido?.total ?? 0)}</span>
         </Boton>
-        <div className="flex-1">{botonEnviar}</div>
+        {/* Con todo enviado, el pulgar entrega lo que está en cocina de una vez (ADR-015). */}
+        <div className="flex-1">
+          {faltan === 0 && puedeEntregar && enCocina.length > 0 ? (
+            <Boton
+              variante="exito"
+              grande
+              icono="servir"
+              className="w-full"
+              onClick={() =>
+                entregar(
+                  enCocina.map((i) => i.id),
+                  `${enCocina.length} ${enCocina.length === 1 ? 'producto' : 'productos'}`,
+                )
+              }
+            >
+              {`Entregar ${enCocina.length}`}
+            </Boton>
+          ) : (
+            botonEnviar
+          )}
+        </div>
       </div>
 
       <PanelLateral
@@ -827,6 +869,7 @@ function Ticket({
   alSumar,
   alRetener,
   alMarchar,
+  alEntregar,
 }: {
   pedido: PedidoVisible | null
   comensales: number
@@ -837,8 +880,11 @@ function Ticket({
   alSumar: (item: ItemPedido, delta: number) => void
   alRetener: (curso: Curso) => void
   alMarchar: (curso: Curso) => void
+  /** Sin el permiso de marcar, no se ven los botones de entregar. */
+  alEntregar: ((ids: string[], que: string) => void) | null
 }) {
   const items = pedido ? itemsVigentes(pedido.estado) : []
+  const porEntregar = items.filter((i) => EN_COCINA.has(i.estado))
   const porCurso = CURSOS.map((c) => ({
     ...c,
     items: items.filter((i) => i.curso === c.curso),
@@ -907,6 +953,11 @@ function Ticket({
                       item={i}
                       alTocar={() => alTocarItem(i)}
                       alSumar={(delta) => alSumar(i, delta)}
+                      alEntregar={
+                        alEntregar && EN_COCINA.has(i.estado)
+                          ? () => alEntregar([i.id], i.nombre)
+                          : null
+                      }
                     />
                   ))}
                 </ul>
@@ -914,6 +965,22 @@ function Ticket({
             )
           })}
       </div>
+      {alEntregar && porEntregar.length > 1 && (
+        <div className="border-t border-linea px-3 pt-3">
+          <Boton
+            icono="servir"
+            className="w-full"
+            onClick={() =>
+              alEntregar(
+                porEntregar.map((i) => i.id),
+                `${porEntregar.length} productos`,
+              )
+            }
+          >
+            {`Todo entregado (${porEntregar.length})`}
+          </Boton>
+        </div>
+      )}
       {esperan > 0 && (
         <p className="border-t border-linea px-3 pt-2 text-sm text-proceso-texto">
           {`${esperan} ${esperan === 1 ? 'espera' : 'esperan'} su curso: «Enviar» no ${esperan === 1 ? 'lo manda' : 'los manda'}; sale${esperan === 1 ? '' : 'n'} al tocar «Marchar».`}
@@ -940,11 +1007,13 @@ function LineaTicket({
   item: i,
   alTocar,
   alSumar,
+  alEntregar,
 }: {
   pedido: PedidoVisible
   item: ItemPedido
   alTocar: () => void
   alSumar: (delta: number) => void
+  alEntregar: (() => void) | null
 }) {
   const sinEnviar = i.estado === 'pendiente' || i.estado === 'retenido'
   const porConfirmar = pedido.itemsPorConfirmar.has(i.id)
@@ -996,6 +1065,17 @@ function LineaTicket({
             onClick={() => alSumar(1)}
           />
         </>
+      )}
+      {alEntregar && (
+        <Boton
+          variante={i.estado === 'listo' ? 'exito' : 'secundario'}
+          icono="servir"
+          aria-label={`Entregar: ${i.nombre}`}
+          className="px-3"
+          onClick={alEntregar}
+        >
+          Entregar
+        </Boton>
       )}
     </li>
   )

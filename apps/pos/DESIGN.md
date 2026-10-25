@@ -78,7 +78,12 @@ Los tonos `libre`, `proceso` y `alerta` **no cambian con la marca**.
   - tarjetas de producto con foto (4:3) o, sin foto, el ícono de su estación;
   - el precio y el «+»;
   - `×N` cuando ya va en el pedido;
-  - el panel del pedido a la derecha con productos, total y Enviar.
+  - el panel del pedido a la derecha con productos, total y Enviar;
+  - en lo que está en cocina, «Entregar» por línea y «Todo entregado».
+- **Estados de la mesa**, de lo más urgente a lo menos: tomando pedido (ámbar), listo para llevar (verde, ícono servir), en preparación (ámbar), servida (gris), libre (verde).
+- **Pedidos en cocina** (caja): tarjetas por comanda del color de su demora (verde a tiempo, ámbar y rojo según los minutos del local), con «Listo» y «Reimprimir»; abajo, lo listo para llevar con «Recuperar». Arriba, la alerta de impresoras que no imprimen, con lo que espera y «Descartar».
+- **Pantalla de cocina**: sin barra lateral, para una tablet o un televisor; letra más grande, un solo botón «Listo» por tarjeta, reloj, conexión y sonido.
+- **Cocina e impresoras**: cómo recibe cada estación, las impresoras con su prueba y su panel de edición, las pantallas y los minutos del ámbar y el rojo.
 - **Marca del restaurante:** una muestra de cada marca, fuera del tema actual, y «Usar».
 
 ## Marca del restaurante

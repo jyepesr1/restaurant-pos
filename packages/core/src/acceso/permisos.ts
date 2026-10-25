@@ -128,6 +128,12 @@ export const PERMISOS_DE_COBRO: ReadonlySet<Permiso> = new Set<Permiso>([
   'cerrar_mesa',
 ])
 
+/**
+ * Lo único que puede hacer una pantalla de cocina (ADR-015): marcar listo, recuperar lo marcado
+ * por error y marcar agotados. Su usuario técnico tiene un rol oculto con estos permisos.
+ */
+export const PERMISOS_PANTALLA: readonly Permiso[] = ['marcar_preparacion', 'agotar_producto']
+
 export type ClaveRol = 'admin' | 'cajero' | 'reportes' | 'mesero'
 
 /**

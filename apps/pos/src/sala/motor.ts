@@ -11,6 +11,7 @@ import {
   ClienteSync,
   type CodigoError,
   type EstadoConexion,
+  type EstadoImpresora,
   GestorConexion,
   type Manejadores,
   type MensajeHub,
@@ -140,6 +141,44 @@ export interface CatalogoEdicion {
   })[]
 }
 
+/** Una impresora de comandas como la edita «Cocina e impresoras» (ADR-015). */
+export interface ImpresoraCocina {
+  id?: string
+  nombre: string
+  conexion: 'red' | 'usb'
+  direccion: string
+  puerto: number | null
+  ancho: 58 | 80
+  pagina_codigos: 'pc850' | 'wpc1252' | 'sin_tildes'
+  respaldo_id: string | null
+  estacion_ids: string[]
+  activo: boolean
+}
+
+/** Lo que devuelve `POST /api/cocina/configuracion`. */
+export interface ConfiguracionCocina {
+  estaciones: { id: string; nombre: string }[]
+  impresoras: (ImpresoraCocina & { id: string })[]
+  estados: EstadoImpresora[]
+  pantallas: {
+    dispositivo_id: string
+    nombre: string
+    estacion_ids: string[]
+    ultimo_uso: string | null
+  }[]
+  tiempos: { amarillo: number; rojo: number }
+}
+
+/** Una comanda que no ha salido de su impresora (`POST /api/impresion/pendientes`). */
+export interface TrabajoPendiente {
+  id: string
+  impresora: string
+  que: string
+  intentos: number
+  error: string | null
+  creado_en: string
+}
+
 export interface Instantanea {
   cargado: boolean
   equipo: Equipo | null
@@ -155,6 +194,8 @@ export interface Instantanea {
   sesionCerradaPor: 'inactividad' | null
   /** El hub rechazó al equipo (token inválido o revocado, app vieja). */
   errorHub: { codigo: CodigoError; mensaje: string } | null
+  /** Cómo están las impresoras de comandas, según el último aviso del hub (ADR-015). */
+  impresoras: EstadoImpresora[]
 }
 
 const MINUTOS_POR_DEFECTO = 30
@@ -248,6 +289,7 @@ export class Sala {
     cambios: 0,
     sesionCerradaPor: null,
     errorHub: null,
+    impresoras: [],
   }
   private readonly oyentes = new Set<() => void>()
   private cargando: Promise<void> | null = null
@@ -513,6 +555,65 @@ export class Sala {
     return r
   }
 
+  // ── Cocina e impresoras (ADR-015) ────────────────────────────────────
+
+  configuracionCocina(): Promise<ConfiguracionCocina> {
+    return this.conSesion('/api/cocina/configuracion', {})
+  }
+
+  async guardarImpresora(impresora: ImpresoraCocina): Promise<string> {
+    const { id } = await this.conSesion<{ id: string }>('/api/impresoras', { impresora })
+    return id
+  }
+
+  async probarImpresora(impresoraId: string): Promise<void> {
+    await this.conSesion('/api/impresoras/prueba', { impresora_id: impresoraId })
+  }
+
+  pendientesImpresion(): Promise<TrabajoPendiente[]> {
+    return this.conSesion('/api/impresion/pendientes', {})
+  }
+
+  async descartarTrabajo(trabajoId: string): Promise<void> {
+    await this.conSesion('/api/impresion/descartar', { trabajo_id: trabajoId })
+  }
+
+  async estacionesDePantalla(dispositivoId: string, estacionIds: string[]): Promise<void> {
+    await this.conSesion('/api/pantallas/estaciones', {
+      dispositivo_id: dispositivoId,
+      estacion_ids: estacionIds,
+    })
+  }
+
+  async tiemposCocina(amarillo: number, rojo: number): Promise<void> {
+    await this.conSesion('/api/cocina/tiempos', { amarillo, rojo })
+  }
+
+  /**
+   * Este equipo pasa a ser pantalla de cocina de esas estaciones: la sesión del administrador se
+   * cierra y queda la de la pantalla, que no vence por inactividad.
+   */
+  async convertirEnPantalla(nombre: string, estacionIds: string[]): Promise<void> {
+    const r = await this.conSesion<{
+      sesion_id: string
+      secreto: string
+      usuario: Sesion['usuario']
+      permisos: string[]
+    }>('/api/pantallas', { nombre, estacion_ids: estacionIds })
+    const equipo: Equipo = { ...this.equipoActual(), tipo: 'kds', nombre }
+    await this.db.guardarAjuste(CLAVES.equipo, equipo)
+    const sesion: Sesion = {
+      sesionId: r.sesion_id,
+      secreto: r.secreto,
+      usuario: r.usuario,
+      permisos: r.permisos,
+      ultimoUso: Date.now(),
+    }
+    await this.db.guardarAjuste(CLAVES.sesion, sesion)
+    this.cambiar({ equipo, sesion, sesionCerradaPor: null })
+    await this.actualizarCatalogo().catch(() => {})
+  }
+
   /** Retira un equipo (perdido, robado): deja de sincronizar y nadie puede entrar en él. */
   async retirarEquipo(dispositivoId: string): Promise<void> {
     await this.conSesion(`/api/dispositivos/${encodeURIComponent(dispositivoId)}/revocar`, {})
@@ -541,8 +642,9 @@ export class Sala {
 
   /** Si pasó el tiempo sin uso, se cierra la sesión: el siguiente toque pide el PIN. */
   vencerSesionSiToca(ahora = Date.now()) {
-    const { sesion, catalogo } = this.estado
-    if (!sesion) return
+    const { sesion, catalogo, equipo } = this.estado
+    // Una pantalla de cocina queda abierta siempre: nadie la usa con las manos sucias para entrar.
+    if (!sesion || equipo?.tipo === 'kds') return
     const minutos = catalogo?.restaurante.sesionInactividadMin ?? MINUTOS_POR_DEFECTO
     if (ahora - sesion.ultimoUso >= minutos * 60_000) this.salir('inactividad').catch(avisarFallo)
   }
@@ -592,6 +694,7 @@ export class Sala {
       alMensaje: (m) => {
         if (m.tipo === 'catalogo' && m.version !== this.estado.catalogo?.version)
           this.traerCatalogoSiHaySesion()
+        if (m.tipo === 'impresoras') this.cambiar({ impresoras: m.impresoras })
         void cliente.recibir(m)
       },
       alCambiarEstado: (conexion) => this.cambiar({ conexion }),
@@ -619,6 +722,14 @@ export class Sala {
   cambiarVisibilidad(visible: boolean) {
     this.gestor?.cambiarVisibilidad(visible)
     if (visible) this.vencerSesionSiToca()
+  }
+
+  /**
+   * La hora del hub según este equipo (ms): los tiempos de cocina se miden contra la hora en que
+   * el hub recibió la comanda, y una tablet con el reloj adelantado no debe verlo todo en ámbar.
+   */
+  ahoraHub(ahora = Date.now()): number {
+    return this.cliente ? Date.parse(this.cliente.horaEstimadaHub(ahora)) : ahora
   }
 
   /** El cliente de sincronización (para leer pedidos y eventos locales). */

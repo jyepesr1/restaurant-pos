@@ -17,6 +17,8 @@ describe('configuración del restaurante', () => {
       redondeo_efectivo_modo: 'cercano_mitad_abajo',
       sesion_inactividad_min: 30,
       marca: 'faro',
+      cocina_amarillo_min: 10,
+      cocina_rojo_min: 20,
     })
   })
 

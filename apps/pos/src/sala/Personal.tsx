@@ -341,7 +341,7 @@ function FilaPersona({
 }
 
 /** Una pregunta antes de algo sin vuelta atrás, dentro del panel. */
-function Confirmar({
+export function Confirmar({
   pregunta,
   si,
   alConfirmar,

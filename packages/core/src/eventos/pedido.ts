@@ -357,7 +357,8 @@ export const Aceptacion = z.strictObject({
   dia_operativo: Dia,
   asignaciones: z.strictObject({
     numero_dia: z.int().min(1).optional(),
-    numero_comanda: z.int().min(1).optional(),
+    /** Número del día de cada comanda de un envío, por `comanda_id` (ADR-015). */
+    numeros_comanda: z.record(Ulid, z.int().min(1)).optional(),
   }),
   afecta: z.array(Ulid).max(20),
   autorizado_por_id: Ulid.nullable(),

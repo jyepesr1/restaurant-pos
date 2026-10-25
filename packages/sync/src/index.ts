@@ -26,6 +26,7 @@ export {
   type TipoConflicto,
 } from './hub/almacen'
 export {
+  type CambioPedido,
   type Conexion,
   type ConfigHub,
   type ControlAcceso,
@@ -38,6 +39,7 @@ export { type Autenticador, SalaSync } from './hub/sala'
 export { huella, huellaEvento, jsonCanonico } from './huella'
 export {
   type CodigoError,
+  type EstadoImpresora,
   MensajeDispositivo,
   type MensajeHub,
   type ResultadoEvento,

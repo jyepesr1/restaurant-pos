@@ -143,7 +143,7 @@ export class ClienteSync {
   recibir(mensaje: MensajeHub): Promise<void> {
     const generacion = this.generacion
     // Un latido o un pong no cambian nada guardado: la pantalla no tiene por qué releer.
-    const escribe = !['latido', 'pong', 'catalogo'].includes(mensaje.tipo)
+    const escribe = !['latido', 'pong', 'catalogo', 'impresoras'].includes(mensaje.tipo)
     return this.enEspera(async () => {
       if (generacion === this.generacion) await this.procesar(mensaje, generacion)
     }, escribe).catch((error) => this.alFallo?.(error))
@@ -296,6 +296,7 @@ export class ClienteSync {
       case 'pong':
       case 'latido':
       case 'catalogo':
+      case 'impresoras':
         return
     }
   }

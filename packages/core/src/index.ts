@@ -6,6 +6,7 @@ export {
   PERMISOS,
   PERMISOS_CON_CONTRASENA,
   PERMISOS_DE_COBRO,
+  PERMISOS_PANTALLA,
   type Permiso,
   permisoPara,
   ROLES_DE_FABRICA,

@@ -11,7 +11,10 @@ import {
   mostrarPines,
   prepararAcceso,
   prepararSincronizacion,
+  zonaHorariaDe,
 } from './arranque'
+import { ColaImpresion } from './impresion/cola'
+import { trabajosDeEvento } from './impresion/comandas'
 import { crearServidor } from './servidor'
 
 const PUERTO_POR_DEFECTO = 4000
@@ -71,10 +74,34 @@ function prepararTodo(db: BaseSqlite) {
       (aviso) => console.warn(`⚠ Seguridad: ${aviso}`),
       (dispositivoId, revocadoEn) => sala?.revocar(dispositivoId, revocadoEn),
     )
-    sala = prepararSincronizacion(db, dirDatos, acceso.restauranteId, acceso.acceso, (error, id) =>
-      console.error(`Un evento hizo fallar al hub y se rechazó (${id}):`, error),
+    const zonaHoraria = zonaHorariaDe(db, acceso.restauranteId)
+    // Las comandas que quedaron en la cola antes de cerrar el hub salen al arrancar.
+    const cola = new ColaImpresion({
+      db,
+      restauranteId: acceso.restauranteId,
+      alCambiar: (estados) => sala?.avisarImpresoras(estados),
+      alFallo: (error) => console.error('Falló la cola de impresión:', error),
+    })
+    const comandas = { db, restauranteId: acceso.restauranteId, zonaHoraria }
+    sala = prepararSincronizacion(
+      db,
+      dirDatos,
+      acceso.restauranteId,
+      acceso.acceso,
+      (error, id) => console.error(`Un evento hizo fallar al hub y se rechazó (${id}):`, error),
+      {
+        // Dentro de la transacción del evento; la cola arranca cuando ya quedó guardado.
+        alGuardar: (evento, cambios) => {
+          if (trabajosDeEvento(comandas, evento, cambios) > 0) setImmediate(() => cola.despertar())
+        },
+        alFalloAlGuardar: (error, id) => {
+          console.error(`No se pudo armar la comanda del evento ${id}:`, error)
+          cola.comandaSinArmar()
+        },
+      },
     )
-    return { ...acceso, sala }
+    cola.despertar()
+    return { ...acceso, sala, cola, zonaHoraria }
   } catch (error) {
     const detalle = error instanceof Error ? error.message : String(error)
     console.error(`No se pudo preparar el acceso del hub: ${detalle}`)
@@ -84,7 +111,7 @@ function prepararTodo(db: BaseSqlite) {
 
 const puerto = leerPuerto()
 const db = prepararBase()
-const { acceso, restauranteId, sala, admin, avisos } = prepararTodo(db)
+const { acceso, restauranteId, sala, cola, zonaHoraria, admin, avisos } = prepararTodo(db)
 const app = crearServidor({
   dirApp,
   diagnostico: { dirDatos },
@@ -98,13 +125,25 @@ const app = crearServidor({
     mesaOcupada: (mesaId) => sala.tienePedidoAbierto(mesaId),
     dirFotos: join(dirDatos, 'fotos'),
   },
+  impresion: {
+    db,
+    restauranteId,
+    acceso,
+    cola,
+    zonaHoraria,
+    alCambiar: (version) => sala.avisarCatalogo(version),
+    permitirLocales: process.env.IMPRESORA_PRUEBA === '1',
+    esEquipoDelHub: (ip) => ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1',
+  },
   versionBase: versionActual(db),
   logger: true,
 })
 
 for (const senal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(senal, async () => {
+    cola.detener()
     await app.close()
+    await cola.listo()
     db.close()
     process.exit(0)
   })

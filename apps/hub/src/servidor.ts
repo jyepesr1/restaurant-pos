@@ -7,6 +7,7 @@ import { rutasPersonal } from './acceso/rutas-personal'
 import type { ServicioAcceso } from './acceso/servicio'
 import { type OpcionesCatalogo, rutasCatalogo } from './catalogo'
 import { type OpcionesDiagnostico, rutasDiagnostico } from './diagnostico'
+import { type OpcionesImpresion, rutasImpresion } from './impresion/rutas'
 import { type OpcionesSincronizacion, rutasSincronizacion } from './sincronizacion'
 
 export interface OpcionesServidor {
@@ -20,6 +21,8 @@ export interface OpcionesServidor {
   sincronizacion?: OpcionesSincronizacion
   /** Sin esta opción no se entrega el catálogo ni se administra el personal. */
   catalogo?: OpcionesCatalogo
+  /** Sin esta opción no hay impresoras, cola de comandas ni pantallas de cocina (ADR-015). */
+  impresion?: OpcionesImpresion
   /** Versión de la base, para mostrarla en el chequeo de salud. */
   versionBase?: number
   logger?: boolean
@@ -31,6 +34,7 @@ export function crearServidor({
   acceso,
   sincronizacion,
   catalogo,
+  impresion,
   versionBase,
   logger = false,
 }: OpcionesServidor = {}): FastifyInstance {
@@ -50,6 +54,9 @@ export function crearServidor({
   if (catalogo) {
     app.register(rutasCatalogo, catalogo)
     app.register(rutasPersonal, catalogo)
+  }
+  if (impresion) {
+    app.register(rutasImpresion, impresion)
   }
 
   // Un error interno no se le muestra al equipo (podría llevar SQL o rutas del PC): queda en el

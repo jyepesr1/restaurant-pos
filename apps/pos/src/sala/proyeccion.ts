@@ -54,15 +54,20 @@ export const itemsVigentes = (estado: EstadoPedido): ItemPedido[] =>
     .filter((i) => i.estado !== 'anulado')
     .sort((a, b) => a.orden - b.orden)
 
-export type EstadoMesaDemo = 'libre' | 'tomando' | 'en_cocina'
+export type EstadoMesaDemo = 'libre' | 'tomando' | 'listo' | 'en_cocina' | 'servida'
 
-/** Estado de la mesa en el plano: con algo sin enviar es "tomando"; todo enviado, "en cocina". */
+/**
+ * Estado de la mesa en el plano, de lo más urgente a lo menos: con algo sin enviar es «tomando»;
+ * con algo listo en cocina, «listo para llevar»; con algo en cocina, «en preparación»; con todo
+ * entregado, «servida» (ADR-015).
+ */
 export function estadoMesa(pedidos: readonly PedidoVisible[]): EstadoMesaDemo {
   const items = pedidos.flatMap((p) => itemsVigentes(p.estado))
   if (items.length === 0) return 'libre'
-  return items.some((i) => i.estado === 'pendiente' || i.estado === 'retenido')
-    ? 'tomando'
-    : 'en_cocina'
+  if (items.some((i) => i.estado === 'pendiente' || i.estado === 'retenido')) return 'tomando'
+  if (items.some((i) => i.estado === 'listo')) return 'listo'
+  if (items.some((i) => i.estado !== 'entregado')) return 'en_cocina'
+  return 'servida'
 }
 
 /** Clave de lo agotado: el producto entero, o una de sus variantes (la botella, no la copa). */

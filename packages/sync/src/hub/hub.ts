@@ -34,6 +34,19 @@ export interface ConfigHub {
    * `catalogo_version` (docs/DINERO.md#precio-copiado). Sin él, no se revisa.
    */
   precios?: RevisorPrecios
+  /**
+   * Corre dentro de la transacción del evento, ya guardado: lo que escriba queda o se pierde con
+   * él (los trabajos de impresión de las comandas, ADR-015). Recibe cada pedido que toca el
+   * evento, antes y después de aplicarlo. Si falla, el evento igual se acepta y el fallo va a
+   * `alFalloAlGuardar`: una impresora mal configurada no puede frenar los pedidos.
+   */
+  alGuardar?: (evento: EventoPedido, pedidos: CambioPedido[]) => void
+  alFalloAlGuardar?: (error: unknown, eventoId: string) => void
+}
+
+export interface CambioPedido {
+  antes: EstadoPedido | null
+  despues: EstadoPedido | null
 }
 
 /** Devuelve qué no coincide con el catálogo, o `null` si todo coincide. */
@@ -374,19 +387,15 @@ export class HubSync {
       secuencia: max + 1,
       recibido_en: recibidoEn,
       dia_operativo: dia,
-      asignaciones:
-        evento.tipo === 'PedidoAbierto'
-          ? { numero_dia: this.almacen.aperturasDelDia(dia) + 1 }
-          : {},
+      asignaciones: this.asignaciones(evento, dia),
       afecta: [],
       autorizado_por_id: acceso.autorizadoPorId,
     } as EventoPedido
 
     // 6. Aplicar a cada pedido y decidir. Un evento de producto (agotado) no toca pedidos.
     const esDePedido = evento.agregado_tipo === 'pedido'
-    const resultados = esDePedido
-      ? agregados.map((pedidoId) => aplicarEvento(this.pedido(pedidoId), candidato))
-      : []
+    const antes = esDePedido ? agregados.map((pedidoId) => this.pedido(pedidoId)) : []
+    const resultados = antes.map((pedido) => aplicarEvento(pedido, candidato))
     const problema = resultados.find(
       (r) => r.problema && r.problema.tipo !== 'items_omitidos',
     )?.problema
@@ -428,6 +437,16 @@ export class HubSync {
         ...conflicto,
       })
     }
+    if (this.config.alGuardar) {
+      try {
+        this.config.alGuardar(
+          candidato,
+          antes.map((pedido, i) => ({ antes: pedido, despues: resultados[i]?.estado ?? null })),
+        )
+      } catch (error) {
+        this.config.alFalloAlGuardar?.(error, id)
+      }
+    }
     return { resultado: this.confirmado(candidato), aceptado: candidato }
   }
 
@@ -450,6 +469,28 @@ export class HubSync {
       descripcion: 'Dos pedidos abiertos en la misma mesa: únelos en caja',
       agregadoId: evento.agregado_id,
     }
+  }
+
+  /**
+   * Números que da el hub: el del pedido del día al abrirlo, y uno por comanda al enviar, seguidos
+   * en el día operativo (ADR-006 y ADR-015).
+   */
+  private asignaciones(evento: EventoNuevo, dia: string): EventoPedido['asignaciones'] {
+    if (evento.tipo === 'PedidoAbierto')
+      return { numero_dia: this.almacen.aperturasDelDia(dia) + 1 }
+    if (evento.tipo === 'ItemsEnviados') {
+      // Solo las comandas que de verdad mandan algo a cocina: lo que ya envió otro equipo no gasta
+      // número, y la cocina no ve saltos (#1, #3).
+      const antes = this.pedido(evento.agregado_id)
+      const conAlgo = evento.datos.comandas.filter((c) =>
+        c.item_ids.some((id) => antes?.items[id]?.estado === 'pendiente'),
+      )
+      const base = this.almacen.comandasDelDia(dia)
+      return {
+        numeros_comanda: Object.fromEntries(conAlgo.map((c, i) => [c.comanda_id, base + i + 1])),
+      }
+    }
+    return {}
   }
 
   /** La hora del dispositivo corregida vale si cae en una ventana razonable; si no, la del hub. */

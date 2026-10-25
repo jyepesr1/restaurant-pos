@@ -1,5 +1,6 @@
 import type { Catalogo } from '@pos/sync'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useAhora } from '../ui/ahora'
 import { Etiqueta, TONOS_SUAVES, type Tono } from '../ui/Etiqueta'
 import { minutos, pesos } from '../ui/formato'
 import { Icono, type NombreIcono } from '../ui/iconos'
@@ -21,7 +22,32 @@ import { type EstadoMesaDemo, estadoMesa, itemsVigentes, type PedidoVisible } fr
 const ESTADOS: Record<EstadoMesaDemo, { tono: Tono; icono: NombreIcono; texto: string }> = {
   libre: { tono: 'libre', icono: 'circulo', texto: 'Libre' },
   tomando: { tono: 'proceso', icono: 'lapiz', texto: 'Tomando pedido' },
+  listo: { tono: 'libre', icono: 'servir', texto: 'Listo para llevar' },
   en_cocina: { tono: 'proceso', icono: 'fuego', texto: 'En preparación' },
+  servida: { tono: 'neutro', icono: 'check', texto: 'Servida' },
+}
+
+/** Borde de la mesa y color de sus sillas, por el tono de su estado (clases completas). */
+const BORDE: Record<Tono, string> = {
+  libre: 'border-libre-fuerte/45',
+  proceso: 'border-proceso-fuerte/45',
+  alerta: 'border-alerta-fuerte/45',
+  accion: 'border-accion-fuerte/45',
+  neutro: 'border-neutro-fuerte/45',
+}
+const SILLA: Record<Tono, string> = {
+  libre: 'bg-libre-fuerte/55',
+  proceso: 'bg-proceso-fuerte/70',
+  alerta: 'bg-alerta-fuerte/70',
+  accion: 'bg-accion-fuerte/60',
+  neutro: 'bg-neutro-fuerte/55',
+}
+const PUNTO: Record<Tono, string> = {
+  libre: 'bg-libre-fuerte',
+  proceso: 'bg-proceso-fuerte',
+  alerta: 'bg-alerta-fuerte',
+  accion: 'bg-accion-fuerte',
+  neutro: 'bg-neutro-fuerte',
 }
 
 type Mesa = Catalogo['mesas'][number]
@@ -41,15 +67,6 @@ const recordado = (clave: string) => {
   } catch {
     return null
   }
-}
-
-function useAhora(cadaMs = 30_000) {
-  const [ahora, setAhora] = useState(Date.now)
-  useEffect(() => {
-    const t = setInterval(() => setAhora(Date.now()), cadaMs)
-    return () => clearInterval(t)
-  }, [cadaMs])
-  return ahora
 }
 
 /** Lo que se dice de una mesa: estado, tiempo desde que se abrió, total y quién la atiende. */
@@ -172,11 +189,11 @@ export function Mesas() {
 
           {/* Qué dice cada color, con cuántas mesas hay así (en la zona que se ve). */}
           <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm" aria-label="Estado de las mesas">
-            {(['libre', 'tomando', 'en_cocina'] as const).map((estado) => (
+            {(['libre', 'tomando', 'listo', 'en_cocina', 'servida'] as const).map((estado) => (
               <li key={estado} className="flex items-center gap-2">
                 <span
                   aria-hidden="true"
-                  className={`size-3 rounded-full ${estado === 'libre' ? 'bg-libre-fuerte' : 'bg-proceso-fuerte'}`}
+                  className={`size-3 rounded-full ${PUNTO[ESTADOS[estado].tono]}`}
                 />
                 <span className="font-medium">{ESTADOS[estado].texto}</span>
                 <span className="cifras text-texto-suave">{enZona(estado)}</span>
@@ -422,12 +439,9 @@ function PlanoZona({
 }
 
 const claseMesa = (r: Resumen) =>
-  r.estado === 'libre'
-    ? 'border-libre-fuerte/45 bg-libre-suave text-libre-texto'
-    : `border-proceso-fuerte/45 ${TONOS_SUAVES[ESTADOS[r.estado].tono]}`
+  `${BORDE[ESTADOS[r.estado].tono]} ${TONOS_SUAVES[ESTADOS[r.estado].tono]}`
 
-const claseSilla = (r: Resumen) =>
-  r.estado === 'libre' ? 'bg-libre-fuerte/55' : 'bg-proceso-fuerte/70'
+const claseSilla = (r: Resumen) => SILLA[ESTADOS[r.estado].tono]
 
 function MesaEnPlano({
   mesa,

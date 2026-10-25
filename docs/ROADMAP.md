@@ -31,7 +31,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.3 | Toma de pedido por comensal y curso | ✅ |
 | 1.3b | Acceso por rol ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)): meseros con PIN desde la IP sin emparejar; caja, administración y reportes con usuario y contraseña; roles y permisos que decide cada restaurante | ✅ |
 | 1.3c | Marca del producto (**Faro**, [ADR-014](DECISIONES.md#adr-014--faro-nombre-identidad-y-estilo-del-producto)) y rediseño: barra lateral, salón con sillas y pedidos abiertos, carta en tarjetas con foto opcional, marca opcional por restaurante | ✅ |
-| 1.4 | Comandas: impresora ESC/POS por estación y KDS básico | ⏳ |
+| 1.4 | Comandas: impresora ESC/POS por estación y KDS básico ([ADR-015](DECISIONES.md#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero)): comanda impresa por estación con cola y respaldo, pantalla de cocina opcional, «Entregado» del mesero y «Pedidos en cocina» en la caja | ✅ |
 | 1.5 | Mover ítems, cambiar y unir mesas, anular con motivo y permiso | ⏳ |
 | 1.6 | Precuenta, división, pagos mixtos y propina | ⏳ |
 | 1.7 | Apertura, cierre y arqueo de caja | ⏳ |
@@ -67,6 +67,140 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 1.4 — Comandas impresas y pantalla de cocina ✅
+
+Decisiones del dueño del 25-oct-2026 ([ADR-015](DECISIONES.md#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero)). En La Spritzzería la cocina no tiene pantalla: trabaja con la comanda en papel. Las impresoras son **Jaltech POS 80** de red (cable al router).
+
+**Cómo llega cada pedido:**
+- **Cada estación decide** en **Cocina e impresoras**: impresora, pantalla o las dos. Si una no tiene ninguna, la pantalla lo advierte.
+- **Comanda impresa:**
+  - lleva estación, mesa o canal, número de comanda del día, pedido, mesero, hora y personas;
+  - los productos van por curso, con las opciones resaltadas y las notas en negro;
+  - avisa los cursos que siguen en espera;
+  - también hay comanda de reimpresión, de anulación y de cambio.
+- **Si la impresora no responde:**
+  - se reintenta sola (espera creciente hasta 30 s, sin rendirse);
+  - a los 3 fallos la comanda sale por la **impresora de respaldo**, si tiene;
+  - todos los equipos ven arriba en rojo «Cocina no imprime»;
+  - en «Pedidos en cocina» se ve por qué y lo que espera, y la caja puede descartar una comanda atascada.
+- **Si se va la luz justo después de enviar**, la comanda igual sale al volver: se guarda con el pedido, en la misma transacción.
+- **Tildes y eñes**: cada impresora tiene su tabla de caracteres (Latina, Windows o sin tildes). La página de prueba muestra cuál sirve.
+
+**Quién marca qué:**
+- **Sin pantalla en cocina**, el mesero toca **Entregar** al llevar el plato, o **Todo entregado**. Se puede deshacer unos segundos.
+- **Pedidos en cocina** (nueva sección):
+  - lo enviado que falta entregar, por estación;
+  - el tiempo desde el envío y su color: verde, ámbar desde 10 minutos, rojo desde 20 (se cambian);
+  - quien puede marcar toca **Listo** si cocina avisa, y el mesero de la mesa recibe un aviso en su celular;
+  - **Reimprimir** una comanda.
+- **Pantalla de cocina (opcional)**:
+  - el administrador entra con su usuario en una tablet, va a **Cocina e impresoras** y la **convierte**;
+  - desde ahí muestra solo las comandas de sus estaciones, con sonido, y el cocinero solo toca **Listo**;
+  - lo marcado por error se recupera;
+  - se quita retirándola en **Personal y roles, Equipos**.
+- **Salón**: dos estados nuevos de mesa, **Listo para llevar** (verde) y **Servida** (gris).
+
+**Por dentro:**
+- `packages/printing` (nuevo): la comanda en líneas del ancho de la impresora (48 caracteres en 80 mm) y en bytes ESC/POS.
+  - Un nombre de producto nunca puede mandarle órdenes a la impresora: se quitan los bytes de control.
+- **Migración 6**:
+  - tablas `impresora` y `trabajo_impresion` (la cola, que no se borra);
+  - columnas `dispositivo.estacion_ids`, `usuario.pantalla` y `rol.oculto`.
+- **Hub**:
+  - numera las comandas por día operativo (`asignaciones.numeros_comanda`);
+  - arma los trabajos dentro de la transacción del evento (`alGuardar`), y si falla el evento igual se acepta;
+  - avisa el estado de las impresoras por WebSocket (`impresoras`).
+- **La pantalla de cocina** marca a nombre de un usuario técnico propio. Solo puede marcar listo y agotados, no sale en Personal y no entra con PIN ni contraseña.
+- **Impresora de prueba**: `pnpm --filter @pos/hub impresora-prueba` muestra en la ventana cada comanda, para probar sin papel.
+
+Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entre otros:
+- **Hub**:
+  - una impresora caída con respaldo nunca volvía: ahora se vuelve a probar al vencer su espera y, si responde, imprime lo suyo;
+  - la dirección de una impresora servía para tantear la red: ahora solo IP privadas y puertos 9100 a 9109;
+  - el PC de la caja no se puede convertir en pantalla;
+  - una comanda que no se arma ya no se pierde en silencio: todos los equipos ven la alerta 15 minutos, y lo armado a medias se deshace;
+  - una estación archivada ya no impide guardar una impresora o una pantalla;
+  - una impresora archivada sin respaldo hacía girar la cola cuatro veces por segundo;
+  - la página de prueba ya no sale por otra impresora y se descarta sola a los 5 minutos;
+  - el orden de la cola no depende del reloj del PC;
+  - descartar deja también el equipo;
+  - con solo el temporizador, la comanda de una impresora caída nunca llegaba al respaldo;
+  - la caja no veía por qué no salía lo de una impresora archivada;
+  - anular o cambiar un plato que se pasó a otra mesa no le llegaba a la cocina;
+  - un envío que no imprimía nada gastaba un número de comanda (la cocina veía #1 y #3);
+  - una IP con ceros a la izquierda («010.0.0.1») salía fuera de la red del local;
+  - un registro de la cola no se puede reemplazar.
+- **Pantalla**:
+  - la pantalla de cocina no mostraba las impresoras caídas;
+  - su letra era pequeña para verse de lejos;
+  - el sonido podía no sonar en una tablet hasta tocarla: ahora lo dice;
+  - la tablet se apagaba sola;
+  - su reloj adelantado pintaba todo de ámbar: los tiempos se miden con la hora del hub;
+  - mostraba todas las estaciones mientras no sabía las suyas;
+  - en el celular, «Entregar» queda a un toque en la barra de abajo;
+  - el mesero ya no ve «Listo» (es de la cocina o la caja);
+  - el aviso de listo no se repite al cambiar de mesero;
+  - USB ya no se puede elegir;
+  - textos técnicos (IP, tabla de caracteres, ámbar y rojo) en palabras del restaurante.
+
+**Pruebas:**
+- **Hub:** 1.111.
+  - Comandas: numeración por día y sin saltos, lo ya enviado por otro equipo, envíos tardíos, los cuatro tipos de comanda, dos restaurantes en la misma base.
+  - Cola: reintentos, respaldo y vuelta de la principal, archivadas, reinicio con trabajos pendientes, una impresora caída no frena la sincronización.
+  - Las 8 rutas con su matriz de permisos y datos inválidos.
+  - Pantalla de cocina: sus permisos, el rol oculto y retirarla.
+  - TCP real contra una impresora de prueba.
+- **App:** 630. Lo que está en cocina, la demora, los estados de mesa, convertir en pantalla, que no se cierre por inactividad y el aviso de impresoras.
+- **Impresión:** 49, con propiedades al azar: ninguna línea pasa del ancho y ningún texto produce un byte de control.
+- **Base:** 353 (más la `it.fails` de la 1.3b), con la migración 6 sobre una base real de la versión 5.
+- **Núcleo:** 345.
+- **Sincronización:** 170.
+
+**Queda pendiente:**
+- **Impresoras USB**: la de la caja es para recibos y cajón (1.6 y 1.7). La impresión por USB llega con el instalador de Windows (1.10).
+- **El timbre de la impresora** (algunas Jaltech de cocina traen zumbador): no se usa todavía.
+- **Agrupar productos iguales** y la pantalla de expedidor: Fase 3 (KDS completo).
+- **Tiempo por mesa** en el plano con los colores de cocina: en una tarea siguiente.
+- **Volver a usar una pantalla** sin retirarla («Dejar de ser pantalla» desde la propia tablet con la contraseña del administrador): hoy se retira desde la caja y la tablet entra de nuevo.
+- **Agotados desde la pantalla de cocina**: el permiso existe; falta el botón.
+- **«Todo entregado» entrega también lo que cocina no marcó listo**, a propósito: en el piloto nadie marca listo.
+- **Volver a cocina algo entregado** pasados los 5 s del Deshacer.
+- **El aviso de listo** no lleva al pedido; falta un contador «Listos para llevar» en el salón del celular.
+- **Indicador permanente de impresoras** (también cuando están bien): hoy solo se ve cuando una falla.
+- **«A tiempo» en verde** puede confundirse con «Listo para llevar»: validar con el dueño.
+- **Rendimiento**: «Pedidos en cocina» y el aviso de listo releen los eventos del equipo por separado.
+
+**Cómo probarlo:**
+
+Antes, con las impresoras:
+
+1. Conecta cada Jaltech con su cable de red al router del local y préndela.
+2. Saca su hoja de configuración: apágala, mantén presionado el botón de avance de papel (FEED) y préndela sin soltarlo; suéltalo cuando empiece a imprimir. Debes ver una hoja con una línea **IP Address**, por ejemplo `192.168.1.87`. Anótala.
+3. En el PC de la caja, abre **Configuración → Red e Internet → Propiedades** y mira la **Dirección IPv4**, por ejemplo `192.168.1.20`. Los tres primeros números deben coincidir con los de la impresora (`192.168.1`). Si no coinciden (por ejemplo, la impresora dice `192.168.123.100`), hay que cambiar la IP de la impresora con el programa de Jaltech: avísame y te doy esos pasos aparte.
+
+En el hub:
+
+4. Cierra el hub si está abierto (**Ctrl+C**) y arráncalo con la versión nueva:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+   Debes ver «Base de datos actualizada a la versión 6».
+5. En el PC de la caja entra como administrador. En la barra lateral toca **Cocina e impresoras**. Debes ver Cocina y Barra con «No le llega nada».
+6. Toca **Agregar impresora**. Escribe «Cocina», toca la estación **Cocina**, deja «Cable de red», escribe la IP del paso 2, deja el puerto 9100 y 80 mm, y toca **Guardar**. Debe salir en la lista con «Lista».
+7. Toca **Prueba**. La impresora de la cocina debe sacar una hoja «PRUEBA DE IMPRESIÓN»: la regla de números debe ocupar una sola línea y las tildes y eñes deben verse bien. Si salen símbolos raros, toca **Editar**, elige **Windows (1252)**, guarda y prueba otra vez.
+8. Repite los pasos 6 y 7 con la de barra («Barra», estación **Barra**). En **Si no responde, imprimir en** puedes elegir la otra como respaldo.
+9. En el celular de un mesero abre una mesa, agrega un plato y una bebida y toca **Enviar**. En la cocina debe salir la comanda del plato y en la barra la de la bebida, con la mesa y el número de comanda.
+10. En la caja toca **Pedidos en cocina**. Deben estar las dos comandas en verde, con su tiempo.
+11. En el celular abre la misma mesa. Al lado de cada producto debe haber **Entregar**. Toca **Todo entregado**. En la caja, las comandas deben desaparecer de «Pedidos en cocina» y la mesa debe quedar **Servida** en el salón.
+12. Desconecta el cable de red de la impresora de barra y envía otra bebida. En unos segundos, arriba debe salir en rojo «Barra no imprime». Vuelve a conectar el cable: la comanda debe salir sola y la alerta debe desaparecer.
+
+Opcional, la pantalla de cocina:
+
+13. En una tablet, entra con el usuario del administrador, ve a **Cocina e impresoras**, elige **Cocina** en «Usar este equipo como pantalla de cocina» y toca **Convertir este equipo → Convertir**. Debe quedar la pantalla con las comandas de cocina. Toca **Listo** en una: en el celular del mesero debe salir «Mesa N: listo para llevar».
+14. Para quitarla: en la caja, **Personal y roles → Equipos**, toca **Retirar** en «Pantalla cocina».
 
 ### 1.3c — Faro: marca del producto y rediseño ✅
 
@@ -253,7 +387,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entr
   - no hay tope ni limpieza automática;
   - se ven y se retiran en Equipos.
 - **Permisos que cambian**: si cambian los permisos de un rol, quien ya está trabajando ve los botones nuevos al volver a entrar. El hub aplica lo nuevo de inmediato.
-- **Pantalla de cocina**: cómo entra (sin rol Cocina de fábrica) se decide en la 1.4.
+- **Pantalla de cocina**: cómo entra (sin rol Cocina de fábrica) se decidió en la 1.4: la convierte el administrador ([ADR-015](DECISIONES.md#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero)).
 - **Roles de un hub ya instalado**: un hub que ya existía conserva los permisos de sus roles. En el tuyo, el Cajero no tiene anular ni descontar hasta que los marques en **Personal y roles**.
 - **Pasos viejos**: los de las tareas 0.7 y 0.10 que dicen «emparejar» ahora son «entrar».
 - **Transacciones anidadas sin savepoint**: si una transacción de adentro falla y quien la llama atrapa el error y sigue, lo que alcanzó a escribir queda. Ningún código lo hace hoy y el comentario de `enTransaccion` lo advierte; hay una prueba `it.fails` que lo documenta.
@@ -393,7 +527,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entr
 **Queda pendiente:**
 - Unir y separar mesas, y los estados precuenta, por pagar, sucia y reservada: tareas 1.5 y 1.6.
 - Pedidos sin mesa (para llevar, domicilio, barra) y los comensales: tarea 1.3.
-- Color de demora por tiempo en la mesa: con los tiempos de cocina de la 1.4.
+- Color de demora por tiempo en la mesa: los tiempos de cocina ya existen (1.4); falta pintarlos en el plano.
 - El gesto de «atrás» del celular dentro de la app no pregunta por cambios sin guardar (recargar y cerrar la pestaña sí). El borrador del editor no se guarda en el equipo: si se cae el navegador, se pierde lo no guardado.
 - Una zona archivada no se puede volver a mostrar desde la pantalla todavía.
 - No avisa si dos mesas quedan una encima de otra.

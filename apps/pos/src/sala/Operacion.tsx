@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Boton } from '../ui/Boton'
 import { aplicarMarca, esMarca } from '../ui/marca'
 import { Carta } from './Carta'
+import { AvisoListos, PantallaCocina, PedidosEnCocina } from './Cocina'
+import { CocinaAjustes } from './CocinaAjustes'
 import { sala, useSala } from './contexto'
 import { Entrar } from './Entrar'
 import { Marca } from './Marca'
@@ -47,9 +49,30 @@ export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLS
   // Sin equipo todavía, entrar lo registra en el hub (ya no se empareja antes).
   if (!estado.equipo || !estado.sesion) return <Entrar />
   if (!estado.catalogo) return <SinCatalogo />
-  if (ruta === '/personal' && estado.sesion.permisos.includes('administrar_usuarios'))
-    return <Personal />
-  if (ruta === '/marca' && estado.sesion.permisos.includes('administrar_usuarios')) return <Marca />
+  // Una pantalla de cocina no ve nada más (ADR-015).
+  if (estado.equipo.tipo === 'kds') return <PantallaCocina />
+  return (
+    <>
+      <AvisoListos />
+      <Pantalla ruta={ruta} parametros={parametros} permisos={estado.sesion.permisos} />
+    </>
+  )
+}
+
+function Pantalla({
+  ruta,
+  parametros,
+  permisos,
+}: {
+  ruta: string
+  parametros: URLSearchParams
+  permisos: string[]
+}) {
+  if (ruta === '/cocina/ajustes' && permisos.includes('administrar_dispositivos'))
+    return <CocinaAjustes />
+  if (ruta === '/cocina') return <PedidosEnCocina />
+  if (ruta === '/personal' && permisos.includes('administrar_usuarios')) return <Personal />
+  if (ruta === '/marca' && permisos.includes('administrar_usuarios')) return <Marca />
   if (ruta === '/carta') return <Carta />
   if (ruta === '/plano') return <PlanoEditor />
   if (ruta === '/pedido') return <TomaPedido key={parametros.get('mesa')} />
@@ -60,7 +83,7 @@ function EquipoRechazado({ codigo, mensaje }: { codigo: string; mensaje: string 
   const { pendientes } = useSala()
   const [confirmando, setConfirmando] = useState(false)
   useEffect(() => {
-    document.title = 'Equipo rechazado · POS'
+    document.title = 'Equipo rechazado · Faro'
   }, [])
   const olvidar = () => void sala.olvidarEquipo()
   return (

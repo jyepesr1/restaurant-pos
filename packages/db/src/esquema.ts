@@ -21,6 +21,7 @@ export const TABLAS_VERSIONADAS = [
   'producto_grupo_modificador',
   'modificador',
   'producto_estacion',
+  'impresora',
 ] as const
 
 /** Solo se agregan filas: la base rechaza UPDATE y DELETE. */
@@ -48,6 +49,7 @@ export const TABLAS_LOCALES = [
   'contador',
   'evento_cuarentena',
   'migracion',
+  'trabajo_impresion',
 ] as const
 
 export const COLUMNAS_COMUNES = [

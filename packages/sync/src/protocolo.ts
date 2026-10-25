@@ -49,6 +49,20 @@ export type MensajeHub =
   | { tipo: 'latido' }
   /** El catálogo cambió y quedó en esta versión: el dispositivo lo vuelve a pedir por HTTP. */
   | { tipo: 'catalogo'; version: number }
+  /** Cómo están las impresoras de comandas; llega al conectar y cada vez que una cambia (ADR-015). */
+  | { tipo: 'impresoras'; impresoras: EstadoImpresora[] }
+
+/** Una impresora de comandas vista desde los equipos. */
+export interface EstadoImpresora {
+  id: string
+  nombre: string
+  /** `falla`: no respondió al último intento; `lista`: imprimió o aún no tuvo trabajo. */
+  estado: 'lista' | 'falla'
+  /** Qué pasó, en palabras para la caja. */
+  error: string | null
+  /** Comandas esperando en esa impresora. */
+  pendientes: number
+}
 
 /** Tipos de dispositivo y lo que ve cada uno (docs/SYNC.md#mensajes-por-websocket). */
 export type TipoDispositivo = 'mesero' | 'caja' | 'kds'

@@ -132,6 +132,16 @@ export class AlmacenSqlite implements AlmacenHub {
     return Number(fila?.n ?? 0)
   }
 
+  comandasDelDia(dia: string): number {
+    const fila = this.db
+      .prepare(
+        `SELECT coalesce(sum((SELECT count(*) FROM json_each(asignaciones, '$.numeros_comanda'))), 0) AS n
+         FROM evento WHERE restaurante_id = ? AND tipo = 'ItemsEnviados' AND dia_operativo = ?`,
+      )
+      .get(this.restauranteId, dia)
+    return Number(fila?.n ?? 0)
+  }
+
   eventosDesde(desde: number, limite: number): EventoPedido[] {
     return this.db
       .prepare(

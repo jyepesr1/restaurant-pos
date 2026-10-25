@@ -3,6 +3,7 @@ import { sql as comprobanteAtado } from './0002_comprobante_atado'
 import { sql as catalogoCambio } from './0003_catalogo_cambio'
 import { sql as elementoPlano } from './0004_elemento_plano'
 import { sql as usuarioContrasena } from './0005_usuario_contrasena'
+import { sql as comandas } from './0006_comandas'
 
 export interface Migracion {
   version: number
@@ -21,4 +22,5 @@ export const MIGRACIONES: readonly Migracion[] = [
   { version: 3, nombre: 'catalogo_cambio', sql: catalogoCambio },
   { version: 4, nombre: 'elemento_plano', sql: elementoPlano },
   { version: 5, nombre: 'usuario_contrasena', sql: usuarioContrasena },
+  { version: 6, nombre: 'comandas', sql: comandas },
 ]

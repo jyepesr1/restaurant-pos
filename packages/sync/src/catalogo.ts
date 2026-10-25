@@ -10,6 +10,9 @@ export interface Catalogo {
     sesionInactividadMin: number
     /** La marca con que se ve el POS (tarea 1.3c); sin ella, Faro. */
     marca?: string | null
+    /** Minutos desde el envío tras los que lo de cocina pasa a ámbar y a rojo (ADR-015). */
+    cocinaAmarilloMin?: number
+    cocinaRojoMin?: number
   }
   /** Zonas o pisos del salón, en su orden. */
   zonas: { id: string; nombre: string; piso: number }[]
@@ -40,7 +43,13 @@ export interface Catalogo {
   }[]
   /** Quién atiende (para mostrar el mesero de cada mesa); solo nombre, nada de credenciales. */
   personal: { id: string; nombre: string }[]
-  estaciones: { id: string; nombre: string }[]
+  /**
+   * Cocina, barra… Cómo recibe cada una (ADR-015): `imprime` si tiene alguna impresora activa,
+   * `pantalla` si alguna pantalla de cocina la muestra. Un hub de antes de la 1.4 no los manda.
+   */
+  estaciones: { id: string; nombre: string; imprime?: boolean; pantalla?: boolean }[]
+  /** Las pantallas de cocina y lo que muestra cada una (para que cada pantalla sepa lo suyo). */
+  pantallas?: { dispositivoId: string; nombre: string; estacionIds: string[] }[]
   categorias: {
     id: string
     nombre: string
