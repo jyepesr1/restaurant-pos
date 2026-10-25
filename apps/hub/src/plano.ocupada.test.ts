@@ -143,8 +143,19 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
       new Date().toISOString(),
     )
     ;(db as BaseSqlite & { close(): void }).close()
-    const pinDe = (nombre: string) => pines.find((p) => p.nombre === nombre)?.pin as string
-    return { dirDatos, pinAdmin: acceso.pin as string, pinDe }
+    /** Con qué entra cada quien: usuario y contraseña si los tiene (ADR-013), si no su PIN. */
+    const credencialesDe = (nombre: string) => {
+      if (nombre === 'Administrador')
+        return {
+          usuario: acceso.admin.usuario as string,
+          contrasena: acceso.admin.contrasena as string,
+        }
+      const p = pines.find((x) => x.nombre === nombre)
+      return p?.usuario
+        ? { usuario: p.usuario, contrasena: p.contrasena as string }
+        : { pin: p?.pin as string }
+    }
+    return { dirDatos, credencialesDe }
   }
 
   async function levantar(dirDatos: string, puerto: number) {
@@ -156,7 +167,7 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
   }
 
   async function escenario() {
-    const { dirDatos, pinAdmin, pinDe } = prepararCarpeta()
+    const { dirDatos, credencialesDe } = prepararCarpeta()
     const puerto = await puertoLibre()
     await levantar(dirDatos, puerto)
     const url = `http://127.0.0.1:${puerto}`
@@ -176,22 +187,19 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
         await fetch(url + ruta, { headers: { authorization: `Bearer ${token}` } })
       ).json()) as Json
 
-    let primero: string | undefined
-    const emparejar = async (tipo: 'caja' | 'mesero', nombre: string) => {
-      const { cuerpo: c } = await post(
-        '/api/emparejamientos',
-        { pin: pinAdmin, nombre, tipo },
-        primero,
+    // Entran sin emparejar (ADR-013): el hub registra cada equipo.
+    const emparejar = async (tipo: 'caja' | 'mesero', _nombre: string) => {
+      const { cuerpo: r } = await post(
+        '/api/entrar',
+        credencialesDe(tipo === 'caja' ? 'Administrador' : 'Mesero 2'),
       )
-      const { cuerpo: r } = await post('/api/emparejar', { codigo: c.codigo })
-      primero ??= r.token
-      return r as { token: string; dispositivo_id: string }
+      return r.equipo as { token: string; dispositivo_id: string }
     }
     const caja = await emparejar('caja', 'Caja')
     const celular = await emparejar('mesero', 'Celular')
     const sesion = async (equipo: { token: string }, nombre: string) =>
-      (await post('/api/sesiones', { pin: pinDe(nombre) }, equipo.token)).cuerpo as Json
-    const gerente = await sesion(caja, 'Gerente')
+      (await post('/api/entrar', credencialesDe(nombre), equipo.token)).cuerpo as Json
+    const gerente = await sesion(caja, 'Administrador')
     const mesero = await sesion(celular, 'Mesero 1')
 
     const wsUrl = `${url.replace('http', 'ws')}/api/sync/ws`

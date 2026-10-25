@@ -299,7 +299,8 @@ describe('PIN en un dispositivo', () => {
     const sesion = m.entrar(conexion, 'mesero')
     const datos = () => ({
       ...sesion,
-      accion: 'anular_item_enviado',
+      // El cajero puede autorizar anulaciones (ADR-013), no cortesías.
+      accion: 'cortesia',
       agregadoId: nuevoId(),
       eventoId: nuevoId(),
       huella: '0'.repeat(64),

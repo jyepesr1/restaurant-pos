@@ -6,7 +6,12 @@ import { aplicarMigraciones, type BaseSqlite } from '@pos/db'
 import { abrirBase } from '@pos/db/node'
 import { HubSync, SalaSync } from '@pos/sync'
 import { AlmacenSqlite } from '@pos/sync/sqlite'
-import { asegurarAdministrador, asegurarRestaurante, asegurarRoles } from './acceso/inicial'
+import {
+  type Administrador,
+  asegurarAdministrador,
+  asegurarRestaurante,
+  asegurarRoles,
+} from './acceso/inicial'
 import { Intentos } from './acceso/intentos'
 import { cargarClave } from './acceso/secretos'
 import { ServicioAcceso } from './acceso/servicio'
@@ -26,7 +31,7 @@ export function abrirDatos(dirDatos: string): { db: BaseSqlite; aplicadas: numbe
   return { db, aplicadas: aplicarMigraciones(db) }
 }
 
-/** Restaurante, roles, administrador y la clave de los PIN (tarea 0.7). */
+/** Restaurante, roles, administrador y la clave de los PIN (tareas 0.7 y 1.3b). */
 export function prepararAcceso(
   db: BaseSqlite,
   dirDatos: string,
@@ -47,11 +52,20 @@ export function prepararAcceso(
     alRevocar,
   })
   const admin = asegurarAdministrador(db, acceso, roles.admin, nueva)
-  return { acceso, restauranteId, roles, pin: admin.pin, avisos: admin.avisos }
+  return { acceso, restauranteId, roles, admin, avisos: admin.avisos }
+}
+
+/** Lo nuevo del administrador para mostrarlo una vez; vacío si no hay nada nuevo. */
+export function lineasAdministrador(admin: Administrador): string[] {
+  return [
+    ...(admin.usuario ? [`  Usuario:          ${admin.usuario}`] : []),
+    ...(admin.contrasena ? [`  Contraseña:       ${admin.contrasena}`] : []),
+    ...(admin.pin ? [`  PIN para autorizar: ${admin.pin}`] : []),
+  ]
 }
 
 /**
- * Muestra PIN recién creados una sola vez: el hub guarda solo su huella. Si la salida no es una
+ * Muestra PIN y contraseñas recién creados una sola vez: el hub guarda solo su huella. Si la salida no es una
  * ventana (el servicio de Windows la manda a un archivo de log), van a un archivo aparte, solo
  * legible por el hub, para leerlo y borrarlo.
  */

@@ -6,6 +6,7 @@ import type { SalaSync } from '@pos/sync'
 import {
   abrirDatos,
   dirDatosDe,
+  lineasAdministrador,
   mostrarPines,
   prepararAcceso,
   prepararSincronizacion,
@@ -82,7 +83,7 @@ function prepararTodo(db: BaseSqlite) {
 
 const puerto = leerPuerto()
 const db = prepararBase()
-const { acceso, restauranteId, sala, pin: pinAdmin, avisos } = prepararTodo(db)
+const { acceso, restauranteId, sala, admin, avisos } = prepararTodo(db)
 const app = crearServidor({
   dirApp,
   diagnostico: { dirDatos },
@@ -125,15 +126,18 @@ if (!existsSync(dirApp)) {
 }
 
 for (const aviso of avisos) console.warn(`⚠ ${aviso}`)
-if (pinAdmin)
+const datosAdmin = lineasAdministrador(admin)
+if (datosAdmin.length > 0)
   mostrarPines(dirDatos, {
     ventana: [
-      `\nPIN del administrador: ${pinAdmin}`,
+      '\nAdministrador (para entrar a la caja):',
+      ...datosAdmin,
       'Anótalo en un lugar seguro: no se vuelve a mostrar.',
     ],
     archivo: ARCHIVO_PIN_ADMIN,
-    contenido: `${pinAdmin}\n`,
-    aviso: (ruta) => `\nEl PIN del administrador quedó en ${ruta}: anótalo y borra ese archivo.`,
+    contenido: `${datosAdmin.join('\n')}\n`,
+    aviso: (ruta) =>
+      `\nLos datos del administrador quedaron en ${ruta}: anótalos y borra ese archivo.`,
   })
 
 console.log('\nHub en marcha. Abre en los dispositivos de la misma red:')

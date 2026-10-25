@@ -1,4 +1,11 @@
-import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  randomInt,
+  scryptSync,
+  timingSafeEqual,
+} from 'node:crypto'
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -46,6 +53,80 @@ export function mismaHuella(a: string, b: string): boolean {
   const x = Buffer.from(a)
   const y = Buffer.from(b)
   return x.length === y.length && timingSafeEqual(x, y)
+}
+
+// ── Usuario y contraseña (ADR-013) ────────────────────────────────────
+
+export const LARGO_MINIMO_CONTRASENA = 8
+export const LARGO_MAXIMO_CONTRASENA = 200
+
+/**
+ * Costo de scrypt (N = 2^costo). 15 tarda unos 50 ms en un PC de caja: frena a quien tenga la
+ * base y pruebe contraseñas, sin que entrar se sienta lento. Las pruebas usan menos.
+ */
+export const COSTO_CONTRASENA = 15
+
+/** El largo se cuenta como se guarda (NFC): «ñ» es una letra aunque llegue como n + tilde. */
+export const esContrasenaValida = (c: string) => {
+  const n = c.normalize('NFC').length
+  return n >= LARGO_MINIMO_CONTRASENA && n <= LARGO_MAXIMO_CONTRASENA
+}
+
+/**
+ * El usuario como se guarda: sin espacios a los lados, en minúsculas y sin tildes («María» es
+ * «maria»); solo letras, números, punto, guion y guion bajo, de 3 a 40. `null` si no sirve.
+ */
+export function normalizarUsuario(usuario: string): string | null {
+  const u = usuario
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+  return /^[a-z0-9._-]{3,40}$/.test(u) ? u : null
+}
+
+/** Huella lenta con sal: `scrypt$costo$r$p$sal$huella`, todo lo que hace falta para comprobarla. */
+export function huellaContrasena(contrasena: string, costo = COSTO_CONTRASENA): string {
+  const sal = randomBytes(16)
+  const huella = scryptSync(contrasena.normalize('NFC'), sal, 32, opcionesScrypt(costo))
+  return ['scrypt', costo, 8, 1, sal.toString('base64url'), huella.toString('base64url')].join('$')
+}
+
+/** Si la contraseña da esa huella, comparando en tiempo constante. */
+export function contrasenaCoincide(contrasena: string, guardada: string): boolean {
+  const [esquema, costo, r, p, sal, huella] = guardada.split('$')
+  if (esquema !== 'scrypt' || !sal || !huella || r !== '8' || p !== '1') return false
+  const n = Number(costo)
+  if (!Number.isInteger(n) || n < 1 || n > 20) return false
+  const esperada = Buffer.from(huella, 'base64url')
+  const calculada = scryptSync(
+    contrasena.normalize('NFC'),
+    Buffer.from(sal, 'base64url'),
+    esperada.length,
+    opcionesScrypt(n),
+  )
+  return calculada.length === esperada.length && timingSafeEqual(calculada, esperada)
+}
+
+const opcionesScrypt = (costo: number) => ({
+  N: 2 ** costo,
+  r: 8,
+  p: 1,
+  // scrypt usa 128·N·r bytes; el doble deja margen sin pasar de lo razonable.
+  maxmem: Math.max(32 * 1024 * 1024, 2 * 128 * 2 ** costo * 8),
+})
+
+/** Sin letras que se confundan: la primera contraseña del administrador se copia de la ventana. */
+const ALFABETO_CONTRASENA = 'abcdefghjkmnpqrstuvwxyz23456789'
+
+/** Tres grupos de cuatro (`k7mp-x9rt-4hwa`): unos 59 bits, fácil de copiar a mano. */
+export function generarContrasena(): string {
+  const grupo = () =>
+    Array.from(
+      { length: 4 },
+      () => ALFABETO_CONTRASENA[randomInt(ALFABETO_CONTRASENA.length)],
+    ).join('')
+  return [grupo(), grupo(), grupo()].join('-')
 }
 
 /** Sin letras que se confundan (0/O, 1/I/L): el código se puede dictar si el QR no lee. */

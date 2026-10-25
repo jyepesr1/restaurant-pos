@@ -11,9 +11,11 @@ describe('arranque', () => {
     const m = montarAcceso()
     const ahora = m.reloj()
     expect(asegurarRestaurante(m.db, ahora)).toBe(m.restauranteId)
-    expect(asegurarRoles(m.db, m.restauranteId, ahora)).toEqual(m.roles)
+    expect(m.roles).toMatchObject(asegurarRoles(m.db, m.restauranteId, ahora))
     expect(asegurarAdministrador(m.db, m.acceso, m.roles.admin, false)).toEqual({
       pin: null,
+      usuario: null,
+      contrasena: null,
       avisos: [],
     })
 
@@ -279,7 +281,8 @@ describe('qué eventos puede crear cada quien', () => {
     const s = m.entrar(conexion, 'gerente')
     const datos = {
       ...s,
-      accion: 'anular_item_enviado',
+      // El cajero puede autorizar anulaciones (ADR-013), no cortesías.
+      accion: 'cortesia',
       agregadoId: nuevoId(),
       eventoId: nuevoId(),
       huella: 'a'.repeat(64),
@@ -299,9 +302,11 @@ describe('qué eventos puede crear cada quien', () => {
     })
   })
 
-  it('pagos y cierres solo desde la caja, aunque el usuario sea cajero', () => {
+  it('pagos y cierres solo desde la caja, aunque el usuario sea cajero (no desde la pantalla de cocina)', () => {
     const m = montarAcceso()
-    const celular = m.emparejar('mesero').conexion
+    // Un celular se vuelve de caja al entrar el cajero con contraseña (ADR-013); una pantalla de
+    // cocina, no.
+    const celular = m.emparejar('kds').conexion
     const caja = m.emparejar('caja').conexion
     const enCelular = m.entrar(celular, 'cajero')
     const enCaja = m.entrar(caja, 'cajero')

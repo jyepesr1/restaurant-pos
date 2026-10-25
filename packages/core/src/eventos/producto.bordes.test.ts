@@ -281,16 +281,14 @@ describe('permisoPara con eventos de producto', () => {
     expect(esPermiso(permisoPara(e))).toBe(true)
   })
 
-  it('no es de caja y lo tienen cajero, cocina, gerente y admin, no el mesero ni el contador', () => {
+  it('no es de caja y de fábrica lo tienen cajero y admin, no el mesero ni reportes', () => {
     for (const tipo of TIPOS) expect(SOLO_DESDE_CAJA.has(tipo)).toBe(false)
     const tiene = (rol: keyof typeof ROLES_DE_FABRICA) =>
       (ROLES_DE_FABRICA[rol].permisos as readonly string[]).includes('agotar_producto')
     expect(tiene('cajero')).toBe(true)
-    expect(tiene('cocina')).toBe(true)
-    expect(tiene('gerente')).toBe(true)
     expect(tiene('admin')).toBe(true)
     expect(tiene('mesero')).toBe(false)
-    expect(tiene('contador')).toBe(false)
+    expect(tiene('reportes')).toBe(false)
   })
 })
 

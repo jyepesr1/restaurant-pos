@@ -185,10 +185,11 @@ describe('acceso en el hub de sincronización', () => {
     })
   })
 
-  it('un cajero cobra y cierra desde la caja; el mismo cajero en un celular, no', () => {
+  it('un cajero cobra y cierra desde la caja; el mismo cajero en la pantalla de cocina, no', () => {
     const m = montarHub()
     const { pedido } = pedidoConItemEnviado(m)
-    const celular = m.emparejar('mesero').conexion
+    // En un celular entrar con contraseña lo vuelve de caja (ADR-013); en la de cocina, no.
+    const celular = m.emparejar('kds').conexion
     const s = m.entrar(celular, 'cajero')
     const cierre = m.evento(
       celular,

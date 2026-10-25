@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { TIPOS_EVENTO_PEDIDO } from '../eventos/pedido'
 import { evento } from '../pruebas/fabrica'
-import { esPermiso, PERMISOS, permisoPara, ROLES_DE_FABRICA, SOLO_DESDE_CAJA } from './permisos'
+import {
+  DESCRIPCION_PERMISOS,
+  esPermiso,
+  PERMISOS,
+  permisoPara,
+  ROLES_DE_FABRICA,
+  SOLO_DESDE_CAJA,
+} from './permisos'
 
 describe('permisos', () => {
   it('reconoce solo las claves fijas', () => {
@@ -10,22 +17,26 @@ describe('permisos', () => {
     expect(esPermiso(3)).toBe(false)
   })
 
-  it('los roles de fábrica siguen la matriz de MODELO_DATOS.md', () => {
+  it('los roles de fábrica siguen la matriz de MODELO_DATOS.md (ADR-013)', () => {
     const tiene = (rol: keyof typeof ROLES_DE_FABRICA, permiso: string) =>
       (ROLES_DE_FABRICA[rol].permisos as readonly string[]).includes(permiso)
 
     expect(tiene('admin', 'administrar_dispositivos')).toBe(true)
-    expect(tiene('gerente', 'administrar_dispositivos')).toBe(false)
-    expect(tiene('gerente', 'anular_item_enviado')).toBe(true)
+    expect(tiene('admin', 'administrar_usuarios')).toBe(true)
+    expect(tiene('cajero', 'administrar_usuarios')).toBe(false)
+    expect(tiene('cajero', 'anular_item_enviado')).toBe(true)
     expect(tiene('mesero', 'anular_item_enviado')).toBe(false)
     expect(tiene('mesero', 'registrar_pago')).toBe(false)
     expect(tiene('cajero', 'cerrar_mesa')).toBe(true)
     expect(tiene('cajero', 'anular_pago')).toBe(false)
-    expect(tiene('cocina', 'marcar_preparacion')).toBe(true)
-    expect(tiene('cocina', 'tomar_pedido')).toBe(false)
-    expect(ROLES_DE_FABRICA.contador.permisos).toEqual(['ver_reportes'])
+    expect(ROLES_DE_FABRICA.reportes.permisos).toEqual(['ver_reportes'])
     for (const rol of Object.values(ROLES_DE_FABRICA))
       for (const permiso of rol.permisos) expect(PERMISOS).toContain(permiso)
+  })
+
+  it('la pantalla de roles describe cada permiso una sola vez', () => {
+    const descritos = DESCRIPCION_PERMISOS.flatMap((g) => g.permisos.map((p) => p.permiso))
+    expect([...descritos].sort()).toEqual([...PERMISOS].sort())
   })
 
   it('cada tipo de evento tiene su permiso; la cortesía pide uno propio', () => {

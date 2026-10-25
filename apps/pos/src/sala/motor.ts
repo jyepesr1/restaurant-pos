@@ -19,7 +19,7 @@ import {
 import { AlmacenIndexedDb, BaseDispositivo } from './almacen'
 import { ErrorApi, llamar, SIN_HUB } from './api'
 
-// El motor de la app en el dispositivo: las credenciales del equipo, la sesión del PIN, el
+// El motor de la app en el dispositivo: las credenciales del equipo, la sesión (PIN o contraseña), el
 // catálogo guardado y la sincronización (ClienteSync sobre IndexedDB y un WebSocket que mantiene
 // GestorConexion). La pantalla lo lee con `useSala` y crea eventos con `registrar`.
 
@@ -39,6 +39,37 @@ export interface Sesion {
   permisos: string[]
   /** Último uso en este dispositivo (ms): tras `sesionInactividadMin` sin uso se pide el PIN. */
   ultimoUso: number
+}
+
+/** Lo que devuelve `POST /api/personal/leer`. */
+export interface Personal {
+  roles: {
+    id: string
+    nombre: string
+    /** De fábrica: no se renombra ni se archiva. */
+    sistema: boolean
+    activo: boolean
+    permisos: string[]
+    personas: number
+  }[]
+  personas: {
+    id: string
+    nombre: string
+    rolId: string
+    activo: boolean
+    /** El usuario con que entra a la caja; `null` si entra con su PIN. */
+    usuario: string | null
+  }[]
+  /** Los equipos que el hub registró, del usado más hace poco al que menos. */
+  equipos: {
+    id: string
+    nombre: string
+    tipo: TipoDispositivo
+    registradoEn: string | null
+    revocadoEn: string | null
+    ultimoUso: string | null
+    ultimaPersona: string | null
+  }[]
 }
 
 /** Un cambio del editor de la carta: crea el registro si no existe, o cambia esos campos. */
@@ -301,15 +332,41 @@ export class Sala {
     })
   }
 
-  /** Abre una sesión con el PIN (requiere el hub) y trae el catálogo. */
-  async entrar(pin: string) {
-    const equipo = this.equipoActual()
+  /**
+   * Entra con el PIN (meseros) o con usuario y contraseña (requiere el hub) y trae el catálogo.
+   * Un navegador sin equipo no se empareja antes: con el acierto, el hub lo registra y le da su
+   * token (ADR-013).
+   */
+  async entrar(datos: string | { usuario: string; contrasena: string }) {
+    const equipo = this.estado.equipo
     const r = await this.api<{
+      equipo: {
+        dispositivo_id: string
+        token: string
+        nombre: string
+        tipo: TipoDispositivo
+      } | null
+      tipo: TipoDispositivo
       sesion_id: string
       secreto: string
       usuario: Sesion['usuario']
       permisos: string[]
-    }>('POST', '/api/sesiones', { cuerpo: { pin }, token: equipo.token })
+    }>('POST', '/api/entrar', {
+      cuerpo: typeof datos === 'string' ? { pin: datos } : datos,
+      token: equipo?.token,
+    })
+    const nuevo: Equipo | null = r.equipo
+      ? {
+          dispositivoId: r.equipo.dispositivo_id,
+          token: r.equipo.token,
+          nombre: r.equipo.nombre,
+          tipo: r.equipo.tipo,
+        }
+      : equipo && equipo.tipo !== r.tipo
+        ? { ...equipo, tipo: r.tipo }
+        : null
+    // Primero el equipo: sin él, la sesión no sirve de nada.
+    if (nuevo) await this.db.guardarAjuste(CLAVES.equipo, nuevo)
     const sesion: Sesion = {
       sesionId: r.sesion_id,
       secreto: r.secreto,
@@ -318,7 +375,12 @@ export class Sala {
       ultimoUso: Date.now(),
     }
     await this.db.guardarAjuste(CLAVES.sesion, sesion)
-    this.cambiar({ sesion, sesionCerradaPor: null })
+    this.cambiar({
+      ...(nuevo ? { equipo: nuevo, errorHub: null } : {}),
+      sesion,
+      sesionCerradaPor: null,
+    })
+    if (r.equipo && nuevo) await this.conectar(nuevo)
     await this.actualizarCatalogo().catch(() => {})
   }
 
@@ -354,7 +416,10 @@ export class Sala {
     })
     // Una respuesta rara no reemplaza la carta buena que ya está guardada.
     if (typeof catalogo?.version !== 'number' || !Array.isArray(catalogo.mesas))
-      throw new ErrorApi('respuesta_invalida', 'El hub respondió algo que no es la carta')
+      throw new ErrorApi(
+        'respuesta_invalida',
+        'La caja respondió algo que no es la carta: intenta de nuevo',
+      )
     // Dos pedidos de la carta a la vez: la respuesta que llega tarde no pisa una más nueva.
     if (catalogo.version < (this.estado.catalogo?.version ?? -1)) return
     const completo = completarCatalogo(catalogo)
@@ -386,6 +451,63 @@ export class Sala {
     })
     await this.actualizarCatalogo().catch(avisarFallo)
     return version
+  }
+
+  // ── Personal y roles (tarea 1.3b) ────────────────────────────────────
+
+  /** Roles y personas, también los archivados (pide `administrar_usuarios`). */
+  async personal(): Promise<Personal> {
+    return this.conSesion('/api/personal/leer', {})
+  }
+
+  /** Crea un rol o cambia su nombre, sus permisos o si está activo. */
+  async guardarRol(rol: {
+    id?: string
+    nombre: string
+    permisos: string[]
+    activo?: boolean
+  }): Promise<string> {
+    return (await this.conSesion<{ id: string }>('/api/personal/roles', { rol })).id
+  }
+
+  /**
+   * Crea o cambia a una persona. Devuelve su PIN si es nueva o se regeneró: solo se ve esta vez.
+   */
+  async guardarPersona(persona: {
+    id?: string
+    nombre: string
+    rol_id: string
+    activo?: boolean
+    acceso?: { tipo: 'pin' } | { tipo: 'contrasena'; usuario: string; contrasena?: string }
+    regenerar_pin?: boolean
+  }): Promise<{ id: string; pin: string | null }> {
+    const r = await this.conSesion<{ id: string; pin: string | null }>('/api/personal/personas', {
+      persona,
+    })
+    // El nombre de cada persona viene en la carta: traerla para verlo en el salón.
+    await this.actualizarCatalogo().catch(avisarFallo)
+    return r
+  }
+
+  /** Retira un equipo (perdido, robado): deja de sincronizar y nadie puede entrar en él. */
+  async retirarEquipo(dispositivoId: string): Promise<void> {
+    await this.conSesion(`/api/dispositivos/${encodeURIComponent(dispositivoId)}/revocar`, {})
+  }
+
+  /** Una llamada con la sesión abierta. Si el hub dice que ya no vale, se pide entrar de nuevo. */
+  private async conSesion<T>(ruta: string, cuerpo: object): Promise<T> {
+    this.usar()
+    const sesion = this.estado.sesion
+    if (!sesion) throw new Error('Sin sesión: vuelve a entrar')
+    try {
+      return await this.api<T>('POST', ruta, {
+        cuerpo: { sesion_id: sesion.sesionId, secreto: sesion.secreto, ...cuerpo },
+        token: this.equipoActual().token,
+      })
+    } catch (e) {
+      if (e instanceof ErrorApi && e.codigo === 'sesion_invalida') await this.salir()
+      throw e
+    }
   }
 
   /** Trae la carta de nuevo; si falla, se queda la guardada (se reintenta al reconectar). */
@@ -528,7 +650,8 @@ export class Sala {
   }
 
   private equipoActual(): Equipo {
-    if (!this.estado.equipo) throw new Error('Este equipo no está emparejado')
+    if (!this.estado.equipo)
+      throw new Error('Este equipo todavía no ha entrado: escribe tu PIN o tu contraseña')
     return this.estado.equipo
   }
 }

@@ -16,7 +16,7 @@ export class ErrorApi extends Error {
 }
 
 export const SIN_HUB =
-  'No hay conexión con el hub. Revisa el Wi-Fi del local y que la caja esté encendida.'
+  'No hay conexión con la caja. Revisa el Wi-Fi del local y que la caja esté encendida.'
 
 export async function llamar<T>(
   metodo: 'GET' | 'POST',
@@ -42,7 +42,7 @@ export async function llamar<T>(
   if (!r.ok)
     throw new ErrorApi(
       String(datos?.error ?? 'error'),
-      String(datos?.mensaje ?? `El hub respondió ${r.status}`),
+      String(datos?.mensaje ?? `La caja respondió con un error (${r.status}). Intenta de nuevo.`),
       Number(datos?.espera_ms ?? 0),
     )
   return datos as T

@@ -235,10 +235,10 @@ describe('el hub arranca después del seed', () => {
 
       const b = hubs.levantar()
       expect(b.restauranteId).toBe(a.restauranteId)
-      expect(b.admin).toEqual({ pin: null, avisos: [] })
+      expect(b.admin).toEqual({ pin: null, usuario: null, contrasena: null, avisos: [] })
       expect(b.claveNueva).toBe(false)
       expect(una(b.db, 'SELECT count(*) AS n FROM producto').n).toBe(productos)
-      expect(una(b.db, 'SELECT count(*) AS n FROM usuario WHERE activo = 1').n).toBe(8)
+      expect(una(b.db, 'SELECT count(*) AS n FROM usuario WHERE activo = 1').n).toBe(6)
       expect(una(b.db, 'SELECT nombre FROM restaurante').nombre).toBe('La Spritzzería')
       expect(versionCatalogo(b.db)).toBe(versiones)
 

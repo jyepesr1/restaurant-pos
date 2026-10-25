@@ -108,14 +108,14 @@ describe('arranque del hub (proceso real)', () => {
   it('al reiniciar con la misma carpeta no migra de nuevo y conserva los datos', async () => {
     const dirDatos = join(carpeta, 'datos')
     hub = await arrancarHub(await entorno(dirDatos))
-    expect(hub.salida()).toContain('El PIN del administrador quedó en')
+    expect(hub.salida()).toContain('Los datos del administrador quedaron en')
     await hub.detener()
 
     hub = await arrancarHub(await entorno(dirDatos))
     expect(hub.salida()).toContain(`Base de datos en la versión ${ULTIMA}.`)
     expect(hub.salida()).not.toContain('actualizada')
-    // El PIN se mostró una sola vez; el restaurante y sus roles no se duplican.
-    expect(hub.salida()).not.toContain('PIN del administrador quedó')
+    // Los datos se mostraron una sola vez; el restaurante y sus roles no se duplican.
+    expect(hub.salida()).not.toContain('datos del administrador quedaron')
     await hub.detener()
     hub = undefined
 
@@ -123,38 +123,37 @@ describe('arranque del hub (proceso real)', () => {
     expect(despues.prepare('SELECT nombre FROM restaurante').all()).toEqual([
       { nombre: 'Mi restaurante' },
     ])
-    expect(despues.prepare('SELECT count(*) AS n FROM rol').get()?.n).toBe(6)
+    expect(despues.prepare('SELECT count(*) AS n FROM rol').get()?.n).toBe(4)
     ;(despues as unknown as { close(): void }).close()
   })
 
-  it('con el PIN que muestra al arrancar se empareja la caja y se entra', async () => {
+  it('con el usuario y la contraseña que muestra al arrancar se entra desde un navegador, sin emparejarlo', async () => {
     const env = await entorno(join(carpeta, 'datos'))
     hub = await arrancarHub(env)
-    // Sin ventana (salida a un proceso, como en un servicio) el PIN va a un archivo aparte.
-    const pin = readFileSync(join(env.DIR_DATOS, 'pin-administrador.txt'), 'utf8').trim()
+    // Sin ventana (salida a un proceso, como en un servicio) los datos van a un archivo aparte.
+    const archivo = readFileSync(join(env.DIR_DATOS, 'pin-administrador.txt'), 'utf8')
+    const dato = (etiqueta: string) =>
+      new RegExp(`${etiqueta}:\\s+(\\S+)`).exec(archivo)?.[1] as string
     const url = `http://127.0.0.1:${env.PUERTO}`
-    const post = (ruta: string, cuerpo: object, token?: string) =>
-      fetch(url + ruta, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(token ? { authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(cuerpo),
-      })
+    const entrar = await fetch(`${url}/api/entrar`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ usuario: dato('Usuario'), contrasena: dato('Contraseña') }),
+    })
 
-    const json = async (r: Promise<Response>) => (await (await r).json()) as Record<string, string>
-    const codigo = await json(post('/api/emparejamientos', { pin, nombre: 'Caja', tipo: 'caja' }))
-    const { token } = await json(post('/api/emparejar', { codigo: codigo.codigo }))
-    const sesion = await post('/api/sesiones', { pin }, token)
-
-    expect(sesion.status).toBe(201)
-    expect(((await sesion.json()) as { usuario: { rol: string } }).usuario.rol).toBe(
-      'Administrador',
-    )
-    // El log del hub no registra los cuerpos: ni el PIN ni el token quedan escritos.
-    expect(hub.salida()).not.toContain('"pin"')
-    expect(hub.salida()).not.toContain(token)
+    expect(entrar.status).toBe(201)
+    const r = (await entrar.json()) as {
+      usuario: { rol: string }
+      equipo: { token: string; tipo: string }
+    }
+    expect(r.usuario.rol).toBe('Administrador')
+    // El hub registró este navegador como equipo de caja y le dio su token.
+    expect(r.equipo.tipo).toBe('caja')
+    expect(dato('PIN para autorizar')).toMatch(/^\d{4}$/)
+    // El log del hub no registra los cuerpos: ni la contraseña ni el token quedan escritos.
+    expect(hub.salida()).not.toContain('"contrasena"')
+    expect(hub.salida()).not.toContain(dato('Contraseña'))
+    expect(hub.salida()).not.toContain(r.equipo.token)
   })
 
   it('no arranca si la base es más nueva que la aplicación', async () => {

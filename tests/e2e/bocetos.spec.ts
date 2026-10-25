@@ -251,9 +251,9 @@ test.describe('tamaño táctil de 48×48 px', () => {
     })
   }
 
-  test('inicio de la app (emparejar): todo mide al menos 48×48', async ({ page }) => {
+  test('inicio de la app (entrar): todo mide al menos 48×48', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Emparejar este equipo' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Escribe tu PIN' })).toBeVisible()
     expect(await medidasPequenas(page)).toEqual([])
   })
 

@@ -6,6 +6,9 @@ import { abrirBase } from './node'
 import { AHORA, insertarVersionado } from './pruebas/utiles'
 import type { BaseSqlite, ValorSql } from './sqlite'
 
+// Las migraciones que siguen a la 4 se prueban aparte.
+const HASTA_4 = MIGRACIONES.filter((m) => m.version <= 4)
+
 // La migración 4 (tarea 1.2) sobre una base real de la versión 3: agrega `elemento_plano` sin
 // tocar nada de lo que ya había, con sus reglas (CHECK), su trigger contra borrados y sus claves.
 
@@ -101,14 +104,14 @@ function migrada() {
 }
 
 describe('migración 4 sobre una base de la versión 3', () => {
-  it('es la migración 4, la última, y se aplica sola', () => {
+  it('es la migración 4 y se aplica sola', () => {
     const { db } = baseVersion3()
     expect(MIGRACIONES.find((m) => m.version === 4)?.nombre).toBe('elemento_plano')
     expect(versionActual(db)).toBe(3)
-    expect(aplicarMigraciones(db)).toEqual([4])
+    expect(aplicarMigraciones(db, HASTA_4)).toEqual([4])
     expect(versionActual(db)).toBe(4)
     // Repetirla no hace nada.
-    expect(aplicarMigraciones(db)).toEqual([])
+    expect(aplicarMigraciones(db, HASTA_4)).toEqual([])
   })
 
   it('no toca ningún dato de la versión 3: salón, carta, historial ni contadores', () => {
@@ -205,7 +208,7 @@ describe('migración 4 sobre una base de la versión 3', () => {
 
   it('si la migración falla a medias, la base se queda en la versión 3 sin tabla', () => {
     const { db } = baseVersion3()
-    const rota = MIGRACIONES.map((m) =>
+    const rota = HASTA_4.map((m) =>
       m.version === 4 ? { ...m, sql: `${m.sql}\nSELECT * FROM no_existe;` } : m,
     )
     expect(() => aplicarMigraciones(db, rota)).toThrow()
@@ -214,7 +217,7 @@ describe('migración 4 sobre una base de la versión 3', () => {
       db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'elemento_plano'").get(),
     ).toBeUndefined()
     // Y se puede volver a intentar con la buena.
-    expect(aplicarMigraciones(db)).toEqual([4])
+    expect(aplicarMigraciones(db, HASTA_4)).toEqual([4])
   })
 })
 

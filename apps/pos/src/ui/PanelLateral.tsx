@@ -35,6 +35,8 @@ export function PanelLateral({
   titulo,
   alCerrar,
   pie,
+  soloConBoton = false,
+  idDescripcion,
   children,
 }: {
   abierto: boolean
@@ -42,6 +44,13 @@ export function PanelLateral({
   alCerrar: () => void
   /** Acciones fijas abajo (p. ej. "Agregar"). */
   pie?: ReactNode
+  /**
+   * Sin X, sin Escape y sin cerrar al tocar fuera: solo con un botón del pie. Para lo que no se
+   * puede perder, como un PIN que se muestra una sola vez.
+   */
+  soloConBoton?: boolean
+  /** Lo que el lector de pantalla lee al abrir, además del título. */
+  idDescripcion?: string
   children: ReactNode
 }) {
   const id = useId()
@@ -50,6 +59,8 @@ export function PanelLateral({
   // repetiría con cada tecla y el campo que se está escribiendo perdería el foco.
   const cerrar = useRef(alCerrar)
   cerrar.current = alCerrar
+  const soloRef = useRef(soloConBoton)
+  soloRef.current = soloConBoton
 
   useEffect(() => {
     if (!abierto) return
@@ -58,7 +69,7 @@ export function PanelLateral({
     bloquearFondo(este)
     panel.current?.focus()
     const alTeclear = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && pila.at(-1) === este) cerrar.current()
+      if (e.key === 'Escape' && pila.at(-1) === este && !soloRef.current) cerrar.current()
     }
     window.addEventListener('keydown', alTeclear)
     return () => {
@@ -77,13 +88,16 @@ export function PanelLateral({
         aria-hidden="true"
         tabIndex={-1}
         className="absolute inset-0 bg-black/40"
-        onClick={() => cerrar.current()}
+        onClick={() => {
+          if (!soloConBoton) cerrar.current()
+        }}
       />
       <div
         ref={panel}
         role="dialog"
         aria-modal="true"
         aria-labelledby={id}
+        aria-describedby={idDescripcion}
         tabIndex={-1}
         className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col rounded-t-3xl bg-superficie shadow-2xl outline-none md:inset-y-0 md:right-0 md:left-auto md:max-h-none md:w-[26rem] md:rounded-none md:rounded-l-3xl"
       >
@@ -91,12 +105,14 @@ export function PanelLateral({
           <h2 id={id} className="text-xl font-semibold">
             {titulo}
           </h2>
-          <Boton
-            variante="fantasma"
-            icono="cerrar"
-            aria-label="Cerrar"
-            onClick={() => cerrar.current()}
-          />
+          {!soloConBoton && (
+            <Boton
+              variante="fantasma"
+              icono="cerrar"
+              aria-label="Cerrar"
+              onClick={() => cerrar.current()}
+            />
+          )}
         </div>
         <div className="flex-1 overflow-y-auto p-5">{children}</div>
         {pie && <div className="border-t border-borde p-4">{pie}</div>}

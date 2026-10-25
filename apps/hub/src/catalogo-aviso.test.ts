@@ -31,7 +31,7 @@ async function montar() {
     () => {},
     (id, en) => sala?.revocar(id, en),
   )
-  sembrar(
+  const { pines } = sembrar(
     db,
     acceso.acceso,
     { restauranteId: acceso.restauranteId, roles: acceso.roles, carta: leerCarta(CARTA) },
@@ -60,16 +60,28 @@ async function montar() {
       })
     ).json()
 
-  let primero: string | undefined
+  let caja: string | undefined
+  /**
+   * Un equipo como en el restaurante (ADR-013): la caja y el celular entran sin emparejar (el hub
+   * los registra); la pantalla de cocina se empareja desde la caja.
+   */
   async function equipo(tipo: 'mesero' | 'caja' | 'kds', nombre: string) {
-    const { codigo } = await post(
-      '/api/emparejamientos',
-      { pin: acceso.pin, nombre, tipo },
-      primero,
+    if (tipo === 'kds') {
+      const { codigo } = await post(
+        '/api/emparejamientos',
+        { pin: acceso.admin.pin, nombre, tipo },
+        caja,
+      )
+      return (await post('/api/emparejar', { codigo })) as { token: string; dispositivo_id: string }
+    }
+    const r = await post(
+      '/api/entrar',
+      tipo === 'caja'
+        ? { usuario: acceso.admin.usuario, contrasena: acceso.admin.contrasena }
+        : { pin: pines.find((p) => p.nombre === 'Mesero 1')?.pin },
     )
-    const r = await post('/api/emparejar', { codigo })
-    primero ??= r.token
-    return r as { token: string; dispositivo_id: string }
+    if (tipo === 'caja') caja ??= r.equipo.token
+    return { token: r.equipo.token as string, dispositivo_id: r.equipo.dispositivo_id as string }
   }
 
   async function conectar(token: string | null) {
@@ -91,7 +103,11 @@ async function montar() {
   }
 
   const admin = async (caja: { token: string }) => {
-    const r = await post('/api/sesiones', { pin: acceso.pin }, caja.token)
+    const r = await post(
+      '/api/entrar',
+      { usuario: acceso.admin.usuario, contrasena: acceso.admin.contrasena },
+      caja.token,
+    )
     return { sesion_id: String(r.sesion_id), secreto: String(r.secreto) }
   }
   const cambiar = async (caja: { token: string }, sesion: object, cambios: unknown[]) => {

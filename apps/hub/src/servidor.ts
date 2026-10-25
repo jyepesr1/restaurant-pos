@@ -3,6 +3,7 @@ import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { rutasAcceso } from './acceso/rutas'
+import { rutasPersonal } from './acceso/rutas-personal'
 import type { ServicioAcceso } from './acceso/servicio'
 import { type OpcionesCatalogo, rutasCatalogo } from './catalogo'
 import { type OpcionesDiagnostico, rutasDiagnostico } from './diagnostico'
@@ -17,7 +18,7 @@ export interface OpcionesServidor {
   acceso?: ServicioAcceso
   /** Sin esta opción no hay WebSocket de sincronización. */
   sincronizacion?: OpcionesSincronizacion
-  /** Sin esta opción no se entrega el catálogo. */
+  /** Sin esta opción no se entrega el catálogo ni se administra el personal. */
   catalogo?: OpcionesCatalogo
   /** Versión de la base, para mostrarla en el chequeo de salud. */
   versionBase?: number
@@ -48,7 +49,20 @@ export function crearServidor({
   }
   if (catalogo) {
     app.register(rutasCatalogo, catalogo)
+    app.register(rutasPersonal, catalogo)
   }
+
+  // Un error interno no se le muestra al equipo (podría llevar SQL o rutas del PC): queda en el
+  // log del hub y el equipo recibe un mensaje claro. Los errores de la petición (400, 413) siguen
+  // con su respuesta de siempre.
+  app.setErrorHandler((error, req, reply) => {
+    const estado = (error as { statusCode?: number }).statusCode ?? 500
+    if (estado < 500) return reply.send(error)
+    req.log.error(error)
+    return reply
+      .code(500)
+      .send({ error: 'interno', mensaje: 'Algo falló en la caja. Intenta de nuevo.' })
+  })
 
   // Cada dispositivo consulta la salud cada pocos segundos: no llenar el log con eso.
   app.get('/api/salud', { logLevel: 'silent' }, async () => ({

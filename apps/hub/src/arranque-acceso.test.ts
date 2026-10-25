@@ -83,11 +83,19 @@ describe('acceso con el proceso real del hub', () => {
 
   const dirDatos = () => join(carpeta, 'datos')
   const rutaPin = () => join(dirDatos(), ARCHIVO_PIN_ADMIN)
-  /** El PIN del administrador que dejó el hub en su carpeta (como lo haría el instalador). */
-  const pinDeArchivo = (borrar = true) => {
-    const pin = readFileSync(rutaPin(), 'utf8').trim()
+  /**
+   * Usuario, contraseña y PIN para autorizar del administrador, como los dejó el hub en su
+   * carpeta (lo que haría el instalador). Solo trae lo que el hub acaba de crear.
+   */
+  const datosDeArchivo = (borrar = true) => {
+    const texto = readFileSync(rutaPin(), 'utf8')
     if (borrar) rmSync(rutaPin())
-    return pin
+    const dato = (etiqueta: string) => new RegExp(`${etiqueta}:\\s+(\\S+)`).exec(texto)?.[1]
+    return {
+      usuario: dato('Usuario'),
+      contrasena: dato('Contraseña'),
+      pin: dato('PIN para autorizar'),
+    }
   }
   const entorno = async () => ({
     DIR_DATOS: dirDatos(),
@@ -103,66 +111,65 @@ describe('acceso con el proceso real del hub', () => {
       },
       body: JSON.stringify(cuerpo),
     })
-  const emparejar = async (h: HubArrancado, pin: string, tipo: string) => {
-    const c = (await (
-      await post(h, '/api/emparejamientos', { pin, nombre: `Equipo ${tipo}`, tipo })
-    ).json()) as { codigo: string }
-    const e = (await (await post(h, '/api/emparejar', { codigo: c.codigo })).json()) as {
-      token: string
-    }
-    return e.token
-  }
+  /** Entra (con token o sin él) y devuelve la respuesta. */
+  const entrar = (h: HubArrancado, cuerpo: object, token?: string) =>
+    post(h, '/api/entrar', cuerpo, token)
+  type Entrada = { sesion_id: string; secreto: string; equipo: { token: string } | null }
 
-  it('al reiniciar con la misma carpeta, el PIN del administrador y el token del equipo siguen sirviendo', async () => {
+  it('al reiniciar con la misma carpeta, la contraseña del administrador y el token del equipo siguen sirviendo', async () => {
     hub = await arrancarHub(await entorno())
-    const pin = pinDeArchivo()
-    const token = await emparejar(hub, pin, 'caja')
-    const sesion = (await (await post(hub, '/api/sesiones', { pin }, token)).json()) as {
-      sesion_id: string
-      secreto: string
-    }
+    const { usuario, contrasena } = datosDeArchivo()
+    const primera = (await (await entrar(hub, { usuario, contrasena })).json()) as Entrada
+    const token = primera.equipo?.token as string
     await hub.detener() // se apaga de golpe, sin cerrar nada
 
     hub = await arrancarHub({ ...(await entorno()), DIR_DATOS: dirDatos() })
-    // No se muestra ni se escribe otro PIN: el administrador ya existe.
+    // No se muestra ni se escribe nada nuevo: el administrador ya existe.
     expect(existsSync(rutaPin())).toBe(false)
-    expect(hub.salida()).not.toMatch(/PIN del administrador/)
+    expect(hub.salida()).not.toMatch(/datos del administrador|Contraseña:/)
     expect(hub.salida()).not.toMatch(/clave de los PIN/)
-    const entra = await post(hub, '/api/sesiones', { pin }, token)
-    expect(entra.status).toBe(201)
+    const otra = await entrar(hub, { usuario, contrasena }, token)
+    expect(otra.status).toBe(201)
+    // Con el token no registra otro equipo.
+    expect(((await otra.json()) as Entrada).equipo).toBeNull()
     // La sesión anterior se cerró al abrir esta; su secreto ya no sirve, pero el hub responde claro.
     const cerrar = await post(
       hub,
       '/api/sesiones/cerrar',
-      { sesion_id: sesion.sesion_id, secreto: sesion.secreto },
+      { sesion_id: primera.sesion_id, secreto: primera.secreto },
       token,
     )
     expect(cerrar.status).toBe(401)
     expect(await cerrar.json()).toMatchObject({ error: 'sesion_invalida' })
   })
 
-  it('con la clave borrada: PIN nuevo y aviso al arrancar; el PIN viejo ya no entra; el equipo sigue emparejado', async () => {
+  it('con la clave borrada: PIN nuevo para autorizar y aviso al arrancar; la contraseña y el equipo siguen sirviendo', async () => {
     const env = await entorno()
     hub = await arrancarHub(env)
-    const pinViejo = pinDeArchivo()
-    const token = await emparejar(hub, pinViejo, 'caja')
+    const primeros = datosDeArchivo()
+    const token = (
+      (await (
+        await entrar(hub, { usuario: primeros.usuario, contrasena: primeros.contrasena })
+      ).json()) as Entrada
+    ).equipo?.token as string
     await hub.detener()
     expect(existsSync(join(dirDatos(), ARCHIVO_CLAVE))).toBe(true)
     rmSync(join(dirDatos(), ARCHIVO_CLAVE))
 
     hub = await arrancarHub({ ...env, PUERTO: String(await puertoLibre()) })
     expect(hub.salida()).toMatch(/Falta la clave de los PIN/)
-    const pinNuevo = pinDeArchivo()
-    expect(pinNuevo).toMatch(/^\d{4}$/)
+    const nuevos = datosDeArchivo()
+    expect(nuevos.pin).toMatch(/^\d{4}$/)
+    // La contraseña no depende de esa clave: no se cambia ni se vuelve a mostrar.
+    expect(nuevos.contrasena).toBeUndefined()
     expect(existsSync(join(dirDatos(), ARCHIVO_CLAVE))).toBe(true)
-
-    if (pinNuevo !== pinViejo) {
-      const viejo = await post(hub, '/api/sesiones', { pin: pinViejo }, token)
-      expect(viejo.status).toBe(401)
-    }
-    const nuevo = await post(hub, '/api/sesiones', { pin: pinNuevo }, token)
-    expect(nuevo.status).toBe(201)
-    expect(((await nuevo.json()) as { usuario: { rol: string } }).usuario.rol).toBe('Administrador')
+    const otra = await entrar(
+      hub,
+      { usuario: primeros.usuario, contrasena: primeros.contrasena },
+      token,
+    )
+    expect(otra.status).toBe(201)
+    expect(((await otra.json()) as { usuario: { rol: string } }).usuario.rol).toBe('Administrador')
   })
 
   it('una clave dañada detiene el arranque con un mensaje claro', async () => {
@@ -177,35 +184,37 @@ describe('acceso con el proceso real del hub', () => {
     )
   })
 
-  it('el log del hub no escribe PIN ni tokens, tampoco cuando el PIN es errado', async () => {
+  it('el log del hub no escribe PIN, contraseñas ni tokens, tampoco cuando están errados', async () => {
     hub = await arrancarHub(await entorno())
-    const pin = pinDeArchivo(false)
-    const token = await emparejar(hub, pin, 'caja')
-    await post(hub, '/api/sesiones', { pin: '0001' }, token)
-    await post(hub, '/api/sesiones', { pin: '0002' }, token)
+    const { usuario, contrasena, pin } = datosDeArchivo(false)
+    const r = (await (await entrar(hub, { usuario, contrasena })).json()) as Entrada
+    const token = r.equipo?.token as string
+    await entrar(hub, { pin: '0001' }, token)
+    await entrar(hub, { usuario, contrasena: 'otra-cualquiera' }, token)
 
     const salida = hub.salida()
-    // El PIN va al archivo de la carpeta de datos (solo legible por el hub), no a la pantalla.
-    expect(salida).not.toMatch(/PIN del administrador: \d/)
+    // Van al archivo de la carpeta de datos (solo legible por el hub), no a la pantalla.
+    expect(salida).not.toMatch(/Contraseña:\s+\S|PIN para autorizar:\s+\d/)
     expect(salida).toContain(ARCHIVO_PIN_ADMIN)
     if (process.platform !== 'win32') expect(statSync(rutaPin()).mode & 0o777).toBe(0o600)
     expect(pin).toMatch(/^\d{4}$/)
     expect(salida).not.toContain(token)
-    expect(salida).not.toMatch(/"pin"|pin=|"0001"|"0002"/)
+    expect(salida).not.toContain(contrasena)
+    expect(salida).not.toMatch(/"pin"|pin=|"0001"|otra-cualquiera|"contrasena"/)
   })
 
-  it('las esperas por intentos viven en memoria: tras reiniciar el hub, el equipo puede volver a intentar', async () => {
+  it('las esperas por intentos viven en memoria: tras reiniciar el hub, se puede volver a intentar', async () => {
     hub = await arrancarHub(await entorno())
-    const pin = pinDeArchivo()
-    const token = await emparejar(hub, pin, 'mesero')
-    for (const malo of ['0001', '0002', '0003'])
-      await post(hub, '/api/sesiones', { pin: malo }, token)
-    const espera = await post(hub, '/api/sesiones', { pin }, token)
+    const { usuario, contrasena } = datosDeArchivo()
+    // Sin token, la espera va por la IP y por el usuario.
+    for (const mala of ['mala-1-xx', 'mala-2-xx', 'mala-3-xx'])
+      await entrar(hub, { usuario, contrasena: mala })
+    const espera = await entrar(hub, { usuario, contrasena })
     expect(espera.status).toBe(429)
     expect(Number(espera.headers.get('retry-after'))).toBeGreaterThan(0)
     await hub.detener()
 
     hub = await arrancarHub({ ...(await entorno()), DIR_DATOS: dirDatos() })
-    expect((await post(hub, '/api/sesiones', { pin }, token)).status).toBe(201)
+    expect((await entrar(hub, { usuario, contrasena })).status).toBe(201)
   })
 })

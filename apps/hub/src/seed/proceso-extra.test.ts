@@ -106,16 +106,18 @@ describe('seed como proceso real, con otros casos', { timeout: 90_000 }, () => {
 
     const r = seed()
     expect(r.codigo).toBe(0)
-    expect(r.salida).toMatch(/usuario\s+7 nuevos/)
+    expect(r.salida).toMatch(/usuario\s+5 nuevos/)
     expect(r.salida).toMatch(/producto\s+98 nuevos, 0 cambiados, 0 iguales/)
     expect(cuenta(carpeta, 'producto')).toBe(98)
-    expect(cuenta(carpeta, 'usuario')).toBe(8)
-    // Los 7 PIN llegaron al archivo de personal: nadie queda sin PIN conocido.
+    expect(cuenta(carpeta, 'usuario')).toBe(6)
+    // Los 5 llegaron al archivo de personal: nadie queda sin PIN o contraseña conocidos.
     const personal = readdirSync(carpeta).filter((f) => /^pines-.*-personal\.txt$/.test(f))
     expect(personal).toHaveLength(1)
     const pines = readFileSync(join(carpeta, personal[0] as string), 'utf8')
-    for (const nombre of ['Gerente', 'Caja', 'Mesero 1', 'Mesero 2', 'Mesero 3', 'Cocina', 'Barra'])
-      expect(pines).toMatch(new RegExp(`${nombre}\\s+\\d{4}`))
+    for (const nombre of ['Mesero 1', 'Mesero 2', 'Mesero 3'])
+      expect(pines).toMatch(new RegExp(`${nombre}\\s+PIN \\d{4}`))
+    for (const nombre of ['Caja', 'Reportes'])
+      expect(pines).toMatch(new RegExp(`${nombre}\\s+usuario \\S+\\s+contraseña \\S+`))
   })
 
   it('con --sin-personal carga la carta sin crear cuentas de ejemplo; después se pueden agregar', () => {
@@ -127,8 +129,8 @@ describe('seed como proceso real, con otros casos', { timeout: 90_000 }, () => {
 
     const segunda = seed()
     expect(segunda.codigo).toBe(0)
-    expect(segunda.salida).toMatch(/usuario\s+7 nuevos/)
-    expect(cuenta(carpeta, 'usuario')).toBe(8)
+    expect(segunda.salida).toMatch(/usuario\s+5 nuevos/)
+    expect(cuenta(carpeta, 'usuario')).toBe(6)
   })
 
   it('si la carta ya no trae un plato con regla (Té Hatsu, Tagliata) avisa pero no falla', () => {
@@ -214,7 +216,7 @@ describe('seed como proceso real, con otros casos', { timeout: 90_000 }, () => {
         join(carpeta, archivos.find((f) => f.endsWith('-administrador.txt')) as string),
         'utf8',
       ),
-    ).toMatch(/Administrador\s+\d{4}/)
+    ).toMatch(/Contraseña:\s+\S+[\s\S]*PIN para autorizar:\s+\d{4}/)
     for (const f of archivos) {
       // En Windows el modo no se aplica; en macOS y Linux sí.
       if (process.platform !== 'win32') expect(statSync(join(carpeta, f)).mode & 0o777).toBe(0o600)

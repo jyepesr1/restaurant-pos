@@ -47,7 +47,18 @@ async function montar() {
     catalogo: { db, restauranteId: acceso.restauranteId, acceso: acceso.acceso },
   })
   await app.ready()
-  const pinDe = (nombre: string) => pines.find((p) => p.nombre === nombre)?.pin as string
+  /** Con qué entra cada quien: usuario y contraseña si los tiene (ADR-013), si no su PIN. */
+  const credencialesDe = (nombre: string) => {
+    if (nombre === 'Administrador')
+      return {
+        usuario: acceso.admin.usuario as string,
+        contrasena: acceso.admin.contrasena as string,
+      }
+    const p = pines.find((x) => x.nombre === nombre)
+    return p?.usuario
+      ? { usuario: p.usuario, contrasena: p.contrasena as string }
+      : { pin: p?.pin as string }
+  }
   const post = async (url: string, cuerpo: object, token?: string) =>
     (
       await app.inject({
@@ -58,17 +69,17 @@ async function montar() {
       })
     ).json()
 
-  let primero: string | undefined
-  async function equipo(tipo: 'mesero' | 'caja', nombre: string, quien: string) {
-    const { codigo } = await post(
-      '/api/emparejamientos',
-      { pin: acceso.pin, nombre, tipo },
-      primero,
-    )
-    const r = await post('/api/emparejar', { codigo })
-    primero ??= r.token
-    const sesion = (await post('/api/sesiones', { pin: pinDe(quien) }, r.token)) as Sesion
-    return { token: r.token as string, dispositivoId: r.dispositivo_id as string, sesion }
+  /**
+   * Entra sin emparejar (ADR-013): el hub registra el equipo, de caja si quien entra cobra. El
+   * tipo y el nombre de cada llamada solo dicen qué equipo es en la prueba.
+   */
+  async function equipo(_tipo: 'mesero' | 'caja', _nombre: string, quien: string) {
+    const r = await post('/api/entrar', credencialesDe(quien))
+    return {
+      token: r.equipo.token as string,
+      dispositivoId: r.equipo.dispositivo_id as string,
+      sesion: r as Sesion,
+    }
   }
 
   /** Abre el WebSocket; `esperar` se resuelve cuando llega (o ya llegó) un mensaje así. */

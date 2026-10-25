@@ -2,7 +2,13 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { BaseSqlite } from '@pos/db'
 import { BaseOcupadaError } from '@pos/db/node'
-import { abrirDatos, dirDatosDe, mostrarPines, prepararAcceso } from '../arranque'
+import {
+  abrirDatos,
+  dirDatosDe,
+  lineasAdministrador,
+  mostrarPines,
+  prepararAcceso,
+} from '../arranque'
 import { leerCarta, reglasSinPlato } from './carta'
 import { sembrar } from './sembrar'
 
@@ -19,19 +25,38 @@ const sinPersonal = process.argv.includes('--sin-personal')
 
 const mensaje = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
-/** Un PIN se muestra en cuanto existe: si algo falla después, no se pierde. */
-function anunciar(quienes: string, personas: readonly { nombre: string; pin: string }[]) {
-  if (personas.length === 0) return
-  const lineas = personas.map((p) => `  ${p.nombre.padEnd(14)} ${p.pin}`)
+/** Un PIN o una contraseña se muestra en cuanto existe: si algo falla después, no se pierde. */
+function anunciar(quienes: string, lineas: readonly string[]) {
+  if (lineas.length === 0) return
   // Un archivo por corrida: así una corrida nueva no pisa PIN que nadie ha leído.
   const archivo = `pines-${new Date().toISOString().replace(/[:.]/g, '-')}-${quienes}.txt`
   mostrarPines(dirDatos, {
-    ventana: ['\nPIN nuevos:', ...lineas, 'Anótalos en un lugar seguro: no se vuelven a mostrar.'],
+    ventana: [
+      '\nPIN y contraseñas nuevos:',
+      ...lineas,
+      'Anótalos en un lugar seguro: no se vuelven a mostrar.',
+    ],
     archivo,
     contenido: `${lineas.join('\n')}\n`,
-    aviso: (ruta) => `\nLos PIN nuevos quedaron en ${ruta}: anótalos y borra ese archivo.`,
+    aviso: (ruta) =>
+      `\nLos PIN y contraseñas nuevos quedaron en ${ruta}: anótalos y borra ese archivo.`,
   })
 }
+
+/** Una persona por línea: nombre, PIN y, si entra a la caja, usuario y contraseña. */
+const lineaDe = (p: {
+  nombre: string
+  pin: string | null
+  usuario?: string
+  contrasena?: string
+}) =>
+  [
+    `  ${p.nombre.padEnd(14)}`,
+    p.usuario ? `usuario ${p.usuario}  contraseña ${p.contrasena}` : '',
+    p.pin ? (p.usuario ? `PIN para autorizar ${p.pin}` : `PIN ${p.pin}`) : '',
+  ]
+    .filter(Boolean)
+    .join('  ')
 
 function correr(): number {
   let carta: ReturnType<typeof leerCarta>
@@ -59,9 +84,9 @@ function correr(): number {
   }
 
   try {
-    const { acceso, restauranteId, roles, pin: pinAdmin, avisos } = prepararAcceso(db, dirDatos)
+    const { acceso, restauranteId, roles, admin, avisos } = prepararAcceso(db, dirDatos)
     for (const aviso of avisos) console.warn(`⚠ ${aviso}`)
-    if (pinAdmin) anunciar('administrador', [{ nombre: 'Administrador', pin: pinAdmin }])
+    anunciar('administrador', lineasAdministrador(admin))
 
     const { tablas, pines } = sembrar(
       db,
@@ -80,7 +105,7 @@ function correr(): number {
       ]
       console.log(`  ${tabla.padEnd(28)} ${partes.join(', ')}`)
     }
-    if (pines.length > 0) anunciar('personal', pines)
+    if (pines.length > 0) anunciar('personal', pines.map(lineaDe))
     else if (sinPersonal) console.log('\nSin personal de ejemplo (--sin-personal).')
     else console.log('\nNo se creó personal nuevo: cada quien conserva su PIN.')
     return 0

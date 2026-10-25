@@ -5,16 +5,18 @@ import { autorizarEvento } from './montaje-hub'
 
 // La matriz de docs/MODELO_DATOS.md#permisos, escrita aquí a mano (no leída del código) y
 // comprobada de punta a punta: roles sembrados en la base × cada tipo de evento, por `verificar`.
+// Los de fábrica son admin, cajero, reportes y mesero (ADR-013); gerente y cocina son roles
+// propios que crea el montaje, como los que haría un restaurante.
 
-type Rol = 'admin' | 'gerente' | 'cajero' | 'mesero' | 'cocina' | 'contador'
-const ROLES: Rol[] = ['admin', 'gerente', 'cajero', 'mesero', 'cocina', 'contador']
+type Rol = 'admin' | 'gerente' | 'cajero' | 'mesero' | 'cocina' | 'reportes'
+const ROLES: Rol[] = ['admin', 'gerente', 'cajero', 'mesero', 'cocina', 'reportes']
 
 const DOC: Record<Permiso, Rol[]> = {
   tomar_pedido: ['admin', 'gerente', 'cajero', 'mesero'],
   quitar_item_no_enviado: ['admin', 'gerente', 'cajero', 'mesero'],
-  anular_item_enviado: ['admin', 'gerente'],
+  anular_item_enviado: ['admin', 'gerente', 'cajero'],
   cancelar_pedido: ['admin', 'gerente'],
-  descontar: ['admin', 'gerente'],
+  descontar: ['admin', 'gerente', 'cajero'],
   cortesia: ['admin', 'gerente'],
   reasignar_mesa: ['admin', 'gerente', 'cajero'],
   dividir_cuenta: ['admin', 'gerente', 'cajero'],
@@ -32,7 +34,7 @@ const DOC: Record<Permiso, Rol[]> = {
   editar_precios: ['admin', 'gerente'],
   administrar_usuarios: ['admin'],
   administrar_dispositivos: ['admin'],
-  ver_reportes: ['admin', 'gerente', 'contador'],
+  ver_reportes: ['admin', 'gerente', 'reportes'],
   ver_reportes_propios: ['cajero', 'mesero'],
 }
 
@@ -79,14 +81,20 @@ const SOLO_CAJA_DOC = ['PagoRegistrado', 'PagoAnulado', 'ReembolsoRegistrado', '
 function montar() {
   const m = montarAcceso()
   const cocina = m.acceso.crearUsuario({ nombre: 'Coco', rolId: m.roles.cocina })
-  const contador = m.acceso.crearUsuario({ nombre: 'Conta', rolId: m.roles.contador })
+  // Ver reportes pide contraseña (ADR-013).
+  const reportes = m.acceso.crearUsuario({
+    nombre: 'Repo',
+    rolId: m.roles.reportes,
+    usuario: 'repo',
+    contrasena: 'clave-de-repo',
+  })
   const pin: Record<Rol, string> = {
     admin: m.personas.admin.pin,
     gerente: m.personas.gerente.pin,
     cajero: m.personas.cajero.pin,
     mesero: m.personas.mesero.pin,
     cocina: cocina.pin,
-    contador: contador.pin,
+    reportes: reportes.pin,
   }
   const usuarios: Record<Rol, string> = {
     admin: m.personas.admin.usuarioId,
@@ -94,13 +102,20 @@ function montar() {
     cajero: m.personas.cajero.usuarioId,
     mesero: m.personas.mesero.usuarioId,
     cocina: cocina.usuarioId,
-    contador: contador.usuarioId,
+    reportes: reportes.usuarioId,
   }
 
   /** Un dispositivo del tipo dado, con sesión abierta de ese rol (uno por rol: no se pisan). */
   function sesionDe(rol: Rol, tipo: 'caja' | 'mesero' | 'kds') {
     const { conexion } = m.emparejar(tipo, `${tipo}-${rol}`)
-    const r = m.acceso.iniciarSesion(conexion, pin[rol])
+    // Quien tiene permisos de caja o de administración entra con usuario y contraseña; el resto,
+    // con su PIN.
+    const r =
+      rol === 'admin' || rol === 'gerente' || rol === 'cajero'
+        ? m.entrar(conexion, rol)
+        : rol === 'reportes'
+          ? m.acceso.entrar({ usuario: 'repo', contrasena: 'clave-de-repo' }, conexion, '10.0.0.9')
+          : m.acceso.iniciarSesion(conexion, pin[rol])
     if (!r.ok) throw new Error(r.mensaje)
     return { conexion, sesion: r }
   }
@@ -183,10 +198,13 @@ describe('la matriz de permisos del documento, por rol', () => {
     expect(m.acceso.verificar(conexion, porcentaje, null).ok).toBe(true)
   })
 
-  it('pagos, reembolsos y cierres solo salen de una caja: ni el administrador desde un celular o un KDS', () => {
+  it('pagos, reembolsos y cierres solo salen de una caja: ni el administrador desde un KDS', () => {
     const m = montar()
     for (const tipoDispositivo of ['mesero', 'kds'] as const)
       for (const rol of ROLES) {
+        // Entrar con contraseña quien puede cobrar vuelve de caja un celular (ADR-013): se prueba
+        // aparte.
+        if (['admin', 'gerente', 'cajero'].includes(rol) && tipoDispositivo === 'mesero') continue
         const { conexion, sesion } = m.sesionDe(rol, tipoDispositivo)
         for (const tipo of SOLO_CAJA_DOC)
           expect(
@@ -194,6 +212,21 @@ describe('la matriz de permisos del documento, por rol', () => {
             `${rol}/${tipoDispositivo}/${tipo}`,
           ).toEqual({ ok: false, motivo: 'solo_caja' })
       }
+  })
+
+  it('quien entra con contraseña en un celular lo vuelve de caja y desde ahí puede cobrar', () => {
+    const m = montar()
+    const { conexion, sesion } = m.sesionDe('admin', 'mesero')
+    expect(
+      m.db.prepare('SELECT tipo FROM dispositivo WHERE id = ?').get(conexion.dispositivoId)?.tipo,
+    ).toBe('caja')
+    // La conexión abierta antes de entrar todavía dice «mesero»: el hub mira el equipo guardado.
+    expect(conexion.tipo).toBe('mesero')
+    for (const tipo of SOLO_CAJA_DOC)
+      expect(
+        m.acceso.verificar(conexion, m.evento(conexion, sesion, tipo, {}), null).ok,
+        tipo,
+      ).toBe(true)
   })
 
   it('el resto de eventos no distingue el tipo de dispositivo', () => {

@@ -29,12 +29,12 @@ describe('pnpm seed (proceso real)', { timeout: 60_000 }, () => {
     expect(primera.codigo).toBe(0)
     expect(primera.salida).toMatch(/producto\s+98 nuevos/)
     // Sin ventana, los PIN no salen en la consola: van a un archivo.
-    expect(primera.salida).not.toMatch(/Mesero 1\s+\d{4}/)
+    expect(primera.salida).not.toMatch(/Mesero 1\s+PIN \d{4}/)
     // Un archivo por corrida: primero el del administrador, luego el del personal.
     const archivos = readdirSync(carpeta).filter((f) => /^pines-.*\.txt$/.test(f))
     const pines = archivos.map((f) => readFileSync(join(carpeta, f), 'utf8')).join('')
-    expect(pines).toMatch(/Administrador\s+\d{4}/)
-    expect(pines).toMatch(/Mesero 3\s+\d{4}/)
+    expect(pines).toMatch(/Contraseña:\s+\S+[\s\S]*PIN para autorizar:\s+\d{4}/)
+    expect(pines).toMatch(/Mesero 3\s+PIN \d{4}/)
 
     const segunda = seed(carpeta)
     expect(segunda.codigo).toBe(0)

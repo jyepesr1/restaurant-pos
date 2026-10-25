@@ -354,7 +354,7 @@ describe('el supervisor cambia antes de que llegue el evento', () => {
         motivo: 'x',
       })
       m.avanzar(10 * 60_000)
-      cambiarRol(m, m.personas.cajero.usuarioId, m.roles.contador)
+      cambiarRol(m, m.personas.cajero.usuarioId, m.roles.reportes)
 
       expect(m.hub.recibirLote(conexion, [antes]).resultados[0]).toMatchObject({
         estado: 'rechazado',

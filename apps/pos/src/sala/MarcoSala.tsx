@@ -18,6 +18,21 @@ const ESTADO: Record<EstadoConexion, EstadoVisible> = {
 // Barra superior de las pantallas de operación: volver, título, conexión y pendientes, quién está
 // y el interruptor de la demo para simular que se cae el Wi-Fi.
 
+/**
+ * «Simular corte» es para probar y para la demo, no para el personal: se ve en desarrollo o si se
+ * abrió la app una vez con `?demo=1` en este equipo (`?demo=0` lo quita).
+ */
+function modoDemo(): boolean {
+  try {
+    const pedido = new URLSearchParams(location.search).get('demo')
+    if (pedido === '1') localStorage.setItem('pos:demo', '1')
+    if (pedido === '0') localStorage.removeItem('pos:demo')
+    return import.meta.env.DEV || localStorage.getItem('pos:demo') === '1'
+  } catch {
+    return import.meta.env.DEV
+  }
+}
+
 export function MarcoSala({
   titulo,
   volver,
@@ -76,16 +91,18 @@ export function MarcoSala({
           <IndicadorConexion estado={ESTADO[conexion]} pendientes={pendientes} />
           {/* En el celular las herramientas bajan a una segunda fila; en tablet y caja, al lado. */}
           <div className="flex w-full items-center gap-1 sm:w-auto">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={simulandoSinConexion}
-              onClick={() => sala.simularSinConexion(!simulandoSinConexion)}
-              className={`${claseBoton(simulandoSinConexion ? 'peligro' : 'secundario')} whitespace-nowrap`}
-            >
-              {simulandoSinConexion && <Icono nombre="check" />}
-              Simular corte
-            </button>
+            {(simulandoSinConexion || modoDemo()) && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={simulandoSinConexion}
+                onClick={() => sala.simularSinConexion(!simulandoSinConexion)}
+                className={`${claseBoton(simulandoSinConexion ? 'peligro' : 'secundario')} whitespace-nowrap`}
+              >
+                {simulandoSinConexion && <Icono nombre="check" />}
+                Simular corte
+              </button>
+            )}
             <span className="flex-1" />
             {sesion && (
               <Boton variante="fantasma" onClick={() => salirCon(() => void sala.salir())}>

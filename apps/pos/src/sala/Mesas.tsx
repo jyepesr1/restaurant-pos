@@ -90,7 +90,7 @@ const describir = (mesa: Mesa, r: Resumen) =>
     .join(', ')
 
 export function Mesas() {
-  const { catalogo, equipo, sesion } = useSala()
+  const { catalogo, sesion } = useSala()
   const pedidos = usePedidos()
   const ahora = useAhora()
   const [vista, setVista] = useState<Vista>(
@@ -101,6 +101,7 @@ export function Mesas() {
   const [zonaElegida, setZonaElegida] = useState(() => recordado(CLAVE_ZONA))
   const editaCarta = sesion?.permisos.some((p) => p === 'editar_catalogo' || p === 'editar_precios')
   const editaPlano = sesion?.permisos.includes('editar_catalogo')
+  const puedePersonal = sesion?.permisos.includes('administrar_usuarios')
 
   const resumenes = useMemo(() => {
     const deMesa = new Map<string, PedidoVisible[]>()
@@ -152,9 +153,9 @@ export function Mesas() {
               Carta
             </Boton>
           )}
-          {equipo?.tipo === 'caja' && (
-            <Boton variante="secundario" onClick={() => navegar('/equipos')}>
-              Aprobar un equipo
+          {puedePersonal && (
+            <Boton variante="secundario" onClick={() => navegar('/personal')}>
+              Personal y roles
             </Boton>
           )}
         </div>

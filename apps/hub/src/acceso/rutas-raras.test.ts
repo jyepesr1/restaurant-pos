@@ -33,15 +33,12 @@ function montarApi() {
   return { ...m, app, enviar, crudo }
 }
 
+/** Un celular de mesero como en el restaurante: entra con su PIN y el hub lo registra (ADR-013). */
 async function conDispositivo() {
   const api = montarApi()
-  const c = await api.enviar('/api/emparejamientos', {
-    payload: { pin: api.personas.admin.pin, nombre: 'Celular', tipo: 'mesero' },
-  })
-  const r = await api.enviar('/api/emparejar', { payload: { codigo: c.json().codigo } })
-  const { token } = r.json() as { token: string }
-  const s = await api.enviar('/api/sesiones', { payload: { pin: api.personas.mesero.pin }, token })
-  return { ...api, token, sesion: s.json() as { sesion_id: string; secreto: string } }
+  const s = await api.enviar('/api/entrar', { payload: { pin: api.personas.mesero.pin } })
+  const r = s.json() as { equipo: { token: string }; sesion_id: string; secreto: string }
+  return { ...api, token: r.equipo.token, sesion: { sesion_id: r.sesion_id, secreto: r.secreto } }
 }
 
 const RUTAS_CON_TOKEN = ['/api/sesiones', '/api/sesiones/cerrar', '/api/autorizaciones'] as const
@@ -214,7 +211,7 @@ describe('API de acceso con cuerpos raros', () => {
   })
 
   it('texto con Unicode, ceros, SQL y etiquetas se guarda como dato y no como instrucción', async () => {
-    const api = montarApi()
+    const api = await conDispositivo()
     const raros = [
       "Caja'); DROP TABLE dispositivo;--",
       '<script>alert(1)</script>',
@@ -223,7 +220,8 @@ describe('API de acceso con cuerpos raros', () => {
       '‮oculto',
       '  espacios  ',
     ]
-    let token: string | undefined // el primer equipo se aprueba sin token; los demás, desde ese
+    // Solo una pantalla de cocina se empareja, desde un equipo ya registrado (ADR-013).
+    const token = api.token
     for (const nombre of raros) {
       const c = await api.enviar('/api/emparejamientos', {
         payload: { pin: api.personas.admin.pin, nombre, tipo: 'kds' },
@@ -233,15 +231,15 @@ describe('API de acceso con cuerpos raros', () => {
       const e = await api.enviar('/api/emparejar', { payload: { codigo: c.json().codigo } })
       expect(e.statusCode, nombre).toBe(201)
       expect(e.json().nombre).toBe(nombre.trim())
-      token ??= e.json().token
     }
+    // Más el celular del montaje.
     expect(Number(api.db.prepare('SELECT count(*) AS n FROM dispositivo').get()?.n)).toBe(
-      raros.length,
+      raros.length + 1,
     )
     // Solo-espacios y nombres de más de 60 caracteres no pasan la regla del servicio.
     for (const nombre of ['   ', 'x'.repeat(61)]) {
       const r = await api.enviar('/api/emparejamientos', {
-        payload: { pin: api.personas.admin.pin, nombre, tipo: 'caja' },
+        payload: { pin: api.personas.admin.pin, nombre, tipo: 'kds' },
         token,
       })
       expect(r.statusCode, nombre).toBe(400)
@@ -250,13 +248,24 @@ describe('API de acceso con cuerpos raros', () => {
     await sigueVivo(api)
   })
 
-  it('tipo de equipo inventado o con nombres de propiedades de Object: 400', async () => {
-    const api = montarApi()
-    for (const tipo of ['tostadora', '', 'CAJA', 'toString', '__proto__', 'constructor', 'caja '])
+  it('tipo de equipo inventado, con nombres de propiedades de Object o que no es de cocina: 400', async () => {
+    const api = await conDispositivo()
+    for (const tipo of [
+      'tostadora',
+      '',
+      'CAJA',
+      'toString',
+      '__proto__',
+      'constructor',
+      'caja ',
+      'caja',
+      'mesero',
+    ])
       expect(
         (
           await api.enviar('/api/emparejamientos', {
             payload: { pin: api.personas.admin.pin, nombre: 'X', tipo },
+            token: api.token,
           })
         ).statusCode,
         tipo,
@@ -301,16 +310,13 @@ describe('API de acceso con cuerpos raros', () => {
 
   it('ids de equipo raros en la ruta de revocar: 4xx y el equipo real queda intacto', async () => {
     const api = await conDispositivo()
-    const caja = await api.enviar('/api/emparejamientos', {
-      payload: { pin: api.personas.admin.pin, nombre: 'Caja', tipo: 'caja' },
-      token: api.token,
-    })
-    const { token } = (
-      await api.enviar('/api/emparejar', { payload: { codigo: caja.json().codigo } })
-    ).json()
+    // La caja entra con la contraseña del administrador y el hub la registra.
     const admin = (
-      await api.enviar('/api/sesiones', { payload: { pin: api.personas.admin.pin }, token })
+      await api.enviar('/api/entrar', {
+        payload: { usuario: api.personas.admin.usuario, contrasena: api.personas.admin.contrasena },
+      })
     ).json()
+    const token = admin.equipo.token as string
     const cuerpo = { sesion_id: admin.sesion_id, secreto: admin.secreto }
 
     for (const id of [
@@ -332,7 +338,9 @@ describe('API de acceso con cuerpos raros', () => {
     ).toBe(0)
     // Sin cuerpo tampoco se revoca nada.
     const dispositivoId = (
-      api.db.prepare("SELECT id FROM dispositivo WHERE nombre = 'Celular'").get() as { id: string }
+      api.db.prepare("SELECT id FROM dispositivo WHERE nombre = 'Equipo de Ana'").get() as {
+        id: string
+      }
     ).id
     const sinCuerpo = await api.enviar(`/api/dispositivos/${dispositivoId}/revocar`, { token })
     expect(sinCuerpo.statusCode).toBe(400)
@@ -340,14 +348,10 @@ describe('API de acceso con cuerpos raros', () => {
 
   it('la sesión de un mesero no puede retirar equipos, ni con su propio token', async () => {
     const api = await conDispositivo()
-    const otro = await api.enviar('/api/emparejamientos', {
-      payload: { pin: api.personas.admin.pin, nombre: 'Otro', tipo: 'mesero' },
-      token: api.token,
+    const otro = await api.enviar('/api/entrar', {
+      payload: { pin: api.personas.mesero2.pin },
     })
-    await api.enviar('/api/emparejar', { payload: { codigo: otro.json().codigo } })
-    const objetivo = (
-      api.db.prepare("SELECT id FROM dispositivo WHERE nombre = 'Otro'").get() as { id: string }
-    ).id
+    const objetivo = otro.json().equipo.dispositivo_id as string
     const r = await api.enviar(`/api/dispositivos/${objetivo}/revocar`, {
       payload: { sesion_id: api.sesion.sesion_id, secreto: api.sesion.secreto },
       token: api.token,
@@ -401,21 +405,21 @@ describe('API de acceso con cuerpos raros', () => {
     expect(bien.statusCode).toBe(201)
   })
 
-  it('pedir un emparejamiento sin token o con un token falso, cuando ya hay equipos: 401 sin gastar intentos', async () => {
+  it('pedir un emparejamiento sin token o con un token falso: 401 sin gastar intentos', async () => {
     const api = await conDispositivo()
     for (const token of [undefined, 'inventado', 'x'.repeat(2000)]) {
       for (let i = 0; i < 5; i++) {
         const r = await api.enviar('/api/emparejamientos', {
-          payload: { pin: '0001', nombre: 'X', tipo: 'caja' },
+          payload: { pin: '0001', nombre: 'X', tipo: 'kds' },
           token,
         })
         expect(r.statusCode).toBe(401)
-        expect(r.json()).toMatchObject({ error: 'equipo_no_emparejado' })
+        expect(r.json()).toMatchObject({ error: 'token_invalido' })
       }
     }
     // Quien sí tiene un equipo, con el PIN bueno, no esperó por nada de eso.
     const bien = await api.enviar('/api/emparejamientos', {
-      payload: { pin: api.personas.admin.pin, nombre: 'Caja', tipo: 'caja' },
+      payload: { pin: api.personas.admin.pin, nombre: 'Cocina', tipo: 'kds' },
       token: api.token,
     })
     expect(bien.statusCode).toBe(201)

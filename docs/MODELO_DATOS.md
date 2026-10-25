@@ -88,7 +88,7 @@ erDiagram
 | `Zona` | 0 | V | `sede_id`, `nombre`, `orden`, `piso` |
 | `Mesa` | 0 | V | `zona_id`, `nombre` ("12", único entre las mesas activas del restaurante), `forma` (`redonda`, `cuadrada`, `rectangular`, `barra`), `x`, `y` (esquina superior izquierda), `ancho`, `alto`, todo en **centímetros enteros**; `rotacion` (grados enteros, alrededor del centro), `capacidad` |
 | `ElementoPlano` | 1 | V | `zona_id`, `tipo` (`pared`, `puerta`, `planta`, `barra`, `texto`), `texto` (solo el de tipo texto), geometría igual que `Mesa`. Tabla `elemento_plano` (migración 4) |
-| `Dispositivo` | 0 | V | `sede_id`, `nombre`, `tipo` (`mesero`, `caja`, `kds`), `emparejado_en`, `revocado_en`, `secuencia_revocacion` |
+| `Dispositivo` | 0 | V | `sede_id`, `nombre`, `tipo` (`mesero`, `caja`, `kds`), `emparejado_en` (desde la 1.3b, cuándo lo registró el hub al entrar por primera vez), `revocado_en`, `secuencia_revocacion` |
 | `DispositivoCredencial` | 0 | L (hub) | `dispositivo_id`, `token_hash` |
 
 El plano se edita desde la caja con la misma API que el catálogo (`POST /api/catalogo/cambios`, permiso `editar_catalogo`). El hub no deja archivar una mesa con un pedido abierto ni una zona con mesas activas. Los cambios del plano no van al historial `catalogo_cambio` (no afectan precios).
@@ -100,8 +100,8 @@ El estado de una mesa (libre, ocupada, con pedido enviado, precuenta, por pagar,
 | Entidad | Fase | Cat. | Campos principales |
 |---|---|---|---|
 | `Usuario` | 0 | V | `nombre`, `rol_id` |
-| `UsuarioCredencial` | 0 | L (hub) | `usuario_id`, `pin_huella` (HMAC-SHA256 del PIN con la clave del hub; única entre usuarios activos), `pin_generado_en`. El PIN escrito nunca se guarda ni se registra. |
-| `Rol` | 0 | V | `nombre`, `sistema` (los de fábrica no se archivan) |
+| `UsuarioCredencial` | 0 | L (hub) | `usuario_id`, `pin_huella` (HMAC-SHA256 del PIN con la clave del hub; única entre usuarios activos), `pin_generado_en`. Desde la tarea 1.3b (migración 5): `nombre_usuario` (en minúsculas, único entre los activos **de cada restaurante**) y `contrasena_huella` (scrypt con sal), que van juntos, y `contrasena_cambiada_en`. Sin usuario, la persona entra con su PIN; con usuario, entra con usuario y contraseña y su PIN solo autoriza ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)). Ni el PIN ni la contraseña escritos se guardan o se registran. |
+| `Rol` | 0 | V | `nombre`, `sistema` (los de fábrica no se renombran ni se archivan; sus permisos sí cambian) |
 | `RolPermiso` | 0 | V | `rol_id`, `permiso` |
 | `Sesion` | 0 | L (hub) | `usuario_id`, `dispositivo_id`, `secreto_hash`, `inicio`, `ultimo_uso` (avanza también con los eventos recibidos), `cerrada_en` |
 | `Autorizacion` | 0 | L (hub) | Comprobante de un solo uso emitido cuando un supervisor escribe su PIN: `supervisor_id`, `accion`, `agregado_id`, `evento_id` que autoriza, `contenido_hash` (huella SHA-256 del evento exacto que se autorizó), `sesion_id` que lo pidió, `emitida_en`, `usada_en`. Al aceptar el evento, el hub copia el supervisor en `autorizado_por_id` del evento. |
@@ -111,33 +111,39 @@ Las tablas de credenciales **solo existen en el hub** y nunca se sincronizan (AD
 
 ### Permisos
 
-Las claves de permiso son fijas y están definidas en `packages/core`; lo único configurable es qué roles las tienen (`RolPermiso`).
+Las claves de permiso son fijas y están definidas en `packages/core`, con su nombre para la pantalla (`DESCRIPCION_PERMISOS`). **Qué roles las tienen lo decide cada restaurante** en la pantalla **Personal y roles** (`RolPermiso`, tarea 1.3b): el administrador crea los roles que quiera y marca sus permisos. Siempre debe quedar al menos una persona activa, con usuario y contraseña, que pueda `administrar_usuarios`.
 
-| Permiso | Admin | Gerente | Cajero | Mesero | Cocina | Contador |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| `tomar_pedido` (abrir, agregar, enviar, mover, unir) | ✓ | ✓ | ✓ | ✓ | | |
-| `quitar_item_no_enviado` | ✓ | ✓ | ✓ | ✓ | | |
-| `anular_item_enviado` | ✓ | ✓ | | | | |
-| `cancelar_pedido` | ✓ | ✓ | | | | |
-| `descontar` | ✓ | ✓ | | | | |
-| `cortesia` | ✓ | ✓ | | | | |
-| `reasignar_mesa` | ✓ | ✓ | ✓ | | | |
-| `dividir_cuenta` | ✓ | ✓ | ✓ | | | |
-| `registrar_pago` | ✓ | ✓ | ✓ | | | |
-| `anular_pago` | ✓ | ✓ | | | | |
-| `cerrar_mesa` | ✓ | ✓ | ✓ | | | |
-| `reabrir_cuenta` | ✓ | ✓ | | | | |
-| `abrir_turno_caja`, `cerrar_turno_caja` | ✓ | ✓ | ✓ | | | |
-| `movimiento_caja` | ✓ | ✓ | ✓ | | | |
-| `abrir_cajon_sin_venta` | ✓ | ✓ | | | | |
-| `marcar_preparacion` (en preparación, listo, entregado) | ✓ | ✓ | | ✓ | ✓ | |
-| `agotar_producto` | ✓ | ✓ | ✓ | | ✓ | |
-| `editar_catalogo`, `editar_precios` | ✓ | ✓ | | | | |
-| `administrar_usuarios`, `administrar_dispositivos` | ✓ | | | | | |
-| `ver_reportes` | ✓ | ✓ | | | | ✓ (fiscal) |
-| `ver_reportes_propios` | | | ✓ | ✓ | | |
+Quien entra con PIN no puede tener ningún permiso de `PERMISOS_CON_CONTRASENA` (cobrar, anular pagos, cerrar mesas, reabrir cuentas, turnos y movimientos de caja, abrir el cajón, editar la carta o los precios, ver reportes, administrar personal o equipos): el hub no lo deja entrar con PIN y no deja guardar una persona o un rol que quede así.
 
-Una acción está permitida si el usuario tiene el permiso **o** si el evento trae un comprobante válido de un supervisor que lo tiene. Reglas adicionales: pagos, cierres y movimientos de caja **solo desde un dispositivo `caja`**; el supervisor no puede autorizarse a sí mismo.
+Los cuatro roles de fábrica ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)) son solo el punto de partida de un restaurante nuevo:
+
+| Permiso | Administrador | Cajero | Reportes | Mesero |
+|---|:-:|:-:|:-:|:-:|
+| `tomar_pedido` (abrir, agregar, enviar, mover, unir) | ✓ | ✓ | | ✓ |
+| `quitar_item_no_enviado` | ✓ | ✓ | | ✓ |
+| `anular_item_enviado` | ✓ | ✓ | | |
+| `cancelar_pedido` | ✓ | | | |
+| `descontar` | ✓ | ✓ | | |
+| `cortesia` | ✓ | | | |
+| `reasignar_mesa` | ✓ | ✓ | | |
+| `dividir_cuenta` | ✓ | ✓ | | |
+| `registrar_pago` | ✓ | ✓ | | |
+| `anular_pago` | ✓ | | | |
+| `cerrar_mesa` | ✓ | ✓ | | |
+| `reabrir_cuenta` | ✓ | | | |
+| `abrir_turno_caja`, `cerrar_turno_caja` | ✓ | ✓ | | |
+| `movimiento_caja` | ✓ | ✓ | | |
+| `abrir_cajon_sin_venta` | ✓ | | | |
+| `marcar_preparacion` (en preparación, listo, entregado) | ✓ | | | ✓ |
+| `agotar_producto` | ✓ | ✓ | | |
+| `editar_catalogo`, `editar_precios` | ✓ | | | |
+| `administrar_usuarios`, `administrar_dispositivos` | ✓ | | | |
+| `ver_reportes` | ✓ | | ✓ | |
+| `ver_reportes_propios` | | ✓ | | ✓ |
+
+Un hub de antes de la 1.3b conserva lo suyo: Contador pasa a llamarse Reportes, y Gerente y Cocina quedan como roles propios del restaurante, con sus permisos y su gente. Los permisos de los roles que ya existían no se tocan.
+
+Una acción está permitida si el usuario tiene el permiso **o** si el evento trae un comprobante válido de un supervisor que lo tiene. Reglas adicionales: pagos, cierres y movimientos de caja **solo desde un dispositivo `caja`** (un equipo pasa a ser de caja cuando alguien entra en él con usuario y contraseña); el supervisor no puede autorizarse a sí mismo.
 
 ## Catálogo
 

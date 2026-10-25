@@ -47,7 +47,18 @@ async function montar(
     catalogo: { db, restauranteId: acceso.restauranteId, acceso: acceso.acceso },
   })
   await app.ready()
-  const pinDe = (nombre: string) => pines.find((p) => p.nombre === nombre)?.pin as string
+  /** Con qué entra cada quien: usuario y contraseña si los tiene (ADR-013), si no su PIN. */
+  const credencialesDe = (nombre: string) => {
+    if (nombre === 'Administrador')
+      return {
+        usuario: acceso.admin.usuario as string,
+        contrasena: acceso.admin.contrasena as string,
+      }
+    const p = pines.find((x) => x.nombre === nombre)
+    return p?.usuario
+      ? { usuario: p.usuario, contrasena: p.contrasena as string }
+      : { pin: p?.pin as string }
+  }
   const post = async (url: string, cuerpo: object, token?: string) =>
     (
       await app.inject({
@@ -58,17 +69,16 @@ async function montar(
       })
     ).json()
 
-  /** Empareja un equipo (el primero sin token; los demás, desde el primero). */
-  let primero: string | undefined
-  async function equipo(tipo: 'mesero' | 'caja', nombre: string) {
-    const { codigo } = await post(
-      '/api/emparejamientos',
-      { pin: acceso.pin, nombre, tipo },
-      primero,
+  /**
+   * Un equipo como en el restaurante (ADR-013): entra sin emparejar y el hub lo registra. La caja
+   * entra con la contraseña del administrador; el celular, con el PIN de un mesero.
+   */
+  async function equipo(tipo: 'mesero' | 'caja', _nombre: string) {
+    const r = await post(
+      '/api/entrar',
+      credencialesDe(tipo === 'caja' ? 'Administrador' : 'Mesero 2'),
     )
-    const r = await post('/api/emparejar', { codigo })
-    primero ??= r.token
-    return r as { token: string; dispositivo_id: string }
+    return { token: r.equipo.token as string, dispositivo_id: r.equipo.dispositivo_id as string }
   }
 
   /** Abre el WebSocket y junta lo que llega. */
@@ -86,7 +96,7 @@ async function montar(
     return { ws, recibidos, enviar, esperar }
   }
 
-  return { app, db, acceso, pinDe, post, equipo, conectar }
+  return { app, db, acceso, credencialesDe, post, equipo, conectar }
 }
 
 describe('WebSocket de sincronización', () => {
@@ -94,7 +104,7 @@ describe('WebSocket de sincronización', () => {
     const m = await montar()
     const caja = await m.equipo('caja', 'Caja')
     const celular = await m.equipo('mesero', 'Celular Ana')
-    const sesion = await m.post('/api/sesiones', { pin: m.pinDe('Mesero 1') }, celular.token)
+    const sesion = await m.post('/api/entrar', m.credencialesDe('Mesero 1'), celular.token)
 
     const enCaja = await m.conectar(caja.token)
     const enCelular = await m.conectar(celular.token)
@@ -268,7 +278,7 @@ describe('WebSocket: el socket se cierra a mitad', () => {
     const m = await montar({ alFallo: (e) => fallos.push(e) })
     const caja = await m.equipo('caja', 'Caja')
     const celular = await m.equipo('mesero', 'Celular')
-    const sesion = await m.post('/api/sesiones', { pin: m.pinDe('Mesero 1') }, celular.token)
+    const sesion = await m.post('/api/entrar', m.credencialesDe('Mesero 1'), celular.token)
     const evento = eventoPedido(sesion, celular.dispositivo_id)
 
     const primero = await m.conectar(celular.token)
@@ -305,7 +315,7 @@ describe('WebSocket: el socket se cierra a mitad', () => {
     const m = await montar({ alFallo: (e) => fallos.push(e) })
     const caja = await m.equipo('caja', 'Caja')
     const celular = await m.equipo('mesero', 'Celular')
-    const sesion = await m.post('/api/sesiones', { pin: m.pinDe('Mesero 1') }, celular.token)
+    const sesion = await m.post('/api/entrar', m.credencialesDe('Mesero 1'), celular.token)
 
     const enCaja = await m.conectar(caja.token)
     await enCaja.esperar('bienvenido')
@@ -372,9 +382,13 @@ describe('WebSocket: token revocado con el equipo conectado', () => {
     const m = await montar()
     const caja = await m.equipo('caja', 'Caja')
     const celular = await m.equipo('mesero', 'Celular')
-    const admin = await m.post('/api/sesiones', { pin: m.acceso.pin }, caja.token)
+    const admin = await m.post(
+      '/api/entrar',
+      { usuario: m.acceso.admin.usuario, contrasena: m.acceso.admin.contrasena },
+      caja.token,
+    )
     expect(admin.sesion_id).toBeDefined()
-    const sesionMesero = await m.post('/api/sesiones', { pin: m.pinDe('Mesero 1') }, celular.token)
+    const sesionMesero = await m.post('/api/entrar', m.credencialesDe('Mesero 1'), celular.token)
 
     const enCaja = await m.conectar(caja.token)
     const enCelular = await m.conectar(celular.token)
@@ -421,7 +435,11 @@ describe('WebSocket: token revocado con el equipo conectado', () => {
     const m = await montar()
     const caja = await m.equipo('caja', 'Caja')
     const celular = await m.equipo('mesero', 'Celular')
-    const admin = await m.post('/api/sesiones', { pin: m.acceso.pin }, caja.token)
+    const admin = await m.post(
+      '/api/entrar',
+      { usuario: m.acceso.admin.usuario, contrasena: m.acceso.admin.contrasena },
+      caja.token,
+    )
     await m.app.inject({
       method: 'POST',
       url: `/api/dispositivos/${celular.dispositivo_id}/revocar`,

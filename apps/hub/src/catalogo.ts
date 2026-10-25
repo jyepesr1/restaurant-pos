@@ -163,7 +163,9 @@ export async function rutasCatalogo(
     const [esquema, token] = (req.headers.authorization ?? '').split(' ')
     const conexion = esquema === 'Bearer' && token ? acceso.autenticar(token) : null
     if (conexion && !conexion.revocadoEn) return conexion
-    reply.code(401).send({ error: 'token_invalido', mensaje: 'Este equipo no está emparejado' })
+    reply
+      .code(401)
+      .send({ error: 'token_invalido', mensaje: 'Este equipo ya no tiene acceso: vuelve a entrar' })
     return null
   }
 

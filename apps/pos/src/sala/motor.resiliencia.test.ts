@@ -548,7 +548,7 @@ describe('olvidarEquipo', () => {
 
     // Sin equipo no se puede crear nada ni llamar al hub.
     await expect(abrirPedido(sala)).rejects.toThrow('Sin sesión')
-    await expect(sala.actualizarCatalogo()).rejects.toThrow('no está emparejado')
+    await expect(sala.actualizarCatalogo()).rejects.toThrow('todavía no ha entrado')
   })
 
   it('al volver a abrir la app queda sin equipo (pide emparejar)', async () => {

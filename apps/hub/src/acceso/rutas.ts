@@ -4,7 +4,7 @@ import { z } from 'zod'
 import type { CodigoAcceso, ErrorAcceso, ServicioAcceso } from './servicio'
 
 // API de acceso del hub. El token del dispositivo va en `Authorization: Bearer …`. Fastify no
-// registra los cuerpos en el log: el PIN no queda escrito en ninguna parte.
+// registra los cuerpos en el log: ni el PIN ni la contraseña quedan escritos en ninguna parte.
 
 export interface OpcionesRutasAcceso {
   acceso: ServicioAcceso
@@ -12,6 +12,7 @@ export interface OpcionesRutasAcceso {
 
 const ESTADO: Record<CodigoAcceso, number> = {
   pin_incorrecto: 401,
+  credenciales_incorrectas: 401,
   sesion_invalida: 401,
   equipo_no_emparejado: 401,
   codigo_invalido: 400,
@@ -35,6 +36,10 @@ const Cuerpos = {
   }),
   emparejar: z.strictObject({ codigo: z.string().max(20) }),
   sesion: z.strictObject({ pin: Pin }),
+  entrar: z.union([
+    z.strictObject({ pin: Pin }),
+    z.strictObject({ usuario: z.string().max(100), contrasena: z.string().max(200) }),
+  ]),
   cerrar: z.strictObject({ sesion_id: Id, secreto: Secreto }),
   autorizacion: z.strictObject({
     sesion_id: Id,
@@ -74,15 +79,26 @@ export async function rutasAcceso(app: FastifyInstance, { acceso }: OpcionesRuta
   const dispositivo = (req: FastifyRequest, reply: FastifyReply): Conexion | null => {
     const conexion = delToken(req)
     if (!conexion)
-      reply.code(401).send({ error: 'token_invalido', mensaje: 'Este equipo no está emparejado' })
+      reply.code(401).send({
+        error: 'token_invalido',
+        mensaje: 'Este equipo ya no tiene acceso: vuelve a entrar',
+      })
     return conexion
   }
 
   app.post('/api/emparejamientos', async (req, reply) => {
     const cuerpo = leer(Cuerpos.emparejamiento, req, reply)
     if (!cuerpo) return reply
-    // Sin token solo vale para el primer equipo (la caja de un hub recién instalado).
-    const r = acceso.crearEmparejamiento(cuerpo, delToken(req))
+    // Desde ADR-013 los celulares y la caja entran sin emparejar (`/api/entrar`): esto queda solo
+    // para la pantalla de cocina (tarea 1.4), aprobado desde un equipo que ya está registrado.
+    const conexion = dispositivo(req, reply)
+    if (!conexion) return reply
+    if (cuerpo.tipo !== 'kds')
+      return reply.code(400).send({
+        error: 'datos_invalidos',
+        mensaje: 'Celulares y cajas no se emparejan: entran con PIN o con usuario y contraseña',
+      })
+    const r = acceso.crearEmparejamiento(cuerpo, conexion)
     if (!r.ok) return enviarError(reply, r)
     return reply.code(201).send({ codigo: r.codigo, vence_en: r.venceEn })
   })
@@ -95,6 +111,31 @@ export async function rutasAcceso(app: FastifyInstance, { acceso }: OpcionesRuta
     return reply
       .code(201)
       .send({ dispositivo_id: r.dispositivoId, token: r.token, nombre: r.nombre, tipo: r.tipo })
+  })
+
+  // Entrar desde cualquier navegador de la red (ADR-013). Sin token, con el acierto el hub
+  // registra el navegador como equipo y devuelve su token, que se ve solo esta vez.
+  app.post('/api/entrar', async (req, reply) => {
+    const autorizacion = req.headers.authorization
+    const conexion = autorizacion ? dispositivo(req, reply) : null
+    if (autorizacion && !conexion) return reply
+    const cuerpo = leer(Cuerpos.entrar, req, reply)
+    if (!cuerpo) return reply
+    const r = acceso.entrar(cuerpo, conexion, req.ip)
+    if (!r.ok) return enviarError(reply, r)
+    return reply.code(201).send({
+      equipo: r.equipo && {
+        dispositivo_id: r.equipo.dispositivoId,
+        token: r.equipo.token,
+        nombre: r.equipo.nombre,
+        tipo: r.equipo.tipo,
+      },
+      tipo: r.tipo,
+      sesion_id: r.sesionId,
+      secreto: r.secreto,
+      usuario: r.usuario,
+      permisos: r.permisos,
+    })
   })
 
   app.post('/api/sesiones', async (req, reply) => {

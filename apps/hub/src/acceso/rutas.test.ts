@@ -16,17 +16,31 @@ function montarApi() {
   return { ...m, app, post }
 }
 
-/** El primero se aprueba sin token; los demás, desde un equipo ya emparejado. */
+/**
+ * Un equipo como en el restaurante (ADR-013): entra sin emparejar y el hub lo registra. La caja
+ * entra con la contraseña del administrador; el celular, con el PIN de Luis (Ana queda libre para
+ * cada prueba). Una pantalla de cocina sí se empareja, desde un equipo ya registrado.
+ */
 async function emparejarPorApi(api: ReturnType<typeof montarApi>, tipo = 'mesero', desde?: string) {
-  const codigo = await api.post(
-    '/api/emparejamientos',
-    { pin: api.personas.admin.pin, nombre: 'Celular', tipo },
-    desde,
+  if (tipo === 'kds') {
+    const codigo = await api.post(
+      '/api/emparejamientos',
+      { pin: api.personas.admin.pin, nombre: 'Cocina', tipo },
+      desde,
+    )
+    expect(codigo.statusCode).toBe(201)
+    const r = await api.post('/api/emparejar', { codigo: codigo.json().codigo })
+    expect(r.statusCode).toBe(201)
+    return r.json() as { token: string; dispositivo_id: string }
+  }
+  const r = await api.post(
+    '/api/entrar',
+    tipo === 'caja'
+      ? { usuario: api.personas.admin.usuario, contrasena: api.personas.admin.contrasena }
+      : { pin: api.personas.mesero2.pin },
   )
-  expect(codigo.statusCode).toBe(201)
-  const r = await api.post('/api/emparejar', { codigo: codigo.json().codigo })
   expect(r.statusCode).toBe(201)
-  return r.json() as { token: string; dispositivo_id: string }
+  return r.json().equipo as { token: string; dispositivo_id: string }
 }
 
 describe('API de acceso', () => {
@@ -91,7 +105,11 @@ describe('API de acceso', () => {
     expect(autorizacion.json().supervisor.nombre).toBe('Gloria')
 
     const admin = (
-      await api.post('/api/sesiones', { pin: api.personas.admin.pin }, caja.token)
+      await api.post(
+        '/api/entrar',
+        { usuario: api.personas.admin.usuario, contrasena: api.personas.admin.contrasena },
+        caja.token,
+      )
     ).json()
     const revocar = await api.post(
       `/api/dispositivos/${celular.dispositivo_id}/revocar`,

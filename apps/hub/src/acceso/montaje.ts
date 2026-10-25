@@ -1,13 +1,16 @@
-import { type EventoNuevo, firmarEvento, nuevoId } from '@pos/core'
+import { type EventoNuevo, firmarEvento, nuevoId, PERMISOS } from '@pos/core'
 import { aplicarMigraciones } from '@pos/db'
 import { abrirBase } from '@pos/db/node'
 import type { Conexion } from '@pos/sync'
 import { asegurarAdministrador, asegurarRestaurante, asegurarRoles } from './inicial'
 import { Intentos } from './intentos'
+import { guardarRol } from './personal'
+import { SISTEMA } from './registros'
 import { ServicioAcceso } from './servicio'
 
 // Montaje de las pruebas de acceso: un hub con su base en memoria, reloj manual y un usuario
-// por rol. Solo para pruebas.
+// por rol. Además de los de fábrica, un rol propio «Gerente» (lo que era de fábrica antes de
+// ADR-013) y «Cocina». Solo para pruebas.
 
 export const INICIO = Date.parse('2026-10-24T20:00:00.000Z')
 
@@ -39,12 +42,68 @@ export function montarAcceso() {
     reloj,
     intentos,
     alRevocar: (id) => revocados.push(id),
+    // Rápido: aquí no se prueba cuánto cuesta adivinar una contraseña.
+    costoContrasena: 1,
   })
   const admin = asegurarAdministrador(db, acceso, roles.admin, false)
-  const personas = {
-    admin: { usuarioId: '', pin: admin.pin as string },
-    gerente: acceso.crearUsuario({ nombre: 'Gloria', rolId: roles.gerente }),
-    cajero: acceso.crearUsuario({ nombre: 'Carlos', rolId: roles.cajero }),
+  const propios = {
+    gerente: guardarRol(
+      db,
+      restauranteId,
+      acceso,
+      {
+        nombre: 'Gerente',
+        permisos: PERMISOS.filter(
+          (p) =>
+            !['administrar_usuarios', 'administrar_dispositivos', 'ver_reportes_propios'].includes(
+              p,
+            ),
+        ),
+      },
+      SISTEMA,
+      reloj(),
+    ),
+    cocina: guardarRol(
+      db,
+      restauranteId,
+      acceso,
+      { nombre: 'Cocina', permisos: ['marcar_preparacion', 'agotar_producto'] },
+      SISTEMA,
+      reloj(),
+    ),
+  }
+  const todosLosRoles = { ...roles, ...propios }
+  const personas: Record<
+    'admin' | 'gerente' | 'cajero' | 'mesero' | 'mesero2',
+    { usuarioId: string; pin: string; usuario?: string; contrasena?: string }
+  > = {
+    admin: {
+      usuarioId: '',
+      pin: admin.pin as string,
+      usuario: admin.usuario as string,
+      contrasena: admin.contrasena as string,
+    },
+    // Con permisos de caja o de administración se entra con contraseña (ADR-013).
+    gerente: {
+      ...acceso.crearUsuario({
+        nombre: 'Gloria',
+        rolId: propios.gerente,
+        usuario: 'gloria',
+        contrasena: 'clave-de-gloria',
+      }),
+      usuario: 'gloria',
+      contrasena: 'clave-de-gloria',
+    },
+    cajero: {
+      ...acceso.crearUsuario({
+        nombre: 'Carlos',
+        rolId: roles.cajero,
+        usuario: 'carlos',
+        contrasena: 'clave-de-carlos',
+      }),
+      usuario: 'carlos',
+      contrasena: 'clave-de-carlos',
+    },
     mesero: acceso.crearUsuario({ nombre: 'Ana', rolId: roles.mesero }),
     mesero2: acceso.crearUsuario({ nombre: 'Luis', rolId: roles.mesero }),
   }
@@ -66,9 +125,16 @@ export function montarAcceso() {
     return { token: r.token, conexion }
   }
 
-  /** Abre sesión con el PIN de esa persona en ese dispositivo. */
+  /**
+   * Abre sesión en ese dispositivo: con su PIN, o con usuario y contraseña si los tiene (el
+   * administrador). Entrar con contraseña vuelve de caja el equipo (ADR-013).
+   */
   function entrar(conexion: Conexion, quien: keyof typeof personas) {
-    const r = acceso.iniciarSesion(conexion, personas[quien].pin)
+    const p = personas[quien]
+    const r =
+      p.usuario && p.contrasena
+        ? acceso.entrar({ usuario: p.usuario, contrasena: p.contrasena }, conexion, '10.0.0.9')
+        : acceso.iniciarSesion(conexion, p.pin)
     if (!r.ok) throw new Error(r.mensaje)
     return r
   }
@@ -105,7 +171,7 @@ export function montarAcceso() {
     firmado,
     db,
     acceso,
-    roles,
+    roles: todosLosRoles,
     restauranteId,
     personas,
     avisos,

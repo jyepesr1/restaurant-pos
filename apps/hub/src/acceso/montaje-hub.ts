@@ -147,6 +147,7 @@ export function hubEnCarpeta(dirDatos: string) {
       reloj,
       intentos: new Intentos(() => ms),
       claveDesde,
+      costoContrasena: 1,
     })
     const admin = asegurarAdministrador(db, acceso, roles.admin, nueva)
     const hub = new HubSync(new AlmacenSqlite(db, restauranteId), {

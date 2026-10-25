@@ -1,11 +1,15 @@
 export { firmarEvento, huellaAutorizable, igualesSinFiltrarTiempo } from './acceso/firma'
 export {
   type ClaveRol,
+  DESCRIPCION_PERMISOS,
   esPermiso,
   PERMISOS,
+  PERMISOS_CON_CONTRASENA,
+  PERMISOS_DE_COBRO,
   type Permiso,
   permisoPara,
   ROLES_DE_FABRICA,
+  ROLES_RETIRADOS,
   SOLO_DESDE_CAJA,
 } from './acceso/permisos'
 export { jsonCanonico, PROFUNDIDAD_MAXIMA } from './canonico'

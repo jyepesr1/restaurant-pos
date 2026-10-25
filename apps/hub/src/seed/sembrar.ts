@@ -7,6 +7,7 @@ import {
   idEstable,
   SISTEMA,
 } from '../acceso/registros'
+import { generarContrasena } from '../acceso/secretos'
 import type { ServicioAcceso } from '../acceso/servicio'
 import type { CategoriaCarta, Estacion, GrupoCarta } from './carta'
 
@@ -29,15 +30,21 @@ export const MESAS = 25
 const COLUMNAS = 5
 const PASO = 120
 
-/** Personal de ejemplo, por rol (los nombres reales los pone el restaurante). */
-export const PERSONAL: readonly { clave: string; nombre: string; rol: ClaveRol }[] = [
-  { clave: 'gerente', nombre: 'Gerente', rol: 'gerente' },
-  { clave: 'caja', nombre: 'Caja', rol: 'cajero' },
+/**
+ * Personal de ejemplo, por rol (los nombres reales los pone el restaurante). Con `usuario` entra a
+ * la caja con usuario y contraseña; sin él, con su PIN (ADR-013).
+ */
+export const PERSONAL: readonly {
+  clave: string
+  nombre: string
+  rol: ClaveRol
+  usuario?: string
+}[] = [
+  { clave: 'caja', nombre: 'Caja', rol: 'cajero', usuario: 'caja' },
+  { clave: 'reportes', nombre: 'Reportes', rol: 'reportes', usuario: 'reportes' },
   { clave: 'mesero-1', nombre: 'Mesero 1', rol: 'mesero' },
   { clave: 'mesero-2', nombre: 'Mesero 2', rol: 'mesero' },
   { clave: 'mesero-3', nombre: 'Mesero 3', rol: 'mesero' },
-  { clave: 'cocina', nombre: 'Cocina', rol: 'cocina' },
-  { clave: 'barra', nombre: 'Barra', rol: 'cocina' },
 ]
 
 /** Tablas que llena el seed y en las que archiva lo que ya no está en la carta. */
@@ -61,8 +68,18 @@ const ESTACIONES: Record<Estacion, { nombre: string; orden: number }> = {
 export interface Resumen {
   /** Por tabla: cuántos registros se crearon, cambiaron, quedaron igual, se respetaron o se archivaron. */
   tablas: Record<string, Record<Cambio, number>>
-  /** PIN de las personas creadas en esta corrida (las que ya existían conservan el suyo). */
-  pines: { nombre: string; rol: ClaveRol; pin: string }[]
+  /**
+   * PIN de las personas creadas en esta corrida (las que ya existían conservan el suyo), y usuario
+   * y contraseña de quien entra con ellos. A quien ya existía sin usuario y ahora lo lleva (una
+   * base de antes de ADR-013), se le dan usuario y contraseña, sin PIN nuevo.
+   */
+  pines: {
+    nombre: string
+    rol: ClaveRol
+    pin: string | null
+    usuario?: string
+    contrasena?: string
+  }[]
 }
 
 export function sembrar(
@@ -215,19 +232,44 @@ export function sembrar(
     for (const persona of PERSONAL) {
       const usuarioId = id(`usuario:${persona.clave}`)
       const existe = db
-        .prepare('SELECT 1 FROM usuario WHERE restaurante_id = ? AND id = ?')
+        .prepare('SELECT activo FROM usuario WHERE restaurante_id = ? AND id = ?')
         .get(restauranteId, usuarioId)
+      const contrasena = persona.usuario ? generarContrasena() : undefined
       if (existe) {
-        contar('usuario', 'igual')
+        // Quien se archivó no vuelve, ni recibe una contraseña que no le serviría.
+        if (
+          existe.activo !== 1 ||
+          !persona.usuario ||
+          acceso.tieneContrasena(usuarioId) ||
+          !contrasena
+        ) {
+          contar('usuario', 'igual')
+          continue
+        }
+        acceso.fijarContrasena(usuarioId, persona.usuario, contrasena)
+        contar('usuario', 'actualizado')
+        pines.push({
+          nombre: persona.nombre,
+          rol: persona.rol,
+          pin: null,
+          usuario: persona.usuario,
+          contrasena,
+        })
         continue
       }
       const { pin } = acceso.insertarUsuario({
         id: usuarioId,
         nombre: persona.nombre,
         rolId: roles[persona.rol],
+        ...(persona.usuario && contrasena ? { usuario: persona.usuario, contrasena } : {}),
       })
       contar('usuario', 'creado')
-      pines.push({ nombre: persona.nombre, rol: persona.rol, pin })
+      pines.push({
+        nombre: persona.nombre,
+        rol: persona.rol,
+        pin,
+        ...(persona.usuario ? { usuario: persona.usuario, contrasena } : {}),
+      })
     }
   })
   return { tablas, pines }

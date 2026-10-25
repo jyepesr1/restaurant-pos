@@ -8,7 +8,8 @@
     "start": "tsx --disable-warning=ExperimentalWarning src/main.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "seed": "tsx --disable-warning=ExperimentalWarning src/seed/main.ts"
+    "seed": "tsx --disable-warning=ExperimentalWarning src/seed/main.ts",
+    "restablecer-admin": "tsx --disable-warning=ExperimentalWarning src/restablecer.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.7",

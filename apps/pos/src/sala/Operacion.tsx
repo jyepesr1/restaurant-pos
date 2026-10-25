@@ -2,16 +2,16 @@ import { useEffect, useState } from 'react'
 import { Boton } from '../ui/Boton'
 import { Carta } from './Carta'
 import { sala, useSala } from './contexto'
-import { Emparejar } from './Emparejar'
 import { Entrar } from './Entrar'
-import { Equipos } from './Equipos'
 import { MarcoSala } from './MarcoSala'
 import { Mesas } from './Mesas'
+import { Personal } from './Personal'
 import { PlanoEditor } from './PlanoEditor'
 import { TomaPedido } from './TomaPedido'
 
-// La app de operación: emparejar el equipo, entrar con el PIN y trabajar (mesas y pedido). Abre
-// la sala al arrancar y le avisa cuando la pantalla se oculta o vuelve (ADR-001).
+// La app de operación: entrar (con PIN o con usuario y contraseña, ADR-013) y trabajar (mesas,
+// pedido, carta, plano y personal). Abre la sala al arrancar y le avisa cuando la pantalla se
+// oculta o vuelve (ADR-001).
 
 const REVISAR_SESION_MS = 30_000
 
@@ -35,10 +35,11 @@ export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLS
   if (!estado.cargado) return <p className="p-6 text-texto-suave">Cargando…</p>
   if (estado.errorHub && estado.errorHub.codigo !== 'mensaje_invalido')
     return <EquipoRechazado mensaje={estado.errorHub.mensaje} codigo={estado.errorHub.codigo} />
-  if (!estado.equipo) return <Emparejar codigoInicial={parametros.get('codigo') ?? ''} />
-  if (!estado.sesion) return <Entrar />
+  // Sin equipo todavía, entrar lo registra en el hub (ya no se empareja antes).
+  if (!estado.equipo || !estado.sesion) return <Entrar />
   if (!estado.catalogo) return <SinCatalogo />
-  if (ruta === '/equipos') return <Equipos />
+  if (ruta === '/personal' && estado.sesion.permisos.includes('administrar_usuarios'))
+    return <Personal />
   if (ruta === '/carta') return <Carta />
   if (ruta === '/plano') return <PlanoEditor />
   if (ruta === '/pedido') return <TomaPedido key={parametros.get('mesa')} />
@@ -54,7 +55,9 @@ function EquipoRechazado({ codigo, mensaje }: { codigo: string; mensaje: string 
   const olvidar = () => void sala.olvidarEquipo()
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-4">
-      <h1 className="font-titulo text-3xl font-semibold">El hub no acepta este equipo</h1>
+      <h1 className="font-titulo text-3xl font-semibold">
+        Este equipo no puede entrar al POS del restaurante
+      </h1>
       <p role="alert">{mensaje}</p>
       {codigo === 'app_vieja' ? (
         <Boton variante="principal" grande onClick={() => location.reload()}>
@@ -62,24 +65,24 @@ function EquipoRechazado({ codigo, mensaje }: { codigo: string; mensaje: string 
         </Boton>
       ) : pendientes === 0 ? (
         <Boton variante="principal" grande onClick={olvidar}>
-          Emparejar de nuevo
+          Entrar de nuevo
         </Boton>
       ) : (
         <>
-          {/* Lo pendiente lleva el equipo viejo: con un emparejamiento nuevo el hub lo rechaza. */}
+          {/* Lo pendiente lleva el equipo viejo: entrar de nuevo registra otro y el hub lo rechaza. */}
           <p>
-            {`Hay ${pendientes === 1 ? 'una acción' : `${pendientes} acciones`} de este equipo que el hub no ha recibido. `}
+            {`Hay ${pendientes === 1 ? 'un cambio' : `${pendientes} cambios`} de este equipo (pedidos, cobros) que la caja todavía no recibe. `}
             {codigo === 'token_revocado'
-              ? 'Mientras haya conexión se siguen entregando al hub para que un administrador las revise: espera a que el número llegue a 0.'
-              : 'Si emparejas de nuevo, no llegarán al hub. Avisa a un administrador antes.'}
+              ? 'Si hay Wi-Fi, se siguen enviando para que un administrador los revise: espera a que el número llegue a 0.'
+              : 'Si entras de nuevo, no llegarán a la caja. Avisa a un administrador antes.'}
           </p>
           {confirmando ? (
             <Boton variante="peligro" grande onClick={olvidar}>
-              {`Emparejar de nuevo sin ${pendientes === 1 ? 'esa acción' : `esas ${pendientes}`}`}
+              {`Entrar de nuevo sin ${pendientes === 1 ? 'ese cambio' : `esos ${pendientes}`}`}
             </Boton>
           ) : (
             <Boton variante="secundario" grande onClick={() => setConfirmando(true)}>
-              Emparejar de nuevo de todas formas
+              Entrar de nuevo de todas formas
             </Boton>
           )}
         </>
@@ -88,13 +91,13 @@ function EquipoRechazado({ codigo, mensaje }: { codigo: string; mensaje: string 
   )
 }
 
-/** Recién se entró con el PIN pero no llegó la carta (se cortó justo): reintentar. */
+/** Recién se entró pero no llegó la carta (se cortó justo): reintentar. */
 function SinCatalogo() {
   const [error, setError] = useState<string | null>(null)
   return (
     <MarcoSala titulo="Salón">
       <div className="flex flex-col items-start gap-3 p-6">
-        <p>Falta traer la carta y las mesas del hub.</p>
+        <p>Falta traer la carta y las mesas del restaurante.</p>
         <p className="text-alerta-texto" role="alert">
           {error ?? ''}
         </p>

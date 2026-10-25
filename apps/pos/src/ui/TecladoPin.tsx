@@ -101,7 +101,8 @@ export function TecladoPin({
         ))}
       </output>
       {/* Solo se anuncia el cambio de mensaje, no cada segundo de la cuenta atrás. */}
-      <p className="min-h-6 text-center text-alerta-texto" role="alert">
+      {/* `key`: el mismo error dos veces seguidas también se anuncia. */}
+      <p key={intento} className="min-h-6 text-center text-alerta-texto" role="alert">
         {restante > 0 ? 'Demasiados intentos.' : ocupado ? 'Comprobando…' : (error ?? '')}
       </p>
       <p className="cifras min-h-6 text-center text-texto-suave" aria-hidden="true">

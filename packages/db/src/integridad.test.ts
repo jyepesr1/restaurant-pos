@@ -249,6 +249,27 @@ describe('transacciones', () => {
     expect(() => enTransaccion(db, async () => 1)).toThrow(/asíncronas/)
   })
 
+  it('una dentro de otra se suma a la de afuera: si algo falla, no queda nada', () => {
+    const db = abrirBase(':memory:')
+    db.exec('CREATE TABLE t (x INTEGER) STRICT')
+    const contar = () => db.prepare('SELECT count(*) AS n FROM t').get()?.n
+    enTransaccion(db, () => {
+      db.exec('INSERT INTO t VALUES (1)')
+      enTransaccion(db, () => db.exec('INSERT INTO t VALUES (2)'))
+    })
+    expect(contar()).toBe(2)
+    expect(() =>
+      enTransaccion(db, () => {
+        enTransaccion(db, () => db.exec('INSERT INTO t VALUES (3)'))
+        throw new Error('falla después')
+      }),
+    ).toThrow('falla después')
+    expect(contar()).toBe(2)
+    // Y la base queda lista para la siguiente.
+    enTransaccion(db, () => db.exec('INSERT INTO t VALUES (4)'))
+    expect(contar()).toBe(3)
+  })
+
   it('si SQLite ya deshizo la transacción, conservan el error original', () => {
     const db = abrirBase(':memory:')
     db.exec(`CREATE TABLE t (x INTEGER) STRICT;

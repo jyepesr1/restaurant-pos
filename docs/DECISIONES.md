@@ -366,17 +366,23 @@ Decisión del dueño del 24-oct-2026: el mesero no debe pasar por emparejar su c
 
 ### Decisión
 
-- **Roles de fábrica: Administrador, Cajero, Reportes y Mesero.** Se quitan Gerente y Cocina; Contador pasa a llamarse Reportes. Cada restaurante puede ajustar sus permisos.
+- **Los permisos de cada rol los decide el restaurante** (decisión del dueño): en la pantalla **Personal y roles** el administrador crea roles y marca sus permisos. Siempre queda al menos una persona activa, con usuario y contraseña, que puede administrar el personal.
+- **Roles de fábrica: Administrador, Cajero, Reportes y Mesero**, solo como punto de partida (la matriz está en [MODELO_DATOS.md](MODELO_DATOS.md#permisos)). No se renombran ni se archivan, porque el hub los reconoce por su nombre; sus permisos sí se cambian. Se quitan Gerente y Cocina como roles de fábrica: en un hub que ya los tenía quedan como roles propios del restaurante, con su gente, y Contador pasa a llamarse Reportes.
 - **Mesero**: abre la IP del hub en su celular y escribe su **PIN de 4 dígitos**. Entra directo a la zona de pedidos. No hay emparejamiento: con el primer PIN correcto el hub registra ese navegador como equipo de mesero y le da un token propio y revocable, para que los eventos sigan llevando dispositivo, firma y revocación (ADR-005, ADR-008).
 - **Administrador, Cajero y Reportes**: entran con **usuario y contraseña** desde cualquier equipo de la red (el PC de caja, una tablet o el celular del dueño dentro del local). Cada uno ve lo de su rol. El cajero también toma pedidos y además cobra y maneja la caja. Reportes solo ve informes. El administrador ve todo y administra personal, carta, plano y equipos.
+- **Lo delicado pide contraseña**: quien tenga permisos de cobro, caja, carta, reportes o administración (`PERMISOS_CON_CONTRASENA` en `packages/core`) no puede entrar solo con un PIN, aunque el rol se lo dé. El hub lo exige al entrar y al guardar personas y roles. Un PIN de 4 dígitos se adivina más fácil que una contraseña.
+- `administrar_usuarios` **equivale a poder todo**: quien lo tiene puede darse cualquier rol. Se da solo a personas de toda confianza; la pantalla lo dice.
+- **Equipos**: con contraseña, el equipo pasa a ser de caja solo si esa persona puede cobrar (`PERMISOS_DE_COBRO`). Cada equipo registrado aparece en **Personal y roles → Equipos**, con su último uso, para **retirarlo** si se pierde. El emparejamiento por código queda solo para la pantalla de cocina (tarea 1.4) y se pide desde un equipo ya registrado.
 - **PIN de autorización**: el administrador y el cajero tienen además un PIN de 4 dígitos que **no abre sesión**. Solo sirve para autorizar en el celular del mesero (anular lo enviado, descuentos) con el comprobante de un solo uso del ADR-008. Todos los PIN del restaurante, de entrada y de autorización, son únicos y los genera el sistema.
-- **Contraseñas**: mínimo 8 caracteres. El hub guarda solo una huella lenta con sal (scrypt), en tablas que solo existen en el hub y nunca se sincronizan. Espera creciente por usuario y por IP, y aviso al administrador como con el PIN. El administrador restablece la contraseña de quien la olvide. Al instalar, el hub muestra **una sola vez** el usuario del administrador y una contraseña inicial.
+- **Contraseñas**: mínimo 8 caracteres. El hub guarda solo una huella lenta con sal (scrypt, N = 2^15), en tablas que solo existen en el hub y nunca se sincronizan; no dependen de la clave de los PIN. Espera creciente por IP (o por equipo) y por usuario; la de usuario tiene un tope de 10 s, para que nadie pueda dejar afuera al administrador probando su usuario. Un usuario que no existe, uno archivado y una contraseña errada tardan lo mismo y dan la misma respuesta. Aviso al administrador como con el PIN. El administrador cambia la contraseña de quien la olvide en Personal y roles; si la olvida el propio administrador, `pnpm restablecer-admin` en el PC del hub le da una nueva. Al instalar, el hub muestra **una sola vez** el usuario del administrador, su contraseña y su PIN para autorizar.
 - **Multirestaurante**: usuarios, roles, PIN y contraseñas son **por restaurante** (`restaurante_id`). El nombre de usuario es único dentro del restaurante, no en todo el sistema. El hub atiende una sola sede, así que su pantalla de entrada no pide escoger restaurante. Cómo se identifica el restaurante al entrar a la nube se decide en la Fase 2.
 - La pantalla de cocina (KDS) ya no tiene rol propio: cómo se identifica se decide en la tarea 1.4.
 
 ### Riesgo aceptado
 
-Sin emparejamiento, cualquier celular conectado al Wi-Fi puede intentar PIN de mesero. Lo frenan la espera creciente por IP y por navegador y el aviso al administrador, pero cambiar de IP la reinicia. Por eso el **Wi-Fi del personal debe estar separado del de los clientes**: pasa de recomendación a condición de instalación (ADR-001). Si el piloto muestra intentos sospechosos, se puede volver a emparejar solo los celulares de meseros o pasar a PIN de 6 dígitos.
+Sin emparejamiento, cualquier celular conectado al Wi-Fi puede intentar PIN de mesero (que solo da permisos de pedidos). Lo frenan la espera creciente por IP y por navegador y el aviso al administrador, pero cambiar de IP la reinicia. Por eso el **Wi-Fi del personal debe estar separado del de los clientes**: pasa de recomendación a condición de instalación (ADR-001). Si el piloto muestra intentos sospechosos, se puede volver a emparejar solo los celulares de meseros o pasar a PIN de 6 dígitos.
+
+Riesgo conocido: comprobar una contraseña (scrypt, unos 50 ms) detiene al hub mientras tanto. La espera por IP y por usuario lo limita, pero muchos intentos desde muchas IP del Wi-Fi lo harían lento. Se pasa a scrypt asíncrono si el piloto lo muestra (docs/ROADMAP.md, 1.3b).
 
 ### Alternativas descartadas
 
@@ -386,4 +392,5 @@ Sin emparejamiento, cualquier celular conectado al Wi-Fi puede intentar PIN de m
 | Mesero entra sin PIN | No quedaría quién tomó o cambió cada pedido, y cualquiera en el Wi-Fi podría pedir. |
 | Mesero toca su nombre y entra | Un mesero podría actuar a nombre de otro. |
 | Autorizar con usuario y contraseña en el celular del mesero | Más lento en hora pico que un PIN. |
+| Permisos fijos por rol, elegidos ahora | El dueño quiere asignarlos él, rol por rol, y el sistema es para varios restaurantes con costumbres distintas. |
 | Entrar a la caja solo desde el PC del hub | El dueño quiere ver reportes desde su celular dentro del local. |

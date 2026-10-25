@@ -29,7 +29,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.1 | Catálogo completo: editor, variantes, modificadores, estaciones y catálogo sincronizado | ✅ |
 | 1.2 | Editor de plano y vista operativa de mesas | ✅ |
 | 1.3 | Toma de pedido por comensal y curso | ✅ |
-| 1.3b | Acceso por rol ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)): meseros con PIN desde la IP sin emparejar; admin, cajero y reportes con usuario y contraseña; roles Administrador, Cajero, Reportes y Mesero | ⏳ |
+| 1.3b | Acceso por rol ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)): meseros con PIN desde la IP sin emparejar; caja, administración y reportes con usuario y contraseña; roles y permisos que decide cada restaurante | ✅ |
 | 1.4 | Comandas: impresora ESC/POS por estación y KDS básico | ⏳ |
 | 1.5 | Mover ítems, cambiar y unir mesas, anular con motivo y permiso | ⏳ |
 | 1.6 | Precuenta, división, pagos mixtos y propina | ⏳ |
@@ -66,6 +66,111 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 1.3b — Acceso por rol ✅
+
+Decisión del dueño del 24-oct-2026 ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)). Reemplaza el emparejamiento de la 0.7: **ya no hay que emparejar ningún celular**.
+
+**Entrar:**
+- **Meseros**: abren la IP del hub en el celular y escriben su PIN. El hub registra el celular la primera vez.
+- **Caja, administración y reportes**: entran con **usuario y contraseña** desde cualquier equipo del local. El hub recuerda en cada equipo cómo se entró la última vez.
+- **Quien puede cobrar, manejar la caja, editar la carta, ver reportes o administrar entra siempre con contraseña**, aunque su rol se cambie. Su PIN no le sirve para entrar: con él aprueba anulaciones y descuentos en el celular de un mesero.
+- **Contraseña errada**: la misma respuesta si el usuario no existe. Tras varios intentos hay una espera, que por usuario dura como máximo 10 s.
+
+**Personal y roles** (botón en el salón, para quien puede administrar el personal):
+- **Personas**:
+  - alta con nombre, rol y cómo entra (PIN, o usuario y contraseña); el PIN se muestra una sola vez;
+  - **Nuevo PIN**, archivar (con confirmación) y volver a activar.
+- **Roles**:
+  - los de fábrica (Administrador, Cajero, Reportes y Mesero) y los que cree el restaurante;
+  - **los permisos de cada rol se marcan uno por uno**;
+  - los de fábrica no se renombran ni se archivan.
+- **Equipos**: cada equipo con su último uso y quién lo usó; **Retirar** uno perdido o robado.
+- **Protecciones**:
+  - siempre queda al menos una persona que puede administrar, con contraseña;
+  - avisa si solo hay una;
+  - pide confirmar antes de quitarte tu propio acceso y antes de salir con cambios sin guardar.
+
+**Por dentro:**
+- `POST /api/entrar` (PIN o usuario y contraseña, con o sin token) y `/api/personal/…`.
+- Contraseñas con scrypt en la migración 5, solo en el hub. Usuarios únicos por restaurante.
+- Un hub de antes conserva lo suyo:
+  - Contador pasa a ser Reportes;
+  - Gerente y Cocina quedan como roles propios;
+  - el administrador recibe usuario y contraseña al arrancar.
+- **Seed**: «Caja» y «Reportes» con usuario y contraseña, y tres meseros con PIN.
+- **Si se pierde la contraseña del administrador**: `pnpm restablecer-admin` en el PC del hub, con el hub cerrado.
+- **«Simular corte»** ahora solo se ve en desarrollo o abriendo la app una vez con `?demo=1` (`?demo=0` lo quita).
+
+Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entre otros:
+- **Seguridad**:
+  - un rol de caja o de administración podía entrar solo con PIN;
+  - el tiempo de respuesta delataba qué usuarios existían;
+  - probar contraseñas dejaba al administrador afuera hasta 60 s;
+  - cualquier celular podía crear códigos de emparejamiento de caja;
+  - el arranque y `restablecer-admin` no filtraban por restaurante;
+  - `restablecer-admin` perdía el PIN que regeneraba;
+  - reactivar a alguien cuyo PIN tenía otra persona daba un error 500.
+- **Pantalla**:
+  - archivar no pedía confirmación;
+  - el PIN nuevo se perdía con un toque afuera;
+  - cambiar a «Con su PIN» borraba la contraseña sin avisar;
+  - no se podía retirar un celular perdido;
+  - los errores se escondían en el botón;
+  - los mensajes hablaban de «hub» y de «emparejar».
+
+**Pruebas:**
+- **Hub:** 701.
+  - Fuerza bruta de PIN y contraseña, rotando IP.
+  - Tiempos iguales para usuarios que existen y que no.
+  - Contraseñas con Unicode.
+  - Dos restaurantes en la misma base, sin cruces.
+  - Carreras al quitar el último administrador.
+  - Roles viejos convertidos.
+  - Reinicio y pérdida de la clave de los PIN.
+  - `restablecer-admin` como proceso real.
+- **App:** 463, con el motor sin conexión, con un token falso y con uno retirado.
+- **Base:** 288, con la migración 5 y las transacciones anidadas. Una más falla a propósito (`it.fails`): documenta lo del savepoint.
+- **Núcleo:** 341.
+- **Sincronización:** 112.
+
+**Queda pendiente:**
+- **El hub espera mientras comprueba**: comprobar una contraseña (scrypt, unos 50 ms) detiene al hub mientras tanto. Si el piloto muestra lentitud por intentos masivos desde el Wi-Fi, se pasa a scrypt asíncrono.
+- **Equipos de más**:
+  - cada vez que alguien entra desde un navegador sin datos guardados (modo privado, datos borrados) se registra un equipo nuevo;
+  - no hay tope ni limpieza automática;
+  - se ven y se retiran en Equipos.
+- **Permisos que cambian**: si cambian los permisos de un rol, quien ya está trabajando ve los botones nuevos al volver a entrar. El hub aplica lo nuevo de inmediato.
+- **Pantalla de cocina**: cómo entra (sin rol Cocina de fábrica) se decide en la 1.4.
+- **Roles de un hub ya instalado**: un hub que ya existía conserva los permisos de sus roles. En el tuyo, el Cajero no tiene anular ni descontar hasta que los marques en **Personal y roles**.
+- **Pasos viejos**: los de las tareas 0.7 y 0.10 que dicen «emparejar» ahora son «entrar».
+- **Transacciones anidadas sin savepoint**: si una transacción de adentro falla y quien la llama atrapa el error y sigue, lo que alcanzó a escribir queda. Ningún código lo hace hoy y el comentario de `enTransaccion` lo advierte; hay una prueba `it.fails` que lo documenta.
+- **Doble envío del formulario**: guardar dos veces seguidas una persona nueva crea dos personas. Se archiva la repetida.
+- **Retirar no es para siempre**: un celular retirado que borra sus datos puede volver a entrar como equipo nuevo, si alguien sabe un PIN válido.
+
+**Cómo probarlo:**
+
+1. Cierra el hub si está abierto (**Ctrl+C**). Escribe `pnpm seed` y anota lo que muestra:
+   - **Administrador**: usuario y contraseña;
+   - **Caja** y **Reportes**: usuario y contraseña;
+   - **Mesero 1, 2 y 3**: su PIN.
+
+   Si tu base ya tenía el seed, solo verás «Caja» y «Reportes» con contraseña nueva. La del administrador sale al arrancar el hub en el paso 2.
+2. Compila y arranca:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+   Si el administrador todavía entraba con PIN, la ventana muestra «Administrador (para entrar a la caja)» con su usuario y contraseña. Anótalos.
+3. En el PC de la caja abre la dirección del hub. Debes ver **Entrar** con Usuario y Contraseña. Escribe una contraseña errada: debe decir «Usuario o contraseña incorrectos» y conservar el usuario. Luego entra con la del administrador: debes ver el salón y el botón **Personal y roles**.
+4. Toca **Personal y roles → Roles → Cajero**. Marca «Anular lo ya enviado a cocina» y «Dar descuentos», y toca **Guardar**. Debe decir «Guardaste el rol Cajero».
+5. En **Personas**, toca **Persona nueva**, escribe «Pedro», deja el rol Mesero y «Con su PIN», y toca **Guardar**. Debe salir el PIN de Pedro en grande. Toca **Ya lo anoté**.
+6. Toca otra vez **Persona nueva**, escribe «Laura» y elige el rol **Cajero**. Debe pasar sola a «Con usuario y contraseña», con el usuario «laura». Escribe una contraseña de al menos 8 caracteres y guarda. Debe salir su PIN, explicado como PIN para aprobar anulaciones y descuentos.
+7. En el celular, conectado al Wi-Fi del local, abre la misma dirección. Debes ver el teclado del PIN. Escribe el de Pedro: debes ver el salón, sin los botones de la carta ni de personal.
+8. En el celular toca **Salir**, luego «Caja, administración o reportes: entrar con usuario y contraseña», y entra como «laura». Debe entrar. Este celular ahora cuenta como caja.
+9. En la caja, abre **Personal y roles → Equipos**. Debes ver el celular con «Último uso: Laura». Toca **Retirar** y confirma. En el celular, la app debe decir que el equipo no puede entrar.
+10. Abre a Pedro y toca **Archivar**: debe preguntar antes. Confirma. En el celular su PIN ya no entra.
 
 ### 1.3 — Toma de pedido por comensal y curso ✅
 

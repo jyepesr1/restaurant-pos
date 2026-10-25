@@ -24,7 +24,17 @@ export interface BaseSqlite {
  * síncrono: con una función async el COMMIT ocurriría antes de que termine.
  */
 export function enTransaccion<T>(db: BaseSqlite, trabajo: () => T): T {
+  // Dentro de otra transacción, el trabajo se suma a ella: todo queda o nada queda. No hay
+  // savepoint: quien atrape el error de una transacción de adentro sin volver a lanzarlo deja su
+  // trabajo a medias dentro de la de afuera. Por eso el error siempre se deja subir.
+  if (enCurso.has(db)) {
+    const resultado = trabajo()
+    if (typeof (resultado as { then?: unknown } | undefined)?.then === 'function')
+      throw new Error('enTransaccion no admite funciones asíncronas')
+    return resultado
+  }
   db.exec('BEGIN IMMEDIATE')
+  enCurso.add(db)
   try {
     const resultado = trabajo()
     if (typeof (resultado as { then?: unknown } | undefined)?.then === 'function') {
@@ -40,5 +50,10 @@ export function enTransaccion<T>(db: BaseSqlite, trabajo: () => T): T {
       // es el error original.
     }
     throw error
+  } finally {
+    enCurso.delete(db)
   }
 }
+
+/** Las bases con una transacción de `enTransaccion` abierta. */
+const enCurso = new WeakSet<BaseSqlite>()

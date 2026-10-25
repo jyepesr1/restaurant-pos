@@ -44,22 +44,30 @@ export class Intentos {
     return r ? Math.max(0, r.hasta - this.ahora()) : 0
   }
 
-  /** Anota un fallo y devuelve la espera que queda. */
-  fallo(quien: string): number {
+  /**
+   * Anota un fallo y devuelve la espera que queda. Con `contar: false` no suma al aviso de todo el
+   * hub: un mismo intento se anota por el equipo y por la cuenta, y cuenta una sola vez. `tope`
+   * acorta la espera de ese registro (la de una cuenta, para que nadie deje afuera a otro).
+   */
+  fallo(
+    quien: string,
+    { contar = true, tope = ESPERA_MAXIMA_MS }: { contar?: boolean; tope?: number } = {},
+  ): number {
     const ahora = this.ahora()
     const previo = this.registros.get(quien)
     // Tras una ventana sin fallos, se empieza de cero.
     const fallos = previo && ahora - previo.ultimo < VENTANA_AVISO_MS ? previo.fallos + 1 : 1
-    this.registros.set(quien, { fallos, hasta: ahora + esperaTras(fallos), ultimo: ahora })
+    const espera = Math.min(tope, esperaTras(fallos))
+    this.registros.set(quien, { fallos, hasta: ahora + espera, ultimo: ahora })
     this.limpiar(ahora)
 
-    this.recientes.push(ahora)
+    if (contar) this.recientes.push(ahora)
     this.recientes = this.recientes.filter((t) => ahora - t < VENTANA_AVISO_MS)
-    if (this.recientes.length === FALLOS_PARA_AVISO)
+    if (contar && this.recientes.length === FALLOS_PARA_AVISO)
       this.alAvisar(`${FALLOS_PARA_AVISO} PIN o códigos errados en 10 minutos en el restaurante`)
     if (fallos === FALLOS_DE_UN_EQUIPO_PARA_AVISO)
       this.alAvisar(`${fallos} PIN o códigos errados seguidos desde ${quien}`)
-    return esperaTras(fallos)
+    return espera
   }
 
   /** Que una IP que prueba sin parar no haga crecer la memoria sin límite. */

@@ -14,6 +14,9 @@ import type { ServicioAcceso } from './servicio'
 
 type Levantado = ReturnType<ReturnType<typeof hubEnCarpeta>['levantar']>
 
+/** Lo que devuelve `asegurarAdministrador` cuando no hay nada nuevo que mostrar. */
+const SIN_NOVEDAD = { pin: null, usuario: null, contrasena: null, avisos: [] }
+
 describe('reinicio y caídas del hub', () => {
   let carpeta = ''
   let hubs: ReturnType<typeof hubEnCarpeta>
@@ -46,7 +49,22 @@ describe('reinicio y caídas del hub', () => {
         >,
       }
     }
-    return { h, adminPin, nuevo }
+    // El administrador entra con usuario y contraseña (ADR-013); su PIN solo autoriza.
+    const credenciales = {
+      usuario: h.admin.usuario as string,
+      contrasena: h.admin.contrasena as string,
+    }
+    return { h, adminPin, nuevo, credenciales }
+  }
+
+  const sesionAdmin = (
+    h: Levantado,
+    conexion: Parameters<ServicioAcceso['iniciarSesion']>[0],
+    credenciales: { usuario: string; contrasena: string },
+  ) => {
+    const r = h.acceso.entrar(credenciales, conexion, '10.0.0.9')
+    if (!r.ok) throw new Error(r.mensaje)
+    return r
   }
 
   const sesion = (
@@ -97,7 +115,7 @@ describe('reinicio y caídas del hub', () => {
 
       const despues = hubs.levantar()
       expect(despues.claveNueva).toBe(false)
-      expect(despues.admin).toEqual({ pin: null, avisos: [] })
+      expect(despues.admin).toEqual(SIN_NOVEDAD)
       expect(despues.restauranteId).toBe(h.restauranteId)
       // El token del dispositivo, el PIN del mesero y el del administrador valen igual.
       const conexion = despues.acceso.autenticar(celular.token)
@@ -133,10 +151,10 @@ describe('reinicio y caídas del hub', () => {
     })
 
     it('un dispositivo revocado sigue revocado tras el reinicio', () => {
-      const { h, adminPin, nuevo } = primerArranque()
+      const { h, adminPin, nuevo, credenciales } = primerArranque()
       const caja = nuevo('caja', 'Caja')
       const celular = nuevo('mesero', 'Celular')
-      const admin = sesion(h, caja.conexion, adminPin)
+      const admin = sesionAdmin(h, caja.conexion, credenciales)
       const r = h.acceso.revocarDispositivo(caja.conexion, {
         ...admin,
         dispositivoId: celular.conexion.dispositivoId,
@@ -166,6 +184,7 @@ describe('reinicio y caídas del hub', () => {
 
     it('los códigos de emparejamiento pendientes se pierden, y las esperas por fallos empiezan de cero', () => {
       const { h, adminPin, nuevo } = primerArranque()
+      const ana = h.acceso.crearUsuario({ nombre: 'Ana', rolId: h.roles.mesero })
       const celular = nuevo('mesero', 'Celular')
       const c = h.acceso.crearEmparejamiento(
         { pin: adminPin, nombre: 'X', tipo: 'kds' },
@@ -173,14 +192,14 @@ describe('reinicio y caídas del hub', () => {
       )
       if (!c.ok) throw new Error(c.mensaje)
       for (const pin of ['0001', '0002', '0003']) h.acceso.iniciarSesion(celular.conexion, pin)
-      expect(h.acceso.iniciarSesion(celular.conexion, adminPin)).toMatchObject({ codigo: 'espera' })
+      expect(h.acceso.iniciarSesion(celular.conexion, ana.pin)).toMatchObject({ codigo: 'espera' })
       hubs.apagar()
 
       const despues = hubs.levantar()
       expect(despues.acceso.emparejar(c.codigo, '10.0.0.1')).toMatchObject({
         codigo: 'codigo_invalido',
       })
-      expect(despues.acceso.iniciarSesion(celular.conexion, adminPin)).toMatchObject({ ok: true })
+      expect(despues.acceso.iniciarSesion(celular.conexion, ana.pin)).toMatchObject({ ok: true })
     })
 
     it('reiniciar varias veces no duplica restaurante, roles ni administrador', () => {
@@ -188,7 +207,7 @@ describe('reinicio y caídas del hub', () => {
       for (let i = 0; i < 4; i++) {
         hubs.apagar()
         const h = hubs.levantar()
-        expect(h.admin).toEqual({ pin: null, avisos: [] })
+        expect(h.admin).toEqual(SIN_NOVEDAD)
       }
       const h = hubs.levantar()
       const cuenta = (t: string) => Number(h.db.prepare(`SELECT count(*) AS n FROM ${t}`).get()?.n)
@@ -197,13 +216,13 @@ describe('reinicio y caídas del hub', () => {
         cuenta('rol'),
         cuenta('usuario'),
         cuenta('usuario_credencial'),
-      ]).toEqual([1, 6, 1, 1])
+      ]).toEqual([1, 4, 1, 1])
     })
   })
 
   describe('con la clave borrada', () => {
     it('ningún PIN guardado sirve; el administrador recibe uno nuevo y avisa; los equipos siguen emparejados', () => {
-      const { h, adminPin, nuevo } = primerArranque()
+      const { h, adminPin, nuevo, credenciales } = primerArranque()
       const ana = h.acceso.crearUsuario({ nombre: 'Ana', rolId: h.roles.mesero })
       const celular = nuevo('mesero', 'Celular')
       const abierta = sesion(h, celular.conexion, ana.pin)
@@ -231,8 +250,11 @@ describe('reinicio y caídas del hub', () => {
         expect(despues.acceso.iniciarSesion(conexion, ana.pin)).toMatchObject({
           codigo: 'pin_incorrecto',
         })
+      // La contraseña no depende de la clave de los PIN: el administrador sigue entrando, y su PIN
+      // nuevo autoriza.
       hubs.avanzar(60_000)
-      expect(despues.acceso.iniciarSesion(conexion, despues.admin.pin as string)).toMatchObject({
+      expect(despues.admin.contrasena).toBeNull()
+      expect(despues.acceso.entrar(credenciales, conexion, '10.0.0.9')).toMatchObject({
         ok: true,
         usuario: { nombre: 'Administrador' },
       })
@@ -293,7 +315,7 @@ describe('reinicio y caídas del hub', () => {
 
       const otra = hubs.levantar()
       expect(otra.claveNueva).toBe(false)
-      expect(otra.admin).toEqual({ pin: null, avisos: [] })
+      expect(otra.admin).toEqual(SIN_NOVEDAD)
       expect(
         otra.acceso.crearEmparejamiento(
           { pin, nombre: 'X', tipo: 'caja' },
@@ -327,7 +349,8 @@ describe('reinicio y caídas del hub', () => {
     /** El mesero tiene un ítem enviado y la gerente autoriza anularlo. */
     function conAutorizacion() {
       const { h, nuevo } = primerArranque()
-      const gerente = h.acceso.crearUsuario({ nombre: 'Gloria', rolId: h.roles.gerente })
+      // De fábrica, el cajero puede autorizar anulaciones (ADR-013).
+      const gerente = h.acceso.crearUsuario({ nombre: 'Gloria', rolId: h.roles.cajero })
       const ana = h.acceso.crearUsuario({ nombre: 'Ana', rolId: h.roles.mesero })
       const { conexion, token } = nuevo('mesero', 'Celular')
       const s = sesion(h, conexion, ana.pin)
