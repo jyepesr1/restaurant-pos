@@ -245,6 +245,10 @@ function FormularioCobro({
   // Atajos de la caja (tarea 0.9): F2 efectivo, F3 crédito, F4 débito, Enter cobra y Esc vuelve.
   // El atajo nunca le gana al botón que tiene el foco.
   const atajo: Record<string, string> = { F2: 'efectivo', F3: 'credito', F4: 'debito' }
+  // Los atajos solo se anuncian donde hay mouse y teclado (la caja); en el celular estorban.
+  const [conTeclado] = useState(
+    () => typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches,
+  )
   const teclas = useRef<(e: KeyboardEvent) => void>(() => {})
   teclas.current = (e: KeyboardEvent) => {
     if (e.repeat) return
@@ -339,7 +343,10 @@ function FormularioCobro({
               forma="tarjeta"
               elegida={clave === o.clave}
               alElegir={() => elegirOpcion(o)}
-              detalle={Object.keys(atajo).find((k) => atajo[k] === o.clave)}
+              detalle={(() => {
+                const tecla = Object.keys(atajo).find((k) => atajo[k] === o.clave)
+                return conTeclado && tecla ? `Tecla ${tecla}` : undefined
+              })()}
             >
               {o.nombre}
             </Opcion>
