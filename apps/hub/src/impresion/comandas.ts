@@ -44,13 +44,33 @@ export function trabajosDeEvento(
   if (!despues) return 0
 
   const porCrear: { comandaId: string; estacionId: string; comanda: Comanda }[] = []
-  const armar = (tipo: TipoComanda, enviada: Enviada, items: ItemComanda[]) => {
+  const armar = (
+    tipo: TipoComanda,
+    enviada: Enviada,
+    items: ItemComanda[],
+    pedido: EstadoPedido = despues,
+    desde: string | null = null,
+  ) => {
     if (items.length > 0)
       porCrear.push({
         comandaId: enviada.comandaId,
         estacionId: enviada.estacionId,
-        comanda: datosComanda(o, evento, despues, tipo, enviada, items),
+        comanda: { ...datosComanda(o, evento, pedido, tipo, enviada, items), antes: desde },
       })
+  }
+  /** Lo que sigue en cocina de un pedido, agrupado por la comanda con que salió. */
+  const enCocinaPorComanda = (pedido: EstadoPedido, ids?: readonly string[]) => {
+    const grupos = new Map<string, { enviada: Enviada; items: ItemComanda[] }>()
+    for (const item of Object.values(pedido.items)) {
+      if (ids && !ids.includes(item.id)) continue
+      if (!EN_COCINA.has(item.estado) || item.cantidad <= item.cantidadAnulada) continue
+      const enviada = enviadaDe(o, pedido.id, item.id)
+      if (!enviada) continue
+      const g = grupos.get(enviada.comandaId) ?? { enviada, items: [] }
+      g.items.push(itemComanda(item))
+      grupos.set(enviada.comandaId, g)
+    }
+    return [...grupos.values()]
   }
 
   switch (evento.tipo) {
@@ -79,7 +99,10 @@ export function trabajosDeEvento(
       break
     }
     case 'ComandaReimpresa': {
-      const enviada = enviadas(o, despues.id).find((e) => e.comandaId === evento.datos.comanda_id)
+      // Si sus platos pasaron a otra mesa, el envío está en el pedido de origen.
+      const enviada =
+        enviadas(o, despues.id).find((e) => e.comandaId === evento.datos.comanda_id) ??
+        enviadaGlobal(o, evento.datos.comanda_id)
       if (!enviada) break
       armar('reimpresion', enviada, itemsVigentes(despues, enviada.itemIds))
       break
@@ -94,6 +117,27 @@ export function trabajosDeEvento(
       armar('anulacion', enviada, [
         itemComanda({ ...item, cantidad: evento.datos.cantidad, cantidadAnulada: 0 }),
       ])
+      break
+    }
+    case 'PedidoCancelado': {
+      // Lo que la cocina tenía de un pedido cancelado sale como anulación.
+      if (!antes) break
+      for (const g of enCocinaPorComanda(antes)) armar('anulacion', g.enviada, g.items)
+      break
+    }
+    case 'PedidoMovidoDeMesa': {
+      if (!antes || antes.mesaId === despues.mesaId) break
+      for (const g of enCocinaPorComanda(despues))
+        armar('traslado', g.enviada, g.items, despues, destinoDe(o, antes))
+      break
+    }
+    case 'ItemsMovidos': {
+      // El evento va en el pedido de origen; el de destino viene como relacionado.
+      const destino = cambios.find((c) => c.despues?.id === evento.datos.pedido_destino_id)?.despues
+      if (!antes || !destino) break
+      const ids = evento.datos.items.map((m) => m.item.item_id)
+      for (const g of enCocinaPorComanda({ ...antes, items: pickItems(antes, ids) }))
+        armar('traslado', g.enviada, g.items, destino, destinoDe(o, antes))
       break
     }
     case 'NotaPedidoCambiada': {
@@ -200,6 +244,20 @@ function enviadaDe(o: OpcionesComandas, pedidoId: string, itemId: string): Envia
   return deFilas(filas).find((e) => e.itemIds.includes(itemId))
 }
 
+/** Una comanda por su id, en cualquier pedido del restaurante. */
+function enviadaGlobal(o: OpcionesComandas, comandaId: string): Enviada | undefined {
+  const filas = o.db
+    .prepare(
+      `SELECT e.datos, e.asignaciones FROM evento e
+       WHERE e.restaurante_id = ? AND e.tipo = 'ItemsEnviados'
+         AND EXISTS (SELECT 1 FROM json_each(e.datos, '$.comandas') c
+                     WHERE json_extract(c.value, '$.comanda_id') = ?)
+       LIMIT 1`,
+    )
+    .all(o.restauranteId, comandaId)
+  return deFilas(filas).find((e) => e.comandaId === comandaId)
+}
+
 /** Las comandas que se enviaron de ese pedido, con su número del día. */
 function enviadas(o: OpcionesComandas, pedidoId: string): Enviada[] {
   const filas = o.db
@@ -252,6 +310,21 @@ function itemComanda(i: ItemPedido): ItemComanda {
 const valor = (o: OpcionesComandas, sql: string, ...params: string[]) =>
   o.db.prepare(sql).get(o.restauranteId, ...params)
 
+/** «Mesa 5», «Mesa 5 + 6» (un grupo con mesas unidas), «Para llevar»… */
+function destinoDe(o: OpcionesComandas, pedido: EstadoPedido): string {
+  if (!pedido.mesaId) return CANALES[pedido.canal] ?? 'Pedido'
+  const nombre = (id: string) =>
+    valor(o, 'SELECT nombre FROM mesa WHERE restaurante_id = ? AND id = ?', id)?.nombre
+  const principal = nombre(pedido.mesaId)
+  const unidas = (pedido.mesasUnidas ?? []).map(nombre).filter((n) => n !== undefined)
+  return principal === undefined ? 'Mesa' : `Mesa ${[principal, ...unidas].map(String).join(' + ')}`
+}
+
+/** Solo esos ítems del pedido. */
+function pickItems(pedido: EstadoPedido, ids: readonly string[]): EstadoPedido['items'] {
+  return Object.fromEntries(Object.entries(pedido.items).filter(([id]) => ids.includes(id)))
+}
+
 function datosComanda(
   o: OpcionesComandas,
   evento: EventoPedido,
@@ -270,15 +343,7 @@ function datosComanda(
     'SELECT nombre FROM usuario WHERE restaurante_id = ? AND id = ?',
     pedido.meseroAsignadoId,
   )
-  let destino = CANALES[pedido.canal] ?? 'Pedido'
-  if (pedido.mesaId) {
-    const mesa = valor(
-      o,
-      'SELECT nombre FROM mesa WHERE restaurante_id = ? AND id = ?',
-      pedido.mesaId,
-    )
-    destino = mesa ? `Mesa ${String(mesa.nombre)}` : 'Mesa'
-  }
+  const destino = destinoDe(o, pedido)
   return {
     tipo,
     estacion: estacion ? String(estacion.nombre) : 'Estación',

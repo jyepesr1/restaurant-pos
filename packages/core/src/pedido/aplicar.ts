@@ -54,6 +54,9 @@ export type TipoProblema =
   | 'saldo_pendiente'
   | 'saldo_negativo'
   | 'tiene_pagos'
+  | 'sin_mesa'
+  | 'mesas_ya_unidas'
+  | 'mesas_no_unidas'
   | 'evento_invalido'
 
 export interface Problema {
@@ -290,6 +293,8 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
       rescateDe: rescate ? evento.datos.pedido_original_id : null,
       unidoA: null,
       notas: null,
+      mesasUnidas: [],
+      vaciadoAlMover: false,
       items: {},
       descuentos: {},
       cursosRetenidos: [],
@@ -346,6 +351,7 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
         estadoSinEnviar(nuevo, curso),
       )
       nuevo.siguienteOrden += 1
+      nuevo.vaciadoAlMover = false
       if (excedeTope(nuevo))
         return sinCambio(estado, 'total_excede', 'El pedido pasaría del tope permitido')
       return listo(nuevo)
@@ -547,6 +553,8 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
           nuevo.unidoA = destinoId
         } else if (totalesPedido(nuevo).saldo < 0) {
           return sinCambio(estado, 'saldo_negativo', 'Se movería algo ya pagado')
+        } else {
+          nuevo.vaciadoAlMover = Object.keys(nuevo.items).length === 0
         }
         return listo(nuevo)
       }
@@ -565,6 +573,7 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
         nuevo.items[id] = item
         nuevo.siguienteOrden += 1
       }
+      nuevo.vaciadoAlMover = false
       if (excedeTope(nuevo))
         return sinCambio(estado, 'total_excede', 'El pedido pasaría del tope permitido')
       return listo(nuevo)
@@ -573,6 +582,29 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
     case 'PedidoMovidoDeMesa': {
       const nuevo = copiar(estado)
       nuevo.mesaId = evento.datos.mesa_destino_id
+      // Si se pasa a una de sus mesas unidas, esa deja de contarse aparte.
+      nuevo.mesasUnidas = nuevo.mesasUnidas.filter((m) => m !== nuevo.mesaId)
+      return listo(nuevo)
+    }
+
+    case 'MesasUnidas': {
+      if (!estado.mesaId) return sinCambio(estado, 'sin_mesa', 'Un pedido sin mesa no une mesas')
+      const nuevo = copiar(estado)
+      const nuevas = evento.datos.mesa_ids.filter(
+        (m) => m !== estado.mesaId && !estado.mesasUnidas.includes(m),
+      )
+      if (nuevas.length === 0)
+        return sinCambio(estado, 'mesas_ya_unidas', 'Esas mesas ya están unidas')
+      nuevo.mesasUnidas = [...nuevo.mesasUnidas, ...nuevas]
+      return listo(nuevo)
+    }
+
+    case 'MesasSeparadas': {
+      const quitar = new Set(evento.datos.mesa_ids)
+      if (!estado.mesasUnidas.some((m) => quitar.has(m)))
+        return sinCambio(estado, 'mesas_no_unidas', 'Esas mesas no están unidas a este pedido')
+      const nuevo = copiar(estado)
+      nuevo.mesasUnidas = nuevo.mesasUnidas.filter((m) => !quitar.has(m))
       return listo(nuevo)
     }
 

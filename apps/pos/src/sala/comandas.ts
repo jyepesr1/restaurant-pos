@@ -7,6 +7,8 @@ import type { PedidoVisible } from './proyeccion'
 // caja. Una comanda sale de aquí cuando el mesero entrega todo lo suyo (o se anula).
 
 export interface ComandaEnCocina {
+  /** Única por tarjeta: una comanda cuyos platos se repartieron en dos mesas da dos tarjetas. */
+  clave: string
   comandaId: string
   pedido: PedidoVisible
   estacionId: string
@@ -27,29 +29,33 @@ export function comandasEnCocina(
   locales: readonly EventoLocal[],
   pedidos: readonly PedidoVisible[],
 ): ComandaEnCocina[] {
-  const porId = new Map(pedidos.map((p) => [p.estado.id, p]))
+  // Cada plato está en el pedido que lo tiene ahora: si se pasó a otra mesa, la comanda sigue
+  // siendo la de su envío, pero la tarjeta muestra la mesa nueva.
+  const dondeEsta = new Map<string, PedidoVisible>()
+  for (const p of pedidos) for (const id of Object.keys(p.estado.items)) dondeEsta.set(id, p)
   const comandas: ComandaEnCocina[] = []
   for (const l of locales) {
     if (!vigente(l) || l.evento.tipo !== 'ItemsEnviados') continue
-    const pedido = porId.get(l.evento.agregado_id)
-    if (!pedido) continue
     const numeros = l.evento.asignaciones?.numeros_comanda
     for (const c of l.evento.datos.comandas) {
-      const items = c.item_ids
-        .map((id) => pedido.estado.items[id])
-        .filter(
-          (i): i is ItemPedido => !!i && EN_COCINA.has(i.estado) && i.cantidad > i.cantidadAnulada,
-        )
-      if (items.length === 0) continue
-      comandas.push({
-        comandaId: c.comanda_id,
-        pedido,
-        estacionId: c.estacion_id,
-        numero: numeros?.[c.comanda_id] ?? null,
-        enviadaEn: l.evento.recibido_en ?? l.evento.hora_estimada_hub,
-        items: items.sort((a, b) => a.orden - b.orden),
-        lista: items.every((i) => i.estado === 'listo'),
-      })
+      const porPedido = new Map<PedidoVisible, ItemPedido[]>()
+      for (const id of c.item_ids) {
+        const pedido = dondeEsta.get(id)
+        const i = pedido?.estado.items[id]
+        if (!pedido || !i || !EN_COCINA.has(i.estado) || i.cantidad <= i.cantidadAnulada) continue
+        porPedido.set(pedido, [...(porPedido.get(pedido) ?? []), i])
+      }
+      for (const [pedido, items] of porPedido)
+        comandas.push({
+          clave: `${c.comanda_id}:${pedido.estado.id}`,
+          comandaId: c.comanda_id,
+          pedido,
+          estacionId: c.estacion_id,
+          numero: numeros?.[c.comanda_id] ?? null,
+          enviadaEn: l.evento.recibido_en ?? l.evento.hora_estimada_hub,
+          items: items.sort((a, b) => a.orden - b.orden),
+          lista: items.every((i) => i.estado === 'listo'),
+        })
     }
   }
   return comandas.sort((a, b) => a.enviadaEn.localeCompare(b.enviadaEn))

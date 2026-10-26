@@ -229,3 +229,30 @@ export const CANALES = {
 
 /** "la entrada", "el fuerte": para los avisos. */
 export const elCurso = (c: Curso) => (c === 'entrada' ? 'la entrada' : `el ${c}`)
+
+/**
+ * Motivos de anulación y de cancelación (tarea 1.5, decisión del dueño). Siempre se puede
+ * escribir otro.
+ */
+export const MOTIVOS_ANULACION = [
+  'Error del mesero',
+  'El cliente cambió',
+  'Demora',
+  'Producto dañado o mal hecho',
+] as const
+
+type DatosMovido = Extract<EventoNuevo, { tipo: 'ItemsMovidos' }>['datos']['items'][number]
+
+/**
+ * Un ítem tal como se pasa a otro pedido: la copia exacta, su estado, lo anulado y quién lo
+ * agregó (el reductor la compara con el ítem real, docs/MODELO_DATOS.md).
+ */
+export function movidoDe(i: ItemPedido): DatosMovido {
+  const { catalogo_version: _v, precio_canal_id: _c, ...copia } = copiaDe(i, 0)
+  return {
+    item: { ...copia, item_id: i.id },
+    estado: i.estado as DatosMovido['estado'],
+    cantidad_anulada: i.cantidadAnulada,
+    agregado_por: i.agregadoPor,
+  }
+}

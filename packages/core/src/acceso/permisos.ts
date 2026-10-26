@@ -205,6 +205,8 @@ const PERMISO_POR_TIPO: Record<TipoEventoPedido, Permiso | null> = {
   ItemAnulado: 'anular_item_enviado',
   ItemsMovidos: 'tomar_pedido',
   PedidoMovidoDeMesa: 'tomar_pedido',
+  MesasUnidas: 'tomar_pedido',
+  MesasSeparadas: 'tomar_pedido',
   PedidosUnidos: 'tomar_pedido',
   DescuentoAplicado: 'descontar',
   DescuentoRetirado: 'descontar',

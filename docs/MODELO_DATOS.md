@@ -215,6 +215,7 @@ Cada tipo tiene su esquema Zod en `packages/core` (tarea 0.5). Los montos que sa
 | `ItemAnulado` | `item_id`, `cantidad` (anulación parcial: 1 de 3), `ya_preparado` (si es merma), `comanda_id` de anulación | `anular_item_enviado` |
 | `ItemsMovidos` | `pedido_destino_id`, **copia completa** de los ítems movidos (incluido `agregado_por`); va en el pedido origen con el destino en `relacionados`. Los ítems conservan su `item_id`. | `tomar_pedido` |
 | `PedidoMovidoDeMesa` | `mesa_destino_id` | `tomar_pedido` |
+| `MesasUnidas` / `MesasSeparadas` | `mesa_ids`: mesas que el pedido ocupa además de la suya (un grupo grande, tarea 1.5). Van en el agregado del pedido, no en uno de mesa: el pedido es lo que ocupa las mesas. El hub no deja unir una mesa con otro pedido abierto. Un pedido ocupa sus mesas mientras tenga algo vigente o no tenga nada (recién abierto, o con lo no enviado quitado); pasar todo a otra mesa (`vaciadoAlMover`) o anularlo todo las suelta. Cualquier evento que vuelva a ocupar una mesa (reabrir, agregar a un pedido vaciado) pasa por la misma revisión | `tomar_pedido` |
 | `PedidosUnidos` | `pedido_origen_id`, copia de sus ítems; solo si el origen no tiene pagos ni división | `tomar_pedido` |
 | `DescuentoAplicado` | `descuento_id`, `alcance` (`item`, `pedido`), `item_id`, `regla` (`porcentaje` o `valor`, informativa), `cantidad_unidades` (cortesía de 1 de 3), **`montos`: pesos por línea ya prorrateados** ([DINERO.md](DINERO.md#descuentos)) | `descontar` o `cortesia` |
 | `DescuentoRetirado` | `descuento_id` | `descontar` |
@@ -233,7 +234,6 @@ Cada tipo tiene su esquema Zod en `packages/core` (tarea 0.5). Los montos que sa
 
 | Evento | Agregado | Datos principales | Permiso |
 |---|---|---|---|
-| `MesasUnidas` / `MesasSeparadas` | mesa | `mesa_ids` (grupo grande en el plano) | `tomar_pedido` |
 | `MesaMarcadaSucia` / `MesaLimpia` | mesa | — | `tomar_pedido` |
 | `ProductoAgotado` / `ProductoDisponible` | producto | `producto_id`, `variante_id` | `agotar_producto` |
 | `TurnoAbierto` | turno_caja | `caja_id`, `base` (pesos) | `abrir_turno_caja` |

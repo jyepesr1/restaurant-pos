@@ -43,6 +43,8 @@ const EVENTO_DOC: Record<string, Permiso | null> = {
   PedidoAbierto: 'tomar_pedido',
   ComensalesCambiados: 'tomar_pedido',
   NotaPedidoCambiada: 'tomar_pedido',
+  MesasUnidas: 'tomar_pedido',
+  MesasSeparadas: 'tomar_pedido',
   ItemAgregado: 'tomar_pedido',
   ItemCambiado: 'tomar_pedido',
   ItemsEnviados: 'tomar_pedido',

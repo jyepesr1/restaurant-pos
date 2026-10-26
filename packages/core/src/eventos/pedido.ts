@@ -153,6 +153,16 @@ const datosPorTipo = {
       .refine((items) => idsUnicos(items.map((m) => m.item.item_id)), 'Ítems repetidos'),
   }),
   PedidoMovidoDeMesa: z.strictObject({ mesa_destino_id: Ulid }),
+  /**
+   * Un grupo grande ocupa más mesas con el mismo pedido (tarea 1.5): las mesas que se suman a la
+   * suya. `MesasSeparadas` las suelta.
+   */
+  MesasUnidas: z.strictObject({
+    mesa_ids: z.array(Ulid).min(1).max(10).refine(idsUnicos, 'Mesas repetidas'),
+  }),
+  MesasSeparadas: z.strictObject({
+    mesa_ids: z.array(Ulid).min(1).max(10).refine(idsUnicos, 'Mesas repetidas'),
+  }),
   PedidosUnidos: z.strictObject({
     pedido_origen_id: Ulid,
     items: z

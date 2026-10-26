@@ -32,7 +32,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.3b | Acceso por rol ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)): meseros con PIN desde la IP sin emparejar; caja, administración y reportes con usuario y contraseña; roles y permisos que decide cada restaurante | ✅ |
 | 1.3c | Marca del producto (**Faro**, [ADR-014](DECISIONES.md#adr-014--faro-nombre-identidad-y-estilo-del-producto)) y rediseño: barra lateral, salón con sillas y pedidos abiertos, carta en tarjetas con foto opcional, marca opcional por restaurante | ✅ |
 | 1.4 | Comandas: impresora ESC/POS por estación y KDS básico ([ADR-015](DECISIONES.md#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero)): comanda impresa por estación con cola y respaldo, pantalla de cocina opcional, «Entregado» del mesero y «Pedidos en cocina» en la caja | ✅ |
-| 1.5 | Mover ítems, cambiar y unir mesas, anular con motivo y permiso | ⏳ |
+| 1.5 | Mover ítems, cambiar y unir mesas, anular con motivo y permiso | ✅ |
 | 1.6 | Precuenta, división, pagos mixtos y propina | ⏳ |
 | 1.7 | Apertura, cierre y arqueo de caja | ⏳ |
 | 1.8 | Datáfonos nivel 1 y conciliación en el cierre | ⏳ |
@@ -202,6 +202,75 @@ Opcional, la pantalla de cocina:
 
 13. En una tablet, entra con el usuario del administrador, ve a **Cocina e impresoras**, elige **Cocina** en «Usar este equipo como pantalla de cocina» y toca **Convertir este equipo → Convertir**. Debe quedar la pantalla con las comandas de cocina. Toca **Listo** en una: en el celular del mesero debe salir «Mesa N: listo para llevar».
 14. Para quitarla: en la caja, **Personal y roles → Equipos**, toca **Retirar** en «Pantalla cocina».
+
+### 1.5 — Mover, cambiar y unir mesas, anular y cancelar ✅
+
+Decisiones del dueño del 25-oct-2026 ([ADR-011](DECISIONES.md#adr-011--reglas-de-operación-acordadas-para-el-piloto)).
+
+**Lo nuevo en el pedido** (botón **Mesa y pedido**, arriba del pedido):
+- **Cambiar de mesa**: todo el pedido pasa a una mesa libre. Si la cocina ya tiene algo, recibe «CAMBIO DE MESA» con la mesa nueva y la anterior.
+- **Unir mesas** para un grupo grande: se eligen mesas libres y quedan ocupadas con el mismo pedido. Se ve «Mesa 5 + 6». En el plano, las mesas del grupo llevan un halo de su color y una franja las une (si la franja cruzaría otra mesa, quedan solo los halos). La principal lleva el tiempo y el total, y la otra dice «con la 5»; si está en otra zona, «con la 5 (Terraza)». Se sueltan en el mismo panel.
+- **Mover productos** a otra mesa: uno, varios o «Todo de P1». Si la mesa tiene pedido se suman a ese; si está libre, se abre uno. Pide conexión. Lo que ya estaba en cocina sale como «CAMBIO DE MESA».
+- **Cancelar el pedido**: con motivo; sin el permiso, con el PIN de quien autoriza. La cocina recibe «ANULAR» de lo que tenía y la mesa queda libre.
+
+**Lo nuevo en un plato ya enviado** (tocar la línea):
+- **Anular**: cuántas unidades, el motivo (lista o «Otro») y si la cocina ya lo hizo (merma). El mesero, sin el permiso, pide el **PIN del cajero o del administrador** en su celular. La cocina recibe «ANULAR».
+- **Cambiar la nota**: la cocina recibe una comanda «CAMBIO».
+
+**Por dentro:**
+- Eventos nuevos `MesasUnidas` y `MesasSeparadas` en el pedido (un grupo ocupa varias mesas).
+- El hub no deja abrir, cambiarse ni unir una mesa que otro pedido ocupa, contando también las mesas unidas.
+- El motor arma eventos con motivo, con el pedido relacionado (al mover) y con el comprobante del supervisor: la huella del evento se firma en el hub con su PIN (ADR-008).
+- Comandas nuevas: «CAMBIO DE MESA» y la anulación de un pedido cancelado.
+- La lista de pedidos del equipo y «Pedidos en cocina» siguen a los productos que pasan de un pedido a otro.
+- «Todo entregado» y «Entregar» cuentan unidades.
+
+Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron:
+- **App:**
+  - mover productos los quitaba del origen pero no aparecían en el destino (la lista de pedidos agrupaba solo por el pedido principal del evento);
+  - «Pedidos en cocina» perdía los platos que pasaban a otra mesa;
+  - anular proponía todas las unidades: ahora una;
+  - el PIN del cajero frenaba la toma de pedido mientras se comprobaba: ahora va aparte, con el mismo teclado de entrar (al cuarto dígito se envía, con la espera tras intentos);
+  - la nota cambiada de un plato enviado se perdía al cerrar: ahora sale como «CAMBIO»; uno ya entregado no la cambia;
+  - avisos falsos sin conexión;
+  - cambiar de mesa y unir sin conexión podían perder lo tomado después: ahora piden conexión;
+  - «Cancelar el pedido» era ambiguo: ahora está aparte, como zona de peligro, con «Volver» y «Sí, cancelarlo», y no se ofrece si hay pagos;
+  - unir mesas se puede antes del primer producto;
+  - soltar una mesa unida no se podía deshacer en el panel.
+- **Hub:**
+  - un pedido que quedó vacío al pasar todo a otra mesa seguía ocupando la suya;
+  - reimprimir una comanda cuyos platos se movieron no imprimía nada;
+  - reabrir una cuenta cuya mesa ya tenía otro pedido, o agregar a un pedido vaciado cuya mesa tomó otro, dejaba dos pedidos en la mesa: ahora el hub revisa cualquier evento que vuelva a ocupar una mesa.
+- **Salón:** cada mesa unida mostraba el mismo total y parecían dos cuentas; la franja quedaba tapada entre mesas pegadas.
+- **Hub y app:** quitar un producto que aún no se enviaba soltaba la mesa; ahora solo la sueltan pasar todo a otra mesa o anularlo todo.
+- **Hub:** un aviso de dos pedidos en la mesa tapaba el de precio distinto; ahora van juntos.
+
+**Pruebas:** 241 nuevas (núcleo 80, sincronización 43, impresión 4, hub 53, app 61), todas pasan.
+
+**Queda pendiente:**
+- **Juntar dos cuentas en una** (`PedidosUnidos`): el núcleo lo soporta, sin pantalla; al hacerlo, la nota del pedido de origen debe pasar al destino.
+- **Mover solo una unidad** de una línea de varias: hoy se mueve la línea entera.
+- Un pedido que queda vacío al mover todo sigue abierto sin productos (la mesa se ve libre).
+- Mesas unidas de zonas distintas no llevan franja en el plano: solo el halo y «con la 5 (Terraza)».
+- El plano con mesas unidas no tiene prueba automática (necesita el ancho real de la pantalla): queda para Playwright (1.11).
+- El hub no revisa que la mesa exista al abrir o cambiarse (solo que esté libre).
+- Un celular con una versión vieja de la app no conoce `MesasUnidas`: hay que actualizar todos los equipos a la vez.
+
+**Cómo probarlo:**
+
+1. Cierra el hub (**Ctrl+C**) y arráncalo con la versión nueva:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+2. En el celular, entra con el PIN de un mesero, abre la mesa 3, agrega 2 Aperol y toca **Enviar 2**.
+3. Abre otra vez la mesa 3 y el pedido, y toca la línea de Aperol. Debe decir que ya salió a cocina, con **Anular**. Tócalo: elige 1, el motivo «El cliente cambió», y en **PIN de quien autoriza** escribe el PIN para autorizar del administrador. Toca **Anular 1**. Debe quedar 1 Aperol; en la barra sale una comanda «ANULAR».
+4. Toca **Mesa y pedido → Unir mesas**, elige la 4 y toca **Guardar**. El título debe decir «Mesa 3 + 4». En el salón, la 3 y la 4 tienen un halo naranja y una franja las une; la 3 tiene el total y la 4 dice «con la 3».
+5. **Mesa y pedido → Cambiar de mesa**, elige la 10 y toca **Pasar a la mesa 10**. El título dice «Mesa 10 + 4»; la 3 queda libre y la barra recibe «CAMBIO DE MESA».
+6. Agrega y envía otro producto, y luego **Mesa y pedido → Mover productos**: elígelo, elige la mesa 8 y toca **Mover 1 a la mesa 8**. La mesa 8 debe mostrarlo.
+7. Abre la mesa 8, **Mesa y pedido → Cancelar el pedido**, elige un motivo, escribe el PIN del administrador y toca **Cancelar el pedido**. La mesa 8 queda libre.
+8. Toca un plato enviado, cambia su nota y toca **Enviar el cambio a cocina**: sale una comanda «CAMBIO».
 
 ### Ajustes del pedido en el celular (25-oct-2026) ✅
 

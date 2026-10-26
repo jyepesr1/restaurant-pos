@@ -101,6 +101,31 @@ const CONFLICTOS: Partial<Record<TipoProblema, TipoConflicto>> = {
   pedido_cerrado: 'pedido_cerrado',
 }
 
+/**
+ * Si un pedido abierto ocupa esa mesa: la suya o una unida a él (tarea 1.5). Uno que pasó todos
+ * sus productos a otra mesa, o al que se le anularon todos, ya no la ocupa; uno recién abierto, o
+ * al que el mesero le quitó lo que aún no enviaba, sí.
+ */
+const ocupa = (p: EstadoPedido, mesaId: string) =>
+  p.estado === 'abierto' &&
+  (p.mesaId === mesaId || p.mesasUnidas.includes(mesaId)) &&
+  (Object.values(p.items).some((i) => i.estado !== 'anulado') ||
+    (Object.keys(p.items).length === 0 && !p.vaciadoAlMover))
+
+/**
+ * Las mesas que un evento hace ocupar a un pedido que antes no las ocupaba: al abrirlo, al
+ * cambiarse o al unir, pero también al reabrir una cuenta o al agregar a un pedido vaciado.
+ */
+function mesasQueToma(antes: EstadoPedido | null, despues: EstadoPedido | null): string[] {
+  if (!despues || despues.mesaId === null) return []
+  return [despues.mesaId, ...despues.mesasUnidas].filter(
+    (m) => ocupa(despues, m) && !(antes && ocupa(antes, m)),
+  )
+}
+
+/** Cambiarse o unirse a una mesa ocupada exige estar al día: se hace con conexión. */
+const TOMA_CON_CONEXION = new Set(['PedidoMovidoDeMesa', 'MesasUnidas'])
+
 /** Mover y unir exigen conexión con el hub: nunca son conflicto. */
 const SIEMPRE_EN_LINEA = new Set(['ItemsMovidos', 'PedidosUnidos'])
 
@@ -177,10 +202,9 @@ export class HubSync {
     this.reconstruirProyecciones()
   }
 
-  /** Si la mesa tiene un pedido abierto (para no archivarla en el editor del plano). */
+  /** Si la mesa tiene un pedido abierto, suyo o de un grupo unido (no se archiva en el plano). */
   tienePedidoAbierto(mesaId: string): boolean {
-    for (const p of this.pedidos.values())
-      if (p.estado === 'abierto' && p.mesaId === mesaId) return true
+    for (const p of this.pedidos.values()) if (ocupa(p, mesaId)) return true
     return false
   }
 
@@ -410,21 +434,30 @@ export class HubSync {
         return this.rechazar(conexion, datos, problema.tipo, recibidoEn)
       }
       conflicto = { tipo, descripcion: problema.descripcion, agregadoId: evento.agregado_id }
-    } else if (evento.tipo === 'PedidoAbierto' && evento.datos.mesa_id) {
-      const mesa = this.mesaOcupada(evento)
-      if (mesa === 'rechazar') return this.rechazar(conexion, datos, 'mesa_ocupada', recibidoEn)
-      conflicto = mesa
-    } else if (evento.tipo === 'ItemAgregado') {
-      // Un precio que no cuadra con el catálogo se acepta (el ítem ya se pidió, quizá sin
-      // conexión) y la caja lo revisa (docs/SYNC.md#rechazos-cuarentena-y-conflictos).
-      const diferencia = this.config.precios?.revisar(evento)
-      if (diferencia)
-        conflicto = {
-          tipo: 'precio_distinto',
-          descripcion: diferencia,
-          agregadoId: evento.agregado_id,
-        }
     }
+    const mesa = problema
+      ? null
+      : this.mesaOcupada(
+          evento,
+          agregados,
+          antes.flatMap((pedido, i) => mesasQueToma(pedido, resultados[i]?.estado ?? null)),
+        )
+    if (mesa === 'rechazar') return this.rechazar(conexion, datos, 'mesa_ocupada', recibidoEn)
+    // Un precio que no cuadra con el catálogo se acepta (el ítem ya se pidió, quizá sin
+    // conexión) y la caja lo revisa (docs/SYNC.md#rechazos-cuarentena-y-conflictos). Un evento
+    // guarda un solo conflicto: si además hay dos pedidos en la mesa, va en la misma descripción.
+    const diferencia =
+      !problema && evento.tipo === 'ItemAgregado' ? this.config.precios?.revisar(evento) : null
+    if (mesa)
+      conflicto = diferencia
+        ? { ...mesa, descripcion: `${mesa.descripcion}. Revisa también el precio: ${diferencia}` }
+        : mesa
+    else if (diferencia)
+      conflicto = {
+        tipo: 'precio_distinto',
+        descripcion: diferencia,
+        agregadoId: evento.agregado_id,
+      }
 
     // 7. Guardar.
     this.almacen.guardarEvento(candidato, contenido, agregados)
@@ -455,12 +488,19 @@ export class HubSync {
    * no lo conocía (estaba sin conexión), se aceptan los dos y se avisa en caja.
    */
   private mesaOcupada(
-    evento: Extract<EventoNuevo, { tipo: 'PedidoAbierto' }>,
+    evento: EventoNuevo,
+    agregados: readonly string[],
+    mesas: readonly string[],
   ): { tipo: TipoConflicto; descripcion: string; agregadoId: string } | 'rechazar' | null {
-    const otro = [...this.pedidos.values()].find(
-      (p) => p.estado === 'abierto' && p.mesaId === evento.datos.mesa_id,
-    )
+    if (mesas.length === 0) return null
+    let otro: EstadoPedido | undefined
+    for (const p of this.pedidos.values())
+      if (!agregados.includes(p.id) && mesas.some((m) => ocupa(p, m))) {
+        otro = p
+        break
+      }
     if (!otro) return null
+    if (TOMA_CON_CONEXION.has(evento.tipo) || SIEMPRE_EN_LINEA.has(evento.tipo)) return 'rechazar'
     const loConocia =
       this.almacen.ultimaSecuenciaDe([otro.id], evento.dispositivo_id) <= evento.secuencia_base
     if (loConocia) return 'rechazar'

@@ -319,6 +319,8 @@ Dos de ellas cambian lo que dice el brief:
 | Modo normal | Conectado al hub por la red local. Sin conexión es solo un respaldo: se toman pedidos, pero no se cobra, no se autoriza ni se edita el catálogo hasta que vuelva la red. |
 | Estaciones del piloto | Cocina y barra. |
 | Cursos (entrada, fuerte, postre; retener y marchar) | **Apagados por defecto** (25-oct-2026): en Colombia casi no se usan. Se prenden por restaurante en «Cocina e impresoras» (`usar_cursos`). |
+| Anular lo enviado (tarea 1.5) | Con motivo de una lista (error del mesero, el cliente cambió, demora, producto dañado o mal hecho) u otro escrito, y si la cocina ya lo hizo (merma). Quien no tiene el permiso lo pide con el **PIN del cajero o del administrador en el mismo celular** (comprobante del ADR-008); desde la caja, sin PIN extra. La cocina recibe «ANULAR». Cancelar el pedido entero, igual, con su permiso. |
+| Unir mesas (tarea 1.5) | Es **juntar mesas para un grupo grande**: un solo pedido ocupa varias mesas y el plano las muestra unidas (`MesasUnidas` en el pedido). No es juntar dos cuentas (`PedidosUnidos` existe en el núcleo, sin pantalla todavía). |
 | Nota del pedido | Además de la nota de cada plato, una nota para todo el pedido (alergias, celebraciones) que sale en cada comanda y en la pantalla de cocina (`NotaPedidoCambiada`, 25-oct-2026). |
 | Productos con opciones | Un solo producto con opciones (Ramón Bilbao copa o botella con su precio; Té Hatsu con sabor obligatorio sin costo). |
 | Modificadores | Término de la carne, quitar ingredientes, adicionales con precio y notas libres. La lista real con precios se pide antes de la Fase 1. |

@@ -8,6 +8,14 @@ import { Icono, type NombreIcono } from '../ui/iconos'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { PanelLateral } from '../ui/PanelLateral'
 import { navegar, useRuta } from '../ui/ruta'
+import {
+  PanelAccionesPedido,
+  PanelAnular,
+  PanelCambiarMesa,
+  PanelCancelar,
+  PanelMover,
+  PanelUnirMesas,
+} from './AccionesPedido'
 import { sala, useSala, useVistaLocal } from './contexto'
 import { MarcoSala } from './MarcoSala'
 import {
@@ -21,12 +29,13 @@ import {
   elCurso,
   faltaElegir,
   lineaIgual,
+  movidoDe,
   type ProductoCatalogo,
   pideOpciones,
   precioElegido,
   unidadesPorEnviar,
 } from './pedido'
-import { claveAgotado, itemsVigentes, type PedidoVisible } from './proyeccion'
+import { claveAgotado, itemsVigentes, ocupaMesa, type PedidoVisible } from './proyeccion'
 
 // Toma de pedido (brief §4.2 y §5, regla 2): tocar productos y "Enviar". Cada toque es un evento
 // guardado aquí antes de mostrarse; se envía al hub cuando haya conexión.
@@ -35,6 +44,10 @@ import { claveAgotado, itemsVigentes, type PedidoVisible } from './proyeccion'
 // - Un curso se puede retener y marchar después (la entrada sale ya; el fuerte, cuando se pida).
 // - Lo agotado (86) se ve en todos los equipos al instante; quien tiene permiso lo marca aquí.
 // La mesa queda ocupada al agregar el primer producto, no al abrirla.
+
+/** Unidades (no líneas) de unos ítems: 2 Aperol en una línea son 2. */
+const unidadesDe = (items: readonly ItemPedido[]) =>
+  items.reduce((n, i) => n + i.cantidad - i.cantidadAnulada, 0)
 
 /** Lo que está en cocina y el mesero puede marcar entregado (ADR-015). */
 const EN_COCINA = new Set(['enviado', 'en_preparacion', 'listo'])
@@ -58,7 +71,8 @@ const RESULTADOS = 40
 
 export function TomaPedido() {
   const { parametros } = useRuta()
-  const { catalogo, sesion } = useSala()
+  const { catalogo, sesion, conexion } = useSala()
+  const enLinea = conexion === 'conectado'
   const vista = useVistaLocal()
   const pedidos = vista?.pedidos ?? null
   const agotados = vista?.agotados ?? new Set<string>()
@@ -86,6 +100,10 @@ export function TomaPedido() {
   // Los cursos se usan poco en Colombia: solo se ven si el restaurante los prende.
   const usarCursos = catalogo?.restaurante.usarCursos ?? false
   const [editandoNota, setEditandoNota] = useState(false)
+  // Mesa y pedido (tarea 1.5): qué panel está abierto, y qué ítem se anula.
+  const [accion, setAccion] = useState<'menu' | 'mover' | 'mesa' | 'unir' | 'cancelar' | null>(null)
+  const [anulando, setAnulando] = useState<string | null>(null)
+  const permisos = sesion?.permisos ?? []
 
   // "/" lleva a la búsqueda (atajo de caja, brief §5, regla 8).
   useEffect(() => {
@@ -108,7 +126,9 @@ export function TomaPedido() {
 
   // El pedido: el elegido, el que se abrió aquí o el primero de la mesa.
   const candidatos = (pedidos ?? []).filter((p) =>
-    mesaId ? p.estado.mesaId === mesaId : p.estado.id === parametros.get('pedido'),
+    mesaId
+      ? p.estado.mesaId === mesaId || p.estado.mesasUnidas.includes(mesaId)
+      : p.estado.id === parametros.get('pedido'),
   )
   const elegidoId =
     parametros.get('pedido') ??
@@ -118,8 +138,11 @@ export function TomaPedido() {
   const pedido = (pedidos ?? []).find((p) => p.estado.id === elegidoId) ?? null
   const canal: Canal = pedido?.estado.canal ?? canalNuevo ?? 'salon'
   const comensales = pedido?.estado.comensales ?? comensalesIniciales
+  const unidas = (pedido?.estado.mesasUnidas ?? [])
+    .map((id) => catalogo?.mesas.find((m) => m.id === id)?.nombre)
+    .filter(Boolean)
   const titulo = mesa
-    ? `Mesa ${mesa.nombre}`
+    ? `Mesa ${[mesa.nombre, ...unidas].join(' + ')}`
     : `${canal === 'salon' ? 'Pedido' : CANALES[canal]}${pedido?.estado.numeroDia ? ` #${pedido.estado.numeroDia}` : ''}`
   const productos = catalogo.categorias.flatMap((c) => c.productos)
   // Por dónde sale cada producto (cocina o barra): da su ícono cuando no tiene foto.
@@ -138,6 +161,23 @@ export function TomaPedido() {
       console.error(e)
       avisar(e instanceof Error ? e.message : 'No se pudo guardar')
     })
+  }
+  /**
+   * Como `enOrden`, pero el fallo vuelve a quien lo pidió (un panel que lo muestra junto al
+   * botón: un PIN errado, sin conexión) en vez de un aviso.
+   */
+  const enOrdenConError = (trabajo: () => Promise<void>): Promise<void> => {
+    const hecho = cola.current.then(trabajo)
+    cola.current = hecho.catch(() => {})
+    return hecho
+  }
+  /**
+   * Para lo que espera al hub (el PIN del supervisor, hasta 8 s): va después de lo que ya está en
+   * la cola, pero sin frenar los productos que se agreguen mientras tanto.
+   */
+  const sinFrenarLaCola = async (trabajo: () => Promise<void>): Promise<void> => {
+    await cola.current
+    await trabajo()
   }
   /** El pedido guardado (no el de la última pantalla): un toque anterior pudo cambiarlo. */
   const pedidoGuardado = async () => {
@@ -280,6 +320,148 @@ export function TomaPedido() {
       }
       const id = await asegurarPedido()
       await sala.registrar('NotaPedidoCambiada', id, { notas })
+    })
+
+  // ── Mesa y pedido (tarea 1.5) ────────────────────────────────────────
+
+  /**
+   * Mesas que ocupan los otros pedidos abiertos (su mesa y las unidas), para elegir a dónde pasar.
+   * Uno que quedó vacío al pasar todo a otra mesa ya no ocupa la suya (igual que en el hub).
+   */
+  const ocupadas = new Map<string, string>()
+  for (const p of pedidos ?? []) {
+    if (!p.estado.mesaId || p.estado.id === pedido?.estado.id || !ocupaMesa(p.estado)) continue
+    const mesero = catalogo?.personal.find((u) => u.id === p.estado.meseroAsignadoId)?.nombre
+    for (const m of [p.estado.mesaId, ...p.estado.mesasUnidas]) ocupadas.set(m, mesero ?? 'ocupada')
+  }
+
+  /** Anular lo enviado, con motivo; sin el permiso lo autoriza el cajero con su PIN. */
+  const anular = (
+    itemId: string,
+    d: { cantidad: number; motivo: string; yaPreparado: boolean; pin: string | null },
+  ) =>
+    sinFrenarLaCola(async () => {
+      const estado = await pedidoGuardado()
+      const item = estado?.items[itemId]
+      if (!estado || !item) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
+      await sala.registrar(
+        'ItemAnulado',
+        estado.id,
+        {
+          item_id: item.id,
+          cantidad: d.cantidad,
+          ya_preparado: d.yaPreparado,
+          comanda_id: nuevoId(),
+        },
+        {
+          motivo: d.motivo,
+          ...(d.pin ? { autoriza: { pin: d.pin, permiso: 'anular_item_enviado' } } : {}),
+        },
+      )
+      setAnulando(null)
+      setEditando(null)
+      avisar(
+        enLinea
+          ? `Anulaste ${d.cantidad} ${item.nombre}`
+          : `Anulado aquí: llega a cocina cuando vuelva la conexión`,
+      )
+    })
+
+  /** Cancelar el pedido entero; la mesa queda libre y la cocina recibe la anulación. */
+  const cancelarPedido = (d: { motivo: string; pin: string | null }) =>
+    sinFrenarLaCola(async () => {
+      const estado = await pedidoGuardado()
+      if (!estado) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
+      if (Object.values(estado.pagos).some((p) => !p.anulado))
+        throw new Error('Este pedido ya tiene pagos: primero hay que anularlos en caja')
+      await sala.registrar(
+        'PedidoCancelado',
+        estado.id,
+        {},
+        {
+          motivo: d.motivo,
+          ...(d.pin ? { autoriza: { pin: d.pin, permiso: 'cancelar_pedido' } } : {}),
+        },
+      )
+      setAccion(null)
+      avisar('Cancelaste el pedido')
+      navegar('/')
+    })
+
+  /** La nota de un plato que ya salió: la cocina recibe una comanda «CAMBIO». */
+  const cambiarNotaEnviada = (itemId: string, notas: string | null) =>
+    enOrden(async () => {
+      const estado = await pedidoGuardado()
+      const item = estado?.items[itemId]
+      if (!estado || !item || item.notas === notas) return
+      await sala.registrar('ItemModificadoTrasEnvio', estado.id, {
+        item_id: item.id,
+        comanda_id: nuevoId(),
+        notas,
+      })
+      avisar(
+        enLinea
+          ? `La cocina recibe el cambio de ${item.nombre}`
+          : 'Guardado: el cambio llega a cocina cuando vuelva la conexión',
+      )
+    })
+
+  /** Pasar productos a otra mesa: al pedido que tenga, o a uno nuevo si está libre. */
+  const moverA = (itemIds: string[], mesaDestino: string) =>
+    enOrdenConError(async () => {
+      const estado = await pedidoGuardado()
+      if (!estado) return
+      const items = itemIds.map((id) => estado.items[id]).filter((i): i is ItemPedido => !!i)
+      if (items.length === 0) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
+      // Lo que el hub rechazaría se avisa antes de abrir nada en la otra mesa.
+      if (estado.cuentas) throw new Error('La cuenta está dividida: primero deshaz la división')
+      if (
+        items.some((i) =>
+          Object.values(estado.descuentos).some((d) => d.montos[i.id] !== undefined),
+        )
+      )
+        throw new Error('Algo tiene descuento: primero quítalo en caja')
+      let destino = (pedidos ?? []).find(
+        (p) =>
+          p.estado.id !== estado.id &&
+          (p.estado.mesaId === mesaDestino || p.estado.mesasUnidas.includes(mesaDestino)),
+      )?.estado.id
+      if (!destino) {
+        destino = nuevoId()
+        await sala.registrar('PedidoAbierto', destino, {
+          canal: 'salon',
+          mesa_id: mesaDestino,
+          comensales: 0,
+        })
+      }
+      await sala.registrar(
+        'ItemsMovidos',
+        estado.id,
+        { pedido_destino_id: destino, items: items.map(movidoDe) },
+        { relacionados: [destino] },
+      )
+      setAccion(null)
+      const nombre = catalogo?.mesas.find((m) => m.id === mesaDestino)?.nombre
+      avisar(`Pasaste ${unidadesDe(items)} a la mesa ${nombre ?? ''}`)
+    })
+
+  /** El pedido entero se cambia a otra mesa libre. */
+  const cambiarDeMesa = (mesaDestino: string) =>
+    enOrdenConError(async () => {
+      const estado = await pedidoGuardado()
+      if (!estado) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
+      await sala.registrar('PedidoMovidoDeMesa', estado.id, { mesa_destino_id: mesaDestino })
+      setAccion(null)
+      navegar(`/pedido?mesa=${mesaDestino}&pedido=${estado.id}`)
+    })
+
+  /** Unir mesas libres a la de este pedido, o soltarlas. */
+  const unirMesas = (agregar: string[], quitar: string[]) =>
+    enOrdenConError(async () => {
+      const id = await asegurarPedido()
+      if (agregar.length > 0) await sala.registrar('MesasUnidas', id, { mesa_ids: agregar })
+      if (quitar.length > 0) await sala.registrar('MesasSeparadas', id, { mesa_ids: quitar })
+      setAccion(null)
     })
 
   const duplicar = (itemId: string) =>
@@ -463,6 +645,7 @@ export function TomaPedido() {
       alMarchar={marchar}
       alEntregar={puedeEntregar ? entregar : null}
       alEditarNota={() => setEditandoNota(true)}
+      alAcciones={pedido || mesaId ? () => setAccion('menu') : null}
     />
   )
 
@@ -710,11 +893,11 @@ export function TomaPedido() {
               onClick={() =>
                 entregar(
                   enCocina.map((i) => i.id),
-                  `${enCocina.length} ${enCocina.length === 1 ? 'producto' : 'productos'}`,
+                  `${unidadesDe(enCocina)} ${unidadesDe(enCocina) === 1 ? 'producto' : 'productos'}`,
                 )
               }
             >
-              {`Entregar ${enCocina.length}`}
+              {`Entregar ${unidadesDe(enCocina)}`}
             </Boton>
           ) : (
             botonEnviar
@@ -761,7 +944,67 @@ export function TomaPedido() {
         />
       )}
 
-      {pedido && itemEditado && (
+      {accion === 'menu' && (
+        <PanelAccionesPedido
+          conMesa={pedido ? pedido.estado.mesaId !== null : !!mesaId}
+          conPedido={!!pedido}
+          alCerrar={() => setAccion(null)}
+          alElegir={setAccion}
+        />
+      )}
+      {pedido && accion === 'mover' && (
+        <PanelMover
+          pedido={pedido}
+          catalogo={catalogo}
+          ocupadas={ocupadas}
+          enLinea={enLinea}
+          alCerrar={() => setAccion(null)}
+          alMover={moverA}
+        />
+      )}
+      {pedido?.estado.mesaId && accion === 'mesa' && (
+        <PanelCambiarMesa
+          enLinea={enLinea}
+          catalogo={catalogo}
+          ocupadas={ocupadas}
+          actual={[pedido.estado.mesaId, ...pedido.estado.mesasUnidas]}
+          alCerrar={() => setAccion(null)}
+          alCambiar={cambiarDeMesa}
+        />
+      )}
+      {(pedido?.estado.mesaId ?? mesaId) && accion === 'unir' && (
+        <PanelUnirMesas
+          enLinea={enLinea}
+          catalogo={catalogo}
+          ocupadas={ocupadas}
+          mesaId={(pedido?.estado.mesaId ?? mesaId) as string}
+          unidas={pedido?.estado.mesasUnidas ?? []}
+          alCerrar={() => setAccion(null)}
+          alGuardar={unirMesas}
+        />
+      )}
+      {pedido && accion === 'cancelar' && (
+        <PanelCancelar
+          mesa={titulo}
+          conPagos={Object.values(pedido.estado.pagos).some((p) => !p.anulado)}
+          conPermiso={permisos.includes('cancelar_pedido')}
+          enLinea={enLinea}
+          enCocina={itemsVigentes(pedido.estado).filter((i) => EN_COCINA.has(i.estado)).length}
+          alCerrar={() => setAccion(null)}
+          alCancelar={cancelarPedido}
+        />
+      )}
+      {pedido && anulando && pedido.estado.items[anulando] && (
+        <PanelAnular
+          item={pedido.estado.items[anulando] as ItemPedido}
+          conPermiso={permisos.includes('anular_item_enviado')}
+          enLinea={enLinea}
+          alCerrar={() => setAnulando(null)}
+          alAnular={(d) => anular(anulando, d)}
+        />
+      )}
+
+      {pedido && itemEditado && !anulando && (
         <PanelItem
           key={itemEditado.id}
           item={itemEditado}
@@ -771,6 +1014,8 @@ export function TomaPedido() {
           alCambiar={(cambio) => cambiarItem(itemEditado.id, cambio)}
           alSumar={(delta) => sumar(itemEditado.id, delta)}
           usarCursos={usarCursos}
+          alAnular={() => setAnulando(itemEditado.id)}
+          alCambiarNotaEnviada={(notas) => cambiarNotaEnviada(itemEditado.id, notas)}
           alDuplicar={() => {
             duplicar(itemEditado.id)
             setEditando(null)
@@ -906,6 +1151,7 @@ function Ticket({
   alMarchar,
   alEntregar,
   alEditarNota,
+  alAcciones,
 }: {
   pedido: PedidoVisible | null
   comensales: number
@@ -919,6 +1165,8 @@ function Ticket({
   /** Sin el permiso de marcar, no se ven los botones de entregar. */
   alEntregar: ((ids: string[], que: string) => void) | null
   alEditarNota: () => void
+  /** Cambiar de mesa, unir, mover y cancelar; sin pedido todavía, nada. */
+  alAcciones: (() => void) | null
 }) {
   const items = pedido ? itemsVigentes(pedido.estado) : []
   const porEntregar = items.filter((i) => EN_COCINA.has(i.estado))
@@ -953,6 +1201,19 @@ function Ticket({
             onClick={() => alCambiarComensales(1)}
           />
         </div>
+      )}
+      {alAcciones && (
+        <button
+          type="button"
+          onClick={alAcciones}
+          className="flex min-h-12 w-full items-center gap-2 border-b border-linea px-4 py-2 text-left font-semibold hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
+        >
+          <Icono nombre="mesa" className="size-5 shrink-0" />
+          Mesa y pedido
+          <span className="ml-auto text-sm font-normal text-texto-suave">
+            Cambiar, unir, mover, cancelar
+          </span>
+        </button>
       )}
       <button
         type="button"
@@ -1025,11 +1286,11 @@ function Ticket({
             onClick={() =>
               alEntregar(
                 porEntregar.map((i) => i.id),
-                `${porEntregar.length} productos`,
+                `${unidadesDe(porEntregar)} productos`,
               )
             }
           >
-            {`Todo entregado (${porEntregar.length})`}
+            {`Todo entregado (${unidadesDe(porEntregar)})`}
           </Boton>
         </div>
       )}
@@ -1346,6 +1607,8 @@ function PanelItem({
   alCambiar,
   alSumar,
   usarCursos,
+  alAnular,
+  alCambiarNotaEnviada,
   alDuplicar,
   alQuitar,
 }: {
@@ -1360,6 +1623,10 @@ function PanelItem({
     notas?: string | null
   }) => void
   alSumar: (delta: number) => void
+  /** Ya enviado: anular con motivo (y PIN si hace falta). */
+  alAnular: () => void
+  /** Ya enviado: cambiar su nota; la cocina recibe «CAMBIO». */
+  alCambiarNotaEnviada: (notas: string | null) => void
   alDuplicar: () => void
   alQuitar: () => void
 }) {
@@ -1370,9 +1637,11 @@ function PanelItem({
    * unidad, se escribe así en la nota («1 sin hielo»): el dueño lo prefiere a separar la línea.
    */
   const guardarNota = () => {
-    if (!sinEnviar) return
     const nueva = notas.trim() || null
-    if (nueva !== item.notas) alCambiar({ notas: nueva })
+    if (nueva === item.notas) return
+    if (sinEnviar) alCambiar({ notas: nueva })
+    // Ya enviado y sin entregar: lo escrito no se pierde al cerrar, va como «CAMBIO» a cocina.
+    else if (item.estado !== 'entregado' && item.estado !== 'anulado') alCambiarNotaEnviada(nueva)
   }
   const cerrar = () => {
     guardarNota()
@@ -1406,13 +1675,38 @@ function PanelItem({
               Quitar
             </Boton>
           )}
+          {!sinEnviar && item.estado !== 'anulado' && (
+            <Boton variante="peligro" grande className="flex-1" onClick={alAnular}>
+              Anular
+            </Boton>
+          )}
         </div>
       }
     >
-      {!sinEnviar && (
-        <p className="mb-4 rounded-xl bg-neutro-suave p-3 text-neutro-texto">
-          Ya se envió a cocina: aquí no se cambia. Para anularlo, avisa en caja.
+      {!sinEnviar && item.estado === 'entregado' && (
+        <p className="rounded-xl bg-neutro-suave p-3 text-neutro-texto">
+          Ya se entregó en la mesa. Si hay que anularlo, toca «Anular».
         </p>
+      )}
+      {!sinEnviar && item.estado !== 'entregado' && (
+        <div className="flex flex-col gap-4">
+          <p className="rounded-xl bg-neutro-suave p-3 text-neutro-texto">
+            Ya salió a cocina. Si cambias la nota, la cocina recibe una comanda «CAMBIO».
+          </p>
+          <label className="flex flex-col gap-1">
+            <span className="font-semibold">Nota para cocina</span>
+            <textarea
+              rows={2}
+              maxLength={200}
+              value={notas}
+              onChange={(e) => setNotas(e.target.value)}
+              className={claseNota}
+            />
+          </label>
+          <Boton disabled={(notas.trim() || null) === item.notas} onClick={cerrar}>
+            Enviar el cambio a cocina
+          </Boton>
+        </div>
       )}
       {sinEnviar && (
         <>

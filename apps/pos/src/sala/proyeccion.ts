@@ -1,5 +1,5 @@
 import { type EstadoPedido, type ItemPedido, reconstruir, totalesPedido } from '@pos/core'
-import type { EventoLocal } from '@pos/sync'
+import { type EventoLocal, pedidosDe } from '@pos/sync'
 
 // Lo que muestra la pantalla de demo, calculado de los eventos guardados en el dispositivo: los
 // confirmados por el hub y, encima, los propios pendientes (docs/SYNC.md#orden-y-estado-local).
@@ -28,8 +28,8 @@ export function pedidosAbiertos(locales: readonly EventoLocal[]): PedidoVisible[
   const porPedido = new Map<string, EventoLocal[]>()
   for (const l of locales) {
     if (!vigente(l) || l.evento.agregado_tipo !== 'pedido') continue
-    const id = l.evento.agregado_id
-    porPedido.set(id, [...(porPedido.get(id) ?? []), l])
+    // Un evento puede tocar dos pedidos: mover productos va en el origen y llega al destino.
+    for (const id of pedidosDe(l.evento)) porPedido.set(id, [...(porPedido.get(id) ?? []), l])
   }
   const visibles: PedidoVisible[] = []
   for (const [id, eventos] of porPedido) {
@@ -132,3 +132,12 @@ export function masPedidos(locales: readonly EventoLocal[], cuantos = 12): strin
     .slice(0, cuantos)
     .map(([id]) => id)
 }
+
+/**
+ * Si un pedido abierto ocupa su mesa: tiene algo vigente, o no tiene nada (se acaba de abrir, o
+ * el mesero quitó lo que aún no enviaba). Uno que quedó vacío al pasar todo a otra mesa, o con
+ * todo anulado, ya no (tarea 1.5; el hub aplica la misma regla).
+ */
+export const ocupaMesa = (p: EstadoPedido) =>
+  p.estado === 'abierto' &&
+  (itemsVigentes(p).length > 0 || (Object.keys(p.items).length === 0 && !p.vaciadoAlMover))

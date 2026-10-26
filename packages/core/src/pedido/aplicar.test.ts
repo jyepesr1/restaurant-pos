@@ -196,6 +196,32 @@ describe('ciclo de vida del pedido', () => {
     expect(final).toMatchObject({ meseroAsignadoId: otro, comensales: 6, mesaId: mesa })
   })
 
+  it('un grupo grande une mesas y las separa; la suya no cuenta dos veces', () => {
+    const { pedido, estado } = abierto()
+    const [m5, m6] = [nuevoId(), nuevoId()]
+    const unida = aplicarTodos(
+      [
+        evento(pedido, 'PedidoMovidoDeMesa', { mesa_destino_id: m5 }),
+        evento(pedido, 'MesasUnidas', { mesa_ids: [m6, m5] }),
+      ],
+      estado,
+    )
+    expect(unida.mesasUnidas).toEqual([m6])
+    expect(
+      aplicarEvento(unida, evento(pedido, 'MesasUnidas', { mesa_ids: [m6] })).problema?.tipo,
+    ).toBe('mesas_ya_unidas')
+    // Pasarse a la mesa unida la vuelve la principal.
+    expect(
+      aplicarTodos([evento(pedido, 'PedidoMovidoDeMesa', { mesa_destino_id: m6 })], unida),
+    ).toMatchObject({
+      mesaId: m6,
+      mesasUnidas: [],
+    })
+    expect(
+      aplicarTodos([evento(pedido, 'MesasSeparadas', { mesa_ids: [m6] })], unida).mesasUnidas,
+    ).toEqual([])
+  })
+
   it('la nota del pedido se pone sin espacios de más y se quita con null o vacía', () => {
     const { pedido, estado } = abierto()
     expect(estado.notas).toBeNull()

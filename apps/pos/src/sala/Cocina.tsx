@@ -271,7 +271,7 @@ function Tablero({
   // En la pantalla suena una vez por cada comanda que llega (no al abrirla con lo que ya había).
   useEffect(() => {
     if (modo !== 'pantalla' || !vista) return
-    const ids = new Set(comandas.map((c) => c.comandaId))
+    const ids = new Set(comandas.map((c) => c.clave))
     if (vistas.current && sonidoActivo && [...ids].some((id) => !vistas.current?.has(id))) sonar()
     vistas.current = ids
   })
@@ -381,7 +381,7 @@ function Tablero({
           className={`grid gap-4 ${modo === 'pantalla' ? 'grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]' : 'grid-cols-[repeat(auto-fill,minmax(16rem,1fr))]'}`}
         >
           {enCurso.map((c) => (
-            <li key={c.comandaId}>
+            <li key={c.clave}>
               <Tarjeta
                 catalogo={catalogo}
                 comanda={c}
@@ -428,7 +428,7 @@ function Tablero({
           <ul className="flex flex-wrap gap-3">
             {listas.map((c) => (
               <li
-                key={c.comandaId}
+                key={c.clave}
                 className={`flex min-h-14 items-center gap-3 rounded-2xl py-2 pr-2 pl-4 ${TONOS_SUAVES.libre}`}
               >
                 <Icono nombre="servir" />
@@ -652,9 +652,9 @@ export function AvisoListos() {
     const mias = vista.comandas.filter(
       (c) => c.lista && c.pedido.estado.meseroAsignadoId === sesion.usuario.id,
     )
-    const ids = new Set(mias.map((c) => c.comandaId))
+    const ids = new Set(mias.map((c) => c.clave))
     if (conocidas.current) {
-      const nuevas = mias.filter((c) => !conocidas.current?.ids.has(c.comandaId))
+      const nuevas = mias.filter((c) => !conocidas.current?.ids.has(c.clave))
       for (const c of nuevas) avisar(`${destino(catalogo, c)}: listo para llevar`)
       if (nuevas.length > 0) navigator.vibrate?.([80, 60, 80])
     }

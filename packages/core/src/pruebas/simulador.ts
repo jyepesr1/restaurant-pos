@@ -138,6 +138,9 @@ const aCopia = (it: ItemPedido) => ({
   notas: it.notas,
 })
 
+/** Una mesa fija para unir y separar: así el simulador ejerce los dos caminos. */
+const MESA_UNIDA = nuevoId()
+
 const aMovido = (it: ItemPedido) => ({
   item: aCopia(it),
   estado: it.estado as Exclude<EstadoItem, 'anulado'>,
@@ -513,7 +516,13 @@ export class Servicio {
                     notas: b % 8 === 0 ? null : 'alérgico al maní',
                   })
                 : evento(id, 'ComensalesCambiados', { comensales: b % 20 })
-              : evento(id, 'PedidoMovidoDeMesa', { mesa_destino_id: nuevoId() }),
+              : b % 2 === 0
+                ? evento(
+                    id,
+                    est.mesasUnidas.includes(MESA_UNIDA) ? 'MesasSeparadas' : 'MesasUnidas',
+                    { mesa_ids: [MESA_UNIDA] },
+                  )
+                : evento(id, 'PedidoMovidoDeMesa', { mesa_destino_id: nuevoId() }),
         )
       case 22: {
         const t = totalesPedido(est)

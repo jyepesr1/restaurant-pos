@@ -2,6 +2,7 @@ import {
   agregadoDe,
   type EventoNuevo,
   firmarEvento,
+  huellaAutorizable,
   nuevoId,
   type TipoEventoPedido,
 } from '@pos/core'
@@ -178,6 +179,16 @@ export interface TrabajoPendiente {
   intentos: number
   error: string | null
   creado_en: string
+}
+
+/** Lo que algunos eventos llevan además de sus datos. */
+export interface OpcionesEvento {
+  /** Obligatorio en anulaciones y cancelaciones (docs/MODELO_DATOS.md). */
+  motivo?: string
+  /** El otro pedido que toca (el destino al mover productos). */
+  relacionados?: string[]
+  /** El PIN de quien autoriza, si quien está en el equipo no tiene el permiso. */
+  autoriza?: { pin: string; permiso: string }
 }
 
 export interface Instantanea {
@@ -753,6 +764,7 @@ export class Sala {
     tipo: T,
     pedidoId: string,
     datos: Extract<EventoNuevo, { tipo: T }>['datos'],
+    opciones: OpcionesEvento = {},
   ): Promise<EventoNuevo> {
     const ahora = Date.now()
     // Primero el uso: si la sesión acaba de vencer, no se firma nada con ella.
@@ -766,17 +778,32 @@ export class Sala {
       version_esquema: 1,
       agregado_tipo: agregadoDe(tipo),
       agregado_id: pedidoId,
-      relacionados: [],
+      relacionados: opciones.relacionados ?? [],
       datos,
       sesion_id: sesion.sesionId,
       usuario_id: sesion.usuario.id,
       dispositivo_id: equipo.dispositivoId,
       autorizacion_id: null,
-      motivo: null,
+      motivo: opciones.motivo ?? null,
       hora_dispositivo: new Date(ahora).toISOString(),
       hora_estimada_hub: cliente.horaEstimadaHub(ahora),
       secuencia_base: await cliente.conocido(),
     } as EventoNuevo
+    // Con el PIN de un supervisor (ADR-008): el hub da un comprobante de un solo uso para este
+    // evento exacto (su huella), y el evento lo lleva. Pide conexión: sin ella, falla aquí.
+    if (opciones.autoriza) {
+      const { autorizacion_id } = await this.conSesion<{ autorizacion_id: string }>(
+        '/api/autorizaciones',
+        {
+          pin: opciones.autoriza.pin,
+          accion: opciones.autoriza.permiso,
+          agregado_id: pedidoId,
+          evento_id: evento.id,
+          huella: huellaAutorizable(evento),
+        },
+      )
+      evento.autorizacion_id = autorizacion_id
+    }
     const firmado = { ...evento, firma: firmarEvento(evento, sesion.secreto) } as EventoNuevo
     const r = await cliente.registrar(firmado)
     if (!r.ok) throw new Error(`Evento inválido: ${r.errores.join('; ')}`)

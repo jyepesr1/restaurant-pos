@@ -83,6 +83,10 @@ export interface EstadoPedido {
   unidoA: string | null
   /** Nota para todo el pedido: va en cada comanda y en la cocina. */
   notas: string | null
+  /** Otras mesas que ocupa el pedido además de `mesaId` (un grupo grande, tarea 1.5). */
+  mesasUnidas: string[]
+  /** Quedó sin productos porque los pasó todos a otra mesa (tarea 1.5): ya no ocupa la suya. */
+  vaciadoAlMover: boolean
   items: Record<string, ItemPedido>
   descuentos: Record<string, DescuentoPedido>
   cursosRetenidos: Curso[]

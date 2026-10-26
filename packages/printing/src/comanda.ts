@@ -6,7 +6,14 @@ import { aLosLados, type Formato, type Linea, parrafo } from './documento'
 // decide el orden y el estilo.
 
 /** `nota`: cambió la nota de todo el pedido con platos ya en cocina (alergias: que no se pierda). */
-export type TipoComanda = 'nueva' | 'reimpresion' | 'modificacion' | 'anulacion' | 'nota'
+export type TipoComanda =
+  | 'nueva'
+  | 'reimpresion'
+  | 'modificacion'
+  | 'anulacion'
+  | 'nota'
+  /** Platos ya en cocina que pasaron a otra mesa: la cocina debe llevarlos a la nueva. */
+  | 'traslado'
 export type CursoComanda = 'entrada' | 'fuerte' | 'postre'
 
 export interface ItemComanda {
@@ -38,6 +45,8 @@ export interface Comanda {
   retenidos?: CursoComanda[]
   /** La nota de todo el pedido («alérgico al maní»): sale arriba, resaltada. */
   notaPedido?: string | null
+  /** En un cambio de mesa, dónde estaba antes («Mesa 5»). */
+  antes?: string | null
 }
 
 const TITULO: Record<TipoComanda, string | null> = {
@@ -46,6 +55,7 @@ const TITULO: Record<TipoComanda, string | null> = {
   modificacion: 'CAMBIO',
   anulacion: 'ANULAR',
   nota: 'NOTA NUEVA',
+  traslado: 'CAMBIO DE MESA',
 }
 
 const NOMBRE_CURSO: Record<CursoComanda, string> = {
@@ -91,6 +101,7 @@ export function lineasComanda(
       grande: true,
     }),
     ...parrafo(datos.join(' · '), formato),
+    ...(comanda.antes ? parrafo(`Antes: ${comanda.antes}`, formato, { negrita: true }) : []),
     ...(comanda.notaPedido
       ? parrafo(`NOTA DEL PEDIDO: ${comanda.notaPedido}`, formato, {
           invertido: true,
