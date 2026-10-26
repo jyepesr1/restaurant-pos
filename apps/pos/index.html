@@ -7,10 +7,10 @@
     <title>Faro</title>
     <link rel="icon" href="/marca/faro.svg" />
     <script>
-      // Modo oscuro antes de pintar: sin destello blanco en el bar de noche (ver src/ui/tema.ts).
+      // Dark mode before painting: no white flash in the bar at night (see src/ui/theme.ts).
       try {
-        // Marca del restaurante (src/ui/marca.ts, que solo guarda marcas que existen): Faro salvo
-        // que el restaurante tenga la suya.
+        // Restaurant brand (src/ui/brand.ts, which only saves brands that exist): Faro unless
+        // the restaurant has its own.
         const m = localStorage.getItem('pos-brand') || 'faro'
         if (m !== 'faro') document.documentElement.dataset.marca = m
       } catch {}

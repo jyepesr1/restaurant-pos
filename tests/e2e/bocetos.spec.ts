@@ -6,7 +6,7 @@ import { expect, type Locator, type Page, test } from '@playwright/test'
 // ejemplo, y para conservarlo entre pantallas se navega con toques, nunca con `page.goto`.
 // Los avisos y los tiempos dependen del reloj: las pruebas que los miran lo congelan.
 
-const esCaja = (proyecto: string) => proyecto === 'register'
+const isRegister = (proyecto: string) => proyecto === 'register'
 
 // ---------------------------------------------------------------------------------------------
 // Utilidades
@@ -35,10 +35,10 @@ async function medidasPequenas(page: Page): Promise<string[]> {
     const description = (el: Element) =>
       `${el.tagName.toLowerCase()}[${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 40)}]`
     const fallas: string[] = []
-    const candidatos = document.querySelectorAll(
+    const candidates = document.querySelectorAll(
       'button, a[href], input, select, textarea, summary, [role="button"], [role="link"], [role="checkbox"]',
     )
-    for (const el of candidatos) {
+    for (const el of candidates) {
       let medido: Element = el
       if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio'))
         medido = el.closest('label') ?? el
@@ -71,9 +71,9 @@ async function contrasteInsuficiente(page: Page): Promise<string[]> {
   )
   return page.evaluate(() => {
     type Rgba = [number, number, number, number]
-    const lienzo = document.createElement('canvas')
-    lienzo.width = lienzo.height = 1
-    const ctx = lienzo.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1
+    const ctx = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D
     const aRgba = (css: string): Rgba => {
       ctx.clearRect(0, 0, 1, 1)
       ctx.fillStyle = '#000'
@@ -82,10 +82,10 @@ async function contrasteInsuficiente(page: Page): Promise<string[]> {
       const d = ctx.getImageData(0, 0, 1, 1).data
       return [d[0] ?? 0, d[1] ?? 0, d[2] ?? 0, (d[3] ?? 0) / 255]
     }
-    const envelope = (f: Rgba, fondo: Rgba): Rgba => {
-      const a = f[3] + fondo[3] * (1 - f[3])
+    const envelope = (f: Rgba, background: Rgba): Rgba => {
+      const a = f[3] + background[3] * (1 - f[3])
       if (a === 0) return [0, 0, 0, 0]
-      const mix = (i: 0 | 1 | 2) => (f[i] * f[3] + fondo[i] * fondo[3] * (1 - f[3])) / a
+      const mix = (i: 0 | 1 | 2) => (f[i] * f[3] + background[i] * background[3] * (1 - f[3])) / a
       return [mix(0), mix(1), mix(2), a]
     }
     const lum = (c: Rgba) => {
@@ -122,11 +122,11 @@ async function contrasteInsuficiente(page: Page): Promise<string[]> {
       let opacidad = 1
       for (let e: Element | null = el; e; e = e.parentElement)
         opacidad *= Number(getComputedStyle(e).opacity)
-      const fondo = fondoDe(el)
+      const background = fondoDe(el)
       const text = aRgba(style.color)
       text[3] *= opacidad
-      const seen = envelope(text, fondo)
-      const [a, b] = [lum(seen), lum(fondo)].sort((x, y) => y - x) as [number, number]
+      const seen = envelope(text, background)
+      const [a, b] = [lum(seen), lum(background)].sort((x, y) => y - x) as [number, number]
       const razon = (a + 0.05) / (b + 0.05)
       const px = Number.parseFloat(style.fontSize)
       const large = px >= 24 || (px >= 18.66 && Number(style.fontWeight) >= 700)
@@ -232,7 +232,7 @@ const ticketEl = (page: Page, table: number, station: 'cocina' | 'barra') =>
 // Tamaño táctil de 48×48 px
 // ---------------------------------------------------------------------------------------------
 
-const PANTALLAS = [
+const SCREENS = [
   { name: 'índice', route: '/mockups' },
   { name: 'floorPlan', route: '/mockups/floor-plan' },
   { name: 'pedido', route: '/mockups/order?table=2' },
@@ -243,7 +243,7 @@ const PANTALLAS = [
 ]
 
 test.describe('tamaño táctil de 48×48 px', () => {
-  for (const { name, route } of PANTALLAS) {
+  for (const { name, route } of SCREENS) {
     test(`${name}: todo botón, enlace y campo mide al menos 48×48`, async ({ page }) => {
       await page.goto(route)
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
@@ -275,7 +275,7 @@ test.describe('tamaño táctil de 48×48 px', () => {
   test('pedido con el panel de opciones, el de un ítem y el de anulación abiertos', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=2')
     await buscarEnCarta(page).fill('tagliata')
     await product(page, 'Tagliata di Manzo').click()
@@ -341,7 +341,7 @@ test.describe('tamaño táctil de 48×48 px', () => {
 
 test.describe('contraste AA en claro y oscuro', () => {
   for (const schema of ['light', 'dark'] as const) {
-    for (const { name, route } of PANTALLAS) {
+    for (const { name, route } of SCREENS) {
       test(`${name} con el sistema en ${schema === 'dark' ? 'dark' : 'claro'}`, async ({
         page,
       }) => {
@@ -661,7 +661,7 @@ test.describe('plano de mesas', () => {
   }, info) => {
     await page.goto('/mockups/floor-plan')
     const checks = page.getByRole('complementary', { name: 'Cuentas abiertas' })
-    if (esCaja(info.project.name)) {
+    if (isRegister(info.project.name)) {
       await expect(checks).toBeVisible()
       for (const n of [2, 4, 7, 9, 12, 21])
         await expect(
@@ -778,7 +778,7 @@ test.describe('pedido en 3 toques', () => {
   test('el mismo producto suma a su línea, la tarjeta muestra la cantidad y Deshacer resta', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await congelarReloj(page)
     await page.goto('/mockups/order?table=2')
     await product(page, 'Pinsa').click()
@@ -802,7 +802,7 @@ test.describe('pedido en 3 toques', () => {
   test('el mismo producto para otra persona o con otra nota es otra línea', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=2')
     await product(page, 'Pinsa').click() // para la mesa
     let ticket = await abrirTicket(page, register)
@@ -817,7 +817,7 @@ test.describe('pedido en 3 toques', () => {
   test('un ítem ya enviado no se suma: el mismo producto abre una línea nueva', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=21')
     await product(page, 'Pinsa').click()
     const ticket = await abrirTicket(page, register)
@@ -840,7 +840,7 @@ test.describe('pedido en 3 toques', () => {
   test('«Cuenta» lleva a la precuenta de la mesa y está deshabilitado sin ítems', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
     const ticket = await abrirTicket(page, register)
     await expect(ticket.getByRole('button', { name: 'Cuenta' })).toBeDisabled()
@@ -855,7 +855,7 @@ test.describe('pedido en 3 toques', () => {
   test('personas de la mesa: al bajar las personas, «para quién» vuelve a Mesa', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=2')
     const ticket = await abrirTicket(page, register)
     await expect(ticket).toContainText('2 personas')
@@ -894,7 +894,7 @@ test.describe('productos con opciones', () => {
   test('Ramón Bilbao Crianza: Copa o Botella en un panel; tocar la variante ya lo agrega con su precio', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
     await buscarEnCarta(page).fill('ramon bilbao crianza')
     const card = product(page, 'Ramón Bilbao Crianza')
@@ -949,7 +949,7 @@ test.describe('productos con opciones', () => {
   test('la cantidad elegida antes de tocar la variante multiplica su precio', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
     await buscarEnCarta(page).fill('ramon bilbao crianza')
     await product(page, 'Ramón Bilbao Crianza').click()
@@ -965,7 +965,7 @@ test.describe('productos con opciones', () => {
   test('Tagliata: el término es obligatorio; tocarlo agrega el plato y no se puede agregar sin él', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
     await buscarEnCarta(page).fill('tagliata')
     await product(page, 'Tagliata di Manzo').click()
@@ -1027,7 +1027,7 @@ test.describe('productos con opciones', () => {
   test('Té Hatsu pide el sabor (obligatorio, sin costo) y tocarlo lo agrega', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
     await buscarEnCarta(page).fill('te hatsu')
     await product(page, 'Té Hatsu').click()
@@ -1077,7 +1077,7 @@ test.describe('productos con opciones', () => {
   test('escribir la nota tecla por tecla al editar un ítem no pierde el foco ni letras', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
     await product(page, 'Pinsa').click()
     const ticket = await abrirTicket(page, register)
@@ -1139,7 +1139,7 @@ test.describe('panel lateral modal', () => {
   test('con dos paneles abiertos (pedido y un ítem), cerrar el de arriba NO libera el fondo', async ({
     page,
   }, info) => {
-    test.skip(esCaja(info.project.name), 'El panel «Pedido» solo existe en el celular')
+    test.skip(isRegister(info.project.name), 'El panel «Pedido» solo existe en el celular')
     await page.goto('/mockups/order?table=2')
     await page.getByRole('button', { name: /^Pedido \(/ }).click()
     const order = page.getByRole('dialog', { name: /^Pedido · Mesa/ })
@@ -1161,7 +1161,7 @@ test.describe('panel lateral modal', () => {
 
 test.describe('deshacer y avisos', () => {
   test('deshacer un ítem agregado lo quita del pedido', async ({ page }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await congelarReloj(page)
     await page.goto('/mockups/order?table=1')
     await product(page, 'Tentazione di Formaggio').click()
@@ -1173,7 +1173,7 @@ test.describe('deshacer y avisos', () => {
   })
 
   test('quitar un ítem y deshacer lo devuelve en su posición original', async ({ page }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await congelarReloj(page)
     await page.goto('/mockups/order?table=1')
     for (const name of ['Pinsa', 'Tentazione di Formaggio', 'Polpette'])
@@ -1208,7 +1208,7 @@ test.describe('deshacer y avisos', () => {
   test('hasta 3 avisos a la vez, cada uno con su Deshacer: quitar dos ítems seguidos no pierde el primero', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await congelarReloj(page)
     await page.goto('/mockups/order?table=1')
     for (const name of ['Pinsa', 'Tentazione di Formaggio', 'Polpette'])
@@ -1280,7 +1280,7 @@ test.describe('deshacer y avisos', () => {
   })
 
   test('quitar el ítem y dejar vencer el aviso lo deja quitado', async ({ page }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await congelarReloj(page)
     await page.goto('/mockups/order?table=1')
     await product(page, 'Pinsa').click()
@@ -1298,7 +1298,7 @@ test.describe('deshacer y avisos', () => {
   })
 
   test('cambiar la cantidad y las notas de un ítem sin enviar', async ({ page }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
     await product(page, 'Pinsa').click()
     const ticket = await abrirTicket(page, register)
@@ -1323,7 +1323,7 @@ test.describe('anular un ítem enviado', () => {
   test('pide motivo y confirmación; queda a la vista, tachado, y deja de cobrarse', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=7')
     let ticket = await abrirTicket(page, register)
     await expect(ticket.getByText('Total').locator('xpath=following-sibling::span[1]')).toHaveText(
@@ -1363,7 +1363,7 @@ test.describe('anular un ítem enviado', () => {
   })
 
   test('lo anulado sale del KDS, del saldo del plano y de la precuenta', async ({ page }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=7')
     const ticket = await abrirTicket(page, register)
     await ticket.getByRole('button', { name: /Spritz Burguer/ }).click()
@@ -1656,7 +1656,7 @@ test.describe('precuenta (docs/DINERO.md)', () => {
     const print = page.getByRole('button', { name: 'Imprimir' })
     const register = await print.boundingBox()
     const consoleLines = page.viewportSize() as { width: number; height: number }
-    if (esCaja(info.project.name)) {
+    if (isRegister(info.project.name)) {
       expect((register?.y ?? 0) + (register?.height ?? 0)).toBeLessThan(consoleLines.height - 20)
     } else {
       expect((register?.y ?? 0) + (register?.height ?? 0)).toBeGreaterThan(consoleLines.height - 90)
@@ -1988,7 +1988,7 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
   test('de punta a punta: pedido nuevo, precuenta y cobro dejan la mesa por limpiar y fuera del KDS', async ({
     page,
   }, info) => {
-    const register = esCaja(info.project.name)
+    const register = isRegister(info.project.name)
     await page.goto('/mockups/floor-plan')
     await mesaEnPlano(page, 1).click()
     await product(page, 'Pinsa').click()
@@ -2205,11 +2205,11 @@ test.describe('KDS (cocina y barra)', () => {
 // ---------------------------------------------------------------------------------------------
 
 test.describe('teclado del PIN (PIN de prueba 2468)', () => {
-  const tecla = (page: Page, d: string) => page.getByRole('button', { name: d, exact: true })
-  const escribir = async (page: Page, pin: string) => {
-    for (const d of pin) await tecla(page, d).click()
+  const hotkey = (page: Page, d: string) => page.getByRole('button', { name: d, exact: true })
+  const write = async (page: Page, pin: string) => {
+    for (const d of pin) await hotkey(page, d).click()
   }
-  const digitos = (page: Page) => page.getByText(/^\d de 4 dígitos$/)
+  const digits = (page: Page) => page.getByText(/^\d de 4 dígitos$/)
   const erase = (page: Page) => page.getByRole('button', { name: 'Borrar el último dígito' })
   const warning = (page: Page) => page.getByRole('alert')
 
@@ -2221,21 +2221,21 @@ test.describe('teclado del PIN (PIN de prueba 2468)', () => {
     page,
   }) => {
     await page.goto('/mockups/components')
-    await escribir(page, '2468')
+    await write(page, '2468')
     await expect(alert(page, 'Hola, Mesero 1')).toHaveCount(1)
     await expect(warning(page)).toHaveText('')
-    await expect(digitos(page)).toHaveText('0 de 4 dígitos') // queda listo para el siguiente
+    await expect(digits(page)).toHaveText('0 de 4 dígitos') // queda listo para el siguiente
   })
 
   test('muestra cuántos dígitos van y borra de a uno', async ({ page }) => {
     await page.goto('/mockups/components')
-    await expect(digitos(page)).toHaveText('0 de 4 dígitos')
+    await expect(digits(page)).toHaveText('0 de 4 dígitos')
     await expect(erase(page)).toBeDisabled()
-    await escribir(page, '24')
-    await expect(digitos(page)).toHaveText('2 de 4 dígitos')
+    await write(page, '24')
+    await expect(digits(page)).toHaveText('2 de 4 dígitos')
     await erase(page).click()
-    await expect(digitos(page)).toHaveText('1 de 4 dígitos')
-    await escribir(page, '468')
+    await expect(digits(page)).toHaveText('1 de 4 dígitos')
+    await write(page, '468')
     await expect(alert(page, 'Hola, Mesero 1')).toHaveCount(1)
   })
 
@@ -2243,7 +2243,7 @@ test.describe('teclado del PIN (PIN de prueba 2468)', () => {
     page,
   }) => {
     await page.goto('/mockups/components')
-    await expect(digitos(page)).toBeVisible() // la pantalla se carga aparte
+    await expect(digits(page)).toBeVisible() // la pantalla se carga aparte
     await page.keyboard.press('2')
     await page.keyboard.press('9')
     await page.keyboard.press('Backspace')
@@ -2251,7 +2251,7 @@ test.describe('teclado del PIN (PIN de prueba 2468)', () => {
     await page.keyboard.press('6')
     await page.keyboard.press('a')
     await page.keyboard.press('Control+7')
-    await expect(digitos(page)).toHaveText('3 de 4 dígitos')
+    await expect(digits(page)).toHaveText('3 de 4 dígitos')
     await page.keyboard.press('8')
     await expect(alert(page, 'Hola, Mesero 1')).toHaveCount(1)
   })
@@ -2260,10 +2260,10 @@ test.describe('teclado del PIN (PIN de prueba 2468)', () => {
     page,
   }) => {
     await page.goto('/mockups/components')
-    await escribir(page, '1111')
+    await write(page, '1111')
     await expect(warning(page)).toHaveText('PIN incorrecto')
-    await expect(digitos(page)).toHaveText('0 de 4 dígitos')
-    await escribir(page, '2468')
+    await expect(digits(page)).toHaveText('0 de 4 dígitos')
+    await write(page, '2468')
     await expect(alert(page, 'Hola, Mesero 1')).toHaveCount(1)
   })
 
@@ -2271,12 +2271,12 @@ test.describe('teclado del PIN (PIN de prueba 2468)', () => {
     page,
   }) => {
     await page.goto('/mockups/components')
-    await escribir(page, '1111')
-    await expect(digitos(page)).toHaveText('0 de 4 dígitos')
-    await escribir(page, '1111')
+    await write(page, '1111')
+    await expect(digits(page)).toHaveText('0 de 4 dígitos')
+    await write(page, '1111')
     await expect(warning(page)).toHaveText('PIN incorrecto')
-    await expect(digitos(page)).toHaveText('0 de 4 dígitos')
-    await escribir(page, '2468')
+    await expect(digits(page)).toHaveText('0 de 4 dígitos')
+    await write(page, '2468')
     await expect(alert(page, 'Hola, Mesero 1')).toHaveCount(1)
   })
 
@@ -2284,59 +2284,59 @@ test.describe('teclado del PIN (PIN de prueba 2468)', () => {
     page,
   }) => {
     await page.goto('/mockups/components')
-    for (let i = 0; i < 3; i++) await escribir(page, '1111')
+    for (let i = 0; i < 3; i++) await write(page, '1111')
     await expect(warning(page)).toHaveText('Demasiados intentos.')
     await expect(page.getByText('Espera 2 s')).toBeVisible()
-    await expect(tecla(page, '5')).toBeDisabled()
+    await expect(hotkey(page, '5')).toBeDisabled()
     await expect(erase(page)).toBeDisabled()
 
     // Ni los toques ni el teclado físico entran durante la espera.
     await page.keyboard.press('2')
-    await expect(digitos(page)).toHaveText('0 de 4 dígitos')
+    await expect(digits(page)).toHaveText('0 de 4 dígitos')
 
     await page.clock.runFor(1_000)
     await expect(page.getByText('Espera 1 s')).toBeVisible()
     await page.clock.runFor(1_500)
-    await expect(tecla(page, '5')).toBeEnabled()
+    await expect(hotkey(page, '5')).toBeEnabled()
     await expect(warning(page)).not.toContainText('Demasiados intentos')
 
-    await escribir(page, '2468')
+    await write(page, '2468')
     await expect(alert(page, 'Hola, Mesero 1')).toHaveCount(1)
   })
 
   test('el cuarto error espera el doble (4 s)', async ({ page }) => {
     await page.goto('/mockups/components')
-    for (let i = 0; i < 3; i++) await escribir(page, '1111')
+    for (let i = 0; i < 3; i++) await write(page, '1111')
     await page.clock.runFor(2_500)
-    await escribir(page, '1111')
+    await write(page, '1111')
     await expect(page.getByText('Espera 4 s')).toBeVisible()
   })
 
   test('el PIN correcto en plena espera no entra', async ({ page }) => {
     await page.goto('/mockups/components')
-    for (let i = 0; i < 3; i++) await escribir(page, '1111')
-    await expect(tecla(page, '2')).toBeDisabled()
+    for (let i = 0; i < 3; i++) await write(page, '1111')
+    await expect(hotkey(page, '2')).toBeDisabled()
     await page.keyboard.type('2468')
     await expect(alert(page, 'Hola, Mesero 1')).toHaveCount(0)
   })
 
   test('después de entrar bien, el contador de errores empieza de cero', async ({ page }) => {
     await page.goto('/mockups/components')
-    for (let i = 0; i < 3; i++) await escribir(page, '1111')
+    for (let i = 0; i < 3; i++) await write(page, '1111')
     await page.clock.runFor(2_500)
-    await escribir(page, '2468')
+    await write(page, '2468')
     await expect(alert(page, 'Hola, Mesero 1')).toHaveCount(1)
 
     // Un solo error nuevo es el primero de una racha nueva: no debe hacer esperar.
-    await escribir(page, '3333')
+    await write(page, '3333')
     await expect(warning(page)).toHaveText('PIN incorrecto')
-    await expect(tecla(page, '5')).toBeEnabled()
+    await expect(hotkey(page, '5')).toBeEnabled()
   })
 
   test('el PIN no queda escrito en pantalla: solo puntos', async ({ page }) => {
     await page.goto('/mockups/components')
-    await escribir(page, '13')
+    await write(page, '13')
     await expect(page.getByText('13', { exact: true })).toHaveCount(0)
-    await expect(digitos(page)).toHaveText('2 de 4 dígitos')
+    await expect(digits(page)).toHaveText('2 de 4 dígitos')
   })
 })

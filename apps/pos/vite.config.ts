@@ -6,15 +6,15 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    // En desarrollo, la API la atiende el hub.
+    // In development, the hub serves the API.
     proxy: {
       '/api': { target: 'http://localhost:4000', ws: true },
       '/photos': 'http://localhost:4000',
     },
   },
   test: {
-    // `pnpm check` corre todos los paquetes a la vez y las pruebas del hub (procesos reales,
-    // scrypt) ocupan la CPU: las de propiedades al azar pueden pasar de los 5 s por defecto.
+    // `pnpm check` runs all packages at once and the hub tests (real processes, scrypt)
+    // keep the CPU busy: the random property tests can exceed the default 5 s.
     testTimeout: 20_000,
   },
 })

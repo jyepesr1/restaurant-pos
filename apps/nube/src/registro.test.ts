@@ -52,14 +52,14 @@ describe('código de un solo uso', () => {
 
   it('con el mismo código escrito de varias formas a la vez, solo uno gana', async () => {
     const { restaurant, code } = await restauranteConCodigo()
-    const formas = [
+    const shapes = [
       code,
       code.toLowerCase(),
       code.replaceAll('-', ''),
       ` ${code} `,
       code.replaceAll('-', ' '),
     ]
-    const responses = await Promise.all(formas.map((c) => record(c)))
+    const responses = await Promise.all(shapes.map((c) => record(c)))
     expect(responses.filter((r) => r.status === 201)).toHaveLength(1)
     expect(await hubsDe(restaurant)).toHaveLength(1)
   })
@@ -73,8 +73,8 @@ describe('código de un solo uso', () => {
     const credentials = await Promise.all(
       responses.map(async (r) => ((await r.json()) as { credential: string }).credential),
     )
-    const validas = await Promise.all(credentials.map((c) => m.nube.authenticate(c)))
-    expect(validas.filter((h) => h !== null)).toHaveLength(1)
+    const validOnes = await Promise.all(credentials.map((c) => m.nube.authenticate(c)))
+    expect(validOnes.filter((h) => h !== null)).toHaveLength(1)
   })
 
   it('un código usado por otro hub no sirve para un tercero', async () => {

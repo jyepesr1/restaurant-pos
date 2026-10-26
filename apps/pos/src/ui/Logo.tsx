@@ -1,7 +1,7 @@
-// El logo de Faro: el faro en su cuadro verde azulado, con su haz de luz. Se dibuja aquí (no es una
-// imagen) para tomar los colores del tema; con la marca de un restaurante, su logo lo reemplaza.
+// The Faro logo: the lighthouse in its teal square, with its light beam. It is drawn here (not an
+// image) to take the theme colors; with a restaurant's brand, its logo replaces it.
 
-export function MarcaFaro({ className = 'size-9' }: { className?: string }) {
+export function FaroMark({ className = 'size-9' }: { className?: string }) {
   return (
     <svg viewBox="0 0 48 48" aria-hidden="true" className={className}>
       <rect width="48" height="48" rx="13" className="fill-accion-fuerte" />
@@ -13,33 +13,33 @@ export function MarcaFaro({ className = 'size-9' }: { className?: string }) {
   )
 }
 
-/** Logo con nombre: el de Faro o, con su marca puesta, el del restaurante. */
+/** Logo with name: Faro's or, with its brand set, the restaurant's. */
 export function Logo({
   name,
   brand,
-  soloMarca = false,
+  brandOnly = false,
 }: {
   name?: string
   brand?: string | null
-  /** Solo el dibujo, sin nombre (la barra lateral angosta de la tablet). */
-  soloMarca?: boolean
+  /** Just the drawing, without name (the tablet's narrow sidebar). */
+  brandOnly?: boolean
 }) {
-  const conMarca = brand === 'la-spritzzeria'
+  const withBrand = brand === 'la-spritzzeria'
   return (
     <span className="flex items-center gap-2.5">
-      {conMarca ? (
-        // La insignia de La Spritzzería: su logo en el círculo crema, como en la carta.
+      {withBrand ? (
+        // La Spritzzería's badge: its logo in the cream circle, as on the menu.
         <img
           src="/marca/la-spritzzeria.svg"
           alt=""
           className="size-10 rounded-full border-2 border-marca bg-[#fff8ec] p-0.5"
         />
       ) : (
-        <MarcaFaro />
+        <FaroMark />
       )}
-      <span className={`flex flex-col leading-tight ${soloMarca ? 'sr-only' : ''}`}>
+      <span className={`flex flex-col leading-tight ${brandOnly ? 'sr-only' : ''}`}>
         <span className="font-titulo text-xl font-bold tracking-tight">{name ?? 'Faro'}</span>
-        {name && !conMarca && (
+        {name && !withBrand && (
           <span className="text-sm font-medium text-texto-suave">con Faro</span>
         )}
       </span>

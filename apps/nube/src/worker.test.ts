@@ -10,7 +10,7 @@ const status = vi.hoisted(() => ({
   createdList: [] as { connectionString: string }[],
   connectedCount: 0,
   terminados: 0,
-  oyentes: [] as string[],
+  listeners: [] as string[],
   failing: null as Error | null,
   fallaAlTerminar: false,
   fallaConsulta: false,
@@ -22,7 +22,7 @@ vi.mock('pg', () => ({
       status.createdList.push(options)
     }
     on(event: string) {
-      status.oyentes.push(event)
+      status.listeners.push(event)
     }
     async connect() {
       if (status.failing) throw status.failing
@@ -56,7 +56,7 @@ beforeEach(async () => {
   status.createdList.length = 0
   status.connectedCount = 0
   status.terminados = 0
-  status.oyentes.length = 0
+  status.listeners.length = 0
   status.failing = null
   status.fallaAlTerminar = false
   status.fallaConsulta = false
@@ -117,7 +117,7 @@ describe('Worker', () => {
     })
     await response
     await Promise.all(pendingList)
-    expect(status.oyentes).toContain('error')
+    expect(status.listeners).toContain('error')
   })
 
   it('si no se puede conectar: 500 genérico, sin la cadena de conexión ni el motivo', async () => {

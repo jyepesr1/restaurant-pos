@@ -591,8 +591,7 @@ describe('un error interno nunca devuelve detalles', () => {
     )
     expect(volcado).not.toContain('clave-super-secreta')
     expect(volcado).not.toContain('SELECT secreto')
-    for (const llamada of log.mock.calls)
-      for (const arg of llamada) expect(arg).not.toBeInstanceOf(Error)
+    for (const call of log.mock.calls) for (const arg of call) expect(arg).not.toBeInstanceOf(Error)
   })
 
   it('si la base falla en la transacción de guardar un lote, es 500 y no queda nada a medias', async () => {

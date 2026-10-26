@@ -124,7 +124,7 @@ const value = (page: Page, title: string) => row(page, title).locator(':scope > 
 const ponerNombre = (page: Page, name = 'Equipo de pruebas') =>
   page.getByLabel('Nombre de este equipo').fill(name)
 
-const envio = (page: Page) =>
+const submission = (page: Page) =>
   page.getByRole('button', { name: /Enviar resultados al hub|Enviando/ })
 
 test.describe('pantalla de diagnóstico', () => {
@@ -527,14 +527,14 @@ test.describe('pantalla de diagnóstico', () => {
     await page.goto('/diagnostics')
     await expect(row(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
     await page.getByLabel('Nombre de este equipo').fill('Caja principal')
-    await envio(page).click()
+    await submission(page).click()
 
     await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
     expect(body).toMatchObject({
       name: 'Caja principal',
       indexedDb: true,
-      capacidades: expect.objectContaining({ secureContext: true }),
-      resumen: expect.objectContaining({ cargas: 1 }),
+      capabilities: expect.objectContaining({ secureContext: true }),
+      summary: expect.objectContaining({ loads: 1 }),
     })
     const types = ((body?.events ?? []) as { type: string }[]).map((event) => event.type)
     expect(types).toContain('load')
@@ -548,7 +548,7 @@ test.describe('pantalla de diagnóstico', () => {
     )
     await page.goto('/diagnostics')
     await ponerNombre(page)
-    await envio(page).click()
+    await submission(page).click()
 
     await expect(page.getByRole('status')).toHaveText(MENSAJE_ERROR)
     await expect(page.getByText('✓ Resultados enviados')).toBeHidden()
@@ -562,10 +562,10 @@ test.describe('pantalla de diagnóstico', () => {
     )
     await page.goto('/diagnostics')
     await ponerNombre(page)
-    await envio(page).click()
+    await submission(page).click()
     await expect(page.getByRole('status')).toHaveText(MENSAJE_ERROR)
     // El botón vuelve a quedar disponible.
-    await expect(envio(page)).toBeEnabled()
+    await expect(submission(page)).toBeEnabled()
 
     await page.unroute('**/api/diagnostics')
     await page.route('**/api/diagnostics', (route) =>
@@ -573,7 +573,7 @@ test.describe('pantalla de diagnóstico', () => {
         ? route.fulfill({ json: { saved: true } })
         : route.fallback(),
     )
-    await envio(page).click()
+    await submission(page).click()
     await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
   })
 
@@ -584,7 +584,7 @@ test.describe('pantalla de diagnóstico', () => {
       return route.fallback()
     })
     await page.goto('/diagnostics')
-    await envio(page).click()
+    await submission(page).click()
 
     await expect(page.getByRole('status')).toHaveText(
       'Escribe un nombre para identificar este equipo.',
@@ -601,7 +601,7 @@ test.describe('pantalla de diagnóstico', () => {
     )
     await page.goto('/diagnostics')
     await ponerNombre(page)
-    await envio(page).click()
+    await submission(page).click()
     await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
     const recargas = value(page, 'El navegador recargó la página solo')
     await expect(recargas).toContainText('0 veces en 1 carga')
@@ -629,13 +629,13 @@ test('el hub guarda el informe enviado desde la pantalla en diagnosticos.jsonl',
   await page.goto('/diagnostics')
   await expect(row(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
   await page.getByLabel('Nombre de este equipo').fill(name)
-  await envio(page).click()
+  await submission(page).click()
   await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
 
   const lines = (await readFile(ARCHIVO, 'utf8')).split('\n').filter(Boolean)
-  const mio = lines.map((line) => JSON.parse(line)).find((r) => r.data?.name === name)
-  expect(mio).toBeDefined()
-  expect(mio.data.indexedDb).toBe(true)
-  expect(new Date(mio.receivedAt).getTime()).not.toBeNaN()
-  expect(mio.data.events.length).toBeGreaterThan(0)
+  const own = lines.map((line) => JSON.parse(line)).find((r) => r.data?.name === name)
+  expect(own).toBeDefined()
+  expect(own.data.indexedDb).toBe(true)
+  expect(new Date(own.receivedAt).getTime()).not.toBeNaN()
+  expect(own.data.events.length).toBeGreaterThan(0)
 })

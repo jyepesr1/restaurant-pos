@@ -12,12 +12,12 @@ export interface Entorno {
   TOKEN_ADMIN?: string
 }
 
-interface Contexto {
-  waitUntil(promesa: Promise<unknown>): void
+interface ToastContext {
+  waitUntil(promise: Promise<unknown>): void
 }
 
 export default {
-  async fetch(req: Request, environment: Entorno, contexto: Contexto): Promise<Response> {
+  async fetch(req: Request, environment: Entorno, context: ToastContext): Promise<Response> {
     let client: Client | null = null
     const sql = sqlPerezoso(async () => {
       client = new Client({ connectionString: environment.HYPERDRIVE.connectionString })
@@ -30,7 +30,7 @@ export default {
       return await atender(req, { sql, tokenAdmin: environment.TOKEN_ADMIN })
     } finally {
       const opened = client as Client | null
-      if (opened) contexto.waitUntil(opened.end().catch(() => {}))
+      if (opened) context.waitUntil(opened.end().catch(() => {}))
     }
   },
 }

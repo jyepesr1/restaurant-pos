@@ -116,7 +116,7 @@ describe('por la API', () => {
               m.nube.recibirEventos(
                 h.hub,
                 (porRestaurante[i] ?? []).map((n) =>
-                  eventoPlano(n, { data: { de: h.restaurantId } }),
+                  eventoPlano(n, { data: { src: h.restaurantId } }),
                 ),
               ),
             ),
@@ -127,7 +127,9 @@ describe('por la API', () => {
               (porRestaurante[i] ?? []).map((n) => ulid(n, 'E')).sort(),
             )
             expect(
-              rows.every((f) => (f.content as { data: { de: string } }).data.de === h.restaurantId),
+              rows.every(
+                (f) => (f.content as { data: { src: string } }).data.src === h.restaurantId,
+              ),
             ).toBe(true)
           }
         },

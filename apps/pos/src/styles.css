@@ -1,0 +1,265 @@
+@import "tailwindcss";
+
+/*
+ * Faro design system (tasks 0.9 and 1.3c). The status colors have a fixed meaning across
+ * the whole product (brief §5), with any brand:
+ *   libre   green  · free, ready, paid
+ *   proceso amber  · in progress, waiting
+ *   alerta  red    · delay, error, destructive action
+ *   accion  teal (Faro) or the restaurant brand's color · the main action
+ *   neutro  gray   · everything else
+ * Each has three tones: `-fuerte` (button or label background, with white text), `-suave`
+ * (faint background) and `-texto` (text over `-suave`). Every pair meets AA contrast
+ * (4.5:1) in light and dark (measured by ui/contrast.test.ts). Color never goes alone.
+ *
+ * Layers: `fondo` (the canvas), `superficie` (cards and panels), `superficie-2` (the sunken:
+ * fields, tappable rows), `lateral` (side and top bar). `linea` separates without being a control;
+ * `borde` is the border of controls (3:1 against its background, WCAG 1.4.11).
+ *
+ * Dark mode follows the system, unless the person picks another (ui/theme.ts): the `oscuro` class
+ * on <html>, which index.html sets before painting.
+ *
+ * Type: Figtree (bundled, works without internet), a single family for everything. Fixed scale:
+ * 14 px secondary (`text-sm`), 16 px body, 18 px products and large buttons, 20 to 24 px
+ * headings, 30 to 36 px large figures. Nothing below 14 px.
+ *
+ * Restaurant brand (`data-marca` on <html>, see ui/brand.ts): optional. It changes surfaces,
+ * type and the action color; the status colors (libre, proceso, alerta) are Faro's with
+ * any brand (checked by ui/contrast.test.ts). With no brand, the POS
+ * looks like Faro (the `:root` values). La Spritzzería's comes from its «Bagno» system
+ * (la-spritzzeria-menu/DESIGN.md): by day the sand and the navy, by night the terrace; `--marca` is
+ * the Aperol orange and only works for large headings (3.27:1 over the sand).
+ */
+
+@custom-variant dark (&:where(.oscuro, .oscuro *));
+
+:root {
+  --fondo: #f2f5f5;
+  --superficie: #ffffff;
+  --superficie-2: #eaf0ef;
+  --lateral: #ffffff;
+  --linea: #dfe6e5;
+  --borde: #778987;
+  --texto: #12201f;
+  --texto-suave: #51625f;
+  /* Keyboard focus ring. */
+  --foco: #0f766e;
+  --sombra: 0 1px 2px rgb(16 42 40 / 0.06), 0 8px 24px -12px rgb(16 42 40 / 0.18);
+
+  --accion-fuerte: #0f766e;
+  --accion-suave: #d9f2ee;
+  --accion-texto: #0b4d48;
+  --libre-fuerte: #15803d;
+  --libre-suave: #dcfce7;
+  --libre-texto: #14532d;
+  --proceso-fuerte: #b45309;
+  --proceso-suave: #fef3c7;
+  --proceso-texto: #78350f;
+  --alerta-fuerte: #b91c1c;
+  --alerta-suave: #fee2e2;
+  --alerta-texto: #7f1d1d;
+  --neutro-fuerte: #475569;
+  --neutro-suave: #e3e9ef;
+  --neutro-texto: #1e293b;
+
+  --marca: #0f766e;
+  --fuente-texto: "Figtree Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --fuente-titulos: var(--fuente-texto);
+
+  color-scheme: light;
+}
+
+:root.oscuro {
+  --fondo: #0a1213;
+  --superficie: #111c1d;
+  --superficie-2: #182627;
+  --lateral: #0d1718;
+  --linea: #213233;
+  --borde: #64807d;
+  --texto: #e4eeed;
+  --texto-suave: #9cb3b0;
+  --foco: #2dd4bf;
+  --sombra: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+
+  --accion-fuerte: #0f766e;
+  --accion-suave: #0c2e2b;
+  --accion-texto: #7ee0d3;
+  --libre-fuerte: #15803d;
+  --libre-suave: #052e16;
+  --libre-texto: #86efac;
+  --proceso-fuerte: #b45309;
+  --proceso-suave: #422006;
+  --proceso-texto: #fcd34d;
+  --alerta-fuerte: #b91c1c;
+  --alerta-suave: #450a0a;
+  --alerta-texto: #fca5a5;
+  --neutro-fuerte: #5b6b80;
+  --neutro-suave: #1e293b;
+  --neutro-texto: #cbd5e1;
+
+  --marca: #2dd4bf;
+
+  color-scheme: dark;
+}
+
+/* ── La Spritzzería by day (Bagno): the sand floor, the navy that writes and acts, the Aperol
+   that headlines. League Gothic labels, Alegreya Sans explains. ── */
+:root[data-marca="la-spritzzeria"] {
+  --fondo: #f8ecda;
+  --superficie: #fff8ec;
+  --superficie-2: #efdcc0;
+  --lateral: #fff8ec;
+  --linea: #e6d3b6;
+  --borde: #8c7b66;
+  --texto: #1d3552;
+  --texto-suave: #3c4f66;
+  --foco: #1d3552;
+  --sombra: 0 1px 2px rgb(29 53 82 / 0.08), 0 8px 24px -12px rgb(29 53 82 / 0.22);
+
+  --accion-fuerte: #1d3552;
+  --accion-suave: #dce4ee;
+  --accion-texto: #1d3552;
+  --neutro-fuerte: #5e6b7a;
+  --neutro-suave: #eadfcf;
+  --neutro-texto: #2b3645;
+
+  --marca: #dc5a0f;
+  --fuente-texto: "Alegreya Sans", system-ui, sans-serif;
+  --fuente-titulos: "League Gothic", "Arial Narrow", sans-serif;
+}
+
+/* ── La Spritzzería by night (on the terrace): the navy from the menu's footer as the floor. ── */
+:root[data-marca="la-spritzzeria"].oscuro {
+  --fondo: #0f1b2b;
+  --superficie: #172a40;
+  --superficie-2: #21364f;
+  --lateral: #13233a;
+  --linea: #24405e;
+  --borde: #6a809b;
+  --texto: #eedecb;
+  --texto-suave: #b9c2ce;
+  --foco: #f59255;
+  --sombra: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+
+  --accion-fuerte: #c24e14;
+  --accion-suave: #3b2014;
+  --accion-texto: #f7a574;
+  --neutro-fuerte: #5e6b7a;
+  --neutro-suave: #1f2d3e;
+  --neutro-texto: #cbd3dd;
+
+  --marca: #f59255;
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-fondo: var(--fondo);
+  --color-superficie: var(--superficie);
+  --color-superficie-2: var(--superficie-2);
+  --color-lateral: var(--lateral);
+  --color-linea: var(--linea);
+  --color-borde: var(--borde);
+  --color-texto: var(--texto);
+  --color-texto-suave: var(--texto-suave);
+  --color-foco: var(--foco);
+  --color-accion-fuerte: var(--accion-fuerte);
+  --color-accion-suave: var(--accion-suave);
+  --color-accion-texto: var(--accion-texto);
+  --color-libre-fuerte: var(--libre-fuerte);
+  --color-libre-suave: var(--libre-suave);
+  --color-libre-texto: var(--libre-texto);
+  --color-proceso-fuerte: var(--proceso-fuerte);
+  --color-proceso-suave: var(--proceso-suave);
+  --color-proceso-texto: var(--proceso-texto);
+  --color-alerta-fuerte: var(--alerta-fuerte);
+  --color-alerta-suave: var(--alerta-suave);
+  --color-alerta-texto: var(--alerta-texto);
+  --color-neutro-fuerte: var(--neutro-fuerte);
+  --color-neutro-suave: var(--neutro-suave);
+  --color-neutro-texto: var(--neutro-texto);
+  --color-marca: var(--marca);
+  --font-sans: var(--fuente-texto);
+  --font-titulo: var(--fuente-titulos);
+  --shadow-flota: var(--sombra);
+}
+
+body {
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* What is not drawn carries the brand too: selection, cursor and scrollbars. */
+::selection {
+  background: var(--accion-suave);
+  color: var(--accion-texto);
+}
+:root {
+  caret-color: var(--accion-fuerte);
+  accent-color: var(--accion-fuerte);
+  scrollbar-color: var(--borde) transparent;
+}
+
+/* League Gothic is narrow and tall: it is used large and with a little air between letters. */
+:root[data-marca="la-spritzzeria"] .font-titulo {
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* The restaurant logo in the mockups: it only shows with its brand on. */
+.logo-marca {
+  display: none;
+}
+:root[data-marca] .logo-marca {
+  display: block;
+}
+
+/* Under the top bar: the menu's striped awning (by day) or an Aperol rule (by night). */
+.firma-marca {
+  display: none;
+  height: 0.375rem;
+}
+:root[data-marca="la-spritzzeria"] .firma-marca {
+  display: block;
+  background: repeating-linear-gradient(90deg, #dc5a0f 0 1.25rem, #fff8ec 1.25rem 2.5rem);
+}
+:root[data-marca="la-spritzzeria"].oscuro .firma-marca {
+  height: 0.25rem;
+  background: #dc5a0f;
+}
+
+/* The bar that shows how much time a notice has left. */
+.aviso-tiempo {
+  width: 100%;
+  animation-name: aviso-tiempo;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes aviso-tiempo {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0;
+  }
+}
+
+/* Money figures and times: equal-width digits so they do not "dance". */
+.cifras {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Whoever asks for less motion sees no animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: it must beat any animation */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: it must beat any transition */
+    transition-duration: 0.01ms !important;
+  }
+}

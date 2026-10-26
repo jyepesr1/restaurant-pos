@@ -121,11 +121,11 @@ describe('aplicar', () => {
          WHERE grantee = 'faro_data' AND table_schema = 'public' ORDER BY 1, 2`,
       )
     ).rows
-    const de = (tableName: string) => permissions.filter((x) => x.t === tableName).map((x) => x.p)
-    expect(de('events')).toEqual(['INSERT', 'SELECT'])
-    expect(de('divergent_events')).toEqual(['INSERT', 'SELECT'])
-    expect(de('restaurants')).toEqual(['INSERT', 'SELECT'])
-    expect(de('migrations')).toEqual([])
+    const src = (tableName: string) => permissions.filter((x) => x.t === tableName).map((x) => x.p)
+    expect(src('events')).toEqual(['INSERT', 'SELECT'])
+    expect(src('divergent_events')).toEqual(['INSERT', 'SELECT'])
+    expect(src('restaurants')).toEqual(['INSERT', 'SELECT'])
+    expect(src('migrations')).toEqual([])
     for (const t of permissions) expect(['DELETE', 'TRUNCATE']).not.toContain(t.p)
   })
 })
