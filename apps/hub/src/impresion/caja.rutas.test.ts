@@ -317,6 +317,9 @@ describe('catálogo: restaurante.cobro y datafonos', () => {
       redondeoModo: 'mitad_arriba',
       redondeoEfectivo: 100,
       redondeoEfectivoModo: 'cercano_mitad_abajo',
+      umbralDiferencia: 1000,
+      zonaHoraria: 'America/Bogota',
+      inicioDiaOperativo: '06:00',
       imprimePrecuenta: false,
     })
     expect(catalogo().datafonos).toEqual([])

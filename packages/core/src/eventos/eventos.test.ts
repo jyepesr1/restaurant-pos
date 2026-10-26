@@ -32,8 +32,8 @@ describe('esquemas de eventos del pedido', () => {
     expect(errores(sobre('ItemAgregado', copiaItem()))).toEqual([])
   })
 
-  it('cubre todos los tipos del catálogo v1: 34 del pedido, 2 del producto (agotado) y 1 de caja', () => {
-    expect(TIPOS_EVENTO_PEDIDO).toHaveLength(37)
+  it('cubre todos los tipos del catálogo v1: 34 del pedido, 2 del producto (agotado) y 4 de caja', () => {
+    expect(TIPOS_EVENTO_PEDIDO).toHaveLength(40)
   })
 
   it('rechaza un tipo desconocido', () => {

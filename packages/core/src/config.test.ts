@@ -22,6 +22,7 @@ describe('configuración del restaurante', () => {
       usar_cursos: false,
       medios_pago: ['efectivo', 'tarjeta', 'nequi', 'daviplata', 'breb', 'transferencia'],
       medios_propios: [],
+      umbral_diferencia_caja: 1000,
       impresora_precuenta_id: null,
     })
   })

@@ -824,6 +824,9 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
     case 'ProductoAgotado':
     case 'ProductoDisponible':
     case 'TurnoAbierto':
+    case 'MovimientoCajaRegistrado':
+    case 'ArqueoRegistrado':
+    case 'TurnoCerrado':
       return sinCambio(estado, 'no_es_del_pedido', `${evento.tipo} no es de un pedido`)
   }
 }

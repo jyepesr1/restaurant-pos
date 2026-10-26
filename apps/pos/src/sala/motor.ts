@@ -196,6 +196,8 @@ export interface ConfiguracionCaja {
   propina_sugerida: number
   /** Los medios que creó el restaurante (Sodexo, QR del banco). */
   medios_propios: MedioPropio[]
+  /** Desde qué diferencia el cierre de caja pide justificación. */
+  umbral_diferencia_caja?: number
   datafonos: (Datafono & { id: string })[]
 }
 
@@ -661,6 +663,10 @@ export class Sala {
     return r.medios_propios
   }
 
+  async umbralDiferencia(pesos: number): Promise<void> {
+    await this.conSesion('/api/caja/umbral', { pesos })
+  }
+
   async propinaSugerida(puntos: number): Promise<void> {
     await this.conSesion('/api/caja/propina', { puntos })
   }
@@ -939,6 +945,13 @@ function motivoEnPalabras(motivo: string | undefined): string {
     sin_permiso: 'No tienes permiso para hacerlo.',
     solo_caja: 'Esto solo se hace desde un equipo de caja.',
     pedido_cerrado: 'El pedido ya estaba cerrado.',
+    arqueo_inexistente: 'La caja no tiene ese conteo: vuelve a contar.',
+    contado_distinto: 'Lo contado no coincide con el conteo guardado: vuelve a contar.',
+    esperado_distinto:
+      'La caja registró algo que este equipo aún no tenía: espera un momento y vuelve a contar.',
+    falta_justificacion: 'Escribe por qué no cuadra la caja.',
+    arqueo_no_es_el_ultimo: 'La caja se cierra con el último conteo: vuelve a contar.',
+    arqueo_desactualizado: 'Hubo pagos o movimientos después del conteo: vuelve a contar.',
   }
   return (motivo && textos[motivo]) ?? `La caja no lo aceptó (${motivo ?? 'sin motivo'}).`
 }

@@ -320,9 +320,54 @@ const datosPorTipo = {
   // (docs/MODELO_DATOS.md#eventos-de-mesa-producto-y-caja). Sin variante: todo el producto.
   ProductoAgotado: z.strictObject({ producto_id: Ulid, variante_id: Ulid.nullable() }),
   ProductoDisponible: z.strictObject({ producto_id: Ulid, variante_id: Ulid.nullable() }),
-  // Abrir la caja con la base en efectivo (tarea 1.6; el cierre y el arqueo son de la 1.7). El
-  // agregado es el turno; `caja_id` es, por ahora, el equipo de caja donde se abre.
+  // Abrir la caja con la base en efectivo (tarea 1.6). El agregado es el turno; `caja_id` es, por
+  // ahora, el equipo de caja donde se abre.
   TurnoAbierto: z.strictObject({ caja_id: Ulid, base: Pesos }),
+  // Efectivo que entra o sale del cajón durante el turno (tarea 1.7), con su motivo. El pago de
+  // propinas dice a quién se entregaron y de qué días del fondo salen (docs/DINERO.md).
+  MovimientoCajaRegistrado: z
+    .strictObject({
+      movimiento_id: Ulid,
+      tipo: z.enum(['entrada', 'salida', 'pago_propinas']),
+      monto: Pesos.min(1),
+      descripcion: Texto,
+      a_quien: Texto.nullable(),
+      dias: z.array(Dia).max(31),
+    })
+    .superRefine((m, ctx) => {
+      if ((m.tipo === 'pago_propinas') !== (m.a_quien !== null))
+        ctx.addIssue({ code: 'custom', message: 'Solo el pago de propinas dice a quién' })
+      if ((m.tipo === 'pago_propinas') !== m.dias.length > 0)
+        ctx.addIssue({ code: 'custom', message: 'El pago de propinas dice de qué días sale' })
+    }),
+  // El conteo del efectivo al cerrar (arqueo ciego): billetes y monedas por valor. Cada conteo
+  // queda, aunque se vuelva a contar.
+  ArqueoRegistrado: z
+    .strictObject({
+      arqueo_id: Ulid,
+      conteo: z
+        .array(z.strictObject({ valor: Pesos.min(1), cantidad: z.int().min(0).max(100_000) }))
+        .max(30),
+      contado_efectivo: Pesos,
+    })
+    .refine(
+      (a) => a.conteo.reduce((s, c) => s + c.valor * c.cantidad, 0) === a.contado_efectivo,
+      'El total contado no coincide con el conteo',
+    ),
+  // Cerrar la caja con el último conteo: lo esperado, lo contado y la diferencia (con signo:
+  // negativa es faltante). Desde el umbral del restaurante, con justificación.
+  TurnoCerrado: z
+    .strictObject({
+      arqueo_id: Ulid,
+      esperado_efectivo: PesosConSigno,
+      contado_efectivo: Pesos,
+      diferencia: PesosConSigno,
+      justificacion: Texto.nullable(),
+    })
+    .refine(
+      (t) => t.diferencia === t.contado_efectivo - t.esperado_efectivo,
+      'La diferencia es lo contado menos lo esperado',
+    ),
 } as const
 
 export type TipoEventoPedido = keyof typeof datosPorTipo
@@ -334,7 +379,12 @@ export const TIPOS_EVENTO_PRODUCTO: readonly TipoEventoPedido[] = [
   'ProductoDisponible',
 ]
 /** Los eventos cuyo agregado es un turno de caja. */
-export const TIPOS_EVENTO_TURNO: readonly TipoEventoPedido[] = ['TurnoAbierto']
+export const TIPOS_EVENTO_TURNO: readonly TipoEventoPedido[] = [
+  'TurnoAbierto',
+  'MovimientoCajaRegistrado',
+  'ArqueoRegistrado',
+  'TurnoCerrado',
+]
 export type TipoAgregado = 'pedido' | 'producto' | 'turno_caja'
 /** A qué agregado pertenece cada tipo de evento. */
 export const agregadoDe = (tipo: TipoEventoPedido): TipoAgregado =>

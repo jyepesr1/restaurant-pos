@@ -963,9 +963,8 @@ describe('resumenTurno', () => {
     })
     const r = resumenTurno([pago, anulado], T1)
     expect(r.pagos).toBe(0)
-    expect(r.porMedio).toEqual([
-      { medio: 'efectivo', medioPropioId: null, venta: 0, propina: 0, pagos: 0 },
-    ])
+    // Un medio que queda en cero no sale en el resumen.
+    expect(r.porMedio).toEqual([])
   })
 
   it('un pago anulado en otro turno: el original queda en el suyo y la reversa cae en el que se registra', () => {
@@ -1413,9 +1412,7 @@ describe('resumenTurno con medios propios y tipo de tarjeta', () => {
       pago_id: pagoIdDe(pago),
       turno_caja_id: T,
     })
-    expect(resumenTurno([pago, anulado], T).porMedio).toEqual([
-      { medio: 'otro', medioPropioId: SODEXO, venta: 0, propina: 0, pagos: 0 },
-    ])
+    expect(resumenTurno([pago, anulado], T).porMedio).toEqual([])
     const otro = propio(QR, 8_000)
     const reembolso = local('ReembolsoRegistrado', pid, {
       pago_id: pagoIdDe(otro),

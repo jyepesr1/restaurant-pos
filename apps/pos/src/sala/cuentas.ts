@@ -1,5 +1,8 @@
 import {
+  type CobradoPorMedio,
+  cobradoDelTurno,
   cobradoEnEfectivo,
+  cuadreDeTurno,
   dividirPorItems,
   type EstadoPedido,
   exigirPesos,
@@ -336,8 +339,16 @@ export interface TurnoVisible {
 }
 
 export function turnoDeCaja(locales: readonly EventoLocal[], cajaId: string): TurnoVisible | null {
+  // Un turno con su cierre confirmado ya no está abierto (tarea 1.7); uno pendiente sigue abierto
+  // hasta que el hub lo acepte, por si lo rechaza.
+  const cerrados = new Set(
+    locales
+      .filter((l) => l.evento.tipo === 'TurnoCerrado' && l.estado === 'confirmado')
+      .map((l) => l.evento.agregado_id),
+  )
   let turno: TurnoVisible | null = null
   for (const l of locales) {
+    if (cerrados.has(l.evento.agregado_id)) continue
     const e = l.evento
     if (e.tipo !== 'TurnoAbierto' || e.datos.caja_id !== cajaId) continue
     if (l.estado !== 'confirmado' && l.estado !== 'pendiente') continue
@@ -352,64 +363,20 @@ export function turnoDeCaja(locales: readonly EventoLocal[], cajaId: string): Tu
   return turno
 }
 
-/**
- * Lo cobrado en un turno, por medio de pago: venta (con su redondeo) y propina. Una anulación o
- * un reembolso cae en el turno en que se registra, no en el del pago (docs/DINERO.md#caja).
- */
+/** Lo cobrado en un turno, por medio de pago (el cálculo es de `@pos/core`, igual al del hub). */
 export interface ResumenTurno {
-  porMedio: {
-    medio: MedioPago
-    medioPropioId: string | null
-    venta: number
-    propina: number
-    pagos: number
-  }[]
+  porMedio: CobradoPorMedio[]
   pagos: number
 }
 
 export function resumenTurno(locales: readonly EventoLocal[], turnoId: string): ResumenTurno {
-  const vigentes = locales.filter((l) => l.estado === 'confirmado' || l.estado === 'pendiente')
-  type Medio = { medio: MedioPago; medioPropioId: string | null }
-  const pagosPorId = new Map<string, Medio & { venta: number; propina: number }>()
-  for (const { evento: e } of vigentes)
-    if (e.tipo === 'PagoRegistrado')
-      pagosPorId.set(e.datos.pago_id, {
-        medio: e.datos.medio,
-        medioPropioId: e.datos.medio_propio_id ?? null,
-        venta: e.datos.monto + e.datos.ajuste_redondeo,
-        propina: e.datos.propina,
-      })
-  const porMedio = new Map<string, Medio & { venta: number; propina: number; pagos: number }>()
-  const sumar = (de: Medio, venta: number, propina: number, pagos: number) => {
-    const clave = `${de.medio}:${de.medioPropioId ?? ''}`
-    const m = porMedio.get(clave) ?? { ...de, venta: 0, propina: 0, pagos: 0 }
-    m.venta += venta
-    m.propina += propina
-    m.pagos += pagos
-    porMedio.set(clave, m)
-  }
-  for (const { evento: e } of vigentes) {
-    if (e.tipo === 'PagoRegistrado' && e.datos.turno_caja_id === turnoId)
-      sumar(
-        { medio: e.datos.medio, medioPropioId: e.datos.medio_propio_id ?? null },
-        e.datos.monto + e.datos.ajuste_redondeo,
-        e.datos.propina,
-        1,
-      )
-    if (e.tipo === 'PagoAnulado' && e.datos.turno_caja_id === turnoId) {
-      const pago = pagosPorId.get(e.datos.pago_id)
-      if (pago) sumar(pago, -pago.venta, -pago.propina, -1)
-    }
-    if (e.tipo === 'ReembolsoRegistrado' && e.datos.turno_caja_id === turnoId) {
-      const pago = pagosPorId.get(e.datos.pago_id)
-      sumar(
-        { medio: e.datos.medio, medioPropioId: pago?.medioPropioId ?? null },
-        -e.datos.monto_venta,
-        -e.datos.monto_propina,
-        0,
-      )
-    }
-  }
-  const lista = [...porMedio.values()]
-  return { porMedio: lista, pagos: lista.reduce((a, m) => a + m.pagos, 0) }
+  const porMedio = cobradoDelTurno(vigentesDe(locales), turnoId)
+  return { porMedio, pagos: porMedio.reduce((a, m) => a + m.pagos, 0) }
 }
+
+/** El cuadre del turno con lo guardado aquí (confirmado y pendiente). */
+export const cuadreDeCaja = (locales: readonly EventoLocal[], turnoId: string) =>
+  cuadreDeTurno(vigentesDe(locales), turnoId)
+
+const vigentesDe = (locales: readonly EventoLocal[]) =>
+  locales.filter((l) => l.estado === 'confirmado' || l.estado === 'pendiente').map((l) => l.evento)

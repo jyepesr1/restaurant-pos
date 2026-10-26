@@ -34,7 +34,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.4 | Comandas: impresora ESC/POS por estación y KDS básico ([ADR-015](DECISIONES.md#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero)): comanda impresa por estación con cola y respaldo, pantalla de cocina opcional, «Entregado» del mesero y «Pedidos en cocina» en la caja | ✅ |
 | 1.5 | Mover ítems, cambiar y unir mesas, anular con motivo y permiso | ✅ |
 | 1.6 | Precuenta, división, pagos mixtos y propina | ✅ |
-| 1.7 | Apertura, cierre y arqueo de caja | ⏳ |
+| 1.7 | Apertura, cierre y arqueo de caja | ✅ |
 | 1.8 | Datáfonos nivel 1 y conciliación en el cierre | ⏳ |
 | 1.9 | Reportes básicos y `docs/KPIS.md` | ⏳ |
 | 1.10 | Hub en el PC de caja (Windows) | ⏳ |
@@ -271,6 +271,63 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 6. Agrega y envía otro producto, y luego **Mesa y pedido → Mover productos**: elígelo, elige la mesa 8 y toca **Mover 1 a la mesa 8**. La mesa 8 debe mostrarlo.
 7. Abre la mesa 8, **Mesa y pedido → Cancelar el pedido**, elige un motivo, escribe el PIN del administrador y toca **Cancelar el pedido**. La mesa 8 queda libre.
 8. Toca un plato enviado, cambia su nota y toca **Enviar el cambio a cocina**: sale una comanda «CAMBIO».
+
+### 1.7 — Apertura, cierre y arqueo de caja ✅
+
+Decisiones del dueño del 26-oct-2026 ([ADR-011](DECISIONES.md#adr-011--reglas-de-operación-acordadas-para-el-piloto)).
+
+**Lo nuevo** (en **Caja**, en el computador de la caja):
+- **Movimientos de efectivo:** «Entrada», «Salida» (con motivo: compra, pago a proveedor u otro) y «Pago de propinas» (a quién se entregaron). Cada uno pide confirmar y queda en la lista del turno.
+- **Cerrar la caja con arqueo ciego:**
+  - se cuentan billetes y monedas por denominación; en la caja se escribe el número y Enter pasa al siguiente;
+  - «Guardar el conteo» lo deja registrado, y solo entonces se ve lo que debería haber (base + efectivo cobrado + entradas − salidas − propinas pagadas), lo contado y si **cuadra, sobra o falta**;
+  - desde $1.000 de diferencia hay que escribir por qué (se cambia en **Caja y pagos → Cierre de caja**); por debajo es opcional;
+  - «Volver a contar» empieza de cero; el conteo anterior queda guardado;
+  - si quedan mesas abiertas, las nombra con su saldo y deja cerrar: lo que se cobre después cae en el próximo turno;
+  - «Otros medios» muestra lo cobrado con tarjeta, Nequi y demás, para revisarlo con su cierre.
+- Una caja abierta de un día anterior lo avisa para cerrarla.
+
+**Por dentro:**
+- Eventos `MovimientoCajaRegistrado`, `ArqueoRegistrado` y `TurnoCerrado` (agregado `turno_caja`), solo desde la caja y con sus permisos.
+- `cuadreDeTurno` en `@pos/core` calcula el cuadre igual en el hub y en la caja.
+- El hub no acepta un cierre que no cuadre con lo suyo: sin el último conteo, con pagos o movimientos después del conteo, con otro esperado o sin la justificación. Después del cierre, ese turno no recibe pagos.
+
+Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas`. Se corrigió:
+- el aviso de una salida grande mostraba lo esperado y rompía el arqueo ciego;
+- el hub aceptaba cerrar con un conteo que no era el último o anterior a un pago;
+- faltaba el billete de $1.000;
+- el día del pago de propinas usaba el reloj y las 6 a. m. del equipo, no los del restaurante;
+- un reembolso de otro turno perdía su medio;
+- un cierre pendiente mostraba la caja cerrada antes de que el hub lo aceptara;
+- «Volver» borraba el conteo;
+- los movimientos no pedían confirmar;
+- el cierre no avisaba sin conexión;
+- con el teclado, Tab caía en − y +.
+
+**Pruebas:** 261 nuevas (núcleo 121, sincronización 66, hub 39, app 35), todas pasan.
+
+**Queda pendiente:**
+- **Corregir un movimiento equivocado** (anularlo con motivo): necesita un evento nuevo.
+- **Cerrar una caja huérfana** (si se cambia el PC de caja con un turno abierto) desde otro equipo, con el PIN del administrador.
+- El pago de propinas no se controla contra el **fondo de propinas por día** ni deja elegir los días: llega con los reportes (1.9).
+- **Imprimir el cierre** y guardarlo para verlo después: llega con el cierre Z (1.9).
+- Avisar en el cierre de pagos que quedaron en cuarentena o rechazados.
+- Retiros parciales durante el turno.
+
+**Cómo probarlo:**
+
+1. Cierra el hub (**Ctrl+C**) y arráncalo con la versión nueva:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+2. En el PC de la caja entra con el usuario de **Caja** y abre la caja con 200.000 de base (en **Caja**).
+3. Cobra una mesa en efectivo (por ejemplo 46.350 con propina): en **Caja** debe aparecer en «Cobrado en este turno».
+4. Toca **Entrada**, escribe 50.000, elige «Cambio para la caja», **Registrar** y **Sí, registrar**. Debe salir en «Movimientos de efectivo».
+5. Toca **Cerrar la caja**. Escribe cuántos billetes y monedas hay (Enter pasa al siguiente). No debe verse cuánto debería haber.
+6. Toca **Guardar el conteo**: ahora se ve «Debería haber», «Contado» y si cuadra. Si la diferencia es de $1.000 o más, escribe por qué.
+7. Toca **Cerrar la caja**. Debes ver el resultado y el formulario para abrirla de nuevo. Intenta cobrar: la cuenta pide abrir la caja.
 
 ### 1.6 — Precuenta, división, pagos mixtos y propina ✅
 

@@ -152,6 +152,7 @@ export function prepararSincronizacion(
         modo: actual.redondeo_efectivo_modo,
         medios: actual.medios_pago,
         mediosPropios: actual.medios_propios.filter((m) => m.activo).map((m) => m.id),
+        umbralDiferencia: actual.umbral_diferencia_caja,
         datafonos: db
           .prepare('SELECT id FROM datafono WHERE restaurante_id = ? AND activo = 1')
           .all(restauranteId)

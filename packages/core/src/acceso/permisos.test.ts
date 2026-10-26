@@ -76,6 +76,9 @@ describe('permisos', () => {
         'PedidoCerrado',
         'ReembolsoRegistrado',
         'TurnoAbierto',
+        'MovimientoCajaRegistrado',
+        'ArqueoRegistrado',
+        'TurnoCerrado',
       ].sort(),
     )
   })

@@ -222,6 +222,9 @@ const PERMISO_POR_TIPO: Record<TipoEventoPedido, Permiso | null> = {
   ProductoAgotado: 'agotar_producto',
   ProductoDisponible: 'agotar_producto',
   TurnoAbierto: 'abrir_turno_caja',
+  MovimientoCajaRegistrado: 'movimiento_caja',
+  ArqueoRegistrado: 'cerrar_turno_caja',
+  TurnoCerrado: 'cerrar_turno_caja',
 }
 
 const sumaExtras = (precios: readonly number[]) => precios.reduce((a, b) => a + b, 0)
@@ -248,6 +251,9 @@ export function permisoPara(
 /** Pagos y cierres solo salen de un dispositivo de caja (docs/MODELO_DATOS.md#permisos). */
 export const SOLO_DESDE_CAJA: ReadonlySet<TipoEventoPedido> = new Set([
   'TurnoAbierto',
+  'MovimientoCajaRegistrado',
+  'ArqueoRegistrado',
+  'TurnoCerrado',
   'PagoRegistrado',
   'PagoAnulado',
   'ReembolsoRegistrado',

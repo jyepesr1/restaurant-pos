@@ -79,10 +79,17 @@ const EVENTO_DOC: Record<string, Permiso | null> = {
   ProductoDisponible: 'agotar_producto',
   // Abrir la caja con la base (tarea 1.6): evento del turno, no del pedido.
   TurnoAbierto: 'abrir_turno_caja',
+  // Movimientos, arqueo y cierre de caja (tarea 1.7).
+  MovimientoCajaRegistrado: 'movimiento_caja',
+  ArqueoRegistrado: 'cerrar_turno_caja',
+  TurnoCerrado: 'cerrar_turno_caja',
 }
 
 const SOLO_CAJA_DOC = [
   'TurnoAbierto',
+  'MovimientoCajaRegistrado',
+  'ArqueoRegistrado',
+  'TurnoCerrado',
   'PagoRegistrado',
   'PagoAnulado',
   'ReembolsoRegistrado',

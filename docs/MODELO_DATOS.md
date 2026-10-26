@@ -186,6 +186,7 @@ Agotado (86) no es un campo editable: son los eventos `ProductoAgotado` / `Produ
 | `marca` | `"faro"` | Con qué marca se ve el POS en todos los equipos (ADR-014): `faro` o una marca preparada (`la-spritzzeria`). La cambia el administrador en «Marca del restaurante». |
 | `medios_pago` | efectivo, tarjeta, Nequi, Daviplata, Bre-B, transferencia | Los que salen al cobrar, en ese orden (tarea 1.6). El efectivo siempre está. Se cambian en «Caja y pagos». |
 | `impresora_precuenta_id` | `null` | Dónde sale la precuenta; sin impresora, solo se ve en pantalla (tarea 1.6). |
+| `umbral_diferencia_caja` | `1000` | Desde qué diferencia (sobrante o faltante) el cierre de caja pide justificación (tarea 1.7). |
 | `medios_propios` | `[]` | Medios que crea el restaurante, con `id`, `nombre` y `activo` (hasta 20). Un pago con uno de ellos va con `medio: 'otro'` y `medio_propio_id`. |
 
 ## Eventos
@@ -240,10 +241,10 @@ Cada tipo tiene su esquema Zod en `packages/core` (tarea 0.5). Los montos que sa
 | `MesaMarcadaSucia` / `MesaLimpia` | mesa | — | `tomar_pedido` |
 | `ProductoAgotado` / `ProductoDisponible` | producto | `producto_id`, `variante_id` | `agotar_producto` |
 | `TurnoAbierto` | turno_caja | `caja_id`, `base` (pesos). Desde la tarea 1.6 la caja es el equipo de caja donde se abre (`caja_id` = su `dispositivo_id`). El hub no deja abrir un segundo turno en una caja que ya tiene uno, y un pago, anulación o reembolso solo cae en un turno abierto de la caja que lo registra | `abrir_turno_caja` |
-| `MovimientoCajaRegistrado` | turno_caja | `tipo` (`entrada`, `salida`, `pago_propinas`, `retiro_parcial`, `apertura_cajon`), `monto`; en `pago_propinas`, los días del fondo y a quién se pagó | `movimiento_caja` o `abrir_cajon_sin_venta` |
+| `MovimientoCajaRegistrado` | turno_caja | `movimiento_id`, `tipo` (desde la 1.7: `entrada`, `salida`, `pago_propinas`; después `retiro_parcial` y `apertura_cajon`), `monto`, `descripcion`; en `pago_propinas`, `a_quien` y los `dias` del fondo | `movimiento_caja` o `abrir_cajon_sin_venta` |
 | `CatalogoCambiado` | catalogo | `entidad`, `registro_id`, `antes`, `despues`, `catalogo_version`. Se guarda en `catalogo_cambio`, no en `evento` (ver [Catálogo](#catálogo)) | `editar_catalogo`, o `editar_precios` si solo cambian precios |
-| `ArqueoRegistrado` | turno_caja | `conteo` por denominación (`{ "50000": 3, … }`), `contado` por medio de pago | `cerrar_turno_caja` |
-| `TurnoCerrado` | turno_caja | `esperado`, `contado` y `diferencia` **por medio de pago**, `justificacion` | `cerrar_turno_caja` |
+| `ArqueoRegistrado` | turno_caja | `arqueo_id`, `conteo` (`[{ valor, cantidad }]`, el billete y la moneda del mismo valor juntos) y `contado_efectivo`, que debe sumar el conteo. Cada conteo queda, aunque se vuelva a contar | `cerrar_turno_caja` |
+| `TurnoCerrado` | turno_caja | `arqueo_id` (el conteo con que se cierra), `esperado_efectivo`, `contado_efectivo`, `diferencia` (contado − esperado, con signo) y `justificacion` (obligatoria desde `umbral_diferencia_caja`). El hub lo rechaza si el esperado no es el suyo o el contado no es el del arqueo. Los demás medios se cuadran con su cierre (tarea 1.8) | `cerrar_turno_caja` |
 | `ConflictoDetectado` | el del evento | `tipo` (lista cerrada abajo), `evento_id`, descripción — lo emite el hub, uno por evento | — |
 | `ConflictoResuelto` | el del evento | `conflicto_id`, `resolucion` | `cerrar_mesa` |
 

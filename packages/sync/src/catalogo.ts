@@ -31,6 +31,11 @@ export interface Catalogo {
       redondeoEfectivoModo: ModoRedondeoEfectivo
       /** Si la precuenta sale impresa; si no, solo se ve en pantalla. */
       imprimePrecuenta: boolean
+      /** Desde qué diferencia el cierre de caja pide justificación (tarea 1.7). */
+      umbralDiferencia?: number
+      /** Para saber el día operativo en el equipo (el pago de propinas dice de qué día sale). */
+      zonaHoraria?: string
+      inicioDiaOperativo?: string
     }
   }
   /** Los datáfonos del restaurante (tarea 1.6), para decir en cuál se cobró una tarjeta. */

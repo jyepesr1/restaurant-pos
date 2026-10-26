@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
 import { Etiqueta } from '../ui/Etiqueta'
+import { pesos } from '../ui/formato'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { PanelLateral } from '../ui/PanelLateral'
 import { sala } from './contexto'
@@ -80,6 +81,16 @@ export function CajaAjustes() {
       : MEDIOS.filter((x) => x === m || caja.medios_pago.includes(x))
     try {
       await sala.mediosDePago(medios)
+      cargar()
+    } catch (e) {
+      avisar(mensaje(e))
+    }
+  }
+
+  const cambiarUmbral = async (v: number) => {
+    try {
+      await sala.umbralDiferencia(v)
+      avisar(v === 0 ? 'Toda diferencia se justifica' : `Se justifica desde ${pesos(v)}`)
       cargar()
     } catch (e) {
       avisar(mensaje(e))
@@ -195,6 +206,26 @@ export function CajaAjustes() {
                 alElegir={() => cambiarPropina(p)}
               >
                 {p === 0 ? 'Sin propina' : `${p / 100} %`}
+              </Opcion>
+            ))}
+          </Grupo>
+        </section>
+
+        <section aria-labelledby="titulo-umbral" className="flex flex-col gap-3">
+          <h2 id="titulo-umbral" className="text-xl font-bold tracking-tight">
+            Cierre de caja
+          </h2>
+          <p className="text-texto-suave">
+            Desde qué diferencia (sobrante o faltante) el cajero debe explicar por qué no cuadra.
+          </p>
+          <Grupo etiqueta="Justificar desde" className="flex flex-wrap gap-2">
+            {[0, 1000, 5000, 10_000].map((v) => (
+              <Opcion
+                key={v}
+                elegida={(caja.umbral_diferencia_caja ?? 1000) === v}
+                alElegir={() => cambiarUmbral(v)}
+              >
+                {v === 0 ? 'Cualquier diferencia' : `Desde ${pesos(v)}`}
               </Opcion>
             ))}
           </Grupo>

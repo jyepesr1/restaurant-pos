@@ -554,6 +554,7 @@ export async function rutasImpresion(
       medios_pago: config.medios_pago,
       medios_propios: config.medios_propios,
       propina_sugerida: config.propina_sugerida,
+      umbral_diferencia_caja: config.umbral_diferencia_caja,
       datafonos: datafonos(),
     }
   })
@@ -618,6 +619,16 @@ export async function rutasImpresion(
     const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
     if (!autor) return reply
     actualizarConfig({ propina_sugerida: cuerpo.data.puntos }, autor)
+    return reply.code(204).send()
+  })
+
+  // Desde qué diferencia el cierre de caja pide justificación (tarea 1.7).
+  app.post('/api/caja/umbral', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({ pesos: z.int().min(0).max(1_000_000) }).safeParse(req.body)
+    if (!cuerpo.success) return datosInvalidos(reply, 'Escribe un valor entre 0 y 1.000.000')
+    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    if (!autor) return reply
+    actualizarConfig({ umbral_diferencia_caja: cuerpo.data.pesos }, autor)
     return reply.code(204).send()
   })
 

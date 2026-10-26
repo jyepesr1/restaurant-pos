@@ -1,5 +1,8 @@
 import {
   aplicarEvento,
+  type CuadreTurno,
+  configCompleta,
+  cuadreDeTurno,
   diaOperativo,
   type EstadoPedido,
   type EventoNuevo,
@@ -54,13 +57,15 @@ export interface ConfigHub {
     /** Los medios propios activos del restaurante. */
     mediosPropios?: readonly string[]
     datafonos: readonly string[]
+    /** Desde qué diferencia el cierre de caja pide justificación (tarea 1.7). */
+    umbralDiferencia?: number
   }
 }
 
-/** Un turno de caja abierto (tarea 1.6; el cierre y el arqueo son de la 1.7). */
+/** Un turno de caja abierto (tareas 1.6 y 1.7): se cierra con `TurnoCerrado`. */
 export interface TurnoCaja {
   id: string
-  /** Por ahora, el equipo de caja donde se abrió. */
+  /** El equipo de caja donde se abrió (por ahora cada caja es un equipo). */
   cajaId: string
   base: number
   abiertoEn: string
@@ -149,6 +154,9 @@ function mesasQueToma(antes: EstadoPedido | null, despues: EstadoPedido | null):
 /** Cambiarse o unirse a una mesa ocupada exige estar al día: se hace con conexión. */
 const TOMA_CON_CONEXION = new Set(['PedidoMovidoDeMesa', 'MesasUnidas'])
 
+/** El umbral de justificación del cierre si no llega el del restaurante (el de fábrica). */
+const UMBRAL_DIFERENCIA_CAJA = configCompleta().umbral_diferencia_caja
+
 /** Mover y unir exigen conexión con el hub: nunca son conflicto. */
 const SIEMPRE_EN_LINEA = new Set(['ItemsMovidos', 'PedidosUnidos'])
 
@@ -218,6 +226,8 @@ export class HubSync {
   private readonly pedidos = new Map<string, EstadoPedido>()
   /** Turnos de caja abiertos, por su id. */
   private readonly turnos = new Map<string, TurnoCaja>()
+  /** Los eventos de cada turno abierto: su apertura, pagos, movimientos y conteos. */
+  private readonly eventosDeTurno = new Map<string, EventoPedido[]>()
   private readonly almacen: AlmacenHub
   private readonly config: ConfigHub
 
@@ -362,15 +372,54 @@ export class HubSync {
     for (const [id, pedido] of todos) if (pedido.estado === 'abierto') this.pedidos.set(id, pedido)
   }
 
+  /**
+   * Lleva los turnos abiertos y los eventos de cada uno (tarea 1.7): con ellos se calcula el cuadre
+   * al cerrar. Un cierre saca el turno; un pago ya no puede caer en él.
+   */
   private aplicarATurnos(evento: EventoPedido) {
-    if (evento.tipo !== 'TurnoAbierto') return
-    this.turnos.set(evento.agregado_id, {
-      id: evento.agregado_id,
-      cajaId: evento.datos.caja_id,
-      base: evento.datos.base,
-      abiertoEn: evento.recibido_en,
-      usuarioId: evento.usuario_id,
-    })
+    const agregar = (turnoId: string, ...eventos: EventoPedido[]) =>
+      this.eventosDeTurno.get(turnoId)?.push(...eventos)
+    switch (evento.tipo) {
+      case 'TurnoAbierto':
+        this.turnos.set(evento.agregado_id, {
+          id: evento.agregado_id,
+          cajaId: evento.datos.caja_id,
+          base: evento.datos.base,
+          abiertoEn: evento.recibido_en,
+          usuarioId: evento.usuario_id,
+        })
+        this.eventosDeTurno.set(evento.agregado_id, [evento])
+        break
+      case 'PagoRegistrado':
+        agregar(evento.datos.turno_caja_id, evento)
+        break
+      case 'PagoAnulado':
+      case 'ReembolsoRegistrado': {
+        // La anulación o el reembolso cae en el turno donde se registra: ahí hace falta el pago
+        // que reversa (su medio), aunque se haya cobrado en otro turno.
+        const pago = this.almacen
+          .eventosDeAgregado(evento.agregado_id)
+          .find((e) => e.tipo === 'PagoRegistrado' && e.datos.pago_id === evento.datos.pago_id)
+        const lista = this.eventosDeTurno.get(evento.datos.turno_caja_id)
+        if (pago && lista && !lista.some((e) => e.id === pago.id))
+          agregar(evento.datos.turno_caja_id, pago)
+        agregar(evento.datos.turno_caja_id, evento)
+        break
+      }
+      case 'MovimientoCajaRegistrado':
+      case 'ArqueoRegistrado':
+        agregar(evento.agregado_id, evento)
+        break
+      case 'TurnoCerrado':
+        this.turnos.delete(evento.agregado_id)
+        this.eventosDeTurno.delete(evento.agregado_id)
+        break
+    }
+  }
+
+  /** El cuadre de un turno abierto (lo cobrado, los movimientos y el efectivo esperado). */
+  cuadre(turnoId: string): CuadreTurno | null {
+    return cuadreDeTurno(this.eventosDeTurno.get(turnoId) ?? [], turnoId)
   }
 
   /**
@@ -387,6 +436,41 @@ export class HubSync {
       )
         return 'turno_ya_existe'
       if (this.turnoAbierto(evento.datos.caja_id)) return 'turno_ya_abierto'
+      return null
+    }
+    if (
+      evento.tipo === 'MovimientoCajaRegistrado' ||
+      evento.tipo === 'ArqueoRegistrado' ||
+      evento.tipo === 'TurnoCerrado'
+    ) {
+      const turno = this.turnos.get(evento.agregado_id)
+      if (!turno) return 'sin_turno'
+      if (turno.cajaId !== evento.dispositivo_id) return 'turno_de_otra_caja'
+      if (evento.tipo !== 'TurnoCerrado') return null
+      // El cierre debe cuadrar con lo que registró el hub: el conteo existe y es el mismo, lo
+      // esperado es lo que da el cuadre, y una diferencia grande trae justificación.
+      const cuadre = this.cuadre(turno.id)
+      const arqueo = cuadre?.arqueos.find((a) => a.id === evento.datos.arqueo_id)
+      if (!cuadre || !arqueo) return 'arqueo_inexistente'
+      // Con el último conteo, y hecho después del último movimiento de dinero del turno.
+      if (cuadre.arqueos.at(-1)?.id !== arqueo.id) return 'arqueo_no_es_el_ultimo'
+      const eventos = this.eventosDeTurno.get(turno.id) ?? []
+      const posicion = (tipos: readonly string[]) =>
+        eventos.findLastIndex((e) => tipos.includes(e.tipo))
+      if (
+        posicion([
+          'PagoRegistrado',
+          'PagoAnulado',
+          'ReembolsoRegistrado',
+          'MovimientoCajaRegistrado',
+        ]) > posicion(['ArqueoRegistrado'])
+      )
+        return 'arqueo_desactualizado'
+      if (arqueo.contado !== evento.datos.contado_efectivo) return 'contado_distinto'
+      if (cuadre.efectivo.esperado !== evento.datos.esperado_efectivo) return 'esperado_distinto'
+      const umbral = this.config.reglasCobro?.().umbralDiferencia ?? UMBRAL_DIFERENCIA_CAJA
+      if (Math.abs(evento.datos.diferencia) >= Math.max(1, umbral) && !evento.datos.justificacion)
+        return 'falta_justificacion'
       return null
     }
     if (

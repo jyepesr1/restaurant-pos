@@ -5,6 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { actualizarVersionado } from './acceso/registros'
 import type { ServicioAcceso } from './acceso/servicio'
+import { zonaHorariaDe } from './arranque'
 import {
   aplicarCambios,
   catalogoParaEditar,
@@ -76,6 +77,9 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
         redondeoModo: config.redondeo_modo,
         redondeoEfectivo: config.redondeo_efectivo,
         redondeoEfectivoModo: config.redondeo_efectivo_modo,
+        umbralDiferencia: config.umbral_diferencia_caja,
+        zonaHoraria: zonaHorariaDe(db, restauranteId),
+        inicioDiaOperativo: config.inicio_dia_operativo,
         // Solo si la impresora elegida sigue activa.
         imprimePrecuenta:
           config.impresora_precuenta_id !== null &&

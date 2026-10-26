@@ -13,6 +13,15 @@ export {
   ROLES_RETIRADOS,
   SOLO_DESDE_CAJA,
 } from './acceso/permisos'
+export {
+  type ArqueoTurno,
+  type CobradoPorMedio,
+  type CuadreTurno,
+  cobradoDelTurno,
+  cuadreDeTurno,
+  DENOMINACIONES,
+  type MovimientoTurno,
+} from './caja/turno'
 export { jsonCanonico, PROFUNDIDAD_MAXIMA } from './canonico'
 export {
   type CategoriaCarta,

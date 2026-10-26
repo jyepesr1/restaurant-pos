@@ -96,7 +96,12 @@ describe('TurnoAbierto: esquema', () => {
 
   it('agregadoDe: turno_caja para TurnoAbierto y, para el resto, lo de siempre', () => {
     expect(agregadoDe('TurnoAbierto')).toBe('turno_caja')
-    expect([...TIPOS_EVENTO_TURNO]).toEqual(['TurnoAbierto'])
+    expect([...TIPOS_EVENTO_TURNO]).toEqual([
+      'TurnoAbierto',
+      'MovimientoCajaRegistrado',
+      'ArqueoRegistrado',
+      'TurnoCerrado',
+    ])
     expect(TIPOS_EVENTO_PEDIDO).toContain('TurnoAbierto')
     expect(agregadoDe('PagoRegistrado')).toBe('pedido')
     expect(agregadoDe('ProductoAgotado')).toBe('producto')

@@ -90,6 +90,11 @@ export const ConfigRestaurante = z.strictObject({
     .max(20)
     .refine((m) => new Set(m.map((x) => x.id)).size === m.length, 'Hay medios repetidos')
     .default([]),
+  /**
+   * Desde qué diferencia (sobrante o faltante, en pesos) el cierre de caja pide justificación
+   * (tarea 1.7). Por debajo se cierra sin más.
+   */
+  umbral_diferencia_caja: z.int().min(0).max(1_000_000).default(1000),
   /** Dónde sale la precuenta impresa; sin impresora, la precuenta solo se ve en pantalla. */
   impresora_precuenta_id: Ulid.nullable().default(null),
 })

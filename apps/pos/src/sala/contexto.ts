@@ -1,6 +1,7 @@
+import type { CuadreTurno } from '@pos/core'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { type ComandaEnCocina, comandasEnCocina } from './comandas'
-import { type ResumenTurno, resumenTurno, type TurnoVisible, turnoDeCaja } from './cuentas'
+import { cuadreDeCaja, type TurnoVisible, turnoDeCaja } from './cuentas'
 import { type Instantanea, Sala } from './motor'
 import { agotados, masPedidos, type PedidoVisible, pedidosAbiertos } from './proyeccion'
 
@@ -22,8 +23,8 @@ export interface VistaLocal {
   comandas: ComandaEnCocina[]
   /** El turno abierto de la caja de este equipo, si tiene (tarea 1.6). */
   turno: TurnoVisible | null
-  /** Lo cobrado en ese turno, por medio. */
-  resumenTurno: ResumenTurno | null
+  /** El cuadre de ese turno: lo cobrado por medio, los movimientos, los conteos y lo esperado. */
+  cuadre: CuadreTurno | null
 }
 
 /** Lo que sale de los eventos guardados aquí; se relee cada vez que algo cambia. */
@@ -46,7 +47,7 @@ export function useVistaLocal(): VistaLocal | null {
           masPedidos: masPedidos(locales),
           comandas: comandasEnCocina(locales, pedidos),
           turno,
-          resumenTurno: turno ? resumenTurno(locales, turno.id) : null,
+          cuadre: turno ? cuadreDeCaja(locales, turno.id) : null,
         })
       })
       .catch((error) => console.error('No se pudieron leer los pedidos:', error))
