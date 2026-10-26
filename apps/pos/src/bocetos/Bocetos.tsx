@@ -4,7 +4,7 @@ import { Indice } from './Indice'
 import { Kds } from './Kds'
 import { Order } from './Pedido'
 import { Plano } from './Plano'
-import { Precuenta } from './Precuenta'
+import { PreBill } from './Precuenta'
 
 /** Las pantallas de los bocetos por ruta (`/bocetos/...`). Se cargan aparte: no pesan en la app. */
 export default function Bocetos({ ruta }: { ruta: string }) {
@@ -16,7 +16,7 @@ export default function Bocetos({ ruta }: { ruta: string }) {
     case '/mockups/kds':
       return <Kds />
     case '/mockups/pre-bill':
-      return <Precuenta />
+      return <PreBill />
     case '/mockups/checkout':
       return <Cobro />
     case '/mockups/components':

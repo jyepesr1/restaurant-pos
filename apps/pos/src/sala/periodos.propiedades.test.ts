@@ -116,7 +116,7 @@ describe('períodos', () => {
 /** Lee un CSV con punto y coma, comillas dobles (con saltos de línea dentro) y CRLF. */
 function leerCsv(csv: string): string[][] {
   const rows: string[][] = []
-  let fila: string[] = []
+  let row: string[] = []
   let celdaActual = ''
   let entreComillas = false
   for (let i = 0; i < csv.length; i++) {
@@ -129,19 +129,19 @@ function leerCsv(csv: string): string[][] {
       else celdaActual += c
     } else if (c === '"') entreComillas = true
     else if (c === ';') {
-      fila.push(celdaActual)
+      row.push(celdaActual)
       celdaActual = ''
     } else if (c === '\r' && csv[i + 1] === '\n') {
-      fila.push(celdaActual)
-      rows.push(fila)
-      fila = []
+      row.push(celdaActual)
+      rows.push(row)
+      row = []
       celdaActual = ''
       i += 1
     } else celdaActual += c
   }
-  if (celdaActual !== '' || fila.length > 0) {
-    fila.push(celdaActual)
-    rows.push(fila)
+  if (celdaActual !== '' || row.length > 0) {
+    row.push(celdaActual)
+    rows.push(row)
   }
   return rows
 }
@@ -157,7 +157,7 @@ function sections(csv: string): string[][][] {
   return groups.filter((g) => g.length > 0)
 }
 
-const HOSTILES = [
+const HOSTILE = [
   '=HYPERLINK("http://x","clic")',
   '+1+1',
   '-2+3',
@@ -176,7 +176,7 @@ const HOSTILES = [
   'ñandú café 🍕',
 ]
 const text = fc.oneof(
-  fc.constantFrom(...HOSTILES),
+  fc.constantFrom(...HOSTILE),
   fc.string({ unit: 'grapheme', maxLength: 30 }),
   fc.string({ unit: 'binary', maxLength: 20 }),
 )

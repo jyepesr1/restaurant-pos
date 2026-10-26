@@ -1,5 +1,5 @@
 import { newId } from '@pos/core'
-import { COLUMNAS, leerEscpos } from '@pos/printing'
+import { COLUMNS, readEscpos } from '@pos/printing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FALLOS_PARA_RESPALDO, VIGENCIA_PRUEBA_MS } from './cola'
 import { type Equipo, type MontajeImpresion, montarImpresion } from './montaje-impresion'
@@ -23,8 +23,8 @@ function enviarN(t: MontajeImpresion, ana: Equipo, n: number, station = t.kitche
 }
 
 const stateOf = (t: MontajeImpresion, id: string) => t.cola.status().find((e) => e.id === id)
-const nombresImpresos = (p: { textos(): string[] }) =>
-  p.textos().map((x) => /Plato (\d+)/.exec(x)?.[1])
+const nombresImpresos = (p: { texts(): string[] }) =>
+  p.texts().map((x) => /Plato (\d+)/.exec(x)?.[1])
 
 describe('reintentos con espera creciente', () => {
   it('espera 1, 2, 4, 8, 16 y 30 s entre intentos, y se queda en 30 s sin rendirse', async () => {
@@ -40,10 +40,10 @@ describe('reintentos con espera creciente', () => {
       attempts += 1
       expect(kitchen.papel.attempts).toBe(attempts)
       // Un instante antes de vencer la espera no se vuelve a intentar.
-      t.avanzar(delay - 1)
+      t.advance(delay - 1)
       await t.cola.runOnce()
       expect(kitchen.papel.attempts).toBe(attempts)
-      t.avanzar(1)
+      t.advance(1)
     }
     expect(t.pendingList()).toBe(1)
   })
@@ -55,11 +55,11 @@ describe('reintentos con espera creciente', () => {
     enviarN(t, t.device(), 1)
     for (let i = 0; i < 40; i++) {
       await t.cola.runOnce()
-      t.avanzar(31 * SEG)
+      t.advance(31 * SEG)
     }
-    const [fila] = t.trabajos()
-    expect(fila).toMatchObject({ status: 'pending', attempts: 40 })
-    expect(String(fila?.last_error)).toContain('rechazó la conexión')
+    const [row] = t.trabajos()
+    expect(row).toMatchObject({ status: 'pending', attempts: 40 })
+    expect(String(row?.last_error)).toContain('rechazó la conexión')
     kitchen.papel.apagada = false
     await t.cola.runOnce()
     expect(t.pendingList()).toBe(0)
@@ -79,7 +79,7 @@ describe('reintentos con espera creciente', () => {
     // Mientras está caída no se salta a la siguiente: solo se intenta la primera.
     expect(kitchen.papel.attempts).toBe(1)
     kitchen.papel.apagada = false
-    t.avanzar(2 * SEG)
+    t.advance(2 * SEG)
     await t.cola.runOnce()
     expect(nombresImpresos(kitchen.papel)).toEqual(['1', '2', '3', '4'])
     expect(t.pendingList()).toBe(0)
@@ -94,9 +94,9 @@ describe('reintentos con espera creciente', () => {
     await t.cola.runOnce()
     enviarN(t, ana, 1)
     kitchen.papel.apagada = false
-    t.avanzar(2 * SEG)
+    t.advance(2 * SEG)
     await t.cola.runOnce()
-    expect(kitchen.papel.textos().map((x) => /#(\d+)/.exec(x)?.[1])).toEqual(['1', '2'])
+    expect(kitchen.papel.texts().map((x) => /#(\d+)/.exec(x)?.[1])).toEqual(['1', '2'])
     expect(t.trabajos().map((f) => f.status)).toEqual(['printed', 'printed'])
   })
 
@@ -113,7 +113,7 @@ describe('reintentos con espera creciente', () => {
       .run('2026-10-24T10:00:00.000Z')
     await t.cola.runOnce()
     // La primera en llegar sale primero: sus números de comanda salen 1 y luego 2.
-    expect(kitchen.papel.textos().map((x) => /#(\d+)/.exec(x)?.[1])).toEqual(['1', '2'])
+    expect(kitchen.papel.texts().map((x) => /#(\d+)/.exec(x)?.[1])).toEqual(['1', '2'])
   })
 
   it('cada impresora sigue su ritmo: una caída no retrasa a la otra', async () => {
@@ -146,7 +146,7 @@ describe('reintentos con espera creciente', () => {
       pendingList: 2,
     })
     kitchen.papel.apagada = false
-    t.avanzar(5 * SEG)
+    t.advance(5 * SEG)
     await t.cola.runOnce()
     expect(stateOf(t, kitchen.id)).toMatchObject({ status: 'ready', error: null, pendingList: 0 })
   })
@@ -165,7 +165,7 @@ describe('impresora de respaldo', () => {
   const fallar = async (t: MontajeImpresion, veces = FALLOS_PARA_RESPALDO) => {
     for (let i = 0; i < veces; i++) {
       await t.cola.runOnce()
-      t.avanzar(60 * SEG)
+      t.advance(60 * SEG)
     }
   }
 
@@ -177,14 +177,14 @@ describe('impresora de respaldo', () => {
     await fallar(t, 1)
     expect(kitchen.papel.attempts).toBe(3)
     // Justo después del tercer fallo la espera de la cocina no ha vencido: sale por el respaldo.
-    t.avanzar(-60 * SEG + 1)
+    t.advance(-60 * SEG + 1)
     await t.cola.runOnce()
     expect(respaldo.papel.recibidos).toHaveLength(1)
     const bytes = respaldo.papel.recibidos[0] as Uint8Array
     // 58 mm: ninguna línea de texto pasa de 32 columnas; y usa la tabla wpc1252 (ESC t 16).
     expect([...bytes.slice(2, 5)]).toEqual([0x1b, 0x74, 16])
-    for (const line of leerEscpos(bytes).text.split('\n'))
-      expect(line.length).toBeLessThanOrEqual(COLUMNAS[58])
+    for (const line of readEscpos(bytes).text.split('\n'))
+      expect(line.length).toBeLessThanOrEqual(COLUMNS[58])
     expect(t.trabajos()[0]).toMatchObject({
       status: 'printed',
       printer_id: kitchen.id,
@@ -196,23 +196,23 @@ describe('impresora de respaldo', () => {
     const { t, kitchen, ana } = await montarConRespaldo()
     enviarN(t, ana, 1)
     await fallar(t)
-    t.avanzar(-60 * SEG + 1)
+    t.advance(-60 * SEG + 1)
     await t.cola.runOnce()
     expect(stateOf(t, kitchen.id)).toMatchObject({ status: 'failed' })
-    const ultimo = t.estadosAvisados.at(-1) as { id: string; status: string }[]
-    expect(ultimo.find((e) => e.id === kitchen.id)?.status).toBe('failed')
+    const latest = t.estadosAvisados.at(-1) as { id: string; status: string }[]
+    expect(latest.find((e) => e.id === kitchen.id)?.status).toBe('failed')
   })
 
   it('cuando la original se arregla, la próxima comanda la prueba y vuelve a salir por ella', async () => {
     const { t, respaldo, kitchen, ana } = await montarConRespaldo()
     enviarN(t, ana, 1)
     await fallar(t)
-    t.avanzar(-60 * SEG + 1)
+    t.advance(-60 * SEG + 1)
     await t.cola.runOnce()
     expect(respaldo.papel.recibidos).toHaveLength(1)
     // Se enciende la impresora y llegan tres comandas más.
     kitchen.papel.apagada = false
-    t.avanzar(60 * SEG)
+    t.advance(60 * SEG)
     enviarN(t, ana, 3, t.kitchen, 'Nueva')
     await t.cola.runOnce()
     // La prueba lleva solo una comanda; el resto espera esa vuelta.
@@ -229,7 +229,7 @@ describe('impresora de respaldo', () => {
     const { t, respaldo, kitchen, ana } = await montarConRespaldo()
     enviarN(t, ana, 2)
     await fallar(t) // 3 fallos
-    t.avanzar(1) // vence la espera del tercer fallo
+    t.advance(1) // vence la espera del tercer fallo
     const before = kitchen.papel.attempts
     await t.cola.runOnce() // prueba (falla otra vez): solo se intenta una comanda
     expect(kitchen.papel.attempts).toBe(before + 1)
@@ -247,7 +247,7 @@ describe('impresora de respaldo', () => {
     for (let i = 0; i < 4; i++) {
       await t.cola.runOnce() // prueba de la original
       await t.cola.runOnce() // y enseguida, el respaldo
-      t.avanzar(60 * SEG)
+      t.advance(60 * SEG)
     }
     expect(kitchen.papel.recibidos).toHaveLength(0)
     expect(respaldo.papel.recibidos).toHaveLength(0)
@@ -257,7 +257,7 @@ describe('impresora de respaldo', () => {
     expect(t.pendingList()).toBe(2)
     // Vuelve el respaldo: sale todo, en orden.
     respaldo.papel.apagada = false
-    t.avanzar(60 * SEG)
+    t.advance(60 * SEG)
     await t.cola.runOnce()
     await t.cola.runOnce()
     expect(nombresImpresos(respaldo.papel)).toEqual(['1', '2'])
@@ -272,7 +272,7 @@ describe('impresora de respaldo', () => {
     expect(respaldo.papel.attempts).toBe(0)
     expect(t.pendingList()).toBe(1)
     kitchen.papel.apagada = false
-    t.avanzar(60 * SEG)
+    t.advance(60 * SEG)
     await t.cola.runOnce()
     expect(kitchen.papel.recibidos).toHaveLength(1)
   })
@@ -297,11 +297,11 @@ describe('impresora de respaldo', () => {
     await fallar(t)
     enviarN(t, ana, 1, t.bar, 'Barra')
     enviarN(t, ana, 1, t.kitchen, 'Cocina')
-    t.avanzar(-60 * SEG + 1)
+    t.advance(-60 * SEG + 1)
     await t.cola.runOnce()
     expect(respaldo.papel.recibidos).toHaveLength(3)
     expect(kitchen.papel.recibidos).toHaveLength(0)
-    expect(respaldo.papel.textos().map((x) => (x.includes('BARRA') ? 'barra' : 'cocina'))).toEqual([
+    expect(respaldo.papel.texts().map((x) => (x.includes('BARRA') ? 'barra' : 'cocina'))).toEqual([
       'cocina',
       'barra',
       'cocina',
@@ -318,7 +318,7 @@ describe('impresora de respaldo', () => {
     t.cola.despertar()
     await t.cola.ready()
     for (let i = 0; i < 120; i++) {
-      t.avanzar(1 * SEG)
+      t.advance(1 * SEG)
       await vi.advanceTimersByTimeAsync(1 * SEG)
       await t.cola.ready()
     }
@@ -355,7 +355,7 @@ describe('páginas de prueba', () => {
     const chica = t.impresoraNueva('Chica', [], { width: 58 })
     insertarPrueba(t, chica.id)
     await t.cola.runOnce()
-    const text = chica.papel.textos()[0] as string
+    const text = chica.papel.texts()[0] as string
     expect(text.replaceAll('\n', ' ')).toContain('PRUEBA DE IMPRESIÓN')
     expect(text.split('\n')).toContain(`${'1234567890'.repeat(3)}12`)
   })
@@ -367,11 +367,11 @@ describe('páginas de prueba', () => {
     insertarPrueba(t, kitchen.id)
     await t.cola.runOnce()
     expect(t.pendingList()).toBe(1)
-    t.avanzar(VIGENCIA_PRUEBA_MS - 1000)
+    t.advance(VIGENCIA_PRUEBA_MS - 1000)
     kitchen.papel.apagada = true
     await t.cola.runOnce()
     expect(t.pendingList()).toBe(1)
-    t.avanzar(2000)
+    t.advance(2000)
     await t.cola.runOnce()
     expect(t.pendingList()).toBe(0)
     expect(t.trabajos()[0]).toMatchObject({
@@ -386,12 +386,12 @@ describe('páginas de prueba', () => {
     const kitchen = t.impresoraNueva('Cocina', [t.kitchen])
     kitchen.papel.apagada = true
     insertarPrueba(t, kitchen.id)
-    t.avanzar(VIGENCIA_PRUEBA_MS + 1000)
+    t.advance(VIGENCIA_PRUEBA_MS + 1000)
     enviarN(t, t.device(), 1)
     kitchen.papel.apagada = false
     await t.cola.runOnce()
     expect(kitchen.papel.recibidos).toHaveLength(1)
-    expect(kitchen.papel.textos()[0]).toContain('Plato 1')
+    expect(kitchen.papel.texts()[0]).toContain('Plato 1')
   })
 })
 
@@ -420,7 +420,7 @@ describe('una impresora archivada sin respaldo', () => {
     expect(runOnce).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(29_000)
     expect(runOnce).toHaveBeenCalledTimes(1)
-    t.avanzar(30 * SEG)
+    t.advance(30 * SEG)
     await vi.advanceTimersByTimeAsync(1_500)
     expect(runOnce).toHaveBeenCalledTimes(2)
     t.cola.detener()
@@ -433,7 +433,7 @@ describe('una impresora archivada sin respaldo', () => {
     t.db.prepare('UPDATE printers SET active = 0 WHERE id = ?').run(vieja.id)
     await t.cola.runOnce()
     t.db.prepare('UPDATE printers SET active = 1 WHERE id = ?').run(vieja.id)
-    t.avanzar(31 * SEG)
+    t.advance(31 * SEG)
     await t.cola.runOnce()
     expect(vieja.papel.recibidos).toHaveLength(1)
   })
@@ -507,7 +507,7 @@ describe('el hub reiniciado con trabajos pendientes', () => {
     enviarN(t, t.device(), 1)
     for (let i = 0; i < 4; i++) {
       await t.cola.runOnce()
-      t.avanzar(60 * SEG)
+      t.advance(60 * SEG)
     }
     const before = kitchen.papel.attempts
     t.cola.detener()
@@ -555,7 +555,7 @@ describe('el hub reiniciado con trabajos pendientes', () => {
     const kitchen = t.impresoraNueva('Cocina', [t.kitchen])
     enviarN(t, t.device(), 1)
     await t.cola.runOnce()
-    t.avanzar(2 * SEG)
+    t.advance(2 * SEG)
     await t.cola.runOnce()
     expect(kitchen.papel.recibidos).toHaveLength(2)
     expect(t.trabajos()[0]).toMatchObject({ status: 'printed', attempts: 2 })
@@ -708,7 +708,7 @@ describe('despertar y vueltas simultáneas', () => {
     await t.cola.ready()
     expect(kitchen.papel.attempts).toBe(1)
     kitchen.papel.apagada = false
-    t.avanzar(1 * SEG)
+    t.advance(1 * SEG)
     await vi.advanceTimersByTimeAsync(1 * SEG)
     await t.cola.ready()
     expect(kitchen.papel.recibidos).toHaveLength(1)
@@ -730,14 +730,14 @@ describe('avisos a los equipos', () => {
     enviarN(t, t.device(), 1)
     await t.cola.runOnce()
     expect(t.estadosAvisados).toHaveLength(2)
-    t.avanzar(31 * SEG)
+    t.advance(31 * SEG)
     await t.cola.runOnce() // sigue igual de mal: mismo mensaje, no se repite... salvo el error
     const before = t.estadosAvisados.length
-    t.avanzar(31 * SEG)
+    t.advance(31 * SEG)
     await t.cola.runOnce()
     expect(t.estadosAvisados.length).toBe(before)
     kitchen.papel.apagada = false
-    t.avanzar(31 * SEG)
+    t.advance(31 * SEG)
     await t.cola.runOnce()
     expect(t.estadosAvisados.at(-1)).toMatchObject([
       { id: kitchen.id, status: 'ready', pendingList: 0 },
@@ -753,18 +753,18 @@ describe('avisos a los equipos', () => {
     expect(alert).toMatchObject({ status: 'failed', pendingList: 0 })
     expect(alert?.error).toMatch(/Pedidos en cocina/)
     expect(t.estadosAvisados.at(-1)).toEqual(t.cola.status())
-    t.avanzar(15 * 60 * SEG - 1)
+    t.advance(15 * 60 * SEG - 1)
     expect(t.cola.status().map((e) => e.id)).toContain('tickets')
-    t.avanzar(1)
+    t.advance(1)
     expect(t.cola.status().map((e) => e.id)).not.toContain('tickets')
   })
 
   it('repetir el aviso de «no se pudo armar» reinicia los 15 minutos y no duplica la entrada', () => {
     const t = montarImpresion()
     t.cola.comandaSinArmar()
-    t.avanzar(10 * 60 * SEG)
+    t.advance(10 * 60 * SEG)
     t.cola.comandaSinArmar()
-    t.avanzar(10 * 60 * SEG)
+    t.advance(10 * 60 * SEG)
     expect(t.cola.status().filter((e) => e.id === 'tickets')).toHaveLength(1)
   })
 
@@ -798,8 +798,8 @@ describe('el aviso de la cola llega a los equipos por la sala (como lo cablea ma
     kitchen.papel.apagada = true
     enviarN(t, ana, 1)
     await cola.runOnce()
-    const ultimo = deAna.filter((m) => m.type === 'printers').at(-1)
-    expect(ultimo?.printers).toMatchObject([{ status: 'failed', pendingList: 1 }])
+    const latest = deAna.filter((m) => m.type === 'printers').at(-1)
+    expect(latest?.printers).toMatchObject([{ status: 'failed', pendingList: 1 }])
 
     const deLuis: { type: string; printers?: { status: string }[] }[] = []
     const aLuis = sala.connect((m) => deLuis.push(m as never))
@@ -814,7 +814,7 @@ describe('el aviso de la cola llega a los equipos por la sala (como lo cablea ma
     expect(deLuis[1]?.printers).toMatchObject([{ status: 'failed' }])
 
     kitchen.papel.apagada = false
-    t.avanzar(2 * SEG)
+    t.advance(2 * SEG)
     await cola.runOnce()
     expect(deAna.filter((m) => m.type === 'printers').at(-1)?.printers).toMatchObject([
       { status: 'ready', pendingList: 0 },

@@ -106,7 +106,7 @@ export function PanelCobro({
 }) {
   if (!cobrando)
     return (
-      <PanelLateral opened={false} titulo="Cobrar" alCerrar={alCerrar}>
+      <PanelLateral opened={false} title="Cobrar" alCerrar={alCerrar}>
         {null}
       </PanelLateral>
     )
@@ -146,7 +146,7 @@ function FormularioCobro({
   const options = opcionesDeCobro(reglas)
   const { available } = cobrando
   const [key, setClave] = useState(options[0]?.key ?? 'cash')
-  const opcion: OpcionCobro =
+  const option: OpcionCobro =
     options.find((o) => o.key === key) ??
     ({
       key: 'cash',
@@ -155,7 +155,7 @@ function FormularioCobro({
       tipoTarjeta: null,
       customMethodId: null,
     } as const)
-  const esEfectivo = opcion.method === 'cash'
+  const esEfectivo = option.method === 'cash'
   const [amount, setMonto] = useState(available)
   const [eleccion, setEleccion] = useState<Eleccion>(() =>
     cobrando.propinaInicial !== null
@@ -168,20 +168,20 @@ function FormularioCobro({
   // Un datáfono por proveedor: los de un mismo proveedor entregan un solo cierre (Bold une todos
   // los suyos), así que da igual por cuál se pasó la tarjeta. Solo se elige si hay proveedores
   // distintos (Bold y Redeban), porque cada uno se concilia aparte en el cierre.
-  const ultimo = recordado()
+  const latest = recordado()
   const porProveedor = [
     ...cardTerminals
       .reduce((groups, d) => {
         // «Otro» no dice cuál: cada uno de esos va aparte.
         const key = d.provider && d.provider !== 'other' ? d.provider : d.id
         const current = groups.get(key)
-        if (!current || d.id === ultimo) groups.set(key, d)
+        if (!current || d.id === latest) groups.set(key, d)
         return groups
       }, new Map<string, (typeof cardTerminals)[number]>())
       .entries(),
   ].map(([key, d]) => ({ id: d.id, name: PROVEEDOR[key] ?? d.name }))
   const [cardTerminal, setDatafono] = useState(
-    () => porProveedor.find((d) => d.id === ultimo)?.id ?? porProveedor[0]?.id ?? null,
+    () => porProveedor.find((d) => d.id === latest)?.id ?? porProveedor[0]?.id ?? null,
   )
   const [confirmando, setConfirmando] = useState(false)
   const confirm = useRef<HTMLButtonElement>(null)
@@ -225,16 +225,16 @@ function FormularioCobro({
     ? pagoEnEfectivo({ balance: available, amount, tip, tendered: served }, reglas)
     : null
   const aCobrar = esEfectivo ? (calculo?.aEntregar ?? 0) : amount + tip
-  const sinDatafono = opcion.method === 'card' && cardTerminal === null
+  const sinDatafono = option.method === 'card' && cardTerminal === null
   const puede = montoValido && !ocupado && !sinDatafono && (!esEfectivo || calculo?.missing === 0)
 
   const record = () => {
     if (!puede || !calculo) return
-    if (opcion.method === 'card' && cardTerminal) recordar(cardTerminal)
+    if (option.method === 'card' && cardTerminal) recordar(cardTerminal)
     alCobrar({
       payment_id: paymentId,
       check_id: cobrando.checkId,
-      method: opcion.method,
+      method: option.method,
       amount,
       tip,
       tendered: esEfectivo ? served : null,
@@ -242,26 +242,26 @@ function FormularioCobro({
       rounding_adjustment: esEfectivo ? calculo.adjustment : 0,
       rounding: esEfectivo ? calculo.rounding : null,
       cardTerminal:
-        opcion.method === 'card' && cardTerminal
+        option.method === 'card' && cardTerminal
           ? {
               card_terminal_id: cardTerminal,
               franchise: null,
               last4: null,
               approval_code: null,
               receipt: null,
-              card_type: opcion.tipoTarjeta,
+              card_type: option.tipoTarjeta,
             }
           : null,
       charge_reference: null,
-      custom_method_id: opcion.customMethodId,
+      custom_method_id: option.customMethodId,
     })
   }
 
   const nombreDatafono = porProveedor.find((d) => d.id === cardTerminal)?.name
   const donde =
-    opcion.method === 'card' && nombreDatafono && porProveedor.length > 1
-      ? `${opcion.name.toLowerCase()} (${nombreDatafono})`
-      : opcion.name.toLowerCase()
+    option.method === 'card' && nombreDatafono && porProveedor.length > 1
+      ? `${option.name.toLowerCase()} (${nombreDatafono})`
+      : option.name.toLowerCase()
 
   // Atajos de la caja (tarea 0.9): F2 efectivo, F3 crédito, F4 débito, Enter cobra y Esc vuelve.
   // El atajo nunca le gana al botón que tiene el foco.
@@ -329,7 +329,7 @@ function FormularioCobro({
   )
 
   return (
-    <PanelLateral opened titulo={`Cobrar · ${cobrando.name}`} alCerrar={alCerrar} pie={pie}>
+    <PanelLateral opened title={`Cobrar · ${cobrando.name}`} alCerrar={alCerrar} pie={pie}>
       <div className="flex flex-col gap-4">
         <section
           className="rounded-2xl border border-linea bg-superficie-2/60 p-4"
@@ -493,12 +493,12 @@ function FormularioCobro({
             aria-label="A cobrar"
           >
             <p className="text-texto-suave">
-              {opcion.method === 'card'
+              {option.method === 'card'
                 ? 'Total en el datáfono (venta + propina)'
-                : `A cobrar por ${opcion.name} (venta + propina)`}
+                : `A cobrar por ${option.name} (venta + propina)`}
             </p>
             <p className="cifras font-titulo text-3xl font-bold">{pesos(aCobrar)}</p>
-            {opcion.method === 'card' &&
+            {option.method === 'card' &&
               (cardTerminals.length === 0 ? (
                 <p className="mt-2 rounded-xl bg-proceso-suave p-3 text-proceso-texto">
                   No hay datáfonos: agrégalos en «Caja y pagos» para cobrar con tarjeta.
@@ -518,7 +518,7 @@ function FormularioCobro({
                   </Grupo>
                 )
               ))}
-            {opcion.method !== 'card' && (
+            {option.method !== 'card' && (
               <p className="mt-2 text-sm text-texto-suave">
                 Revisa que llegó antes de registrarlo.
               </p>

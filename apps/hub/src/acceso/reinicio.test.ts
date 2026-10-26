@@ -138,7 +138,7 @@ describe('reinicio y caídas del hub', () => {
       const s = session(h, connection, waiter.pin)
       const opened = event(h, connection, s, 'OrderOpened', ABRIR)
       hubs.apagar()
-      hubs.avanzar(30_000)
+      hubs.advance(30_000)
 
       const after = hubs.spinUp()
       const newOne = after.access.authenticate(token) as NonNullable<typeof connection>
@@ -240,19 +240,19 @@ describe('reinicio y caídas del hub', () => {
       expect(connection.dispositivoId).toBe(phone.connection.dispositivoId)
 
       // Los PIN de antes no entran; el nuevo del administrador sí.
-      hubs.avanzar(60_000)
+      hubs.advance(60_000)
       if (after.admin.pin !== adminPin)
         expect(after.access.startSession(connection, adminPin)).toMatchObject({
           code: 'wrong_pin',
         })
-      hubs.avanzar(60_000)
+      hubs.advance(60_000)
       if (after.admin.pin !== ana.pin)
         expect(after.access.startSession(connection, ana.pin)).toMatchObject({
           code: 'wrong_pin',
         })
       // La contraseña no depende de la clave de los PIN: el administrador sigue entrando, y su PIN
       // nuevo autoriza.
-      hubs.avanzar(60_000)
+      hubs.advance(60_000)
       expect(after.admin.password).toBeNull()
       expect(after.access.entrar(credenciales, connection, '10.0.0.9')).toMatchObject({
         ok: true,
@@ -270,7 +270,7 @@ describe('reinicio y caídas del hub', () => {
       const pending = event(h, phone.connection, s, 'OrderOpened', ABRIR)
       hubs.apagar()
       rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
-      hubs.avanzar(60_000)
+      hubs.advance(60_000)
 
       // El secreto de cada sesión sale de la clave: con otra clave, la firma ya no cuadra. Como la
       // sesión es de antes de la clave nueva, el gerente decide.
@@ -400,7 +400,7 @@ describe('reinicio y caídas del hub', () => {
     it('el hub se apaga tras emitir el comprobante: al volver, el evento llega y se acepta', () => {
       const c = conAutorizacion()
       hubs.apagar()
-      hubs.avanzar(90_000) // se tarda en volver, pero dentro de la vigencia del comprobante
+      hubs.advance(90_000) // se tarda en volver, pero dentro de la vigencia del comprobante
 
       const after = hubs.spinUp()
       expect(after.db.prepare('SELECT supervisor_id, used_at FROM authorizations').get()).toEqual({
@@ -421,7 +421,7 @@ describe('reinicio y caídas del hub', () => {
     it('si vuelve mucho después, el evento sigue valiendo por la hora en que se creó, no por cuándo llegó', () => {
       const c = conAutorizacion()
       hubs.apagar()
-      hubs.avanzar(3 * 60 * 60_000)
+      hubs.advance(3 * 60 * 60_000)
 
       const after = hubs.spinUp()
       const connection = after.access.authenticate(c.token) as never
@@ -481,7 +481,7 @@ describe('reinicio y caídas del hub', () => {
       expect(c.h.db.prepare('SELECT used_at FROM authorizations').get()?.used_at).toBeNull()
 
       hubs.apagar()
-      hubs.avanzar(20_000)
+      hubs.advance(20_000)
       const after = hubs.spinUp()
       const r = after.hub.recibirLote(after.access.authenticate(c.token) as never, [c.voidItem])
       expect(r.resultados[0]).toMatchObject({

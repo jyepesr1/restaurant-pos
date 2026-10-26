@@ -480,9 +480,9 @@ describe('lo que ve el editor y lo que ven los equipos', () => {
   it('el editor no entrega la sede, el autor ni la fecha de creación', async () => {
     const m = await montar()
     const e = m.edicion()
-    for (const fila of [...e.zones, ...e.tables, ...e.elements]) {
+    for (const row of [...e.zones, ...e.tables, ...e.elements]) {
       for (const field of ['location_id', 'restaurant_id', 'user_id', 'device_id', 'created_at'])
-        expect(Object.keys(fila)).not.toContain(field)
+        expect(Object.keys(row)).not.toContain(field)
     }
   })
 

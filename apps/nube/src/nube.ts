@@ -268,7 +268,7 @@ export class Nube {
     crudos: readonly unknown[],
   ): Promise<ResultadoEvento[]> {
     const resultados: ResultadoEvento[] = []
-    type Valido = { indice: number; id: string; fingerprint: string; fila: Record<string, unknown> }
+    type Valido = { indice: number; id: string; fingerprint: string; row: Record<string, unknown> }
     const validEntries: Valido[] = []
     /** El mismo id otra vez en el lote: se compara con lo que quede guardado. */
     const repetidosEnLote: Valido[] = []
@@ -303,7 +303,7 @@ export class Nube {
         indice,
         id: r.data.id,
         fingerprint,
-        fila: {
+        row: {
           id: r.data.id,
           type: r.data.type,
           aggregate_type: r.data.aggregate_type,
@@ -335,7 +335,7 @@ export class Nube {
              business_day date, received_at timestamptz, content jsonb, fingerprint text)
            ON CONFLICT (restaurant_id, id) DO NOTHING
            RETURNING id`,
-          [hub.restauranteId, hub.id, JSON.stringify(rows.map((v) => v.fila))],
+          [hub.restauranteId, hub.id, JSON.stringify(rows.map((v) => v.row))],
         )
       // Una sola sentencia para todo el lote. Si la base rechaza un dato (una fecha que Postgres
       // no acepta, por ejemplo), se prueba uno por uno: el malo queda inválido y el resto entra.
@@ -391,7 +391,7 @@ export class Nube {
            SELECT $1, x.id, $2, x.content, x.fingerprint
            FROM jsonb_to_recordset($3::jsonb) AS x(id text, content jsonb, fingerprint text)
            ON CONFLICT (restaurant_id, event_id, fingerprint) DO NOTHING`,
-          [hub.restauranteId, hub.id, JSON.stringify(distintos.map((d) => d.fila))],
+          [hub.restauranteId, hub.id, JSON.stringify(distintos.map((d) => d.row))],
         )
       // Lo guardado sin huecos desde la secuencia 1: desde ahí sigue el hub (`lastSequence`).
       await tx.query(
@@ -430,10 +430,10 @@ export class Nube {
    * subiendo. Si un evento no se pudo guardar (inválido), se queda ahí y el hub lo debe avisar.
    */
   async lastSequence(hub: HubAutenticado): Promise<number> {
-    const [fila] = await this.sql.query<{ s: string | number }>(
+    const [row] = await this.sql.query<{ s: string | number }>(
       'SELECT contiguous_sequence AS s FROM hubs WHERE id = $1',
       [hub.id],
     )
-    return Number(fila?.s ?? 0)
+    return Number(row?.s ?? 0)
   }
 }

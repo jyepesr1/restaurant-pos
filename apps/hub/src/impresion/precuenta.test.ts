@@ -1,5 +1,5 @@
 import { fullConfig, newId, orderTaxes, orderTip, orderTotals } from '@pos/core'
-import { COLUMNAS, type Precuenta } from '@pos/printing'
+import { COLUMNS, type PreBill } from '@pos/printing'
 import { describe, expect, it } from 'vitest'
 import { item } from '../acceso/montaje-hub'
 import { trabajosDeEvento } from './comandas'
@@ -68,8 +68,8 @@ function mundo(options: { width?: 58 | 80; conImpresora?: boolean } = {}) {
       suggested_tip: 0,
       ...extra,
     })
-  const guardada = (): Precuenta[] =>
-    t.trabajos("WHERE type = 'preBill'").map((f) => t.content(f) as Precuenta)
+  const guardada = (): PreBill[] =>
+    t.trabajos("WHERE type = 'preBill'").map((f) => t.content(f) as PreBill)
   return { t, ana, cashier, admin, printer, select, agregarCon, preBill, guardada }
 }
 
@@ -203,7 +203,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
     const [p] = guardada()
     const status = t.hub.order(order)
     if (!status) throw new Error('sin pedido')
-    expect(p).toMatchObject({ total: 140_700, paid: 0, subtotal: 140_700, tasaPropina: 1000 })
+    expect(p).toMatchObject({ total: 140_700, paid: 0, subtotal: 140_700, tipRate: 1000 })
     expect(p?.tip).toBe(orderTip(status, 140_700, fullConfig()))
     expect(p?.tip).toBe(13_028)
   })
@@ -225,7 +225,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
     preBill(order, null, { suggested_tip: 3_787 })
     preBill(order, null, { suggested_tip: 5_000 })
     preBill(order, null, { suggested_tip: 0 })
-    expect(guardada().map((p) => [p.tip, p.tasaPropina])).toEqual([
+    expect(guardada().map((p) => [p.tip, p.tipRate])).toEqual([
       [3_787, 1000],
       [5_000, null],
       [0, null],
@@ -324,7 +324,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
     expect(r.status).toBe('confirmed')
     preBill(order, null, { suggested_tip: 4_483 })
     const [p] = guardada()
-    expect(p).toMatchObject({ total: 48_420, subtotal: 48_420, tip: 4_483, tasaPropina: 1000 })
+    expect(p).toMatchObject({ total: 48_420, subtotal: 48_420, tip: 4_483, tipRate: 1000 })
     expect(p?.lines).toEqual([expect.objectContaining({ name: 'Aperol Spritz', value: 48_420 })])
   })
 
@@ -340,7 +340,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
       paid: 40_000,
       subtotal: 60_000,
       tip: 5_556,
-      tasaPropina: 1000,
+      tipRate: 1000,
       check: null,
     })
     // Σ líneas = total (la precuenta muestra todo lo que se consumió, no solo el saldo).
@@ -357,7 +357,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
       paid: 40_000,
       subtotal: 60_000,
       tip: 5_556,
-      tasaPropina: 1000,
+      tipRate: 1000,
     })
   })
 
@@ -392,7 +392,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
     const order = t.open(ana)
     agregarCon(order, 100_000)
     preBill(order, null, { suggested_tip: 4_630 })
-    expect(guardada()[0]).toMatchObject({ tasaPropina: 500, tip: 4_630 })
+    expect(guardada()[0]).toMatchObject({ tipRate: 500, tip: 4_630 })
   })
 
   it('con propina sugerida en 0 %, la precuenta lleva propina 0', () => {
@@ -403,7 +403,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
     const order = t.open(ana)
     agregarCon(order, 100_000)
     preBill(order, null, { suggested_tip: 0 })
-    expect(guardada()[0]).toMatchObject({ tasaPropina: 0, tip: 0, subtotal: 100_000 })
+    expect(guardada()[0]).toMatchObject({ tipRate: 0, tip: 0, subtotal: 100_000 })
   })
 
   it('el destino sigue al pedido: para llevar, varias mesas unidas', () => {
@@ -457,14 +457,14 @@ describe('trabajoDePrecuenta: cuenta dividida', () => {
       check: { name: 'Cuenta 1', amount: 50_000 },
       subtotal: 50_000,
       tip: 4_630,
-      tasaPropina: 1000,
+      tipRate: 1000,
       total: 100_000,
     })
     expect(b).toMatchObject({
       check: { name: 'Cuenta 2', amount: 50_000 },
       subtotal: 50_000,
       tip: 4_629,
-      tasaPropina: 1000,
+      tipRate: 1000,
     })
     // Las dos propinas suman la del pedido entero (9.259).
     expect((a?.tip ?? 0) + (b?.tip ?? 0)).toBe(9_259)
@@ -494,7 +494,7 @@ describe('trabajoDePrecuenta: cuenta dividida', () => {
       check: { name: 'Cuenta 1', amount: 30_000 },
       subtotal: 30_000,
       tip: 2_778,
-      tasaPropina: 1000,
+      tipRate: 1000,
       paid: 20_000,
     })
     expect(t.fallosGuardar).toEqual([])
@@ -607,7 +607,7 @@ describe('la cola imprime la precuenta', () => {
     agregarCon(order, 40_900, { name: 'Garden Margarita', quantity: 2 })
     preBill(order, null, { suggested_tip: 7_574 })
     await t.cola.runOnce()
-    const [papel] = printer.papel.textos()
+    const [papel] = printer.papel.texts()
     expect(papel).toContain('PRECUENTA')
     expect(papel).toContain('Mesa 5')
     expect(papel).toContain('2 x Garden Margarita')
@@ -630,7 +630,7 @@ describe('la cola imprime la precuenta', () => {
     agregarCon(order, 40_900)
     preBill(order, null, { suggested_tip: 5_000 })
     await t.cola.runOnce()
-    const papel = (printer.papel.textos()[0] ?? '').replace(/[ ]+/g, ' ')
+    const papel = (printer.papel.texts()[0] ?? '').replace(/[ ]+/g, ' ')
     expect(papel).toContain('Propina $5.000')
     expect(papel).not.toContain('Propina sugerida')
     expect(papel).toContain('$45.900')
@@ -642,7 +642,7 @@ describe('la cola imprime la precuenta', () => {
     agregarCon(order, 40_900)
     preBill(order, null, { suggested_tip: 0 })
     await t.cola.runOnce()
-    const papel = (printer.papel.textos()[0] ?? '').replace(/[ ]+/g, ' ')
+    const papel = (printer.papel.texts()[0] ?? '').replace(/[ ]+/g, ' ')
     expect(papel).toContain('A pagar $40.900')
     expect(papel).not.toContain('Propina')
   })
@@ -653,9 +653,9 @@ describe('la cola imprime la precuenta', () => {
     agregarCon(order, 40_900, { name: 'Garden Margarita con nombre bien largo', quantity: 2 })
     preBill(order)
     await t.cola.runOnce()
-    const text = printer.papel.textos()[0] ?? ''
+    const text = printer.papel.texts()[0] ?? ''
     expect(text).toContain('$81.800')
-    for (const line of text.split('\n')) expect(line.length, line).toBeLessThanOrEqual(COLUMNAS[58])
+    for (const line of text.split('\n')) expect(line.length, line).toBeLessThanOrEqual(COLUMNS[58])
   })
 
   it('imprime una sola vez aunque la cola dé más vueltas, y corta el papel una vez', async () => {
@@ -665,7 +665,7 @@ describe('la cola imprime la precuenta', () => {
     preBill(order)
     await t.cola.runOnce()
     await t.cola.runOnce()
-    t.avanzar(60_000)
+    t.advance(60_000)
     await t.cola.runOnce()
     expect(printer.papel.recibidos).toHaveLength(1)
   })
@@ -682,10 +682,10 @@ describe('la cola imprime la precuenta', () => {
     // El pedido cambia mientras tanto: la precuenta ya quedó fijada con lo de ese momento.
     agregarCon(order, 10_000)
     printer.papel.apagada = false
-    t.avanzar(5_000)
+    t.advance(5_000)
     await t.cola.runOnce()
     expect(t.pendingList()).toBe(0)
-    const text = printer.papel.textos()[0] ?? ''
+    const text = printer.papel.texts()[0] ?? ''
     expect(text).toContain('$40.900')
     expect(text).not.toContain('$50.900')
   })
@@ -701,11 +701,11 @@ describe('la cola imprime la precuenta', () => {
     // Tres fallos seguidos; justo después, con la espera de la principal sin vencer, sale por el respaldo.
     for (let i = 0; i < 3; i++) {
       await t.cola.runOnce()
-      t.avanzar(60_000)
+      t.advance(60_000)
     }
-    t.avanzar(-60_000 + 1)
+    t.advance(-60_000 + 1)
     await t.cola.runOnce()
-    expect(respaldo.papel.textos()[0]).toContain('PRECUENTA')
+    expect(respaldo.papel.texts()[0]).toContain('PRECUENTA')
     expect(t.trabajos("WHERE type = 'preBill'")[0]).toMatchObject({
       status: 'printed',
       printed_on_id: respaldo.id,
@@ -789,7 +789,7 @@ describe('«Pedidos que no han salido»: la precuenta se nombra', () => {
     const order = t.open(ana, table)
     const dish = agregarCon(order, 40_900, { name: 'Pizza' })
     t.send(ana, order, [{ id: dish.item_id, station: t.kitchen }])
-    t.avanzar(1_000)
+    t.advance(1_000)
     preBill(order)
     const list = (await pendingList(t, admin)).map((x) => x.que)
     expect(list).toHaveLength(2)

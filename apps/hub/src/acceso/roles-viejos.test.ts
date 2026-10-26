@@ -73,12 +73,12 @@ describe('conversión de los roles de antes', () => {
     const b = baseVieja()
     const before = permissions(b.db)
     const nuevos = asegurarRoles(b.db, b.restauranteId, MAS_TARDE)
-    const fila = (id: string) =>
+    const row = (id: string) =>
       b.db.prepare('SELECT name, system, active FROM roles WHERE id = ?').get(id)
     expect(nuevos.reports).toBe(b.roles.Contador as string)
-    expect(fila(b.roles.Contador as string)).toEqual({ name: 'Reportes', system: 1, active: 1 })
-    expect(fila(b.roles.Gerente as string)).toEqual({ name: 'Gerente', system: 0, active: 1 })
-    expect(fila(b.roles.Cocina as string)).toEqual({ name: 'Cocina', system: 0, active: 1 })
+    expect(row(b.roles.Contador as string)).toEqual({ name: 'Reportes', system: 1, active: 1 })
+    expect(row(b.roles.Gerente as string)).toEqual({ name: 'Gerente', system: 0, active: 1 })
+    expect(row(b.roles.Cocina as string)).toEqual({ name: 'Cocina', system: 0, active: 1 })
     // Los de fábrica que siguen (Administrador, Cajero, Mesero) conservan su id.
     expect(nuevos.admin).toBe(b.roles.Administrador as string)
     expect(nuevos.cashier).toBe(b.roles.Cajero as string)

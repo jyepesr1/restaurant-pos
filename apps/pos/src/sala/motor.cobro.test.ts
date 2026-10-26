@@ -59,7 +59,7 @@ beforeEach(() => {
 async function asentar(vueltas = 4) {
   for (let i = 0; i < vueltas; i++) await new Promise((r) => setImmediate(r))
 }
-async function avanzar(ms: number) {
+async function advance(ms: number) {
   for (let t = 0; t < ms; t += 100) {
     await vi.advanceTimersByTimeAsync(Math.min(100, ms - t))
     await asentar(3)
@@ -68,7 +68,7 @@ async function avanzar(ms: number) {
 async function until(condicion: () => Promise<boolean> | boolean, maxMs = 20_000) {
   for (let t = 0; t <= maxMs; t += 100) {
     if (await condicion()) return
-    await avanzar(100)
+    await advance(100)
   }
   throw new Error('No se cumplió en el tiempo simulado')
 }

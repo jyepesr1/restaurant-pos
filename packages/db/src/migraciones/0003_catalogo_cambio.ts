@@ -18,7 +18,7 @@ const COLUMNAS_COMUNES = [
 ]
 
 /** Columnas de cada tabla del catálogo tal como están en la versión 2 del esquema. */
-const COLUMNAS: Record<string, string[]> = {
+const COLUMNS: Record<string, string[]> = {
   taxes: ['name', 'type', 'rate'],
   stations: ['name', 'position'],
   categories: ['name', 'position', 'station_id', 'photo'],
@@ -30,17 +30,17 @@ const COLUMNAS: Record<string, string[]> = {
   product_stations: ['product_id', 'station_id'],
 }
 
-const ENTIDADES = Object.keys(COLUMNAS)
+const ENTIDADES = Object.keys(COLUMNS)
   .map((t) => `'${t}'`)
   .join(', ')
 
-const copiarEstadoActual = (tabla: string, columnas: string[]) => `
+const copiarEstadoActual = (tableName: string, columns: string[]) => `
 INSERT INTO catalog_changes
   (restaurant_id, version, entity, record_id, before, after, user_id, device_id, done_at)
-SELECT restaurant_id, version, '${tabla}', id, NULL,
-  json_object(${[...COLUMNAS_COMUNES, ...columnas].map((c) => `'${c}', ${c}`).join(', ')}),
+SELECT restaurant_id, version, '${tableName}', id, NULL,
+  json_object(${[...COLUMNAS_COMUNES, ...columns].map((c) => `'${c}', ${c}`).join(', ')}),
   user_id, device_id, updated_at
-FROM ${tabla};`
+FROM ${tableName};`
 
 export const sql = `
 CREATE TABLE catalog_changes (
@@ -66,8 +66,8 @@ WHEN EXISTS (
   SELECT 1 FROM catalog_changes WHERE restaurant_id = NEW.restaurant_id AND version = NEW.version
 )
 BEGIN SELECT RAISE(ABORT, 'catalogo_cambio: los registros no se reemplazan'); END;
-${Object.entries(COLUMNAS)
-  .map(([tabla, columnas]) => copiarEstadoActual(tabla, columnas))
+${Object.entries(COLUMNS)
+  .map(([tableName, columns]) => copiarEstadoActual(tableName, columns))
   .join('\n')}
 
 -- Desde qué versión hay historial completo: para una versión anterior solo se conoce el estado

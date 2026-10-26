@@ -18,7 +18,7 @@ describe('emparejamiento: aprobar con el PIN del administrador', () => {
 
     // Ni cambiando de IP ni con el PIN bueno: la caja recién instalada espera.
     expect(request(m, null, m.people.admin.pin)).toMatchObject({ ok: false, code: 'wait' })
-    m.avanzar(2000)
+    m.advance(2000)
     expect(request(m, null, m.people.admin.pin)).toMatchObject({ ok: true })
   })
 
@@ -43,7 +43,7 @@ describe('emparejamiento: aprobar con el PIN del administrador', () => {
 
     expect(request(m, a, m.people.admin.pin)).toMatchObject({ ok: false, code: 'wait' })
     expect(request(m, b, m.people.admin.pin)).toMatchObject({ ok: true })
-    m.avanzar(2000)
+    m.advance(2000)
     expect(request(m, a, m.people.admin.pin)).toMatchObject({ ok: true })
   })
 
@@ -104,7 +104,7 @@ describe('emparejamiento: canjear el código desde una IP', () => {
         register,
       )
       if (!c.ok) {
-        m.avanzar(60_000)
+        m.advance(60_000)
         continue
       }
       for (const code of ['AAAAAAAA', 'BBBBBBBB', c.code]) {
@@ -138,7 +138,7 @@ describe('emparejamiento: canjear el código desde una IP', () => {
     for (let i = 0; i < 200; i++)
       expect(m.access.emparejar('AAAAAAAA', '10.0.0.66')).toMatchObject({ code: 'wait' })
 
-    m.avanzar(2000)
+    m.advance(2000)
     expect(m.access.emparejar('AAAAAAAA', '10.0.0.66')).toMatchObject({
       code: 'invalid_code',
     })
@@ -192,7 +192,7 @@ describe('emparejamiento: canjear el código desde una IP', () => {
     const m = montarAcceso()
     const { connection } = m.emparejar()
     for (let i = 0; i < FALLOS_DE_UN_EQUIPO_PARA_AVISO; i++) {
-      m.avanzar(61_000) // nunca topa con la espera ni pasa 10 minutos sin errores
+      m.advance(61_000) // nunca topa con la espera ni pasa 10 minutos sin errores
       m.access.startSession(connection, BAD_VALUES[i % 8] as string)
     }
     expect(
@@ -211,11 +211,11 @@ describe('PIN en un dispositivo', () => {
       esperas.push(r.ok ? undefined : r.esperaMs)
       if (!r.ok && r.esperaMs) {
         // Un milisegundo antes de cumplirse sigue esperando; al cumplirse, deja intentar.
-        m.avanzar(r.esperaMs - 1)
+        m.advance(r.esperaMs - 1)
         expect(m.access.startSession(connection, m.people.waiter.pin)).toMatchObject({
           code: 'wait',
         })
-        m.avanzar(1)
+        m.advance(1)
       }
     }
     expect(esperas).toEqual([0, 0, 2000, 4000, 8000, 16_000])
@@ -230,7 +230,7 @@ describe('PIN en un dispositivo', () => {
       if (!r.ok && r.esperaMs !== undefined) {
         last = r.esperaMs
         expect(r.esperaMs).toBeLessThanOrEqual(ESPERA_MAXIMA_MS)
-        m.avanzar(r.esperaMs)
+        m.advance(r.esperaMs)
       }
     }
     expect(last).toBe(ESPERA_MAXIMA_MS)
@@ -245,7 +245,7 @@ describe('PIN en un dispositivo', () => {
       expect(m.access.startSession(connection, m.people.waiter.pin)).toMatchObject({
         code: 'wait',
       })
-    m.avanzar(2000)
+    m.advance(2000)
     expect(m.access.startSession(connection, m.people.waiter.pin)).toMatchObject({ ok: true })
   })
 
@@ -365,7 +365,7 @@ describe('PIN en un dispositivo', () => {
     const { connection } = m.emparejar()
     m.access.startSession(connection, BAD_VALUES[0] as string)
     m.access.startSession(connection, BAD_VALUES[1] as string)
-    m.avanzar(10 * 60_000)
+    m.advance(10 * 60_000)
 
     expect(m.access.startSession(connection, BAD_VALUES[2] as string)).toMatchObject({
       esperaMs: 0,
@@ -396,7 +396,7 @@ describe('PIN en un dispositivo', () => {
     ])
     m.access.startSession(connection, raros[2] as string)
     for (const p of raros.slice(3)) {
-      m.avanzar(60_000)
+      m.advance(60_000)
       expect(m.access.startSession(connection, p), JSON.stringify(p)).toMatchObject({
         code: 'wrong_pin',
       })

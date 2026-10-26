@@ -83,15 +83,15 @@ export function resumirEventos(events: EventoDiagnostico[]): ResumenDiagnostico 
         break
       case 'ws-open': {
         if (typeof detalle?.reconexiones === 'number' && detalle.reconexiones > 0) reconexiones += 1
-        const ultimo = ocultamientos.at(-1)
-        if (cargaTrasRecarga !== null && ultimo?.recargada) {
-          ultimo.recuperacionMs = time - cargaTrasRecarga
+        const latest = ocultamientos.at(-1)
+        if (cargaTrasRecarga !== null && latest?.recargada) {
+          latest.recuperacionMs = time - cargaTrasRecarga
           cargaTrasRecarga = null
         } else if (typeof detalle?.msDesdeVisible === 'number') {
           if (ocultaDesde !== null) {
             recuperacionPendiente = detalle.msDesdeVisible
-          } else if (ultimo?.conexionPerdida && ultimo.recuperacionMs === null) {
-            ultimo.recuperacionMs = detalle.msDesdeVisible
+          } else if (latest?.conexionPerdida && latest.recuperacionMs === null) {
+            latest.recuperacionMs = detalle.msDesdeVisible
           }
         } else if (ocultaDesde !== null && perdidaMientrasOculta) {
           // Se reconectó sola antes de que el usuario volviera.

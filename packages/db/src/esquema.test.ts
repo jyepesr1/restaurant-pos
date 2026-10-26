@@ -18,18 +18,18 @@ function nombresDeTablas(db: BaseSqlite): string[] {
   return db
     .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
     .all()
-    .map((fila) => String(fila.name))
+    .map((row) => String(row.name))
 }
 
 /** Inserta una fila con las columnas comunes de un registro versionado. */
 function insertarVersionado(
   db: BaseSqlite,
-  tabla: string,
+  tableName: string,
   restauranteId: string,
   fields: Record<string, ValorSql>,
   id = newId(),
 ): string {
-  const fila: Record<string, ValorSql> = {
+  const row: Record<string, ValorSql> = {
     id,
     restaurant_id: restauranteId,
     created_at: AHORA,
@@ -37,10 +37,10 @@ function insertarVersionado(
     version: 1,
     ...fields,
   }
-  const columnas = Object.keys(fila)
+  const columns = Object.keys(row)
   db.prepare(
-    `INSERT INTO ${tabla} (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`,
-  ).run(...Object.values(fila))
+    `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+  ).run(...Object.values(row))
   return id
 }
 
@@ -58,7 +58,7 @@ function sembrarMinimo(db: BaseSqlite) {
 }
 
 function insertarEvento(db: BaseSqlite, restaurant: string, fields: Record<string, ValorSql> = {}) {
-  const fila: Record<string, ValorSql> = {
+  const row: Record<string, ValorSql> = {
     restaurant_id: restaurant,
     id: newId(),
     type: 'OrderOpened',
@@ -77,11 +77,11 @@ function insertarEvento(db: BaseSqlite, restaurant: string, fields: Record<strin
     content_hash: 'abc',
     ...fields,
   }
-  const columnas = Object.keys(fila)
+  const columns = Object.keys(row)
   db.prepare(
-    `INSERT INTO events (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`,
-  ).run(...Object.values(fila))
-  return fila
+    `INSERT INTO events (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+  ).run(...Object.values(row))
+  return row
 }
 
 describe('migraciones', () => {
@@ -151,19 +151,19 @@ describe('esquema', () => {
     const noEstrictas = db
       .prepare("SELECT name FROM pragma_table_list WHERE schema = 'main' AND strict = 0")
       .all()
-      .map((fila) => String(fila.name))
+      .map((row) => String(row.name))
       .filter((name) => !name.startsWith('sqlite_'))
 
     expect(noEstrictas).toEqual([])
   })
 
-  it.each(TABLAS_VERSIONADAS)('%s tiene las columnas comunes', (tabla) => {
-    const columnas = db
-      .prepare(`SELECT name FROM pragma_table_info('${tabla}')`)
+  it.each(TABLAS_VERSIONADAS)('%s tiene las columnas comunes', (tableName) => {
+    const columns = db
+      .prepare(`SELECT name FROM pragma_table_info('${tableName}')`)
       .all()
-      .map((fila) => String(fila.name))
+      .map((row) => String(row.name))
 
-    expect(columnas).toEqual(expect.arrayContaining([...COLUMNAS_COMUNES]))
+    expect(columns).toEqual(expect.arrayContaining([...COLUMNAS_COMUNES]))
   })
 
   it('las claves foráneas están activas', () => {
@@ -266,14 +266,18 @@ describe('eventos', () => {
     )
   })
 
-  it.each(TABLAS_INMUTABLES)('%s tiene bloqueados UPDATE y DELETE', (tabla) => {
+  it.each(TABLAS_INMUTABLES)('%s tiene bloqueados UPDATE y DELETE', (tableName) => {
     const disparadores = db
       .prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger' AND tbl_name = ?")
-      .all(tabla)
-      .map((fila) => String(fila.name))
+      .all(tableName)
+      .map((row) => String(row.name))
 
     expect(disparadores).toEqual(
-      expect.arrayContaining([`${tabla}_no_delete`, `${tabla}_no_replace`, `${tabla}_no_update`]),
+      expect.arrayContaining([
+        `${tableName}_no_delete`,
+        `${tableName}_no_replace`,
+        `${tableName}_no_update`,
+      ]),
     )
   })
 
@@ -302,9 +306,9 @@ describe('eventos', () => {
 
   it('INSERT OR REPLACE no puede reescribir un evento', () => {
     const event = insertarEvento(db, restaurant, { data: '{"a":1}' })
-    const columnas = Object.keys(event)
+    const columns = Object.keys(event)
     const reemplazar = db.prepare(
-      `INSERT OR REPLACE INTO events (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`,
+      `INSERT OR REPLACE INTO events (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
     )
 
     expect(() => reemplazar.run(...Object.values({ ...event, data: '{"a":2}' }))).toThrow(

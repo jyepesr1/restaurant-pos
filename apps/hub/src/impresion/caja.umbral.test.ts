@@ -57,10 +57,10 @@ describe('POST /api/caja/umbral', () => {
     await m.umbral(2_000)
     expect(m.catalog().version).toBeGreaterThan(before)
     expect(m.t.cambiosCatalogo).toEqual([m.catalog().version])
-    const fila = m.t.db
+    const row = m.t.db
       .prepare('SELECT user_id, device_id FROM restaurants WHERE id = ?')
       .get(m.t.restauranteId)
-    expect(fila).toEqual({
+    expect(row).toEqual({
       user_id: m.t.people.admin.userId,
       device_id: m.admin.connection.dispositivoId,
     })

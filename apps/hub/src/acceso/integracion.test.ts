@@ -125,8 +125,8 @@ describe('acceso en el hub de sincronización', () => {
   it('lo que el mesero hizo sin conexión cuenta como uso de su sesión', () => {
     const m = montarHub()
     const { session } = pedidoConItemEnviado(m)
-    const fila = m.db.prepare('SELECT last_used FROM sessions WHERE id = ?').get(session.sesionId)
-    expect(fila?.last_used).toBe(m.clock())
+    const row = m.db.prepare('SELECT last_used FROM sessions WHERE id = ?').get(session.sesionId)
+    expect(row?.last_used).toBe(m.clock())
   })
 
   it('un dispositivo revocado es rechazado: no lee el salón y lo nuevo que envía no entra', () => {
@@ -151,14 +151,14 @@ describe('acceso en el hub de sincronización', () => {
       guests: 1,
     })
 
-    m.avanzar(60_000)
+    m.advance(60_000)
     const r = m.access.revocarDispositivo(register, {
       ...admin,
       dispositivoId: phone.connection.dispositivoId,
     })
     if (!r.ok) throw new Error(r.message)
     sala.revoke(phone.connection.dispositivoId, r.revocadoEn)
-    m.avanzar(60_000)
+    m.advance(60_000)
     const after = m.event(phone.connection, session, 'OrderOpened', {
       channel: 'bar',
       table_id: null,

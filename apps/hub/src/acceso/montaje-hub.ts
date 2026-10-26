@@ -168,7 +168,7 @@ export function hubEnCarpeta(dirDatos: string) {
       abiertas = []
     },
     clock,
-    avanzar: (n: number) => {
+    advance: (n: number) => {
       ms += n
     },
   }

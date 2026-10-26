@@ -30,8 +30,8 @@ export function periodoDe(atajo: Atajo, today: string): Periodo {
   const firstOne = `${today.slice(0, 8)}01`
   if (atajo === 'month') return { from: firstOne, until: today }
   if (atajo === 'lastMonth') {
-    const ultimo = sumarDias(firstOne, -1)
-    return { from: `${ultimo.slice(0, 8)}01`, until: ultimo }
+    const latest = sumarDias(firstOne, -1)
+    return { from: `${latest.slice(0, 8)}01`, until: latest }
   }
   return { from: today, until: today }
 }

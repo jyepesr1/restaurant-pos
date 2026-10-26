@@ -96,16 +96,16 @@ describe('migración 7: cobro', () => {
     const { db, restaurant } = baseVersion6()
     aplicarMigraciones(db, HASTA_7)
     expect(TABLAS_VERSIONADAS).toContain('card_terminals')
-    const tabla = db
+    const tableName = db
       .prepare('PRAGMA table_list')
       .all()
       .find((t) => t.name === 'card_terminals')
-    expect(tabla).toMatchObject({ strict: 1 })
-    const columnas = db
+    expect(tableName).toMatchObject({ strict: 1 })
+    const columns = db
       .prepare("SELECT name FROM pragma_table_info('card_terminals')")
       .all()
       .map((c) => c.name)
-    for (const common of COLUMNAS_COMUNES) expect(columnas).toContain(common)
+    for (const common of COLUMNAS_COMUNES) expect(columns).toContain(common)
     const id = insertarVersionado(db, 'card_terminals', restaurant, {
       name: 'Bold 1',
       provider: 'bold',

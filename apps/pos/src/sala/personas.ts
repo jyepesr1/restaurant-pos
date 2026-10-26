@@ -35,14 +35,14 @@ export interface BorradorPersona {
 export const LARGO_MINIMO_CONTRASENA = 8
 
 /** El borrador para editar a alguien, o uno vacío con el rol sugerido. */
-export function borradorDe(persona: PersonaPersonal | null, rolSugerido: string): BorradorPersona {
-  if (!persona) return { name: '', rolId: rolSugerido, entra: 'pin', user: '', password: '' }
+export function borradorDe(person: PersonaPersonal | null, rolSugerido: string): BorradorPersona {
+  if (!person) return { name: '', rolId: rolSugerido, entra: 'pin', user: '', password: '' }
   return {
-    id: persona.id,
-    name: persona.name,
-    rolId: persona.rolId,
-    entra: persona.user ? 'password' : 'pin',
-    user: persona.user ?? '',
+    id: person.id,
+    name: person.name,
+    rolId: person.rolId,
+    entra: person.user ? 'password' : 'pin',
+    user: person.user ?? '',
     password: '',
   }
 }

@@ -68,7 +68,7 @@ export interface PagoHecho {
 }
 
 export interface Mesa {
-  numero: number
+  number: number
   status: EstadoMesa
   /** Cuándo se abrió (ms). */
   abiertaEn: number | null
@@ -111,8 +111,8 @@ export function item(
   }
 }
 
-export const mesaLibre = (numero: number): Mesa => ({
-  numero,
+export const mesaLibre = (number: number): Mesa => ({
+  number,
   status: 'free',
   abiertaEn: null,
   guests: 0,
@@ -124,10 +124,10 @@ export const mesaLibre = (numero: number): Mesa => ({
 /** El salón de ejemplo: algunas mesas en cada estado, para ver cómo se distinguen. */
 export function mesasIniciales(): Mesa[] {
   const tables = Array.from({ length: 25 }, (_, i) => mesaLibre(i + 1))
-  const poner = (numero: number, table: Partial<Mesa> & { abiertaHace?: number }) => {
+  const poner = (number: number, table: Partial<Mesa> & { abiertaHace?: number }) => {
     const { abiertaHace, ...rest } = table
-    tables[numero - 1] = {
-      ...(tables[numero - 1] as Mesa),
+    tables[number - 1] = {
+      ...(tables[number - 1] as Mesa),
       ...(abiertaHace === undefined ? {} : { abiertaEn: haceMinutos(abiertaHace) }),
       ...rest,
     }

@@ -132,7 +132,7 @@ export class RedSimulada {
 
   ahora = () => this.clock
   horaIso = () => new Date(this.clock).toISOString()
-  avanzar(ms: number) {
+  advance(ms: number) {
     this.clock += ms
   }
 

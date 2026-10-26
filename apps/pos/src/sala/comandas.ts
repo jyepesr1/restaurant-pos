@@ -13,7 +13,7 @@ export interface ComandaEnCocina {
   order: PedidoVisible
   estacionId: string
   /** Número del día que dio el hub; mientras no lo confirma, nada. */
-  numero: number | null
+  number: number | null
   /** Desde cuándo está en cocina: cuando la recibió el hub (o se envió, si aún no llega). */
   enviadaEn: string
   /** Lo que falta entregar de esta comanda. */
@@ -51,7 +51,7 @@ export function comandasEnCocina(
           comandaId: c.ticket_id,
           order,
           estacionId: c.station_id,
-          numero: numeros?.[c.ticket_id] ?? null,
+          number: numeros?.[c.ticket_id] ?? null,
           enviadaEn: l.event.received_at ?? l.event.hub_estimated_time,
           items: items.sort((a, b) => a.position - b.position),
           list: items.every((i) => i.status === 'ready'),

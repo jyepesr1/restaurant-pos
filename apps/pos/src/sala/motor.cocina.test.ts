@@ -421,14 +421,14 @@ async function esperar(condicion: () => boolean, ms = 3000) {
 
 /** Espera a que la sala termine de procesar lo que traía (el contador de cambios deja de subir). */
 async function asentar(sala: Sala) {
-  let ultimo = -1
+  let latest = -1
   let quietos = 0
   while (quietos < 4) {
     await sala.sync?.ready()
     await new Promise((r) => setTimeout(r, 25))
     const ahora = sala.instantanea().changes
-    quietos = ahora === ultimo ? quietos + 1 : 0
-    ultimo = ahora
+    quietos = ahora === latest ? quietos + 1 : 0
+    latest = ahora
   }
 }
 
@@ -477,11 +477,11 @@ describe('mensaje «impresoras»', () => {
 
   it('un equipo que se conecta después recibe el último estado', async () => {
     const h = montarHub()
-    const ultimo = statuses('Barra')
-    h.salaHub.avisarImpresoras(ultimo)
+    const latest = statuses('Barra')
+    h.salaHub.avisarImpresoras(latest)
     const sala = await conectada(h)
     await esperar(() => sala.instantanea().printers.length === 1)
-    expect(sala.instantanea().printers).toEqual(ultimo)
+    expect(sala.instantanea().printers).toEqual(latest)
   })
 
   it('el aviso no cambia lo guardado ni los pendientes del equipo', async () => {
@@ -504,11 +504,11 @@ describe('mensaje «impresoras»', () => {
     const h = montarHub()
     const sala = await conectada(h)
     await esperar(() => sala.instantanea().connection === 'connected')
-    const ultimo = statuses('Cocina')
-    h.salaHub.avisarImpresoras(ultimo)
+    const latest = statuses('Cocina')
+    h.salaHub.avisarImpresoras(latest)
     await esperar(() => sala.instantanea().printers.length === 1)
     sala.simularSinConexion(true)
-    expect(sala.instantanea().printers).toEqual(ultimo)
+    expect(sala.instantanea().printers).toEqual(latest)
   })
 })
 

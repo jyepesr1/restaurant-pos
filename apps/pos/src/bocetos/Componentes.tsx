@@ -26,7 +26,7 @@ export function Componentes() {
   const [attempts, setIntentos] = useState(0)
 
   return (
-    <Marco titulo="Design system">
+    <Marco title="Design system">
       <div className="mx-auto flex max-w-4xl flex-col gap-8 p-4">
         <section>
           <h2 className="font-titulo mb-3 text-2xl font-semibold">Colores con significado</h2>
@@ -93,7 +93,7 @@ export function Componentes() {
           </div>
           <PanelLateral
             opened={panel}
-            titulo="Panel lateral"
+            title="Panel lateral"
             alCerrar={() => setPanel(false)}
             pie={
               <Boton variant="main" className="w-full" onClick={() => setPanel(false)}>

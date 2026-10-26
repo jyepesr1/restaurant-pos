@@ -48,7 +48,7 @@ const recibidoEn = (l: EventoLocal, time: string): EventoLocal => ({
 })
 
 const resumen = (c: ComandaEnCocina[]) =>
-  c.map((x) => ({ n: x.numero, items: x.items.map((i) => i.name), list: x.list }))
+  c.map((x) => ({ n: x.number, items: x.items.map((i) => i.name), list: x.list }))
 
 describe('comandasEnCocina', () => {
   it('sin eventos o sin pedidos abiertos no hay nada', () => {
@@ -74,7 +74,7 @@ describe('comandasEnCocina', () => {
     expect(r[0]).toMatchObject({
       comandaId: ticket,
       estacionId: COCINA,
-      numero: 7,
+      number: 7,
       enviadaEn: TIME,
       list: false,
     })
@@ -265,7 +265,7 @@ describe('comandasEnCocina', () => {
         ]
       })
       expect(comandasEnCocina(locales, orders)[0]).toMatchObject({
-        numero: 4,
+        number: 4,
         enviadaEn: '2026-10-24T15:03:00.000Z',
       })
     })

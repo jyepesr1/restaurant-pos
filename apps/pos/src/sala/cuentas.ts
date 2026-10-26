@@ -67,7 +67,7 @@ export const methodName = (
   ])
 
 /** «INC 8 %», «IVA 19 %», «Exento» (el mismo nombre que la precuenta impresa). */
-export function nombreImpuesto(type: 'inc' | 'iva' | 'exempt', rate: number): string {
+export function taxName(type: 'inc' | 'iva' | 'exempt', rate: number): string {
   if (type === 'exempt' || rate === 0) return 'Exento'
   return `${type.toUpperCase()} ${`${rate / 100}`.replace('.', ',')} %`
 }

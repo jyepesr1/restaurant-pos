@@ -58,7 +58,7 @@ export function Kds() {
               (i) => estacionDe.get(i.product.key) === station,
             )
             const from = Math.min(...items.map((i) => i.enviadoEn as number))
-            return { key: `${table.numero}-${station}`, table, station, items, from }
+            return { key: `${table.number}-${station}`, table, station, items, from }
           }),
         )
         .filter((c) => c.items.length > 0)
@@ -76,7 +76,7 @@ export function Kds() {
     })
 
   return (
-    <Marco titulo="Cocina y barra" user="Cocina">
+    <Marco title="Cocina y barra" user="Cocina">
       <div className="p-3">
         <Grupo etiqueta="Estación" className="mb-3 flex flex-wrap gap-2">
           {(['todas', 'cocina', 'barra'] as const).map((f) => (
@@ -100,7 +100,7 @@ export function Kds() {
               >
                 <div className="flex items-center justify-between gap-2 border-b border-borde p-3">
                   <div>
-                    <p className="font-titulo text-3xl font-bold">Mesa {c.table.numero}</p>
+                    <p className="font-titulo text-3xl font-bold">Mesa {c.table.number}</p>
                     <p className="text-texto-suave">
                       {c.table.waiter} · <span className="capitalize">{c.station}</span>
                     </p>
@@ -153,9 +153,9 @@ export function Kds() {
                     className="w-full"
                     onClick={() => {
                       const ids = new Set(c.items.map((i) => i.id))
-                      cambiarMesa(c.table.numero, (table) => despachar(table, ids))
-                      avisar(`Mesa ${c.table.numero} despachada (${c.station})`, () =>
-                        cambiarMesa(c.table.numero, (table) => ({
+                      cambiarMesa(c.table.number, (table) => despachar(table, ids))
+                      avisar(`Mesa ${c.table.number} despachada (${c.station})`, () =>
+                        cambiarMesa(c.table.number, (table) => ({
                           ...table,
                           status: table.status === 'ready' ? 'in_kitchen' : table.status,
                           items: table.items.map((i) =>

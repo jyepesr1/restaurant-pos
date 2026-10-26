@@ -1396,7 +1396,7 @@ describe('informe del hub (tarea 1.9): datosDeInforme y cierreDeTurno', () => {
     const order = e.abrirPedido(e.register, 30_000)
     const payment = e.cobrar(e.register, order, e.pagoNequi(shift, 10_000))
     // Al otro día operativo (después de las 6:00 a. m.).
-    e.m.network.avanzar(24 * 60 * 60 * 1000)
+    e.m.network.advance(24 * 60 * 60 * 1000)
     e.voidItem(e.register, order, payment, shift)
     const today = e.status.hub.datosDeInforme('2026-10-25', '2026-10-25')
     expect(today.events.map((x) => `${x.type}:${x.business_day}`)).toEqual([

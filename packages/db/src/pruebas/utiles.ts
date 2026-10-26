@@ -3,22 +3,22 @@ import type { BaseSqlite, ValorSql } from '../sqlite'
 
 export const AHORA = '2026-10-24T15:00:00.000Z'
 
-function insertar(db: BaseSqlite, tabla: string, fila: Record<string, ValorSql>): void {
-  const columnas = Object.keys(fila)
+function insertar(db: BaseSqlite, tableName: string, row: Record<string, ValorSql>): void {
+  const columns = Object.keys(row)
   db.prepare(
-    `INSERT INTO ${tabla} (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`,
-  ).run(...Object.values(fila))
+    `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+  ).run(...Object.values(row))
 }
 
 /** Inserta una fila con las columnas comunes de un registro versionado. */
 export function insertarVersionado(
   db: BaseSqlite,
-  tabla: string,
+  tableName: string,
   restauranteId: string,
   fields: Record<string, ValorSql>,
   id = newId(),
 ): string {
-  insertar(db, tabla, {
+  insertar(db, tableName, {
     id,
     restaurant_id: restauranteId,
     created_at: AHORA,
@@ -58,7 +58,7 @@ export function insertarEvento(
   restaurant: string,
   fields: Record<string, ValorSql> = {},
 ): Record<string, ValorSql> {
-  const fila: Record<string, ValorSql> = {
+  const row: Record<string, ValorSql> = {
     restaurant_id: restaurant,
     id: newId(),
     type: 'OrderOpened',
@@ -77,8 +77,8 @@ export function insertarEvento(
     content_hash: 'abc',
     ...fields,
   }
-  insertar(db, 'events', fila)
-  return fila
+  insertar(db, 'events', row)
+  return row
 }
 
 export function insertarPedido(
@@ -141,6 +141,6 @@ export function insertarConflicto(
   })
 }
 
-export function insertarEnTabla(db: BaseSqlite, tabla: string, fila: Record<string, ValorSql>) {
-  insertar(db, tabla, fila)
+export function insertarEnTabla(db: BaseSqlite, tableName: string, row: Record<string, ValorSql>) {
+  insertar(db, tableName, row)
 }

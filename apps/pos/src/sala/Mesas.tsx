@@ -198,7 +198,7 @@ export function Mesas() {
     ).length
 
   return (
-    <MarcoSala titulo="Salón">
+    <MarcoSala title="Salón">
       <div className="mx-auto flex max-w-[96rem] flex-col gap-5 p-3 md:p-5 lg:flex-row lg:items-start">
         <PedidosAbiertos catalog={catalog} orders={orders ?? []} ahora={ahora} />
 
@@ -462,7 +462,7 @@ function PlanoZona({
   const elements = catalog.elements.filter((e) => e.zonaId === zonaId)
   const register = limites([...tables, ...elements])
   const { ref, escala } = useEscala(register)
-  const centro = (m: Mesa) => {
+  const center = (m: Mesa) => {
     const e = posicion(m, register, escala)
     return { x: Number(e.left) + Number(e.width) / 2, y: Number(e.top) + Number(e.height) / 2 }
   }
@@ -477,7 +477,7 @@ function PlanoZona({
   const uniones = enGrupo.flatMap((m) => {
     const main = tables.find((x) => x.id === grupoDe(m)?.tableId)
     if (!main || main.id === m.id) return []
-    const [de, a] = [centro(main), centro(m)]
+    const [de, a] = [center(main), center(m)]
     const cruza = tables.some(
       (x) => x.id !== m.id && x.id !== main.id && cruzaCaja(de, a, posicion(x, register, escala)),
     )
@@ -542,7 +542,7 @@ function PlanoZona({
           key={m.id}
           table={m}
           r={resumenes.get(m.id) as Resumen}
-          estilo={posicion(m, register, escala)}
+          style={posicion(m, register, escala)}
           escala={escala}
           alTocar={() => alTocar(m)}
         />
@@ -588,13 +588,13 @@ const claseSilla = (r: Resumen) => SILLA[ESTADOS[r.status].tono]
 function MesaEnPlano({
   table,
   r,
-  estilo,
+  style,
   escala,
   alTocar,
 }: {
   table: Mesa
   r: Resumen
-  estilo: React.CSSProperties
+  style: React.CSSProperties
   escala: number
   alTocar: () => void
 }) {
@@ -608,10 +608,10 @@ function MesaEnPlano({
     const extra = Math.max(0, 48 - medida)
     return { start: start - extra / 2, medida: medida + extra }
   }
-  const width = crecer(Number(estilo.width), Number(estilo.left))
-  const height = crecer(Number(estilo.height), Number(estilo.top))
+  const width = crecer(Number(style.width), Number(style.left))
+  const height = crecer(Number(style.height), Number(style.top))
   const tocable = {
-    ...estilo,
+    ...style,
     left: width.start,
     width: width.medida,
     top: height.start,
@@ -619,11 +619,11 @@ function MesaEnPlano({
   }
   return (
     <>
-      <div style={estilo} aria-hidden="true" className="pointer-events-none">
+      <div style={style} aria-hidden="true" className="pointer-events-none">
         <Sillas
           shape={table.shape}
-          width={Number(estilo.width)}
-          height={Number(estilo.height)}
+          width={Number(style.width)}
+          height={Number(style.height)}
           places={table.capacity}
           cssClass={claseSilla(r)}
         />

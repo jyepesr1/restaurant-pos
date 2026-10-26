@@ -8,7 +8,7 @@ import { Grupo, Opcion } from '../ui/Opciones'
 import { navegar } from '../ui/ruta'
 import { Diferencia } from './Caja'
 import { sala, useSala } from './contexto'
-import { methodName, nombreImpuesto, reglasDe } from './cuentas'
+import { methodName, reglasDe, taxName } from './cuentas'
 import { claseCampo } from './Entrar'
 import { MarcoSala } from './MarcoSala'
 import type { CierreReporte, Reporte } from './motor'
@@ -57,24 +57,24 @@ export function Reportes() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // Solo cuenta la respuesta del último pedido: una lenta de antes no pisa la nueva.
-  const ultimo = useRef(0)
+  const latest = useRef(0)
 
   const cargar = useCallback((p: Periodo | null) => {
-    const numero = ++ultimo.current
+    const number = ++latest.current
     setPedido(p)
     setCargando(true)
     setError(null)
     sala
       .report(p)
       .then((r) => {
-        if (numero !== ultimo.current) return
+        if (number !== latest.current) return
         setMostrado({ report: r, period: p ?? { from: r.today, until: r.today } })
       })
       .catch((e) => {
-        if (numero === ultimo.current) setError(message(e))
+        if (number === latest.current) setError(message(e))
       })
       .finally(() => {
-        if (numero === ultimo.current) setCargando(false)
+        if (number === latest.current) setCargando(false)
       })
   }, [])
   useEffect(() => cargar(null), [cargar])
@@ -100,7 +100,7 @@ export function Reportes() {
 
   return (
     <MarcoSala
-      titulo="Reportes"
+      title="Reportes"
       actions={
         mostrado && (
           <Boton icono="receipt" onClick={descargar}>
@@ -250,7 +250,7 @@ function Contenido({
         </p>
       )}
 
-      <Tarjeta titulo="Cierres de caja">
+      <Tarjeta title="Cierres de caja">
         {report.closings.length === 0 ? (
           <EmptyState>Ninguna caja se cerró en este período.</EmptyState>
         ) : (
@@ -271,7 +271,7 @@ function Contenido({
       </Tarjeta>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Tarjeta titulo="Ventas">
+        <Tarjeta title="Ventas">
           <Filas>
             <Fila name="Bruto" value={pesos(v.gross)} />
             {v.voided > 0 && <Fila name="Productos anulados" value={minus(v.voided)} />}
@@ -291,7 +291,7 @@ function Contenido({
               .map((i) => (
                 <Fila
                   key={`${i.type}${i.rate}`}
-                  name={nombreImpuesto(i.type, i.rate)}
+                  name={taxName(i.type, i.rate)}
                   value={pesos(i.tax)}
                 />
               ))}
@@ -299,7 +299,7 @@ function Contenido({
           <Nota>Impuestos informativos: valídalos con tu contador.</Nota>
         </Tarjeta>
 
-        <Tarjeta titulo="Por medio de pago">
+        <Tarjeta title="Por medio de pago">
           {inf.byMethod.length === 0 ? (
             <EmptyState>Sin pagos en este período.</EmptyState>
           ) : (
@@ -317,12 +317,12 @@ function Contenido({
           <Nota>Cuenta los pagos el día en que se cobraron, aunque la mesa cierre otro día.</Nota>
         </Tarjeta>
 
-        <Tarjeta titulo="Por mesero">
+        <Tarjeta title="Por mesero">
           {inf.byWaiter.length === 0 ? (
             <EmptyState>Sin ventas en este período.</EmptyState>
           ) : (
             <Tabla
-              columnas={['Mesero', 'Ventas', 'Cuentas', 'Ticket']}
+              columns={['Mesero', 'Ventas', 'Cuentas', 'Ticket']}
               rows={inf.byWaiter.map((m) => ({
                 key: m.userId,
                 celdas: [quien(m.userId), pesos(m.net), String(m.checks), pesos(m.averageTicket)],
@@ -334,7 +334,7 @@ function Contenido({
 
         <Productos report={report} />
 
-        <Tarjeta titulo="Anulaciones y cancelaciones">
+        <Tarjeta title="Anulaciones y cancelaciones">
           {inf.voids.length === 0 && inf.cancellations.length === 0 ? (
             <EmptyState>Nada anulado ni cancelado.</EmptyState>
           ) : (
@@ -342,7 +342,7 @@ function Contenido({
               {inf.voids.map((a) => (
                 <Evento
                   key={a.eventId}
-                  titulo={`${a.units} × ${a.name}`}
+                  title={`${a.units} × ${a.name}`}
                   value={pesos(a.value)}
                   reason={a.reason}
                   detalle={[
@@ -364,7 +364,7 @@ function Contenido({
               {inf.cancellations.map((c) => (
                 <Evento
                   key={c.eventId}
-                  titulo={c.orderNumber ? `Pedido ${c.orderNumber} cancelado` : 'Pedido cancelado'}
+                  title={c.orderNumber ? `Pedido ${c.orderNumber} cancelado` : 'Pedido cancelado'}
                   value={pesos(c.value)}
                   reason={c.reason}
                   detalle={[
@@ -381,7 +381,7 @@ function Contenido({
           <Nota>Cada anulación cuenta el día en que se hizo.</Nota>
         </Tarjeta>
 
-        <Tarjeta titulo="Descuentos y cortesías">
+        <Tarjeta title="Descuentos y cortesías">
           {inf.discounts.length === 0 ? (
             <EmptyState>Sin descuentos en este período.</EmptyState>
           ) : (
@@ -390,7 +390,7 @@ function Contenido({
                 <Evento
                   // biome-ignore lint/suspicious/noArrayIndexKey: un pedido puede tener varios descuentos iguales
                   key={`${d.orderId}${i}`}
-                  titulo={
+                  title={
                     d.rule === 'comp'
                       ? 'Cortesía'
                       : d.rule === 'percent'
@@ -407,7 +407,7 @@ function Contenido({
           )}
         </Tarjeta>
 
-        <Tarjeta titulo="Fondo de propinas">
+        <Tarjeta title="Fondo de propinas">
           <Filas>
             <Fila name="Propinas cobradas" value={pesos(inf.tipPool.tips)} />
             <Fila name="Pagadas desde la caja" value={minus(inf.tipPool.paidOut)} />
@@ -429,13 +429,13 @@ function Productos({ report }: { report: Reporte }) {
   const net = report.report.sales.net
   const visibles = all ? byProduct : byProduct.slice(0, PRODUCTOS_VISIBLES)
   return (
-    <Tarjeta titulo="Por producto">
+    <Tarjeta title="Por producto">
       {byProduct.length === 0 ? (
         <EmptyState>Sin productos vendidos.</EmptyState>
       ) : (
         <>
           <Tabla
-            columnas={['Producto', 'Unidades', 'Ventas', '% de ventas']}
+            columns={['Producto', 'Unidades', 'Ventas', '% de ventas']}
             rows={visibles.map((p) => ({
               key: `${p.productId}${p.variantId ?? ''}`,
               celdas: [p.name, String(p.units), pesos(p.net), percent(p.net, net)],
@@ -581,20 +581,20 @@ function Cifra({
 }
 
 function Tarjeta({
-  titulo,
+  title,
   ancha = false,
   children,
 }: {
-  titulo: string
+  title: string
   ancha?: boolean
   children: ReactNode
 }) {
   return (
     <section
-      aria-label={titulo}
+      aria-label={title}
       className={`flex flex-col rounded-2xl border border-linea bg-superficie p-4 ${ancha ? 'lg:col-span-2' : ''}`}
     >
-      <h3 className="mb-3 text-lg font-semibold">{titulo}</h3>
+      <h3 className="mb-3 text-lg font-semibold">{title}</h3>
       {children}
     </section>
   )
@@ -634,10 +634,10 @@ const Dato = ({ name, value }: { name: string; value: string }) => (
 )
 
 function Tabla({
-  columnas,
+  columns,
   rows,
 }: {
-  columnas: string[]
+  columns: string[]
   rows: { key: string; celdas: string[] }[]
 }) {
   return (
@@ -645,7 +645,7 @@ function Tabla({
       <table className="cifras w-full border-collapse text-left">
         <thead>
           <tr className="text-sm text-texto-suave">
-            {columnas.map((c, i) => (
+            {columns.map((c, i) => (
               <th
                 key={c}
                 scope="col"
@@ -677,13 +677,13 @@ function Tabla({
 }
 
 function Evento({
-  titulo,
+  title,
   value,
   reason,
   detalle,
   etiqueta,
 }: {
-  titulo: string
+  title: string
   value: string
   reason: string | null
   detalle: (string | null)[]
@@ -693,7 +693,7 @@ function Evento({
   return (
     <li className="flex flex-col gap-1 py-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-        <span className="font-semibold">{titulo}</span>
+        <span className="font-semibold">{title}</span>
         <span className="cifras">{value}</span>
       </div>
       {reason && <p>{reason}</p>}

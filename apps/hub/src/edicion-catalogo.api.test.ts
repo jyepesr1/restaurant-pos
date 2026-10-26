@@ -249,14 +249,14 @@ describe('archivar y reactivar', () => {
     const r = await m.edicion()
     expect(r.statusCode).toBe(200)
     const cuerpo = r.json()
-    const fila = cuerpo.products.find((p: { id: string }) => p.id === burrata.id)
-    expect(fila.active).toBe(false)
-    expect(typeof fila.favorite).toBe('boolean')
+    const row = cuerpo.products.find((p: { id: string }) => p.id === burrata.id)
+    expect(row.active).toBe(false)
+    expect(typeof row.favorite).toBe('boolean')
     expect(cuerpo.products.some((p: { active: boolean }) => p.active)).toBe(true)
     expect(cuerpo.version).toBe(m.catalog().version)
     // La respuesta no trae quién ni de qué restaurante.
-    expect(fila).not.toHaveProperty('restaurant_id')
-    expect(fila).not.toHaveProperty('user_id')
+    expect(row).not.toHaveProperty('restaurant_id')
+    expect(row).not.toHaveProperty('user_id')
   })
 
   it('archivar y reactivar en un solo pedido deja la última palabra y dos versiones', async () => {
@@ -417,10 +417,10 @@ describe('permisos y sesiones', () => {
         { entity: 'products', id: burrata.id, data: { price } },
       ])
       expect(r.code, quien).toBe(200)
-      const ultimo = m.db
+      const latest = m.db
         .prepare('SELECT user_id, device_id FROM catalog_changes ORDER BY version DESC LIMIT 1')
         .get()
-      expect(ultimo).toEqual({
+      expect(latest).toEqual({
         user_id: m.people[quien].userId,
         device_id: m.register.connection.dispositivoId,
       })
@@ -798,11 +798,11 @@ describe('cambios que no cambian nada', () => {
       { entity: 'products', id: burrata.id, data: { price: burrata.price, favorite: true } },
     ])
     expect(r.cuerpo.cambiados).toBe(1)
-    const ultimo = m.db
+    const latest = m.db
       .prepare('SELECT before, after FROM catalog_changes ORDER BY version DESC LIMIT 1')
       .get()
-    expect(JSON.parse(String(ultimo?.before)).favorite).toBe(0)
-    expect(JSON.parse(String(ultimo?.after)).favorite).toBe(1)
+    expect(JSON.parse(String(latest?.before)).favorite).toBe(0)
+    expect(JSON.parse(String(latest?.after)).favorite).toBe(1)
   })
 
   it('el mismo registro dos veces con el mismo cambio cuenta una sola vez', async () => {
@@ -831,11 +831,11 @@ describe('el padre de un registro no cambia', () => {
     const other = burrataDe(m)
     const variant = vino.variants[0]
     const tagliata = m.product('Tagliata di Manzo')
-    const opcion = tagliata.groups[0]?.options[0]
+    const option = tagliata.groups[0]?.options[0]
     const otroGrupo = m.db
       .prepare('SELECT id FROM modifier_groups WHERE id <> ? LIMIT 1')
       .get(tagliata.groups[0]?.id ?? '')
-    if (!variant || !opcion) throw new Error('falta')
+    if (!variant || !option) throw new Error('falta')
     const before = m.catalog().version
     const r1 = await m.editar(session, [
       { entity: 'variants', id: variant.id, data: { product_id: other.id } },
@@ -844,7 +844,7 @@ describe('el padre de un registro no cambia', () => {
     expect(r1.cuerpo.message).toMatch(/otro product/)
     if (otroGrupo) {
       const r2 = await m.editar(session, [
-        { entity: 'modifiers', id: opcion.id, data: { group_id: String(otroGrupo.id) } },
+        { entity: 'modifiers', id: option.id, data: { group_id: String(otroGrupo.id) } },
       ])
       expect(r2.code).toBe(400)
       expect(r2.cuerpo.message).toMatch(/otro group/)
@@ -1000,11 +1000,11 @@ describe('archivar lo que otros usan', () => {
   it('archivar un grupo y tocar en el mismo pedido una de sus opciones activas se rechaza', async () => {
     const m = await montarServidor()
     const group = m.product('Tagliata di Manzo').groups[0]
-    const opcion = group?.options[0]
-    if (!group || !opcion) throw new Error('falta')
+    const option = group?.options[0]
+    if (!group || !option) throw new Error('falta')
     const r = await m.editar(m.sesionDe('manager'), [
       { entity: 'modifier_groups', id: group.id, data: { active: false } },
-      { entity: 'modifiers', id: opcion.id, data: { extra_price: opcion.extraPrice + 500 } },
+      { entity: 'modifiers', id: option.id, data: { extra_price: option.extraPrice + 500 } },
     ])
     expect(r.code).toBe(400)
     expect(r.cuerpo.message).toMatch(/Cambio 2.*group está archivado/)

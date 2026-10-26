@@ -11,7 +11,7 @@ import {
 } from '@pos/sync'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
-import { conSigno, mediosDelCierre } from './Caja'
+import { mediosDelCierre, withSign } from './Caja'
 import { cuadreDeCaja, type ReglasCobro, resumenTurno, turnoDeCaja } from './cuentas'
 import { type Equipo, Sala, type Sesion } from './motor'
 import { catalogoDePrueba, datosItem } from './pruebas'
@@ -19,7 +19,7 @@ import { catalogoDePrueba, datosItem } from './pruebas'
 // De punta a punta, en memoria (tarea 1.8): la caja (motor + IndexedDB) habla con un hub de memoria
 // con las reglas de cobro. Abrir turno → cobro con tarjeta y Nequi → conteo con los cierres del
 // datáfono y de la app → cierre confirmado; y con un reporte distinto, que pide justificación. El
-// cierre se arma como lo hace la pantalla de la caja (`mediosDelCierre`, `conSigno`,
+// cierre se arma como lo hace la pantalla de la caja (`mediosDelCierre`, `withSign`,
 // `otherMethodsReconciliation`). Los temporizadores son falsos: nada espera de verdad.
 
 const T0 = new Date('2026-10-26T15:00:00.000Z')
@@ -60,7 +60,7 @@ beforeEach(() => {
 async function asentar(vueltas = 4) {
   for (let i = 0; i < vueltas; i++) await new Promise((r) => setImmediate(r))
 }
-async function avanzar(ms: number) {
+async function advance(ms: number) {
   for (let t = 0; t < ms; t += 100) {
     await vi.advanceTimersByTimeAsync(Math.min(100, ms - t))
     await asentar(3)
@@ -69,7 +69,7 @@ async function avanzar(ms: number) {
 async function until(condicion: () => Promise<boolean> | boolean, maxMs = 20_000) {
   for (let t = 0; t <= maxMs; t += 100) {
     if (await condicion()) return
-    await avanzar(100)
+    await advance(100)
   }
   throw new Error('No se cumplió en el tiempo simulado')
 }
@@ -279,7 +279,7 @@ async function cerrarComoCaja(
   const reportados = medios.map((m) => ({
     method: m.method,
     custom_method_id: m.customMethodId,
-    reported: conSigno(escrito[m.key] ?? ''),
+    reported: withSign(escrito[m.key] ?? ''),
   }))
   const cashCount = newId()
   const tally = await resolver(

@@ -66,8 +66,8 @@ describe('anular lo enviado (ItemAnulado)', () => {
     const e = scenario()
     const { event } = e.autorizar(pinDe(e.m, 'manager'), e.voidItem(), 'void_sent_item')
     e.send(event)
-    const fila = e.m.db.prepare("SELECT reason FROM events WHERE type = 'ItemVoided'").get()
-    expect(fila?.reason).toBe(REASON)
+    const row = e.m.db.prepare("SELECT reason FROM events WHERE type = 'ItemVoided'").get()
+    expect(row?.reason).toBe(REASON)
   })
 
   it('sin motivo ni siquiera con comprobante: el esquema lo rechaza', () => {
@@ -103,7 +103,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
       fingerprint: authorizableFingerprint(borrador),
     })
     if (!a.ok) throw new Error(a.message)
-    e.m.avanzar(VIGENCIA_AUTORIZACION_MS + 1_000)
+    e.m.advance(VIGENCIA_AUTORIZACION_MS + 1_000)
     // El evento se rehace con la hora de ahora (la huella incluye la hora, así que también
     // cambia): se prueba con la hora tardía puesta a mano sobre el mismo contenido.
     const tarde = firmar(e.session, {
@@ -117,7 +117,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
   it('un comprobante que llega más de 12 horas después de emitido no vale', () => {
     const e = scenario()
     const { event } = e.autorizar(pinDe(e.m, 'manager'), e.voidItem(), 'void_sent_item')
-    e.m.avanzar(ENTREGA_AUTORIZADO_MS + 1_000)
+    e.m.advance(ENTREGA_AUTORIZADO_MS + 1_000)
     expect(e.send(event)).toMatchObject({ status: 'rejected', reason: 'invalid_authorization' })
   })
 
@@ -240,10 +240,10 @@ describe('anular lo enviado (ItemAnulado)', () => {
     )
     const { event, comprobante } = e.autorizar(pinDe(e.m, 'manager'), demasiadas, 'void_sent_item')
     expect(e.send(event)).toMatchObject({ status: 'rejected', reason: 'invalid_quantity' })
-    const fila = e.m.db
+    const row = e.m.db
       .prepare('SELECT used_at FROM authorizations WHERE id = ?')
       .get(comprobante.autorizacionId)
-    expect(fila?.used_at).toBeNull()
+    expect(row?.used_at).toBeNull()
   })
 })
 

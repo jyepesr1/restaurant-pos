@@ -124,7 +124,7 @@ function apply(source: CatalogoEdicion, changes: CambioCatalogo[]): CatalogoEdic
   const c = structuredClone(source)
   let version = c.version
   const tocados: { entity: Entidad; id: string; donde: string }[] = []
-  const tabla = (e: Entidad) => c[TABLA[e]] as unknown as (Registro & { id: string })[]
+  const tableName = (e: Entidad) => c[TABLA[e]] as unknown as (Registro & { id: string })[]
 
   for (const [i, change] of changes.entries()) {
     const donde = `Cambio ${i + 1} (${change.entity})`
@@ -137,7 +137,7 @@ function apply(source: CatalogoEdicion, changes: CambioCatalogo[]): CatalogoEdic
       if (typeof value === 'string' && !(c[target] as { id: string }[]).some((x) => x.id === value))
         throw new Error(`${donde}: ${field} no existe`)
     }
-    const rows = tabla(change.entity)
+    const rows = tableName(change.entity)
     const current = rows.find((f) => f.id === change.id)
     if (!current) {
       for (const k of CAMPOS[change.entity])
@@ -159,10 +159,10 @@ function apply(source: CatalogoEdicion, changes: CambioCatalogo[]): CatalogoEdic
     }
     if (change.entity === 'product_modifier_groups') {
       const pair = (f: Registro) => `${f.product_id}|${f.group_id}`
-      const mismos = tabla('product_modifier_groups').filter(
+      const mismos = tableName('product_modifier_groups').filter(
         (f) =>
           pair(f) ===
-          pair(tabla('product_modifier_groups').find((x) => x.id === change.id) as Registro),
+          pair(tableName('product_modifier_groups').find((x) => x.id === change.id) as Registro),
       )
       if (mismos.length > 1) throw new Error(`${donde}: ese producto ya tiene ese grupo`)
     }
@@ -170,10 +170,10 @@ function apply(source: CatalogoEdicion, changes: CambioCatalogo[]): CatalogoEdic
   }
 
   for (const t of tocados) {
-    const fila = tabla(t.entity).find((f) => f.id === t.id) as Registro
-    if (fila.active === true) {
+    const row = tableName(t.entity).find((f) => f.id === t.id) as Registro
+    if (row.active === true) {
       for (const [field, target] of Object.entries(REFERENCIAS)) {
-        const ref = fila[field]
+        const ref = row[field]
         const parent =
           typeof ref === 'string'
             ? (c[target] as unknown as Registro[]).find((x) => x.id === ref)
@@ -317,9 +317,9 @@ function edicionDe(s: SemillaEdicion, contiguo = true): CatalogoEdicion {
       position: vi,
     })),
   )
-  const links = s.links.flatMap((fila, pi) =>
+  const links = s.links.flatMap((row, pi) =>
     acomodar(
-      fila
+      row
         .map((e, gi) => ({
           e,
           gi,
@@ -527,10 +527,10 @@ describe('producto: lo que se guarda es lo que se editó', () => {
         for (const change of changes) {
           if (change.entity === 'products') expect(change.id).toBe(b.id)
           else if (change.entity === 'variants' || change.entity === 'product_modifier_groups') {
-            const fila = (change.entity === 'variants' ? after.variants : after.links).find(
+            const row = (change.entity === 'variants' ? after.variants : after.links).find(
               (x) => x.id === change.id,
             )
-            expect(fila?.product_id).toBe(b.id)
+            expect(row?.product_id).toBe(b.id)
           } else throw new Error(`Cambio inesperado: ${change.entity}`)
         }
         // Los demás productos quedan igual.
@@ -810,9 +810,9 @@ describe('orden de tamaños y opciones cuando hay archivados en medio', () => {
     const c = edicionDe(fc.sample(arbSemilla, { seed: SEMILLA, numRuns: 1 })[0] as SemillaEdicion)
     const g = borradorDeGrupo(c, 'GRP0')
     g.active = false
-    const opcion = g.options[0]
-    if (!opcion) throw new Error('falta')
-    opcion.extraPrice += 500
+    const option = g.options[0]
+    if (!option) throw new Error('falta')
+    option.extraPrice += 500
     expect(() => apply(c, cambiosDeGrupo(c, g))).not.toThrow()
   })
 

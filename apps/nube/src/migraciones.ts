@@ -160,11 +160,11 @@ export async function migrar(
   const aplicadas = await sql.query<{ version: number; name: string; fingerprint: string }>(
     'SELECT version, name, fingerprint FROM migrations ORDER BY version',
   )
-  for (const fila of aplicadas) {
-    const m = migraciones[fila.version - 1]
-    if (m && huellaSql(m.sql) !== fila.fingerprint)
+  for (const row of aplicadas) {
+    const m = migraciones[row.version - 1]
+    if (m && huellaSql(m.sql) !== row.fingerprint)
       throw new Error(
-        `La migración ${fila.version} («${fila.name}») cambió después de aplicarse. Las migraciones publicadas no se editan: crea una nueva.`,
+        `La migración ${row.version} («${row.name}») cambió después de aplicarse. Las migraciones publicadas no se editan: crea una nueva.`,
       )
   }
   const hechas: number[] = []
@@ -172,10 +172,8 @@ export async function migrar(
     const aplicada = await sql.transaccion(async (tx) => {
       // Se bloquea el registro: dos procesos a la vez no aplican la misma migración.
       await tx.query('LOCK TABLE migrations IN EXCLUSIVE MODE')
-      const [fila] = await tx.query<{ v: number | null }>(
-        'SELECT max(version) AS v FROM migrations',
-      )
-      if ((fila?.v ?? 0) >= m.version) return false
+      const [row] = await tx.query<{ v: number | null }>('SELECT max(version) AS v FROM migrations')
+      if ((row?.v ?? 0) >= m.version) return false
       await tx.execute(m.sql)
       await tx.query('INSERT INTO migrations (version, name, fingerprint) VALUES ($1, $2, $3)', [
         m.version,

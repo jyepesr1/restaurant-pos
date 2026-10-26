@@ -112,7 +112,7 @@ export class ClienteSync {
   }
 
   /** Carga lo guardado (el desfase del reloj). Conviene llamarlo al abrir la app. */
-  iniciar(): Promise<void> {
+  begin(): Promise<void> {
     return this.enEspera(async () => {
       this.desfaseMs = (await this.almacen.cursor()).desfaseMs ?? this.desfaseMs
     })

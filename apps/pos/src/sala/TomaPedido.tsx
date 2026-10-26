@@ -118,7 +118,7 @@ export function TomaPedido() {
 
   if (!catalog || (tableId && !table) || (!tableId && !canalNuevo && !parametros.get('order'))) {
     return (
-      <MarcoSala titulo="Pedido" back="/">
+      <MarcoSala title="Pedido" back="/">
         <p className="p-6 text-texto-suave">Esta mesa o este pedido no existe.</p>
       </MarcoSala>
     )
@@ -138,7 +138,7 @@ export function TomaPedido() {
   const merged = (order?.status.mergedTables ?? [])
     .map((id) => catalog?.tables.find((m) => m.id === id)?.name)
     .filter(Boolean)
-  const titulo = table
+  const title = table
     ? `Mesa ${[table.name, ...merged].join(' + ')}`
     : `${channel === 'dine_in' ? 'Pedido' : CANALES[channel]}${order?.status.dayNumber ? ` #${order.status.dayNumber}` : ''}`
   const products = catalog.categories.flatMap((c) => c.products)
@@ -663,7 +663,7 @@ export function TomaPedido() {
   )
 
   return (
-    <MarcoSala titulo={titulo} back="/">
+    <MarcoSala title={title} back="/">
       <div className="mx-auto flex max-w-[96rem] gap-5 p-3 pb-28 md:p-5 md:pb-5">
         <section className="min-w-0 flex-1" aria-label="Carta">
           {tableId && candidatos.length > 1 && (
@@ -874,7 +874,7 @@ export function TomaPedido() {
         {/* Tablet y caja: el pedido siempre a la vista. */}
         <aside className="sticky top-21 hidden h-[calc(100dvh-6.5rem)] w-80 shrink-0 lg:w-96 flex-col overflow-hidden rounded-2xl border border-linea bg-superficie shadow-flota md:flex">
           <div className="flex items-center justify-between gap-2 border-b border-linea px-4 py-3">
-            <h2 className="text-lg font-bold">{titulo}</h2>
+            <h2 className="text-lg font-bold">{title}</h2>
             {order?.status.dayNumber && (
               <span className="cifras text-sm text-texto-suave">{`Pedido #${order.status.dayNumber}`}</span>
             )}
@@ -922,7 +922,7 @@ export function TomaPedido() {
 
       <PanelLateral
         opened={verPedido}
-        titulo={`Pedido · ${titulo}`}
+        title={`Pedido · ${title}`}
         alCerrar={() => setVerPedido(false)}
         pie={pieTicket}
       >
@@ -1000,7 +1000,7 @@ export function TomaPedido() {
       )}
       {order && action === 'cancel' && (
         <PanelCancelar
-          table={titulo}
+          table={title}
           withPayments={Object.values(order.status.payments).some((p) => !p.voided)}
           conPermiso={permissions.includes('cancel_order')}
           enLinea={enLinea}
@@ -1106,11 +1106,11 @@ function ElegirPara({
   alContarPersonas: (n: number) => void
 }) {
   // En el celular cada fila es una sola línea que se desliza; en pantallas anchas cabe todo.
-  const fila = '-mx-3 flex items-center gap-2 overflow-x-auto px-3 pb-1 md:flex-wrap'
+  const row = '-mx-3 flex items-center gap-2 overflow-x-auto px-3 pb-1 md:flex-wrap'
   return (
     <div className="mt-3 flex flex-col gap-2">
       {preguntarPersonas && (
-        <Grupo etiqueta="Cuántas personas hay en la mesa" className={fila}>
+        <Grupo etiqueta="Cuántas personas hay en la mesa" className={row}>
           <span className="shrink-0 font-semibold text-texto-suave">¿Cuántas personas?</span>
           {PERSONAS_RAPIDAS.map((n) => (
             <Opcion key={n} elegida={false} alElegir={() => alContarPersonas(n)}>
@@ -1120,7 +1120,7 @@ function ElegirPara({
         </Grupo>
       )}
       {guests > 0 && (
-        <Grupo etiqueta="Para quién es lo que agregues" className={fila}>
+        <Grupo etiqueta="Para quién es lo que agregues" className={row}>
           <span className="shrink-0 font-semibold text-texto-suave">Para</span>
           {personasDe(guests).map((c) => (
             <Opcion
@@ -1135,7 +1135,7 @@ function ElegirPara({
         </Grupo>
       )}
       {usarCursos && (
-        <Grupo etiqueta="En qué curso va lo que agregues" className={fila}>
+        <Grupo etiqueta="En qué curso va lo que agregues" className={row}>
           <span className="shrink-0 font-semibold text-texto-suave">Curso</span>
           {COURSES.map((c) => (
             <Opcion
@@ -1248,7 +1248,7 @@ function Ticket({
         )}
         {order &&
           porCurso.map((c) => {
-            const retenidos = c.items.filter((i) => i.status === 'held').length
+            const heldCourses = c.items.filter((i) => i.status === 'held').length
             const pendingList = c.items.filter((i) => i.status === 'pending').length
             return (
               <section key={c.course ?? 'ninguno'} aria-label={c.name}>
@@ -1256,16 +1256,16 @@ function Ticket({
                   <div className="flex min-h-12 items-center justify-between gap-2 bg-superficie-2/60 px-4">
                     <span className="font-semibold">
                       {c.name}
-                      {retenidos > 0 && (
+                      {heldCourses > 0 && (
                         <span className="font-normal text-proceso-texto"> · espera</span>
                       )}
                     </span>
-                    {c.course !== null && retenidos > 0 && (
+                    {c.course !== null && heldCourses > 0 && (
                       <Boton variant="main" onClick={() => alMarchar(c.course as Course)}>
-                        {`Marchar ${retenidos}`}
+                        {`Marchar ${heldCourses}`}
                       </Boton>
                     )}
-                    {c.course !== null && retenidos === 0 && pendingList > 0 && (
+                    {c.course !== null && heldCourses === 0 && pendingList > 0 && (
                       <Boton onClick={() => alRetener(c.course as Course)}>Retener</Boton>
                     )}
                   </div>
@@ -1412,10 +1412,10 @@ function LineaTicket({
   )
 }
 
-function Section({ titulo, children }: { titulo: string; children: ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="mb-4 flex flex-col gap-2">
-      <p className="font-semibold">{titulo}</p>
+      <p className="font-semibold">{title}</p>
       {children}
     </div>
   )
@@ -1523,7 +1523,7 @@ function PanelProducto({
   return (
     <PanelLateral
       opened
-      titulo={product.name}
+      title={product.name}
       alCerrar={close}
       pie={
         <Boton
@@ -1592,7 +1592,7 @@ function PanelProducto({
           ))}
         </Grupo>
       ))}
-      <Section titulo="Cantidad">
+      <Section title="Cantidad">
         <Quantity value={quantity} onChange={setCantidad} />
       </Section>
       <label className="flex flex-col gap-1">
@@ -1668,7 +1668,7 @@ function PanelItem({
   return (
     <PanelLateral
       opened
-      titulo={item.name}
+      title={item.name}
       alCerrar={close}
       pie={
         <div className="flex gap-2">
@@ -1722,7 +1722,7 @@ function PanelItem({
       )}
       {sinEnviar && (
         <>
-          <Section titulo="Cantidad">
+          <Section title="Cantidad">
             <Quantity value={item.quantity} onChange={(n) => alSumar(n - item.quantity)} />
           </Section>
           {enSalon && guests > 0 && (
@@ -1790,7 +1790,7 @@ function PanelNotaPedido({
   return (
     <PanelLateral
       opened
-      titulo="Nota del pedido"
+      title="Nota del pedido"
       alCerrar={alCerrar}
       pie={
         <Boton variant="main" large className="w-full" onClick={() => onSave(newOne)}>
@@ -1839,7 +1839,7 @@ function PanelAgotar({
     ...(everything ? [] : product.variants.map((v) => ({ id: v.id, name: v.name }))),
   ]
   return (
-    <PanelLateral opened titulo={`Agotar ${product.name}`} alCerrar={alCerrar}>
+    <PanelLateral opened title={`Agotar ${product.name}`} alCerrar={alCerrar}>
       <p className="mb-4 text-texto-suave">
         Toca lo que se acabó; tócalo otra vez cuando vuelva a haber.
       </p>

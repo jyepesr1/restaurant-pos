@@ -1,23 +1,23 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import {
-  COLUMNAS,
-  codificar,
-  comoTexto,
+  asText,
+  CODE_PAGES,
+  COLUMNS,
+  encode,
   escpos,
-  type Linea,
-  leerEscpos,
-  lineasPrecuenta,
-  nombreImpuesto,
-  PAGINAS_CODIGOS,
-  type Precuenta,
+  type Line,
+  type PreBill,
   pesos,
+  preBillLines,
+  readEscpos,
+  taxName,
 } from './index'
 
-// La precuenta en papel (tarea 1.6): 58 y 80 mm, con y sin pagos previos, con cuenta dividida, sin
-// propina, con tildes y con el formato de pesos.
+// The pre-bill on paper (task 1.6): 58 and 80 mm, with and without previous payments, with a split
+// check, without tip, with accents and with the pesos format.
 
-const preBill: Precuenta = {
+const preBill: PreBill = {
   restaurant: 'La Spritzzería',
   target: 'Mesa 5',
   order: 12,
@@ -34,21 +34,21 @@ const preBill: Precuenta = {
   check: null,
   subtotal: 140_700,
   tip: 13_028,
-  tasaPropina: 1000,
+  tipRate: 1000,
 }
 
-const f80 = { columnas: COLUMNAS[80], pagina: 'pc850' as const }
-const f58 = { columnas: COLUMNAS[58], pagina: 'pc850' as const }
-const text = (p: Precuenta, format = f80) => comoTexto(lineasPrecuenta(p, format), format.columnas)
+const f80 = { columns: COLUMNS[80], page: 'pc850' as const }
+const f58 = { columns: COLUMNS[58], page: 'pc850' as const }
+const text = (p: PreBill, format = f80) => asText(preBillLines(p, format), format.columns)
 
-const anchoDeLinea = (l: Linea, columnas: number, pagina: (typeof PAGINAS_CODIGOS)[number]) => {
+const lineWidth = (l: Line, columns: number, page: (typeof CODE_PAGES)[number]) => {
   if (!('text' in l)) return 0
-  return codificar(l.text, pagina).length / (l.large ? 2 : 1) <= (l.large ? columnas / 2 : columnas)
+  return encode(l.text, page).length / (l.large ? 2 : 1) <= (l.large ? columns / 2 : columns)
     ? 0
-    : codificar(l.text, pagina).length
+    : encode(l.text, page).length
 }
 
-describe('pesos: formato colombiano', () => {
+describe('pesos: Colombian format', () => {
   it.each([
     [0, '$0'],
     [5, '$5'],
@@ -67,11 +67,11 @@ describe('pesos: formato colombiano', () => {
     [-10, '-$10'],
     [-1_000, '-$1.000'],
     [-1_234_567, '-$1.234.567'],
-  ])('un negativo lleva el signo antes del peso: %i → %s', (n, expected) => {
+  ])('a negative carries the sign before the peso sign: %i → %s', (n, expected) => {
     expect(pesos(n)).toBe(expected)
   })
 
-  it('propiedad: sin los puntos y el signo vuelve al número, y los puntos van de tres en tres', () => {
+  it('property: without dots and sign it returns the number, and dots group by three', () => {
     fc.assert(
       fc.property(fc.integer({ min: -10_000_000_000, max: 10_000_000_000 }), (n) => {
         const t = pesos(n)
@@ -82,22 +82,22 @@ describe('pesos: formato colombiano', () => {
   })
 })
 
-describe('nombreImpuesto', () => {
-  it('INC e IVA con su tarifa, y exento sin porcentaje', () => {
-    expect(nombreImpuesto('inc', 800)).toBe('INC 8 %')
-    expect(nombreImpuesto('iva', 1900)).toBe('IVA 19 %')
-    expect(nombreImpuesto('exempt', 0)).toBe('Exento')
-    expect(nombreImpuesto('exempt', 800)).toBe('Exento')
-    expect(nombreImpuesto('inc', 0)).toBe('Exento')
+describe('taxName', () => {
+  it('INC and IVA with their rate, and exempt without a percentage', () => {
+    expect(taxName('inc', 800)).toBe('INC 8 %')
+    expect(taxName('iva', 1900)).toBe('IVA 19 %')
+    expect(taxName('exempt', 0)).toBe('Exento')
+    expect(taxName('exempt', 800)).toBe('Exento')
+    expect(taxName('inc', 0)).toBe('Exento')
   })
 
-  it('una tarifa con decimales usa coma', () => {
-    expect(nombreImpuesto('iva', 550)).toBe('IVA 5,5 %')
+  it('a rate with decimals uses a comma', () => {
+    expect(taxName('iva', 550)).toBe('IVA 5,5 %')
   })
 })
 
-describe('lineasPrecuenta: lo que sale en el papel', () => {
-  it('lleva restaurante, PRECUENTA, mesa, datos del pedido, los platos con su valor y el total', () => {
+describe('preBillLines: what comes out on paper', () => {
+  it('has restaurant, PRECUENTA, table, order data, dishes with their value and the total', () => {
     const t = text(preBill)
     expect(t).toContain('LA SPRITZZERÍA')
     expect(t).toContain('[PRECUENTA]')
@@ -111,20 +111,20 @@ describe('lineasPrecuenta: lo que sale en el papel', () => {
     expect(t.indexOf('Garden')).toBeLessThan(t.indexOf('Total '))
   })
 
-  it('la propina sugerida y el total con propina cuadran con los montos recibidos', () => {
+  it('the suggested tip and the total with tip match the amounts received', () => {
     const t = text(preBill)
     expect(t).toMatch(/Propina sugerida \(10 %\) +\$13\.028/)
     expect(t.replace(/\s+/g, ' ')).toMatch(/TOTAL CON PROPINA \$153\.728/)
     expect(t).not.toContain('A PAGAR')
   })
 
-  it('termina avisando que la propina es voluntaria y que no es una factura', () => {
+  it('ends by noting that the tip is voluntary and that it is not an invoice', () => {
     const t = text(preBill)
     expect(t).toContain('La propina es voluntaria.')
     expect(t.trimEnd().endsWith('Esta precuenta no es una factura.')).toBe(true)
   })
 
-  it('el impuesto discriminado: base sin impuestos y cada impuesto con valor', () => {
+  it('itemized tax: base without taxes and each tax with a value', () => {
     const t = text({
       ...preBill,
       taxes: [
@@ -136,23 +136,23 @@ describe('lineasPrecuenta: lo que sale en el papel', () => {
     expect(t).toMatch(/Base sin impuestos +\$115\.000/)
     expect(t).toMatch(/INC 8 % +\$8\.000/)
     expect(t).toMatch(/IVA 19 % +\$1\.900/)
-    // El exento no suma impuesto: no se lista como renglón.
+    // Exempt adds no tax: it is not listed as a row.
     expect(t).not.toMatch(/Exento +\$/)
   })
 
-  it('un hub de antes sin impuestos (undefined o vacío) no imprime renglón de base', () => {
-    const { taxes: _i, ...sinImpuestos } = preBill
-    expect(text(sinImpuestos as Precuenta)).not.toContain('Base sin impuestos')
+  it('an older hub without taxes (undefined or empty) prints no base row', () => {
+    const { taxes: _i, ...withoutTaxes } = preBill
+    expect(text(withoutTaxes as PreBill)).not.toContain('Base sin impuestos')
     expect(text({ ...preBill, taxes: [] })).not.toContain('Base sin impuestos')
   })
 
-  it('sin pagos previos no aparece «Ya pagado» ni «Saldo»', () => {
+  it('without previous payments neither «Ya pagado» nor «Saldo» appears', () => {
     const t = text(preBill)
     expect(t).not.toContain('Ya pagado')
     expect(t).not.toContain('Saldo')
   })
 
-  it('con pagos previos: total, lo ya pagado en negativo y el saldo', () => {
+  it('with previous payments: total, the amount already paid as negative and the balance', () => {
     const t = text({
       ...preBill,
       paid: 40_000,
@@ -168,13 +168,13 @@ describe('lineasPrecuenta: lo que sale en el papel', () => {
     expect(t.indexOf('Ya pagado')).toBeLessThan(t.indexOf('Saldo'))
   })
 
-  it('con la cuenta pagada por completo el saldo sale en $0', () => {
+  it('with the bill fully paid the balance prints as $0', () => {
     const t = text({ ...preBill, paid: 140_700, subtotal: 0, tip: 0 })
     expect(t).toMatch(/Saldo +\$0/)
     expect(t).toMatch(/A PAGAR|A pagar/i)
   })
 
-  it('con cuenta dividida: nombre de la cuenta y su monto, y la propina de esa cuenta', () => {
+  it('with a split check: the check name and its amount, and the tip for that check', () => {
     const t = text({
       ...preBill,
       paid: 40_000,
@@ -185,39 +185,37 @@ describe('lineasPrecuenta: lo que sale en el papel', () => {
     expect(t).toMatch(/Cuenta 1 +\$50\.350/)
     expect(t).toMatch(/Propina sugerida \(10 %\) +\$4\.662/)
     expect(t).toContain('$55.012')
-    // La cuenta va después del saldo y antes de la propina.
+    // The check goes after the balance and before the tip.
     expect(t.indexOf('Saldo')).toBeLessThan(t.indexOf('Cuenta 1'))
     expect(t.indexOf('Cuenta 1')).toBeLessThan(t.indexOf('Propina sugerida'))
   })
 
-  it('sin cuenta dividida no hay renglón de cuenta', () => {
+  it('without a split check there is no check row', () => {
     expect(text(preBill)).not.toMatch(/Cuenta \d/)
   })
 
-  it('sin propina (tasa 0 o propina 0): sale «A pagar» con el subtotal y nada de propina', () => {
-    const t = text({ ...preBill, tip: 0, tasaPropina: 0 })
+  it('without tip (rate 0 or tip 0): «A pagar» prints with the subtotal and no tip', () => {
+    const t = text({ ...preBill, tip: 0, tipRate: 0 })
     expect(t).toMatch(/A PAGAR +\$140\.700|A PAGAR/)
     expect(t).not.toContain('Propina sugerida')
     expect(t).not.toContain('Total con propina')
-    // La advertencia de propina voluntaria se mantiene.
+    // The voluntary tip notice stays.
     expect(t).toContain('La propina es voluntaria.')
   })
 
-  it('si el cliente pidió otra propina (tasa null) dice «Propina» y no «sugerida», con el total que suma', () => {
-    const t = text({ ...preBill, tasaPropina: null, tip: 20_000 })
+  it('a guest-chosen tip (rate null) says «Propina», not «sugerida», with the summed total', () => {
+    const t = text({ ...preBill, tipRate: null, tip: 20_000 })
     expect(t).toMatch(/Propina +\$20\.000/)
     expect(t).not.toContain('sugerida')
     expect(t).not.toContain('NaN')
     expect(t.replace(/\s+/g, ' ')).toContain('TOTAL CON PROPINA $160.700')
   })
 
-  it('la tasa de propina con decimales usa coma: 7,5 %', () => {
-    expect(text({ ...preBill, tasaPropina: 750, tip: 10_553 })).toContain(
-      'Propina sugerida (7,5 %)',
-    )
+  it('a tip rate with decimals uses a comma: 7,5 %', () => {
+    expect(text({ ...preBill, tipRate: 750, tip: 10_553 })).toContain('Propina sugerida (7,5 %)')
   })
 
-  it('un pedido sin número de día, sin comensales y sin mesero omite esos datos', () => {
+  it('an order without a day number, guests or waiter omits that data', () => {
     const t = text({ ...preBill, order: null, guests: null, waiter: '' })
     expect(t).toContain('8:42 p. m.')
     expect(t).not.toContain('Pedido')
@@ -225,29 +223,29 @@ describe('lineasPrecuenta: lo que sale en el papel', () => {
     expect(t).not.toContain(' · · ')
   })
 
-  it('«Para llevar» y varias mesas se imprimen tal cual', () => {
+  it('«Para llevar» and several tables print as is', () => {
     expect(text({ ...preBill, target: 'Mesa 5 + 6' })).toContain('MESA 5 + 6')
     expect(text({ ...preBill, target: 'Para llevar' })).toContain('PARA LLEVAR')
   })
 
-  it('una precuenta sin platos (mesa vacía) no rompe', () => {
+  it('a pre-bill without dishes (empty table) does not break', () => {
     const t = text({ ...preBill, lines: [], total: 0, subtotal: 0, tip: 0, taxes: [] })
     expect(t).toMatch(/Total +\$0/)
   })
 })
 
-describe('lineasPrecuenta: opciones del plato', () => {
-  // BUG: precuenta.ts agrega `  ${opcion}` para sangrar las opciones bajo su plato, pero `parrafo`
-  // → `partir` (documento.ts) descarta los espacios del principio, así que «Término medio» sale
-  // pegado al margen, igual que un plato.
-  it('las opciones de un plato salen sangradas bajo el plato', () => {
+describe('preBillLines: dish options', () => {
+  // BUG: pre-bill.ts adds `  ${option}` to indent options under their dish, but `paragraph`
+  // → `wrapText` (document.ts) drops leading spaces, so «Término medio» prints flush against
+  // the margin, just like a dish.
+  it('the options of a dish print indented under the dish', () => {
     const textLine = text(preBill)
       .split('\n')
       .find((l) => l.includes('Término medio'))
     expect(textLine?.startsWith('  ')).toBe(true)
   })
 
-  it('las opciones salen justo debajo de su plato, antes del plato siguiente', () => {
+  it('options print right below their dish, before the next dish', () => {
     const t = text({
       ...preBill,
       lines: [
@@ -261,11 +259,11 @@ describe('lineasPrecuenta: opciones del plato', () => {
   })
 })
 
-describe('lineasPrecuenta: 58 mm (32 columnas) frente a 80 mm (48)', () => {
-  it('en 58 mm los mismos datos caben en líneas de hasta 32 caracteres', () => {
-    for (const l of lineasPrecuenta(preBill, f58)) {
+describe('preBillLines: 58 mm (32 columns) versus 80 mm (48)', () => {
+  it('at 58 mm the same data fits in lines of up to 32 characters', () => {
+    for (const l of preBillLines(preBill, f58)) {
       if (!('text' in l)) continue
-      expect(codificar(l.text, 'pc850').length).toBeLessThanOrEqual(l.large ? 16 : 32)
+      expect(encode(l.text, 'pc850').length).toBeLessThanOrEqual(l.large ? 16 : 32)
     }
     const t = text(preBill, f58)
     expect(t).toContain('2 x Garden Margarita')
@@ -274,27 +272,27 @@ describe('lineasPrecuenta: 58 mm (32 columnas) frente a 80 mm (48)', () => {
     expect(t).toContain('$13.028')
   })
 
-  it('en 80 mm las líneas llegan hasta 48 caracteres', () => {
-    const anchos = lineasPrecuenta(preBill, f80).map((l) =>
+  it('at 80 mm lines reach up to 48 characters', () => {
+    const widths = preBillLines(preBill, f80).map((l) =>
       'text' in l && !l.large ? l.text.length : 0,
     )
-    expect(Math.max(...anchos)).toBeLessThanOrEqual(48)
-    expect(Math.max(...anchos)).toBeGreaterThan(32)
+    expect(Math.max(...widths)).toBeLessThanOrEqual(48)
+    expect(Math.max(...widths)).toBeGreaterThan(32)
   })
 
-  it('el monto va pegado al borde derecho: el renglón mide justo el ancho', () => {
-    const lines = lineasPrecuenta(preBill, f80)
+  it('the amount sits against the right edge: the row is exactly the width', () => {
+    const lines = preBillLines(preBill, f80)
     const total = lines.find(
       (l) => 'text' in l && l.text.startsWith('Total ') && l.text.endsWith('$140.700'),
     )
     expect(total && 'text' in total ? total.text.length : 0).toBe(48)
-    const en58 = lineasPrecuenta(preBill, f58).find(
+    const in58 = preBillLines(preBill, f58).find(
       (l) => 'text' in l && l.text.startsWith('Total ') && l.text.endsWith('$140.700'),
     )
-    expect(en58 && 'text' in en58 ? en58.text.length : 0).toBe(32)
+    expect(in58 && 'text' in in58 ? in58.text.length : 0).toBe(32)
   })
 
-  it('un nombre de plato muy largo se parte en 58 mm y el valor no se pierde', () => {
+  it('a very long dish name wraps at 58 mm and the value is not lost', () => {
     const length = 'Pizza Margarita Especial de la Casa con Doble Queso y Albahaca'
     const t = text(
       { ...preBill, lines: [{ quantity: 1, name: length, options: [], value: 58_900 }] },
@@ -305,7 +303,7 @@ describe('lineasPrecuenta: 58 mm (32 columnas) frente a 80 mm (48)', () => {
     for (const line of t.split('\n')) expect(line.length).toBeLessThanOrEqual(32)
   })
 
-  it('un valor que no cabe junto al nombre baja a su propia línea sin cortarse', () => {
+  it('a value that does not fit next to the name moves to its own line without being cut', () => {
     const t = text(
       {
         ...preBill,
@@ -323,15 +321,15 @@ describe('lineasPrecuenta: 58 mm (32 columnas) frente a 80 mm (48)', () => {
     expect(t).toContain('$1.234.567')
   })
 
-  it('«Total con propina» (letra grande) con 58 mm se parte sin perder el monto', () => {
+  it('«Total con propina» (large font) at 58 mm wraps without losing the amount', () => {
     const t = text(preBill, f58)
     expect(t.replace(/\s+/g, ' ').toUpperCase()).toContain('TOTAL CON PROPINA')
     expect(t).toContain('$153.728')
   })
 })
 
-describe('lineasPrecuenta: tildes y caracteres', () => {
-  const conTildes: Precuenta = {
+describe('preBillLines: accents and characters', () => {
+  const withAccents: PreBill = {
     ...preBill,
     restaurant: 'Café Ñandú',
     target: 'Terraza ¡Bogotá!',
@@ -346,88 +344,88 @@ describe('lineasPrecuenta: tildes y caracteres', () => {
     ],
   }
 
-  it('pc850: las tildes y eñes salen en el byte de la tabla y se leen de vuelta', () => {
-    const bytes = escpos(lineasPrecuenta(conTildes, f80), f80)
-    const leido = leerEscpos(bytes).text
-    expect(leido).toContain('Piña colada')
-    expect(leido).toContain('Sin azúcar')
-    expect(leido).toContain('José Ñáñez')
-    expect(leido).toContain('Más hielo ¿sí?')
-    expect(leido).toContain('Esta precuenta no es una factura.')
+  it('pc850: accents and ñ print as the code page byte and read back', () => {
+    const bytes = escpos(preBillLines(withAccents, f80), f80)
+    const readResult = readEscpos(bytes).text
+    expect(readResult).toContain('Piña colada')
+    expect(readResult).toContain('Sin azúcar')
+    expect(readResult).toContain('José Ñáñez')
+    expect(readResult).toContain('Más hielo ¿sí?')
+    expect(readResult).toContain('Esta precuenta no es una factura.')
   })
 
-  it('wpc1252 también conserva las tildes', () => {
-    const f = { columnas: 48, pagina: 'wpc1252' as const }
-    const leido = leerEscpos(escpos(lineasPrecuenta(conTildes, f), f)).text
-    expect(leido).toContain('Piña colada')
-    expect(leido).toContain('José Ñáñez')
+  it('wpc1252 also keeps the accents', () => {
+    const f = { columns: 48, page: 'wpc1252' as const }
+    const readResult = readEscpos(escpos(preBillLines(withAccents, f), f)).text
+    expect(readResult).toContain('Piña colada')
+    expect(readResult).toContain('José Ñáñez')
   })
 
-  it('sin_tildes quita las tildes pero deja legible todo el texto', () => {
-    const f = { columnas: 48, pagina: 'no_accents' as const }
-    const leido = leerEscpos(escpos(lineasPrecuenta(conTildes, f), f)).text
-    expect(leido).toContain('Pina colada')
-    expect(leido).toContain('Sin azucar')
-    expect(leido).toContain('Jose Nanez')
-    expect(leido).not.toMatch(/[ñáéíóú¿¡]/i)
+  it('no_accents strips the accents but keeps all text readable', () => {
+    const f = { columns: 48, page: 'no_accents' as const }
+    const readResult = readEscpos(escpos(preBillLines(withAccents, f), f)).text
+    expect(readResult).toContain('Pina colada')
+    expect(readResult).toContain('Sin azucar')
+    expect(readResult).toContain('Jose Nanez')
+    expect(readResult).not.toMatch(/[ñáéíóú¿¡]/i)
   })
 
-  it('el aviso de «no es una factura» y los montos salen igual en todas las tablas', () => {
-    for (const pagina of PAGINAS_CODIGOS) {
-      const f = { columnas: 48, pagina }
-      const leido = leerEscpos(escpos(lineasPrecuenta(preBill, f), f)).text
-      expect(leido).toContain('$140.700')
-      expect(leido).toContain('$153.728')
-      expect(leido).toMatch(/precuenta no es una factura/)
+  it('the «no es una factura» notice and the amounts print the same on every code page', () => {
+    for (const page of CODE_PAGES) {
+      const f = { columns: 48, page }
+      const readResult = readEscpos(escpos(preBillLines(preBill, f), f)).text
+      expect(readResult).toContain('$140.700')
+      expect(readResult).toContain('$153.728')
+      expect(readResult).toMatch(/precuenta no es una factura/)
     }
   })
 })
 
-describe('lineasPrecuenta: ESC/POS', () => {
-  it('corta el papel una sola vez, al final', () => {
-    expect(leerEscpos(escpos(lineasPrecuenta(preBill, f80), f80)).cortes).toBe(1)
-    expect(leerEscpos(escpos(lineasPrecuenta(preBill, f58), f58)).cortes).toBe(1)
+describe('preBillLines: ESC/POS', () => {
+  it('cuts the paper only once, at the end', () => {
+    expect(readEscpos(escpos(preBillLines(preBill, f80), f80)).cuts).toBe(1)
+    expect(readEscpos(escpos(preBillLines(preBill, f58), f58)).cuts).toBe(1)
   })
 
-  it('el nombre del plato no le da órdenes a la impresora (sin bytes de control)', () => {
+  it('the dish name gives no commands to the printer (no control bytes)', () => {
     const badCase = 'Plato\u001b@\u001dVB\u0000 raro\n'
     const bytes = escpos(
-      lineasPrecuenta(
+      preBillLines(
         { ...preBill, lines: [{ quantity: 1, name: badCase, options: [badCase], value: 1_000 }] },
         f80,
       ),
       f80,
     )
-    expect(leerEscpos(bytes).cortes).toBe(1)
+    expect(readEscpos(bytes).cuts).toBe(1)
   })
 })
 
-describe('lineasPrecuenta: propiedades', () => {
-  it('ninguna línea pasa del ancho para cualquier texto, ancho, tabla y montos', () => {
+describe('preBillLines: properties', () => {
+  it('no line exceeds the width for any text, width, code page and amounts', () => {
     fc.assert(
       fc.property(
         fc.string({ maxLength: 100 }),
         fc.string({ maxLength: 60 }),
         fc.constantFrom(32, 48),
-        fc.constantFrom(...PAGINAS_CODIGOS),
+        fc.constantFrom(...CODE_PAGES),
         fc.integer({ min: 0, max: 10_000_000_000 }),
         fc.integer({ min: 0, max: 10_000_000_000 }),
         fc.boolean(),
-        (name, opcion, columnas, pagina, value, paid, conCuenta) => {
-          const p: Precuenta = {
+        (name, option, columns, page, value, paid, withCheck) => {
+          const p: PreBill = {
             ...preBill,
             restaurant: name,
             target: name,
-            lines: [{ quantity: 3, name, options: [opcion], value }],
+            lines: [{ quantity: 3, name, options: [option], value }],
             total: value,
             paid,
             subtotal: value,
-            check: conCuenta ? { name, amount: value } : null,
+            check: withCheck ? { name, amount: value } : null,
           }
-          for (const l of lineasPrecuenta(p, { columnas, pagina })) {
+          for (const l of preBillLines(p, { columns, page })) {
             if (!('text' in l)) continue
-            const width = l.large ? Math.floor(columnas / 2) : columnas
-            expect(codificar(l.text, pagina).length).toBeLessThanOrEqual(width)
+            const width = l.large ? Math.floor(columns / 2) : columns
+            expect(encode(l.text, page).length).toBeLessThanOrEqual(width)
           }
         },
       ),
@@ -435,19 +433,16 @@ describe('lineasPrecuenta: propiedades', () => {
     )
   })
 
-  it('siempre aparecen el total y el aviso final, sea cual sea el tamaño de los montos', () => {
+  it('the total and the final notice always appear, whatever the size of the amounts', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 10_000_000_000 }),
         fc.integer({ min: 0, max: 1_000_000_000 }),
         fc.constantFrom(32, 48),
-        (total, tip, columnas) => {
-          const t = comoTexto(
-            lineasPrecuenta(
-              { ...preBill, total, subtotal: total, tip },
-              { columnas, pagina: 'pc850' },
-            ),
-            columnas,
+        (total, tip, columns) => {
+          const t = asText(
+            preBillLines({ ...preBill, total, subtotal: total, tip }, { columns, page: 'pc850' }),
+            columns,
           )
           expect(t).toContain(pesos(total))
           expect(t.replace(/\s+/g, ' ')).toContain('Esta precuenta no es una factura.')
@@ -457,13 +452,13 @@ describe('lineasPrecuenta: propiedades', () => {
     )
   })
 
-  it('el total con propina impreso es el subtotal más la propina', () => {
+  it('the printed total with tip is the subtotal plus the tip', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 5_000_000_000 }),
         fc.integer({ min: 1, max: 500_000_000 }),
         (subtotal, tip) => {
-          const t = comoTexto(lineasPrecuenta({ ...preBill, subtotal, tip }, f80), 48).replace(
+          const t = asText(preBillLines({ ...preBill, subtotal, tip }, f80), 48).replace(
             /\s+/g,
             ' ',
           )
@@ -474,10 +469,10 @@ describe('lineasPrecuenta: propiedades', () => {
     )
   })
 
-  it('anchoDeLinea de apoyo: ninguna línea de la precuenta de ejemplo se pasa', () => {
-    for (const pagina of PAGINAS_CODIGOS)
-      for (const columnas of [32, 48])
-        for (const l of lineasPrecuenta(preBill, { columnas, pagina }))
-          expect(anchoDeLinea(l, columnas, pagina)).toBe(0)
+  it('lineWidth helper: no line of the sample pre-bill overflows', () => {
+    for (const page of CODE_PAGES)
+      for (const columns of [32, 48])
+        for (const l of preBillLines(preBill, { columns, page }))
+          expect(lineWidth(l, columns, page)).toBe(0)
   })
 })

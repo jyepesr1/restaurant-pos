@@ -55,8 +55,8 @@ const migrada = () => {
   return base
 }
 
-const contar = (db: BaseSqlite, tabla: string) =>
-  Number(db.prepare(`SELECT count(*) AS n FROM ${tabla}`).get()?.n)
+const contar = (db: BaseSqlite, tableName: string) =>
+  Number(db.prepare(`SELECT count(*) AS n FROM ${tableName}`).get()?.n)
 
 const TABLAS_ANTES = [
   'restaurants',
@@ -147,11 +147,11 @@ describe('migración 6: ficha', () => {
       expect(sqlTables.find((t) => t.name === name)).toMatchObject({ strict: 1 })
     expect(TABLAS_VERSIONADAS).toContain('printers')
     expect(TABLAS_LOCALES).toContain('print_jobs')
-    const columnas = db
+    const columns = db
       .prepare("SELECT name FROM pragma_table_info('printers')")
       .all()
       .map((c) => c.name)
-    for (const common of COLUMNAS_COMUNES) expect(columnas).toContain(common)
+    for (const common of COLUMNAS_COMUNES) expect(columns).toContain(common)
   })
 })
 
@@ -228,8 +228,8 @@ CREATE TABLE printers (x TEXT) STRICT;`,
       .map((t) => t.name)
     expect(names).not.toContain('printers')
     expect(names).not.toContain('print_jobs')
-    const columnas = db.prepare("SELECT name FROM pragma_table_info('users')").all()
-    expect(columnas.map((c) => c.name)).not.toContain('screen')
+    const columns = db.prepare("SELECT name FROM pragma_table_info('users')").all()
+    expect(columns.map((c) => c.name)).not.toContain('screen')
   })
 })
 
@@ -237,20 +237,22 @@ describe('migración 6: columnas nuevas de equipo, persona y rol', () => {
   it.each([
     ['users', 'screen'],
     ['roles', 'hidden'],
-  ])('%s.%s solo acepta 0 y 1', (tabla, columna) => {
+  ])('%s.%s solo acepta 0 y 1', (tableName, columna) => {
     const { db, ana, role } = migrada()
-    const id = tabla === 'users' ? ana : role
+    const id = tableName === 'users' ? ana : role
     expect(() =>
-      db.prepare(`UPDATE ${tabla} SET ${columna} = 1 WHERE id = ?`).run(id),
+      db.prepare(`UPDATE ${tableName} SET ${columna} = 1 WHERE id = ?`).run(id),
     ).not.toThrow()
     expect(() =>
-      db.prepare(`UPDATE ${tabla} SET ${columna} = 0 WHERE id = ?`).run(id),
+      db.prepare(`UPDATE ${tableName} SET ${columna} = 0 WHERE id = ?`).run(id),
     ).not.toThrow()
     for (const badCase of [2, -1])
       expect(() =>
-        db.prepare(`UPDATE ${tabla} SET ${columna} = ? WHERE id = ?`).run(badCase, id),
+        db.prepare(`UPDATE ${tableName} SET ${columna} = ? WHERE id = ?`).run(badCase, id),
       ).toThrow(/CHECK/)
-    expect(() => db.prepare(`UPDATE ${tabla} SET ${columna} = NULL WHERE id = ?`).run(id)).toThrow()
+    expect(() =>
+      db.prepare(`UPDATE ${tableName} SET ${columna} = NULL WHERE id = ?`).run(id),
+    ).toThrow()
   })
 
   it('dispositivo.estacion_ids acepta NULL y JSON, y rechaza texto que no es JSON', () => {

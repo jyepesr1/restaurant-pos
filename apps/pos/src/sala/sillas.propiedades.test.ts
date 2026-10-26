@@ -13,7 +13,7 @@ type Forma = (typeof FORMAS)[number]
 interface Silla {
   /** Esquinas de la silla ya giradas. */
   esquinas: [number, number][]
-  centro: [number, number]
+  center: [number, number]
   width: number
   height: number
   giro: number
@@ -56,7 +56,7 @@ function sillasDe(shape: string, boxWidth: number, boxHeight: number, places: nu
           number,
         ],
     )
-    return { esquinas, centro: [cx, cy], width: width, height: height, giro }
+    return { esquinas, center: [cx, cy], width: width, height: height, giro }
   })
 }
 
@@ -92,7 +92,7 @@ function puntosDe(seat: Silla): [number, number][] {
     const [x2, y2] = e[(i + 1) % 4] as [number, number]
     for (let t = 0; t <= 8; t++) puntos.push([x1 + ((x2 - x1) * t) / 8, y1 + ((y2 - y1) * t) / 8])
   }
-  puntos.push(seat.centro)
+  puntos.push(seat.center)
   return puntos
 }
 
@@ -241,7 +241,7 @@ describe('sillas: sin encimarse', () => {
   const aireSilla = (boxWidth: number, boxHeight: number) =>
     Math.max(3, largoSilla(boxWidth, boxHeight) * 0.18)
 
-  const caben = (f: Forma, boxWidth: number, boxHeight: number) => {
+  const fits = (f: Forma, boxWidth: number, boxHeight: number) => {
     const length = largoSilla(boxWidth, boxHeight)
     if (f === 'bar') return Math.floor(boxWidth / length)
     if (f === 'round') {
@@ -261,7 +261,7 @@ describe('sillas: sin encimarse', () => {
   it('con los puestos que caben en el borde, las sillas no se encimen, para cada forma y medida', () => {
     fc.assert(
       fc.property(medidas, ({ f, width: boxWidth, height: boxHeight, fraction }) => {
-        const cupo = caben(f, boxWidth, boxHeight)
+        const cupo = fits(f, boxWidth, boxHeight)
         fc.pre(cupo >= 1)
         const places = 1 + Math.floor(fraction * (cupo - 1))
         expect(
@@ -276,7 +276,7 @@ describe('sillas: sin encimarse', () => {
   it('con el máximo que cabe en el borde, tampoco', () => {
     fc.assert(
       fc.property(medidas, ({ f, width: boxWidth, height: boxHeight }) => {
-        const places = Math.min(caben(f, boxWidth, boxHeight), 100)
+        const places = Math.min(fits(f, boxWidth, boxHeight), 100)
         fc.pre(places >= 1)
         expect(
           encimadas(sillasDe(f, boxWidth, boxHeight, places)),
@@ -312,9 +312,9 @@ describe('sillas: sin encimarse', () => {
       fc.property(fc.integer({ min: 2, max: 14 }), (places) => {
         const sillas = sillasDe('rectangular', 400, 100, places)
         const above = sillas.filter(
-          (s) => s.centro[1] < 0 && s.centro[0] >= 0 && s.centro[0] <= 400,
+          (s) => s.center[1] < 0 && s.center[0] >= 0 && s.center[0] <= 400,
         ).length
-        const below = sillas.filter((s) => s.centro[1] > 100).length
+        const below = sillas.filter((s) => s.center[1] > 100).length
         expect(Math.abs(above - below)).toBeLessThanOrEqual(1)
       }),
       SEMILLA,

@@ -15,7 +15,6 @@ import {
   enPartesIguales,
   lineasDe,
   methodName,
-  nombreImpuesto,
   opcionesDeCobro,
   pagoEnEfectivo,
   porCobrar,
@@ -28,6 +27,7 @@ import {
   recortarAsignaciones,
   reglasDe,
   resumenTurno,
+  taxName,
   turnoDeCaja,
 } from './cuentas'
 import { pedidosAbiertos } from './proyeccion'
@@ -133,11 +133,11 @@ describe('reglasDe, nombres y formato', () => {
   })
 
   it('nombreImpuesto: INC, IVA y exento', () => {
-    expect(nombreImpuesto('inc', 800)).toBe('INC 8 %')
-    expect(nombreImpuesto('iva', 1900)).toBe('IVA 19 %')
-    expect(nombreImpuesto('iva', 550)).toBe('IVA 5,5 %')
-    expect(nombreImpuesto('exempt', 0)).toBe('Exento')
-    expect(nombreImpuesto('inc', 0)).toBe('Exento')
+    expect(taxName('inc', 800)).toBe('INC 8 %')
+    expect(taxName('iva', 1900)).toBe('IVA 19 %')
+    expect(taxName('iva', 550)).toBe('IVA 5,5 %')
+    expect(taxName('exempt', 0)).toBe('Exento')
+    expect(taxName('inc', 0)).toBe('Exento')
   })
 })
 

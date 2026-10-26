@@ -393,10 +393,10 @@ describe('escenarios de sincronización', () => {
     const m = montar()
     const ana = m.network.device('ana')
     const order = await abrirPedido(ana)
-    m.network.avanzar(60_000)
+    m.network.advance(60_000)
     const connection = m.network.tokens.get('token-ana')
     if (connection) connection.revocadoEn = m.network.horaIso()
-    m.network.avanzar(60_000)
+    m.network.advance(60_000)
     await ana.crear(order, 'ItemAdded', item())
 
     await m.network.conectarTodos()
@@ -468,7 +468,7 @@ describe('hub: validaciones', () => {
     const m = montar()
     const ana = m.network.device('ana')
     // Hub: 15:00 UTC del 24 (10 a. m. en Bogotá).
-    m.network.avanzar(Date.parse(AHORA) - m.network.ahora())
+    m.network.advance(Date.parse(AHORA) - m.network.ahora())
     const r = m.hub().recibirLote(conexionDe(m, ana), [
       crudo(ana, { hub_estimated_time: '2026-10-24T09:00:00.000Z' }), // 4 a. m.: día anterior
       crudo(ana, { hub_estimated_time: '2026-10-20T09:00:00.000Z' }), // días atrás: se ignora

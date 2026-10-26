@@ -43,10 +43,10 @@ function photo(carpeta: string) {
     db.close()
   }
 }
-const check = (carpeta: string, tabla: string) => {
+const check = (carpeta: string, tableName: string) => {
   const db = abrirBase(join(carpeta, 'pos.sqlite'))
   try {
-    return Number(db.prepare(`SELECT count(*) AS n FROM ${tabla}`).get()?.n)
+    return Number(db.prepare(`SELECT count(*) AS n FROM ${tableName}`).get()?.n)
   } finally {
     db.close()
   }
@@ -83,14 +83,21 @@ describe('seed como proceso real, con otros casos', { timeout: 90_000 }, () => {
       expect(muerta.senal).toBe('SIGKILL')
       // Antes de morir, la preparación del hub (restaurante, roles, administrador) sí terminó,
       // pero el catálogo del seed no dejó ni un registro.
-      for (const tabla of ['dining_tables', 'zones', 'stations', 'taxes', 'categories', 'products'])
-        expect({ tabla, n: check(carpeta, tabla) }).toEqual({ tabla, n: 0 })
+      for (const tableName of [
+        'dining_tables',
+        'zones',
+        'stations',
+        'taxes',
+        'categories',
+        'products',
+      ])
+        expect({ tableName, n: check(carpeta, tableName) }).toEqual({ tableName, n: 0 })
 
       const r = seed()
       expect(r.code).toBe(0)
       expect(r.output).toMatch(/products\s+98 nuevos, 0 cambiados, 0 iguales/)
-      for (const tabla of ['dining_tables', 'categories', 'products', 'variants', 'modifiers'])
-        expect(check(carpeta, tabla)).toBe(check(limpia, tabla))
+      for (const tableName of ['dining_tables', 'categories', 'products', 'variants', 'modifiers'])
+        expect(check(carpeta, tableName)).toBe(check(limpia, tableName))
     } finally {
       rmSync(limpia, { recursive: true, force: true })
     }
@@ -100,8 +107,8 @@ describe('seed como proceso real, con otros casos', { timeout: 90_000 }, () => {
     const muerta = morirEn('users:4')
     expect(muerta.senal).toBe('SIGKILL')
     // El catálogo y los tres usuarios que se alcanzaron a crear van en la misma transacción.
-    for (const tabla of ['dining_tables', 'products', 'categories'])
-      expect(check(carpeta, tabla)).toBe(0)
+    for (const tableName of ['dining_tables', 'products', 'categories'])
+      expect(check(carpeta, tableName)).toBe(0)
     // Solo el administrador que prepara el hub antes de sembrar.
     expect(check(carpeta, 'users')).toBe(1)
 

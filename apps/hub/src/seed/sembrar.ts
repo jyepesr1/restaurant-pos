@@ -27,7 +27,7 @@ export const IMPUESTO = { name: 'INC 8 %', type: 'inc', rate: 800 } as const
 
 /** Plano provisional: 25 mesas en una zona, en cuadrícula. El real se dibuja en la Fase 1. */
 export const TABLES = 25
-const COLUMNAS = 5
+const COLUMNS = 5
 const PASO = 120
 
 /**
@@ -96,22 +96,22 @@ export function sembrar(
 ): Resumen {
   const { restauranteId, roles, menu } = data
   const sqlTables: Resumen['sqlTables'] = {}
-  const contar = (tabla: string, change: Cambio) => {
-    sqlTables[tabla] ??= { created: 0, updated: 0, equal: 0, respected: 0, archived: 0 }
-    sqlTables[tabla][change] += 1
+  const contar = (tableName: string, change: Cambio) => {
+    sqlTables[tableName] ??= { created: 0, updated: 0, equal: 0, respected: 0, archived: 0 }
+    sqlTables[tableName][change] += 1
   }
   const id = (key: string) => idEstable(restauranteId, key)
   const currentOnes = new Map<string, Set<string>>()
   const guardar = (
-    tabla: string,
+    tableName: string,
     idRegistro: string,
     fields: Record<string, ValorSql>,
     options: { soloCrear?: boolean } = {},
   ) => {
-    currentOnes.set(tabla, (currentOnes.get(tabla) ?? new Set()).add(idRegistro))
+    currentOnes.set(tableName, (currentOnes.get(tableName) ?? new Set()).add(idRegistro))
     contar(
-      tabla,
-      guardarVersionado(db, tabla, restauranteId, idRegistro, fields, SISTEMA, ahora, options),
+      tableName,
+      guardarVersionado(db, tableName, restauranteId, idRegistro, fields, SISTEMA, ahora, options),
     )
   }
   const pins: Resumen['pins'] = []
@@ -142,8 +142,8 @@ export function sembrar(
         zone_id: zonaId,
         name: String(n),
         shape: 'square',
-        x: ((n - 1) % COLUMNAS) * PASO,
-        y: Math.floor((n - 1) / COLUMNAS) * PASO,
+        x: ((n - 1) % COLUMNS) * PASO,
+        y: Math.floor((n - 1) / COLUMNS) * PASO,
         width: 80,
         height: 80,
         rotation: 0,
@@ -221,58 +221,58 @@ export function sembrar(
 
     // Lo que el seed cargó antes y ya no está en la carta se archiva (nunca se borra). Solo lo
     // del sistema: lo que creó una persona no es del seed.
-    for (const tabla of SEMBRADAS) {
-      const quedan = currentOnes.get(tabla) ?? new Set<string>()
+    for (const tableName of SEMBRADAS) {
+      const quedan = currentOnes.get(tableName) ?? new Set<string>()
       const sobran = db
         .prepare(
-          `SELECT id FROM ${tabla} WHERE restaurant_id = ? AND active = 1 AND user_id IS NULL`,
+          `SELECT id FROM ${tableName} WHERE restaurant_id = ? AND active = 1 AND user_id IS NULL`,
         )
         .all(restauranteId)
         .map((f) => String(f.id))
         .filter((x) => !quedan.has(x))
       for (const x of sobran) {
-        actualizarVersionado(db, tabla, restauranteId, x, { active: 0 }, SISTEMA, ahora)
-        contar(tabla, 'archived')
+        actualizarVersionado(db, tableName, restauranteId, x, { active: 0 }, SISTEMA, ahora)
+        contar(tableName, 'archived')
       }
     }
 
     // Personal de ejemplo, en la misma transacción: o queda todo con sus PIN, o nada.
     if (data.sinPersonal) return
-    for (const persona of PERSONAL) {
-      const userId = id(`usuario:${persona.key}`)
+    for (const person of PERSONAL) {
+      const userId = id(`usuario:${person.key}`)
       const existe = db
         .prepare('SELECT active FROM users WHERE restaurant_id = ? AND id = ?')
         .get(restauranteId, userId)
-      const password = persona.user ? generarContrasena() : undefined
+      const password = person.user ? generarContrasena() : undefined
       if (existe) {
         // Quien se archivó no vuelve, ni recibe una contraseña que no le serviría.
-        if (existe.active !== 1 || !persona.user || access.tieneContrasena(userId) || !password) {
+        if (existe.active !== 1 || !person.user || access.tieneContrasena(userId) || !password) {
           contar('users', 'equal')
           continue
         }
-        access.fijarContrasena(userId, persona.user, password)
+        access.fijarContrasena(userId, person.user, password)
         contar('users', 'updated')
         pins.push({
-          name: persona.name,
-          role: persona.role,
+          name: person.name,
+          role: person.role,
           pin: null,
-          user: persona.user,
+          user: person.user,
           password,
         })
         continue
       }
       const { pin } = access.insertUser({
         id: userId,
-        name: persona.name,
-        rolId: roles[persona.role],
-        ...(persona.user && password ? { user: persona.user, password } : {}),
+        name: person.name,
+        rolId: roles[person.role],
+        ...(person.user && password ? { user: person.user, password } : {}),
       })
       contar('users', 'created')
       pins.push({
-        name: persona.name,
-        role: persona.role,
+        name: person.name,
+        role: person.role,
         pin,
-        ...(persona.user ? { user: persona.user, password } : {}),
+        ...(person.user ? { user: person.user, password } : {}),
       })
     }
   })

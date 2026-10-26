@@ -93,12 +93,12 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
     const after = rows(db)
     expect(after).toEqual(before)
     // Las columnas no cambiaron ni de nombre ni de orden.
-    const columnas = (tabla: string) =>
+    const columns = (tableName: string) =>
       db
-        .prepare(`SELECT name FROM pragma_table_info('${tabla}')`)
+        .prepare(`SELECT name FROM pragma_table_info('${tableName}')`)
         .all()
         .map((c) => c.name)
-    expect(Object.keys(after[0] ?? {})).toEqual(columnas('print_jobs'))
+    expect(Object.keys(after[0] ?? {})).toEqual(columns('print_jobs'))
   })
 
   it('conserva los datos que importan de una persona: quién descartó, desde qué equipo y por qué', () => {
@@ -173,11 +173,11 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
       ]),
     )
     expect(new Set(objetos).size).toBe(objetos.length)
-    const tabla = db
+    const tableName = db
       .prepare('PRAGMA table_list')
       .all()
       .find((t) => t.name === 'print_jobs')
-    expect(tabla).toMatchObject({ strict: 1 })
+    expect(tableName).toMatchObject({ strict: 1 })
   })
 
   it('las reglas de la tabla siguen vigentes con los trabajos migrados', () => {
@@ -243,11 +243,11 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
   it('el índice de pendientes sigue sirviendo a la cola (restaurante, estado, creado_en)', () => {
     const { db } = conCola()
     aplicarMigraciones(db, HASTA_7)
-    const columnas = db
+    const columns = db
       .prepare("SELECT name FROM pragma_index_info('print_jobs_pending') ORDER BY seqno")
       .all()
       .map((c) => c.name)
-    expect(columnas).toEqual(['restaurant_id', 'status', 'created_at'])
+    expect(columns).toEqual(['restaurant_id', 'status', 'created_at'])
   })
 
   it('una precuenta sin evento ni comanda se guarda y se consulta como pendiente', () => {
@@ -401,11 +401,11 @@ describe('migración 7: datafono', () => {
   it('la versión no puede ser negativa y el índice por versión sirve a la sincronización', () => {
     const { db, cardTerminal } = migrada()
     expect(() => cardTerminal({ version: -1 })).toThrow()
-    const columnas = db
+    const columns = db
       .prepare("SELECT name FROM pragma_index_info('card_terminals_by_version') ORDER BY seqno")
       .all()
       .map((c) => c.name)
-    expect(columnas).toEqual(['restaurant_id', 'version'])
+    expect(columns).toEqual(['restaurant_id', 'version'])
   })
 
   it('cada restaurante tiene los suyos: dos pueden llamar igual a su datáfono', () => {

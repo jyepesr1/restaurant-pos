@@ -7,14 +7,14 @@ import type { BaseSqlite, ValorSql } from '@pos/db'
 
 /** Siguiente valor del contador de catálogo del restaurante. */
 export function siguienteVersion(db: BaseSqlite, restauranteId: string): number {
-  const fila = db
+  const row = db
     .prepare(
       `INSERT INTO counters (restaurant_id, name, value) VALUES (?, 'catalog', 1)
        ON CONFLICT (restaurant_id, name) DO UPDATE SET value = value + 1
        RETURNING value`,
     )
     .get(restauranteId)
-  return Number(fila?.value)
+  return Number(row?.value)
 }
 
 /** Tablas del catálogo: cada cambio suyo queda en `catalog_changes` (`CatalogoCambiado`). */
@@ -31,24 +31,24 @@ export const TABLAS_CATALOGO = [
 ] as const
 export type TablaCatalogo = (typeof TABLAS_CATALOGO)[number]
 
-const esDelCatalogo = (tabla: string): tabla is TablaCatalogo =>
-  (TABLAS_CATALOGO as readonly string[]).includes(tabla)
+const esDelCatalogo = (tableName: string): tableName is TablaCatalogo =>
+  (TABLAS_CATALOGO as readonly string[]).includes(tableName)
 
-const leerFila = (db: BaseSqlite, tabla: string, restauranteId: string, id: string) =>
-  db.prepare(`SELECT * FROM ${tabla} WHERE restaurant_id = ? AND id = ?`).get(restauranteId, id)
+const leerFila = (db: BaseSqlite, tableName: string, restauranteId: string, id: string) =>
+  db.prepare(`SELECT * FROM ${tableName} WHERE restaurant_id = ? AND id = ?`).get(restauranteId, id)
 
 /** Deja en el historial cómo quedó el registro (y cómo estaba), en la misma transacción. */
 function anotarCambio(
   db: BaseSqlite,
-  tabla: string,
+  tableName: string,
   restauranteId: string,
   id: string,
   before: Record<string, unknown> | undefined,
   autor: Autor,
   ahora: string,
 ) {
-  if (!esDelCatalogo(tabla)) return
-  const after = leerFila(db, tabla, restauranteId, id)
+  if (!esDelCatalogo(tableName)) return
+  const after = leerFila(db, tableName, restauranteId, id)
   if (!after) return
   db.prepare(
     `INSERT INTO catalog_changes
@@ -57,7 +57,7 @@ function anotarCambio(
   ).run(
     restauranteId,
     Number(after.version),
-    tabla,
+    tableName,
     id,
     before ? JSON.stringify(before) : null,
     JSON.stringify(after),
@@ -77,14 +77,14 @@ export const SISTEMA: Autor = { userId: null, dispositivoId: null }
 /** Inserta un registro versionado con sus columnas comunes. Devuelve su id. */
 export function insertarVersionado(
   db: BaseSqlite,
-  tabla: string,
+  tableName: string,
   restauranteId: string,
   fields: Record<string, ValorSql>,
   autor: Autor,
   ahora: string,
   id: string = newId(),
 ): string {
-  const fila: Record<string, ValorSql> = {
+  const row: Record<string, ValorSql> = {
     id,
     restaurant_id: restauranteId,
     created_at: ahora,
@@ -95,25 +95,25 @@ export function insertarVersionado(
     active: 1,
     ...fields,
   }
-  const columnas = Object.keys(fila)
+  const columns = Object.keys(row)
   db.prepare(
-    `INSERT INTO ${tabla} (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`,
-  ).run(...Object.values(fila))
-  anotarCambio(db, tabla, restauranteId, id, undefined, autor, ahora)
+    `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+  ).run(...Object.values(row))
+  anotarCambio(db, tableName, restauranteId, id, undefined, autor, ahora)
   return id
 }
 
 /** Actualiza un registro versionado: sube su versión y deja quién y cuándo. */
 export function actualizarVersionado(
   db: BaseSqlite,
-  tabla: string,
+  tableName: string,
   restauranteId: string,
   id: string,
   fields: Record<string, ValorSql>,
   autor: Autor,
   ahora: string,
 ) {
-  const before = leerFila(db, tabla, restauranteId, id)
+  const before = leerFila(db, tableName, restauranteId, id)
   const all: Record<string, ValorSql> = {
     ...fields,
     updated_at: ahora,
@@ -123,9 +123,9 @@ export function actualizarVersionado(
   }
   const assignments = Object.keys(all).map((c) => `${c} = ?`)
   db.prepare(
-    `UPDATE ${tabla} SET ${assignments.join(', ')} WHERE restaurant_id = ? AND id = ?`,
+    `UPDATE ${tableName} SET ${assignments.join(', ')} WHERE restaurant_id = ? AND id = ?`,
   ).run(...Object.values(all), restauranteId, id)
-  anotarCambio(db, tabla, restauranteId, id, before, autor, ahora)
+  anotarCambio(db, tableName, restauranteId, id, before, autor, ahora)
 }
 
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
@@ -152,7 +152,7 @@ export type Cambio = 'created' | 'updated' | 'equal' | 'respected' | 'archived'
  */
 export function guardarVersionado(
   db: BaseSqlite,
-  tabla: string,
+  tableName: string,
   restauranteId: string,
   id: string,
   fields: Record<string, ValorSql>,
@@ -161,16 +161,16 @@ export function guardarVersionado(
   options: { soloCrear?: boolean } = {},
 ): Cambio {
   const current = db
-    .prepare(`SELECT * FROM ${tabla} WHERE restaurant_id = ? AND id = ?`)
+    .prepare(`SELECT * FROM ${tableName} WHERE restaurant_id = ? AND id = ?`)
     .get(restauranteId, id)
   if (!current) {
-    insertarVersionado(db, tabla, restauranteId, fields, autor, ahora, id)
+    insertarVersionado(db, tableName, restauranteId, fields, autor, ahora, id)
     return 'created'
   }
   if (options.soloCrear || current.user_id !== null) return 'respected'
   const deseado = { ...fields, active: 1 }
   if (Object.entries(deseado).every(([columna, value]) => current[columna] === value))
     return 'equal'
-  actualizarVersionado(db, tabla, restauranteId, id, deseado, autor, ahora)
+  actualizarVersionado(db, tableName, restauranteId, id, deseado, autor, ahora)
   return 'updated'
 }

@@ -80,7 +80,7 @@ export class GestorConexion {
     this.t = options.temporizadores ?? temporizadoresGlobales
   }
 
-  iniciar() {
+  begin() {
     if (this.active) return
     this.active = true
     this.vigilancia = this.t.setInterval(() => this.vigilar(), TIEMPOS.vigilanciaMs)

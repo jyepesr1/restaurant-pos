@@ -57,23 +57,23 @@ async function conDosAdmins() {
     token: r.json().device.token as string,
     session: { session_id: r.json().session_id as string, secret: r.json().secret as string },
   }
-  const persona = (quien: { token: string; session: object }, p: object) =>
-    api.post('/api/staff/people', { ...quien.session, persona: p }, { token: quien.token })
+  const person = (quien: { token: string; session: object }, p: object) =>
+    api.post('/api/staff/people', { ...quien.session, person: p }, { token: quien.token })
   const role = (quien: { token: string; session: object }, p: object) =>
     api.post('/api/staff/roles', { ...quien.session, role: p }, { token: quien.token })
-  return { m, api, x, y, jefa, jefes, persona, role }
+  return { m, api, x, y, jefa, jefes, person, role }
 }
 
 describe('dos solicitudes a la vez', () => {
   it('dos equipos crean a la persona con el mismo usuario: una entra y la otra recibe «ya hay alguien»', async () => {
-    const { m, x, y, persona } = await conDosAdmins()
+    const { m, x, y, person } = await conDosAdmins()
     const before = contar(m, 'SELECT count(*) AS n FROM users')
     const newOne = (n: string) => ({
       name: `Carla ${n}`,
       role_id: m.roles.cashier,
       access: { type: 'password', user: 'carla', password: `clave-de-carla-${n}` },
     })
-    const [a, b] = await Promise.all([persona(x, newOne('uno')), persona(y, newOne('dos'))])
+    const [a, b] = await Promise.all([person(x, newOne('uno')), person(y, newOne('dos'))])
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 400])
     const mala = a.statusCode === 400 ? a : b
     expect(mala.json().message).toMatch(/Ya hay alguien con el usuario «carla»/)
@@ -89,9 +89,9 @@ describe('dos solicitudes a la vez', () => {
   })
 
   it('crear a «la misma persona» dos veces (doble envío) deja dos personas distintas con PIN distintos: no hay idempotencia', async () => {
-    const { m, x, y, persona } = await conDosAdmins()
+    const { m, x, y, person } = await conDosAdmins()
     const data = { name: 'Bruno', role_id: m.roles.waiter }
-    const [a, b] = await Promise.all([persona(x, data), persona(y, data)])
+    const [a, b] = await Promise.all([person(x, data), person(y, data)])
     expect([a.statusCode, b.statusCode]).toEqual([200, 200])
     expect(a.json().id).not.toBe(b.json().id)
     expect(a.json().pin).not.toBe(b.json().pin)
@@ -99,9 +99,9 @@ describe('dos solicitudes a la vez', () => {
   })
 
   it('40 meseros creados a la vez desde dos equipos: todos con PIN de 4 dígitos, distintos y que entran', async () => {
-    const { m, api, x, y, persona } = await conDosAdmins()
+    const { m, api, x, y, person } = await conDosAdmins()
     const batch = Array.from({ length: 40 }, (_, i) =>
-      persona(i % 2 ? x : y, { name: `Mesero ${i}`, role_id: m.roles.waiter }),
+      person(i % 2 ? x : y, { name: `Mesero ${i}`, role_id: m.roles.waiter }),
     )
     const res = await Promise.all(batch)
     const pins = res.map((r) => r.json().pin as string)
@@ -136,16 +136,16 @@ describe('dos solicitudes a la vez', () => {
   })
 
   it('el administrador y la jefa se archivan el uno al otro a la vez: queda exactamente uno activo', async () => {
-    const { m, x, y, jefa, persona } = await conDosAdmins()
+    const { m, x, y, jefa, person } = await conDosAdmins()
     const [a, b] = await Promise.all([
-      persona(x, {
+      person(x, {
         id: jefa.userId,
         name: 'Jefa',
         role_id: m.db.prepare('SELECT role_id FROM users WHERE id = ?').get(jefa.userId)
           ?.role_id as string,
         active: false,
       }),
-      persona(y, {
+      person(y, {
         id: m.people.admin.userId,
         name: 'Administrador',
         role_id: m.roles.admin,
@@ -164,17 +164,17 @@ describe('dos solicitudes a la vez', () => {
     const api = montarApi(m)
     const { token, session } = await api.signInAdmin()
     const adminId = m.people.admin.userId
-    const persona = (p: object) =>
-      api.post('/api/staff/people', { ...session, persona: p }, { token })
+    const person = (p: object) =>
+      api.post('/api/staff/people', { ...session, person: p }, { token })
     const role = (p: object) => api.post('/api/staff/roles', { ...session, role: p }, { token })
     const before = photo(m)
     const caminos = {
       archivarla: () =>
-        persona({ id: adminId, name: 'Administrador', role_id: m.roles.admin, active: false }),
+        person({ id: adminId, name: 'Administrador', role_id: m.roles.admin, active: false }),
       pasarla_a_mesero: () =>
-        persona({ id: adminId, name: 'Administrador', role_id: m.roles.waiter }),
+        person({ id: adminId, name: 'Administrador', role_id: m.roles.waiter }),
       quitarle_la_contrasena: () =>
-        persona({
+        person({
           id: adminId,
           name: 'Administrador',
           role_id: m.roles.admin,
@@ -231,7 +231,7 @@ describe('fallos a mitad de una operación (transacciones anidadas)', () => {
       '/api/staff/people',
       {
         ...session,
-        persona: {
+        person: {
           id: m.people.cashier.userId,
           name: 'Carlos Cambiado',
           role_id: m.roles.reports,
@@ -387,7 +387,7 @@ describe('equipo autorregistrado y revocación', () => {
   it('lo que el celular creó antes de la revocación va a cuarentena; lo posterior, rechazado', () => {
     const c = phone()
     const before = c.open(c.m.clock())
-    c.m.avanzar(5000)
+    c.m.advance(5000)
     const revocadoEn = c.revoke()
     const after = c.open(add(revocadoEn, 1000))
     // La conexión que arma la sala al llegar el lote ya trae la revocación.
@@ -406,7 +406,7 @@ describe('equipo autorregistrado y revocación', () => {
       }),
     ).toMatchObject({ ok: false, code: 'invalid_data' })
     const first = c.revoke()
-    c.m.avanzar(60_000)
+    c.m.advance(60_000)
     expect(c.revoke()).toBe(first)
   })
 
@@ -435,7 +435,7 @@ describe('equipo autorregistrado y revocación', () => {
 
 describe('sesión abierta mientras cambian los permisos de su rol', () => {
   it('quitarle administrar_usuarios al rol de una sesión abierta corta la API de personal al instante', async () => {
-    const { m, api, y, jefes, persona } = await conDosAdmins()
+    const { m, api, y, jefes, person } = await conDosAdmins()
     expect((await api.post('/api/staff/read', y.session, { token: y.token })).statusCode).toBe(200)
     guardarRol(
       m.db,
@@ -447,7 +447,7 @@ describe('sesión abierta mientras cambian los permisos de su rol', () => {
     )
     for (const url of ['/api/staff/read'])
       expect((await api.post(url, y.session, { token: y.token })).statusCode).toBe(403)
-    expect((await persona(y, { name: 'Intruso', role_id: m.roles.waiter })).statusCode).toBe(403)
+    expect((await person(y, { name: 'Intruso', role_id: m.roles.waiter })).statusCode).toBe(403)
   })
 
   it('al mesero le quitan «tomar_pedido» con la sesión abierta: lo anterior va a cuarentena, lo posterior se rechaza', () => {
@@ -458,7 +458,7 @@ describe('sesión abierta mientras cambian los permisos de su rol', () => {
     expect(e.permissions).toContain('take_order')
     const connection = m.access.authenticate(e.device.token) as never
     const before = m.event(connection, e, 'OrderOpened', ABRIR)
-    m.avanzar(10 * 60_000)
+    m.advance(10 * 60_000)
     guardarRol(
       m.db,
       m.restauranteId,
@@ -468,7 +468,7 @@ describe('sesión abierta mientras cambian los permisos de su rol', () => {
       m.clock(),
     )
     const change = m.clock()
-    m.avanzar(1000)
+    m.advance(1000)
     const after = m.event(connection, e, 'OrderOpened', ABRIR, {
       device_time: add(change, 500),
       hub_estimated_time: add(change, 500),
@@ -512,12 +512,12 @@ describe('un mesero que pasa a tener contraseña con su sesión abierta', () => 
     if (!e.ok || !e.device) throw new Error('no entró')
     const connection = m.access.authenticate(e.device.token) as never
     const hechoAntes = m.event(connection, e, 'OrderOpened', ABRIR)
-    m.avanzar(60_000)
+    m.advance(60_000)
     const r = await api.post(
       '/api/staff/people',
       {
         ...x.session,
-        persona: {
+        person: {
           id: m.people.waiter.userId,
           name: 'Ana',
           role_id: m.roles.cashier,
@@ -557,7 +557,7 @@ describe('un mesero que pasa a tener contraseña con su sesión abierta', () => 
       '/api/staff/people',
       {
         ...x.session,
-        persona: {
+        person: {
           id: m.people.waiter.userId,
           name: 'Ana',
           role_id: m.roles.waiter,
@@ -566,7 +566,7 @@ describe('un mesero que pasa a tener contraseña con su sesión abierta', () => 
       },
       { token: x.token },
     )
-    m.avanzar(5 * 60_000)
+    m.advance(5 * 60_000)
     const after = m.event(connection, e, 'OrderOpened', ABRIR)
     expect(m.hub.recibirLote(connection, [after]).resultados[0]).toMatchObject({
       status: 'rejected',
@@ -594,22 +594,22 @@ describe('un mesero que pasa a tener contraseña con su sesión abierta', () => 
 
 describe('reactivar a quien se archivó', () => {
   it('si su usuario lo tomó otra persona: error claro (400) y no queda activa a medias', async () => {
-    const { m, api, x, persona } = await conDosAdmins()
+    const { m, api, x, person } = await conDosAdmins()
     const carla = (
-      await persona(x, {
+      await person(x, {
         name: 'Carla',
         role_id: m.roles.cashier,
         access: { type: 'password', user: 'carla', password: 'clave-de-carla-1' },
       })
     ).json()
-    await persona(x, { id: carla.id, name: 'Carla', role_id: m.roles.cashier, active: false })
-    await persona(x, {
+    await person(x, { id: carla.id, name: 'Carla', role_id: m.roles.cashier, active: false })
+    await person(x, {
       name: 'Carla II',
       role_id: m.roles.cashier,
       access: { type: 'password', user: 'carla', password: 'clave-de-carla-2' },
     })
     const before = photo(m)
-    const r = await persona(x, {
+    const r = await person(x, {
       id: carla.id,
       name: 'Carla',
       role_id: m.roles.cashier,
@@ -619,7 +619,7 @@ describe('reactivar a quien se archivó', () => {
     expect(r.json().message).toMatch(/ya lo tiene otra persona/)
     expect(photo(m)).toBe(before)
     // Dándole otro usuario con contraseña, sí.
-    const fine = await persona(x, {
+    const fine = await person(x, {
       id: carla.id,
       name: 'Carla',
       role_id: m.roles.cashier,
@@ -631,15 +631,15 @@ describe('reactivar a quien se archivó', () => {
   })
 
   it('si su PIN lo tomó otra persona mientras estaba archivada, al activarla recibe un PIN nuevo', async () => {
-    const { m, x, persona } = await conDosAdmins()
-    const bea = (await persona(x, { name: 'Bea', role_id: m.roles.waiter })).json()
-    await persona(x, { id: bea.id, name: 'Bea', role_id: m.roles.waiter, active: false })
+    const { m, x, person } = await conDosAdmins()
+    const bea = (await person(x, { name: 'Bea', role_id: m.roles.waiter })).json()
+    await person(x, { id: bea.id, name: 'Bea', role_id: m.roles.waiter, active: false })
     // Otra persona recibe, por azar, el mismo PIN (se fuerza en la base).
-    const cora = (await persona(x, { name: 'Cora', role_id: m.roles.waiter })).json()
+    const cora = (await person(x, { name: 'Cora', role_id: m.roles.waiter })).json()
     m.db
       .prepare('UPDATE user_credentials SET pin_hash = ? WHERE user_id = ?')
       .run(huellaPin(Buffer.alloc(32, 7), m.restauranteId, bea.pin), cora.id)
-    const r = await persona(x, { id: bea.id, name: 'Bea', role_id: m.roles.waiter, active: true })
+    const r = await person(x, { id: bea.id, name: 'Bea', role_id: m.roles.waiter, active: true })
     expect(r.statusCode).toBe(200)
     expect(r.json().pin).toMatch(/^\d{4}$/)
     expect(r.json().pin).not.toBe(bea.pin)

@@ -71,8 +71,8 @@ describe('servidor del hub', () => {
       return new Promise<{ status: number; cuerpo: string }>((resolver, reject) => {
         const req = request({ host: '127.0.0.1', port, path: ruta, method: 'GET' }, (res) => {
           let cuerpo = ''
-          res.on('data', (trozo) => {
-            cuerpo += trozo
+          res.on('data', (chunk) => {
+            cuerpo += chunk
           })
           res.on('end', () => resolver({ status: res.statusCode ?? 0, cuerpo }))
         })

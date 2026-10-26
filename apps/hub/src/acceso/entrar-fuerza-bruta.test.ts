@@ -59,7 +59,7 @@ describe('PIN sin token, rotando IP', () => {
     while (fallos < FALLOS_DE_UN_EQUIPO_PARA_AVISO) {
       const r = await api.post('/api/sign-in', { pin }, { token, ip: ip(fallos) })
       // Respeta la espera: cada intento llega cuando ya se puede.
-      if (r.statusCode === 429) api.avanzar(Number(r.json().espera_ms) + 1)
+      if (r.statusCode === 429) api.advance(Number(r.json().espera_ms) + 1)
       else fallos++
     }
     expect(api.avisos.some((a) => /seguidos desde device:/.test(a))).toBe(true)
@@ -121,7 +121,7 @@ describe('PIN sin token, rotando IP', () => {
 
   it('la espera de una IP sube hasta 60 s y la respuesta trae retry-after coherente', async () => {
     const api = montarApi()
-    let ultimo = 0
+    let latest = 0
     for (let n = 0; n < 40; n++) {
       const r = await api.post('/api/sign-in', { pin: '0002' }, { ip: '10.5.5.5' })
       if (r.statusCode === 429) {
@@ -129,11 +129,11 @@ describe('PIN sin token, rotando IP', () => {
         expect(ms).toBeGreaterThan(0)
         expect(ms).toBeLessThanOrEqual(ESPERA_MAXIMA_MS)
         expect(Number(r.headers['retry-after'])).toBe(Math.ceil(ms / 1000))
-        ultimo = ms
-        api.avanzar(ms)
+        latest = ms
+        api.advance(ms)
       }
     }
-    expect(ultimo).toBeGreaterThan(0)
+    expect(latest).toBeGreaterThan(0)
   })
 })
 
@@ -164,7 +164,7 @@ describe('contraseña sin token', () => {
       const r = await api.post('/api/sign-in', credencialesMalas(user, s), { ip: ip(s) })
       if (r.statusCode === 401) permitidos++
       expect([401, 429]).toContain(r.statusCode)
-      api.avanzar(1000)
+      api.advance(1000)
     }
     // La espera por cuenta tiene tope de 10 s: 2 libres + la rampa 2, 4, 8 s + uno cada 10 s.
     expect(permitidos).toBeLessThan(420)
@@ -197,7 +197,7 @@ describe('contraseña sin token', () => {
     for (let s = 0; s < 600; s++) {
       const r = await api.post('/api/sign-in', credencialesMalas(user, s), { ip: ip(s) })
       if (r.statusCode === 429) maxima = Math.max(maxima, Number(r.json().espera_ms))
-      api.avanzar(1000)
+      api.advance(1000)
     }
     expect(maxima).toBeGreaterThan(0)
     expect(maxima).toBeLessThanOrEqual(10_000)
@@ -209,7 +209,7 @@ describe('contraseña sin token', () => {
     )
     expect(waiter.statusCode).toBe(201)
     // Y al callar el atacante, la cuenta vuelve en cuanto pasa la espera.
-    api.avanzar(10_001)
+    api.advance(10_001)
     expect((await api.post('/api/sign-in', api.admin(), { ip: '10.3.3.4' })).statusCode).toBe(201)
   })
 
@@ -222,9 +222,9 @@ describe('contraseña sin token', () => {
     const user = api.people.admin.user as string
     for (let s = 0; s < 12; s++) {
       const r = await api.post('/api/sign-in', credencialesMalas(user, s), { ip: ip(s) })
-      if (r.statusCode === 429) api.avanzar(Number(r.json().espera_ms) + 1)
+      if (r.statusCode === 429) api.advance(Number(r.json().espera_ms) + 1)
     }
-    api.avanzar(10_001)
+    api.advance(10_001)
     const r = await api.post('/api/sign-in', credencialesMalas(user, 77), { ip: ip(900) })
     expect(r.statusCode).toBe(401)
   })
@@ -234,7 +234,7 @@ describe('contraseña sin token', () => {
     const user = api.people.admin.user as string
     for (let i = 0; i < 3; i++)
       await api.post('/api/sign-in', credencialesMalas(user, i), { ip: ip(i) })
-    api.avanzar(VENTANA_AVISO_MS + 1)
+    api.advance(VENTANA_AVISO_MS + 1)
     for (let i = 0; i < 2; i++) {
       const r = await api.post('/api/sign-in', credencialesMalas(user, i), { ip: ip(50 + i) })
       expect(r.statusCode).toBe(401)

@@ -47,7 +47,7 @@ export class BaseDispositivo extends Dexie {
 
 const CURSOR = 'cursor'
 
-const fila = (local: EventoLocal): FilaEvento => ({
+const row = (local: EventoLocal): FilaEvento => ({
   id: local.event.id,
   position: local.position,
   pending: local.own && local.status === 'pending' ? 1 : 0,
@@ -63,7 +63,7 @@ export class AlmacenIndexedDb implements AlmacenDispositivo {
   }
 
   async guardar(locales: readonly EventoLocal[]) {
-    if (locales.length > 0) await this.db.events.bulkPut(locales.map(fila))
+    if (locales.length > 0) await this.db.events.bulkPut(locales.map(row))
   }
 
   async obtener(id: string) {

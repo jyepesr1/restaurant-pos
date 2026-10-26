@@ -306,13 +306,13 @@ describe('tamaño del cuerpo', () => {
   })
 
   it('sin content-length (flujo), deja de leer al pasarse del límite', async () => {
-    const trozo = new Uint8Array(1024 * 1024).fill(0x20)
+    const chunk = new Uint8Array(1024 * 1024).fill(0x20)
     let leidos = 0
     const flujo = new ReadableStream<Uint8Array>({
       pull(control) {
         leidos++
         if (leidos > 40) control.close()
-        else control.enqueue(trozo)
+        else control.enqueue(chunk)
       },
     })
     const res = await atender(

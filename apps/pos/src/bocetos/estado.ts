@@ -39,8 +39,8 @@ export const useMesas = (): Mesa[] => useSyncExternalStore(suscribir, () => stat
 export const useSimulacion = (): Simulacion =>
   useSyncExternalStore(suscribir, () => status.simulacion)
 
-export function cambiarMesa(numero: number, change: (table: Mesa) => Mesa) {
-  patch({ ...status, tables: status.tables.map((m) => (m.numero === numero ? change(m) : m)) })
+export function cambiarMesa(number: number, change: (table: Mesa) => Mesa) {
+  patch({ ...status, tables: status.tables.map((m) => (m.number === number ? change(m) : m)) })
 }
 
 export function simular(changes: Partial<Simulacion>) {

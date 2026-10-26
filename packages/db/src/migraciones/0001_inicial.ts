@@ -28,20 +28,20 @@ const versionado = (restauranteRef = 'REFERENCES restaurants (id)') => `
  * dispara BEFORE DELETE al reemplazar, así que sin esto un REPLACE reescribiría la historia.
  * `existe` es la condición (sobre NEW) que indica que la fila ya está.
  */
-const inmutable = (tabla: string, existe: string) => `
-  CREATE TRIGGER ${tabla}_no_update BEFORE UPDATE ON ${tabla}
-  BEGIN SELECT RAISE(ABORT, '${tabla}: los registros no se modifican'); END;
-  CREATE TRIGGER ${tabla}_no_delete BEFORE DELETE ON ${tabla}
-  BEGIN SELECT RAISE(ABORT, '${tabla}: los registros no se borran'); END;
-  CREATE TRIGGER ${tabla}_no_replace BEFORE INSERT ON ${tabla}
-  WHEN EXISTS (SELECT 1 FROM ${tabla} WHERE ${existe})
-  BEGIN SELECT RAISE(ABORT, '${tabla}: los registros no se reemplazan'); END;`
+const inmutable = (tableName: string, existe: string) => `
+  CREATE TRIGGER ${tableName}_no_update BEFORE UPDATE ON ${tableName}
+  BEGIN SELECT RAISE(ABORT, '${tableName}: los registros no se modifican'); END;
+  CREATE TRIGGER ${tableName}_no_delete BEFORE DELETE ON ${tableName}
+  BEGIN SELECT RAISE(ABORT, '${tableName}: los registros no se borran'); END;
+  CREATE TRIGGER ${tableName}_no_replace BEFORE INSERT ON ${tableName}
+  WHEN EXISTS (SELECT 1 FROM ${tableName} WHERE ${existe})
+  BEGIN SELECT RAISE(ABORT, '${tableName}: los registros no se reemplazan'); END;`
 
 /** Catálogo y configuración: se archivan (activo = 0), nunca se borran. */
-const archivable = (tabla: string) => `
-  CREATE TRIGGER ${tabla}_no_delete BEFORE DELETE ON ${tabla}
-  BEGIN SELECT RAISE(ABORT, '${tabla}: se archiva con activo = 0, no se borra'); END;
-  CREATE INDEX ${tabla}_por_version ON ${tabla} (restaurant_id, version);`
+const archivable = (tableName: string) => `
+  CREATE TRIGGER ${tableName}_no_delete BEFORE DELETE ON ${tableName}
+  BEGIN SELECT RAISE(ABORT, '${tableName}: se archiva con activo = 0, no se borra'); END;
+  CREATE INDEX ${tableName}_por_version ON ${tableName} (restaurant_id, version);`
 
 export const sql = `
 -- ── Organización y salón ────────────────────────────────────────────────

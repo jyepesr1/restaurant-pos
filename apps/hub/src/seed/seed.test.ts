@@ -127,8 +127,8 @@ describe('carga en la base', () => {
     const h = hub()
     const r = h.cargar()
 
-    const check = (tabla: string) =>
-      Number(h.db.prepare(`SELECT count(*) AS n FROM ${tabla} WHERE active = 1`).get()?.n)
+    const check = (tableName: string) =>
+      Number(h.db.prepare(`SELECT count(*) AS n FROM ${tableName} WHERE active = 1`).get()?.n)
     expect(check('dining_tables')).toBe(TABLES)
     expect(check('categories')).toBe(15)
     expect(check('products')).toBe(98)
@@ -156,9 +156,9 @@ describe('carga en la base', () => {
     const pinesAntes = h.rows('SELECT user_id, pin_hash FROM user_credentials ORDER BY 1')
     const r = h.cargar(TEXTO_CARTA, '2026-10-25T10:00:00.000Z')
 
-    for (const [tabla, c] of Object.entries(r.sqlTables)) {
-      expect({ tabla, created: c.created, updated: c.updated }).toEqual({
-        tabla,
+    for (const [tableName, c] of Object.entries(r.sqlTables)) {
+      expect({ tableName, created: c.created, updated: c.updated }).toEqual({
+        tableName,
         created: 0,
         updated: 0,
       })

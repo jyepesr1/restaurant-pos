@@ -174,7 +174,7 @@ export function montarAcceso() {
     avisos,
     revocados,
     clock,
-    avanzar: (n: number) => {
+    advance: (n: number) => {
       ms += n
     },
     emparejar,

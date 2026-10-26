@@ -37,8 +37,8 @@ function arrancarHub(env: Record<string, string>): Promise<HubArrancado> {
     { cwd: DIR_HUB, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
   )
   let text = ''
-  const acumular = (trozo: Buffer) => {
-    text += String(trozo)
+  const acumular = (chunk: Buffer) => {
+    text += String(chunk)
   }
   child.stdout?.on('data', acumular)
   child.stderr?.on('data', acumular)

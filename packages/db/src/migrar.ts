@@ -22,8 +22,8 @@ export function huellaSql(sql: string): string {
 
 export function versionActual(db: BaseSqlite): number {
   db.exec(CREAR_REGISTRO)
-  const fila = db.prepare('SELECT max(version) AS version FROM migrations').get()
-  return Number(fila?.version ?? 0)
+  const row = db.prepare('SELECT max(version) AS version FROM migrations').get()
+  return Number(row?.version ?? 0)
 }
 
 function verificarNumeracion(migraciones: readonly Migracion[]) {
@@ -36,11 +36,11 @@ function verificarNumeracion(migraciones: readonly Migracion[]) {
 
 function verificarAplicadas(db: BaseSqlite, migraciones: readonly Migracion[]) {
   const aplicadas = db.prepare('SELECT version, name, hash FROM migrations ORDER BY version').all()
-  for (const fila of aplicadas) {
-    const migration = migraciones[Number(fila.version) - 1]
-    if (migration && huellaSql(migration.sql) !== fila.hash) {
+  for (const row of aplicadas) {
+    const migration = migraciones[Number(row.version) - 1]
+    if (migration && huellaSql(migration.sql) !== row.hash) {
       throw new Error(
-        `La migración ${fila.version} ("${fila.name}") cambió después de aplicarse. Las migraciones publicadas no se editan: crea una nueva.`,
+        `La migración ${row.version} ("${row.name}") cambió después de aplicarse. Las migraciones publicadas no se editan: crea una nueva.`,
       )
     }
   }

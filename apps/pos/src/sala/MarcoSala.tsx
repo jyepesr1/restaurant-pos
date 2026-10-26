@@ -113,13 +113,13 @@ const iniciales = (name: string) =>
     .join('')
 
 export function MarcoSala({
-  titulo,
+  title,
   back,
   protegerSalida,
   actions,
   children,
 }: {
-  titulo: string
+  title: string
   back?: string
   /**
    * Volver, cambiar de sección y Salir pasan por aquí antes de dejar la pantalla (p. ej., para
@@ -135,7 +135,7 @@ export function MarcoSala({
   const caidas = printers.filter((i) => i.status === 'failed')
   const { ruta } = useRuta()
   const [menuAbierto, setMenuAbierto] = useState(false)
-  const encabezado = useRef<HTMLHeadingElement>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
   const salirCon = (action: () => void) => (protegerSalida ? protegerSalida(action) : action())
   const ir = (target: string) =>
     salirCon(() => {
@@ -153,21 +153,21 @@ export function MarcoSala({
   const conNavegacion = session !== null && groups.length > 0
 
   useEffect(() => {
-    document.title = `${titulo} · ${restaurant ?? 'Faro'}`
-  }, [titulo, restaurant])
+    document.title = `${title} · ${restaurant ?? 'Faro'}`
+  }, [title, restaurant])
   // El foco va al título al llegar a la pantalla, no cada vez que el título cambia (un pedido
   // para llevar recibe su número después): no se le roba el foco a quien está escribiendo.
   useEffect(() => {
-    encabezado.current?.focus({ preventScroll: true })
+    heading.current?.focus({ preventScroll: true })
   }, [])
   // El menú del celular es modal: el foco entra a él, lo de atrás queda inerte y sin desplazarse,
   // se cierra con Escape y el foco vuelve al botón del menú.
   const botonMenu = useRef<HTMLButtonElement>(null)
   const cerrarMenu = useRef<HTMLButtonElement>(null)
-  const pagina = useRef<HTMLDivElement>(null)
+  const page = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!menuAbierto) return
-    const fondo = pagina.current
+    const fondo = page.current
     const desplazamiento = document.body.style.overflow
     fondo?.setAttribute('inert', '')
     document.body.style.overflow = 'hidden'
@@ -245,7 +245,7 @@ export function MarcoSala({
 
   return (
     <div className="flex min-h-dvh">
-      <div ref={pagina} className="contents">
+      <div ref={page} className="contents">
         {/* Caja y tablet: la barra lateral siempre a la vista (en tablet, solo íconos). */}
         {conNavegacion && (
           <aside className="sticky top-0 hidden h-dvh w-20 shrink-0 flex-col gap-6 border-r border-linea bg-lateral px-3 py-4 md:flex lg:w-64 lg:px-4">
@@ -294,11 +294,11 @@ export function MarcoSala({
               )}
               {!conNavegacion && <Logo name={restaurant} brand={catalog?.restaurant.brand} />}
               <h1
-                ref={encabezado}
+                ref={heading}
                 tabIndex={-1}
                 className={`font-titulo mr-auto truncate text-xl font-bold tracking-tight outline-none md:text-2xl ${conNavegacion ? '' : 'sr-only'}`}
               >
-                {titulo}
+                {title}
               </h1>
               <IndicadorConexion status={ESTADO[connection]} pendingList={pendingList} compacto />
               <span aria-live="polite" className="contents">

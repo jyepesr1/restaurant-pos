@@ -15,7 +15,7 @@ function baseVersion4() {
   aplicarMigraciones(db, HASTA_4)
   const { restaurant } = sembrar(db)
   const role = insertarVersionado(db, 'roles', restaurant, { name: 'Mesero' })
-  const persona = (name: string, pin: string) => {
+  const person = (name: string, pin: string) => {
     const id = insertarVersionado(db, 'users', restaurant, { name, role_id: role })
     insertarEnTabla(db, 'user_credentials', {
       user_id: id,
@@ -25,8 +25,8 @@ function baseVersion4() {
     })
     return id
   }
-  const ana = persona('Ana', 'huella-ana')
-  return { db, restaurant, persona, ana }
+  const ana = person('Ana', 'huella-ana')
+  return { db, restaurant, person, ana }
 }
 
 const conUsuario = (
@@ -68,9 +68,9 @@ describe('migración 5: usuario y contraseña', () => {
   })
 
   it('el usuario es único entre los vigentes; archivado, queda libre', () => {
-    const { db, ana, persona } = baseVersion4()
+    const { db, ana, person } = baseVersion4()
     aplicarMigraciones(db)
-    const luis = persona('Luis', 'huella-luis')
+    const luis = person('Luis', 'huella-luis')
     conUsuario(db, ana, 'caja', 'scrypt$a')
     expect(() => conUsuario(db, luis, 'caja', 'scrypt$b')).toThrow(/UNIQUE/)
     db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(ana)

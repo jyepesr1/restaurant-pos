@@ -42,8 +42,8 @@ async function medidasPequenas(page: Page): Promise<string[]> {
       let medido: Element = el
       if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio'))
         medido = el.closest('label') ?? el
-      const estilo = getComputedStyle(medido)
-      if (estilo.display === 'none' || estilo.visibility === 'hidden') continue
+      const style = getComputedStyle(medido)
+      if (style.display === 'none' || style.visibility === 'hidden') continue
       if (el.closest('[hidden], [aria-hidden="true"]')) continue
       const r = medido.getBoundingClientRect()
       if (r.width === 0 && r.height === 0) continue
@@ -114,8 +114,8 @@ async function contrasteInsuficiente(page: Page): Promise<string[]> {
         (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim() !== '',
       )
       if (!own) continue
-      const estilo = getComputedStyle(el)
-      if (estilo.display === 'none' || estilo.visibility === 'hidden') continue
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') continue
       const r = el.getBoundingClientRect()
       if (r.width <= 1 || r.height <= 1) continue // sr-only
       if (el.closest('button:disabled, fieldset:disabled, [aria-disabled="true"]')) continue
@@ -123,16 +123,16 @@ async function contrasteInsuficiente(page: Page): Promise<string[]> {
       for (let e: Element | null = el; e; e = e.parentElement)
         opacidad *= Number(getComputedStyle(e).opacity)
       const fondo = fondoDe(el)
-      const text = aRgba(estilo.color)
+      const text = aRgba(style.color)
       text[3] *= opacidad
       const seen = envelope(text, fondo)
       const [a, b] = [lum(seen), lum(fondo)].sort((x, y) => y - x) as [number, number]
       const razon = (a + 0.05) / (b + 0.05)
-      const px = Number.parseFloat(estilo.fontSize)
-      const large = px >= 24 || (px >= 18.66 && Number(estilo.fontWeight) >= 700)
+      const px = Number.parseFloat(style.fontSize)
+      const large = px >= 24 || (px >= 18.66 && Number(style.fontWeight) >= 700)
       if (razon < (large ? 3 : 4.5)) {
         const name = (el.textContent ?? '').trim().slice(0, 30)
-        const key = `${name}|${estilo.color}|${estilo.backgroundColor}`
+        const key = `${name}|${style.color}|${style.backgroundColor}`
         if (seenSet.has(key)) continue
         seenSet.add(key)
         fallas.push(`«${name}» contraste ${razon.toFixed(2)} (${large ? 'grande' : 'normal'})`)
@@ -180,13 +180,13 @@ function repartoPorResiduo(total: number, pesos: number[]): number[] {
 }
 
 /** Desde el plano: la mesa por su número (el nombre accesible empieza con «Mesa N:»). */
-const mesaEnPlano = (page: Page, numero: number) =>
-  page.getByRole('button', { name: new RegExp(`^Mesa ${numero}: `) })
+const mesaEnPlano = (page: Page, number: number) =>
+  page.getByRole('button', { name: new RegExp(`^Mesa ${number}: `) })
 
-const mesaEnLista = (page: Page, numero: number) =>
+const mesaEnLista = (page: Page, number: number) =>
   page
     .locator('section[aria-label="Mesas"] ul > li')
-    .filter({ hasText: new RegExp(`^${numero}(?!\\d)`) })
+    .filter({ hasText: new RegExp(`^${number}(?!\\d)`) })
     .getByRole('button')
 
 const buscarEnCarta = (page: Page) => page.getByRole('searchbox', { name: 'Buscar en la carta' })
@@ -984,9 +984,9 @@ test.describe('productos con opciones', () => {
     await expect(panel).toBeHidden()
     await expect(alert(page, 'Agregaste Tagliata di Manzo')).toBeVisible()
     const ticket = await abrirTicket(page, register)
-    const fila = ticket.getByRole('button', { name: /Tagliata di Manzo/ })
-    await expect(fila).toContainText('Tres cuartos')
-    await expect(fila).toContainText('$40.900')
+    const row = ticket.getByRole('button', { name: /Tagliata di Manzo/ })
+    await expect(row).toContainText('Tres cuartos')
+    await expect(row).toContainText('$40.900')
   })
 
   test('el término y la nota llegan a la cocina, resaltados', async ({ page }) => {
@@ -1036,9 +1036,9 @@ test.describe('productos con opciones', () => {
     await panel.getByRole('button', { name: 'Amarillo' }).click()
     await expect(panel).toBeHidden()
     const ticket = await abrirTicket(page, register)
-    const fila = ticket.getByRole('button', { name: /Té Hatsu/ })
-    await expect(fila).toContainText('Amarillo')
-    await expect(fila).toContainText('$13.900')
+    const row = ticket.getByRole('button', { name: /Té Hatsu/ })
+    await expect(row).toContainText('Amarillo')
+    await expect(row).toContainText('$13.900')
   })
 
   test('la hamburguesa también pide el término al tocarla', async ({ page }) => {
@@ -1308,10 +1308,10 @@ test.describe('deshacer y avisos', () => {
     await item.getByRole('button', { name: 'Uno más' }).click()
     await item.getByLabel('Notas para cocina').fill('bien caliente')
     await item.getByRole('button', { name: 'Listo' }).click()
-    const fila = ticket.getByRole('button', { name: /Pinsa/ })
-    await expect(fila).toContainText('3')
-    await expect(fila).toContainText('«bien caliente»')
-    await expect(fila).toContainText('$62.700')
+    const row = ticket.getByRole('button', { name: /Pinsa/ })
+    await expect(row).toContainText('3')
+    await expect(row).toContainText('«bien caliente»')
+    await expect(row).toContainText('$62.700')
   })
 })
 
@@ -1351,14 +1351,14 @@ test.describe('anular un ítem enviado', () => {
     await cerrarTicket(page, register)
     await expect(alert(page, 'Anulaste Spritz Burguer (demora)')).toBeVisible()
     ticket = await abrirTicket(page, register)
-    const fila = ticket.getByRole('listitem').filter({ hasText: 'Spritz Burguer' })
-    await expect(fila).toContainText('anulado: demora')
-    await expect(fila.locator('.line-through').first()).toBeVisible()
+    const row = ticket.getByRole('listitem').filter({ hasText: 'Spritz Burguer' })
+    await expect(row).toContainText('anulado: demora')
+    await expect(row.locator('.line-through').first()).toBeVisible()
     await expect(ticket.getByText('Total').locator('xpath=following-sibling::span[1]')).toHaveText(
       '$13.900',
     )
     // Un ítem anulado ya no se puede tocar.
-    await fila.getByRole('button').click()
+    await row.getByRole('button').click()
     await expect(page.getByRole('dialog', { name: /Spritz Burguer/ })).toHaveCount(0)
   })
 
@@ -1470,13 +1470,13 @@ test.describe('búsqueda en la carta', () => {
 // ---------------------------------------------------------------------------------------------
 
 test.describe('precuenta (docs/DINERO.md)', () => {
-  const fila = (page: Page, rotulo: RegExp) =>
+  const row = (page: Page, rotulo: RegExp) =>
     page.locator('dt', { hasText: rotulo }).locator('xpath=following-sibling::dd[1]')
   const checks = (page: Page) => page.getByRole('region', { name: 'Dividir' }).getByRole('listitem')
   /** Monto y propina de cada cuenta tal como se leen en pantalla. */
   const leerCuentas = async (page: Page) => {
-    const textos = await checks(page).evaluateAll((lis) => lis.map((li) => li.textContent ?? ''))
-    return textos.flatMap((t) => {
+    const texts = await checks(page).evaluateAll((lis) => lis.map((li) => li.textContent ?? ''))
+    return texts.flatMap((t) => {
       const m = /\$([\d.]+) \+ propina \$([\d.]+)/.exec(t)
       return m ? [{ amount: numeroDe(m[1] as string), tip: numeroDe(m[2] as string) }] : []
     })
@@ -1487,10 +1487,10 @@ test.describe('precuenta (docs/DINERO.md)', () => {
   }) => {
     await page.goto('/mockups/pre-bill?table=12')
     // 44.900 + 40.900 + 27.900 + 129.900 + 13.900
-    await expect(fila(page, /^Total$/)).toHaveText('$257.500')
+    await expect(row(page, /^Total$/)).toHaveText('$257.500')
     // 257.500 / 1,08 = 238.425,93 → 10 % = 23.842,59 → 23.843 (no 25.750, que sería sobre el bruto)
-    await expect(fila(page, /Propina sugerida/)).toHaveText('$23.843')
-    await expect(fila(page, /^Con propina$/)).toHaveText('$281.343')
+    await expect(row(page, /Propina sugerida/)).toHaveText('$23.843')
+    await expect(row(page, /^Con propina$/)).toHaveText('$281.343')
     await expect(page.getByText('Precios con INC incluido.')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Cobrar $257.500' })).toBeVisible()
     // Sin pagos todavía: no hay renglones de «Ya pagado».
@@ -1502,11 +1502,11 @@ test.describe('precuenta (docs/DINERO.md)', () => {
       page,
     }) => {
       await page.goto(`/mockups/pre-bill?table=${table}`)
-      const total = numeroDe((await fila(page, /^Total$/).textContent()) ?? '')
+      const total = numeroDe((await row(page, /^Total$/).textContent()) ?? '')
       expect(total).toBeGreaterThan(0)
       const tip = propinaEsperada(total)
-      await expect(fila(page, /Propina sugerida/)).toHaveText(enPesos(tip))
-      await expect(fila(page, /^Con propina$/)).toHaveText(enPesos(total + tip))
+      await expect(row(page, /Propina sugerida/)).toHaveText(enPesos(tip))
+      await expect(row(page, /^Con propina$/)).toHaveText(enPesos(total + tip))
     })
   }
 
@@ -1517,7 +1517,7 @@ test.describe('precuenta (docs/DINERO.md)', () => {
     await expect(items.getByRole('listitem').filter({ hasText: 'Limonada de Coco' })).toContainText(
       '$74.500',
     )
-    await expect(fila(page, /^Total$/)).toHaveText('$116.300')
+    await expect(row(page, /^Total$/)).toHaveText('$116.300')
   })
 
   test('partes iguales del saldo: 257.500 entre 2, 3 y 4 por mayor residuo, con la propina de cada una', async ({
@@ -1948,14 +1948,14 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
     // Un pago parcial vuelve a la precuenta, con lo pagado y el saldo.
     await expect(page).toHaveURL(/\/bocetos\/precuenta\?mesa=12$/)
     await expect(alert(page, 'Pago registrado. Queda $128.750')).toBeVisible()
-    const fila = (r: RegExp) =>
+    const row = (r: RegExp) =>
       page.locator('dt', { hasText: r }).locator('xpath=following-sibling::dd[1]')
-    await expect(fila(/^Total$/)).toHaveText('$257.500')
-    await expect(fila(/^Ya pagado$/)).toHaveText('-$128.750')
-    await expect(fila(/^Saldo$/)).toHaveText('$128.750')
+    await expect(row(/^Total$/)).toHaveText('$257.500')
+    await expect(row(/^Ya pagado$/)).toHaveText('-$128.750')
+    await expect(row(/^Saldo$/)).toHaveText('$128.750')
     // La propina sugerida se vuelve a calcular sobre el saldo: 128.750 / 1,08 × 10 %.
-    await expect(fila(/Propina sugerida/)).toHaveText(enPesos(propinaEsperada(128_750)))
-    await expect(fila(/^Con propina$/)).toHaveText(enPesos(128_750 + propinaEsperada(128_750)))
+    await expect(row(/Propina sugerida/)).toHaveText(enPesos(propinaEsperada(128_750)))
+    await expect(row(/^Con propina$/)).toHaveText(enPesos(128_750 + propinaEsperada(128_750)))
 
     // El plano sigue mostrando la mesa abierta, con el saldo pendiente.
     await page.getByRole('button', { name: 'Volver' }).click()

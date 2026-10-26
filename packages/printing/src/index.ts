@@ -1,39 +1,39 @@
-export { type CierreZ, lineasCierreZ, type MedioCierreZ } from './cierre'
 export {
-  caracteres,
-  codificar,
-  decodificar,
-  limpiar,
-  NUMERO_PAGINA,
-  PAGINAS_CODIGOS,
-  type PaginaCodigos,
-} from './codificacion'
+  asText,
+  COLUMNS,
+  type Format,
+  type Line,
+  paragraph,
+  type Style,
+  toSides,
+  type Width,
+  widthOf,
+  wrapText,
+} from './document'
 export {
-  type Comanda,
-  type CursoComanda,
-  type ItemComanda,
-  lineasComanda,
-  lineasPrueba,
-  type TipoComanda,
-} from './comanda'
-export {
-  type Ancho,
-  aLosLados,
-  anchoDe,
-  COLUMNAS,
-  comoTexto,
-  type Estilo,
-  type Formato,
-  type Linea,
-  parrafo,
-  partir,
-} from './documento'
+  CODE_PAGE_NUMBER,
+  CODE_PAGES,
+  type CodePage,
+  characters,
+  clear,
+  decode,
+  encode,
+} from './encoding'
 export { escpos } from './escpos'
-export { type Leido, leerEscpos } from './lector'
 export {
-  type LineaPrecuenta,
-  lineasPrecuenta,
-  nombreImpuesto,
-  type Precuenta,
+  type PreBill,
+  type PreBillLine,
   pesos,
-} from './precuenta'
+  preBillLines,
+  taxName,
+} from './pre-bill'
+export { type ReadResult, readEscpos } from './reader'
+export {
+  type Ticket,
+  type TicketCourse,
+  type TicketItem,
+  type TicketType,
+  testLines,
+  ticketLines,
+} from './ticket'
+export { type ZReport, type ZReportMethod, zReportLines } from './z-report'

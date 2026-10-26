@@ -1,5 +1,5 @@
 import { newId, type OrderEvent } from '@pos/core'
-import type { CierreZ } from '@pos/printing'
+import type { ZReport } from '@pos/printing'
 import { AlmacenSqlite } from '@pos/sync/sqlite'
 import { describe, expect, it, vi } from 'vitest'
 import { cashPaymentData, event, itemCopy } from '../../../../packages/core/src/testing/factory'
@@ -88,7 +88,7 @@ function mundo(options: { width?: 58 | 80; conImpresora?: boolean } = {}) {
     return crudo
   }
 
-  const cierresZ = () => t.trabajos("WHERE type = 'report'").map((f) => t.content(f) as CierreZ)
+  const cierresZ = () => t.trabajos("WHERE type = 'report'").map((f) => t.content(f) as ZReport)
   return { t, ana, admin, cashier, printer, select, turnoCobrado, cerrarConEvento, cierresZ }
 }
 
@@ -237,10 +237,10 @@ describe('cierre Z: sin impresora o con una que no sirve', () => {
       'Cierre de caja (reimpresión)',
     ])
     m.printer.papel.apagada = false
-    m.t.avanzar(60 * 60 * 1000)
+    m.t.advance(60 * 60 * 1000)
     m.t.cola.despertar()
     await m.t.cola.ready()
-    expect(m.printer.papel.textos()).toHaveLength(2)
+    expect(m.printer.papel.texts()).toHaveLength(2)
     expect(m.t.pendingList()).toBe(0)
   })
 })
@@ -266,13 +266,13 @@ describe('reimpresión del cierre Z', () => {
     expect(z).toHaveLength(4)
     expect(z.filter((c) => c.reprinted === null)).toHaveLength(1)
     expect(z.filter((c) => c.reprinted !== null)).toHaveLength(3)
-    const { reprinted: _a, ...original } = z.find((c) => c.reprinted === null) as CierreZ
+    const { reprinted: _a, ...original } = z.find((c) => c.reprinted === null) as ZReport
     for (const c of z.filter((c) => c.reprinted !== null)) {
       const { reprinted: _b, ...rest } = c
       expect(rest).toEqual(original)
     }
     await m.t.cola.runOnce()
-    const papel = m.printer.papel.textos()
+    const papel = m.printer.papel.texts()
     expect(papel).toHaveLength(4)
     expect(papel.filter((p) => p.includes('Reimpresión'))).toHaveLength(3)
     // La reimpresión del turno de otro día no cambia al agregar ventas después.
@@ -312,10 +312,10 @@ describe('papel de 58 y de 80 mm', () => {
       'confirmed',
     )
     await m.t.cola.runOnce()
-    const [papel] = m.printer.papel.textos()
+    const [papel] = m.printer.papel.texts()
     expect(papel).toContain('CIERRE DE CAJA')
-    const columnas = width === 58 ? 32 : 48
-    for (const line of (papel ?? '').split('\n')) expect(line.length).toBeLessThanOrEqual(columnas)
+    const columns = width === 58 ? 32 : 48
+    for (const line of (papel ?? '').split('\n')) expect(line.length).toBeLessThanOrEqual(columns)
   })
 })
 
@@ -448,7 +448,7 @@ describe('cierre Z: el día de las ventas es el de la apertura del turno', () =>
     }
     vender(40_000)
     // Pasa la madrugada: son las 6:30 a. m. del 25.
-    m.t.avanzar(Date.parse('2026-10-25T11:30:00.000Z') - INICIO)
+    m.t.advance(Date.parse('2026-10-25T11:30:00.000Z') - INICIO)
     vender(25_000)
     const { cerrarConEvento } = m
     const crudo = { ...cerrarConEvento(register, shift, 165_000), base_sequence: maxSecuencia(m.t) }
@@ -596,11 +596,11 @@ describe('rutas de reportes: permisos, cuerpos y fechas', () => {
   it('"hoy" cambia a las 6:00 a. m. de Bogotá, no a medianoche', async () => {
     const m = mundo()
     const today = async () => (await report(m, {})).json().today
-    m.t.avanzar(Date.parse('2026-10-25T04:59:00.000Z') - INICIO) // 11:59 p. m. del 24
+    m.t.advance(Date.parse('2026-10-25T04:59:00.000Z') - INICIO) // 11:59 p. m. del 24
     expect(await today()).toBe('2026-10-24')
-    m.t.avanzar(Date.parse('2026-10-25T10:59:00.000Z') - Date.parse('2026-10-25T04:59:00.000Z')) // 5:59 a. m.
+    m.t.advance(Date.parse('2026-10-25T10:59:00.000Z') - Date.parse('2026-10-25T04:59:00.000Z')) // 5:59 a. m.
     expect(await today()).toBe('2026-10-24')
-    m.t.avanzar(60_000) // 6:00 a. m. del 25
+    m.t.advance(60_000) // 6:00 a. m. del 25
     expect(await today()).toBe('2026-10-25')
     expect((await report(m, {})).json().report).toMatchObject({
       from: '2026-10-25',

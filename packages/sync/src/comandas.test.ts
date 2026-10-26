@@ -79,7 +79,7 @@ function montar(almacen: Almacen, config: Partial<ConstructorParameters<typeof H
     fijar: (time: string) => {
       ms = BOGOTA(time)
     },
-    avanzar: (n: number) => {
+    advance: (n: number) => {
       ms += n
     },
   }
@@ -195,22 +195,22 @@ describe.each(['memory', 'sqlite'] as const)('número de comanda (%s)', (almacen
       const { order, ids } = conPlatos(m, 1)
       const c = ticket([ids[0] as string])
       const r = m.send(WAITER, order, 'ItemsSent', { tickets: [c] })
-      return { numero: numeros(r.accepted)?.[c.ticket_id], day: r.accepted?.business_day }
+      return { number: numeros(r.accepted)?.[c.ticket_id], day: r.accepted?.business_day }
     }
 
     it('a las 6:00 a. m. empieza un día nuevo y la numeración vuelve a 1', () => {
       const m = montar(almacen)
-      expect(enviarUno(m, '2026-10-24T20:00:00')).toEqual({ numero: 1, day: '2026-10-24' })
-      expect(enviarUno(m, '2026-10-24T21:00:00')).toEqual({ numero: 2, day: '2026-10-24' })
-      expect(enviarUno(m, '2026-10-25T05:59:00')).toEqual({ numero: 3, day: '2026-10-24' })
-      expect(enviarUno(m, '2026-10-25T06:00:00')).toEqual({ numero: 1, day: '2026-10-25' })
-      expect(enviarUno(m, '2026-10-25T06:01:00')).toEqual({ numero: 2, day: '2026-10-25' })
+      expect(enviarUno(m, '2026-10-24T20:00:00')).toEqual({ number: 1, day: '2026-10-24' })
+      expect(enviarUno(m, '2026-10-24T21:00:00')).toEqual({ number: 2, day: '2026-10-24' })
+      expect(enviarUno(m, '2026-10-25T05:59:00')).toEqual({ number: 3, day: '2026-10-24' })
+      expect(enviarUno(m, '2026-10-25T06:00:00')).toEqual({ number: 1, day: '2026-10-25' })
+      expect(enviarUno(m, '2026-10-25T06:01:00')).toEqual({ number: 2, day: '2026-10-25' })
     })
 
     it('la madrugada (después de medianoche) sigue siendo del día anterior', () => {
       const m = montar(almacen)
       enviarUno(m, '2026-10-24T22:00:00')
-      expect(enviarUno(m, '2026-10-25T01:30:00')).toEqual({ numero: 2, day: '2026-10-24' })
+      expect(enviarUno(m, '2026-10-25T01:30:00')).toEqual({ number: 2, day: '2026-10-24' })
     })
 
     it('un envío con la hora del dispositivo de ayer que llega hoy cuenta en el día de ayer', () => {
@@ -236,7 +236,7 @@ describe.each(['memory', 'sqlite'] as const)('número de comanda (%s)', (almacen
       expect(r.accepted?.business_day).toBe('2026-10-24')
       expect(numeros(r.accepted)).toEqual({ [c.ticket_id]: 2 })
       // El día de hoy no se mueve.
-      expect(enviarUno(m, '2026-10-25T07:20:00')).toEqual({ numero: 2, day: '2026-10-25' })
+      expect(enviarUno(m, '2026-10-25T07:20:00')).toEqual({ number: 2, day: '2026-10-25' })
     })
 
     it('un dispositivo con el reloj muy atrasado no mete su comanda en un día viejo: vale la hora del hub', () => {
@@ -275,7 +275,7 @@ describe.each(['memory', 'sqlite'] as const)('número de comanda (%s)', (almacen
     it('el inicio del día es configurable (4:00 a. m.)', () => {
       const m = montar(almacen, { inicioDiaOperativo: '04:00' })
       expect(enviarUno(m, '2026-10-25T03:59:00').day).toBe('2026-10-24')
-      expect(enviarUno(m, '2026-10-25T04:00:00')).toEqual({ numero: 1, day: '2026-10-25' })
+      expect(enviarUno(m, '2026-10-25T04:00:00')).toEqual({ number: 1, day: '2026-10-25' })
     })
   })
 
@@ -569,10 +569,10 @@ describe('alGuardar: misma transacción que el evento (SQLite)', () => {
       access: accesoLibre,
       onSave: (event) => {
         // El evento ya está guardado cuando corre el gancho.
-        const fila = db
+        const row = db
           .prepare('SELECT count(*) AS n FROM events WHERE restaurant_id = ? AND id = ?')
           .get(restauranteId, event.id)
-        db.prepare('INSERT INTO sonda VALUES (?, ?)').run(event.id, Number(fila?.n))
+        db.prepare('INSERT INTO sonda VALUES (?, ?)').run(event.id, Number(row?.n))
       },
     })
     const crudo = (order: string) => ({

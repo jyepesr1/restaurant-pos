@@ -32,7 +32,7 @@ const reason = (r: unknown) => {
 }
 
 type Reporte = { method: string; custom_method_id: string | null; reported: number }
-type Linea = Reporte & { expected: number; variance: number }
+type Line = Reporte & { expected: number; variance: number }
 const res = (method: string, reported: number, own: string | null = null): Reporte => ({
   method,
   custom_method_id: own,
@@ -43,7 +43,7 @@ const lin = (
   expected: number,
   reported: number,
   own: string | null = null,
-): Linea => ({
+): Line => ({
   ...res(method, reported, own),
   expected,
   variance: reported - expected,
@@ -206,7 +206,7 @@ function entorno(options: { umbral?: number } = {}) {
     return { cashCount, result }
   }
   /** Las líneas que debe traer el cierre: las que calcula el hub con el conteo. */
-  const lineasDe = (shift: string, cashCount: string, hub = status.hub): Linea[] => {
+  const lineasDe = (shift: string, cashCount: string, hub = status.hub): Line[] => {
     const reconciliation = hub.reconciliation(shift)
     const tally = reconciliation?.cashCounts.find((a) => a.id === cashCount)
     return reconciliation && tally
@@ -581,14 +581,14 @@ describe('otros_medios_distintos', () => {
   it('con varios conteos solo vale el reporte del último', () => {
     const t = conTarjetaYNequi()
     const firstOne = t.contar(t.register, t.shift, 100_000, [res('card', 1), res('nequi', 1)])
-    const ultimo = t.contar(t.register, t.shift, 100_000, [
+    const latest = t.contar(t.register, t.shift, 100_000, [
       res('card', 110_000),
       res('nequi', 30_000),
     ])
     expect(reason(t.close(t.register, t.shift, firstOne.cashCount, 100_000, 100_000))).toBe(
       'cash_count_not_latest',
     )
-    expect(reason(t.close(t.register, t.shift, ultimo.cashCount, 100_000, 100_000))).toBe(
+    expect(reason(t.close(t.register, t.shift, latest.cashCount, 100_000, 100_000))).toBe(
       'confirmed',
     )
   })

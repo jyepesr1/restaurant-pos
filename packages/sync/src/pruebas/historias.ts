@@ -31,7 +31,7 @@ export interface PlanDeHistoria {
    * eventos aceptados). Así ningún evento nuevo cae en un día ya pasado. Sustituye a `dias`, y
    * también reparte el día de los cierres de mesa.
    */
-  cortes?: [number, number]
+  cuts?: [number, number]
 }
 
 export interface Story {
@@ -84,11 +84,11 @@ export function armarHistoria(plan: PlanDeHistoria): Story {
   const opening = service.shifts.map((t) =>
     crudo('ShiftOpened', t, { register_id: CAJA, base: 100_000 }, { business_day: DAYS[0] }),
   )
-  const method = plan.cortes
+  const method = plan.cuts
     ? service.log
         .filter((e) => appliedEvents.has(e.id))
         .map((e, j) => {
-          const [c1, c2] = plan.cortes as [number, number]
+          const [c1, c2] = plan.cuts as [number, number]
           const d = j < c1 ? DAYS[0] : j < c2 ? DAYS[1] : DAYS[2]
           return { ...e, business_day: d } as OrderEvent
         })

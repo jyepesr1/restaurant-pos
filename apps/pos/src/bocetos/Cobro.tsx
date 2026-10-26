@@ -20,9 +20,9 @@ import { saldoMesa, totalMesa } from './totales'
 const BILLETES = [20_000, 50_000, 100_000]
 
 export function Cobro() {
-  const numero = useMesaDeLaRuta(12)
+  const number = useMesaDeLaRuta(12)
   const { parametros } = useRuta()
-  const table = useMesas().find((m) => m.numero === numero)
+  const table = useMesas().find((m) => m.number === number)
   const avisar = useAvisar()
 
   const balance = table ? saldoMesa(table) : 0
@@ -70,7 +70,7 @@ export function Cobro() {
           }
         : { method, amount, adjustment: 0, tip, tendered: null, change: null }
     const closes = amount === balance
-    cambiarMesa(numero, (m) => ({
+    cambiarMesa(number, (m) => ({
       ...m,
       payments: [...m.payments, payment],
       status: closes ? 'dirty' : m.status,
@@ -79,12 +79,12 @@ export function Cobro() {
     setUltimoCambio(method === 'cash' ? calculo.change : null)
     if (closes) {
       // La mesa se cierra sola al quedar en 0: un toque menos. Se puede deshacer el cierre.
-      avisar(`Mesa ${numero} pagada y cerrada`, () =>
-        cambiarMesa(numero, (m) => ({ ...m, status: 'preBill' })),
+      avisar(`Mesa ${number} pagada y cerrada`, () =>
+        cambiarMesa(number, (m) => ({ ...m, status: 'preBill' })),
       )
     } else {
       avisar(`Pago registrado. Queda ${pesos(balance - amount)}`)
-      navegar(`/mockups/pre-bill?table=${numero}`)
+      navegar(`/mockups/pre-bill?table=${number}`)
     }
   }
 
@@ -118,7 +118,7 @@ export function Cobro() {
   const total = totalMesa(table)
 
   return (
-    <Marco titulo={`Cobro · Mesa ${numero}`} user="Caja" back={`/mockups/pre-bill?table=${numero}`}>
+    <Marco title={`Cobro · Mesa ${number}`} user="Caja" back={`/mockups/pre-bill?table=${number}`}>
       <div className="mx-auto grid max-w-4xl gap-4 p-3 md:grid-cols-2">
         <section className="rounded-2xl border border-borde bg-superficie p-4" aria-label="Saldo">
           <p className="text-texto-suave">Saldo pendiente</p>

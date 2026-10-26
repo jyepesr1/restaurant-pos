@@ -310,7 +310,7 @@ describe('comprobante de supervisor para cada evento sin permiso', () => {
     // Se avanza el reloj lo suficiente para que la espera nunca estorbe.
     for (const permission of PERMISSIONS)
       for (const role of ROLES) {
-        m.avanzar(61_000)
+        m.advance(61_000)
         const r = m.access.autorizar(connection, {
           ...session,
           pin: m.pin[role],

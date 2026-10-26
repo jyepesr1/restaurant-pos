@@ -94,9 +94,9 @@ describe('reenviar un lote', () => {
           const guardadosEnTotal = new Map<string, number>()
           while (from < events.length) {
             const tam = sizes[i++ % sizes.length] ?? 1
-            const trozo = events.slice(from, from + tam)
+            const chunk = events.slice(from, from + tam)
             // Con solape, el lote repite los dos últimos eventos del anterior (un reintento a medias).
-            const sent = solape ? [...events.slice(Math.max(0, from - 2), from), ...trozo] : trozo
+            const sent = solape ? [...events.slice(Math.max(0, from - 2), from), ...chunk] : chunk
             const r = await m.nube.recibirEventos(partido.hub, sent)
             for (const x of r)
               if (x.status === 'saved' && x.id)

@@ -145,8 +145,8 @@ export function prepararSincronizacion(
     prices: revisorPrecios(db, restauranteId),
     // Se leen en cada pago: el administrador puede cambiarlas con el hub andando.
     reglasCobro: () => {
-      const fila = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)
-      const current = fullConfig(JSON.parse(String(fila?.config ?? '{}')))
+      const row = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)
+      const current = fullConfig(JSON.parse(String(row?.config ?? '{}')))
       return {
         multiple: current.cash_rounding,
         mode: current.cash_rounding_mode,

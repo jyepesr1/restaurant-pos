@@ -50,8 +50,8 @@ const ocupar = (m: Mesa): Mesa =>
     : m
 
 export function Order() {
-  const numero = useMesaDeLaRuta(2)
-  const table = useMesas().find((m) => m.numero === numero)
+  const number = useMesaDeLaRuta(2)
+  const table = useMesas().find((m) => m.number === number)
   const avisar = useAvisar()
   const [busqueda, setBusqueda] = useState('')
   const [category, setCategoria] = useState(menu[0]?.key ?? '')
@@ -95,14 +95,14 @@ export function Order() {
   const add = (fresh: OrderItem) => {
     const equal = items.find((i) => mismaLinea(i, fresh))
     if (equal) {
-      cambiarMesa(numero, (m) => ({
+      cambiarMesa(number, (m) => ({
         ...m,
         items: m.items.map((i) =>
           i.id === equal.id ? { ...i, quantity: i.quantity + fresh.quantity } : i,
         ),
       }))
       avisar(`${nombreItem(fresh)}: ${equal.quantity + fresh.quantity}`, () =>
-        cambiarMesa(numero, (m) => ({
+        cambiarMesa(number, (m) => ({
           ...m,
           items: m.items.map((i) =>
             i.id === equal.id ? { ...i, quantity: i.quantity - fresh.quantity } : i,
@@ -112,9 +112,9 @@ export function Order() {
       return
     }
     const before = table
-    cambiarMesa(numero, (m) => ({ ...ocupar(m), items: [...m.items, fresh] }))
+    cambiarMesa(number, (m) => ({ ...ocupar(m), items: [...m.items, fresh] }))
     avisar(`Agregaste ${nombreItem(fresh)}`, () =>
-      cambiarMesa(numero, (m) =>
+      cambiarMesa(number, (m) =>
         m.items.length === 1 && before.items.length === 0
           ? before
           : { ...m, items: m.items.filter((i) => i.id !== fresh.id) },
@@ -129,9 +129,9 @@ export function Order() {
 
   const remove = (item: OrderItem) => {
     const posicion = items.findIndex((i) => i.id === item.id)
-    cambiarMesa(numero, (m) => ({ ...m, items: m.items.filter((i) => i.id !== item.id) }))
+    cambiarMesa(number, (m) => ({ ...m, items: m.items.filter((i) => i.id !== item.id) }))
     avisar(`Quitaste ${nombreItem(item)}`, () =>
-      cambiarMesa(numero, (m) => {
+      cambiarMesa(number, (m) => {
         const copy = [...m.items]
         copy.splice(posicion, 0, item)
         return { ...m, items: copy }
@@ -142,7 +142,7 @@ export function Order() {
   const send = () => {
     if (porEnviar.length === 0) return
     const ahora = Date.now()
-    cambiarMesa(numero, (m) => ({
+    cambiarMesa(number, (m) => ({
       ...m,
       status: 'in_kitchen',
       items: m.items.map((i) => (i.enviadoEn === null ? { ...i, enviadoEn: ahora } : i)),
@@ -153,7 +153,7 @@ export function Order() {
     navegar('/mockups/floor-plan')
   }
 
-  const pedirCuenta = () => navegar(`/mockups/pre-bill?table=${numero}`)
+  const pedirCuenta = () => navegar(`/mockups/pre-bill?table=${number}`)
   const itemEditado = items.find((i) => i.id === editando) ?? null
 
   const ticket = (
@@ -161,7 +161,7 @@ export function Order() {
       table={table}
       guest={guest}
       alElegirComensal={setComensal}
-      alCambiarComensales={(n) => cambiarMesa(numero, (m) => ({ ...m, guests: n }))}
+      alCambiarComensales={(n) => cambiarMesa(number, (m) => ({ ...m, guests: n }))}
       alTocarItem={(i) => setEditando(i.id)}
     />
   )
@@ -190,7 +190,7 @@ export function Order() {
   )
 
   return (
-    <Marco titulo={`Mesa ${numero}`} back="/mockups/floor-plan">
+    <Marco title={`Mesa ${number}`} back="/mockups/floor-plan">
       <div className="mx-auto flex max-w-6xl gap-4 p-3 pb-28 md:pb-3">
         <section className="min-w-0 flex-1" aria-label="Carta">
           <label className="relative block">
@@ -296,7 +296,7 @@ export function Order() {
 
       <PanelLateral
         opened={verPedido}
-        titulo={`Pedido · Mesa ${numero}`}
+        title={`Pedido · Mesa ${number}`}
         alCerrar={() => setVerPedido(false)}
         pie={
           <div className="flex gap-2">
@@ -323,7 +323,7 @@ export function Order() {
         guests={table.guests}
         alCerrar={() => setEditando(null)}
         onSave={(item) => {
-          cambiarMesa(numero, (m) => ({
+          cambiarMesa(number, (m) => ({
             ...m,
             items: m.items.map((i) => (i.id === item.id ? item : i)),
           }))
@@ -334,7 +334,7 @@ export function Order() {
           setEditando(null)
         }}
         onVoid={(item, reason, alreadyPrepared) => {
-          cambiarMesa(numero, (m) => ({
+          cambiarMesa(number, (m) => ({
             ...m,
             items: m.items.map((i) =>
               i.id === item.id ? { ...i, voided: { reason, alreadyPrepared } } : i,
@@ -527,7 +527,7 @@ function PanelProducto({
   return (
     <PanelLateral
       opened
-      titulo={product.name}
+      title={product.name}
       alCerrar={close}
       pie={
         <Boton
@@ -547,7 +547,7 @@ function PanelProducto({
       )}
       {product.variants.length > 0 && (
         <ListaOpciones
-          titulo="Tamaño"
+          title="Tamaño"
           options={product.variants.map((v) => ({ name: v.name, detalle: pesos(v.price) }))}
           elegida={variant}
           alElegir={(v) => (unaSola ? agregarCon(v, options) : setVariante(v))}
@@ -556,7 +556,7 @@ function PanelProducto({
       {product.groups.map((g: MenuGroup) => (
         <ListaOpciones
           key={g.key}
-          titulo={`${g.name}${g.minimum > 0 ? ' (obligatorio)' : ''}`}
+          title={`${g.name}${g.minimum > 0 ? ' (obligatorio)' : ''}`}
           options={g.options.map((o) => ({
             name: o.name,
             detalle: o.extraPrice ? `+${pesos(o.extraPrice)}` : '',
@@ -584,19 +584,19 @@ function PanelProducto({
 }
 
 function ListaOpciones({
-  titulo,
+  title,
   options,
   elegida,
   alElegir,
 }: {
-  titulo: string
+  title: string
   options: { name: string; detalle: string }[]
   elegida: string | null
   alElegir: (name: string) => void
 }) {
   return (
     <fieldset className="mb-5 min-w-0 border-0 p-0">
-      <legend className="mb-2 font-semibold">{titulo}</legend>
+      <legend className="mb-2 font-semibold">{title}</legend>
       <div className="grid grid-cols-2 gap-2">
         {options.map((o) => (
           <Opcion
@@ -669,7 +669,7 @@ function PanelItem({
     return (
       <PanelLateral
         opened
-        titulo={`Anular ${nombreItem(item)}`}
+        title={`Anular ${nombreItem(item)}`}
         alCerrar={close}
         pie={
           confirmando ? (
@@ -732,7 +732,7 @@ function PanelItem({
   return (
     <PanelLateral
       opened
-      titulo={nombreItem(item)}
+      title={nombreItem(item)}
       alCerrar={close}
       pie={
         <div className="flex gap-2">
@@ -764,7 +764,7 @@ function PanelItem({
         onChange={(quantity) => setBorrador({ ...borrador, quantity })}
       />
       <ListaOpciones
-        titulo="Para"
+        title="Para"
         options={['Mesa', ...Array.from({ length: guests }, (_, i) => `P${i + 1}`)].map((name) => ({
           name,
           detalle: '',

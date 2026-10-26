@@ -10,7 +10,7 @@ const Sesion = { session_id: z.string().length(26), secret: z.string().min(1).ma
 const Id = z.string().length(26)
 
 const Cuerpos = {
-  leer: z.strictObject(Sesion),
+  read: z.strictObject(Sesion),
   role: z.strictObject({
     ...Sesion,
     role: z.strictObject({
@@ -20,9 +20,9 @@ const Cuerpos = {
       active: z.boolean().optional(),
     }),
   }),
-  persona: z.strictObject({
+  person: z.strictObject({
     ...Sesion,
-    persona: z.strictObject({
+    person: z.strictObject({
       id: Id.optional(),
       name: z.string().max(100),
       role_id: Id,
@@ -104,7 +104,7 @@ export async function rutasPersonal(
   }
 
   app.post('/api/staff/read', async (req, reply) => {
-    if (!administrador(Cuerpos.leer, req, reply)) return reply
+    if (!administrador(Cuerpos.read, req, reply)) return reply
     return leerPersonal(db, restauranteId, access)
   })
 
@@ -117,9 +117,9 @@ export async function rutasPersonal(
   })
 
   app.post('/api/staff/people', async (req, reply) => {
-    const a = administrador(Cuerpos.persona, req, reply)
+    const a = administrador(Cuerpos.person, req, reply)
     if (!a) return reply
-    const p = a.data.persona
+    const p = a.data.person
     return conErrores(reply, () => {
       const r = guardarPersona(
         db,

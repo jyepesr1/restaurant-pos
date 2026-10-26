@@ -98,8 +98,8 @@ describe('por la API', () => {
     const [r] = await m.nube.recibirEventos(a.hub, [falso])
     expect(r?.status).toBe('saved')
     expect(await contar(m.db, 'events', b.restauranteId)).toBe(0)
-    const [fila] = await eventosGuardados(m.db, a.restauranteId)
-    expect(fila?.hub_id).toBe(a.hub.id)
+    const [row] = await eventosGuardados(m.db, a.restauranteId)
+    expect(row?.hub_id).toBe(a.hub.id)
   })
 
   it('propiedad: con k restaurantes y lotes al azar, cada uno termina con exactamente lo suyo', async () => {

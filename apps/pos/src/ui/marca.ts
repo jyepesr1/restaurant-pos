@@ -24,7 +24,7 @@ const CLAVE = 'pos-brand'
 
 export const esMarca = (value: unknown): value is Marca => BRANDS.some((m) => m.brand === value)
 
-function leer(): Marca {
+function read(): Marca {
   try {
     const guardada = localStorage.getItem(CLAVE)
     return esMarca(guardada) ? guardada : MARCA_POR_DEFECTO
@@ -34,7 +34,7 @@ function leer(): Marca {
 }
 
 /** Pone la marca en la página y la recuerda en el equipo (para pintarla antes de cargar). */
-export function aplicarMarca(brand: Marca = leer()) {
+export function aplicarMarca(brand: Marca = read()) {
   if (brand === 'faro') delete document.documentElement.dataset.marca
   else document.documentElement.dataset.marca = brand
   try {
@@ -45,7 +45,7 @@ export function aplicarMarca(brand: Marca = leer()) {
 }
 
 export function useMarca(): [Marca, (brand: Marca) => void] {
-  const [brand, setMarca] = useState<Marca>(leer)
+  const [brand, setMarca] = useState<Marca>(read)
   const select = (newOne: Marca) => {
     aplicarMarca(newOne)
     setMarca(newOne)

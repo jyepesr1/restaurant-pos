@@ -642,8 +642,8 @@ describe('productos de otro restaurante, archivados y datos raros', () => {
     const r = await m.subir('admin', burrata.id, comoDato('webp', WEBP))
     expect(r.statusCode).toBe(200)
     expect(m.products().map((p) => p.id)).not.toContain(burrata.id)
-    const fila = m.db.prepare('SELECT photo, active FROM products WHERE id = ?').get(burrata.id)
-    expect(fila).toMatchObject({ photo: r.json().photo.replace('/photos/', ''), active: 0 })
+    const row = m.db.prepare('SELECT photo, active FROM products WHERE id = ?').get(burrata.id)
+    expect(row).toMatchObject({ photo: r.json().photo.replace('/photos/', ''), active: 0 })
   })
 
   it('un valor guardado en la base que no es un nombre de foto sale como sin foto', () => {
@@ -666,15 +666,15 @@ describe('productos de otro restaurante, archivados y datos raros', () => {
     const m = await montar()
     const burrata = m.product('Burrata Spritz')
     const photo = (await m.subir('admin', burrata.id, comoDato('png', PNG))).json().photo as string
-    const fila = m.db
+    const row = m.db
       .prepare(
         "SELECT * FROM catalog_changes WHERE entity = 'products' AND record_id = ? ORDER BY version DESC LIMIT 1",
       )
       .get(burrata.id) as Record<string, string | null>
-    expect(JSON.parse(String(fila.after)).photo).toBe(photo.replace('/photos/', ''))
-    expect(JSON.parse(String(fila.before)).photo).toBeNull()
-    expect(fila.user_id).toBe(m.people.admin.userId)
-    expect(fila.device_id).toBe(m.register.connection.dispositivoId)
+    expect(JSON.parse(String(row.after)).photo).toBe(photo.replace('/photos/', ''))
+    expect(JSON.parse(String(row.before)).photo).toBeNull()
+    expect(row.user_id).toBe(m.people.admin.userId)
+    expect(row.device_id).toBe(m.register.connection.dispositivoId)
   })
 
   it('el seed que corre después no borra la foto de un producto que alguien ya editó', async () => {
@@ -1118,10 +1118,10 @@ describe('marca del restaurante', () => {
       .run('{"session_idle_min":9,"brand":"la-spritzzeria"}', m.restauranteId)
     await m.post('/api/restaurant/brand', { ...m.session('admin'), brand: 'faro' })
     expect(configCruda(m)).toMatchObject({ session_idle_min: 9, brand: 'faro' })
-    const fila = m.db
+    const row = m.db
       .prepare('SELECT user_id, device_id FROM restaurants WHERE id = ?')
       .get(m.restauranteId)
-    expect(fila).toEqual({
+    expect(row).toEqual({
       user_id: m.people.admin.userId,
       device_id: m.register.connection.dispositivoId,
     })

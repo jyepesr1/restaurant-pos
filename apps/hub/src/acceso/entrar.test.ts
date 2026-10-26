@@ -110,7 +110,7 @@ describe('entrar sin emparejar', () => {
     const otraIp = await api.post('/api/sign-in', api.admin, undefined, '10.0.0.34')
     expect(otraIp.statusCode).toBe(429)
     expect(Number(otraIp.headers['retry-after'])).toBeGreaterThan(0)
-    api.avanzar(61_000)
+    api.advance(61_000)
     expect((await api.post('/api/sign-in', api.admin, undefined, '10.0.0.34')).statusCode).toBe(201)
   })
 
@@ -184,11 +184,11 @@ describe('arranque de un hub de antes de ADR-013', () => {
 
     const roles = asegurarRoles(m.db, m.restauranteId, m.clock())
     expect(roles.reports).toBe(m.roles.reports)
-    const fila = (id: string) =>
+    const row = (id: string) =>
       m.db.prepare('SELECT name, system, active FROM roles WHERE id = ?').get(id)
-    expect(fila(m.roles.reports)).toEqual({ name: 'Reportes', system: 1, active: 1 })
-    expect(fila(manager)).toEqual({ name: 'Gerente', system: 0, active: 1 })
-    expect(fila(kitchen)).toEqual({ name: 'Cocina', system: 0, active: 1 })
+    expect(row(m.roles.reports)).toEqual({ name: 'Reportes', system: 1, active: 1 })
+    expect(row(manager)).toEqual({ name: 'Gerente', system: 0, active: 1 })
+    expect(row(kitchen)).toEqual({ name: 'Cocina', system: 0, active: 1 })
     expect(m.access.permisosDe(gloria.userId)).toEqual([])
     // Correrlo otra vez no cambia nada.
     expect(asegurarRoles(m.db, m.restauranteId, m.clock())).toEqual(roles)

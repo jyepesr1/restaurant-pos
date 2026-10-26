@@ -80,9 +80,9 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
     ana.mandar(order, 'OrderNoteChanged', { notes: 'alérgico al maní' })
     t.send(ana, order, items)
-    expect(t.content(t.trabajos()[0]).notaPedido).toBe('alérgico al maní')
+    expect(t.content(t.trabajos()[0]).orderNote).toBe('alérgico al maní')
     await t.cola.runOnce()
-    const text = kitchen.papel.textos()[0] as string
+    const text = kitchen.papel.texts()[0] as string
     expect(text).toContain('NOTA DEL PEDIDO: alérgico al maní')
     // Arriba, antes de los ítems.
     expect(text.indexOf('NOTA DEL PEDIDO')).toBeLessThan(text.indexOf('Tagliata'))
@@ -92,9 +92,9 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     const { t, kitchen, ana } = montar()
     const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
     t.send(ana, order, items)
-    expect(t.content(t.trabajos()[0]).notaPedido).toBeNull()
+    expect(t.content(t.trabajos()[0]).orderNote).toBeNull()
     await t.cola.runOnce()
-    expect(kitchen.papel.textos()[0]).not.toContain('NOTA DEL PEDIDO')
+    expect(kitchen.papel.texts()[0]).not.toContain('NOTA DEL PEDIDO')
   })
 
   it('cada estación del mismo envío lleva la nota', async () => {
@@ -107,7 +107,7 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     t.send(ana, order, items)
     await t.cola.runOnce()
     for (const p of [kitchen.papel, bar.papel]) {
-      expect(p.textos()[0]).toContain('NOTA DEL PEDIDO: cumpleaños: velita en el postre')
+      expect(p.texts()[0]).toContain('NOTA DEL PEDIDO: cumpleaños: velita en el postre')
     }
   })
 
@@ -116,9 +116,9 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
     ana.mandar(order, 'OrderNoteChanged', { notes: '   sin sal   ' })
     t.send(ana, order, items)
-    expect(t.content(t.trabajos()[0]).notaPedido).toBe('sin sal')
+    expect(t.content(t.trabajos()[0]).orderNote).toBe('sin sal')
     await t.cola.runOnce()
-    expect(comoNota(kitchen.papel.textos()[0] as string)).toBe('sin sal')
+    expect(comoNota(kitchen.papel.texts()[0] as string)).toBe('sin sal')
   })
 
   it('una nota de solo espacios o vacía equivale a no tener nota', async () => {
@@ -127,7 +127,7 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     ana.mandar(order, 'OrderNoteChanged', { notes: 'algo' })
     ana.mandar(order, 'OrderNoteChanged', { notes: '    ' })
     t.send(ana, order, items)
-    expect(t.content(t.trabajos()[0]).notaPedido).toBeNull()
+    expect(t.content(t.trabajos()[0]).orderNote).toBeNull()
   })
 
   it('quitar la nota (null) antes de enviar: la comanda sale sin ella', async () => {
@@ -137,7 +137,7 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     ana.mandar(order, 'OrderNoteChanged', { notes: null })
     t.send(ana, order, items)
     await t.cola.runOnce()
-    expect(kitchen.papel.textos()[0]).not.toContain('NOTA DEL PEDIDO')
+    expect(kitchen.papel.texts()[0]).not.toContain('NOTA DEL PEDIDO')
   })
 
   it('cambiar la nota entre dos envíos: cada comanda nueva lleva la que había al enviar', async () => {
@@ -152,13 +152,13 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     ana.mandar(order, 'OrderNoteChanged', { notes: 'segunda' })
     t.send(ana, order, [items[1] as (typeof items)[0]])
     await t.cola.runOnce()
-    const textos = kitchen.papel.textos()
-    expect(textos).toHaveLength(3)
-    expect(comoNota(textos[0] as string)).toBe('primera')
-    expect(textos[1]).toContain('NOTA NUEVA')
-    expect(comoNota(textos[1] as string)).toBe('segunda')
-    expect(textos[2]).not.toContain('NOTA NUEVA')
-    expect(comoNota(textos[2] as string)).toBe('segunda')
+    const texts = kitchen.papel.texts()
+    expect(texts).toHaveLength(3)
+    expect(comoNota(texts[0] as string)).toBe('primera')
+    expect(texts[1]).toContain('NOTA NUEVA')
+    expect(comoNota(texts[1] as string)).toBe('segunda')
+    expect(texts[2]).not.toContain('NOTA NUEVA')
+    expect(comoNota(texts[2] as string)).toBe('segunda')
   })
 
   it('poner la nota con platos en cocina saca una comanda «NOTA NUEVA» sin ítems; la original no se reimprime', async () => {
@@ -167,15 +167,15 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     t.send(ana, order, items)
     ana.mandar(order, 'OrderNoteChanged', { notes: 'tarde' })
     await t.cola.runOnce()
-    const textos = kitchen.papel.textos()
-    expect(textos).toHaveLength(2)
-    expect(textos[0]).not.toContain('NOTA DEL PEDIDO')
-    expect(textos[1]).toContain('NOTA NUEVA')
-    expect(textos[1]).toContain('NOTA DEL PEDIDO: tarde')
-    expect(textos[1]).not.toContain('Tagliata')
+    const texts = kitchen.papel.texts()
+    expect(texts).toHaveLength(2)
+    expect(texts[0]).not.toContain('NOTA DEL PEDIDO')
+    expect(texts[1]).toContain('NOTA NUEVA')
+    expect(texts[1]).toContain('NOTA DEL PEDIDO: tarde')
+    expect(texts[1]).not.toContain('Tagliata')
     expect(t.content(t.trabajos()[1])).toMatchObject({
       type: 'note',
-      notaPedido: 'tarde',
+      orderNote: 'tarde',
       items: [],
     })
   })
@@ -188,14 +188,14 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     const other = t.add(ana, order, { name: 'Risotto', station: t.kitchen })
     t.send(ana, order, [other])
     await t.cola.runOnce()
-    const textos = kitchen.papel.textos()
+    const texts = kitchen.papel.texts()
     // Original sin nota, el aviso «NOTA NUEVA» y la comanda nueva del Risotto.
-    expect(textos).toHaveLength(3)
-    expect(textos[0]).not.toContain('NOTA DEL PEDIDO')
-    expect(textos[1]).toContain('NOTA NUEVA')
-    expect(textos[2]).toContain('NOTA DEL PEDIDO: tarde')
-    expect(textos[2]).not.toContain('NOTA NUEVA')
-    expect(textos[2]).toContain('Risotto')
+    expect(texts).toHaveLength(3)
+    expect(texts[0]).not.toContain('NOTA DEL PEDIDO')
+    expect(texts[1]).toContain('NOTA NUEVA')
+    expect(texts[2]).toContain('NOTA DEL PEDIDO: tarde')
+    expect(texts[2]).not.toContain('NOTA NUEVA')
+    expect(texts[2]).toContain('Risotto')
   })
 
   it('al marchar un curso retenido, la comanda que sale lleva la nota', async () => {
@@ -211,9 +211,9 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     ana.mandar(order, 'CourseFired', { course: 'main' })
     t.send(ana, order, [main])
     await t.cola.runOnce()
-    const textos = kitchen.papel.textos()
-    expect(textos.length).toBeGreaterThan(0)
-    for (const text of textos) expect(text).toContain('NOTA DEL PEDIDO: sin picante')
+    const texts = kitchen.papel.texts()
+    expect(texts.length).toBeGreaterThan(0)
+    for (const text of texts) expect(text).toContain('NOTA DEL PEDIDO: sin picante')
   })
 
   it('una reimpresión lleva la nota vigente, no la que había al enviar', async () => {
@@ -223,13 +223,13 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     ana.mandar(order, 'OrderNoteChanged', { notes: 'cambió después' })
     ana.mandar(order, 'TicketReprinted', { ticket_id: sent.tickets[0]?.ticket_id })
     await t.cola.runOnce()
-    const textos = kitchen.papel.textos()
+    const texts = kitchen.papel.texts()
     // Original, aviso «NOTA NUEVA» y la reimpresión.
-    expect(textos).toHaveLength(3)
-    expect(textos[0]).not.toContain('NOTA DEL PEDIDO')
-    expect(textos[1]).toContain('NOTA NUEVA')
-    expect(textos[2]).toContain('REIMPRESIÓN')
-    expect(textos[2]).toContain('NOTA DEL PEDIDO: cambió después')
+    expect(texts).toHaveLength(3)
+    expect(texts[0]).not.toContain('NOTA DEL PEDIDO')
+    expect(texts[1]).toContain('NOTA NUEVA')
+    expect(texts[2]).toContain('REIMPRESIÓN')
+    expect(texts[2]).toContain('NOTA DEL PEDIDO: cambió después')
   })
 
   it('la comanda de anulación no repite la nota del pedido (ya salió con la original)', async () => {
@@ -245,12 +245,12 @@ describe('la comanda nueva lleva la nota del pedido', () => {
       ticket_id: null,
     })
     await t.cola.runOnce()
-    const textos = kitchen.papel.textos()
-    expect(textos).toHaveLength(2)
-    expect(textos[0]).toContain('NOTA DEL PEDIDO')
-    expect(textos[1]).toContain('ANULA')
-    expect(textos[1]).not.toContain('NOTA DEL PEDIDO')
-    expect(t.content(t.trabajos()[1]).notaPedido).toBeNull()
+    const texts = kitchen.papel.texts()
+    expect(texts).toHaveLength(2)
+    expect(texts[0]).toContain('NOTA DEL PEDIDO')
+    expect(texts[1]).toContain('ANULA')
+    expect(texts[1]).not.toContain('NOTA DEL PEDIDO')
+    expect(t.content(t.trabajos()[1]).orderNote).toBeNull()
   })
 
   it('acentos, eñes y signos pasan a la impresora sin perder letras', async () => {
@@ -259,7 +259,7 @@ describe('la comanda nueva lleva la nota del pedido', () => {
     ana.mandar(order, 'OrderNoteChanged', { notes: 'Alérgico al maní; ñandú ¡ya! (rápido)' })
     t.send(ana, order, items)
     await t.cola.runOnce()
-    expect((kitchen.papel.textos()[0] as string).replace(/\s+/g, ' ')).toContain(
+    expect((kitchen.papel.texts()[0] as string).replace(/\s+/g, ' ')).toContain(
       'Alérgico al maní; ñandú ¡ya! (rápido)',
     )
   })
@@ -267,15 +267,15 @@ describe('la comanda nueva lleva la nota del pedido', () => {
   it('una nota de 500 caracteres no pierde palabras en el papel (se parte en renglones)', async () => {
     const { t, kitchen, ana } = montar()
     const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
-    const palabras = Array.from({ length: 70 }, (_, i) => `p${String(i).padStart(2, '0')}xx`)
-    const long = palabras.join(' ').slice(0, 500)
+    const words = Array.from({ length: 70 }, (_, i) => `p${String(i).padStart(2, '0')}xx`)
+    const long = words.join(' ').slice(0, 500)
     expect(long.length).toBeLessThanOrEqual(500)
     ana.mandar(order, 'OrderNoteChanged', { notes: long })
     t.send(ana, order, items)
     await t.cola.runOnce()
-    const text = (kitchen.papel.textos()[0] as string).replace(/\s+/g, ' ')
+    const text = (kitchen.papel.texts()[0] as string).replace(/\s+/g, ' ')
     const completas = long.split(' ').slice(0, -1) // la última pudo cortarse con el slice
-    for (const palabra of completas) expect(text, palabra).toContain(palabra)
+    for (const word of completas) expect(text, word).toContain(word)
   })
 })
 
@@ -287,10 +287,10 @@ describe('comanda «NOTA NUEVA» al cambiar la nota con platos en cocina', () =>
     t.send(ana, order, items)
     ana.mandar(order, 'OrderNoteChanged', { notes: null })
     await t.cola.runOnce()
-    const textos = kitchen.papel.textos()
-    expect(textos).toHaveLength(2)
-    expect(textos[1]).toContain('SE QUITÓ LA NOTA DEL PEDIDO')
-    expect(textos[1]).not.toContain('NOTA DEL PEDIDO: ')
+    const texts = kitchen.papel.texts()
+    expect(texts).toHaveLength(2)
+    expect(texts[1]).toContain('SE QUITÓ LA NOTA DEL PEDIDO')
+    expect(texts[1]).not.toContain('NOTA DEL PEDIDO: ')
   })
 
   it('repetir la misma nota (o quitar la que no hay) no imprime nada', async () => {
@@ -327,9 +327,9 @@ describe('comanda «NOTA NUEVA» al cambiar la nota con platos en cocina', () =>
     ana.mandar(order, 'ItemServed', { item_ids: [items[1]?.id] })
     ana.mandar(order, 'OrderNoteChanged', { notes: 'alérgico al maní' })
     await t.cola.runOnce()
-    expect(kitchen.papel.textos().at(-1)).toContain('NOTA NUEVA')
+    expect(kitchen.papel.texts().at(-1)).toContain('NOTA NUEVA')
     expect(bar.papel.recibidos).toHaveLength(1)
-    expect(bar.papel.textos()[0]).not.toContain('NOTA NUEVA')
+    expect(bar.papel.texts()[0]).not.toContain('NOTA NUEVA')
   })
 
   it('con dos estaciones con platos en cocina, cada una recibe su aviso', async () => {
@@ -343,7 +343,7 @@ describe('comanda «NOTA NUEVA» al cambiar la nota con platos en cocina', () =>
     await t.cola.runOnce()
     for (const p of [kitchen.papel, bar.papel]) {
       expect(p.recibidos).toHaveLength(2)
-      expect(p.textos()[1]).toContain('NOTA NUEVA')
+      expect(p.texts()[1]).toContain('NOTA NUEVA')
     }
   })
 
@@ -361,7 +361,7 @@ describe('comanda «NOTA NUEVA» al cambiar la nota con platos en cocina', () =>
     ana.mandar(order, 'OrderNoteChanged', { notes: 'ya nada' })
     await t.cola.runOnce()
     // La comanda original y la de anulación; ningún «NOTA NUEVA».
-    expect(kitchen.papel.textos().some((x) => x.includes('NOTA NUEVA'))).toBe(false)
+    expect(kitchen.papel.texts().some((x) => x.includes('NOTA NUEVA'))).toBe(false)
   })
 
   it('el mismo evento reenviado no imprime el aviso dos veces', async () => {

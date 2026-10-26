@@ -1,6 +1,6 @@
 import { type ChargedByMethod, newId, type ShiftReconciliation } from '@pos/core'
 import { describe, expect, it } from 'vitest'
-import { conSigno, mediosDelCierre } from './Caja'
+import { mediosDelCierre, withSign } from './Caja'
 import { methodName, type ReglasCobro } from './cuentas'
 import { catalogoDePrueba } from './pruebas'
 
@@ -269,16 +269,16 @@ describe('conSigno: lo escrito en el cierre de un medio', () => {
     ['5-000', 5_000],
     ['-$ 2.500', -2_500],
   ])('«%s» → %s', (text, expected) => {
-    expect(conSigno(text)).toBe(expected)
+    expect(withSign(text)).toBe(expected)
   })
 
   it('nunca da -0', () => {
-    expect(Object.is(conSigno('-'), 0)).toBe(true)
-    expect(Object.is(conSigno('-0'), 0)).toBe(true)
+    expect(Object.is(withSign('-'), 0)).toBe(true)
+    expect(Object.is(withSign('-0'), 0)).toBe(true)
   })
 
   it('corta a 9 cifras como los demás campos de dinero', () => {
-    expect(conSigno('1234567890123')).toBe(123_456_789)
-    expect(conSigno('-1234567890123')).toBe(-123_456_789)
+    expect(withSign('1234567890123')).toBe(123_456_789)
+    expect(withSign('-1234567890123')).toBe(-123_456_789)
   })
 })

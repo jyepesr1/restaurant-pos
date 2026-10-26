@@ -64,9 +64,9 @@ export async function probarIndexedDb(): Promise<boolean> {
   try {
     const value = String(Math.random())
     const id = await db.tests.add({ value })
-    const leido = await db.tests.get(id)
+    const readResult = await db.tests.get(id)
     await db.tests.delete(id)
-    return leido?.value === value
+    return readResult?.value === value
   } catch {
     return false
   }

@@ -1,37 +1,37 @@
-import { codificar, NUMERO_PAGINA, type PaginaCodigos } from './codificacion'
-import type { Linea } from './documento'
+import type { Line } from './document'
+import { CODE_PAGE_NUMBER, type CodePage, encode } from './encoding'
 
-// Órdenes ESC/POS del juego básico de Epson, que entienden las impresoras térmicas genéricas.
-// Solo se usa lo que toda impresora de 58 u 80 mm trae: tamaño, negrita, invertido, alineación,
-// avance y corte.
+// ESC/POS commands from Epson's basic set, which generic thermal printers understand.
+// Only what every 58 or 80 mm printer has is used: size, bold, reversed, alignment,
+// feed and cut.
 
 const ESC = 0x1b
 const GS = 0x1d
 const LF = 0x0a
 
-const iniciar = [ESC, 0x40]
-const tabla = (n: number) => [ESC, 0x74, n]
-const alinear = (centro: boolean) => [ESC, 0x61, centro ? 1 : 0]
-const negrita = (yes: boolean) => [ESC, 0x45, yes ? 1 : 0]
+const begin = [ESC, 0x40]
+const tableName = (n: number) => [ESC, 0x74, n]
+const align = (center: boolean) => [ESC, 0x61, center ? 1 : 0]
+const bold = (yes: boolean) => [ESC, 0x45, yes ? 1 : 0]
 const reversed = (yes: boolean) => [GS, 0x42, yes ? 1 : 0]
 const size = (large: boolean) => [GS, 0x21, large ? 0x11 : 0x00]
-/** Avanza n líneas: el corte queda debajo de lo impreso y no a mitad del último producto. */
-const avanzar = (n: number) => [ESC, 0x64, n]
-/** Corte parcial (deja una pestaña): el papel no cae al piso de la cocina. */
+/** Feeds n lines: the cut lands below the printout and not in the middle of the last product. */
+const advance = (n: number) => [ESC, 0x64, n]
+/** Partial cut (leaves a tab): the paper does not fall on the kitchen floor. */
 const cut = [GS, 0x56, 0x42, 0x00]
 
-/** El documento en bytes para la impresora, con avance y corte al final. */
+/** The document as bytes for the printer, with feed and cut at the end. */
 export function escpos(
-  lines: readonly Linea[],
-  format: { columnas: number; pagina: PaginaCodigos },
+  lines: readonly Line[],
+  format: { columns: number; page: CodePage },
 ): Uint8Array {
-  const bytes: number[] = [...iniciar]
-  const n = NUMERO_PAGINA[format.pagina]
-  if (n !== null) bytes.push(...tabla(n))
+  const bytes: number[] = [...begin]
+  const n = CODE_PAGE_NUMBER[format.page]
+  if (n !== null) bytes.push(...tableName(n))
   for (const line of lines) {
     if ('separator' in line) {
-      bytes.push(...alinear(false), ...size(false), ...negrita(false), ...reversed(false))
-      bytes.push(...Array(format.columnas).fill(0x2d), LF)
+      bytes.push(...align(false), ...size(false), ...bold(false), ...reversed(false))
+      bytes.push(...Array(format.columns).fill(0x2d), LF)
       continue
     }
     if ('space' in line) {
@@ -39,16 +39,16 @@ export function escpos(
       continue
     }
     bytes.push(
-      ...alinear(!!line.centro),
+      ...align(!!line.center),
       ...size(!!line.large),
-      ...negrita(!!line.negrita),
+      ...bold(!!line.bold),
       ...reversed(!!line.reversed),
-      ...codificar(line.text, format.pagina),
-      // Se apaga antes del salto: el invertido no pinta el resto de la línea de negro.
+      ...encode(line.text, format.page),
+      // Turned off before the line feed: reversed mode does not paint the rest of the line black.
       ...reversed(false),
       LF,
     )
   }
-  bytes.push(...size(false), ...negrita(false), ...alinear(false), ...avanzar(4), ...cut)
+  bytes.push(...size(false), ...bold(false), ...align(false), ...advance(4), ...cut)
   return Uint8Array.from(bytes)
 }

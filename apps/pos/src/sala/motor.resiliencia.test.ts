@@ -53,7 +53,7 @@ async function asentar(vueltas = 4) {
 }
 
 /** Avanza el reloj simulado en pasos, dejando correr IndexedDB entre paso y paso. */
-async function avanzar(ms: number) {
+async function advance(ms: number) {
   for (let t = 0; t < ms; t += 100) {
     await vi.advanceTimersByTimeAsync(Math.min(100, ms - t))
     await asentar(3)
@@ -64,7 +64,7 @@ async function avanzar(ms: number) {
 async function until(condicion: () => Promise<boolean> | boolean, maxMs = 20_000) {
   for (let t = 0; t <= maxMs; t += 100) {
     if (await condicion()) return
-    await avanzar(100)
+    await advance(100)
   }
   throw new Error('No se cumplió en el tiempo simulado')
 }
@@ -335,7 +335,7 @@ describe('el hub se cae a mitad de una operación', () => {
 
     // Mientras sigue caído hay reintentos, pero espaciados (no un ciclo apretado).
     const attempts = h.aperturas
-    await avanzar(10_000)
+    await advance(10_000)
     expect(h.aperturas - attempts).toBeLessThanOrEqual(6)
     expect(sala.instantanea().pendingList).toBe(6)
 
@@ -379,7 +379,7 @@ describe('el hub se cae a mitad de una operación', () => {
     const h = montarHub()
     h.caido = true
     const { sala } = await device(h, 'Ana')
-    await avanzar(3_000)
+    await advance(3_000)
     expect(sala.instantanea().connection).not.toBe('connected')
 
     const p = await abrirPedido(sala)
@@ -424,7 +424,7 @@ describe('token inválido o revocado', () => {
 
     // Pasa un buen rato y no vuelve a intentarlo (cada intento solo gastaría batería y red).
     const attempts = h.aperturas
-    await avanzar(60_000)
+    await advance(60_000)
     expect(h.aperturas).toBe(attempts)
     expect(sala.instantanea().connection).toBe('disconnected')
   })
@@ -435,7 +435,7 @@ describe('token inválido o revocado', () => {
     await until(() => sala.instantanea().errorHub !== null)
     await abrirPedido(sala)
     expect(sala.instantanea().pendingList).toBe(1)
-    await avanzar(10_000)
+    await advance(10_000)
     expect(sala.instantanea().pendingList).toBe(1)
   })
 
@@ -474,7 +474,7 @@ describe('token inválido o revocado', () => {
     await until(() => oldOne.instantanea().errorHub !== null)
     expect(oldOne.instantanea().errorHub).toMatchObject({ code: 'outdated_app' })
     const attempts = h.aperturas
-    await avanzar(30_000)
+    await advance(30_000)
     expect(h.aperturas).toBe(attempts)
   })
 
@@ -486,8 +486,8 @@ describe('token inválido o revocado', () => {
 
     // El gerente retira el equipo de Ana.
     const ahora = new Date().toISOString()
-    const fila = h.tokens.get(ana.e.token) as EquipoHub
-    fila.revocadoEn = ahora
+    const row = h.tokens.get(ana.e.token) as EquipoHub
+    row.revocadoEn = ahora
     h.salaHub.revoke(ana.e.dispositivoId, ahora)
     await until(() => ana.sala.instantanea().errorHub !== null)
     expect(ana.sala.instantanea().errorHub?.code).toBe('revoked_token')
@@ -496,7 +496,7 @@ describe('token inválido o revocado', () => {
     // Lo que Beto hace después ya no le llega a Ana, pero a Beto sí le funciona.
     const p = await abrirPedido(beto.sala)
     await until(() => sinPendientes(beto.sala))
-    await avanzar(2_000)
+    await advance(2_000)
     expect(pedidosAbiertos(await locales(ana.sala))).toEqual([])
     expect(pedidosAbiertos(await locales(beto.sala)).map((v) => v.status.id)).toEqual([p])
   })
@@ -543,7 +543,7 @@ describe('olvidarEquipo', () => {
     expect(sala.sync).toBeNull()
 
     const attempts = h.aperturas
-    await avanzar(30_000)
+    await advance(30_000)
     expect(h.aperturas).toBe(attempts)
 
     // Sin equipo no se puede crear nada ni llamar al hub.
@@ -834,7 +834,7 @@ describe('reloj del dispositivo desfasado', () => {
       const h = montarHub({ desfaseHubMs: desfase })
       const { sala } = await device(h, 'Ana')
       await until(() => conectada(sala))
-      await avanzar(500)
+      await advance(500)
 
       const event = await sala.record('OrderOpened', newId(), {
         channel: 'dine_in',
@@ -893,7 +893,7 @@ describe('arranque y corte simulado', () => {
     expect(a).toBe(b)
     await Promise.all([a, b])
     await until(() => conectada(another))
-    await avanzar(2_000)
+    await advance(2_000)
     expect(h.aperturas).toBe(1)
   })
 
@@ -913,10 +913,10 @@ describe('arranque y corte simulado', () => {
     const h = montarHub()
     const { sala } = await device(h, 'Ana')
     await until(() => conectada(sala))
-    await avanzar(500)
+    await advance(500)
     const before = sala.instantanea().changes
     h.salaHub.latir()
-    await avanzar(500)
+    await advance(500)
     expect(sala.instantanea().changes).toBe(before)
   })
 

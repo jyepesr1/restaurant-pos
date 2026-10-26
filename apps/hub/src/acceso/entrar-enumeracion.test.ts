@@ -28,10 +28,10 @@ describe('sin pistas sobre qué usuarios existen', () => {
           { ip: '10.0.0.40' },
         )
         sequence[i]?.push(cuerpoDe(r))
-        api.avanzar(r.statusCode === 429 ? Number(r.json().espera_ms) : 100)
+        api.advance(r.statusCode === 429 ? Number(r.json().espera_ms) : 100)
       }
       // La otra cuenta empieza de cero en tiempo y en IP.
-      api.avanzar(11 * 60_000)
+      api.advance(11 * 60_000)
     }
     expect(sequence[0]).toEqual(sequence[1])
     expect(sequence[0]?.[0]).toEqual({
@@ -68,7 +68,7 @@ describe('sin pistas sobre qué usuarios existen', () => {
     for (const [i, c] of casos.entries()) {
       // IP distinta para cada caso y reloj corrido: cada uno es su primer intento.
       respuestas.push(cuerpoDe(await api.post('/api/sign-in', c, { ip: `10.2.0.${i + 1}` })))
-      api.avanzar(11 * 60_000)
+      api.advance(11 * 60_000)
     }
     for (const r of respuestas) expect(r).toEqual(respuestas[0])
   })
@@ -123,7 +123,7 @@ describe('sin pistas sobre qué usuarios existen', () => {
           ).statusCode,
         )
       expect(statuses).toEqual([401, 401, 401, 429])
-      api.avanzar(11 * 60_000)
+      api.advance(11 * 60_000)
     }
   })
 })

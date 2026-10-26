@@ -52,10 +52,10 @@ describe('cuarentena y rechazos de un agotado', () => {
   it('al cajero le quitan el permiso: lo de antes va a cuarentena y lo de después se rechaza', () => {
     const { m, connection, markSoldOut } = cajaConSesion()
     const before = markSoldOut()
-    m.avanzar(10 * 60_000)
+    m.advance(10 * 60_000)
     cambiarRol(m, m.people.cashier.userId, m.roles.waiter)
     const change = m.clock()
-    m.avanzar(10 * 60_000)
+    m.advance(10 * 60_000)
     const after = markSoldOut(add(change, 1000))
 
     const r = m.hub.recibirLote(connection, [before, after])
@@ -74,10 +74,10 @@ describe('cuarentena y rechazos de un agotado', () => {
   it('al cajero lo archivan: lo de antes va a cuarentena y lo de después se rechaza', () => {
     const { m, connection, markSoldOut } = cajaConSesion()
     const before = markSoldOut()
-    m.avanzar(10 * 60_000)
+    m.advance(10 * 60_000)
     m.access.archivarUsuario(m.people.cashier.userId)
     const archived = m.clock()
-    m.avanzar(10 * 60_000)
+    m.advance(10 * 60_000)
     const after = markSoldOut(add(archived, 1000))
 
     const r = m.hub.recibirLote(connection, [before, after])
@@ -93,9 +93,9 @@ describe('cuarentena y rechazos de un agotado', () => {
   it('un dispositivo revocado: el agotado de antes va a cuarentena y el de después se rechaza', () => {
     const { m, connection, markSoldOut } = cajaConSesion()
     const before = markSoldOut()
-    m.avanzar(60_000)
+    m.advance(60_000)
     const revocado = { ...connection, revocadoEn: m.clock() }
-    m.avanzar(60_000)
+    m.advance(60_000)
     const after = markSoldOut()
 
     const r = m.hub.recibirLote(revocado, [before, after])

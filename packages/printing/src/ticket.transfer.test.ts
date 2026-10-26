@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { COLUMNAS, type Comanda, comoTexto, lineasComanda } from './index'
+import { asText, COLUMNS, type Ticket, ticketLines } from './index'
 
-// La comanda de traslado (tarea 1.5): CAMBIO DE MESA con la mesa nueva y «Antes: …».
+// The transfer ticket (task 1.5): CAMBIO DE MESA with the new table and «Antes: …».
 
-const base: Comanda = {
+const base: Ticket = {
   type: 'move',
   station: 'Cocina',
-  numero: 7,
+  number: 7,
   target: 'Mesa 5 + 6',
   order: 3,
   waiter: 'Ana',
@@ -15,11 +15,11 @@ const base: Comanda = {
   items: [{ quantity: 2, name: 'Tagliata', guest: null, course: null, options: [], notes: null }],
   before: 'Mesa 3',
 }
-const format = { columnas: COLUMNAS[80], pagina: 'pc850' as const }
-const text = (c: Comanda) => comoTexto(lineasComanda(c, format), 48)
+const format = { columns: COLUMNS[80], page: 'pc850' as const }
+const text = (c: Ticket) => asText(ticketLines(c, format), 48)
 
-describe('comanda de traslado', () => {
-  it('lleva CAMBIO DE MESA, la mesa nueva con su número y la de antes', () => {
+describe('transfer ticket', () => {
+  it('has CAMBIO DE MESA, the new table with its number and the previous one', () => {
     const t = text(base)
     expect(t).toContain('CAMBIO DE MESA')
     expect(t).toMatch(/Mesa 5 \+ 6 +#7/i)
@@ -27,25 +27,25 @@ describe('comanda de traslado', () => {
     expect(t).toContain('2 X TAGLIATA')
   })
 
-  it('sin «antes» no imprime esa línea', () => {
+  it('without «antes» it does not print that line', () => {
     expect(text({ ...base, before: null })).not.toContain('Antes:')
     expect(text({ ...base, before: undefined })).not.toContain('Antes:')
   })
 
-  it('los demás tipos no muestran CAMBIO DE MESA', () => {
+  it('the other types do not show CAMBIO DE MESA', () => {
     for (const type of ['newOne', 'reprinting', 'modification', 'voidEntry', 'note'] as const)
       expect(text({ ...base, type, before: null })).not.toContain('CAMBIO DE MESA')
   })
 
-  it('también cabe en 58 mm, con una mesa de nombre largo, sin pasarse del ancho', () => {
+  it('also fits at 58 mm, with a long table name, without exceeding the width', () => {
     const length = {
       ...base,
       target: 'Mesa Terraza Norte 12 + Terraza Norte 13',
       before: 'Mesa Barra Principal 1',
     }
-    const l = lineasComanda(length, { columnas: COLUMNAS[58], pagina: 'pc850' })
-    for (const line of comoTexto(l, COLUMNAS[58]).split('\n'))
-      expect([...line].length).toBeLessThanOrEqual(COLUMNAS[58] * 2)
-    expect(comoTexto(l, COLUMNAS[58])).toContain('Antes:')
+    const l = ticketLines(length, { columns: COLUMNS[58], page: 'pc850' })
+    for (const line of asText(l, COLUMNS[58]).split('\n'))
+      expect([...line].length).toBeLessThanOrEqual(COLUMNS[58] * 2)
+    expect(asText(l, COLUMNS[58])).toContain('Antes:')
   })
 })

@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { type CierreZ, COLUMNAS, comoTexto, escpos, leerEscpos, lineasCierreZ } from './index'
+import { asText, COLUMNS, escpos, readEscpos, type ZReport, zReportLines } from './index'
 
-// El cierre Z en papel (tarea 1.9): 58 y 80 mm, con diferencias, demás medios y reimpresión.
+// The Z report on paper (task 1.9): 58 and 80 mm, with variances, other methods and reprint.
 
-const closeout: CierreZ = {
+const closeout: ZReport = {
   restaurant: 'La Spritzzería',
   day: 'sábado 24 de octubre de 2026',
   opened: '11:02 a. m.',
   closed: '11:48 p. m.',
-  abrio: 'Caja',
-  cerro: 'Caja',
+  openedByName: 'Caja',
+  closedByName: 'Caja',
   cash: {
     base: 200_000,
     charged: 850_300,
@@ -45,11 +45,11 @@ const closeout: CierreZ = {
   reprinted: null,
 }
 
-const text = (z: CierreZ, width: 58 | 80 = 80) =>
-  comoTexto(lineasCierreZ(z, { columnas: COLUMNAS[width], pagina: 'pc850' }), COLUMNAS[width])
+const text = (z: ZReport, width: 58 | 80 = 80) =>
+  asText(zReportLines(z, { columns: COLUMNS[width], page: 'pc850' }), COLUMNS[width])
 
-describe('lineasCierreZ', () => {
-  it('lleva el cuadre, los demás medios, la justificación, lo cobrado y las ventas del día', () => {
+describe('zReportLines', () => {
+  it('has the reconciliation, other methods, justification, amounts charged and day sales', () => {
     const t = text(closeout)
     for (const share of [
       'CIERRE DE CAJA',
@@ -70,13 +70,13 @@ describe('lineasCierreZ', () => {
       'Firma cajero',
     ])
       expect(t).toContain(share)
-    // Una diferencia en cero no se repite por medio; lo que no pasó no se imprime.
+    // A zero variance is not repeated per method; what did not happen is not printed.
     expect(t).not.toContain('Pedidos cancelados')
     expect(t).not.toContain('Entradas')
     expect(t).not.toContain('Reimpresión')
   })
 
-  it('una diferencia a favor dice Sobran, y la reimpresión dice cuándo', () => {
+  it('a positive variance says Sobran, and the reprint says when', () => {
     const t = text({
       ...closeout,
       cash: { ...closeout.cash, counted: 920_400, variance: 1_000 },
@@ -86,13 +86,13 @@ describe('lineasCierreZ', () => {
     expect(t).toContain('Reimpresión 25 oct., 9:10 a. m.')
   })
 
-  it('en 58 mm ninguna línea pasa del ancho y los bytes se leen igual', () => {
-    const format = { columnas: COLUMNAS[58], pagina: 'pc850' as const }
-    const lines = lineasCierreZ(closeout, format)
+  it('at 58 mm no line exceeds the width and the bytes read back the same', () => {
+    const format = { columns: COLUMNS[58], page: 'pc850' as const }
+    const lines = zReportLines(closeout, format)
     for (const l of lines)
       if ('text' in l) expect(l.text.length).toBeLessThanOrEqual(l.large ? 16 : 32)
-    const leido = leerEscpos(escpos(lines, format))
-    expect(leido.text).toContain('CIERRE DE CAJA')
-    expect(leido.text).toContain('Firma cajero')
+    const readResult = readEscpos(escpos(lines, format))
+    expect(readResult.text).toContain('CIERRE DE CAJA')
+    expect(readResult.text).toContain('Firma cajero')
   })
 })

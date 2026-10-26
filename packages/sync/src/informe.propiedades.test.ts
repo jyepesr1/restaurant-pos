@@ -472,7 +472,7 @@ const planOrdenado = fc.record<PlanDeHistoria>({
   days: fc.constant([1]),
   closes: fc.constant<[boolean, boolean]>([false, false]),
   tips: fc.constant<[number, number]>([0, 0]),
-  cortes: fc
+  cuts: fc
     .tuple(fc.nat(50), fc.nat(50))
     .map(([a, b]) => [Math.min(a, b), Math.max(a, b)] as [number, number]),
 })
@@ -532,14 +532,14 @@ describe('Σ por días = el estado final', () => {
         for (const id of h.service.orders) {
           const closings = h.events.filter((e) => e.type === 'OrderClosed' && e.aggregate_id === id)
           const firstOne = closings.at(0)
-          const ultimo = closings.at(-1)
-          if (!firstOne || !ultimo) continue
+          const latest = closings.at(-1)
+          if (!firstOne || !latest) continue
           const estadoEn = (sequence: number) =>
             rebuild(
               h.events.filter((e) => e.sequence <= sequence),
               id,
             ) as OrderState
-          const final = orderTotals(estadoEn(ultimo.sequence))
+          const final = orderTotals(estadoEn(latest.sequence))
           expected.gross += final.gross
           expected.voided += final.voided
           expected.discounts += final.discount
@@ -602,12 +602,12 @@ describe('un rango es la suma de sus días', () => {
         const porDia = days.map((d) => ventasDe(memory, d))
         const sumarPor = <T>(list: T[][], key: (x: T) => string, fields: ((x: T) => number)[]) => {
           const m = new Map<string, number[]>()
-          for (const fila of list.flat()) {
-            const acc = m.get(key(fila)) ?? fields.map(() => 0)
+          for (const row of list.flat()) {
+            const acc = m.get(key(row)) ?? fields.map(() => 0)
             fields.forEach((c, i) => {
-              acc[i] = (acc[i] ?? 0) + c(fila)
+              acc[i] = (acc[i] ?? 0) + c(row)
             })
-            m.set(key(fila), acc)
+            m.set(key(row), acc)
           }
           // Lo que suma cero no sale en el informe.
           return new Map([...m].filter(([, a]) => a.some((n) => n !== 0)))

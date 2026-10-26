@@ -22,9 +22,9 @@ import { currentOnes, lineaDe, nombreItem, saldoMesa, totalMesa } from './totale
 
 type Modo = 'single' | 'even' | 'items'
 
-export function Precuenta() {
-  const numero = useMesaDeLaRuta(12)
-  const table = useMesas().find((m) => m.numero === numero)
+export function PreBill() {
+  const number = useMesaDeLaRuta(12)
+  const table = useMesas().find((m) => m.number === number)
   const avisar = useAvisar()
   const [mode, setModo] = useState<Modo>('single')
   const [people, setPersonas] = useState(2)
@@ -71,7 +71,7 @@ export function Precuenta() {
   const tips = propinasDeCuentas(amounts)
 
   const cobrar = (amount: number, propinaCuenta: number) =>
-    navegar(`/mockups/checkout?table=${numero}&amount=${amount}&tip=${propinaCuenta}`)
+    navegar(`/mockups/checkout?table=${number}&amount=${amount}&tip=${propinaCuenta}`)
 
   const actions = (
     <>
@@ -81,7 +81,7 @@ export function Precuenta() {
         icono="receipt"
         className="flex-1"
         onClick={() => {
-          cambiarMesa(numero, (m) => ({ ...m, status: 'preBill' }))
+          cambiarMesa(number, (m) => ({ ...m, status: 'preBill' }))
           avisar('Precuenta enviada a la impresora')
         }}
       >
@@ -103,7 +103,7 @@ export function Precuenta() {
   )
 
   return (
-    <Marco titulo={`Precuenta · Mesa ${numero}`} user="Caja" back="/mockups/floor-plan">
+    <Marco title={`Precuenta · Mesa ${number}`} user="Caja" back="/mockups/floor-plan">
       <div className="mx-auto grid max-w-5xl gap-4 p-3 pb-28 md:grid-cols-[1fr_22rem] md:pb-3">
         <section className="rounded-2xl border border-borde bg-superficie" aria-label="Ítems">
           <ul>

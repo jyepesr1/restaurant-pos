@@ -512,7 +512,8 @@ function apply(source: CatalogoEdicion, enviados: CambioCatalogo[]): CatalogoEdi
     id: string
     donde: string
   }[] = []
-  const tabla = (e: keyof typeof TABLA) => c[TABLA[e]] as unknown as (Registro & { id: string })[]
+  const tableName = (e: keyof typeof TABLA) =>
+    c[TABLA[e]] as unknown as (Registro & { id: string })[]
 
   for (const [i, change] of changes.entries()) {
     const e = change.entity as keyof typeof TABLA
@@ -525,11 +526,11 @@ function apply(source: CatalogoEdicion, enviados: CambioCatalogo[]): CatalogoEdi
     const zonaRef = change.data.zone_id
     if (typeof zonaRef === 'string' && !c.zones.some((z) => z.id === zonaRef))
       throw new Error(`${donde}: zone_id no existe`)
-    const current = tabla(e).find((f) => f.id === change.id)
+    const current = tableName(e).find((f) => f.id === change.id)
     if (!current) {
       for (const k of CAMPOS[e])
         if (!(k in change.data)) throw new Error(`${donde}: falta ${k} al crear`)
-      tabla(e).push({ id: change.id, version: ++version, ...change.data } as Registro & {
+      tableName(e).push({ id: change.id, version: ++version, ...change.data } as Registro & {
         id: string
       })
     } else {
@@ -537,42 +538,39 @@ function apply(source: CatalogoEdicion, enviados: CambioCatalogo[]): CatalogoEdi
       if (cambia.length !== keys.length) throw new Error(`${donde}: manda campos sin cambio`)
       Object.assign(current, change.data, { version: ++version })
     }
-    const fila = tabla(e).find((f) => f.id === change.id) as Registro
+    const row = tableName(e).find((f) => f.id === change.id) as Registro
     const badCase = (field: string) => {
-      throw new Error(`${donde}: ${field} inválido (${String(fila[field])})`)
+      throw new Error(`${donde}: ${field} inválido (${String(row[field])})`)
     }
-    if (typeof fila.name === 'string') {
+    if (typeof row.name === 'string') {
       const max = e === 'zones' ? 80 : 20
-      if (fila.name !== fila.name.trim() || fila.name.length < 1 || fila.name.length > max)
+      if (row.name !== row.name.trim() || row.name.length < 1 || row.name.length > max)
         badCase('name')
     }
     if (e !== 'zones') {
-      if (!entero(fila.x, -LIMITE, LIMITE)) badCase('x')
-      if (!entero(fila.y, -LIMITE, LIMITE)) badCase('y')
-      if (!entero(fila.width, 5, LIMITE)) badCase('width')
-      if (!entero(fila.height, 5, LIMITE)) badCase('height')
-      if (!entero(fila.rotation, 0, 359)) badCase('rotation')
+      if (!entero(row.x, -LIMITE, LIMITE)) badCase('x')
+      if (!entero(row.y, -LIMITE, LIMITE)) badCase('y')
+      if (!entero(row.width, 5, LIMITE)) badCase('width')
+      if (!entero(row.height, 5, LIMITE)) badCase('height')
+      if (!entero(row.rotation, 0, 359)) badCase('rotation')
     }
-    if (e === 'dining_tables' && !entero(fila.capacity, 1, 100)) badCase('capacity')
-    if (e === 'zones' && (!entero(fila.level, -5, 100) || !entero(fila.position, 0, 10_000)))
+    if (e === 'dining_tables' && !entero(row.capacity, 1, 100)) badCase('capacity')
+    if (e === 'zones' && (!entero(row.level, -5, 100) || !entero(row.position, 0, 10_000)))
       badCase('level')
     if (e === 'floor_plan_elements') {
-      if (
-        typeof fila.text === 'string' &&
-        (fila.text !== fila.text.trim() || fila.text.length > 60)
-      )
+      if (typeof row.text === 'string' && (row.text !== row.text.trim() || row.text.length > 60))
         badCase('text')
     }
     tocados.push({ entity: e, id: change.id, donde })
   }
 
   for (const t of tocados) {
-    const fila = tabla(t.entity).find((f) => f.id === t.id) as Registro
-    if (fila.active === true && t.entity !== 'zones') {
-      const zone = c.zones.find((z) => z.id === fila.zone_id)
+    const row = tableName(t.entity).find((f) => f.id === t.id) as Registro
+    if (row.active === true && t.entity !== 'zones') {
+      const zone = c.zones.find((z) => z.id === row.zone_id)
       if (zone?.active !== true) throw new Error(`${t.donde}: zona está archivado`)
     }
-    if (fila.active === false && t.entity === 'zones')
+    if (row.active === false && t.entity === 'zones')
       if (c.tables.some((m) => m.zone_id === t.id && m.active))
         throw new Error(`${t.donde}: lo usan mesas; cámbialos primero`)
   }

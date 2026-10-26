@@ -60,7 +60,7 @@ export function CajaAjustes() {
 
   if (error && !register)
     return (
-      <MarcoSala titulo="Caja y pagos">
+      <MarcoSala title="Caja y pagos">
         <div className="mx-auto flex max-w-3xl flex-col items-start gap-3 p-6">
           <p className="text-alerta-texto">{error}</p>
           <Boton onClick={cargar}>Intentar de nuevo</Boton>
@@ -69,7 +69,7 @@ export function CajaAjustes() {
     )
   if (!register || !kitchen)
     return (
-      <MarcoSala titulo="Caja y pagos">
+      <MarcoSala title="Caja y pagos">
         <p className="p-6 text-texto-suave">Leyendo la configuración de la caja…</p>
       </MarcoSala>
     )
@@ -141,7 +141,7 @@ export function CajaAjustes() {
   }
 
   return (
-    <MarcoSala titulo="Caja y pagos">
+    <MarcoSala title="Caja y pagos">
       <div className="mx-auto flex max-w-3xl flex-col gap-8 p-3 md:p-5">
         <section aria-labelledby="title-methods" className="flex flex-col gap-3">
           <h2 id="title-methods" className="text-xl font-bold tracking-tight">
@@ -336,7 +336,7 @@ function EditarDatafono({
   return (
     <PanelLateral
       opened={cardTerminal !== null}
-      titulo={cardTerminal?.id ? 'Datáfono' : 'Datáfono nuevo'}
+      title={cardTerminal?.id ? 'Datáfono' : 'Datáfono nuevo'}
       alCerrar={alCerrar}
       pie={
         <div className="flex flex-col gap-2">
@@ -393,7 +393,7 @@ function EditarMedio({
   return (
     <PanelLateral
       opened={method !== null}
-      titulo={method?.id ? 'Medio de pago' : 'Medio de pago nuevo'}
+      title={method?.id ? 'Medio de pago' : 'Medio de pago nuevo'}
       alCerrar={alCerrar}
       pie={
         <div className="flex flex-col gap-2">

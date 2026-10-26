@@ -210,10 +210,10 @@ describe('POST /api/caja/precuenta', () => {
   it('el cambio queda a nombre de quien lo hizo', async () => {
     const m = mundo()
     await m.preBill(nuevaImpresora(m).id)
-    const fila = m.t.db
+    const row = m.t.db
       .prepare('SELECT user_id, device_id FROM restaurants WHERE id = ?')
       .get(m.t.restauranteId)
-    expect(fila).toEqual({
+    expect(row).toEqual({
       user_id: m.t.people.admin.userId,
       device_id: m.admin.connection.dispositivoId,
     })
@@ -660,7 +660,7 @@ describe('POST /api/datafonos', () => {
     const m = mundo()
     const { id } = (await m.cardTerminal(bold)).json() as { id: string }
     const before = m.t.db.prepare('SELECT * FROM card_terminals WHERE id = ?').get(id)
-    m.t.avanzar(5000)
+    m.t.advance(5000)
     await m.cardTerminal({ ...bold, id, name: 'Bold terraza', provider: 'redeban' })
     const after = m.t.db.prepare('SELECT * FROM card_terminals WHERE id = ?').get(id)
     expect(after).toMatchObject({ name: 'Bold terraza', provider: 'redeban', id })

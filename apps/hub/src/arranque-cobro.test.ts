@@ -57,9 +57,9 @@ function mundo() {
         } as never),
       ),
     })
-    const ultimo = recibidos.filter((x) => x.type === 'result').at(-1)
-    if (ultimo?.type !== 'result') throw new Error('Sin resultado')
-    return ultimo.resultados.map((r) => (r.status === 'rejected' ? r.reason : r.status))
+    const latest = recibidos.filter((x) => x.type === 'result').at(-1)
+    if (latest?.type !== 'result') throw new Error('Sin resultado')
+    return latest.resultados.map((r) => (r.status === 'rejected' ? r.reason : r.status))
   }
 
   const shift = newId()

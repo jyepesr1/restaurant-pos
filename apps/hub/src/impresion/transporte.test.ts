@@ -1,4 +1,4 @@
-import { escpos, leerEscpos, lineasPrueba } from '@pos/printing'
+import { escpos, readEscpos, testLines } from '@pos/printing'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ColaImpresion } from './cola'
 import { abrirImpresoraDePrueba, type ImpresoraDePrueba } from './impresora-prueba'
@@ -19,9 +19,9 @@ const open = async () => {
 }
 const target = (port: number) => ({ connection: 'network' as const, address: '127.0.0.1', port })
 const bytesDePrueba = () => {
-  const format = { columnas: 48, pagina: 'pc850' as const }
+  const format = { columns: 48, page: 'pc850' as const }
   return escpos(
-    lineasPrueba({ printer: 'X', stations: ['Cocina'], time: '3:00 p. m.' }, format),
+    testLines({ printer: 'X', stations: ['Cocina'], time: '3:00 p. m.' }, format),
     format,
   )
 }
@@ -34,7 +34,7 @@ describe('enviarPorRed', () => {
     await p.esperar(1)
     expect(p.recibidos).toHaveLength(1)
     expect([...(p.recibidos[0] as Uint8Array)]).toEqual([...bytes])
-    expect(leerEscpos(p.recibidos[0] as Uint8Array).cortes).toBe(1)
+    expect(readEscpos(p.recibidos[0] as Uint8Array).cuts).toBe(1)
   })
 
   it('entrega sin pérdida un documento grande (500 KB)', async () => {
@@ -127,10 +127,10 @@ describe('la cola contra sockets de verdad', () => {
     expect(p.recibidos).toHaveLength(0)
     expect(cola.status()[0]).toMatchObject({ status: 'failed', pendingList: 3 })
     await p.apagar(false)
-    t.avanzar(2000)
+    t.advance(2000)
     await cola.runOnce()
     await p.esperar(3)
-    expect(p.recibidos.map((b) => /Plato (\d)/.exec(leerEscpos(b).text)?.[1])).toEqual([
+    expect(p.recibidos.map((b) => /Plato (\d)/.exec(readEscpos(b).text)?.[1])).toEqual([
       '1',
       '2',
       '3',

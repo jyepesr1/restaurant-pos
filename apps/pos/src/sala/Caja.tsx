@@ -68,7 +68,7 @@ const diaDe = (iso: string, reglas: ReglasCobro | null) =>
   businessDay(iso, reglas?.timeZone ?? 'America/Bogota', reglas?.inicioDiaOperativo ?? '06:00')
 
 /** Un valor que puede ser negativo (un medio con solo devoluciones): «-5.000» → -5000. */
-export const conSigno = (text: string) =>
+export const withSign = (text: string) =>
   (text.trim().startsWith('-') ? -1 : 1) * soloDigitos(text) || 0
 
 /** «Mesa 4», «Mesa 5 + 6», «Para llevar». */
@@ -191,7 +191,7 @@ export function Caja() {
   )
 
   return (
-    <MarcoSala titulo="Caja">
+    <MarcoSala title="Caja">
       <div className="mx-auto flex max-w-xl flex-col gap-4 p-3 md:p-5">
         {!esCaja ? (
           <p className="rounded-2xl bg-proceso-suave p-4 text-proceso-texto">
@@ -477,7 +477,7 @@ function PanelMovimiento({
   return (
     <PanelLateral
       opened={type !== null}
-      titulo={type ? NOMBRE_MOVIMIENTO[type] : 'Movimiento'}
+      title={type ? NOMBRE_MOVIMIENTO[type] : 'Movimiento'}
       alCerrar={alCerrar}
       pie={
         confirmando ? (
@@ -684,7 +684,7 @@ function Cierre({
       const reportados = medios.map((m) => ({
         method: m.method,
         custom_method_id: m.customMethodId,
-        reported: conSigno(reports[m.key] ?? ''),
+        reported: withSign(reports[m.key] ?? ''),
       }))
       await sala.registrarConfirmado('CashCountRecorded', reconciliation.shiftId, {
         cash_count_id: id,
@@ -903,7 +903,7 @@ function Cierre({
               },
             }}
             reglas={reglas}
-            titulo="Así queda la caja"
+            title="Así queda la caja"
           />
           {cambioDespues && (
             <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">
@@ -991,16 +991,16 @@ function Cierre({
 function Result({
   reconciliation,
   reglas,
-  titulo = 'Cómo quedó la caja',
+  title = 'Cómo quedó la caja',
 }: {
   reconciliation: ShiftReconciliation
   reglas: ReglasCobro | null
-  titulo?: string
+  title?: string
 }) {
   const c = reconciliation.closed
   if (!c) return null
   const digitales = reconciliation.byMethod.filter((m) => m.method !== 'cash')
-  const fila = (name: string, value: number, sign = '') =>
+  const row = (name: string, value: number, sign = '') =>
     value > 0 && (
       <>
         <dt>{name}</dt>
@@ -1013,7 +1013,7 @@ function Result({
       aria-label="Cuadre de la caja"
     >
       <h2 className="text-lg font-semibold">
-        {titulo}
+        {title}
         {c.time && (
           <span className="ml-2 text-sm font-normal text-texto-suave">{`· cerrada a ${cuando(c.time)}`}</span>
         )}
@@ -1021,11 +1021,11 @@ function Result({
       <dl className="cifras grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
         <dt>Base</dt>
         <dd className="text-right">{pesos(reconciliation.base)}</dd>
-        {fila('Efectivo cobrado (con propinas)', reconciliation.cash.charged, '+')}
-        {fila('Devoluciones', reconciliation.cash.refunds, '-')}
-        {fila('Entradas', reconciliation.cash.entries, '+')}
-        {fila('Salidas', reconciliation.cash.outflows, '-')}
-        {fila('Pago de propinas', reconciliation.cash.tipPayouts, '-')}
+        {row('Efectivo cobrado (con propinas)', reconciliation.cash.charged, '+')}
+        {row('Devoluciones', reconciliation.cash.refunds, '-')}
+        {row('Entradas', reconciliation.cash.entries, '+')}
+        {row('Salidas', reconciliation.cash.outflows, '-')}
+        {row('Pago de propinas', reconciliation.cash.tipPayouts, '-')}
         <dt className="font-semibold">Debería haber</dt>
         <dd className="text-right font-semibold">{pesos(c.expected)}</dd>
         <dt className="font-semibold">Contado</dt>

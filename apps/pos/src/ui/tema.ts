@@ -8,7 +8,7 @@ export type Tema = 'system' | 'light' | 'dark'
 const CLAVE = 'pos-theme'
 const consulta = () => window.matchMedia('(prefers-color-scheme: dark)')
 
-function leer(): Tema {
+function read(): Tema {
   try {
     const saved = localStorage.getItem(CLAVE)
     return saved === 'light' || saved === 'dark' ? saved : 'system'
@@ -21,13 +21,13 @@ const resolver = (tema: Tema, sistemaOscuro: boolean) =>
   tema === 'dark' || (tema === 'system' && sistemaOscuro)
 
 /** Pone o quita la clase `oscuro` en <html>. */
-export function aplicarTema(tema: Tema = leer()) {
+export function aplicarTema(tema: Tema = read()) {
   document.documentElement.classList.toggle('oscuro', resolver(tema, consulta().matches))
 }
 
 /** El tema elegido, si la pantalla está en oscuro ahora mismo y cómo cambiarlo. */
 export function useTema(): { tema: Tema; dark: boolean; select: (tema: Tema) => void } {
-  const [tema, setTema] = useState<Tema>(leer)
+  const [tema, setTema] = useState<Tema>(read)
   const [sistemaOscuro, setSistemaOscuro] = useState(() => consulta().matches)
 
   useEffect(() => {

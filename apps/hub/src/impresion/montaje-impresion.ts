@@ -1,6 +1,6 @@
 import { newId } from '@pos/core'
 import type { ValorSql } from '@pos/db'
-import { leerEscpos } from '@pos/printing'
+import { readEscpos } from '@pos/printing'
 import { HubSync } from '@pos/sync'
 import { AlmacenSqlite } from '@pos/sync/sqlite'
 import { montarAcceso } from '../acceso/montaje'
@@ -25,7 +25,7 @@ export interface Papel {
   /** Cuántas veces se intentó (también las que fallaron). */
   attempts: number
   /** Lo recibido, ya leído como texto (una comanda por entrada). */
-  textos(): string[]
+  texts(): string[]
 }
 
 export type Equipo = ReturnType<ReturnType<typeof montarImpresion>['device']>
@@ -79,7 +79,7 @@ export function montarImpresion(options: OpcionesMontaje = {}) {
       apagada: false,
       recibidos: [],
       attempts: 0,
-      textos: () => p.recibidos.map((b) => leerEscpos(b).text),
+      texts: () => p.recibidos.map((b) => readEscpos(b).text),
     }
     network.set(address, p)
     return p
@@ -291,8 +291,8 @@ export function montarImpresion(options: OpcionesMontaje = {}) {
       ValorSql
     >[]
   const pendingList = () => trabajos("WHERE status = 'pending'").length
-  const content = (fila: Record<string, ValorSql> | undefined) =>
-    JSON.parse(String(fila?.content ?? 'null'))
+  const content = (row: Record<string, ValorSql> | undefined) =>
+    JSON.parse(String(row?.content ?? 'null'))
 
   return {
     ...m,

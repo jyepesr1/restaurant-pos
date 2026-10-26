@@ -422,14 +422,14 @@ describe('la API de personal de un restaurante no toca al otro', () => {
     const antesRoles = JSON.stringify(
       m.db.prepare('SELECT * FROM role_permissions WHERE restaurant_id = ? ORDER BY id').all(m.idB),
     )
-    const persona = (data: Parameters<typeof guardarPersona>[3]) => () =>
+    const person = (data: Parameters<typeof guardarPersona>[3]) => () =>
       guardarPersona(m.db, m.idA, m.accesoA, data, SISTEMA, m.a.clock())
-    expect(persona({ id: m.cajaB.userId, name: 'Cambiada', rolId: m.a.roles.waiter })).toThrow(
+    expect(person({ id: m.cajaB.userId, name: 'Cambiada', rolId: m.a.roles.waiter })).toThrow(
       /Esa persona no existe/,
     )
-    expect(persona({ name: 'Intrusa', rolId: m.rolesB.admin })).toThrow(/Ese rol no existe/)
+    expect(person({ name: 'Intrusa', rolId: m.rolesB.admin })).toThrow(/Ese rol no existe/)
     expect(
-      persona({ id: m.cajaB.userId, name: 'Cambiada', rolId: m.rolesB.waiter, active: false }),
+      person({ id: m.cajaB.userId, name: 'Cambiada', rolId: m.rolesB.waiter, active: false }),
     ).toThrow(ErrorPersonal)
     expect(() =>
       guardarRol(

@@ -1,6 +1,6 @@
 import { createServer, type Socket } from 'node:net'
 import { fileURLToPath } from 'node:url'
-import { leerEscpos } from '@pos/printing'
+import { readEscpos } from '@pos/printing'
 
 // Una impresora de red de mentira: escucha como una térmica (puerto 9100, «RAW») y guarda lo que
 // recibe. Sirve para las pruebas y para probar el hub sin papel:
@@ -70,7 +70,7 @@ export function abrirImpresoraDePrueba(
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.argv[2] ?? 9100)
   const printer = await abrirImpresoraDePrueba(port, (bytes) => {
-    const { text } = leerEscpos(bytes)
+    const { text } = readEscpos(bytes)
     console.log(`\n${text}\n`)
   })
   console.log(

@@ -80,11 +80,11 @@ const estilosNivel: Record<Nivel, { icono: string; cssClass: string }> = {
   info: { icono: '', cssClass: 'text-slate-700 dark:text-slate-300' },
 }
 
-function Fila({ titulo, severity, text }: { titulo: string; severity: Nivel; text: string }) {
+function Fila({ title, severity, text }: { title: string; severity: Nivel; text: string }) {
   const { icono, cssClass } = estilosNivel[severity]
   return (
     <li className="flex items-start justify-between gap-4 border-b border-slate-200 py-3 dark:border-slate-800">
-      <span className="font-medium">{titulo}</span>
+      <span className="font-medium">{title}</span>
       <span className={`text-right ${cssClass}`}>
         {icono && <span aria-hidden="true">{icono} </span>}
         {text}
@@ -102,7 +102,7 @@ const textoCanal: Record<EstadoCanal, { severity: Nivel; text: string }> = {
 
 interface Veredicto {
   severity: 'ok' | 'alert' | 'error'
-  titulo: string
+  title: string
   puntos: string[]
 }
 
@@ -130,17 +130,17 @@ function calcularVeredicto(
   if (errors.length > 0) {
     return {
       severity: 'error',
-      titulo: `Revisar: ${plural(errors.length, 'punto', 'puntos')}`,
+      title: `Revisar: ${plural(errors.length, 'punto', 'puntos')}`,
       puntos: errors,
     }
   }
   if (indexedDb === null || medianaMs === null || resumen.ocultamientos.length === 0) {
-    return { severity: 'alert', titulo: 'Prueba en curso: sigue los pasos', puntos: avisos }
+    return { severity: 'alert', title: 'Prueba en curso: sigue los pasos', puntos: avisos }
   }
   if (avisos.length > 0) {
-    return { severity: 'alert', titulo: 'Funciona, con avisos', puntos: avisos }
+    return { severity: 'alert', title: 'Funciona, con avisos', puntos: avisos }
   }
-  return { severity: 'ok', titulo: 'Listo para operar', puntos: [] }
+  return { severity: 'ok', title: 'Listo para operar', puntos: [] }
 }
 
 const claseVeredicto: Record<Veredicto['severity'], string> = {
@@ -223,7 +223,7 @@ export function Diagnostico() {
   }
 
   const veredicto = calcularVeredicto(channel, indexedDb, latencia?.medianaMs ?? null, resumen)
-  const ultimo = resumen.ocultamientos.at(-1)
+  const latest = resumen.ocultamientos.at(-1)
 
   return (
     <div className="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -244,7 +244,7 @@ export function Diagnostico() {
         >
           <p className="text-lg font-semibold">
             <span aria-hidden="true">{iconoVeredicto[veredicto.severity]} </span>
-            {veredicto.titulo}
+            {veredicto.title}
           </p>
           {veredicto.puntos.length > 0 && (
             <ul className="mt-2 list-disc pl-5">
@@ -278,9 +278,9 @@ export function Diagnostico() {
           Conexión con el hub
         </h2>
         <ul>
-          <Fila titulo="Canal en tiempo real" {...textoCanal[channel]} />
+          <Fila title="Canal en tiempo real" {...textoCanal[channel]} />
           <Fila
-            titulo="Tiempo de respuesta"
+            title="Tiempo de respuesta"
             severity={
               latencia === null
                 ? 'measuring'
@@ -295,33 +295,33 @@ export function Diagnostico() {
             }
           />
           <Fila
-            titulo="Veces que se reconectó"
+            title="Veces que se reconectó"
             severity="info"
             text={String(resumen.reconexiones)}
           />
           <Fila
-            titulo="Última vez en segundo plano"
-            severity={ultimo ? (ultimo.conexionPerdida ? 'alert' : 'ok') : 'info'}
+            title="Última vez en segundo plano"
+            severity={latest ? (latest.conexionPerdida ? 'alert' : 'ok') : 'info'}
             text={
-              ultimo
-                ? `${formatearDuracion(ultimo.duracionMs)}, ${
-                    ultimo.recargada
+              latest
+                ? `${formatearDuracion(latest.duracionMs)}, ${
+                    latest.recargada
                       ? 'la página se recargó'
-                      : ultimo.conexionPerdida
+                      : latest.conexionPerdida
                         ? 'se perdió la conexión'
                         : 'sin cortes'
                   }${
-                    ultimo.conexionPerdida
-                      ? ultimo.recuperacionMs === null
+                    latest.conexionPerdida
+                      ? latest.recuperacionMs === null
                         ? ' (aún reconectando)'
-                        : ` (volvió en ${formatearDuracion(ultimo.recuperacionMs)})`
+                        : ` (volvió en ${formatearDuracion(latest.recuperacionMs)})`
                       : ''
                   }`
                 : 'Aún no ha pasado'
             }
           />
           <Fila
-            titulo="El navegador recargó la página solo"
+            title="El navegador recargó la página solo"
             severity={resumen.descartes === 0 ? 'ok' : 'alert'}
             text={`${plural(resumen.descartes, 'vez', 'veces')} en ${plural(resumen.cargas, 'carga', 'cargas')}`}
           />
@@ -332,12 +332,12 @@ export function Diagnostico() {
         </h2>
         <ul>
           <Fila
-            titulo="Datos locales (IndexedDB)"
+            title="Datos locales (IndexedDB)"
             severity={indexedDb === null ? 'measuring' : indexedDb ? 'ok' : 'error'}
             text={indexedDb === null ? 'Probando' : indexedDb ? 'Funciona' : 'No funciona'}
           />
           <Fila
-            titulo="Dirección segura (HTTPS)"
+            title="Dirección segura (HTTPS)"
             severity={capacidades.contextoSeguro ? 'ok' : 'info'}
             text={
               capacidades.contextoSeguro
@@ -346,17 +346,17 @@ export function Diagnostico() {
             }
           />
           <Fila
-            titulo="Vibración"
+            title="Vibración"
             severity={capacidades.vibracion ? 'ok' : 'info'}
             text={capacidades.vibracion ? 'Disponible' : 'No disponible en este equipo'}
           />
           <Fila
-            titulo="Mantener pantalla encendida"
+            title="Mantener pantalla encendida"
             severity={capacidades.pantallaEncendida ? 'ok' : 'info'}
             text={capacidades.pantallaEncendida ? 'Disponible' : 'Se configura en el equipo'}
           />
           <Fila
-            titulo="Notificaciones del sistema"
+            title="Notificaciones del sistema"
             severity={capacidades.notificaciones ? 'ok' : 'info'}
             text={capacidades.notificaciones ? 'Disponible' : 'No disponible (requiere HTTPS)'}
           />

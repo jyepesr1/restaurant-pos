@@ -60,12 +60,12 @@ describe('ultima_secuencia: contigua desde 1', () => {
           const llegados: number[] = []
           while (from < secuencias.length) {
             const tam = sizes[i++ % sizes.length] ?? 1
-            const trozo = secuencias.slice(from, from + tam)
+            const chunk = secuencias.slice(from, from + tam)
             await m.nube.recibirEventos(
               hub,
-              trozo.map((s) => eventoPlano(s)),
+              chunk.map((s) => eventoPlano(s)),
             )
-            llegados.push(...trozo)
+            llegados.push(...chunk)
             from += tam
             const ahora = await m.nube.lastSequence(hub)
             expect(ahora).toBe(mayorContigua(llegados))
@@ -135,8 +135,8 @@ describe('ultima_secuencia: contigua desde 1', () => {
       eventoPlano(1, { sequence: Number.MAX_SAFE_INTEGER }),
     ])
     expect(r?.status).toBe('saved')
-    const [fila] = await eventosGuardados(m.db, restauranteId)
-    expect(fila?.hub_sequence).toBe(String(Number.MAX_SAFE_INTEGER))
+    const [row] = await eventosGuardados(m.db, restauranteId)
+    expect(row?.hub_sequence).toBe(String(Number.MAX_SAFE_INTEGER))
     expect(await m.nube.lastSequence(hub)).toBe(0)
   })
 })
@@ -200,8 +200,8 @@ describe('formato de un evento', () => {
     })
     const [r] = await m.nube.recibirEventos(hub, [e])
     expect(r?.status).toBe('saved')
-    const [fila] = await eventosGuardados(m.db, restauranteId)
-    expect(fila?.content).toEqual(e)
+    const [row] = await eventosGuardados(m.db, restauranteId)
+    expect(row?.content).toEqual(e)
   })
 
   it('la misma estructura inválida dos veces en el lote se responde dos veces', async () => {
@@ -309,8 +309,8 @@ describe('texto que Postgres no acepta', () => {
     const notes = 'Té con ñandú 🍹 \t\n\r   \u{1F600} \u0001'
     const [r] = await m.nube.recibirEventos(hub, [eventoPlano(1, { data: { notes } })])
     expect(r?.status).toBe('saved')
-    const [fila] = await eventosGuardados(m.db, restauranteId)
-    expect(fila?.content).toMatchObject({ data: { notes } })
+    const [row] = await eventosGuardados(m.db, restauranteId)
+    expect(row?.content).toMatchObject({ data: { notes } })
   })
 
   it('propiedad: cualquier texto Unicode arbitrario nunca produce un error en el lote', async () => {
@@ -352,8 +352,8 @@ describe('fechas en el borde de lo que acepta Postgres', () => {
     const e = eventoPlano(1, { received_at: '2031-01-01T00:00:00Z', business_day: '2019-05-05' })
     const [r] = await m.nube.recibirEventos(hub, [e])
     expect(r?.status).toBe('saved')
-    const [fila] = await eventosGuardados(m.db, restauranteId)
-    expect(fila?.content).toEqual(e)
+    const [row] = await eventosGuardados(m.db, restauranteId)
+    expect(row?.content).toEqual(e)
     const [two] = await m.nube.recibirEventos(hub, [e])
     expect(two?.status).toBe('already_stored')
   })
@@ -361,13 +361,13 @@ describe('fechas en el borde de lo que acepta Postgres', () => {
   it('la fecha de guardado la pone la nube, no el evento', async () => {
     const { hub, restauranteId } = await m.nuevoHub()
     await m.nube.recibirEventos(hub, [eventoPlano(1, { received_at: '2000-01-01T00:00:00Z' })])
-    const [fila] = (
+    const [row] = (
       await m.db.query<{ vieja: boolean }>(
         "SELECT saved_at > '2020-01-01' AS vieja FROM events WHERE restaurant_id = $1",
         [restauranteId],
       )
     ).rows
-    expect(fila?.vieja).toBe(true)
+    expect(row?.vieja).toBe(true)
   })
 })
 

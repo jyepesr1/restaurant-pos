@@ -66,7 +66,7 @@ function target(catalog: Catalogo, c: ComandaEnCocina): string {
 /** «Pedidos en cocina», dentro del marco de la caja. */
 export function PedidosEnCocina() {
   return (
-    <MarcoSala titulo="Pedidos en cocina">
+    <MarcoSala title="Pedidos en cocina">
       <div className="mx-auto flex max-w-7xl flex-col gap-5 p-4 md:p-6">
         <AvisoImpresoras />
         <Tablero mode="register" />
@@ -484,8 +484,8 @@ function Tarjeta({
     >
       <header className="flex items-baseline justify-between gap-2">
         <span className={`font-bold ${large ? 'text-3xl' : 'text-xl'}`}>{target(catalog, c)}</span>
-        {c.numero !== null && (
-          <span className={`cifras font-bold ${large ? 'text-3xl' : 'text-lg'}`}>#{c.numero}</span>
+        {c.number !== null && (
+          <span className={`cifras font-bold ${large ? 'text-3xl' : 'text-lg'}`}>#{c.number}</span>
         )}
       </header>
       <div className={`flex flex-wrap items-center gap-2 ${large ? 'text-lg' : 'text-sm'}`}>

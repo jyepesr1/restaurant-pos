@@ -56,14 +56,14 @@ export function Plano() {
 
   const tocar = (table: Mesa) => {
     if (table.status === 'dirty') {
-      cambiarMesa(table.numero, () => mesaLibre(table.numero))
-      avisar(`Mesa ${table.numero} lista para usar`, () => cambiarMesa(table.numero, () => table))
+      cambiarMesa(table.number, () => mesaLibre(table.number))
+      avisar(`Mesa ${table.number} lista para usar`, () => cambiarMesa(table.number, () => table))
       return
     }
     navegar(
       table.status === 'preBill'
-        ? `/mockups/pre-bill?table=${table.numero}`
-        : `/mockups/order?table=${table.numero}`,
+        ? `/mockups/pre-bill?table=${table.number}`
+        : `/mockups/order?table=${table.number}`,
     )
   }
 
@@ -73,7 +73,7 @@ export function Plano() {
 
   return (
     <Marco
-      titulo="Salón"
+      title="Salón"
       actions={
         <Boton
           variant="secondary"
@@ -97,7 +97,7 @@ export function Plano() {
           {vista === 'floorPlan' ? (
             <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
               {tables.map((table) => (
-                <li key={table.numero}>
+                <li key={table.number}>
                   <MesaEnPlano table={table} ahora={ahora} alTocar={() => tocar(table)} />
                 </li>
               ))}
@@ -105,7 +105,7 @@ export function Plano() {
           ) : (
             <ul className="flex flex-col gap-2">
               {tables.map((table) => (
-                <li key={table.numero}>
+                <li key={table.number}>
                   <MesaEnLista table={table} ahora={ahora} alTocar={() => tocar(table)} />
                 </li>
               ))}
@@ -118,14 +118,14 @@ export function Plano() {
           <h2 className="mb-2 text-lg font-semibold">Cuentas abiertas</h2>
           <ul className="flex flex-col gap-2">
             {abiertas.map((table) => (
-              <li key={table.numero}>
+              <li key={table.number}>
                 <button
                   type="button"
-                  onClick={() => navegar(`/mockups/pre-bill?table=${table.numero}`)}
+                  onClick={() => navegar(`/mockups/pre-bill?table=${table.number}`)}
                   className="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-borde bg-superficie px-4 text-left hover:bg-superficie-2"
                 >
                   <span>
-                    <span className="font-semibold">Mesa {table.numero}</span>
+                    <span className="font-semibold">Mesa {table.number}</span>
                     <span className="block text-sm text-texto-suave">
                       {estadoVisible(table, ahora).text}
                     </span>
@@ -166,11 +166,11 @@ function MesaEnPlano({
     <button
       type="button"
       onClick={alTocar}
-      aria-label={`Mesa ${table.numero}: ${v.text}${ocupada ? `, ${tiempo}, ${pesos(saldoMesa(table))}` : ''}`}
+      aria-label={`Mesa ${table.number}: ${v.text}${ocupada ? `, ${tiempo}, ${pesos(saldoMesa(table))}` : ''}`}
       className={`flex aspect-square w-full flex-col justify-between rounded-2xl border-2 p-2 text-left transition active:scale-95 focus-visible:outline-3 focus-visible:outline-foco ${claseMesa(table, v)}`}
     >
       <span className="flex items-start justify-between">
-        <span className="font-titulo text-3xl font-bold leading-none">{table.numero}</span>
+        <span className="font-titulo text-3xl font-bold leading-none">{table.number}</span>
         <Icono name={v.icono} />
       </span>
       <span className="text-sm leading-tight font-semibold">{v.text}</span>
@@ -201,7 +201,7 @@ function MesaEnLista({
       onClick={alTocar}
       className="flex min-h-16 w-full items-center gap-3 rounded-2xl border border-borde bg-superficie px-3 text-left hover:bg-superficie-2"
     >
-      <span className="font-titulo w-10 text-center text-3xl font-bold">{table.numero}</span>
+      <span className="font-titulo w-10 text-center text-3xl font-bold">{table.number}</span>
       <span className="flex-1">
         <Etiqueta tono={v.tono} icono={v.icono}>
           {v.text}

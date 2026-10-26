@@ -129,18 +129,18 @@ export function add(
  */
 export function ordenes(previos: readonly (number | undefined)[]): number[] {
   const result: number[] = []
-  let ultimo = -1
+  let latest = -1
   for (const [i, previous] of previos.entries()) {
-    if (previous !== undefined && previous > ultimo) {
+    if (previous !== undefined && previous > latest) {
       result.push(previous)
-      ultimo = previous
+      latest = previous
       continue
     }
     if (previous === undefined) {
       const next = previos.slice(i + 1).find((x) => x !== undefined)
-      if (next === undefined || ultimo + 1 < next) {
-        ultimo += 1
-        result.push(ultimo)
+      if (next === undefined || latest + 1 < next) {
+        latest += 1
+        result.push(latest)
         continue
       }
     }

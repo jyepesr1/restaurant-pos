@@ -19,8 +19,8 @@ describe('arranque', () => {
       avisos: [],
     })
 
-    const check = (tabla: string) =>
-      Number(m.db.prepare(`SELECT count(*) AS n FROM ${tabla}`).get()?.n)
+    const check = (tableName: string) =>
+      Number(m.db.prepare(`SELECT count(*) AS n FROM ${tableName}`).get()?.n)
     expect(check('restaurants')).toBe(1)
     expect(check('locations')).toBe(1)
     expect(check('roles')).toBe(6)
@@ -98,7 +98,7 @@ describe('emparejar un dispositivo', () => {
       null,
     )
     if (!code.ok) throw new Error(code.message)
-    m.avanzar(VIGENCIA_CODIGO_MS)
+    m.advance(VIGENCIA_CODIGO_MS)
     expect(m.access.emparejar(code.code, 'ip')).toMatchObject({ code: 'invalid_code' })
   })
 
@@ -132,8 +132,8 @@ describe('sesiones con PIN', () => {
     expect(r.user).toMatchObject({ name: 'Carlos', role: 'Cajero' })
     expect(r.permissions).toContain('record_payment')
     expect(r.secret).not.toBe('')
-    const fila = m.db.prepare('SELECT secret_hash FROM sessions').get()
-    expect(fila?.secret_hash).not.toBe(r.secret)
+    const row = m.db.prepare('SELECT secret_hash FROM sessions').get()
+    expect(row?.secret_hash).not.toBe(r.secret)
   })
 
   it('tres PIN errados en un dispositivo lo hacen esperar; a los demás no', () => {
@@ -146,7 +146,7 @@ describe('sesiones con PIN', () => {
     expect(r.map((x) => (x.ok ? 'ok' : x.esperaMs))).toEqual([0, 0, 2000])
     expect(m.access.startSession(a, m.people.waiter.pin)).toMatchObject({ code: 'wait' })
     expect(m.access.startSession(b, m.people.waiter.pin)).toMatchObject({ ok: true })
-    m.avanzar(2000)
+    m.advance(2000)
     expect(m.access.startSession(a, m.people.waiter.pin)).toMatchObject({ ok: true })
   })
 
@@ -351,9 +351,9 @@ describe('qué eventos puede crear cada quien', () => {
     const { connection } = m.emparejar()
     const s = m.entrar(connection, 'waiter')
     const before = m.event(connection, s, 'OrderOpened', open)
-    m.avanzar(40 * 60_000)
+    m.advance(40 * 60_000)
     m.access.cerrarSesion(connection, s)
-    m.avanzar(5 * 60_000)
+    m.advance(5 * 60_000)
     const after = m.event(connection, s, 'OrderOpened', open)
 
     expect(m.access.verify(connection, before, null)).toMatchObject({ ok: true })

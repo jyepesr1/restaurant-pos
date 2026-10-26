@@ -610,7 +610,7 @@ export class Sala {
   /**
    * Crea o cambia a una persona. Devuelve su PIN si es nueva o se regeneró: solo se ve esta vez.
    */
-  async guardarPersona(persona: {
+  async guardarPersona(person: {
     id?: string
     name: string
     role_id: string
@@ -619,7 +619,7 @@ export class Sala {
     regenerar_pin?: boolean
   }): Promise<{ id: string; pin: string | null }> {
     const r = await this.conSesion<{ id: string; pin: string | null }>('/api/staff/people', {
-      persona,
+      person,
     })
     // El nombre de cada persona viene en la carta: traerla para verlo en el salón.
     await this.actualizarCatalogo().catch(avisarFallo)
@@ -838,9 +838,9 @@ export class Sala {
     })
     this.cliente = cliente
     this.gestor = gestor
-    await cliente.iniciar()
+    await cliente.begin()
     if (this.gestor !== gestor) return
-    if (!this.status.simulandoSinConexion) gestor.iniciar()
+    if (!this.status.simulandoSinConexion) gestor.begin()
     await this.alCambiarDatos()
   }
 
@@ -853,7 +853,7 @@ export class Sala {
   simularSinConexion(without: boolean) {
     this.patch({ simulandoSinConexion: without })
     if (without) this.gestor?.detener()
-    else this.gestor?.iniciar()
+    else this.gestor?.begin()
   }
 
   cambiarVisibilidad(visible: boolean) {
@@ -972,7 +972,7 @@ export class Sala {
 
 /** Por qué el hub rechazó un evento de dinero, dicho para la caja. */
 function motivoEnPalabras(reason: string | undefined): string {
-  const textos: Record<string, string> = {
+  const texts: Record<string, string> = {
     no_shift: 'La caja no tiene turno abierto: ábrela en «Caja».',
     other_register_shift: 'Ese turno es de otra caja: cobra desde la caja donde se abrió.',
     shift_already_open: 'Esta caja ya tiene un turno abierto.',
@@ -994,5 +994,5 @@ function motivoEnPalabras(reason: string | undefined): string {
     other_methods_mismatch:
       'Los demás medios no coinciden con lo que registró la caja: recarga la app (puede estar desactualizada) y vuelve a contar.',
   }
-  return (reason && textos[reason]) ?? `La caja no lo aceptó (${reason ?? 'sin motivo'}).`
+  return (reason && texts[reason]) ?? `La caja no lo aceptó (${reason ?? 'sin motivo'}).`
 }

@@ -1,5 +1,5 @@
 import { newId } from '@pos/core'
-import type { CierreZ } from '@pos/printing'
+import type { ZReport } from '@pos/printing'
 import { describe, expect, it } from 'vitest'
 import { item } from '../acceso/montaje-hub'
 import { type Equipo, montarImpresion } from '../impresion/montaje-impresion'
@@ -77,7 +77,7 @@ function mundo(options: { conImpresora?: boolean } = {}) {
     )
     return { shift, order, closeout }
   }
-  const cierresZ = () => t.trabajos("WHERE type = 'report'").map((f) => t.content(f) as CierreZ)
+  const cierresZ = () => t.trabajos("WHERE type = 'report'").map((f) => t.content(f) as ZReport)
   return { t, ana, admin, cashier, printer, day, cierresZ }
 }
 
@@ -94,7 +94,7 @@ describe('cierre Z al cerrar la caja', () => {
       sales: { net: 40_000, tips: 4_000, checks: 1 },
     })
     await t.cola.runOnce()
-    const [papel] = printer.papel.textos()
+    const [papel] = printer.papel.texts()
     expect(papel).toContain('CIERRE DE CAJA')
     expect(papel).toContain('$144.000')
   })

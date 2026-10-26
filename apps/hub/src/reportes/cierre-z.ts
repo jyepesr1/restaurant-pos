@@ -7,7 +7,7 @@ import {
   report,
 } from '@pos/core'
 import type { BaseSqlite } from '@pos/db'
-import { type CierreZ, nombreImpuesto } from '@pos/printing'
+import { taxName, type ZReport } from '@pos/printing'
 import { cierreDeTurno, datosDeInforme } from '@pos/sync'
 import { AlmacenSqlite } from '@pos/sync/sqlite'
 
@@ -65,7 +65,7 @@ export function armarCierreZ(
   o: OpcionesCierreZ,
   shiftId: string,
   reprintedAt: string | null,
-): CierreZ | null {
+): ZReport | null {
   const almacen = new AlmacenSqlite(o.db, o.restauranteId)
   const closeout = cierreDeTurno(almacen, shiftId)
   const closed = closeout?.reconciliation.closed
@@ -85,8 +85,8 @@ export function armarCierreZ(
     day: diaEnPalabras(day),
     opened: fechaHora(c.openedAt, o.timeZone),
     closed: fechaHora(closed.time, o.timeZone),
-    abrio: names[closeout.abiertoPor] ?? '',
-    cerro: names[closeout.cerradoPor] ?? '',
+    openedByName: names[closeout.abiertoPor] ?? '',
+    closedByName: names[closeout.cerradoPor] ?? '',
     cash: {
       base: c.base,
       charged: c.cash.charged,
@@ -109,7 +109,7 @@ export function armarCierreZ(
     sales: {
       net: r.sales.net,
       taxes: r.sales.taxes.map((i) => ({
-        name: nombreImpuesto(i.type, i.rate),
+        name: taxName(i.type, i.rate),
         base: i.base,
         value: i.tax,
       })),

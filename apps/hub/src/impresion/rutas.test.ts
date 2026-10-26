@@ -470,14 +470,14 @@ describe('POST /api/impresoras: crear, editar y archivar', () => {
       }),
     })
     expect(r.json()).toEqual({ id })
-    const fila = m.t.db.prepare('SELECT * FROM printers WHERE id = ?').get(id)
-    expect(fila).toMatchObject({
+    const row = m.t.db.prepare('SELECT * FROM printers WHERE id = ?').get(id)
+    expect(row).toMatchObject({
       name: 'Cocina caliente',
       width: 58,
       code_page: 'wpc1252',
       user_id: m.admin.session.user.id,
     })
-    expect(Number(fila?.version)).toBeGreaterThan(Number(before?.version))
+    expect(Number(row?.version)).toBeGreaterThan(Number(before?.version))
     expect(m.t.db.prepare('SELECT count(*) AS n FROM printers').get()).toEqual({ n: 1 })
   })
 
@@ -598,14 +598,14 @@ describe('POST /api/impresoras: crear, editar y archivar', () => {
     for (let i = 0; i < 8; i++) {
       await m.t.cola.runOnce()
       await m.t.cola.runOnce()
-      m.t.avanzar(60_000)
+      m.t.advance(60_000)
     }
     expect(m.t.pendingList()).toBe(1)
     b.papel.apagada = false
     for (let i = 0; i < 3; i++) {
       await m.t.cola.runOnce()
       await m.t.cola.runOnce()
-      m.t.avanzar(60_000)
+      m.t.advance(60_000)
     }
     expect(m.t.pendingList()).toBe(0)
     expect(b.papel.recibidos.length + a.papel.recibidos.length).toBe(1)
@@ -616,8 +616,8 @@ describe('con la impresora de prueba (permitirLocales)', () => {
   it('acepta 127.0.0.1 y cualquier puerto, y el trabajo sale por la red de verdad', async () => {
     const m = await mundo({ permitirLocales: true })
     const id = await m.crear({ address: '127.0.0.1', port: 4455 })
-    const fila = m.t.db.prepare('SELECT address, port FROM printers WHERE id = ?').get(id)
-    expect(fila).toEqual({ address: '127.0.0.1', port: 4455 })
+    const row = m.t.db.prepare('SELECT address, port FROM printers WHERE id = ?').get(id)
+    expect(row).toEqual({ address: '127.0.0.1', port: 4455 })
   })
 
   it('sin la opción, 127.0.0.1 se rechaza', async () => {
@@ -643,7 +643,7 @@ describe('POST /api/impresoras/prueba', () => {
       status: 'printed',
       printer_id: imp.id,
     })
-    const text = imp.papel.textos()[0] as string
+    const text = imp.papel.texts()[0] as string
     expect(text.replaceAll('\n', ' ')).toContain('PRUEBA DE IMPRESIÓN')
     expect(text).toContain('Imprime: Cocina')
   })
@@ -683,8 +683,8 @@ describe('POST /api/impresoras/prueba', () => {
     const m = await mundo()
     const imp = m.t.impresoraNueva('Mixta', [m.t.kitchen, m.t.bar])
     const r = await m.llamar(m.admin, '/api/printers/test', { printer_id: imp.id })
-    const fila = m.t.trabajos().find((f) => f.id === r.json().trabajo_id)
-    const content = m.t.content(fila)
+    const row = m.t.trabajos().find((f) => f.id === r.json().trabajo_id)
+    const content = m.t.content(row)
     expect(content.stations).toEqual(['Cocina', 'Barra'])
     expect(content.printer).toBe('Mixta')
     expect(content.time).toMatch(/3:00\s*p\.\s*m\./)
@@ -704,7 +704,7 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
         m.t.table(String(9 + i)),
       )
       m.t.send(ana, order, items)
-      m.t.avanzar(1000)
+      m.t.advance(1000)
     }
     await m.t.cola.runOnce()
     return { m, imp }
@@ -727,7 +727,7 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
   it('no lista lo impreso ni lo descartado', async () => {
     const { m, imp } = await conPendientes()
     imp.papel.apagada = false
-    m.t.avanzar(2000)
+    m.t.advance(2000)
     await m.t.cola.runOnce()
     await m.t.cola.runOnce()
     expect((await m.llamar(m.admin, '/api/printing/pending')).json()).toEqual([])
@@ -745,13 +745,13 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
     const [firstOne] = (await m.llamar(m.cashier, '/api/printing/pending')).json()
     const r = await m.llamar(m.cashier, '/api/printing/discard', { trabajo_id: firstOne.id })
     expect(r.statusCode).toBe(204)
-    const fila = m.t.db.prepare('SELECT * FROM print_jobs WHERE id = ?').get(firstOne.id)
-    expect(fila).toMatchObject({
+    const row = m.t.db.prepare('SELECT * FROM print_jobs WHERE id = ?').get(firstOne.id)
+    expect(row).toMatchObject({
       status: 'discarded',
       discarded_by_id: m.cashier.session.user.id,
       discarded_device_id: m.cashier.connection.dispositivoId,
     })
-    expect(fila?.finished_at).not.toBeNull()
+    expect(row?.finished_at).not.toBeNull()
     expect(m.t.db.prepare('SELECT count(*) AS n FROM print_jobs').get()).toEqual({ n: 3 })
     const list = (await m.llamar(m.admin, '/api/printing/pending')).json()
     expect(list).toHaveLength(2)
@@ -767,7 +767,7 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
     expect(another.statusCode).toBe(400)
     expect(another.json().message).toBe('Esa comanda ya salió o ya se descartó')
     imp.papel.apagada = false
-    m.t.avanzar(2000)
+    m.t.advance(2000)
     await m.t.cola.runOnce()
     await m.t.cola.runOnce()
     expect(
@@ -783,7 +783,7 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
     for (const x of (await m.llamar(m.admin, '/api/printing/pending')).json())
       await m.llamar(m.admin, '/api/printing/discard', { trabajo_id: x.id })
     imp.papel.apagada = false
-    m.t.avanzar(60_000)
+    m.t.advance(60_000)
     await m.t.cola.runOnce()
     expect(imp.papel.recibidos).toHaveLength(0)
   })
@@ -825,7 +825,7 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
     const imp = m.t.impresoraNueva('Cocina', [m.t.kitchen])
     const insertar = m.t.db.prepare(
       `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
-       VALUES (?, ?, ?, 'ticket', '{"station":"Cocina","target":"Mesa","numero":1}', ?)`,
+       VALUES (?, ?, ?, 'ticket', '{"station":"Cocina","target":"Mesa","number":1}', ?)`,
     )
     for (let i = 0; i < 230; i++)
       insertar.run(
@@ -849,7 +849,7 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
   it('una comanda sin número o con textos raros no rompe la lista', async () => {
     const m = await mundo()
     const imp = m.t.impresoraNueva('Cocina', [m.t.kitchen])
-    for (const content of ['{}', '{"station":"Cocina"}', '{"numero":null,"target":"Mesa 1"}', '[]'])
+    for (const content of ['{}', '{"station":"Cocina"}', '{"number":null,"target":"Mesa 1"}', '[]'])
       m.t.db
         .prepare(
           `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
@@ -913,26 +913,24 @@ describe('POST /api/cocina/tiempos', () => {
         m.t.restauranteId,
       )
     await m.llamar(m.admin, '/api/kitchen/timers', { amarillo: 12, rojo: 25 })
-    const fila = m.t.db
+    const row = m.t.db
       .prepare('SELECT config, user_id FROM restaurants WHERE id = ?')
       .get(m.t.restauranteId)
-    expect(JSON.parse(String(fila?.config))).toMatchObject({
+    expect(JSON.parse(String(row?.config))).toMatchObject({
       session_idle_min: 45,
       brand: 'la-spritzzeria',
       kitchen_yellow_min: 12,
       kitchen_red_min: 25,
     })
-    expect(fila?.user_id).toBe(m.admin.session.user.id)
+    expect(row?.user_id).toBe(m.admin.session.user.id)
   })
 
   it('un restaurante con la configuración vacía recibe los valores de fábrica y los guarda completos', async () => {
     const m = await mundo()
     m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restauranteId)
     await m.llamar(m.admin, '/api/kitchen/timers', { amarillo: 3, rojo: 4 })
-    const fila = m.t.db
-      .prepare('SELECT config FROM restaurants WHERE id = ?')
-      .get(m.t.restauranteId)
-    expect(JSON.parse(String(fila?.config))).toMatchObject({
+    const row = m.t.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(m.t.restauranteId)
+    expect(JSON.parse(String(row?.config))).toMatchObject({
       kitchen_yellow_min: 3,
       kitchen_red_min: 4,
     })

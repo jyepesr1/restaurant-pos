@@ -27,10 +27,10 @@ async function interceptarWs(page: Page) {
 async function relojSinEmpates(page: Page) {
   await page.addInitScript(() => {
     const real = Date.now.bind(Date)
-    let ultimo = 0
+    let latest = 0
     Date.now = () => {
-      ultimo = Math.max(real(), ultimo + 1)
-      return ultimo
+      latest = Math.max(real(), latest + 1)
+      return latest
     }
   })
 }
@@ -113,14 +113,14 @@ const leerSockets = (page: Page) =>
 const colgarSocketsNuevos = (page: Page, colgar: boolean) =>
   page.evaluate(`window.__colgar = ${colgar}`)
 
-const fila = (page: Page, titulo: string) => page.getByRole('listitem').filter({ hasText: titulo })
+const row = (page: Page, title: string) => page.getByRole('listitem').filter({ hasText: title })
 const CANAL = 'Canal en tiempo real'
 const BLOQUEO = 'Última vez en segundo plano'
-const wsConectado = (page: Page) => expect(fila(page, CANAL)).toContainText('✓ Conectado')
+const wsConectado = (page: Page) => expect(row(page, CANAL)).toContainText('✓ Conectado')
 const wsDesconectado = (page: Page) =>
-  expect(fila(page, CANAL)).toContainText('✕ Desconectado, reintentando')
+  expect(row(page, CANAL)).toContainText('✕ Desconectado, reintentando')
 /** Valor (columna derecha) de una fila del diagnóstico. */
-const value = (page: Page, titulo: string) => fila(page, titulo).locator(':scope > span').last()
+const value = (page: Page, title: string) => row(page, title).locator(':scope > span').last()
 const ponerNombre = (page: Page, name = 'Equipo de pruebas') =>
   page.getByLabel('Nombre de este equipo').fill(name)
 
@@ -135,11 +135,11 @@ test.describe('pantalla de diagnóstico', () => {
 
     await expect(page.getByRole('heading', { name: 'Diagnóstico del dispositivo' })).toBeVisible()
     await wsConectado(page)
-    await expect(fila(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
-    await expect(fila(page, 'Tiempo de respuesta')).toContainText('Midiendo')
+    await expect(row(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
+    await expect(row(page, 'Tiempo de respuesta')).toContainText('Midiendo')
     // El primer ping sale a los 5 s de abrir el socket.
-    await expect(fila(page, 'Tiempo de respuesta')).toContainText(/\d+ ms/, { timeout: 15_000 })
-    await expect(fila(page, 'Tiempo de respuesta')).not.toContainText('Midiendo')
+    await expect(row(page, 'Tiempo de respuesta')).toContainText(/\d+ ms/, { timeout: 15_000 })
+    await expect(row(page, 'Tiempo de respuesta')).not.toContainText('Midiendo')
   })
 
   test('el inicio enlaza a /diagnostico', async ({ page }) => {
@@ -189,7 +189,7 @@ test.describe('pantalla de diagnóstico', () => {
     await wsDesconectado(page)
 
     hubCaido = false
-    await expect(fila(page, CANAL)).toContainText('✓ Conectado', { timeout: 10_000 })
+    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 10_000 })
   })
 
   test('al ocultar y mostrar la página actualiza el resumen del último bloqueo', async ({
@@ -198,7 +198,7 @@ test.describe('pantalla de diagnóstico', () => {
     await relojSinEmpates(page)
     await page.goto('/diagnostics')
     await wsConectado(page)
-    const bloqueo = fila(page, BLOQUEO)
+    const bloqueo = row(page, BLOQUEO)
     await expect(bloqueo).toContainText('Aún no ha pasado')
 
     await cambiarVisibilidad(page, true)
@@ -224,7 +224,7 @@ test.describe('pantalla de diagnóstico', () => {
     await wsDesconectado(page)
     await cambiarVisibilidad(page, false)
 
-    const bloqueo = fila(page, BLOQUEO)
+    const bloqueo = row(page, BLOQUEO)
     await expect(bloqueo).toContainText('se perdió la conexión', { timeout: 10_000 })
     await expect(page.getByText('En segundo plano se pierde la conexión')).toBeVisible()
   })
@@ -251,9 +251,9 @@ test.describe('pantalla de diagnóstico', () => {
     })()`)
 
     await page.goto('/diagnostics')
-    await expect(fila(page, CANAL)).toContainText('Conectando')
+    await expect(row(page, CANAL)).toContainText('Conectando')
     // Se abandona a los 4 s y el siguiente intento sale al segundo.
-    await expect(fila(page, CANAL)).toContainText('✓ Conectado', { timeout: 10_000 })
+    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 10_000 })
   })
 
   test('al volver sin conexión reconecta de inmediato, sin esperar el reintento', async ({
@@ -283,8 +283,8 @@ test.describe('pantalla de diagnóstico', () => {
     // aunque el reintento programado estuviera a varios segundos.
     hubCaido = false
     await cambiarVisibilidad(page, false)
-    await expect(fila(page, CANAL)).toContainText('✓ Conectado', { timeout: 1500 })
-    await expect(fila(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
+    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 1500 })
+    await expect(row(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
   })
 
   test('al volver sin conexión no quedan dos sockets abiertos a la vez', async ({ page }) => {
@@ -302,7 +302,7 @@ test.describe('pantalla de diagnóstico', () => {
 
     hub.caido = false
     await cambiarVisibilidad(page, false)
-    await expect(fila(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
+    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
 
     // El reintento viejo habría saltado como mucho a los 5 s (espera máxima entre intentos): si
     // no se canceló al volver, abriría un segundo socket. Es una ventana de tiempo real a propósito.
@@ -333,12 +333,12 @@ test.describe('pantalla de diagnóstico', () => {
     await cambiarVisibilidad(page, false)
 
     // Debe reconectar antes de que el límite de 4 s abandone el intento por su cuenta.
-    await expect(fila(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
+    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
     const sockets = await leerSockets(page)
     expect(sockets.statuses).toEqual([3, 3, 1])
     expect(sockets.live).toBe(1)
     expect(hub.conexiones).toHaveLength(2)
-    await expect(fila(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
+    await expect(row(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
   })
 
   test('una conexión sana reabierta al volver no se descarta por no haber recibido mensajes aún', async ({
@@ -355,10 +355,10 @@ test.describe('pantalla de diagnóstico', () => {
     await wsDesconectado(page)
     hub.caido = false
     await cambiarVisibilidad(page, false)
-    await expect(fila(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
+    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
 
     // La fila solo cambia tras la comprobación de 3 s al volver, que es cuando podría descartarla.
-    await expect(fila(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
+    await expect(row(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
     await wsConectado(page)
     // El hub no manda nada nada más abrir (el primer latido sale a los 5 s): eso no es "mudo".
     expect(hub.conexiones).toHaveLength(2)
@@ -385,7 +385,7 @@ test.describe('pantalla de diagnóstico', () => {
     hub.caido = false
     await cambiarVisibilidad(page, false)
 
-    await expect(fila(page, CANAL)).toContainText('✓ Conectado', { timeout: 5000 })
+    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 5000 })
     // Un intento por vuelta como mucho, y los reintentos programados no deben sumar otro socket.
     await page.waitForTimeout(6000)
     await wsConectado(page)
@@ -393,7 +393,7 @@ test.describe('pantalla de diagnóstico', () => {
     expect(sockets.live).toBe(1)
     expect(sockets.maximoSimultaneos).toBe(1)
 
-    const bloqueo = fila(page, BLOQUEO)
+    const bloqueo = row(page, BLOQUEO)
     await expect(bloqueo).toContainText('se perdió la conexión', { timeout: 10_000 })
     await expect(bloqueo).toContainText('volvió en')
     await expect(bloqueo).not.toContainText('aún reconectando')
@@ -416,14 +416,14 @@ test.describe('pantalla de diagnóstico', () => {
     await cambiarVisibilidad(page, false)
 
     // La comprobación al volver dura 3 s y el resumen se refresca cada 3 s.
-    const bloqueo = fila(page, BLOQUEO)
+    const bloqueo = row(page, BLOQUEO)
     await expect(bloqueo).toContainText('se perdió la conexión', { timeout: 10_000 })
     await expect(bloqueo).toContainText('(aún reconectando)')
     await expect(bloqueo).not.toContainText('volvió en')
-    await expect(fila(page, CANAL)).toContainText('✕ Desconectado, reintentando')
+    await expect(row(page, CANAL)).toContainText('✕ Desconectado, reintentando')
 
     hub.caido = false
-    await expect(fila(page, CANAL)).toContainText('✓ Conectado', { timeout: 10_000 })
+    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 10_000 })
     await expect(bloqueo).toContainText(/\(volvió en \d+ s\)/, { timeout: 10_000 })
     await expect(bloqueo).not.toContainText('aún reconectando')
   })
@@ -440,7 +440,7 @@ test.describe('pantalla de diagnóstico', () => {
     await cambiarVisibilidad(page, false)
 
     // "aún reconectando" solo aparece pasados los 3 s de la comprobación: el hub vuelve después.
-    const bloqueo = fila(page, BLOQUEO)
+    const bloqueo = row(page, BLOQUEO)
     await expect(bloqueo).toContainText('(aún reconectando)', { timeout: 10_000 })
     hub.caido = false
     await wsConectado(page)
@@ -475,7 +475,7 @@ test.describe('pantalla de diagnóstico', () => {
     // así que "Sin respuesta" dura milisegundos: se comprueba por la segunda conexión en el hub.
     await expect.poll(() => conexiones.length, { timeout: 6000 }).toBe(2)
     await wsConectado(page)
-    await expect(fila(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
+    await expect(row(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
   })
 
   test('si el hub deja de responder sin cerrar el canal, lo detecta y reconecta', async ({
@@ -495,7 +495,7 @@ test.describe('pantalla de diagnóstico', () => {
 
     await page.goto('/diagnostics')
     await wsConectado(page)
-    await expect(fila(page, CANAL)).toContainText('Sin respuesta, reconectando', {
+    await expect(row(page, CANAL)).toContainText('Sin respuesta, reconectando', {
       timeout: 25_000,
     })
     await wsConectado(page)
@@ -525,7 +525,7 @@ test.describe('pantalla de diagnóstico', () => {
     })
 
     await page.goto('/diagnostics')
-    await expect(fila(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
+    await expect(row(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
     await page.getByLabel('Nombre de este equipo').fill('Caja principal')
     await envio(page).click()
 
@@ -627,7 +627,7 @@ test('el hub guarda el informe enviado desde la pantalla en diagnosticos.jsonl',
 
   const name = `e2e-diagnostics-${Date.now()}`
   await page.goto('/diagnostics')
-  await expect(fila(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
+  await expect(row(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
   await page.getByLabel('Nombre de este equipo').fill(name)
   await envio(page).click()
   await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')

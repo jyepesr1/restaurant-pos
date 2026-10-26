@@ -160,7 +160,7 @@ export function PlanoEditor() {
 
   if (!c || !b)
     return (
-      <MarcoSala titulo="Plano" back="/">
+      <MarcoSala title="Plano" back="/">
         <p className="p-6 text-texto-suave" role={error ? 'alert' : undefined}>
           {error ?? 'Cargando el plano…'}
         </p>
@@ -196,7 +196,7 @@ export function PlanoEditor() {
   }
 
   return (
-    <MarcoSala titulo="Plano" back="/" protegerSalida={siSePuede}>
+    <MarcoSala title="Plano" back="/" protegerSalida={siSePuede}>
       <div className="mx-auto flex max-w-7xl flex-col gap-3 p-3">
         <Grupo etiqueta="Zona" className="flex flex-wrap gap-2">
           {zones.map((z) => (

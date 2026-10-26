@@ -121,7 +121,7 @@ describe('aplicar', () => {
          WHERE grantee = 'faro_data' AND table_schema = 'public' ORDER BY 1, 2`,
       )
     ).rows
-    const de = (tabla: string) => permissions.filter((x) => x.t === tabla).map((x) => x.p)
+    const de = (tableName: string) => permissions.filter((x) => x.t === tableName).map((x) => x.p)
     expect(de('events')).toEqual(['INSERT', 'SELECT'])
     expect(de('divergent_events')).toEqual(['INSERT', 'SELECT'])
     expect(de('restaurants')).toEqual(['INSERT', 'SELECT'])

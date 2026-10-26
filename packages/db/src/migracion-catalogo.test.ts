@@ -37,8 +37,8 @@ function baseVersion2() {
     ...fields,
   })
   insertarVersionado(db, 'restaurants', restaurant, { name: 'Prueba', config: '{}' }, restaurant)
-  const record = (tabla: string, fields: Record<string, string | number | null>) =>
-    insertarVersionado(db, tabla, restaurant, v(fields))
+  const record = (tableName: string, fields: Record<string, string | number | null>) =>
+    insertarVersionado(db, tableName, restaurant, v(fields))
 
   const tax = record('taxes', { name: 'INC 8 %', type: 'inc', rate: 800 })
   const exempt = record('taxes', { name: 'Exento', type: 'exempt', rate: 0 })
@@ -122,44 +122,44 @@ describe('migración 3 sobre una base de la versión 2', () => {
 
   it('cada fila conserva la versión, el autor y la hora del registro, sin estado anterior', () => {
     const { db, category } = baseVersion2()
-    const fila = db.prepare('SELECT * FROM categories WHERE id = ?').get(category)
+    const row = db.prepare('SELECT * FROM categories WHERE id = ?').get(category)
     aplicarMigraciones(db)
 
     const change = db.prepare('SELECT * FROM catalog_changes WHERE record_id = ?').get(category)
     expect(change).toMatchObject({
-      version: fila?.version,
+      version: row?.version,
       entity: 'categories',
       before: null,
-      user_id: fila?.user_id,
-      device_id: fila?.device_id,
-      done_at: fila?.updated_at,
+      user_id: row?.user_id,
+      device_id: row?.device_id,
+      done_at: row?.updated_at,
     })
-    expect(JSON.parse(String(change?.after))).toEqual(fila)
+    expect(JSON.parse(String(change?.after))).toEqual(row)
   })
 
   it('el estado guardado trae todas las columnas de cada tabla, ni una más ni una menos', () => {
     const { db } = baseVersion2()
     aplicarMigraciones(db)
-    for (const tabla of TABLAS_CATALOGO) {
-      const columnas = db
-        .prepare(`PRAGMA table_info(${tabla})`)
+    for (const tableName of TABLAS_CATALOGO) {
+      const columns = db
+        .prepare(`PRAGMA table_info(${tableName})`)
         .all()
         .map((c) => String(c.name))
         .sort()
-      const change = db.prepare('SELECT after FROM catalog_changes WHERE entity = ?').get(tabla)
-      expect(Object.keys(JSON.parse(String(change?.after))).sort(), tabla).toEqual(columnas)
+      const change = db.prepare('SELECT after FROM catalog_changes WHERE entity = ?').get(tableName)
+      expect(Object.keys(JSON.parse(String(change?.after))).sort(), tableName).toEqual(columns)
     }
   })
 
   it('el estado guardado es igual a la fila de la tabla (valores y tipos)', () => {
     const { db } = baseVersion2()
     aplicarMigraciones(db)
-    for (const tabla of TABLAS_CATALOGO) {
-      for (const fila of db.prepare(`SELECT * FROM ${tabla}`).all()) {
+    for (const tableName of TABLAS_CATALOGO) {
+      for (const row of db.prepare(`SELECT * FROM ${tableName}`).all()) {
         const change = db
           .prepare('SELECT after FROM catalog_changes WHERE record_id = ?')
-          .get(fila.id ?? '')
-        expect(JSON.parse(String(change?.after)), `${tabla} ${fila.id}`).toEqual(fila)
+          .get(row.id ?? '')
+        expect(JSON.parse(String(change?.after)), `${tableName} ${row.id}`).toEqual(row)
       }
     }
   })
@@ -242,8 +242,8 @@ describe('el historial del catálogo es de solo agregar', () => {
   function migrada() {
     const m = baseVersion2()
     aplicarMigraciones(m.db)
-    const fila = historial(m.db)[0]
-    return { ...m, fila }
+    const row = historial(m.db)[0]
+    return { ...m, row }
   }
 
   it('rechaza UPDATE', () => {
@@ -261,7 +261,7 @@ describe('el historial del catálogo es de solo agregar', () => {
   })
 
   it('rechaza INSERT OR REPLACE y REPLACE INTO sobre una versión existente', () => {
-    const { db, restaurant, fila } = migrada()
+    const { db, restaurant, row } = migrada()
     const before = historial(db)
     const reemplazo = (verbo: string) =>
       db
@@ -269,7 +269,7 @@ describe('el historial del catálogo es de solo agregar', () => {
           `${verbo} INTO catalog_changes (restaurant_id, version, entity, record_id, after, done_at)
            VALUES (?, ?, 'products', ?, '{"falso":true}', ?)`,
         )
-        .run(restaurant, Number(fila?.version), newId(), AHORA)
+        .run(restaurant, Number(row?.version), newId(), AHORA)
     expect(() => reemplazo('INSERT OR REPLACE')).toThrow(/no se reemplazan/)
     expect(() => reemplazo('REPLACE')).toThrow(/no se reemplazan/)
     expect(() => reemplazo('INSERT')).toThrow(/no se reemplazan/)
@@ -277,13 +277,13 @@ describe('el historial del catálogo es de solo agregar', () => {
   })
 
   it('INSERT OR IGNORE sobre una versión existente tampoco cambia nada', () => {
-    const { db, restaurant, fila } = migrada()
+    const { db, restaurant, row } = migrada()
     const before = historial(db)
     try {
       db.prepare(
         `INSERT OR IGNORE INTO catalog_changes (restaurant_id, version, entity, record_id, after, done_at)
          VALUES (?, ?, 'products', ?, '{}', ?)`,
-      ).run(restaurant, Number(fila?.version), newId(), AHORA)
+      ).run(restaurant, Number(row?.version), newId(), AHORA)
     } catch {
       // Abortar también está bien: lo que importa es que la historia no cambie.
     }

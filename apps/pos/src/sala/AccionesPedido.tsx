@@ -66,7 +66,7 @@ function AutorizarConPin({
     <div className="flex flex-col gap-2 rounded-2xl border border-linea bg-superficie-2/60 p-3">
       <p className="font-semibold">Pásale el celular al cajero o al administrador</p>
       <TecladoPin
-        titulo={ocupado ? 'Comprobando el PIN…' : 'Que escriba su PIN para autorizar'}
+        title={ocupado ? 'Comprobando el PIN…' : 'Que escriba su PIN para autorizar'}
         error={status.error}
         intento={status.intento}
         esperaMs={status.esperaMs}
@@ -168,7 +168,7 @@ export function PanelAnular({
   return (
     <PanelLateral
       opened
-      titulo={`Anular ${item.name}`}
+      title={`Anular ${item.name}`}
       alCerrar={alCerrar}
       pie={
         conPermiso ? (
@@ -320,7 +320,7 @@ export function PanelCambiarMesa({
   return (
     <PanelLateral
       opened
-      titulo="Cambiar de mesa"
+      title="Cambiar de mesa"
       alCerrar={alCerrar}
       pie={
         <div className="flex flex-col gap-2">
@@ -385,7 +385,7 @@ export function PanelUnirMesas({
   return (
     <PanelLateral
       opened
-      titulo={`Unir mesas con la mesa ${main ?? ''}`}
+      title={`Unir mesas con la mesa ${main ?? ''}`}
       alCerrar={alCerrar}
       pie={
         <div className="flex flex-col gap-2">
@@ -459,7 +459,7 @@ export function PanelMover({
   return (
     <PanelLateral
       opened
-      titulo="Mover productos"
+      title="Mover productos"
       alCerrar={alCerrar}
       pie={
         <div className="flex flex-col gap-2">
@@ -575,7 +575,7 @@ export function PanelCancelar({
   return (
     <PanelLateral
       opened
-      titulo={`Cancelar el pedido de la ${table.toLowerCase()}`}
+      title={`Cancelar el pedido de la ${table.toLowerCase()}`}
       alCerrar={alCerrar}
       pie={
         <div className="flex flex-col gap-2">
@@ -685,7 +685,7 @@ export function PanelAccionesPedido({
   const cssClass =
     'flex min-h-16 w-full items-center gap-3 rounded-xl border border-borde bg-superficie px-4 text-left focus-visible:outline-3 focus-visible:outline-foco'
   return (
-    <PanelLateral opened titulo="Mesa y pedido" alCerrar={alCerrar}>
+    <PanelLateral opened title="Mesa y pedido" alCerrar={alCerrar}>
       <ul className="flex flex-col gap-2">
         {options.map((o) => (
           <li key={o.action}>

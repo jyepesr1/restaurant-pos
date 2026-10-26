@@ -210,20 +210,20 @@ export function variasMesas(
 ): MesaPlano[] {
   const f = FORMAS[shape]
   const separacion = SEPARACION
-  const columnas = Math.max(1, Math.min(porFila, quantity))
-  const rows = Math.ceil(quantity / columnas)
+  const columns = Math.max(1, Math.min(porFila, quantity))
+  const rows = Math.ceil(quantity / columns)
   // El bloque entero en un hueco libre, para que las mesas nuevas no caigan encima de otras.
   const start = lugarLibre(
     b,
-    columnas * (f.width + separacion) - separacion,
+    columns * (f.width + separacion) - separacion,
     rows * (f.height + separacion) - separacion,
   )
   const usados = [...nombresUsados]
   return Array.from({ length: quantity }, (_, i) => {
     const name = siguienteNombre(usados)
     usados.push(name)
-    const fila = Math.floor(i / columnas)
-    const columna = i % columnas
+    const row = Math.floor(i / columns)
+    const columna = i % columns
     return {
       id: newId(),
       fresh: true,
@@ -235,7 +235,7 @@ export function variasMesas(
       height: f.height,
       rotation: 0,
       x: ajustar(start.x + columna * (f.width + separacion)),
-      y: ajustar(start.y + fila * (f.height + separacion)),
+      y: ajustar(start.y + row * (f.height + separacion)),
     }
   })
 }

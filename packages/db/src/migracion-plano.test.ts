@@ -134,15 +134,15 @@ describe('migración 4 sobre una base de la versión 3', () => {
   it('la tabla nace vacía, es STRICT y tiene las columnas comunes del registro versionado', () => {
     const { db } = migrada()
     expect(db.prepare('SELECT count(*) AS n FROM floor_plan_elements').get()?.n).toBe(0)
-    const tabla = db
+    const tableName = db
       .prepare("SELECT sql FROM sqlite_master WHERE name = 'floor_plan_elements'")
       .get()
-    expect(String(tabla?.sql)).toMatch(/STRICT/)
-    const columnas = db
+    expect(String(tableName?.sql)).toMatch(/STRICT/)
+    const columns = db
       .prepare('PRAGMA table_info(floor_plan_elements)')
       .all()
       .map((c) => String(c.name))
-    expect(columnas).toEqual([
+    expect(columns).toEqual([
       'id',
       'restaurant_id',
       'created_at',

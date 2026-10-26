@@ -52,9 +52,9 @@ function mundo() {
         } as never),
       ],
     })
-    const ultimo = recibidos.filter((x) => x.type === 'result').at(-1)
-    if (ultimo?.type !== 'result') throw new Error('Sin resultado')
-    const r = ultimo.resultados[0]
+    const latest = recibidos.filter((x) => x.type === 'result').at(-1)
+    if (latest?.type !== 'result') throw new Error('Sin resultado')
+    const r = latest.resultados[0]
     return r?.status === 'rejected' ? r.reason : (r?.status ?? 'sin resultado')
   }
   const ponerConfig = (config: object) =>

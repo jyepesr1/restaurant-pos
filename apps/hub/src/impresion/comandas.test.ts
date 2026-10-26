@@ -1,5 +1,5 @@
 import { newId } from '@pos/core'
-import { leerEscpos } from '@pos/printing'
+import { readEscpos } from '@pos/printing'
 import { HubSync } from '@pos/sync'
 import { AlmacenSqlite } from '@pos/sync/sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -137,13 +137,13 @@ describe('comandas impresas', () => {
     expect(pendingList(t.m)).toBe(0)
     await kitchen.mockPrinter.esperar(1)
     await bar.mockPrinter.esperar(1)
-    const enCocina = leerEscpos(kitchen.mockPrinter.recibidos[0] as Uint8Array).text
+    const enCocina = readEscpos(kitchen.mockPrinter.recibidos[0] as Uint8Array).text
     expect(enCocina).toContain('COCINA')
     expect(enCocina).toContain('Tagliata')
     expect(enCocina).toContain('> Término medio')
     expect(enCocina).toMatch(/Mesa +#1/)
     expect(enCocina).not.toContain('Aperol')
-    expect(leerEscpos(bar.mockPrinter.recibidos[0] as Uint8Array).text).toContain('Aperol Spritz')
+    expect(readEscpos(bar.mockPrinter.recibidos[0] as Uint8Array).text).toContain('Aperol Spritz')
     // Un segundo envío sigue la numeración del día.
     const other = t.send()
     expect(Object.values(other?.assignments.ticket_numbers ?? {})).toEqual([3, 4])
@@ -177,11 +177,11 @@ describe('comandas impresas', () => {
     await cola.runOnce()
     await respaldo.mockPrinter.esperar(1)
     expect(respaldo.mockPrinter.recibidos).toHaveLength(1)
-    expect(leerEscpos(respaldo.mockPrinter.recibidos[0] as Uint8Array).text).toContain('Tagliata')
-    const fila = t.m.db.prepare("SELECT * FROM print_jobs WHERE type = 'ticket'").get()
-    expect(fila?.status).toBe('printed')
-    expect(fila?.printed_on_id).toBe(respaldo.id)
-    expect(Number(fila?.attempts)).toBe(4)
+    expect(readEscpos(respaldo.mockPrinter.recibidos[0] as Uint8Array).text).toContain('Tagliata')
+    const row = t.m.db.prepare("SELECT * FROM print_jobs WHERE type = 'ticket'").get()
+    expect(row?.status).toBe('printed')
+    expect(row?.printed_on_id).toBe(respaldo.id)
+    expect(Number(row?.attempts)).toBe(4)
   })
 
   it('el reintento del mismo envío no duplica la comanda', async () => {
@@ -240,10 +240,10 @@ describe('comandas impresas', () => {
     await t.cola.runOnce()
     await kitchen.mockPrinter.esperar(2)
     await bar.mockPrinter.esperar(2)
-    const note = leerEscpos(kitchen.mockPrinter.recibidos[1] as Uint8Array).text
+    const note = readEscpos(kitchen.mockPrinter.recibidos[1] as Uint8Array).text
     expect(note).toContain('NOTA NUEVA')
     expect(note).toContain('NOTA DEL PEDIDO: alérgico al maní')
-    expect(leerEscpos(bar.mockPrinter.recibidos[1] as Uint8Array).text).toContain(
+    expect(readEscpos(bar.mockPrinter.recibidos[1] as Uint8Array).text).toContain(
       'alérgico al maní',
     )
 
@@ -251,7 +251,7 @@ describe('comandas impresas', () => {
     t.other(sent.aggregate_id, 'OrderNoteChanged', { notes: null })
     await t.cola.runOnce()
     await kitchen.mockPrinter.esperar(3)
-    expect(leerEscpos(kitchen.mockPrinter.recibidos[2] as Uint8Array).text).toContain(
+    expect(readEscpos(kitchen.mockPrinter.recibidos[2] as Uint8Array).text).toContain(
       'SE QUITÓ LA NOTA DEL PEDIDO',
     )
   })

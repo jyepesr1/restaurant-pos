@@ -459,7 +459,7 @@ describe('evento rechazado que se reenvía tal cual', () => {
     await m.network.settle()
     const respaldo = structuredClone((m.almacen as AlmacenMemoria).events)
     // Después del respaldo, un ítem más: el único que el respaldo no tiene.
-    const ultimo = await ana.crear(order, 'ItemAdded', item(8900))
+    const latest = await ana.crear(order, 'ItemAdded', item(8900))
     await m.network.settle()
     expect(eventosDe(m)).toHaveLength(3)
 
@@ -470,7 +470,7 @@ describe('evento rechazado que se reenvía tal cual', () => {
     m.network.sala = m.crearSala(restaurado)
     await m.network.conectarTodos()
 
-    const local = await ana.almacen.obtener(ultimo.id)
+    const local = await ana.almacen.obtener(latest.id)
     expect(local?.status, `el último ítem terminó ${local?.status} (${local?.reason})`).toBe(
       'confirmed',
     )

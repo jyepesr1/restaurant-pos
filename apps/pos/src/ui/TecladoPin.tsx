@@ -7,14 +7,14 @@ import { Icono } from './iconos'
 export const DIGITOS = 4
 
 export function TecladoPin({
-  titulo = 'Escribe tu PIN',
+  title = 'Escribe tu PIN',
   error,
   intento = 0,
   esperaMs = 0,
   ocupado = false,
   alCompletar,
 }: {
-  titulo?: string
+  title?: string
   /** Mensaje del último intento fallido. */
   error?: string | null
   /** Cambia en cada intento fallido: así dos errores iguales seguidos también se notan. */
@@ -88,7 +88,7 @@ export function TecladoPin({
   return (
     <div className="mx-auto w-full max-w-xs">
       <p className="text-center text-lg font-semibold" id={idTitulo}>
-        {titulo}
+        {title}
       </p>
       <output className="my-5 flex justify-center gap-4" aria-labelledby={idTitulo}>
         <span className="sr-only">{`${pin.length} de ${DIGITOS} dígitos`}</span>

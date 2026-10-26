@@ -196,8 +196,8 @@ describe('repetir el seed', () => {
       MAS_TARDE,
     )
     const r = h.cargar(MAS_TARDE)
-    const fila = h.cardTerminals().find((f) => f.id === own)
-    expect(fila).toMatchObject({ active: 1, name: 'Redeban barra' })
+    const row = h.cardTerminals().find((f) => f.id === own)
+    expect(row).toMatchObject({ active: 1, name: 'Redeban barra' })
     expect(r.sqlTables.card_terminals?.archived ?? 0).toBe(0)
     expect(h.cardTerminals()).toHaveLength(3)
   })

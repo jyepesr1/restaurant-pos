@@ -190,18 +190,18 @@ export class ServicioAcceso implements ControlAcceso {
 
   /** Token → dispositivo (el `Autenticador` de la sala). `null` si no existe o se archivó. */
   authenticate = (token: string): Conexion | null => {
-    const fila = this.db
+    const row = this.db
       .prepare(
         `SELECT d.id, d.type, d.revoked_at FROM device_credentials c
          JOIN devices d ON d.id = c.device_id
          WHERE c.restaurant_id = ? AND c.token_hash = ? AND d.active = 1`,
       )
       .get(this.restauranteId, huellaSecreto(token))
-    if (!fila) return null
+    if (!row) return null
     return {
-      dispositivoId: String(fila.id),
-      type: String(fila.type) as TipoDispositivo,
-      revocadoEn: fila.revoked_at === null ? null : String(fila.revoked_at),
+      dispositivoId: String(row.id),
+      type: String(row.type) as TipoDispositivo,
+      revocadoEn: row.revoked_at === null ? null : String(row.revoked_at),
     }
   }
 
@@ -294,11 +294,11 @@ export class ServicioAcceso implements ControlAcceso {
     if (data.dispositivoId === connection.dispositivoId)
       return error('invalid_data', 'No puedes retirar el equipo desde el que estás')
 
-    const fila = this.db
+    const row = this.db
       .prepare('SELECT revoked_at FROM devices WHERE restaurant_id = ? AND id = ?')
       .get(this.restauranteId, data.dispositivoId)
-    if (!fila) return error('invalid_data', 'Ese equipo no existe')
-    if (fila.revoked_at !== null) return { ok: true, revocadoEn: String(fila.revoked_at) }
+    if (!row) return error('invalid_data', 'Ese equipo no existe')
+    if (row.revoked_at !== null) return { ok: true, revocadoEn: String(row.revoked_at) }
 
     const ahora = this.clock()
     enTransaccion(this.db, () => {

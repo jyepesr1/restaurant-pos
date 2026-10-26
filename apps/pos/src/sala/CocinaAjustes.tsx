@@ -64,7 +64,7 @@ export function CocinaAjustes() {
 
   if (error && !config)
     return (
-      <MarcoSala titulo="Cocina e impresoras">
+      <MarcoSala title="Cocina e impresoras">
         <div className="mx-auto flex max-w-3xl flex-col items-start gap-3 p-6">
           <p className="text-alerta-texto">{error}</p>
           <Boton onClick={cargar}>Intentar de nuevo</Boton>
@@ -73,7 +73,7 @@ export function CocinaAjustes() {
     )
   if (!config)
     return (
-      <MarcoSala titulo="Cocina e impresoras">
+      <MarcoSala title="Cocina e impresoras">
         <p className="p-6 text-texto-suave">Leyendo la configuración de la caja…</p>
       </MarcoSala>
     )
@@ -95,7 +95,7 @@ export function CocinaAjustes() {
 
   return (
     <MarcoSala
-      titulo="Cocina e impresoras"
+      title="Cocina e impresoras"
       actions={
         <Boton variant="main" icono="more" onClick={() => setEditando({ ...NUEVA })}>
           Agregar impresora
@@ -303,7 +303,7 @@ function EditarImpresora({
   return (
     <PanelLateral
       opened
-      titulo={initial.id ? `Editar ${initial.name}` : 'Impresora nueva'}
+      title={initial.id ? `Editar ${initial.name}` : 'Impresora nueva'}
       alCerrar={alCerrar}
       pie={
         <div className="flex flex-col gap-2">

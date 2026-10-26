@@ -27,10 +27,10 @@ function restauranteLocal(): { id: string; name: string } {
   const dir = process.env.DATA_DIR || fileURLToPath(new URL('../../hub/datos', import.meta.url))
   const db = abrirBase(join(dir, 'pos.sqlite'))
   try {
-    const fila = db.prepare('SELECT id, name FROM restaurants LIMIT 1').get()
-    if (!fila)
+    const row = db.prepare('SELECT id, name FROM restaurants LIMIT 1').get()
+    if (!row)
       throw new Error(`La base del hub en ${dir} no tiene restaurante. Corre primero pnpm seed.`)
-    return { id: String(fila.id), name: String(fila.name) }
+    return { id: String(row.id), name: String(row.name) }
   } finally {
     db.close()
   }

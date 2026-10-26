@@ -32,7 +32,7 @@ function liberarFondo(panel: object) {
 
 export function PanelLateral({
   opened,
-  titulo,
+  title,
   alCerrar,
   pie,
   soloConBoton = false,
@@ -40,7 +40,7 @@ export function PanelLateral({
   children,
 }: {
   opened: boolean
-  titulo: string
+  title: string
   alCerrar: () => void
   /** Acciones fijas abajo (p. ej. "Agregar"). */
   pie?: ReactNode
@@ -103,7 +103,7 @@ export function PanelLateral({
       >
         <div className="flex items-center justify-between gap-3 border-b border-borde p-3 pl-5">
           <h2 id={id} className="text-xl font-semibold">
-            {titulo}
+            {title}
           </h2>
           {!soloConBoton && (
             <Boton

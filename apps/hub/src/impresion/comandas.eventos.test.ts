@@ -1,5 +1,5 @@
 import { newId } from '@pos/core'
-import { leerEscpos } from '@pos/printing'
+import { readEscpos } from '@pos/printing'
 import { describe, expect, it } from 'vitest'
 import { insertarVersionado, SISTEMA } from '../acceso/registros'
 import { trabajosDeEvento } from './comandas'
@@ -35,7 +35,7 @@ describe('numeración de las comandas por día operativo', () => {
     const numeros = r.accepted?.assignments.ticket_numbers as Record<string, number>
     expect(r.tickets.map((c) => numeros[c.ticket_id])).toEqual([1, 2, 3])
     const porEstacion = Object.fromEntries(
-      t.trabajos().map((f) => [t.content(f).station, t.content(f).numero]),
+      t.trabajos().map((f) => [t.content(f).station, t.content(f).number]),
     )
     expect(porEstacion).toEqual({ Cocina: 1, Barra: 2, Postres: 3 })
   })
@@ -49,13 +49,13 @@ describe('numeración de las comandas por día operativo', () => {
       t.send(ana, order, items)
     }
     enviarUno() // 3:00 p. m. del 24
-    t.avanzar(14 * 3_600_000 + 59 * 60_000) // 5:59 a. m. del 25: sigue siendo el día 24
+    t.advance(14 * 3_600_000 + 59 * 60_000) // 5:59 a. m. del 25: sigue siendo el día 24
     enviarUno()
-    t.avanzar(60_000) // 6:00 a. m.
+    t.advance(60_000) // 6:00 a. m.
     enviarUno()
-    t.avanzar(60_000)
+    t.advance(60_000)
     enviarUno()
-    expect(t.trabajos().map((f) => t.content(f).numero)).toEqual([1, 2, 1, 2])
+    expect(t.trabajos().map((f) => t.content(f).number)).toEqual([1, 2, 1, 2])
   })
 
   it('la hora de la comanda sale en la zona horaria del restaurante', () => {
@@ -165,8 +165,8 @@ describe('ItemsEnviados con ítems ya enviados por otro equipo', () => {
     )
     const other = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }])
     t.send(ana, other.order, other.items)
-    const ultimo = t.trabajos().at(-1)
-    expect(t.content(ultimo).numero).toBe(2)
+    const latest = t.trabajos().at(-1)
+    expect(t.content(latest).number).toBe(2)
   })
 })
 
@@ -181,7 +181,7 @@ describe('un envío hecho sin conexión que llega tarde', () => {
     const before = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }])
     t.send(ana, before.order, before.items) // número 1 del día 24
     const horaDelEnvio = new Date(t.clock() + 8.5 * 3_600_000).toISOString() // 11:30 p. m. del 24
-    t.avanzar(15 * 3_600_000 + 40 * 60_000) // 6:40 a. m. del 25
+    t.advance(15 * 3_600_000 + 40 * 60_000) // 6:40 a. m. del 25
     const r = luis.mandar(
       order,
       'ItemsSent',
@@ -190,14 +190,14 @@ describe('un envío hecho sin conexión que llega tarde', () => {
     )
     expect(r.status).toBe('confirmed')
     expect(r.accepted?.business_day).toBe('2026-10-24')
-    const ultimo = t.trabajos().at(-1)
-    expect(t.content(ultimo).numero).toBe(2)
-    expect(String(ultimo?.created_at)).toBe(r.accepted?.received_at)
-    expect(TIME.exec(String(t.content(ultimo).time))?.slice(1, 5)).toEqual(['6', '40', 'a'])
+    const latest = t.trabajos().at(-1)
+    expect(t.content(latest).number).toBe(2)
+    expect(String(latest?.created_at)).toBe(r.accepted?.received_at)
+    expect(TIME.exec(String(t.content(latest).time))?.slice(1, 5)).toEqual(['6', '40', 'a'])
     // Hoy la cuenta empieza en 1.
     const today = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }])
     t.send(ana, today.order, today.items)
-    expect(t.content(t.trabajos().at(-1)).numero).toBe(1)
+    expect(t.content(t.trabajos().at(-1)).number).toBe(1)
   })
 
   it('sale por la impresora aunque el envío llegue horas después, y solo una vez', async () => {
@@ -205,7 +205,7 @@ describe('un envío hecho sin conexión que llega tarde', () => {
     const { kitchen } = conImpresoras(t)
     const ana = t.device('waiter')
     const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
-    t.avanzar(3 * 3_600_000)
+    t.advance(3 * 3_600_000)
     t.send(ana, order, items)
     await t.cola.runOnce()
     await t.cola.runOnce()
@@ -247,7 +247,7 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
     expect(t.pendingList()).toBe(1)
     await t.cola.runOnce()
     expect(imp.kitchen.papel.recibidos).toHaveLength(2)
-    const text = imp.kitchen.papel.textos()[1] as string
+    const text = imp.kitchen.papel.texts()[1] as string
     expect(text).toContain('REIMPRESIÓN')
     expect(text).toMatch(/Mesa 12 +#1/)
     expect(text).toContain('3 x Tagliata')
@@ -295,7 +295,7 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
     const kitchen = sent.tickets.find((c) => c.station_id === t.kitchen)
     ana.mandar(order, 'TicketReprinted', { ticket_id: kitchen?.ticket_id })
     await t.cola.runOnce()
-    const text = imp.kitchen.papel.textos().at(-1) as string
+    const text = imp.kitchen.papel.texts().at(-1) as string
     expect(text).toContain('REIMPRESIÓN')
     expect(text).toContain('2 x Tagliata')
     expect(text).not.toContain('Risotto')
@@ -327,7 +327,7 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
     })
     expect(r.status).toBe('confirmed')
     await t.cola.runOnce()
-    const text = imp.kitchen.papel.textos().at(-1) as string
+    const text = imp.kitchen.papel.texts().at(-1) as string
     expect(text).toContain('ANULAR')
     expect(text).toMatch(/Mesa 12 +#1/)
     expect(text).toContain('-2 x Tagliata')
@@ -393,9 +393,9 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
         ticket_id: null,
       })
     await t.cola.runOnce()
-    const textos = imp.kitchen.papel.textos()
-    expect(textos.at(-2)).toContain('-1 x Tagliata')
-    expect(textos.at(-1)).toContain('-2 x Tagliata')
+    const texts = imp.kitchen.papel.texts()
+    expect(texts.at(-2)).toContain('-1 x Tagliata')
+    expect(texts.at(-1)).toContain('-2 x Tagliata')
   })
 
   it('ItemModificadoTrasEnvio saca la comanda de cambio con las opciones y notas nuevas', async () => {
@@ -408,7 +408,7 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
     })
     expect(r.status).toBe('confirmed')
     await t.cola.runOnce()
-    const text = imp.kitchen.papel.textos().at(-1) as string
+    const text = imp.kitchen.papel.texts().at(-1) as string
     expect(text).toContain('CAMBIO')
     expect(text).toMatch(/Mesa 12 +#1/)
     expect(text).toContain('Risotto')
@@ -426,7 +426,7 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
       modifiers: [{ modifier_id: newId(), name: 'Bien cocido', extra_price: 0 }],
     })
     await t.cola.runOnce()
-    const text = imp.kitchen.papel.textos().at(-1) as string
+    const text = imp.kitchen.papel.texts().at(-1) as string
     expect(text).toContain('> Bien cocido')
     expect(text).not.toContain('NOTA')
   })
@@ -540,7 +540,7 @@ describe('datos que lleva la comanda', () => {
       waiter: 'Ana',
       order: 1,
       guests: 2,
-      numero: 1,
+      number: 1,
     })
   })
 
@@ -590,8 +590,8 @@ describe('datos que lleva la comanda', () => {
     t.send(ana, order, items)
     await t.cola.runOnce()
     const bytes = imp.kitchen.papel.recibidos[0] as Uint8Array
-    expect(leerEscpos(bytes).cortes).toBe(1)
-    expect(leerEscpos(bytes).text).toContain('Pizza')
+    expect(readEscpos(bytes).cuts).toBe(1)
+    expect(readEscpos(bytes).text).toContain('Pizza')
   })
 })
 
@@ -614,11 +614,11 @@ describe('cursos retenidos', () => {
     })
     expect(t.hub.order(order)?.items[dessert.id]?.status).toBe('held')
     t.send(ana, order, [main])
-    expect(t.content(t.trabajos()[0]).retenidos).toEqual(['dessert'])
+    expect(t.content(t.trabajos()[0]).heldCourses).toEqual(['dessert'])
     // Se marcha el postre: ahora sí se envía y ya no hay nada en espera.
     ana.mandar(order, 'CourseFired', { course: 'dessert' })
     t.send(ana, order, [dessert])
-    expect(t.content(t.trabajos().at(-1)).retenidos).toEqual([])
+    expect(t.content(t.trabajos().at(-1)).heldCourses).toEqual([])
   })
 
   it('varios cursos retenidos se avisan todos, y solo los que tienen platos', () => {
@@ -635,7 +635,7 @@ describe('cursos retenidos', () => {
     })
     t.add(ana, order, { name: 'Tagliata', station: t.kitchen, course: 'main' })
     t.send(ana, order, [entry])
-    expect(t.content(t.trabajos()[0]).retenidos).toEqual(['main'])
+    expect(t.content(t.trabajos()[0]).heldCourses).toEqual(['main'])
   })
 
   it('si el curso está retenido pero no hay platos de ese curso, no se avisa en espera', () => {
@@ -646,7 +646,7 @@ describe('cursos retenidos', () => {
     ana.mandar(order, 'CourseHeld', { course: 'dessert' })
     const dish = t.add(ana, order, { name: 'Risotto', station: t.kitchen })
     t.send(ana, order, [dish])
-    expect(t.content(t.trabajos().at(-1)).retenidos).toEqual([])
+    expect(t.content(t.trabajos().at(-1)).heldCourses).toEqual([])
   })
 
   it('las reimpresiones no llevan el aviso de espera', () => {
@@ -662,9 +662,9 @@ describe('cursos retenidos', () => {
     t.add(ana, order, { name: 'Tiramisú', station: t.postres, course: 'dessert' })
     ana.mandar(order, 'CourseHeld', { course: 'dessert' })
     const r = t.send(ana, order, [dish])
-    expect(t.content(t.trabajos()[0]).retenidos).toEqual(['dessert'])
+    expect(t.content(t.trabajos()[0]).heldCourses).toEqual(['dessert'])
     ana.mandar(order, 'TicketReprinted', { ticket_id: r.tickets[0]?.ticket_id })
-    expect(t.content(t.trabajos().at(-1))).toMatchObject({ type: 'reprinting', retenidos: [] })
+    expect(t.content(t.trabajos().at(-1))).toMatchObject({ type: 'reprinting', heldCourses: [] })
   })
 })
 
@@ -714,7 +714,7 @@ describe('estaciones e impresoras', () => {
     ])
     t.send(ana, order, items)
     await t.cola.runOnce()
-    expect(unica.papel.textos().map((x) => (x.includes('COCINA') ? 'cocina' : 'barra'))).toEqual([
+    expect(unica.papel.texts().map((x) => (x.includes('COCINA') ? 'cocina' : 'barra'))).toEqual([
       'cocina',
       'barra',
     ])
@@ -737,7 +737,7 @@ describe('estaciones e impresoras', () => {
     t.send(ana, order, items)
     t.db.prepare('UPDATE stations SET active = 0 WHERE id = ?').run(t.kitchen)
     await t.cola.runOnce()
-    expect(imp.papel.textos()[0]).toContain('COCINA')
+    expect(imp.papel.texts()[0]).toContain('COCINA')
   })
 
   it('una estación que no existe en la base se imprime como «Estación»', () => {

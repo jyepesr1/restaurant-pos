@@ -17,7 +17,7 @@ export const esperaTras = (fallos: number) =>
 interface Registro {
   fallos: number
   until: number
-  ultimo: number
+  latest: number
 }
 
 /**
@@ -56,10 +56,10 @@ export class Intentos {
     const ahora = this.ahora()
     const previous = this.registros.get(quien)
     // Tras una ventana sin fallos, se empieza de cero.
-    const fallos = previous && ahora - previous.ultimo < VENTANA_AVISO_MS ? previous.fallos + 1 : 1
+    const fallos = previous && ahora - previous.latest < VENTANA_AVISO_MS ? previous.fallos + 1 : 1
     const delay = Math.min(tope, esperaTras(fallos))
-    this.registros.set(quien, { fallos, until: ahora + delay, ultimo: ahora })
-    this.limpiar(ahora)
+    this.registros.set(quien, { fallos, until: ahora + delay, latest: ahora })
+    this.clear(ahora)
 
     if (contar) this.recientes.push(ahora)
     this.recientes = this.recientes.filter((t) => ahora - t < VENTANA_AVISO_MS)
@@ -71,9 +71,9 @@ export class Intentos {
   }
 
   /** Que una IP que prueba sin parar no haga crecer la memoria sin límite. */
-  private limpiar(ahora: number) {
+  private clear(ahora: number) {
     if (this.registros.size < 1000) return
     for (const [quien, r] of this.registros)
-      if (ahora - r.ultimo >= VENTANA_AVISO_MS) this.registros.delete(quien)
+      if (ahora - r.latest >= VENTANA_AVISO_MS) this.registros.delete(quien)
   }
 }

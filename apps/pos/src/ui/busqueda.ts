@@ -17,16 +17,16 @@ export function distancia(a: string, b: string): number {
   )
   for (let i = 1; i <= a.length; i++) {
     for (let j = 1; j <= b.length; j++) {
-      const fila = rows[i] as number[]
+      const row = rows[i] as number[]
       const above = rows[i - 1] as number[]
       const costo = a[i - 1] === b[j - 1] ? 0 : 1
-      fila[j] = Math.min(
+      row[j] = Math.min(
         (above[j] as number) + 1,
-        (fila[j - 1] as number) + 1,
+        (row[j - 1] as number) + 1,
         (above[j - 1] as number) + costo,
       )
       if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
-        fila[j] = Math.min(fila[j] as number, ((rows[i - 2] as number[])[j - 2] as number) + 1)
+        row[j] = Math.min(row[j] as number, ((rows[i - 2] as number[])[j - 2] as number) + 1)
     }
   }
   return (rows[a.length] as number[])[b.length] as number
@@ -36,15 +36,12 @@ export function distancia(a: string, b: string): number {
 const tolerancia = (length: number) => (length <= 3 ? 0 : length <= 6 ? 1 : 2)
 
 /** Qué tan bien una palabra buscada calza con una del nombre (0 = perfecto; null = no calza). */
-function calce(buscada: string, palabra: string): number | null {
-  if (palabra.startsWith(buscada)) return 0
+function calce(buscada: string, word: string): number | null {
+  if (word.startsWith(buscada)) return 0
   const t = tolerancia(buscada.length)
   if (t === 0) return null
   // Se compara también con el comienzo de la palabra: "apreol" contra "aperol" de "aperol spritz".
-  const d = Math.min(
-    distancia(buscada, palabra),
-    distancia(buscada, palabra.slice(0, buscada.length)),
-  )
+  const d = Math.min(distancia(buscada, word), distancia(buscada, word.slice(0, buscada.length)))
   return d <= t ? d : null
 }
 
@@ -53,13 +50,13 @@ function calce(buscada: string, palabra: string): number | null {
  * calzar con alguna del texto. Sin búsqueda, devuelve todo en su orden.
  */
 export function search<T>(elements: readonly T[], busqueda: string, text: (e: T) => string): T[] {
-  const palabras = normalizar(busqueda).split(' ').filter(Boolean)
-  if (palabras.length === 0) return [...elements]
+  const words = normalizar(busqueda).split(' ').filter(Boolean)
+  if (words.length === 0) return [...elements]
   const puntuados: { element: T; puntos: number; position: number }[] = []
   elements.forEach((element, position) => {
     const del = normalizar(text(element)).split(' ')
     let puntos = 0
-    for (const buscada of palabras) {
+    for (const buscada of words) {
       const mejor = Math.min(...del.map((p) => calce(buscada, p) ?? Number.POSITIVE_INFINITY))
       if (!Number.isFinite(mejor)) return
       puntos += mejor

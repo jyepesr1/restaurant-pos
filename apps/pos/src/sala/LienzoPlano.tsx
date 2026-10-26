@@ -121,7 +121,7 @@ export function Sillas({
     const enLados = places - cabeceras
     const above = Math.ceil(enLados / 2)
     const below = enLados - above
-    const fila = (cuantas: number, lejos: boolean) => {
+    const row = (cuantas: number, lejos: boolean) => {
       for (let i = 0; i < cuantas; i++) {
         const a = (lado * (i + 0.5)) / cuantas
         const b = lejos ? cabecera + aire + fondo / 2 : -aire - fondo / 2
@@ -132,8 +132,8 @@ export function Sillas({
         )
       }
     }
-    fila(above, false)
-    fila(below, true)
+    row(above, false)
+    row(below, true)
     if (cabeceras) {
       const method = cabecera / 2
       const before = -aire - fondo / 2

@@ -9,7 +9,7 @@ import { sembrar } from './sembrar'
 // nada) justo antes del INSERT número N de una tabla (MORIR_EN="producto:50") o antes de crear a
 // la persona número N (MORIR_EN="usuario:3").
 
-const [tabla, n] = (process.env.MORIR_EN ?? '').split(':') as [string, string]
+const [tableName, n] = (process.env.MORIR_EN ?? '').split(':') as [string, string]
 const limite = Number(n)
 const morir = () => process.kill(process.pid, 'SIGKILL')
 
@@ -21,7 +21,7 @@ let check = 0
 const trampa: BaseSqlite = {
   exec: (sql) => db.exec(sql),
   prepare: (sql) => {
-    if (sql.startsWith(`INSERT INTO ${tabla} `) && ++check === limite) morir()
+    if (sql.startsWith(`INSERT INTO ${tableName} `) && ++check === limite) morir()
     return db.prepare(sql)
   },
   close: () => db.close(),
@@ -29,7 +29,7 @@ const trampa: BaseSqlite = {
 const insertUser = access.insertUser.bind(access)
 let people = 0
 access.insertUser = (...args) => {
-  if (tabla === 'users' && ++people === limite) morir()
+  if (tableName === 'users' && ++people === limite) morir()
   return insertUser(...args)
 }
 

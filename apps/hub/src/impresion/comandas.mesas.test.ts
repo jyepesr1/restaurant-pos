@@ -77,11 +77,11 @@ describe('cancelar el pedido', () => {
     const voids = trabajosTipo(t, 'voidEntry')
     expect(voids).toHaveLength(2)
     const porEstacion = Object.fromEntries(voids.map((f) => [t.content(f).station, t.content(f)]))
-    expect(porEstacion.Cocina).toMatchObject({ target: 'Mesa 5', numero: 1 })
+    expect(porEstacion.Cocina).toMatchObject({ target: 'Mesa 5', number: 1 })
     expect(porEstacion.Cocina.items).toMatchObject([{ name: 'Tagliata', quantity: 2 }])
     expect(porEstacion.Barra.items).toMatchObject([{ name: 'Aperol Spritz', quantity: 1 }])
     await t.cola.runOnce()
-    expect(imp.kitchen.papel.textos().at(-1)).toContain('ANULAR')
+    expect(imp.kitchen.papel.texts().at(-1)).toContain('ANULAR')
   })
 
   it('solo se anula lo que sigue en cocina: no lo entregado ni lo anulado, y las unidades que quedan', async () => {
@@ -189,7 +189,7 @@ describe('cambiar de mesa (traslado)', () => {
     for (const f of traslados)
       expect(t.content(f)).toMatchObject({ target: 'Mesa 6', before: 'Mesa 5' })
     await t.cola.runOnce()
-    const text = imp.kitchen.papel.textos().at(-1) as string
+    const text = imp.kitchen.papel.texts().at(-1) as string
     expect(text).toContain('CAMBIO DE MESA')
     expect(text).toContain('Antes: Mesa 5')
     expect(text).toMatch(/Mesa 6 +#1/)
@@ -209,8 +209,8 @@ describe('cambiar de mesa (traslado)', () => {
     t.send(ana, order, items)
     ana.mandar(order, 'OrderMovedTable', { target_table_id: t.table('6') })
     const c = t.content(trabajosTipo(t, 'move')[0])
-    expect(c.numero).toBe(1)
-    expect(c.notaPedido ?? null).toBeNull()
+    expect(c.number).toBe(1)
+    expect(c.orderNote ?? null).toBeNull()
   })
 
   it('nada en cocina, nada que avisar: pendientes, entregados y pedidos sin enviar no imprimen', () => {
@@ -328,11 +328,11 @@ describe('mover productos (traslado)', () => {
       station: 'Cocina',
       target: 'Mesa 8',
       before: 'Mesa 5',
-      numero: 1,
+      number: 1,
     })
     expect(t.content(traslados[0]).items).toMatchObject([{ name: 'Risotto' }])
     await t.cola.runOnce()
-    expect(imp.kitchen.papel.textos().at(-1)).toContain('Antes: Mesa 5')
+    expect(imp.kitchen.papel.texts().at(-1)).toContain('Antes: Mesa 5')
   })
 
   it('a un pedido que ya existe con productos: el destino es la mesa de ese pedido', () => {
@@ -396,7 +396,7 @@ describe('mover productos (traslado)', () => {
     expect(t.content(traslados[1])).toMatchObject({
       target: 'Mesa 9',
       before: 'Mesa 8',
-      numero: 1,
+      number: 1,
     })
   })
 
@@ -428,10 +428,10 @@ describe('reimprimir la comanda de platos que se movieron', () => {
     expect(ana.mandar(target, 'TicketReprinted', { ticket_id: comandaId }).status).toBe('confirmed')
     const reimpresiones = trabajosTipo(t, 'reprinting')
     expect(reimpresiones).toHaveLength(1)
-    expect(t.content(reimpresiones[0])).toMatchObject({ target: 'Mesa 8', numero: 1 })
+    expect(t.content(reimpresiones[0])).toMatchObject({ target: 'Mesa 8', number: 1 })
     expect(t.content(reimpresiones[0]).items).toMatchObject([{ name: 'Tagliata' }])
     await t.cola.runOnce()
-    expect(imp.kitchen.papel.textos().at(-1)).toContain('REIMPRESIÓN')
+    expect(imp.kitchen.papel.texts().at(-1)).toContain('REIMPRESIÓN')
   })
 
   it('una comanda que no existe en ningún pedido no imprime nada', () => {

@@ -10,13 +10,7 @@ import {
   orderTotals,
 } from '@pos/core'
 import type { BaseSqlite, Fila } from '@pos/db'
-import {
-  type Comanda,
-  type ItemComanda,
-  nombreImpuesto,
-  type Precuenta,
-  type TipoComanda,
-} from '@pos/printing'
+import { type PreBill, type Ticket, type TicketItem, type TicketType, taxName } from '@pos/printing'
 import type { CambioPedido } from '@pos/sync'
 import { encolarCierreZ } from '../reportes/cierre-z'
 
@@ -39,7 +33,7 @@ interface Enviada {
   comandaId: string
   estacionId: string
   itemIds: string[]
-  numero: number | null
+  number: number | null
 }
 
 export interface OpcionesComandas {
@@ -70,11 +64,11 @@ export function trabajosDeEvento(
   if (!after) return 0
   if (event.type === 'PreBillPrinted') return trabajoDePrecuenta(o, event, after)
 
-  const porCrear: { comandaId: string; estacionId: string; ticket: Comanda }[] = []
+  const porCrear: { comandaId: string; estacionId: string; ticket: Ticket }[] = []
   const build = (
-    type: TipoComanda,
+    type: TicketType,
     sent: Enviada,
-    items: ItemComanda[],
+    items: TicketItem[],
     order: OrderState = after,
     from: string | null = null,
   ) => {
@@ -87,7 +81,7 @@ export function trabajosDeEvento(
   }
   /** Lo que sigue en cocina de un pedido, agrupado por la comanda con que salió. */
   const enCocinaPorComanda = (order: OrderState, ids?: readonly string[]) => {
-    const groups = new Map<string, { sent: Enviada; items: ItemComanda[] }>()
+    const groups = new Map<string, { sent: Enviada; items: TicketItem[] }>()
     for (const item of Object.values(order.items)) {
       if (ids && !ids.includes(item.id)) continue
       if (!EN_COCINA.has(item.status) || item.quantity <= item.voidedQuantity) continue
@@ -117,7 +111,7 @@ export function trabajosDeEvento(
             comandaId: c.ticket_id,
             estacionId: c.station_id,
             itemIds: c.item_ids,
-            numero: event.assignments.ticket_numbers?.[c.ticket_id] ?? null,
+            number: event.assignments.ticket_numbers?.[c.ticket_id] ?? null,
           },
           items,
         )
@@ -212,7 +206,7 @@ export function trabajosDeEvento(
 function insertar(
   o: OpcionesComandas,
   event: OrderEvent,
-  porCrear: readonly { comandaId: string; estacionId: string; ticket: Comanda }[],
+  porCrear: readonly { comandaId: string; estacionId: string; ticket: Ticket }[],
 ): number {
   let creados = 0
   for (const { comandaId, estacionId, ticket } of porCrear) {
@@ -248,8 +242,8 @@ function trabajoDePrecuenta(
   event: Extract<OrderEvent, { type: 'PreBillPrinted' }>,
   order: OrderState,
 ): number {
-  const fila = value(o, 'SELECT name, config FROM restaurants WHERE id = ?')
-  const config = fullConfig(JSON.parse(String(fila?.config ?? '{}')))
+  const row = value(o, 'SELECT name, config FROM restaurants WHERE id = ?')
+  const config = fullConfig(JSON.parse(String(row?.config ?? '{}')))
   const impresoraId = config.pre_bill_printer_id
   if (
     !impresoraId ||
@@ -274,8 +268,8 @@ function trabajoDePrecuenta(
   const subtotal = check ? Math.max(0, checkBalance(order, check.id) ?? 0) : totales.balance
   const tip = event.data.suggested_tip
   const suggested = check ? checkPendingTip(check, subtotal) : orderTip(order, subtotal, config)
-  const preBill: Precuenta = {
-    restaurant: String(fila?.name ?? ''),
+  const preBill: PreBill = {
+    restaurant: String(row?.name ?? ''),
     target: destinoDe(o, order),
     order: order.dayNumber,
     waiter: waiter ? String(waiter.name) : '',
@@ -291,7 +285,7 @@ function trabajoDePrecuenta(
         value: itemTotals(order, i).net,
       })),
     taxes: orderTaxes(order, config.rounding_mode).map((i) => ({
-      name: nombreImpuesto(i.type, i.rate),
+      name: taxName(i.type, i.rate),
       base: i.base,
       value: i.tax,
     })),
@@ -300,7 +294,7 @@ function trabajoDePrecuenta(
     check: check ? { name: check.name, amount: subtotal } : null,
     subtotal,
     tip,
-    tasaPropina: tip === suggested ? config.suggested_tip : null,
+    tipRate: tip === suggested ? config.suggested_tip : null,
   }
   o.db
     .prepare(
@@ -397,20 +391,20 @@ function deFilas(rows: readonly Fila[]): Enviada[] {
       comandaId: c.ticket_id,
       estacionId: c.station_id,
       itemIds: c.item_ids,
-      numero: numeros?.[c.ticket_id] ?? null,
+      number: numeros?.[c.ticket_id] ?? null,
     }))
   })
 }
 
 /** Lo que sigue en pie de una comanda (sin lo anulado). */
-function itemsVigentes(order: OrderState, ids: readonly string[]): ItemComanda[] {
+function itemsVigentes(order: OrderState, ids: readonly string[]): TicketItem[] {
   return ids
     .map((id) => order.items[id])
     .filter((i): i is OrderItem => !!i && i.status !== 'voided' && i.quantity > i.voidedQuantity)
     .map((i) => itemComanda(i))
 }
 
-function itemComanda(i: OrderItem): ItemComanda {
+function itemComanda(i: OrderItem): TicketItem {
   return {
     quantity: i.quantity - i.voidedQuantity,
     name: i.name,
@@ -443,10 +437,10 @@ function datosComanda(
   o: OpcionesComandas,
   event: OrderEvent,
   order: OrderState,
-  type: TipoComanda,
+  type: TicketType,
   sent: Enviada,
-  items: ItemComanda[],
-): Comanda {
+  items: TicketItem[],
+): Ticket {
   const station = value(
     o,
     'SELECT name FROM stations WHERE restaurant_id = ? AND id = ?',
@@ -461,16 +455,16 @@ function datosComanda(
   return {
     type,
     station: station ? String(station.name) : 'Estación',
-    numero: sent.numero,
+    number: sent.number,
     target,
     order: order.dayNumber,
     waiter: waiter ? String(waiter.name) : '',
     time: timeOf(o, event.received_at),
     guests: order.guests > 0 ? order.guests : null,
     items,
-    retenidos: type === 'newOne' ? order.heldCourses.filter((c) => tieneCurso(order, c)) : [],
+    heldCourses: type === 'newOne' ? order.heldCourses.filter((c) => tieneCurso(order, c)) : [],
     // En una anulación o un cambio, la nota del pedido distrae: ya salió con la comanda original.
-    notaPedido: type === 'newOne' || type === 'reprinting' || type === 'note' ? order.notes : null,
+    orderNote: type === 'newOne' || type === 'reprinting' || type === 'note' ? order.notes : null,
   }
 }
 

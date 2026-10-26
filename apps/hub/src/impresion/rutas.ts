@@ -7,7 +7,7 @@ import {
   type RestaurantConfig,
 } from '@pos/core'
 import { type BaseSqlite, enTransaccion, type Fila } from '@pos/db'
-import { PAGINAS_CODIGOS } from '@pos/printing'
+import { CODE_PAGES } from '@pos/printing'
 import type { Conexion } from '@pos/sync'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
@@ -79,7 +79,7 @@ const Impresora = z.strictObject({
   address: z.string().trim().min(1).max(255),
   port: z.int().min(1).max(65535).nullable(),
   width: z.union([z.literal(58), z.literal(80)]),
-  code_page: z.enum(PAGINAS_CODIGOS),
+  code_page: z.enum(CODE_PAGES),
   fallback_id: Id.nullable(),
   station_ids: Estaciones,
   active: z.boolean(),
@@ -355,7 +355,7 @@ export async function rutasImpresion(
           target?: string
           reprinted?: string | null
           station?: string
-          numero?: number | null
+          number?: number | null
         }
         return {
           id: String(f.id),
@@ -369,7 +369,7 @@ export async function rutasImpresion(
                   ? c.reprinted
                     ? 'Cierre de caja (reimpresión)'
                     : 'Cierre de caja'
-                  : [c.station, c.target, c.numero ? `#${c.numero}` : null]
+                  : [c.station, c.target, c.number ? `#${c.number}` : null]
                       .filter(Boolean)
                       .join(' · '),
           attempts: Number(f.attempts),

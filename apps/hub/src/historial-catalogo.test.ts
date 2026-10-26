@@ -12,12 +12,12 @@ const AUTOR: Autor = { userId: null, dispositivoId: null }
 function montar() {
   const m = montarCarta()
   const historial = new HistorialCatalogo(m.db, m.restauranteId)
-  const patch = (tabla: string, id: string, fields: Record<string, string | number | null>) => {
-    actualizarVersionado(m.db, tabla, m.restauranteId, id, fields, AUTOR, m.clock())
+  const patch = (tableName: string, id: string, fields: Record<string, string | number | null>) => {
+    actualizarVersionado(m.db, tableName, m.restauranteId, id, fields, AUTOR, m.clock())
     return historial.versionActual()
   }
-  const crear = (tabla: string, fields: Record<string, string | number | null>) => {
-    const id = insertarVersionado(m.db, tabla, m.restauranteId, fields, AUTOR, m.clock())
+  const crear = (tableName: string, fields: Record<string, string | number | null>) => {
+    const id = insertarVersionado(m.db, tableName, m.restauranteId, fields, AUTOR, m.clock())
     return { id, version: historial.versionActual() }
   }
   const data = (p: ReturnType<typeof m.product>, fields: Record<string, unknown> = {}) => ({
@@ -107,8 +107,8 @@ describe('historial con muchos cambios del mismo registro', () => {
   it('el historial con el catálogo migrado coincide con lo que tiene cada tabla hoy', () => {
     const m = montar()
     for (const p of m.catalog().categories.flatMap((c) => c.products)) {
-      const fila = m.db.prepare('SELECT * FROM products WHERE id = ?').get(p.id)
-      expect(m.historial.estadoEn('products', p.id, m.historial.versionActual())).toEqual(fila)
+      const row = m.db.prepare('SELECT * FROM products WHERE id = ?').get(p.id)
+      expect(m.historial.estadoEn('products', p.id, m.historial.versionActual())).toEqual(row)
     }
   })
 })
@@ -197,34 +197,34 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   it('un modificador que cambió de precio entre versiones', () => {
     const m = montar()
     const tagliata = m.product('Tagliata di Manzo')
-    const opcion = tagliata.groups[0]?.options[0]
-    if (!opcion) throw new Error('falta')
+    const option = tagliata.groups[0]?.options[0]
+    if (!option) throw new Error('falta')
     const before = m.historial.versionActual()
-    const after = m.patch('modifiers', opcion.id, {
-      extra_price: opcion.extraPrice + 2_500,
+    const after = m.patch('modifiers', option.id, {
+      extra_price: option.extraPrice + 2_500,
     })
     const item = (extra: number, catalog_version: number) =>
       m.data(tagliata, {
         catalog_version,
-        modifiers: [{ modifier_id: opcion.id, name: opcion.name, extra_price: extra }],
+        modifiers: [{ modifier_id: option.id, name: option.name, extra_price: extra }],
       })
-    expect(m.variance(item(opcion.extraPrice, before))).toBeNull()
-    expect(m.variance(item(opcion.extraPrice, after))).toMatch(/La opción «.+» se cobró/)
-    expect(m.variance(item(opcion.extraPrice + 2_500, after))).toBeNull()
-    expect(m.variance(item(opcion.extraPrice + 2_500, before))).toMatch(/La opción «.+» se cobró/)
+    expect(m.variance(item(option.extraPrice, before))).toBeNull()
+    expect(m.variance(item(option.extraPrice, after))).toMatch(/La opción «.+» se cobró/)
+    expect(m.variance(item(option.extraPrice + 2_500, after))).toBeNull()
+    expect(m.variance(item(option.extraPrice + 2_500, before))).toMatch(/La opción «.+» se cobró/)
   })
 
   it('un modificador archivado después ya no estaba en la carta; antes sí', () => {
     const m = montar()
     const tagliata = m.product('Tagliata di Manzo')
-    const opcion = tagliata.groups[0]?.options[0]
-    if (!opcion) throw new Error('falta')
+    const option = tagliata.groups[0]?.options[0]
+    if (!option) throw new Error('falta')
     const before = m.historial.versionActual()
-    const after = m.patch('modifiers', opcion.id, { active: 0 })
+    const after = m.patch('modifiers', option.id, { active: 0 })
     const item = (catalog_version: number) =>
       m.data(tagliata, {
         catalog_version,
-        modifiers: [{ modifier_id: opcion.id, name: opcion.name, extra_price: opcion.extraPrice }],
+        modifiers: [{ modifier_id: option.id, name: option.name, extra_price: option.extraPrice }],
       })
     expect(m.variance(item(before))).toBeNull()
     expect(m.variance(item(after))).toMatch(/no estaba en la carta/)
@@ -329,12 +329,12 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   it('con un modificador repetido', () => {
     const m = montar()
     const tagliata = m.product('Tagliata di Manzo')
-    const opcion = tagliata.groups[0]?.options[0]
-    if (!opcion) throw new Error('falta')
+    const option = tagliata.groups[0]?.options[0]
+    if (!option) throw new Error('falta')
     const mod = {
-      modifier_id: opcion.id,
-      name: opcion.name,
-      extra_price: opcion.extraPrice,
+      modifier_id: option.id,
+      name: option.name,
+      extra_price: option.extraPrice,
     }
     expect(m.variance(m.data(tagliata, { modifiers: [mod] }))).toBeNull()
     expect(m.variance(m.data(tagliata, { modifiers: [mod, mod] }))).toMatch(/viene dos veces/)
@@ -380,12 +380,12 @@ describe('precio_distinto con el catálogo cambiado después', () => {
     const m = montar()
     const tagliata = m.product('Tagliata di Manzo')
     const group = tagliata.groups[0]
-    const opcion = group?.options[0]
-    if (!group || !opcion) throw new Error('falta')
+    const option = group?.options[0]
+    if (!group || !option) throw new Error('falta')
     const conOpcion = (p: ReturnType<typeof m.product>, catalog_version?: number) =>
       m.data(p, {
         ...(catalog_version === undefined ? {} : { catalog_version }),
-        modifiers: [{ modifier_id: opcion.id, name: opcion.name, extra_price: opcion.extraPrice }],
+        modifiers: [{ modifier_id: option.id, name: option.name, extra_price: option.extraPrice }],
       })
     // De otro producto.
     expect(m.variance(conOpcion(m.product('Burrata Spritz')))).toMatch(/no es de/)
@@ -399,8 +399,8 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   it('una opción cuyo enlace con el producto se archivó después valía con la versión anterior', () => {
     const m = montar()
     const tagliata = m.product('Tagliata di Manzo')
-    const opcion = tagliata.groups[0]?.options[0]
-    if (!opcion) throw new Error('falta')
+    const option = tagliata.groups[0]?.options[0]
+    if (!option) throw new Error('falta')
     const enlace = String(
       m.db.prepare('SELECT id FROM product_modifier_groups WHERE product_id = ?').get(tagliata.id)
         ?.id,
@@ -410,7 +410,7 @@ describe('precio_distinto con el catálogo cambiado después', () => {
     const item = (catalog_version: number) =>
       m.data(tagliata, {
         catalog_version,
-        modifiers: [{ modifier_id: opcion.id, name: opcion.name, extra_price: opcion.extraPrice }],
+        modifiers: [{ modifier_id: option.id, name: option.name, extra_price: option.extraPrice }],
       })
     expect(m.variance(item(before))).toBeNull()
     expect(m.variance(item(after))).toMatch(/no es de/)

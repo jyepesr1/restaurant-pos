@@ -10,13 +10,13 @@ import { useSimulacion } from './estado'
 // lector de pantalla la anuncia).
 
 export function Marco({
-  titulo,
+  title,
   back = '/mockups',
   user = 'Mesero 1',
   actions,
   children,
 }: {
-  titulo: string
+  title: string
   back?: string
   user?: string
   actions?: ReactNode
@@ -24,12 +24,12 @@ export function Marco({
 }) {
   const { dark, select } = useTema()
   const { connection, pendingList, impresorasConFalla } = useSimulacion()
-  const encabezado = useRef<HTMLHeadingElement>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
-    document.title = `${titulo} · POS`
-    encabezado.current?.focus({ preventScroll: true })
-  }, [titulo])
+    document.title = `${title} · POS`
+    heading.current?.focus({ preventScroll: true })
+  }, [title])
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -42,11 +42,11 @@ export function Marco({
           className="logo-marca size-10 rounded-full border-2 border-marca bg-[#fff8ec] p-0.5"
         />
         <h1
-          ref={encabezado}
+          ref={heading}
           tabIndex={-1}
           className="font-titulo mr-auto text-2xl font-semibold leading-none outline-none"
         >
-          {titulo}
+          {title}
         </h1>
         <IndicadorConexion
           status={connection}

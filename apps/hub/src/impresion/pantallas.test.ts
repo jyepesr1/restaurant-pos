@@ -154,20 +154,20 @@ describe('convertir un equipo en pantalla de cocina', () => {
 
     // Una persona nueva en el rol oculto.
     const newOne = await llamar('/api/staff/people', {
-      persona: { name: 'Intruso', role_id: rolOculto },
+      person: { name: 'Intruso', role_id: rolOculto },
     })
     expect(newOne.statusCode).toBe(400)
     // Mover a una persona real al rol oculto.
     const ana = String(t.db.prepare("SELECT id FROM users WHERE name = 'Ana'").get()?.id)
     const move = await llamar('/api/staff/people', {
-      persona: { id: ana, name: 'Ana', role_id: rolOculto },
+      person: { id: ana, name: 'Ana', role_id: rolOculto },
     })
     expect(move.statusCode).toBe(400)
     // Editar al usuario técnico (nombre, regenerar PIN, ponerle contraseña).
     const rolMesero = String(
       t.db.prepare('SELECT role_id FROM users WHERE id = ?').get(ana)?.role_id,
     )
-    for (const persona of [
+    for (const person of [
       { id: p.userId, name: 'Otro', role_id: rolMesero },
       { id: p.userId, name: 'Cocina', role_id: rolMesero, regenerar_pin: true },
       {
@@ -178,7 +178,7 @@ describe('convertir un equipo en pantalla de cocina', () => {
       },
       { id: p.userId, name: 'Cocina', role_id: rolMesero, active: false },
     ]) {
-      const r = await llamar('/api/staff/people', { persona })
+      const r = await llamar('/api/staff/people', { person })
       expect(r.statusCode).toBe(400)
     }
     // Editar el rol oculto: permisos, nombre, archivarlo.
@@ -467,7 +467,7 @@ describe('retirar una pantalla', () => {
     t.send(ana, order, items)
     expect(p.mandar(order, 'ItemReady', { item_ids: [items[0]?.id] }).status).toBe('confirmed')
 
-    t.avanzar(60_000)
+    t.advance(60_000)
     const r = await t.post(
       `/api/devices/${p.tablet.connection.dispositivoId}/revoke`,
       admin.cuerpoSesion,
@@ -487,7 +487,7 @@ describe('retirar una pantalla', () => {
       n: 1,
     })
 
-    t.avanzar(60_000)
+    t.advance(60_000)
     const after = p.mandar(order, 'ItemReady', { item_ids: [items[1]?.id] })
     expect(after.status).toBe('rejected')
     expect(t.hub.order(order)?.items[items[1]?.id as string]?.status).toBe('sent')

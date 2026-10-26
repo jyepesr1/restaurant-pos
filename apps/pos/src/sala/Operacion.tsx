@@ -137,7 +137,7 @@ function EquipoRechazado({ code, message }: { code: string; message: string }) {
 function SinCatalogo() {
   const [error, setError] = useState<string | null>(null)
   return (
-    <MarcoSala titulo="Salón">
+    <MarcoSala title="Salón">
       <div className="flex flex-col items-start gap-3 p-6">
         <p>Falta traer la carta y las mesas del restaurante.</p>
         <p className="text-alerta-texto" role="alert">

@@ -63,12 +63,12 @@ export function Entrar() {
 
   const porInactividad = sessionClosedBy === 'inactivity'
   return (
-    <MarcoSala titulo={catalog?.restaurant.name ?? device?.name ?? 'Entrar'}>
+    <MarcoSala title={catalog?.restaurant.name ?? device?.name ?? 'Entrar'}>
       <div className="mx-3 my-4 flex max-w-md sm:mx-auto flex-col gap-6 rounded-3xl border border-linea bg-superficie p-5 shadow-flota sm:my-10 sm:p-8">
         {mode === 'pin' ? (
           <>
             <TecladoPin
-              titulo={
+              title={
                 porInactividad
                   ? 'Se cerró tu sesión por no usarla un rato. Escribe tu PIN'
                   : 'Escribe tu PIN'
@@ -86,7 +86,7 @@ export function Entrar() {
         ) : (
           <>
             <ConContrasena
-              titulo={porInactividad ? 'Se cerró tu sesión por no usarla un rato' : 'Entrar'}
+              title={porInactividad ? 'Se cerró tu sesión por no usarla un rato' : 'Entrar'}
               error={error}
               intento={intento}
               esperaMs={esperaMs}
@@ -109,14 +109,14 @@ export function Entrar() {
 }
 
 function ConContrasena({
-  titulo,
+  title,
   error,
   intento,
   esperaMs,
   ocupado,
   alEnviar,
 }: {
-  titulo: string
+  title: string
   error: string | null
   intento: number
   esperaMs: number
@@ -164,7 +164,7 @@ function ConContrasena({
   return (
     <form className="flex flex-col gap-4" onSubmit={send} aria-labelledby="title-sign-in">
       <h2 id="title-sign-in" className="text-center text-xl font-semibold">
-        {titulo}
+        {title}
       </h2>
       <label className="flex flex-col gap-1">
         <span className="font-semibold">Usuario</span>

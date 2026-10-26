@@ -127,13 +127,13 @@ export async function eventosGuardados(db: Mundo['db'], restauranteId: string) {
   return r.rows
 }
 
-export async function contar(db: Mundo['db'], tabla: string, restauranteId?: string) {
+export async function contar(db: Mundo['db'], tableName: string, restauranteId?: string) {
   const r = restauranteId
     ? await db.query<{ n: number }>(
-        `SELECT count(*)::int AS n FROM ${tabla} WHERE restaurant_id = $1`,
+        `SELECT count(*)::int AS n FROM ${tableName} WHERE restaurant_id = $1`,
         [restauranteId],
       )
-    : await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${tabla}`)
+    : await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${tableName}`)
   return r.rows[0]?.n ?? 0
 }
 

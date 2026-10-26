@@ -52,17 +52,17 @@ export class AlmacenSqlite implements AlmacenHub {
   }
 
   maxSecuencia(): number {
-    const fila = this.db
+    const row = this.db
       .prepare('SELECT max(sequence) AS m FROM events WHERE restaurant_id = ?')
       .get(this.restauranteId)
-    return Number(fila?.m ?? 0)
+    return Number(row?.m ?? 0)
   }
 
   porId(id: string) {
-    const fila = this.db
+    const row = this.db
       .prepare('SELECT * FROM events WHERE restaurant_id = ? AND id = ?')
       .get(this.restauranteId, id)
-    return fila ? { event: aEvento(fila), fingerprint: String(fila.content_hash) } : undefined
+    return row ? { event: aEvento(row), fingerprint: String(row.content_hash) } : undefined
   }
 
   rechazo(eventId: string, fingerprint: string): Rechazo | undefined {
@@ -92,7 +92,7 @@ export class AlmacenSqlite implements AlmacenHub {
   ultimaSecuenciaDe(agregados: readonly string[], excepto?: string): number {
     if (agregados.length === 0) return 0
     const list = agregados.map(() => '?').join(', ')
-    const fila =
+    const row =
       excepto === undefined
         ? this.db
             .prepare(
@@ -107,7 +107,7 @@ export class AlmacenSqlite implements AlmacenHub {
                WHERE a.restaurant_id = ? AND a.aggregate_id IN (${list}) AND e.device_id <> ?`,
             )
             .get(this.restauranteId, ...agregados, excepto)
-    return Number(fila?.m ?? 0)
+    return Number(row?.m ?? 0)
   }
 
   eventosDeAgregado(agregadoId: string): OrderEvent[] {
@@ -122,31 +122,31 @@ export class AlmacenSqlite implements AlmacenHub {
   }
 
   cuarentenasDe(dispositivoId: string): number {
-    const fila = this.db
+    const row = this.db
       .prepare(
         'SELECT count(*) AS n FROM quarantined_events WHERE restaurant_id = ? AND device_id = ?',
       )
       .get(this.restauranteId, dispositivoId)
-    return Number(fila?.n ?? 0)
+    return Number(row?.n ?? 0)
   }
 
   aperturasDelDia(day: string): number {
-    const fila = this.db
+    const row = this.db
       .prepare(
         "SELECT count(*) AS n FROM events WHERE restaurant_id = ? AND type = 'OrderOpened' AND business_day = ?",
       )
       .get(this.restauranteId, day)
-    return Number(fila?.n ?? 0)
+    return Number(row?.n ?? 0)
   }
 
   comandasDelDia(day: string): number {
-    const fila = this.db
+    const row = this.db
       .prepare(
         `SELECT coalesce(sum((SELECT count(*) FROM json_each(assignments, '$.ticket_numbers'))), 0) AS n
          FROM events WHERE restaurant_id = ? AND type = 'ItemsSent' AND business_day = ?`,
       )
       .get(this.restauranteId, day)
-    return Number(fila?.n ?? 0)
+    return Number(row?.n ?? 0)
   }
 
   eventosDelPeriodo(types: readonly string[], from: string, until: string): OrderEvent[] {

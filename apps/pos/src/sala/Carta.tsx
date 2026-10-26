@@ -79,7 +79,7 @@ export function Menu() {
   }
 
   return (
-    <MarcoSala titulo="Carta" back="/">
+    <MarcoSala title="Carta" back="/">
       <div className="mx-auto max-w-4xl p-3">
         <Grupo etiqueta="Qué editar" className="mb-4 flex flex-wrap gap-2">
           <Opcion elegida={pestana === 'products'} alElegir={() => setPestana('products')}>
@@ -157,13 +157,13 @@ export function Menu() {
 // ── Listas ─────────────────────────────────────────────────────────────
 
 function Fila({
-  titulo,
+  title,
   detalle,
   extremo,
   archived,
   alTocar,
 }: {
-  titulo: string
+  title: string
   detalle?: string
   extremo?: string
   archived: boolean
@@ -177,7 +177,7 @@ function Fila({
         className="flex min-h-14 w-full items-center gap-3 border-b border-borde px-3 py-2 text-left hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
       >
         <span className="flex-1">
-          <span className="font-semibold">{titulo}</span>
+          <span className="font-semibold">{title}</span>
           {detalle && <span className="block text-sm text-texto-suave">{detalle}</span>}
         </span>
         {archived && <Etiqueta tono="neutral">Archivado</Etiqueta>}
@@ -254,7 +254,7 @@ function ListaProductos({
           return (
             <Fila
               key={p.id}
-              titulo={p.name}
+              title={p.name}
               detalle={
                 [
                   variants.map((v) => v.name).join(' · '),
@@ -321,7 +321,7 @@ function ListaGrupos({
           return (
             <Fila
               key={g.id}
-              titulo={g.name}
+              title={g.name}
               detalle={`${reglas(g.minimum, g.maximum)} · ${quienes}`}
               archived={!g.active}
               alTocar={() => alAbrir(g.id)}
@@ -511,7 +511,7 @@ function PanelProducto({
   return (
     <PanelLateral
       opened
-      titulo={initial.fresh ? 'Nuevo producto' : initial.name}
+      title={initial.fresh ? 'Nuevo producto' : initial.name}
       alCerrar={panel.close}
       pie={
         <PieGuardar
@@ -780,7 +780,7 @@ function PanelGrupo({
   return (
     <PanelLateral
       opened
-      titulo={initial.fresh ? 'Nuevo grupo de opciones' : initial.name}
+      title={initial.fresh ? 'Nuevo grupo de opciones' : initial.name}
       alCerrar={panel.close}
       pie={
         <PieGuardar

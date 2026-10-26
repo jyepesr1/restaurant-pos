@@ -9,25 +9,25 @@ import { Marco } from './Marco'
 
 // Índice de los bocetos de la tarea 0.9 (brief §5): para abrirlos en el celular y la tablet.
 
-const PANTALLAS: { ruta: string; titulo: string; para: string; icono: NombreIcono }[] = [
+const PANTALLAS: { ruta: string; title: string; para: string; icono: NombreIcono }[] = [
   {
     ruta: '/mockups/floor-plan',
-    titulo: 'Plano de mesas',
+    title: 'Plano de mesas',
     para: 'Mesero y caja',
     icono: 'floorPlan',
   },
-  { ruta: '/mockups/order?table=2', titulo: 'Toma de pedido', para: 'Mesero', icono: 'pencil' },
-  { ruta: '/mockups/kds', titulo: 'Cocina y barra (KDS)', para: 'Cocina y barra', icono: 'fire' },
+  { ruta: '/mockups/order?table=2', title: 'Toma de pedido', para: 'Mesero', icono: 'pencil' },
+  { ruta: '/mockups/kds', title: 'Cocina y barra (KDS)', para: 'Cocina y barra', icono: 'fire' },
   {
     ruta: '/mockups/pre-bill?table=12',
-    titulo: 'Precuenta y división',
+    title: 'Precuenta y división',
     para: 'Caja',
     icono: 'receipt',
   },
-  { ruta: '/mockups/checkout?table=12', titulo: 'Cobro', para: 'Caja', icono: 'bill' },
+  { ruta: '/mockups/checkout?table=12', title: 'Cobro', para: 'Caja', icono: 'bill' },
   {
     ruta: '/mockups/components',
-    titulo: 'Design system',
+    title: 'Design system',
     para: 'Colores y componentes',
     icono: 'check',
   },
@@ -59,7 +59,7 @@ export function Indice() {
   const simulacion = useSimulacion()
   const [brand, elegirMarca] = useMarca()
   return (
-    <Marco titulo="Bocetos del POS" back="/">
+    <Marco title="Bocetos del POS" back="/">
       <div className="mx-auto max-w-3xl p-4">
         <p className="mb-4 text-texto-suave">
           Bocetos navegables con la carta real de La Spritzzería. Los datos son de ejemplo y no se
@@ -113,7 +113,7 @@ export function Indice() {
                   <Icono name={p.icono} width="1.5em" height="1.5em" />
                 </span>
                 <span>
-                  <span className="font-titulo block text-2xl font-semibold">{p.titulo}</span>
+                  <span className="font-titulo block text-2xl font-semibold">{p.title}</span>
                   <span className="text-texto-suave">{p.para}</span>
                 </span>
               </a>

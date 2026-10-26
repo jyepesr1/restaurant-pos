@@ -20,14 +20,16 @@ import { ErrorFoto, guardarFoto, leerFoto, urlFoto } from './fotos'
 // ahora se entrega entero: es pequeño.
 
 const text = (v: unknown) => String(v)
-const numero = (v: unknown) => Number(v)
+const number = (v: unknown) => Number(v)
 
 export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
   const allRows = (sql: string): Fila[] => db.prepare(sql).all(restauranteId)
-  const activeRows = (tabla: string, position = 'position, name') =>
-    allRows(`SELECT * FROM ${tabla} WHERE restaurant_id = ? AND active = 1 ORDER BY ${position}`)
+  const activeRows = (tableName: string, position = 'position, name') =>
+    allRows(
+      `SELECT * FROM ${tableName} WHERE restaurant_id = ? AND active = 1 ORDER BY ${position}`,
+    )
 
-  const version = numero(
+  const version = number(
     db
       .prepare("SELECT value FROM counters WHERE restaurant_id = ? AND name = 'catalog'")
       .get(restauranteId)?.value ?? 0,
@@ -48,7 +50,9 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
     const list = JSON.parse(String(v ?? '[]'))
     return Array.isArray(list) ? list.map(String) : []
   }
-  const impresas = new Set(activeRows('printers', 'name').flatMap((f) => listaJson(f.station_ids)))
+  const printedOnes = new Set(
+    activeRows('printers', 'name').flatMap((f) => listaJson(f.station_ids)),
+  )
   const pantallas = allRows(
     `SELECT id, name, station_ids FROM devices
      WHERE restaurant_id = ? AND active = 1 AND type = 'kds' AND revoked_at IS NULL
@@ -96,20 +100,20 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
       name: text(f.name),
       provider: text(f.provider),
     })),
-    zones: zones.map((f) => ({ id: text(f.id), name: text(f.name), level: numero(f.level) })),
+    zones: zones.map((f) => ({ id: text(f.id), name: text(f.name), level: number(f.level) })),
     tables: activeRows('dining_tables', 'zone_id, y, x')
       .filter((f) => idsZonas.has(text(f.zone_id)))
       .map((f) => ({
         id: text(f.id),
         zonaId: text(f.zone_id),
         name: text(f.name),
-        x: numero(f.x),
-        y: numero(f.y),
-        width: numero(f.width),
-        height: numero(f.height),
-        rotation: numero(f.rotation),
+        x: number(f.x),
+        y: number(f.y),
+        width: number(f.width),
+        height: number(f.height),
+        rotation: number(f.rotation),
         shape: text(f.shape) as Catalogo['tables'][number]['shape'],
-        capacity: numero(f.capacity),
+        capacity: number(f.capacity),
       })),
     elements: activeRows('floor_plan_elements', 'zone_id, version')
       .filter((f) => idsZonas.has(text(f.zone_id)))
@@ -118,11 +122,11 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
         zonaId: text(f.zone_id),
         type: text(f.type) as Catalogo['elements'][number]['type'],
         text: f.text === null ? null : text(f.text),
-        x: numero(f.x),
-        y: numero(f.y),
-        width: numero(f.width),
-        height: numero(f.height),
-        rotation: numero(f.rotation),
+        x: number(f.x),
+        y: number(f.y),
+        width: number(f.width),
+        height: number(f.height),
+        rotation: number(f.rotation),
       })),
     staff: activeRows('users', 'name')
       .filter((f) => f.screen !== 1)
@@ -133,7 +137,7 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
     stations: activeRows('stations').map((f) => ({
       id: text(f.id),
       name: text(f.name),
-      imprime: impresas.has(text(f.id)),
+      imprime: printedOnes.has(text(f.id)),
       screen: pantallas.some((p) => p.estacionIds.includes(text(f.id))),
     })),
     pantallas,
@@ -151,14 +155,14 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
             description: p.description === null ? null : text(p.description),
             favorite: p.favorite === 1,
             photo: urlFoto(p.photo),
-            price: numero(p.price),
+            price: number(p.price),
             tax: {
               type: text(tax.type) as 'inc' | 'iva' | 'exempt',
-              rate: numero(tax.rate),
+              rate: number(tax.rate),
             },
             variants: variants
               .filter((v) => v.product_id === p.id)
-              .map((v) => ({ id: text(v.id), name: text(v.name), price: numero(v.price) })),
+              .map((v) => ({ id: text(v.id), name: text(v.name), price: number(v.price) })),
             groups: links
               .filter((e) => e.product_id === p.id && groups.has(text(e.group_id)))
               .map((e) => {
@@ -166,14 +170,14 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
                 return {
                   id: text(g.id),
                   name: text(g.name),
-                  minimum: numero(g.minimum),
-                  maximum: numero(g.maximum),
+                  minimum: number(g.minimum),
+                  maximum: number(g.maximum),
                   options: modifiers
                     .filter((m) => m.group_id === g.id)
                     .map((m) => ({
                       id: text(m.id),
                       name: text(m.name),
-                      extraPrice: numero(m.extra_price),
+                      extraPrice: number(m.extra_price),
                     })),
                 }
               }),
@@ -319,8 +323,8 @@ export async function rutasCatalogo(
     if (!cuerpo.success) return datosInvalidos(reply, 'Esa marca no existe')
     const autor = conPermiso(req, reply, cuerpo.data, 'manage_users')
     if (!autor) return reply
-    const fila = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)
-    const current = JSON.parse(String(fila?.config ?? '{}')) as Record<string, unknown>
+    const row = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)
+    const current = JSON.parse(String(row?.config ?? '{}')) as Record<string, unknown>
     if (current.brand !== cuerpo.data.brand) {
       actualizarVersionado(
         db,

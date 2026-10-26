@@ -28,7 +28,7 @@ interface OpcionesComprobante {
 function conComprobante(m: MontajeHub, o: OpcionesComprobante = {}) {
   const base = pedidoConItemEnviado(m)
   // Un rato después de abrir la sesión, para poder probar eventos «anteriores» al comprobante.
-  m.avanzar(5 * 60_000)
+  m.advance(5 * 60_000)
   const emitida = m.clock()
   const time = add(emitida, o.desfase ?? 0)
   const sinComprobante = m.event(
@@ -183,7 +183,7 @@ describe('un comprobante, un solo evento', () => {
   it('el comprobante es de la sesión que lo pidió: otra sesión del mismo usuario no lo usa', () => {
     const m = montarHub()
     const c = conComprobante(m)
-    m.avanzar(1000)
+    m.advance(1000)
     const another = m.entrar(c.connection, 'waiter')
     const robado = m.firmado(another, { ...c.event, session_id: another.sesionId })
 
@@ -303,10 +303,10 @@ describe('el supervisor cambia antes de que llegue el evento', () => {
     it('lo que hizo antes del cambio va a cuarentena para que alguien lo revise; lo de después, rechazado', () => {
       const { m, connection, voidItem } = gerenteSinConexion()
       const before = voidItem(m.clock())
-      m.avanzar(10 * 60_000)
+      m.advance(10 * 60_000)
       cambiarRol(m, m.people.manager.userId, m.roles.waiter)
       const change = m.clock()
-      m.avanzar(10 * 60_000)
+      m.advance(10 * 60_000)
       const after = voidItem(add(change, 1000))
 
       const r = m.hub.recibirLote(connection, [before, after])
@@ -321,7 +321,7 @@ describe('el supervisor cambia antes de que llegue el evento', () => {
 
     it('el borde: justo en el instante del cambio ya cuenta como posterior', () => {
       const { m, connection, voidItem } = gerenteSinConexion()
-      m.avanzar(10 * 60_000)
+      m.advance(10 * 60_000)
       cambiarRol(m, m.people.manager.userId, m.roles.waiter)
       const change = m.clock()
 
@@ -332,7 +332,7 @@ describe('el supervisor cambia antes de que llegue el evento', () => {
     it('un usuario archivado: lo anterior al archivado se revisa, lo posterior se rechaza', () => {
       const { m, connection, voidItem } = gerenteSinConexion()
       const before = voidItem(m.clock())
-      m.avanzar(10 * 60_000)
+      m.advance(10 * 60_000)
       m.access.archivarUsuario(m.people.manager.userId)
       const closeout = m.clock()
       const justoDespues = voidItem(add(closeout, 1000))
@@ -353,7 +353,7 @@ describe('el supervisor cambia antes de que llegue el evento', () => {
       const before = m.event(connection, session, 'ItemVoided', datosAnular(newId()), {
         reason: 'x',
       })
-      m.avanzar(10 * 60_000)
+      m.advance(10 * 60_000)
       cambiarRol(m, m.people.cashier.userId, m.roles.reports)
 
       expect(m.hub.recibirLote(connection, [before]).resultados[0]).toMatchObject({
@@ -368,7 +368,7 @@ describe('evento que llega tarde pero se creó a tiempo', () => {
   it('sin conexión: creado a los 119 s del comprobante y recibido media hora después, vale', () => {
     const m = montarHub()
     const c = conComprobante(m, { desfase: 119_000 })
-    m.avanzar(30 * 60_000)
+    m.advance(30 * 60_000)
 
     const r = m.hub.recibirLote(c.connection, [c.voidItem()])
     expect(r.resultados[0]).toMatchObject({
@@ -414,7 +414,7 @@ describe('evento que llega tarde pero se creó a tiempo', () => {
     for (const [delay, expected] of casos) {
       const m = montarHub()
       const c = conComprobante(m)
-      m.avanzar(delay)
+      m.advance(delay)
       const r = m.hub.recibirLote(c.connection, [c.voidItem()])
       expect(r.resultados[0]?.status, `espera ${delay}`).toBe(expected)
     }
@@ -430,7 +430,7 @@ describe('sesiones y reloj', () => {
     ]
     for (const [desfase, expected] of casos) {
       const m = montarHub()
-      m.avanzar(60 * 60_000)
+      m.advance(60 * 60_000)
       const { connection } = m.emparejar('waiter')
       const session = m.entrar(connection, 'waiter')
       const time = add(m.clock(), desfase)
@@ -455,7 +455,7 @@ describe('sesiones y reloj', () => {
       const m = montarHub()
       const { connection } = m.emparejar('waiter')
       const session = m.entrar(connection, 'waiter')
-      m.avanzar(30 * 60_000)
+      m.advance(30 * 60_000)
       const closeout = m.clock()
       expect(m.access.cerrarSesion(connection, session)).toEqual({ ok: true })
       const time = add(closeout, desfase)
@@ -464,7 +464,7 @@ describe('sesiones y reloj', () => {
         hub_estimated_time: time,
       })
       // Se recibe mucho después: lo que cuenta es la hora del evento.
-      m.avanzar(60 * 60_000)
+      m.advance(60 * 60_000)
       const r = m.hub.recibirLote(connection, [ev])
       expect(r.resultados[0]?.status, `desfase ${desfase}`).toBe(expected)
     }
@@ -482,17 +482,17 @@ describe('sesiones y reloj', () => {
 
     const r = m.hub.recibirLote(connection, [ev])
     expect(r.resultados[0]?.status).toBe('confirmed')
-    const fila = m.db.prepare('SELECT received_at, business_day FROM events').get()
-    expect(fila?.received_at).toBe(m.clock())
+    const row = m.db.prepare('SELECT received_at, business_day FROM events').get()
+    expect(row?.received_at).toBe(m.clock())
     // 20:00 UTC = 15:00 en Bogotá: el día operativo es el de hoy, no el de las 23:00 del reloj adelantado.
-    expect(fila?.business_day).toBe('2026-10-24')
+    expect(row?.business_day).toBe('2026-10-24')
   })
 
   it('con la sesión cerrada, la hora futura no sirve para colarse después del cierre', () => {
     const m = montarHub()
     const { connection } = m.emparejar('waiter')
     const session = m.entrar(connection, 'waiter')
-    m.avanzar(10 * 60_000)
+    m.advance(10 * 60_000)
     m.access.cerrarSesion(connection, session)
     const futura = add(m.clock(), 10 * 60_000)
     const ev = m.event(connection, session, 'OrderOpened', ABRIR, {
@@ -525,9 +525,9 @@ describe('sesiones y reloj', () => {
     const { connection } = m.emparejar('waiter')
     const ana = m.entrar(connection, 'waiter')
     const before = m.event(connection, ana, 'OrderOpened', ABRIR)
-    m.avanzar(10 * 60_000)
+    m.advance(10 * 60_000)
     m.entrar(connection, 'waiter2')
-    m.avanzar(5 * 60_000)
+    m.advance(5 * 60_000)
     const after = m.event(connection, ana, 'OrderOpened', ABRIR)
 
     const r = m.hub.recibirLote(connection, [before, after])
@@ -539,24 +539,24 @@ describe('sesiones y reloj', () => {
     const m = montarHub()
     const { connection } = m.emparejar('waiter')
     const session = m.entrar(connection, 'waiter')
-    const ultimo = () =>
+    const latest = () =>
       m.db.prepare('SELECT last_used FROM sessions WHERE id = ?').get(session.sesionId)?.last_used
 
-    m.avanzar(10 * 60_000)
+    m.advance(10 * 60_000)
     const reciente = m.event(connection, session, 'OrderOpened', ABRIR)
     m.hub.recibirLote(connection, [reciente])
-    expect(ultimo()).toBe(m.clock())
+    expect(latest()).toBe(m.clock())
 
     // Un evento viejo que llega después no retrocede el último uso.
     const oldOne = add(m.clock(), -5 * 60_000)
-    m.avanzar(1000)
+    m.advance(1000)
     m.hub.recibirLote(connection, [
       m.event(connection, session, 'OrderOpened', ABRIR, {
         device_time: oldOne,
         hub_estimated_time: oldOne,
       }),
     ])
-    expect(ultimo()).toBe(add(m.clock(), -1000))
+    expect(latest()).toBe(add(m.clock(), -1000))
 
     // Uno con hora futura no lo adelanta más allá del reloj del hub.
     const futura = add(m.clock(), 30_000)
@@ -566,7 +566,7 @@ describe('sesiones y reloj', () => {
         hub_estimated_time: futura,
       }),
     ])
-    expect(ultimo()).toBe(m.clock())
+    expect(latest()).toBe(m.clock())
   })
 
   it('el secreto de la sesión, no su id, es lo que permite pedir un comprobante', () => {
@@ -797,9 +797,9 @@ describe('revocar un dispositivo con trabajo pendiente', () => {
       lote_id: 'l1',
       events: [open(c, c.m.clock())],
     })
-    c.m.avanzar(1000)
+    c.m.advance(1000)
     c.revoke()
-    c.m.avanzar(1000)
+    c.m.advance(1000)
     c.enlace.recibir({
       type: 'push',
       lote_id: 'l2',
@@ -813,7 +813,7 @@ describe('revocar un dispositivo con trabajo pendiente', () => {
   it('un lote creado antes de la revocación pero recibido después va a cuarentena, no se pierde ni entra', () => {
     const c = conSala()
     const before = open(c, c.m.clock())
-    c.m.avanzar(5000)
+    c.m.advance(5000)
     const revocadoEn = c.revoke()
     c.enlace.recibir({ type: 'push', lote_id: 'l1', events: [before] })
 
@@ -828,7 +828,7 @@ describe('revocar un dispositivo con trabajo pendiente', () => {
 
   it('el borde: un evento con la hora exacta de la revocación ya no cuenta como anterior', () => {
     const c = conSala()
-    c.m.avanzar(5000)
+    c.m.advance(5000)
     const revocadoEn = c.revoke()
     c.enlace.recibir({
       type: 'push',
@@ -842,9 +842,9 @@ describe('revocar un dispositivo con trabajo pendiente', () => {
   it('un lote mixto de un dispositivo revocado: cada evento sigue su camino y el lote no se corta', () => {
     const c = conSala()
     const a = open(c, c.m.clock())
-    c.m.avanzar(5000)
+    c.m.advance(5000)
     c.revoke()
-    c.m.avanzar(5000)
+    c.m.advance(5000)
     const b = open(c, c.m.clock())
     c.enlace.recibir({ type: 'push', lote_id: 'l1', events: [a, b, a] })
 
@@ -868,7 +868,7 @@ describe('revocar un dispositivo con trabajo pendiente', () => {
       c.m.people.manager.pin,
       sinComprobante,
     )
-    c.m.avanzar(10_000)
+    c.m.advance(10_000)
     c.revoke()
     c.enlace.recibir({ type: 'push', lote_id: 'l1', events: [event] })
 
@@ -916,7 +916,7 @@ describe('revocar un dispositivo con trabajo pendiente', () => {
   it('revocar dos veces no cambia la fecha ni avisa dos veces', () => {
     const c = conSala()
     const first = c.revoke()
-    c.m.avanzar(60_000)
+    c.m.advance(60_000)
     const r2 = c.m.access.revocarDispositivo(c.register, {
       ...c.admin,
       dispositivoId: c.phone.connection.dispositivoId,
@@ -940,13 +940,13 @@ describe('revocar un dispositivo con trabajo pendiente', () => {
     const c = conSala()
     pedidoConItemEnviado(c.m)
     c.revoke()
-    const fila = c.m.db
+    const row = c.m.db
       .prepare(
         'SELECT revoked_at, revocation_sequence, user_id, device_id FROM devices WHERE id = ?',
       )
       .get(c.phone.connection.dispositivoId)
 
-    expect(fila).toEqual({
+    expect(row).toEqual({
       revoked_at: c.m.clock(),
       revocation_sequence: 3,
       user_id: c.m.people.admin.userId,
@@ -957,7 +957,7 @@ describe('revocar un dispositivo con trabajo pendiente', () => {
   it('tras 500 eventos en cuarentena de un equipo revocado, los siguientes se rechazan', () => {
     const c = conSala()
     const eventosViejos = Array.from({ length: 501 }, () => open(c, c.m.clock()))
-    c.m.avanzar(5000)
+    c.m.advance(5000)
     c.revoke()
     for (let i = 0; i < eventosViejos.length; i += 100)
       c.enlace.recibir({

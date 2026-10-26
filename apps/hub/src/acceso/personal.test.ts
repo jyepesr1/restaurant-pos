@@ -10,17 +10,17 @@ const montar = () => {
   const m = montarAcceso()
   const role = (data: Parameters<typeof guardarRol>[3]) =>
     guardarRol(m.db, m.restauranteId, m.access, data, SISTEMA, m.clock())
-  const persona = (data: Parameters<typeof guardarPersona>[3]) =>
+  const person = (data: Parameters<typeof guardarPersona>[3]) =>
     guardarPersona(m.db, m.restauranteId, m.access, data, SISTEMA, m.clock())
-  const leer = () => leerPersonal(m.db, m.restauranteId, m.access)
-  return { ...m, role, persona, leer }
+  const read = () => leerPersonal(m.db, m.restauranteId, m.access)
+  return { ...m, role, person, read }
 }
 
 describe('roles', () => {
   it('se crea un rol con los permisos que se quieran, y quitar uno lo archiva sin borrarlo', () => {
     const m = montar()
     const id = m.role({ name: 'Bartender', permissions: ['take_order', 'mark_product_sold_out'] })
-    const ana = m.persona({ name: 'Bea', rolId: id })
+    const ana = m.person({ name: 'Bea', rolId: id })
     expect(m.access.permisosDe(ana.userId)).toEqual(['mark_product_sold_out', 'take_order'])
 
     m.role({ id, name: 'Bartender', permissions: ['take_order'] })
@@ -35,7 +35,7 @@ describe('roles', () => {
     expect(
       m.db.prepare('SELECT count(*) AS n FROM role_permissions WHERE role_id = ?').get(id)?.n,
     ).toBe(2)
-    expect(m.leer().roles.find((r) => r.id === id)).toMatchObject({
+    expect(m.read().roles.find((r) => r.id === id)).toMatchObject({
       name: 'Bartender',
       system: false,
       people: 1,
@@ -69,14 +69,14 @@ describe('roles', () => {
     ).toThrow(/tiene personas/)
     const empty = m.role({ name: 'Temporada', permissions: ['take_order'] })
     m.role({ id: empty, name: 'Temporada', permissions: [], active: false })
-    expect(m.leer().roles.find((r) => r.id === empty)?.active).toBe(false)
+    expect(m.read().roles.find((r) => r.id === empty)?.active).toBe(false)
     // Con el nombre libre, se puede crear otro igual.
     expect(() => m.role({ name: 'Temporada', permissions: [] })).not.toThrow()
   })
 
   it('no deja al restaurante sin nadie que pueda administrar el personal', () => {
     const m = montar()
-    const all = m.leer().roles.find((r) => r.id === m.roles.admin)?.permissions ?? []
+    const all = m.read().roles.find((r) => r.id === m.roles.admin)?.permissions ?? []
     expect(() =>
       m.role({
         id: m.roles.admin,
@@ -92,7 +92,7 @@ describe('roles', () => {
 describe('quien entra con PIN no puede tener permisos de caja ni de administración', () => {
   it('ni al crearla, ni al darle ese permiso a su rol', () => {
     const m = montar()
-    expect(() => m.persona({ name: 'Pía', rolId: m.roles.cashier })).toThrow(
+    expect(() => m.person({ name: 'Pía', rolId: m.roles.cashier })).toThrow(
       /Pía entra con PIN y su rol permite «/,
     )
     expect(() =>
@@ -133,7 +133,7 @@ describe('volver a activar a alguien', () => {
     const m = montar()
     const ana = m.people.waiter
     const data = { id: ana.userId, name: 'Ana', rolId: m.roles.waiter }
-    m.persona({ ...data, active: false })
+    m.person({ ...data, active: false })
     // Su PIN lo toma otra persona mientras está archivada.
     const fingerprint = String(
       m.db.prepare('SELECT pin_hash FROM user_credentials WHERE user_id = ?').get(ana.userId)
@@ -142,21 +142,21 @@ describe('volver a activar a alguien', () => {
     m.db
       .prepare('UPDATE user_credentials SET pin_hash = ? WHERE user_id = ?')
       .run(fingerprint, m.people.waiter2.userId)
-    const r = m.persona({ ...data, active: true })
+    const r = m.person({ ...data, active: true })
     expect(r.pin).toMatch(/^\d{4}$/)
-    expect(m.leer().people.find((p) => p.id === ana.userId)?.active).toBe(true)
+    expect(m.read().people.find((p) => p.id === ana.userId)?.active).toBe(true)
 
     const carlos = m.people.cashier
     const deCarlos = { id: carlos.userId, name: 'Carlos', rolId: m.roles.cashier }
-    m.persona({ ...deCarlos, active: false })
-    m.persona({
+    m.person({ ...deCarlos, active: false })
+    m.person({
       name: 'Otro Carlos',
       rolId: m.roles.cashier,
       access: { type: 'password', user: 'carlos', password: 'otra-clave-1' },
     })
-    expect(() => m.persona({ ...deCarlos, active: true })).toThrow(/ya lo tiene otra persona/)
+    expect(() => m.person({ ...deCarlos, active: true })).toThrow(/ya lo tiene otra persona/)
     expect(() =>
-      m.persona({
+      m.person({
         ...deCarlos,
         active: true,
         access: { type: 'password', user: 'carlos.b', password: 'nueva-clave-2' },
@@ -168,11 +168,11 @@ describe('volver a activar a alguien', () => {
 describe('personas', () => {
   it('un mesero nuevo entra con su PIN; alguien de caja, con usuario y contraseña', () => {
     const m = montar()
-    const waiter = m.persona({ name: 'Pedro', rolId: m.roles.waiter })
+    const waiter = m.person({ name: 'Pedro', rolId: m.roles.waiter })
     expect(waiter.pin).toMatch(/^\d{4}$/)
     expect(m.access.entrar({ pin: waiter.pin as string }, null, 'ip-1')).toMatchObject({ ok: true })
 
-    const register = m.persona({
+    const register = m.person({
       name: 'Carla',
       rolId: m.roles.cashier,
       access: { type: 'password', user: 'Carla', password: 'caja-segura-1' },
@@ -187,13 +187,13 @@ describe('personas', () => {
     expect(m.access.entrar({ pin: register.pin as string }, null, 'ip-3')).toMatchObject({
       ok: false,
     })
-    expect(m.leer().people.find((p) => p.id === register.userId)?.user).toBe('carla')
+    expect(m.read().people.find((p) => p.id === register.userId)?.user).toBe('carla')
   })
 
   it('el usuario es único en el restaurante y la contraseña tiene al menos 8 caracteres', () => {
     const m = montar()
     const withIt = (user: string, password?: string) => () =>
-      m.persona({
+      m.person({
         name: 'X',
         rolId: m.roles.cashier,
         access: { type: 'password', user, password },
@@ -203,7 +203,7 @@ describe('personas', () => {
     expect(withIt('con espacio', 'larga-12345')).toThrow(/de 3 a 40/)
     expect(withIt('nuevo')).toThrow(/Escribe una contraseña/)
     // Ninguno de esos intentos dejó a alguien creado.
-    expect(m.leer().people.filter((p) => p.name === 'X')).toEqual([])
+    expect(m.read().people.filter((p) => p.name === 'X')).toEqual([])
   })
 
   it('pasar a alguien de PIN a contraseña y de vuelta; cambiar el rol cierra su sesión', () => {
@@ -213,15 +213,15 @@ describe('personas', () => {
     const data = { id: m.people.waiter.userId, name: 'Ana' }
 
     // Con PIN no puede quedar en un rol que cobra (ADR-013)…
-    expect(() => m.persona({ ...data, rolId: m.roles.cashier })).toThrow(
+    expect(() => m.person({ ...data, rolId: m.roles.cashier })).toThrow(
       /Ana entra con PIN y su rol permite/,
     )
     // …en uno que no cobra, sí; y cambiar el rol cierra su sesión.
     const bar = m.role({ name: 'Barra', permissions: ['take_order'] })
-    m.persona({ ...data, rolId: bar })
+    m.person({ ...data, rolId: bar })
     expect(m.access.cerrarSesion(connection, session)).toMatchObject({ code: 'invalid_session' })
 
-    m.persona({
+    m.person({
       ...data,
       rolId: m.roles.cashier,
       access: { type: 'password', user: 'ana', password: 'ana-clave-99' },
@@ -229,22 +229,22 @@ describe('personas', () => {
     expect(m.access.startSession(connection, m.people.waiter.pin)).toMatchObject({ ok: false })
     // Mismo usuario sin contraseña nueva: no cambia nada.
     expect(() =>
-      m.persona({
+      m.person({
         ...data,
         rolId: m.roles.cashier,
         access: { type: 'password', user: 'ana' },
       }),
     ).not.toThrow()
     expect(() =>
-      m.persona({
+      m.person({
         ...data,
         rolId: m.roles.cashier,
         access: { type: 'password', user: 'ana2' },
       }),
     ).toThrow(/escribe también una contraseña/)
 
-    m.persona({ ...data, rolId: m.roles.waiter, access: { type: 'pin' } })
-    m.avanzar(61_000)
+    m.person({ ...data, rolId: m.roles.waiter, access: { type: 'pin' } })
+    m.advance(61_000)
     expect(m.access.startSession(connection, m.people.waiter.pin)).toMatchObject({ ok: true })
   })
 
@@ -252,23 +252,23 @@ describe('personas', () => {
     const m = montar()
     const { connection } = m.emparejar('waiter')
     const data = { id: m.people.waiter.userId, name: 'Ana', rolId: m.roles.waiter }
-    const r = m.persona({ ...data, regenerarPin: true })
+    const r = m.person({ ...data, regenerarPin: true })
     expect(r.pin).toMatch(/^\d{4}$/)
     if (r.pin !== m.people.waiter.pin)
       expect(m.access.startSession(connection, m.people.waiter.pin)).toMatchObject({ ok: false })
-    m.avanzar(61_000)
+    m.advance(61_000)
     expect(m.access.startSession(connection, r.pin as string)).toMatchObject({ ok: true })
 
-    m.persona({ ...data, active: false })
-    m.avanzar(61_000)
+    m.person({ ...data, active: false })
+    m.advance(61_000)
     expect(m.access.startSession(connection, r.pin as string)).toMatchObject({ ok: false })
-    expect(m.leer().people.find((p) => p.id === data.id)?.active).toBe(false)
+    expect(m.read().people.find((p) => p.id === data.id)?.active).toBe(false)
   })
 
   it('no se archiva a la última persona que administra el personal', () => {
     const m = montar()
     expect(() =>
-      m.persona({
+      m.person({
         id: m.people.admin.userId,
         name: 'Administrador',
         rolId: m.roles.admin,
@@ -277,7 +277,7 @@ describe('personas', () => {
     ).toThrow(/Tiene que quedar al menos una persona/)
     expect(
       () =>
-        m.persona({
+        m.person({
           id: m.people.admin.userId,
           name: 'Administrador',
           rolId: m.roles.admin,
@@ -295,7 +295,7 @@ describe('equipos en la pantalla de personal', () => {
     const phone = m.access.entrar({ pin: m.people.waiter.pin }, null, 'ip-1')
     const register = m.access.entrar({ user: 'carlos', password: 'clave-de-carlos' }, null, 'ip-2')
     if (!phone.ok || !register.ok || !phone.device || !register.device) throw new Error('no entró')
-    m.avanzar(60_000)
+    m.advance(60_000)
     const admin = m.access.entrar(
       {
         user: String(m.people.admin.user),
@@ -309,7 +309,7 @@ describe('equipos en la pantalla de personal', () => {
     if (!connection) throw new Error('sin conexión')
     m.access.revocarDispositivo(connection, { ...admin, dispositivoId: phone.device.dispositivoId })
 
-    const devices = m.leer().devices
+    const devices = m.read().devices
     expect(devices.map((e) => [e.name, e.type, e.ultimaPersona, e.revocadoEn !== null])).toEqual([
       ['Equipo de Administrador', 'register', 'Administrador', false],
       ['Equipo de Carlos', 'register', 'Carlos', false],
@@ -353,9 +353,9 @@ describe('API de personal', () => {
     const session = { session_id: register.session_id, secret: register.secret }
     const token = register.device.token
 
-    const leido = await api.post('/api/staff/read', session, token)
-    expect(leido.statusCode).toBe(200)
-    expect(leido.json().roles.map((r: { name: string }) => r.name)).toContain('Reportes')
+    const readResult = await api.post('/api/staff/read', session, token)
+    expect(readResult.statusCode).toBe(200)
+    expect(readResult.json().roles.map((r: { name: string }) => r.name)).toContain('Reportes')
 
     const role = await api.post(
       '/api/staff/roles',
@@ -363,13 +363,13 @@ describe('API de personal', () => {
       token,
     )
     expect(role.statusCode).toBe(200)
-    const persona = await api.post(
+    const person = await api.post(
       '/api/staff/people',
-      { ...session, persona: { name: 'Bruno', role_id: role.json().id } },
+      { ...session, person: { name: 'Bruno', role_id: role.json().id } },
       token,
     )
-    expect(persona.statusCode).toBe(200)
-    expect(persona.json().pin).toMatch(/^\d{4}$/)
+    expect(person.statusCode).toBe(200)
+    expect(person.json().pin).toMatch(/^\d{4}$/)
     expect(api.changes).toHaveLength(2)
 
     const repetido = await api.post(

@@ -19,9 +19,9 @@ const TEXTO_CARTA = readFileSync(
 const AHORA = '2026-10-24T20:00:00.000Z'
 
 const makeOne = (db: BaseSqlite, sql: string, ...p: string[]) => {
-  const fila = db.prepare(sql).get(...p)
-  if (!fila) throw new Error(`Sin resultado: ${sql}`)
-  return fila
+  const row = db.prepare(sql).get(...p)
+  if (!row) throw new Error(`Sin resultado: ${sql}`)
+  return row
 }
 const versionCatalogo = (db: BaseSqlite) =>
   Number(makeOne(db, "SELECT value FROM counters WHERE name = 'catalog'").value)
@@ -231,7 +231,7 @@ describe('el hub arranca después del seed', () => {
       const products = makeOne(a.db, 'SELECT count(*) AS n FROM products').n
       const versiones = versionCatalogo(a.db)
       hubs.apagar()
-      hubs.avanzar(60_000)
+      hubs.advance(60_000)
 
       const b = hubs.spinUp()
       expect(b.restauranteId).toBe(a.restauranteId)
@@ -259,9 +259,9 @@ describe('el hub arranca después del seed', () => {
         { restauranteId: b.restauranteId, roles: b.roles, menu: leerCarta(TEXTO_CARTA) },
         hubs.clock(),
       )
-      for (const [tabla, changes] of Object.entries(another.sqlTables))
-        expect({ tabla, created: changes.created, updated: changes.updated }).toEqual({
-          tabla,
+      for (const [tableName, changes] of Object.entries(another.sqlTables))
+        expect({ tableName, created: changes.created, updated: changes.updated }).toEqual({
+          tableName,
           created: 0,
           updated: 0,
         })

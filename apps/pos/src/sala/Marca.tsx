@@ -12,13 +12,13 @@ import { MarcoSala } from './MarcoSala'
 /** Lo que distingue a cada marca a primera vista: su suelo, su acción, su título y su logo. */
 const MUESTRA: Record<
   MarcaId,
-  { fondo: string; card: string; action: string; titulo: string; text: string; letra: string }
+  { fondo: string; card: string; action: string; title: string; text: string; letra: string }
 > = {
   faro: {
     fondo: '#f2f5f5',
     card: '#ffffff',
     action: '#0f766e',
-    titulo: '#12201f',
+    title: '#12201f',
     text: '#51625f',
     letra: '"Figtree Variable", system-ui, sans-serif',
   },
@@ -26,7 +26,7 @@ const MUESTRA: Record<
     fondo: '#f8ecda',
     card: '#fff8ec',
     action: '#1d3552',
-    titulo: '#dc5a0f',
+    title: '#dc5a0f',
     text: '#3c4f66',
     letra: '"League Gothic", "Arial Narrow", sans-serif',
   },
@@ -55,7 +55,7 @@ export function Marca() {
   }
 
   return (
-    <MarcoSala titulo="Marca del restaurante">
+    <MarcoSala title="Marca del restaurante">
       <div className="mx-auto flex max-w-4xl flex-col gap-5 p-4 md:p-6">
         <p className="max-w-2xl text-texto-suave">
           Elige cómo se ve el sistema en todos los equipos del restaurante. Los colores de estado
@@ -89,10 +89,10 @@ export function Marca() {
                         src="/marca/la-spritzzeria.svg"
                         alt=""
                         className="size-10 rounded-full border-2 bg-[#fff8ec] p-0.5"
-                        style={{ borderColor: v.titulo }}
+                        style={{ borderColor: v.title }}
                       />
                     )}
-                    <span className="text-2xl" style={{ color: v.titulo, fontFamily: v.letra }}>
+                    <span className="text-2xl" style={{ color: v.title, fontFamily: v.letra }}>
                       {m.brand === 'faro' ? 'Salón' : 'LA SPRITZZERÍA'}
                     </span>
                   </div>

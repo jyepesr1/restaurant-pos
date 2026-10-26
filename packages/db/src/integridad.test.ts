@@ -24,14 +24,14 @@ function baseMigrada(): BaseSqlite {
 }
 
 describe('archivado del catálogo', () => {
-  it.each(TABLAS_VERSIONADAS)('%s no admite DELETE: se archiva', (tabla) => {
+  it.each(TABLAS_VERSIONADAS)('%s no admite DELETE: se archiva', (tableName) => {
     const db = baseMigrada()
     const disparadores = db
       .prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger' AND tbl_name = ?")
-      .all(tabla)
-      .map((fila) => String(fila.name))
+      .all(tableName)
+      .map((row) => String(row.name))
 
-    expect(disparadores).toContain(`${tabla}_no_delete`)
+    expect(disparadores).toContain(`${tableName}_no_delete`)
   })
 
   it('borrar un producto falla y archivarlo funciona', () => {
@@ -89,7 +89,7 @@ describe('dinero en todas las columnas', () => {
     })
 
   // Cada columna con la forma de insertar un valor en ella.
-  const columnas: Record<string, (value: ValorSql) => unknown> = {
+  const columns: Record<string, (value: ValorSql) => unknown> = {
     'products.price': (price) =>
       insertarVersionado(db, 'products', base.restaurant, {
         category_id: base.category,
@@ -120,7 +120,7 @@ describe('dinero en todas las columnas', () => {
       }),
   }
 
-  describe.each(Object.entries(columnas))('%s', (_columna, insertar) => {
+  describe.each(Object.entries(columns))('%s', (_columna, insertar) => {
     it.each([0, 40900, 100_000_000])('acepta %d', (value) => {
       expect(() => insertar(value)).not.toThrow()
     })

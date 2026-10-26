@@ -96,7 +96,7 @@ export function leerPersonal(
   // Los equipos, con el uso más reciente primero: el que se perdió suele ser uno que no se usa.
   const devices = db
     .prepare(
-      `SELECT d.id, d.name, d.type, d.paired_at, d.revoked_at, s.last_used, u.name AS persona
+      `SELECT d.id, d.name, d.type, d.paired_at, d.revoked_at, s.last_used, u.name AS person
        FROM devices d
        LEFT JOIN sessions s ON s.id = (
          SELECT id FROM sessions WHERE device_id = d.id ORDER BY last_used DESC LIMIT 1)
@@ -112,7 +112,7 @@ export function leerPersonal(
       registradoEn: f.paired_at === null ? null : String(f.paired_at),
       revocadoEn: f.revoked_at === null ? null : String(f.revoked_at),
       ultimoUso: f.last_used === null ? null : String(f.last_used),
-      ultimaPersona: f.persona === null ? null : String(f.persona),
+      ultimaPersona: f.person === null ? null : String(f.person),
     }))
   return { roles, people, devices }
 }
@@ -196,9 +196,9 @@ export function guardarRol(
       .prepare('SELECT id, permission, active FROM role_permissions WHERE role_id = ?')
       .all(rolId)
     for (const permission of PERMISSIONS) {
-      const fila = rows.find((f) => f.permission === permission)
+      const row = rows.find((f) => f.permission === permission)
       const quiere = permissions.includes(permission)
-      if (!fila) {
+      if (!row) {
         if (quiere)
           insertarVersionado(
             db,
@@ -208,12 +208,12 @@ export function guardarRol(
             autor,
             ahora,
           )
-      } else if (quiere !== (fila.active === 1)) {
+      } else if (quiere !== (row.active === 1)) {
         actualizarVersionado(
           db,
           'role_permissions',
           restauranteId,
-          String(fila.id),
+          String(row.id),
           { active: quiere ? 1 : 0 },
           autor,
           ahora,

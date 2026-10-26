@@ -233,10 +233,10 @@ describe('POST /api/cocina/cursos: efecto', () => {
       brand: 'la-spritzzeria',
       courses_enabled: true,
     })
-    const fila = m.t.db
+    const row = m.t.db
       .prepare('SELECT user_id, device_id FROM restaurants WHERE id = ?')
       .get(m.t.restauranteId)
-    expect(fila?.user_id).toBe(m.admin.session.user.id)
+    expect(row?.user_id).toBe(m.admin.session.user.id)
   })
 
   it('cambiar los tiempos no toca los cursos, y los cursos no tocan los tiempos', async () => {

@@ -46,9 +46,9 @@ const contar = (db: BaseSqlite, sql: string, ...p: string[]) => Number(db.prepar
  * Un hub recién instalado con un restaurante de ID dado (o nuevo). La sede también lleva un ID
  * estable para poder comparar dos hubs del mismo restaurante fila por fila.
  */
-function hub(restauranteId = newId(), compartida?: BaseSqlite) {
-  const db = compartida ?? abrirBase(':memory:')
-  if (!compartida) aplicarMigraciones(db)
+function hub(restauranteId = newId(), shared?: BaseSqlite) {
+  const db = shared ?? abrirBase(':memory:')
+  if (!shared) aplicarMigraciones(db)
   agregarRestaurante(db, restauranteId)
   const roles = asegurarRoles(db, restauranteId, AHORA)
   const access = new ServicioAcceso({
@@ -107,9 +107,9 @@ describe('repetir el seed', () => {
     for (const time of [MAS_TARDE, '2026-10-26T01:00:00.000Z', '2027-01-01T00:00:00.000Z']) {
       const r = h.cargar(TEXTO_CARTA, time)
       expect(r.pins).toEqual([])
-      for (const [tabla, c] of Object.entries(r.sqlTables))
-        expect({ tabla, ...c, equal: 0, respected: 0 }).toEqual({
-          tabla,
+      for (const [tableName, c] of Object.entries(r.sqlTables))
+        expect({ tableName, ...c, equal: 0, respected: 0 }).toEqual({
+          tableName,
           created: 0,
           updated: 0,
           equal: 0,
@@ -227,9 +227,9 @@ describe('restaurantes distintos', () => {
     expect(contar(a.db, 'SELECT count(*) AS n FROM products WHERE restaurant_id = ?', other)).toBe(
       98,
     )
-    for (const tabla of TABLAS_VERSIONADAS) {
+    for (const tableName of TABLAS_VERSIONADAS) {
       const ids = a.db
-        .prepare(`SELECT id FROM ${tabla}`)
+        .prepare(`SELECT id FROM ${tableName}`)
         .all()
         .map((f) => String(f.id))
       expect(new Set(ids).size).toBe(ids.length)
@@ -259,8 +259,8 @@ describe('restaurantes distintos', () => {
 
 describe('registros archivados a mano', () => {
   const idDe = (h: ReturnType<typeof hub>, key: string) => idEstable(h.restauranteId, key)
-  const status = (h: ReturnType<typeof hub>, tabla: string, id: string) =>
-    h.db.prepare(`SELECT active, version FROM ${tabla} WHERE id = ?`).get(id)
+  const status = (h: ReturnType<typeof hub>, tableName: string, id: string) =>
+    h.db.prepare(`SELECT active, version FROM ${tableName} WHERE id = ?`).get(id)
 
   it('el seed reactiva un producto, una mesa, una categoría y una opción archivados', () => {
     const h = hub()
@@ -274,13 +274,13 @@ describe('registros archivados a mano', () => {
     const contadorAntes = Number(
       h.db.prepare("SELECT value FROM counters WHERE name = 'catalog'").get()?.value,
     )
-    for (const [tabla, id] of objetivos)
-      h.db.prepare(`UPDATE ${tabla} SET active = 0 WHERE id = ?`).run(id)
+    for (const [tableName, id] of objetivos)
+      h.db.prepare(`UPDATE ${tableName} SET active = 0 WHERE id = ?`).run(id)
 
     const r = h.cargar(TEXTO_CARTA, MAS_TARDE)
-    for (const [tabla, id] of objetivos) {
-      expect({ tabla, ...status(h, tabla, id) }).toMatchObject({ tabla, active: 1 })
-      expect(Number(status(h, tabla, id)?.version)).toBeGreaterThan(contadorAntes)
+    for (const [tableName, id] of objetivos) {
+      expect({ tableName, ...status(h, tableName, id) }).toMatchObject({ tableName, active: 1 })
+      expect(Number(status(h, tableName, id)?.version)).toBeGreaterThan(contadorAntes)
     }
     expect(r.sqlTables.products).toMatchObject({ created: 0, updated: 1 })
     expect(r.sqlTables.dining_tables).toMatchObject({ created: 0, updated: 1 })
@@ -362,12 +362,10 @@ describe('cambios en la carta', () => {
     const r = h.cargar(TEXTO_CARTA.replace('es: Quattro Formaggi', 'es: Cuatro Quesos'), MAS_TARDE)
 
     expect(r.sqlTables.products).toMatchObject({ created: 1, updated: 0, archived: 1 })
-    const fila = h.db
-      .prepare('SELECT active, price, version FROM products WHERE id = ?')
-      .get(oldOne)
-    expect(fila).toMatchObject({ active: 0, price: 44_900 })
+    const row = h.db.prepare('SELECT active, price, version FROM products WHERE id = ?').get(oldOne)
+    expect(row).toMatchObject({ active: 0, price: 44_900 })
     // Archivar es un cambio más del catálogo: sube la versión para que los dispositivos lo reciban.
-    expect(Number(fila?.version)).toBeGreaterThan(before)
+    expect(Number(row?.version)).toBeGreaterThan(before)
     expect(names(h)).toContain('Cuatro Quesos')
     expect(names(h)).not.toContain('Quattro Formaggi')
     expect(contar(h.db, 'SELECT count(*) AS n FROM products WHERE active = 1')).toBe(98)

@@ -287,7 +287,7 @@ describe('cliente: reconexiones y reloj', () => {
       send: (message) => enviados.push(message),
       ahora: () => clock,
     })
-    return { cliente, enviados, almacen, avanzar: (ms: number) => (clock += ms) }
+    return { cliente, enviados, almacen, advance: (ms: number) => (clock += ms) }
   }
   const welcome = (time = '2026-10-24T20:00:00.000Z'): MensajeHub => ({
     type: 'welcome',
@@ -341,7 +341,7 @@ describe('cliente: reconexiones y reloj', () => {
       send: () => {},
       ahora: () => m.network.ahora() - 59_000,
     })
-    await other.iniciar()
+    await other.begin()
     expect(other.horaEstimadaHub()).toBe(m.network.horaIso())
   })
 

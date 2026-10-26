@@ -275,12 +275,12 @@ export class HubSync {
     type: TipoDispositivo,
     dispositivoId: string | null = null,
   ): Extract<MensajeHub, { type: 'events' }> {
-    const pagina = this.almacen.eventosDesde(from, TAMANO_PAGINA)
+    const page = this.almacen.eventosDesde(from, TAMANO_PAGINA)
     return {
       type: 'events',
-      events: pagina.filter((e) => this.ve(type, e)).map((e) => paraDispositivo(e, dispositivoId)),
-      until: pagina.at(-1)?.sequence ?? from,
-      hay_mas: pagina.length === TAMANO_PAGINA,
+      events: page.filter((e) => this.ve(type, e)).map((e) => paraDispositivo(e, dispositivoId)),
+      until: page.at(-1)?.sequence ?? from,
+      hay_mas: page.length === TAMANO_PAGINA,
     }
   }
 
@@ -363,8 +363,8 @@ export class HubSync {
     const all = new Map<string, OrderState>()
     let from = 0
     for (;;) {
-      const pagina = this.almacen.eventosDesde(from, TAMANO_PAGINA)
-      for (const event of pagina) {
+      const page = this.almacen.eventosDesde(from, TAMANO_PAGINA)
+      for (const event of page) {
         this.aplicarATurnos(event)
         if (event.aggregate_type !== 'order') continue
         for (const id of pedidosDe(event)) {
@@ -372,8 +372,8 @@ export class HubSync {
           if (r.status) all.set(id, r.status)
         }
       }
-      if (pagina.length < TAMANO_PAGINA) break
-      from = pagina.at(-1)?.sequence ?? from
+      if (page.length < TAMANO_PAGINA) break
+      from = page.at(-1)?.sequence ?? from
     }
     for (const [id, order] of all) if (order.status === 'open') this.orders.set(id, order)
   }
@@ -486,7 +486,7 @@ export class HubSync {
       if (reconciliation.cash.expected !== event.data.expected_cash) return 'expected_mismatch'
       // Los demás medios (tarea 1.8): cada uno con lo que registró el hub y lo que dijo su cierre
       // en el conteo, ni más ni menos.
-      const comoTexto = (l: {
+      const asText = (l: {
         method: string
         customMethodId: string | null
         expected: number
@@ -499,7 +499,7 @@ export class HubSync {
         expected: o.expected,
         reported: o.reported,
       }))
-      if (others.map(comoTexto).sort().join('|') !== delEvento.map(comoTexto).sort().join('|'))
+      if (others.map(asText).sort().join('|') !== delEvento.map(asText).sort().join('|'))
         return 'other_methods_mismatch'
       const umbral = this.config.reglasCobro?.().umbralDiferencia ?? UMBRAL_DIFERENCIA_CAJA
       const large = (d: number) => Math.abs(d) >= Math.max(1, umbral)

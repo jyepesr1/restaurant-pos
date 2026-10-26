@@ -17,7 +17,7 @@ function clienteDeMentira(
   const llamadas: Llamada[] = []
   return {
     llamadas,
-    textos: () => llamadas.map((l) => l.text),
+    texts: () => llamadas.map((l) => l.text),
     cliente: {
       async query(text: string, parametros?: unknown[]) {
         llamadas.push({ text, parametros })
@@ -51,7 +51,7 @@ describe('sqlDePg: transacciones', () => {
       return 'ready'
     })
     expect(r).toBe('ready')
-    expect(f.textos()).toEqual(['BEGIN', 'SELECT 1', 'COMMIT'])
+    expect(f.texts()).toEqual(['BEGIN', 'SELECT 1', 'COMMIT'])
   })
 
   it('una transacción anidada no abre otra: un solo BEGIN y un solo COMMIT', async () => {
@@ -67,7 +67,7 @@ describe('sqlDePg: transacciones', () => {
       })
       await externa.query('SELECT 4')
     })
-    expect(f.textos()).toEqual(['BEGIN', 'SELECT 1', 'SELECT 2', 'SELECT 3', 'SELECT 4', 'COMMIT'])
+    expect(f.texts()).toEqual(['BEGIN', 'SELECT 1', 'SELECT 2', 'SELECT 3', 'SELECT 4', 'COMMIT'])
   })
 
   it('la anidada devuelve su valor a quien la llamó', async () => {
@@ -90,7 +90,7 @@ describe('sqlDePg: transacciones', () => {
         })
       }),
     ).rejects.toBe(error)
-    expect(f.textos()).toEqual(['BEGIN', 'SELECT 1', 'SELECT 2', 'ROLLBACK'])
+    expect(f.texts()).toEqual(['BEGIN', 'SELECT 1', 'SELECT 2', 'ROLLBACK'])
   })
 
   it('con datos reales: si falla la anidada, no queda nada de lo escrito antes ni dentro', async () => {
@@ -150,7 +150,7 @@ describe('sqlDePg: transacciones', () => {
     const sql = sqlDePg(f.cliente as never)
     await sql.transaccion(async () => {})
     await sql.transaccion(async () => {})
-    expect(f.textos()).toEqual(['BEGIN', 'COMMIT', 'BEGIN', 'COMMIT'])
+    expect(f.texts()).toEqual(['BEGIN', 'COMMIT', 'BEGIN', 'COMMIT'])
   })
 
   it('tras un rollback, la siguiente transacción vuelve a abrir BEGIN', async () => {
@@ -158,7 +158,7 @@ describe('sqlDePg: transacciones', () => {
     const sql = sqlDePg(f.cliente as never)
     await expect(sql.transaccion(async () => Promise.reject(new Error('x')))).rejects.toThrow('x')
     await sql.transaccion(async () => {})
-    expect(f.textos()).toEqual(['BEGIN', 'ROLLBACK', 'BEGIN', 'COMMIT'])
+    expect(f.texts()).toEqual(['BEGIN', 'ROLLBACK', 'BEGIN', 'COMMIT'])
   })
 
   it('un trabajo que lanza un valor que no es Error se relanza tal cual', async () => {
@@ -167,7 +167,7 @@ describe('sqlDePg: transacciones', () => {
     const odd = { code: 7 }
     await expect(sql.transaccion(async () => Promise.reject(odd))).rejects.toBe(odd)
     await expect(sql.transaccion(async () => Promise.reject('text'))).rejects.toBe('text')
-    expect(f.textos().filter((t) => t === 'ROLLBACK')).toHaveLength(2)
+    expect(f.texts().filter((t) => t === 'ROLLBACK')).toHaveLength(2)
   })
 
   it('si falla el COMMIT, se intenta deshacer y el error que sube es el del COMMIT', async () => {
@@ -175,7 +175,7 @@ describe('sqlDePg: transacciones', () => {
     const f = clienteDeMentira((t) => (t === 'COMMIT' ? error : undefined))
     const sql = sqlDePg(f.cliente as never)
     await expect(sql.transaccion(async (tx) => tx.query('SELECT 1'))).rejects.toBe(error)
-    expect(f.textos()).toEqual(['BEGIN', 'SELECT 1', 'COMMIT', 'ROLLBACK'])
+    expect(f.texts()).toEqual(['BEGIN', 'SELECT 1', 'COMMIT', 'ROLLBACK'])
   })
 
   it('si falla el BEGIN, no se corre el trabajo ni se hace ROLLBACK', async () => {
@@ -185,7 +185,7 @@ describe('sqlDePg: transacciones', () => {
     const trabajo = vi.fn()
     await expect(sql.transaccion(trabajo)).rejects.toBe(error)
     expect(trabajo).not.toHaveBeenCalled()
-    expect(f.textos()).toEqual(['BEGIN'])
+    expect(f.texts()).toEqual(['BEGIN'])
   })
 
   it('si la conexión se cae a mitad (el ROLLBACK también falla), sube el error original', async () => {
@@ -237,7 +237,7 @@ describe('sqlDePg: consultas', () => {
     const f = clienteDeMentira(() => error)
     const sql = sqlDePg(f.cliente as never)
     await expect(sql.query('SELECT')).rejects.toBe(error)
-    expect(f.textos()).toEqual(['SELECT'])
+    expect(f.texts()).toEqual(['SELECT'])
   })
 
   it('las consultas dentro de una transacción pasan por el mismo cliente, en orden', async () => {

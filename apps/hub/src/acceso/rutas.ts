@@ -62,7 +62,7 @@ function enviarError(reply: FastifyReply, e: ErrorAcceso) {
   })
 }
 
-function leer<T>(esquema: z.ZodType<T>, req: FastifyRequest, reply: FastifyReply): T | null {
+function read<T>(esquema: z.ZodType<T>, req: FastifyRequest, reply: FastifyReply): T | null {
   const r = esquema.safeParse(req.body)
   if (r.success) return r.data
   reply.code(400).send({ error: 'invalid_data', message: 'Datos con formato inesperado' })
@@ -87,7 +87,7 @@ export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRuta
   }
 
   app.post('/api/pairings', async (req, reply) => {
-    const cuerpo = leer(Cuerpos.emparejamiento, req, reply)
+    const cuerpo = read(Cuerpos.emparejamiento, req, reply)
     if (!cuerpo) return reply
     // Desde ADR-013 los celulares y la caja entran sin emparejar (`/api/entrar`): esto queda solo
     // para la pantalla de cocina (tarea 1.4), aprobado desde un equipo que ya está registrado.
@@ -104,7 +104,7 @@ export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRuta
   })
 
   app.post('/api/pair', async (req, reply) => {
-    const cuerpo = leer(Cuerpos.emparejar, req, reply)
+    const cuerpo = read(Cuerpos.emparejar, req, reply)
     if (!cuerpo) return reply
     const r = access.emparejar(cuerpo.code, req.ip)
     if (!r.ok) return enviarError(reply, r)
@@ -119,7 +119,7 @@ export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRuta
     const authorization = req.headers.authorization
     const connection = authorization ? device(req, reply) : null
     if (authorization && !connection) return reply
-    const cuerpo = leer(Cuerpos.entrar, req, reply)
+    const cuerpo = read(Cuerpos.entrar, req, reply)
     if (!cuerpo) return reply
     const r = access.entrar(cuerpo, connection, req.ip)
     if (!r.ok) return enviarError(reply, r)
@@ -141,7 +141,7 @@ export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRuta
   app.post('/api/sessions', async (req, reply) => {
     const connection = device(req, reply)
     if (!connection) return reply
-    const cuerpo = leer(Cuerpos.session, req, reply)
+    const cuerpo = read(Cuerpos.session, req, reply)
     if (!cuerpo) return reply
     const r = access.startSession(connection, cuerpo.pin)
     if (!r.ok) return enviarError(reply, r)
@@ -156,7 +156,7 @@ export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRuta
   app.post('/api/sessions/close', async (req, reply) => {
     const connection = device(req, reply)
     if (!connection) return reply
-    const cuerpo = leer(Cuerpos.close, req, reply)
+    const cuerpo = read(Cuerpos.close, req, reply)
     if (!cuerpo) return reply
     const r = access.cerrarSesion(connection, {
       sesionId: cuerpo.session_id,
@@ -169,7 +169,7 @@ export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRuta
   app.post('/api/authorizations', async (req, reply) => {
     const connection = device(req, reply)
     if (!connection) return reply
-    const c = leer(Cuerpos.authorization, req, reply)
+    const c = read(Cuerpos.authorization, req, reply)
     if (!c) return reply
     const r = access.autorizar(connection, {
       sesionId: c.session_id,
@@ -187,7 +187,7 @@ export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRuta
   app.post<{ Params: { id: string } }>('/api/devices/:id/revoke', async (req, reply) => {
     const connection = device(req, reply)
     if (!connection) return reply
-    const cuerpo = leer(Cuerpos.revoke, req, reply)
+    const cuerpo = read(Cuerpos.revoke, req, reply)
     if (!cuerpo) return reply
     const r = access.revocarDispositivo(connection, {
       sesionId: cuerpo.session_id,

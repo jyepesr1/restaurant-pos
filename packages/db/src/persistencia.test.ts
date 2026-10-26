@@ -91,8 +91,8 @@ describe('base en archivo', () => {
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let errors = ''
-    child.stderr.on('data', (trozo) => {
-      errors += String(trozo)
+    child.stderr.on('data', (chunk) => {
+      errors += String(chunk)
     })
     const salio = new Promise<NodeJS.Signals | null>((resolver) =>
       child.on('exit', (_codigo, senal) => resolver(senal)),
@@ -101,8 +101,8 @@ describe('base en archivo', () => {
     // El hijo avisa cuando ya hizo el INSERT dentro de BEGIN y todavía no confirma.
     await new Promise<void>((resolver, reject) => {
       let output = ''
-      child.stdout.on('data', (trozo) => {
-        output += String(trozo)
+      child.stdout.on('data', (chunk) => {
+        output += String(chunk)
         if (output.includes('en-transaccion')) resolver()
       })
       child.on('exit', () => reject(new Error(`El hijo terminó antes de tiempo: ${errors}`)))
@@ -113,7 +113,7 @@ describe('base en archivo', () => {
       initial
         .prepare('SELECT id FROM events ORDER BY sequence')
         .all()
-        .map((fila) => fila.id)
+        .map((row) => row.id)
     expect(events()).toEqual([confirmed.id])
 
     child.kill('SIGKILL')
@@ -128,7 +128,7 @@ describe('base en archivo', () => {
       reabierta
         .prepare('SELECT id FROM events ORDER BY sequence')
         .all()
-        .map((fila) => fila.id),
+        .map((row) => row.id),
     ).toEqual([confirmed.id])
     expect(reabierta.prepare('SELECT count(*) AS n FROM events WHERE id = ?').get(pending)?.n).toBe(
       0,

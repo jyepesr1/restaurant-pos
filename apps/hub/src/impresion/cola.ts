@@ -1,15 +1,15 @@
 import type { BaseSqlite, Fila } from '@pos/db'
 import {
-  type CierreZ,
-  COLUMNAS,
-  type Comanda,
+  COLUMNS,
+  type CodePage,
   escpos,
-  lineasCierreZ,
-  lineasComanda,
-  lineasPrecuenta,
-  lineasPrueba,
-  type PaginaCodigos,
-  type Precuenta,
+  type PreBill,
+  preBillLines,
+  type Ticket,
+  testLines,
+  ticketLines,
+  type ZReport,
+  zReportLines,
 } from '@pos/printing'
 import type { EstadoImpresora } from '@pos/sync'
 import { type Enviar, enviarPorRed } from './transporte'
@@ -325,18 +325,18 @@ export class ColaImpresion {
   private bytes(trabajo: Fila, printer: Fila): Uint8Array {
     const width = Number(printer.width) === 58 ? 58 : 80
     const format = {
-      columnas: COLUMNAS[width],
-      pagina: String(printer.code_page) as PaginaCodigos,
+      columns: COLUMNS[width],
+      page: String(printer.code_page) as CodePage,
     }
     const content = JSON.parse(String(trabajo.content))
     const lines =
       trabajo.type === 'test'
-        ? lineasPrueba(content as PruebaImpresion, format)
+        ? testLines(content as PruebaImpresion, format)
         : trabajo.type === 'preBill'
-          ? lineasPrecuenta(content as Precuenta, format)
+          ? preBillLines(content as PreBill, format)
           : trabajo.type === 'report'
-            ? lineasCierreZ(content as CierreZ, format)
-            : lineasComanda(content as Comanda, format)
+            ? zReportLines(content as ZReport, format)
+            : ticketLines(content as Ticket, format)
     return escpos(lines, format)
   }
 
@@ -356,10 +356,10 @@ export class ColaImpresion {
     // volver a probar la caída.
     const cuando = (id: string) => {
       const propia = this.statuses.get(id)?.reintentoEn ?? ahora
-      const fila = printers.get(id)
+      const row = printers.get(id)
       const caida =
-        fila?.active !== 1 || (this.statuses.get(id)?.fallosSeguidos ?? 0) >= FALLOS_PARA_RESPALDO
-      const respaldo = fila?.fallback_id ? printers.get(String(fila.fallback_id)) : undefined
+        row?.active !== 1 || (this.statuses.get(id)?.fallosSeguidos ?? 0) >= FALLOS_PARA_RESPALDO
+      const respaldo = row?.fallback_id ? printers.get(String(row.fallback_id)) : undefined
       if (!caida || respaldo?.active !== 1) return propia
       return Math.min(propia, this.statuses.get(String(respaldo.id))?.reintentoEn ?? ahora)
     }

@@ -7,19 +7,19 @@ import { montarApi } from './montaje-api'
 async function admin() {
   const api = montarApi()
   const { token, session } = await api.signInAdmin()
-  const persona = (p: unknown, extra: object = {}) =>
-    api.post('/api/staff/people', { ...session, persona: p, ...extra }, { token })
+  const person = (p: unknown, extra: object = {}) =>
+    api.post('/api/staff/people', { ...session, person: p, ...extra }, { token })
   const role = (r: unknown) => api.post('/api/staff/roles', { ...session, role: r }, { token })
   const version = () =>
     Number(api.db.prepare("SELECT value FROM counters WHERE name = 'catalog'").get()?.value)
-  return { api, token, session, persona, role, version }
+  return { api, token, session, person, role, version }
 }
 
 const valida = (rolId: string) => ({ name: 'Bruno', role_id: rolId })
 
 describe('personas con datos raros', () => {
   it('campos de más, de menos o de otro tipo: 400 y la base no cambia ni avisa', async () => {
-    const { api, persona, version } = await admin()
+    const { api, person, version } = await admin()
     const v = version()
     const raros: unknown[] = [
       null,
@@ -53,7 +53,7 @@ describe('personas con datos raros', () => {
       { ...valida(api.roles.waiter), name: 'n'.repeat(101) },
     ]
     for (const p of raros) {
-      const r = await persona(p)
+      const r = await person(p)
       expect(r.statusCode, JSON.stringify(p)).toBe(400)
     }
     expect(version()).toBe(v)
@@ -61,19 +61,17 @@ describe('personas con datos raros', () => {
   })
 
   it('nombres del servicio: vacío, solo espacios, 61 letras; y el mensaje es claro', async () => {
-    const { api, persona } = await admin()
+    const { api, person } = await admin()
     for (const name of ['', '   ', '\t\n', 'n'.repeat(61)]) {
-      const r = await persona({ name, role_id: api.roles.waiter })
+      const r = await person({ name, role_id: api.roles.waiter })
       expect(r.statusCode, JSON.stringify(name)).toBe(400)
       expect(r.json().message).toMatch(/entre 1 y 60/)
     }
-    expect((await persona({ name: 'n'.repeat(60), role_id: api.roles.waiter })).statusCode).toBe(
-      200,
-    )
+    expect((await person({ name: 'n'.repeat(60), role_id: api.roles.waiter })).statusCode).toBe(200)
   })
 
   it('nombres con Unicode, emoji, HTML o SQL se guardan como texto y vuelven iguales', async () => {
-    const { api, persona, session, token } = await admin()
+    const { api, person, session, token } = await admin()
     const names = [
       'María José Peña',
       '李小龍',
@@ -83,9 +81,9 @@ describe('personas con datos raros', () => {
       'مرحبا',
     ]
     for (const name of names)
-      expect((await persona({ name, role_id: api.roles.waiter })).statusCode, name).toBe(200)
-    const leido = (await api.post('/api/staff/read', session, { token })).json()
-    const guardados = leido.people.map((p: { name: string }) => p.name)
+      expect((await person({ name, role_id: api.roles.waiter })).statusCode, name).toBe(200)
+    const readResult = (await api.post('/api/staff/read', session, { token })).json()
+    const guardados = readResult.people.map((p: { name: string }) => p.name)
     for (const name of names) expect(guardados).toContain(name.trim())
     expect(Number(api.db.prepare('SELECT count(*) AS n FROM users').get()?.n)).toBeGreaterThan(
       names.length,
@@ -93,42 +91,42 @@ describe('personas con datos raros', () => {
   })
 
   it('un nombre con un carácter nulo no rompe nada: se guarda o se rechaza, pero no hay 500', async () => {
-    const { api, persona } = await admin()
-    const r = await persona({ name: 'a\u0000b', role_id: api.roles.waiter })
+    const { api, person } = await admin()
+    const r = await person({ name: 'a\u0000b', role_id: api.roles.waiter })
     expect(r.statusCode).toBeLessThan(500)
   })
 
   it('rol que no existe, de otro tipo de id o archivado: 400 con mensaje', async () => {
-    const { api, persona, role } = await admin()
+    const { api, person, role } = await admin()
     const empty = (await role({ name: 'Temporal', permissions: ['take_order'] })).json().id
     await role({ id: empty, name: 'Temporal', permissions: [], active: false })
     const nonexistent = '0'.repeat(26)
-    expect((await persona({ name: 'Bruno', role_id: nonexistent })).json().message).toMatch(
+    expect((await person({ name: 'Bruno', role_id: nonexistent })).json().message).toMatch(
       /Ese rol no existe/,
     )
-    expect((await persona({ name: 'Bruno', role_id: empty })).json().message).toMatch(/archivado/)
+    expect((await person({ name: 'Bruno', role_id: empty })).json().message).toMatch(/archivado/)
     expect(
-      (await persona({ id: nonexistent, name: 'Bruno', role_id: api.roles.waiter })).json().message,
+      (await person({ id: nonexistent, name: 'Bruno', role_id: api.roles.waiter })).json().message,
     ).toMatch(/no existe/)
   })
 
   it('una contraseña nueva exigida y corta: mensajes claros; y nunca se repite en la respuesta', async () => {
-    const { api, persona } = await admin()
-    const withoutKey = await persona({
+    const { api, person } = await admin()
+    const withoutKey = await person({
       name: 'Carla',
       role_id: api.roles.cashier,
       access: { type: 'password', user: 'carla' },
     })
     expect(withoutKey.statusCode).toBe(400)
     expect(withoutKey.json().message).toMatch(/contraseña/)
-    const corta = await persona({
+    const corta = await person({
       name: 'Carla',
       role_id: api.roles.cashier,
       access: { type: 'password', user: 'carla', password: 'corta' },
     })
     expect(corta.statusCode).toBe(400)
     expect(corta.body).not.toContain('"corta"')
-    const ok = await persona({
+    const ok = await person({
       name: 'Carla',
       role_id: api.roles.cashier,
       access: { type: 'password', user: 'carla', password: 'esta-es-la-clave-1' },
@@ -139,9 +137,9 @@ describe('personas con datos raros', () => {
   })
 
   it('con PIN solo no se puede dar un rol que cobra o administra: error claro y nada guardado', async () => {
-    const { api, persona, version } = await admin()
+    const { api, person, version } = await admin()
     const v = version()
-    const r = await persona({
+    const r = await person({
       name: 'Cajero sin clave',
       role_id: api.roles.cashier,
       access: { type: 'pin' },
@@ -228,9 +226,9 @@ describe('roles con datos raros', () => {
   })
 
   it('un rol sin permisos es válido (y su gente no puede hacer nada)', async () => {
-    const { api, role, persona } = await admin()
+    const { api, role, person } = await admin()
     const id = (await role({ name: 'Observadores', permissions: [] })).json().id
-    expect((await persona({ name: 'Omar', role_id: id })).statusCode).toBe(200)
+    expect((await person({ name: 'Omar', role_id: id })).statusCode).toBe(200)
     expect(
       api.access.permisosDe(
         (api.db.prepare("SELECT id FROM users WHERE name = 'Omar'").get() as { id: string }).id,
@@ -242,8 +240,8 @@ describe('roles con datos raros', () => {
 describe('sin permiso, sin sesión o con credenciales ajenas', () => {
   async function conCajaYReportes() {
     const a = await admin()
-    const { api, persona } = a
-    await persona({
+    const { api, person } = a
+    await person({
       name: 'Rita',
       role_id: api.roles.reports,
       access: { type: 'password', user: 'rita', password: 'clave-de-rita-1' },
@@ -274,7 +272,7 @@ describe('sin permiso, sin sesión o con credenciales ajenas', () => {
             ? quien.session
             : url === '/api/staff/roles'
               ? { ...quien.session, role: { name: 'Colado', permissions: [] } }
-              : { ...quien.session, persona: { name: 'Colado', role_id: t.api.roles.waiter } }
+              : { ...quien.session, person: { name: 'Colado', role_id: t.api.roles.waiter } }
         expect((await t.api.post(url, cuerpo, { token: quien.token })).statusCode, url).toBe(403)
       }
     expect(JSON.stringify(t.api.db.prepare('SELECT * FROM users ORDER BY id').all())).toBe(before)
@@ -288,7 +286,7 @@ describe('sin permiso, sin sesión o con credenciales ajenas', () => {
         ? s
         : url === '/api/staff/roles'
           ? { ...s, role: { name: 'Colado', permissions: [] } }
-          : { ...s, persona: { name: 'Colado', role_id: t.api.roles.waiter } }
+          : { ...s, person: { name: 'Colado', role_id: t.api.roles.waiter } }
     for (const url of RUTAS) {
       const attempts: [string, object, string | undefined][] = [
         ['sin token', session, undefined],
@@ -349,7 +347,7 @@ describe('sin permiso, sin sesión o con credenciales ajenas', () => {
 
   it('una persona archivada con la sesión abierta ya no administra', async () => {
     const t = await conCajaYReportes()
-    const jefa = await t.persona({
+    const jefa = await t.person({
       name: 'Jefa',
       role_id: t.api.roles.admin,
       access: { type: 'password', user: 'jefa', password: 'clave-de-la-jefa' },
@@ -365,7 +363,7 @@ describe('sin permiso, sin sesión o con credenciales ajenas', () => {
     expect((await t.api.post('/api/staff/read', suya, { token: e.device.token })).statusCode).toBe(
       200,
     )
-    await t.persona({
+    await t.person({
       id: jefa.json().id,
       name: 'Jefa',
       role_id: t.api.roles.admin,
@@ -422,7 +420,7 @@ describe('sin permiso, sin sesión o con credenciales ajenas', () => {
 
   it('un aluvión de peticiones malas no tumba al hub: la buena después responde', async () => {
     const t = await conCajaYReportes()
-    await Promise.all(Array.from({ length: 200 }, (_, i) => t.persona({ name: i, role_id: 7 })))
+    await Promise.all(Array.from({ length: 200 }, (_, i) => t.person({ name: i, role_id: 7 })))
     expect((await t.api.post('/api/staff/read', t.session, { token: t.token })).statusCode).toBe(
       200,
     )

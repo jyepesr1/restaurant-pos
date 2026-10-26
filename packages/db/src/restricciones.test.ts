@@ -267,11 +267,11 @@ describe('restricciones del esquema', () => {
 
     it('los valores por defecto de relacionados, afecta y asignaciones son JSON vacío', () => {
       const event = insertarEvento(db, base.restaurant)
-      const fila = db
+      const row = db
         .prepare('SELECT related, affects, assignments FROM events WHERE id = ?')
         .get(event.id ?? null)
 
-      expect(fila).toEqual({ related: '[]', affects: '[]', assignments: '{}' })
+      expect(row).toEqual({ related: '[]', affects: '[]', assignments: '{}' })
     })
 
     it('rechaza config del restaurante que no es JSON', () => {
@@ -282,7 +282,7 @@ describe('restricciones del esquema', () => {
     })
 
     it('rechaza contenido de cuarentena que no es JSON', () => {
-      const fila = (content: string) =>
+      const row = (content: string) =>
         insertarEnTabla(db, 'quarantined_events', {
           restaurant_id: base.restaurant,
           event_id: newId(),
@@ -292,8 +292,8 @@ describe('restricciones del esquema', () => {
           received_at: AHORA,
         })
 
-      expect(() => fila('{"a":1}')).not.toThrow()
-      expect(() => fila('<html>')).toThrow(/CHECK/)
+      expect(() => row('{"a":1}')).not.toThrow()
+      expect(() => row('<html>')).toThrow(/CHECK/)
     })
   })
 

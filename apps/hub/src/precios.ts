@@ -28,7 +28,7 @@ export class HistorialCatalogo {
    * viejo conocido, en vez de dar por inexistente algo que sí estaba en la carta.
    */
   estadoEn(entity: string, registroId: string, version: number): Fila | undefined {
-    const fila =
+    const row =
       this.db
         .prepare(
           `SELECT after FROM catalog_changes
@@ -45,7 +45,7 @@ export class HistorialCatalogo {
             )
             .get(this.restauranteId, entity, registroId)
         : undefined)
-    return fila ? (JSON.parse(String(fila.after)) as Fila) : undefined
+    return row ? (JSON.parse(String(row.after)) as Fila) : undefined
   }
 
   /** Las variantes activas de un producto en esa versión (una variante no cambia de producto). */
@@ -69,10 +69,10 @@ export class HistorialCatalogo {
   }
 
   private counter(name: string): number {
-    const fila = this.db
+    const row = this.db
       .prepare('SELECT value FROM counters WHERE restaurant_id = ? AND name = ?')
       .get(this.restauranteId, name)
-    return Number(fila?.value ?? 0)
+    return Number(row?.value ?? 0)
   }
 
   versionActual(): number {

@@ -88,7 +88,7 @@ function correr(): number {
       new Date().toISOString(),
     )
     console.log(`Datos de La Spritzzería cargados en ${dirDatos}`)
-    for (const [tabla, c] of Object.entries(sqlTables)) {
+    for (const [tableName, c] of Object.entries(sqlTables)) {
       const parts = [
         `${c.created} nuevos`,
         `${c.updated} cambiados`,
@@ -96,7 +96,7 @@ function correr(): number {
         ...(c.respected ? [`${c.respected} respetados`] : []),
         ...(c.archived ? [`${c.archived} archivados`] : []),
       ]
-      console.log(`  ${tabla.padEnd(28)} ${parts.join(', ')}`)
+      console.log(`  ${tableName.padEnd(28)} ${parts.join(', ')}`)
     }
     if (pins.length > 0) anunciar('personal', pins.map(lineaDe))
     else if (sinPersonal) console.log('\nSin personal de ejemplo (--sin-personal).')

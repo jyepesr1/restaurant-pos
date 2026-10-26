@@ -14,12 +14,12 @@ import {
   enPartesIguales,
   lineasDe,
   methodName,
-  nombreImpuesto,
   porCobrar,
   porProductos,
   propinaSugeridaDe,
   recortarAsignaciones,
   reglasDe,
+  taxName,
 } from './cuentas'
 import { claseCampo } from './Entrar'
 import { MarcoSala } from './MarcoSala'
@@ -55,7 +55,7 @@ export function Check() {
   const { catalog, session, device, connection } = useSala()
   const avisar = useAvisar()
   // Lo cobrado que cerró el pedido: se sigue viendo (el cambio que hay que entregar).
-  const [closed, setCerrado] = useState<{ titulo: string; change: number | null } | null>(null)
+  const [closed, setCerrado] = useState<{ title: string; change: number | null } | null>(null)
   const [ultimoCambio, setUltimoCambio] = useState<number | null>(null)
   const [mode, setModo] = useState<Modo>('single')
   const [people, setPersonas] = useState(2)
@@ -69,7 +69,7 @@ export function Check() {
 
   if (closed)
     return (
-      <MarcoSala titulo={closed.titulo} back="/">
+      <MarcoSala title={closed.title} back="/">
         <div className="mx-auto flex max-w-md flex-col gap-4 p-4">
           <p className="rounded-2xl bg-libre-suave p-4 text-libre-texto">
             <span className="block text-lg font-semibold">Pagado y cerrado</span>
@@ -93,17 +93,17 @@ export function Check() {
   const pedidoVisible = vista.orders.find((p) => p.status.id === orderId)
   if (!pedidoVisible)
     return (
-      <MarcoSala titulo="Cuenta" back="/">
+      <MarcoSala title="Cuenta" back="/">
         <p className="p-6 text-texto-suave">Este pedido ya no está abierto.</p>
       </MarcoSala>
     )
   const order = pedidoVisible.status
-  const titulo = tituloDe(catalog, order)
+  const title = tituloDe(catalog, order)
   const volverAlPedido = `/order?order=${order.id}${order.tableId ? `&table=${order.tableId}` : ''}`
   const reglas = reglasDe(catalog)
   if (!reglas)
     return (
-      <MarcoSala titulo={`Cuenta · ${titulo}`} back="/">
+      <MarcoSala title={`Cuenta · ${title}`} back="/">
         <p className="p-6 text-texto-suave">
           La caja tiene una versión anterior que no sabe cobrar: hay que actualizarla.
         </p>
@@ -150,7 +150,7 @@ export function Check() {
         suggested_tip: tip,
       })
       avisar(
-        reglas.imprimePrecuenta ? 'Precuenta enviada a la impresora' : `${titulo}: pidió la cuenta`,
+        reglas.imprimePrecuenta ? 'Precuenta enviada a la impresora' : `${title}: pidió la cuenta`,
       )
     })
 
@@ -169,8 +169,8 @@ export function Check() {
   /** Cierra el pedido con saldo 0; el hub confirma antes de mostrarlo cerrado. */
   const close = async (change: number | null) => {
     await sala.registrarConfirmado('OrderClosed', order.id, {})
-    setCerrado({ titulo, change })
-    avisar(`${titulo}: pagada y cerrada`)
+    setCerrado({ title, change })
+    avisar(`${title}: pagada y cerrada`)
   }
 
   // El dinero se muestra como cobrado solo cuando el hub lo acepta: un pago que el hub rechaza
@@ -244,7 +244,7 @@ export function Check() {
     })
 
   return (
-    <MarcoSala titulo={`Cuenta · ${titulo}`} back={volverAlPedido}>
+    <MarcoSala title={`Cuenta · ${title}`} back={volverAlPedido}>
       <div className="mx-auto grid max-w-5xl gap-4 p-3 pb-28 md:grid-cols-[1fr_24rem] md:p-5">
         <section
           className="rounded-2xl border border-linea bg-superficie shadow-flota"
@@ -299,7 +299,7 @@ export function Check() {
                   .filter((i) => i.tax > 0)
                   .map((i) => (
                     <div key={`${i.type}${i.rate}`} className="contents">
-                      <dt className="text-texto-suave">{nombreImpuesto(i.type, i.rate)}</dt>
+                      <dt className="text-texto-suave">{taxName(i.type, i.rate)}</dt>
                       <dd className="text-right text-texto-suave">{pesos(i.tax)}</dd>
                     </div>
                   ))}
@@ -522,7 +522,7 @@ export function Check() {
                   onClick={() =>
                     abrirCobro({
                       checkId: null,
-                      name: titulo,
+                      name: title,
                       available: balance,
                       check: null,
                       propinaInicial: propinaElegida,
@@ -773,7 +773,7 @@ function PanelAnularPago({
   return (
     <PanelLateral
       opened={paymentId !== null}
-      titulo="Anular el pago"
+      title="Anular el pago"
       alCerrar={alCerrar}
       pie={
         <Boton
