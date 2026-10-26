@@ -421,14 +421,15 @@ describe('otros_medios_distintos', () => {
     ).toBe('otros_medios_distintos')
   })
 
-  it('una línea repetida', () => {
+  // El esquema ya rechaza la línea repetida y el medio propio sin id, antes de comparar con el hub.
+  it('una línea repetida: el esquema la rechaza', () => {
     expect(
       listo().cerrarCon([
         lin('tarjeta', 110_000, 110_000),
         lin('tarjeta', 110_000, 110_000),
         lin('nequi', 30_000, 30_000),
       ]),
-    ).toBe('otros_medios_distintos')
+    ).toMatch(/^esquema: .*Un medio aparece dos veces/)
   })
 
   it('otro esperado: dice $1 menos o más de lo que registró el hub', () => {
@@ -492,7 +493,7 @@ describe('otros_medios_distintos', () => {
     ).toBe('confirmado')
   })
 
-  it('un medio propio sin id en el cierre: distinto', () => {
+  it('un medio propio sin id en el cierre: el esquema lo rechaza', () => {
     const e = entorno()
     const turno = e.abrirTurno(e.caja, 0)
     const pedido = e.abrirPedido(e.caja)
@@ -504,7 +505,7 @@ describe('otros_medios_distintos', () => {
           otros_medios: [lin('otro', 20_000, 20_000, null)],
         }),
       ),
-    ).toBe('otros_medios_distintos')
+    ).toMatch(/^esquema: .*Un medio propio dice cuál es/)
   })
 
   it('un rechazo no cierra el turno ni deja huella; con las líneas correctas se acepta', () => {
@@ -885,7 +886,7 @@ describe('reinicio del hub con tarjeta y Nequi a medias', () => {
     t.cerrar(t.caja, t.turno, t.arqueo, 100_000, 100_000, { justificacion: 'Propinas del cierre' })
     const reiniciado = t.nuevoHub()
     expect(reiniciado.turnoAbierto(t.caja.dispositivoId)).toBeNull()
-    expect(reiniciado.cuadre(t.turno)).toBeNull()
+    expect(reiniciado.cuadre(t.turno)?.cerrado).not.toBeNull()
     expect(
       motivo(
         t.uno(

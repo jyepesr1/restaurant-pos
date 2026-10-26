@@ -23,6 +23,7 @@ export {
   type Conflicto,
   type Cuarentena,
   type Rechazo,
+  TIPOS_COBRO,
   type TipoConflicto,
 } from './hub/almacen'
 export {
@@ -35,6 +36,14 @@ export {
   type RevisorPrecios,
   type VeredictoAcceso,
 } from './hub/hub'
+export {
+  type CierreDePedido,
+  type CierreDeTurno,
+  cierreDeTurno,
+  cuadreGuardado,
+  type DatosInforme,
+  datosDeInforme,
+} from './hub/informe'
 export { type Autenticador, SalaSync } from './hub/sala'
 export { huella, huellaEvento, jsonCanonico } from './huella'
 export {

@@ -50,6 +50,7 @@ const trazos = {
   marca:
     'M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-1-1.5-1-2.5 1-1.5 2-1.5h2a4 4 0 0 0 4-4c0-4.4-4-8-9-8zM7.5 12h.01M10 7.5h.01M15 7.5h.01',
   silla: 'M7 3v9h10V3M7 12v9m10-9v9M7 16h10',
+  grafica: 'M4 20h16M7 16v-4M12 16V6M17 16V9',
 } as const
 
 export type NombreIcono = keyof typeof trazos

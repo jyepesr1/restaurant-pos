@@ -21,6 +21,13 @@ import {
   type TipoDispositivo,
 } from '../protocolo'
 import type { AlmacenHub, TipoConflicto } from './almacen'
+import {
+  type CierreDeTurno,
+  cierreDeTurno,
+  cuadreGuardado,
+  type DatosInforme,
+  datosDeInforme,
+} from './informe'
 
 export interface ConfigHub {
   restauranteId: string
@@ -418,9 +425,23 @@ export class HubSync {
     }
   }
 
-  /** El cuadre de un turno abierto (lo cobrado, los movimientos y el efectivo esperado). */
+  /**
+   * El cuadre de un turno (lo cobrado, los movimientos y el efectivo esperado): el abierto, de
+   * memoria; el cerrado, de la base.
+   */
   cuadre(turnoId: string): CuadreTurno | null {
-    return cuadreDeTurno(this.eventosDeTurno.get(turnoId) ?? [], turnoId)
+    const abierto = this.eventosDeTurno.get(turnoId)
+    return abierto ? cuadreDeTurno(abierto, turnoId) : cuadreGuardado(this.almacen, turnoId)
+  }
+
+  /** Lo que necesita el informe de un período de días operativos (tarea 1.9). */
+  datosDeInforme(desde: string, hasta: string): DatosInforme {
+    return datosDeInforme(this.almacen, desde, hasta)
+  }
+
+  /** El cierre de un turno ya cerrado, para reimprimir su cierre Z. */
+  cierreDeTurno(turnoId: string): CierreDeTurno | null {
+    return cierreDeTurno(this.almacen, turnoId)
   }
 
   /**

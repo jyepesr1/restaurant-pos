@@ -1,8 +1,11 @@
 import {
   agregadoDe,
+  type CobradoPorMedio,
+  type CuadreTurno,
   type EventoNuevo,
   firmarEvento,
   huellaAutorizable,
+  type Informe,
   type MedioPago,
   nuevoId,
   type TipoEventoPedido,
@@ -199,6 +202,30 @@ export interface ConfiguracionCaja {
   /** Desde qué diferencia el cierre de caja pide justificación. */
   umbral_diferencia_caja?: number
   datafonos: (Datafono & { id: string })[]
+}
+
+/** Un cierre de caja del período, con su cuadre (`POST /api/reportes`, tarea 1.9). */
+export interface CierreReporte {
+  turnoId: string
+  diaOperativo: string
+  abiertoEn: string
+  abiertoPor: string
+  cerradoPor: string
+  base: number
+  porMedio: CobradoPorMedio[]
+  cerrado: NonNullable<CuadreTurno['cerrado']>
+}
+
+/** El reporte de un período de días operativos (docs/KPIS.md). */
+export interface Reporte {
+  /** El día operativo de hoy según el hub. */
+  hoy: string
+  informe: Informe
+  cierres: CierreReporte[]
+  /** Nombres de las personas que aparecen, por id. */
+  usuarios: Record<string, string>
+  /** Si hay impresora de precuentas para reimprimir el cierre Z. */
+  impresora: boolean
 }
 
 /** Una comanda que no ha salido de su impresora (`POST /api/impresion/pendientes`). */
@@ -636,6 +663,17 @@ export class Sala {
 
   async tiemposCocina(amarillo: number, rojo: number): Promise<void> {
     await this.conSesion('/api/cocina/tiempos', { amarillo, rojo })
+  }
+
+  // ── Reportes (tarea 1.9) ─────────────────────────────────────────────
+
+  /** El reporte de un período; sin fechas, el día operativo de hoy. */
+  reporte(periodo: { desde: string; hasta: string } | null = null): Promise<Reporte> {
+    return this.conSesion('/api/reportes', periodo ?? {})
+  }
+
+  async reimprimirCierre(turnoId: string): Promise<void> {
+    await this.conSesion('/api/reportes/cierre-z', { turno_id: turnoId })
   }
 
   // ── Caja y pagos (tarea 1.6) ─────────────────────────────────────────

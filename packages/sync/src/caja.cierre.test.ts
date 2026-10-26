@@ -661,13 +661,13 @@ describe('cierre de caja: las cuatro reglas y el cierre correcto', () => {
     })
   })
 
-  it('el cierre correcto: se confirma, el turno ya no está abierto y el cuadre desaparece', () => {
+  it('el cierre correcto: se confirma, el turno ya no está abierto y el cuadre queda cerrado', () => {
     const t = turnoCobrado()
     const { arqueo } = t.contar(t.caja, t.turno, t.esperado)
     const r = t.cerrar(t.caja, t.turno, arqueo, t.esperado, t.esperado)
     expect(motivo(r)).toBe('confirmado')
     expect(t.estado.hub.turnoAbierto(t.caja.dispositivoId)).toBeNull()
-    expect(t.estado.hub.cuadre(t.turno)).toBeNull()
+    expect(t.estado.hub.cuadre(t.turno)?.cerrado).not.toBeNull()
     const cierre = eventosDe(t.m).find((x) => x.tipo === 'TurnoCerrado')
     expect(cierre?.agregado_id).toBe(t.turno)
     expect(cierre?.datos).toMatchObject({ esperado_efectivo: 132_000, diferencia: 0 })
@@ -972,7 +972,7 @@ describe('reinicio del hub con un turno a medias', () => {
     expect(reiniciado.cuadre(a.t2)).toEqual(antes)
     expect(reiniciado.turnoAbierto(a.caja.dispositivoId)?.id).toBe(a.t2)
     // El turno cerrado no reaparece.
-    expect(reiniciado.cuadre(a.t1)).toBeNull()
+    expect(reiniciado.cuadre(a.t1)?.cerrado).not.toBeNull()
   })
 
   it('tras el reinicio el cierre se acepta con el esperado reconstruido y se rechaza con otro', () => {
@@ -991,7 +991,7 @@ describe('reinicio del hub con un turno a medias', () => {
     a.cerrar(a.caja, a.t2, arqueo, ESPERADO, 82_000)
     a.estado.hub = a.nuevoHub()
     expect(a.estado.hub.turnoAbierto(a.caja.dispositivoId)).toBeNull()
-    expect(a.estado.hub.cuadre(a.t2)).toBeNull()
+    expect(a.estado.hub.cuadre(a.t2)?.cerrado).not.toBeNull()
     expect(motivo(a.movimiento(a.caja, a.t2, 'entrada', 1_000))).toBe('sin_turno')
     expect(motivo(a.contar(a.caja, a.t2, 1_000).resultado)).toBe('sin_turno')
     const siguiente = a.abrirTurno(a.caja, 5_000)
@@ -1243,7 +1243,7 @@ describe('con la red simulada: la caja cierra sin conexión, el hub se apaga y l
     await m.red.conectarTodos()
     expect(tipos(m)).toEqual(CUATRO)
     expect(m.hub().turnoAbierto(caja.dispositivoId)).toBeNull()
-    expect(m.hub().cuadre(turno)).toBeNull()
+    expect(m.hub().cuadre(turno)?.cerrado).not.toBeNull()
     expect(await caja.cliente.pendientes()).toBe(0)
     expect((await ana.cliente.locales()).map((l) => l.evento.tipo)).toEqual(CUATRO)
   })
@@ -1305,5 +1305,68 @@ describe('con la red simulada: la caja cierra sin conexión, el hub se apaga y l
     await m.red.estabilizar()
     expect(tipos(m)).toEqual(CUATRO)
     expect(m.hub().turnoAbierto(caja.dispositivoId)).toBeNull()
+  })
+})
+
+describe('informe del hub (tarea 1.9): datosDeInforme y cierreDeTurno', () => {
+  const DIA = '2026-10-24'
+
+  it('junta los pedidos cerrados, los pagos del día y el cierre del turno con su cuadre', () => {
+    const e = entorno()
+    const turno = e.abrirTurno(e.caja, 50_000)
+    const cerrado = e.abrirPedido(e.caja, 30_000)
+    e.cobrar(e.caja, cerrado, e.pagoEf(turno, 30_000, 3_000))
+    expect(motivo(e.uno(e.caja, e.crudo(e.caja, 'PedidoCerrado', cerrado, {})))).toBe('confirmado')
+    // Un abono de una mesa que sigue abierta: cuenta por medio, no en ventas.
+    const abierto = e.abrirPedido(e.caja, 20_000)
+    const abono = e.cobrar(e.caja, abierto, e.pagoNequi(turno, 5_000))
+    e.anular(e.caja, abierto, abono, turno)
+    e.movimiento(e.caja, turno, 'pago_propinas', 1_000)
+    const { arqueo } = e.contar(e.caja, turno, 82_000)
+    expect(motivo(e.cerrar(e.caja, turno, arqueo, 82_000, 82_000))).toBe('confirmado')
+
+    const datos = e.estado.hub.datosDeInforme(DIA, DIA)
+    expect(datos.cierres?.map((c) => [c.antes, c.despues.id])).toEqual([[null, cerrado]])
+    // El pago de Nequi se anuló el mismo día: aparece con su anulación.
+    expect(datos.eventos.map((x) => x.tipo)).toEqual([
+      'PagoRegistrado',
+      'PagoRegistrado',
+      'PagoAnulado',
+      'MovimientoCajaRegistrado',
+    ])
+    expect(datos.cierresDeCaja).toHaveLength(1)
+    expect(datos.cierresDeCaja[0]).toMatchObject({
+      diaOperativo: DIA,
+      abiertoPor: e.caja.usuarioId,
+      cerradoPor: e.caja.usuarioId,
+    })
+    expect(datos.cierresDeCaja[0]?.cuadre.cerrado).toMatchObject({
+      esperado: 82_000,
+      diferencia: 0,
+    })
+    // Ya cerrado, el cuadre sale de la base y es el mismo que vio la caja al cerrar.
+    expect(e.estado.hub.cuadre(turno)?.efectivo.esperado).toBe(82_000)
+    expect(e.estado.hub.datosDeInforme('2026-10-25', '2026-10-25')).toMatchObject({
+      cierres: [],
+      eventos: [],
+      cierresDeCaja: [],
+    })
+  })
+
+  it('una anulación de hoy trae el pago original de otro día, y un reinicio da lo mismo', () => {
+    const e = entorno()
+    const turno = e.abrirTurno(e.caja)
+    const pedido = e.abrirPedido(e.caja, 30_000)
+    const pago = e.cobrar(e.caja, pedido, e.pagoNequi(turno, 10_000))
+    // Al otro día operativo (después de las 6:00 a. m.).
+    e.m.red.avanzar(24 * 60 * 60 * 1000)
+    e.anular(e.caja, pedido, pago, turno)
+    const hoy = e.estado.hub.datosDeInforme('2026-10-25', '2026-10-25')
+    expect(hoy.eventos.map((x) => `${x.tipo}:${x.dia_operativo}`)).toEqual([
+      `PagoRegistrado:${DIA}`,
+      'PagoAnulado:2026-10-25',
+    ])
+    expect(e.nuevoHub().datosDeInforme('2026-10-25', '2026-10-25')).toEqual(hoy)
+    expect(e.estado.hub.cierreDeTurno(turno)).toBeNull()
   })
 })

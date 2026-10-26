@@ -8,6 +8,8 @@ import {
   exigirPesos,
   type MedioPago,
   type ModoRedondeoEfectivo,
+  NOMBRE_MEDIO,
+  nombreDeMedio as nombreDelMedio,
   partesIguales,
   propinaDelPedido,
   propinaPendienteDeCuenta,
@@ -23,17 +25,6 @@ import type { Catalogo, EventoLocal } from '@pos/sync'
 // que se calcula aquí.
 
 export type ReglasCobro = NonNullable<Catalogo['restaurante']['cobro']>
-
-export const NOMBRE_MEDIO: Record<MedioPago, string> = {
-  efectivo: 'Efectivo',
-  tarjeta: 'Tarjeta',
-  nequi: 'Nequi',
-  daviplata: 'Daviplata',
-  breb: 'Bre-B',
-  transferencia: 'Transferencia',
-  bono: 'Bono',
-  otro: 'Otro',
-}
 
 /** Una opción del cobro: un medio, la tarjeta crédito o débito, o un medio propio. */
 export interface OpcionCobro {
@@ -70,11 +61,10 @@ export const nombreDeMedio = (
   medioPropioId: string | null | undefined,
   reglas: ReglasCobro | null,
 ) =>
-  medio === 'otro'
-    ? ([...(reglas?.mediosPropios ?? []), ...(reglas?.mediosPropiosArchivados ?? [])].find(
-        (m) => m.id === medioPropioId,
-      )?.nombre ?? 'Otro')
-    : NOMBRE_MEDIO[medio]
+  nombreDelMedio(medio, medioPropioId, [
+    ...(reglas?.mediosPropios ?? []),
+    ...(reglas?.mediosPropiosArchivados ?? []),
+  ])
 
 /** «INC 8 %», «IVA 19 %», «Exento» (el mismo nombre que la precuenta impresa). */
 export function nombreImpuesto(tipo: 'inc' | 'iva' | 'exento', tarifa: number): string {

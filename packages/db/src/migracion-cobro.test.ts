@@ -10,6 +10,8 @@ import type { BaseSqlite } from './sqlite'
 // Migración 7 (tarea 1.6): datáfonos y precuentas en la cola de impresión.
 
 const HASTA_6 = MIGRACIONES.filter((m) => m.version <= 6)
+// Hasta la 7: las que vienen después tienen sus propias pruebas.
+const HASTA_7 = MIGRACIONES.filter((m) => m.version <= 7)
 
 /** Una base de la versión 6 con una impresora y trabajos de impresión de cada estado. */
 function baseVersion6() {
@@ -48,7 +50,7 @@ describe('migración 7: cobro', () => {
   it('es la 7, se llama cobro y aplica sobre la 6', () => {
     const { db } = baseVersion6()
     expect(MIGRACIONES.find((m) => m.version === 7)?.nombre).toBe('cobro')
-    expect(aplicarMigraciones(db)).toEqual([7])
+    expect(aplicarMigraciones(db, HASTA_7)).toEqual([7])
     expect(versionActual(db)).toBe(7)
     expect(db.prepare('SELECT nombre, hash FROM migracion WHERE version = 7').get()).toEqual({
       nombre: 'cobro',
@@ -61,7 +63,7 @@ describe('migración 7: cobro', () => {
     const antes = filas(db)
     expect(antes).toHaveLength(3)
     expect(() => trabajo({ tipo: 'precuenta' })).toThrow()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     expect(filas(db)).toEqual(antes)
     expect(() => trabajo({ tipo: 'precuenta' })).not.toThrow()
     expect(() => trabajo({ tipo: 'otra' })).toThrow()
@@ -69,7 +71,7 @@ describe('migración 7: cobro', () => {
 
   it('la cola sigue sin dejar borrar, reemplazar ni duplicar un evento en la misma impresora', () => {
     const { db, trabajo, impresora } = baseVersion6()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     const id = trabajo({})
     expect(() => db.prepare('DELETE FROM trabajo_impresion WHERE id = ?').run(id)).toThrow(
       /no se borra/,
@@ -98,7 +100,7 @@ describe('migración 7: cobro', () => {
 
   it('datafono es STRICT, versionada, con las columnas comunes, y no se borra', () => {
     const { db, restaurante } = baseVersion6()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     expect(TABLAS_VERSIONADAS).toContain('datafono')
     const tabla = db
       .prepare('PRAGMA table_list')
@@ -125,7 +127,7 @@ describe('migración 7: cobro', () => {
 
   it('la base queda íntegra', () => {
     const { db } = baseVersion6()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
     expect(db.prepare('PRAGMA integrity_check').all()).toEqual([{ integrity_check: 'ok' }])
   })

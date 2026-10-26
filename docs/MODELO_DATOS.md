@@ -304,7 +304,9 @@ Desde la tarea 1.4 ([ADR-015](DECISIONES.md#adr-015--comandas-impresas-por-estac
 | Entidad | Cat. | Campos principales |
 |---|---|---|
 | `Impresora` | V | `nombre`, `conexion` (`red`; `usb` llega con el instalador, 1.10), `direccion` (IP o nombre del equipo; en USB, el nombre en Windows), `puerto` (9100 por defecto), `ancho` (58/80 mm), `pagina_codigos` (`pc850`, `wpc1252` o `sin_tildes`: cómo imprime tildes y eñes cada marca), `respaldo_id`, `estacion_ids` |
-| `TrabajoImpresion` | L (hub) | `impresora_id`, `tipo` (`comanda`, `prueba`), `evento_id` y `comanda_id` (únicos con la impresora: reintentar el evento no duplica), `contenido` (la comanda ya resuelta en JSON; se convierte en bytes al imprimir, con el ancho de la impresora que la imprime), `estado` (`pendiente`, `impreso`, `descartado`; no se borra), `intentos`, `ultimo_error`, `impreso_en_id` (puede ser la de respaldo), `descartado_por_id` |
+| `TrabajoImpresion` | L (hub) | `impresora_id`, `tipo` (`comanda`, `prueba`; `precuenta` desde la migración 7 y `informe`, el cierre Z, desde la 8), `evento_id` y `comanda_id` (únicos con la impresora: reintentar el evento no duplica), `contenido` (la comanda ya resuelta en JSON; se convierte en bytes al imprimir, con el ancho de la impresora que la imprime), `estado` (`pendiente`, `impreso`, `descartado`; no se borra), `intentos`, `ultimo_error`, `impreso_en_id` (puede ser la de respaldo), `descartado_por_id` |
+
+El cierre Z (tarea 1.9, [KPIS.md](KPIS.md#cierre-z-impreso)) se crea en la transacción de `TurnoCerrado`, en la impresora de precuentas, con los montos congelados; una reimpresión desde Reportes va sin `evento_id` y dice que es reimpresión.
 
 Una comanda se crea en la misma transacción que el evento que la pide (`ItemsEnviados`, `ComandaReimpresa`, `ItemAnulado` de algo en cocina, `ItemModificadoTrasEnvio`), una por impresora activa de su estación. El número de comanda del día lo da el hub en `asignaciones.numeros_comanda` del envío (uno por estación); la reimpresión, la anulación y la modificación llevan el de la comanda original.
 

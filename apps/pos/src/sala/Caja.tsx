@@ -1082,7 +1082,7 @@ function Resultado({
 }
 
 /** «Cuadra», «Sobran $X» o «Faltan $X», con su ícono. */
-function Diferencia({ valor }: { valor: number }) {
+export function Diferencia({ valor }: { valor: number }) {
   if (valor === 0)
     return (
       <Etiqueta tono="libre" icono="check">

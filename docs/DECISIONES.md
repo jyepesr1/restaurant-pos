@@ -336,6 +336,9 @@ Dos de ellas cambian lo que dice el brief:
 | Dividir la cuenta | Primero **en partes iguales** y **por productos** (un producto que toman varias cuentas se reparte entre ellas). Monto libre y fracciones (1/3 de botella) quedan para después. |
 | Precuenta | Se ve en pantalla y, si se eligió, sale por una impresora (de red hoy; la USB de la caja llega con la 1.10). Pedirla marca la mesa «Pidió la cuenta». |
 | Cerrar la mesa | **Se cierra sola** cuando un pago deja el saldo en 0. |
+| Reportes (tarea 1.9) | Se ve **un día operativo o un rango** (Hoy, Ayer, Últimos 7 días, Rango; hasta 93 días). Solo quien tiene «Ver todos los reportes»; **el mesero no ve nada por ahora**. Se descarga en **CSV para Excel**. Las fórmulas están en [KPIS.md](KPIS.md) (26-oct-2026). |
+| Mesa reabierta en los reportes | Lo ya reportado de un día **no cambia nunca**: si una mesa cerrada el 24 se reabre y se cierra el 25, la diferencia (lo agregado o corregido) aparece el 25. Como en contabilidad y en la factura electrónica (nota crédito ese día) (26-oct-2026). |
+| Cierre Z (tarea 1.9) | Sale **solo al cerrar la caja**, en la impresora de precuentas (si hay una elegida), con el cuadre, lo cobrado por medio, las ventas del día y lo anulado; se **reimprime desde Reportes** marcado como reimpresión (26-oct-2026). |
 
 ---
 

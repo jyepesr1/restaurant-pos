@@ -14,6 +14,7 @@ import { MarcoSala } from './MarcoSala'
 import { Mesas } from './Mesas'
 import { Personal } from './Personal'
 import { PlanoEditor } from './PlanoEditor'
+import { Reportes } from './Reportes'
 import { TomaPedido } from './TomaPedido'
 
 // La app de operación: entrar (con PIN o con usuario y contraseña, ADR-013) y trabajar (mesas,
@@ -76,6 +77,7 @@ function Pantalla({
   if (ruta === '/caja/ajustes' && permisos.includes('administrar_dispositivos'))
     return <CajaAjustes />
   if (ruta === '/caja') return <Caja />
+  if (ruta === '/reportes' && permisos.includes('ver_reportes')) return <Reportes />
   if (ruta === '/cuenta') return <Cuenta key={parametros.get('pedido')} />
   if (ruta === '/cocina') return <PedidosEnCocina />
   if (ruta === '/personal' && permisos.includes('administrar_usuarios')) return <Personal />

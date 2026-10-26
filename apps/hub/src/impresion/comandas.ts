@@ -18,6 +18,7 @@ import {
   type TipoComanda,
 } from '@pos/printing'
 import type { CambioPedido } from '@pos/sync'
+import { encolarCierreZ } from '../reportes/cierre-z'
 
 // De un evento aceptado a los trabajos de impresión de sus comandas (ADR-015). Corre dentro de la
 // transacción del evento (`ConfigHub.alGuardar`): si el hub se cae justo después, las comandas ya
@@ -53,6 +54,16 @@ export function trabajosDeEvento(
   evento: EventoPedido,
   cambios: readonly CambioPedido[],
 ): number {
+  // Al cerrar la caja sale el cierre Z (tarea 1.9).
+  // Un fallo aquí no es de una comanda: se registra aparte y el cierre se reimprime desde Reportes.
+  if (evento.tipo === 'TurnoCerrado') {
+    try {
+      return encolarCierreZ(o, evento.agregado_id, { evento }) === 'en_cola' ? 1 : 0
+    } catch (error) {
+      console.error(`No se pudo armar el cierre Z del turno ${evento.agregado_id}:`, error)
+      return 0
+    }
+  }
   const cambio = cambios[0]
   const antes = cambio?.antes ?? null
   const despues = cambio?.despues ?? null

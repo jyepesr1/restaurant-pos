@@ -1,3 +1,4 @@
+export { type CierreZ, lineasCierreZ, type MedioCierreZ } from './cierre'
 export {
   caracteres,
   codificar,

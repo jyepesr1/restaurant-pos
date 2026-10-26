@@ -132,24 +132,45 @@ export function impuestosDelPedido(
   estado: EstadoPedido,
   modo?: ModoRedondeo,
 ): ImpuestoDiscriminado[] {
+  return impuestosDePedidos([estado], modo)
+}
+
+/**
+ * El impuesto discriminado de varios pedidos (los reportes, tarea 1.9): las centésimas de cada
+ * línea se suman por tipo y tarifa en todos los pedidos y se redondean **una sola vez** por grupo
+ * (docs/DINERO.md, principio 2). Sumar el de cada pedido ya redondeado se iría alejando. `restar`
+ * son estados que se descuentan (lo que ya se reportó de un pedido reabierto); un grupo puede
+ * quedar negativo y se redondea por su valor absoluto.
+ */
+export function impuestosDePedidos(
+  estados: readonly EstadoPedido[],
+  modo?: ModoRedondeo,
+  restar: readonly EstadoPedido[] = [],
+): ImpuestoDiscriminado[] {
   const grupos = new Map<
     string,
     { tipo: TipoImpuesto; tarifa: number; neto: number; centesimas: number }
   >()
-  for (const item of Object.values(estado.items)) {
-    const { neto } = totalesItem(estado, item)
-    if (neto <= 0) continue
-    const tarifa = item.impuestoTipo === 'exento' ? 0 : item.tarifa
-    const clave = `${item.impuestoTipo}:${tarifa}`
-    const g = grupos.get(clave) ?? { tipo: item.impuestoTipo, tarifa, neto: 0, centesimas: 0 }
-    g.neto += neto
-    g.centesimas += desglosar(neto, tarifa, modo).impuestoCentesimas
-    grupos.set(clave, g)
+  const sumar = (estado: EstadoPedido, signo: 1 | -1) => {
+    for (const item of Object.values(estado.items)) {
+      const { neto } = totalesItem(estado, item)
+      if (neto <= 0) continue
+      const tarifa = item.impuestoTipo === 'exento' ? 0 : item.tarifa
+      const clave = `${item.impuestoTipo}:${tarifa}`
+      const g = grupos.get(clave) ?? { tipo: item.impuestoTipo, tarifa, neto: 0, centesimas: 0 }
+      g.neto += signo * neto
+      g.centesimas += signo * desglosar(neto, tarifa, modo).impuestoCentesimas
+      grupos.set(clave, g)
+    }
   }
+  for (const estado of estados) sumar(estado, 1)
+  for (const estado of restar) sumar(estado, -1)
   return [...grupos.values()]
+    .filter((g) => g.neto !== 0 || g.centesimas !== 0)
     .sort((a, b) => b.neto - a.neto)
     .map((g) => {
-      const impuesto = aEntero(redondear(BigInt(g.centesimas), 100n, modo))
+      const abs = aEntero(redondear(BigInt(Math.abs(g.centesimas)), 100n, modo))
+      const impuesto = g.centesimas < 0 ? -abs : abs
       return { tipo: g.tipo, tarifa: g.tarifa, base: g.neto - impuesto, impuesto }
     })
 }

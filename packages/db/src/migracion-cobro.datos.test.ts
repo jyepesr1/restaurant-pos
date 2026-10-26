@@ -10,6 +10,8 @@ import type { BaseSqlite } from './sqlite'
 // cambiar un CHECK) y no puede perder ni mover nada de lo que ya estaba.
 
 const HASTA_6 = MIGRACIONES.filter((m) => m.version <= 6)
+// Hasta la 7: las que vienen después tienen sus propias pruebas.
+const HASTA_7 = MIGRACIONES.filter((m) => m.version <= 7)
 
 function baseVersion6() {
   const db = abrirBase(':memory:')
@@ -87,7 +89,7 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
     const { db } = conCola()
     const antes = filas(db)
     expect(antes).toHaveLength(4)
-    expect(aplicarMigraciones(db)).toEqual([7])
+    expect(aplicarMigraciones(db, HASTA_7)).toEqual([7])
     const despues = filas(db)
     expect(despues).toEqual(antes)
     // Las columnas no cambiaron ni de nombre ni de orden.
@@ -101,7 +103,7 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
 
   it('conserva los datos que importan de una persona: quién descartó, desde qué equipo y por qué', () => {
     const { db, descartado, usuario, dispositivo, barra } = conCola()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     expect(
       db.prepare('SELECT * FROM trabajo_impresion WHERE id = ?').get(descartado),
     ).toMatchObject({
@@ -118,7 +120,7 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
   it('el contenido JSON, el evento y la comanda de un pendiente se mantienen', () => {
     const { db, pendiente } = conCola()
     const antes = db.prepare('SELECT * FROM trabajo_impresion WHERE id = ?').get(pendiente)
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     const despues = db.prepare('SELECT * FROM trabajo_impresion WHERE id = ?').get(pendiente)
     expect(despues).toEqual(antes)
     expect(JSON.parse(String(despues?.contenido))).toEqual({
@@ -133,7 +135,7 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
     const tablas = ['restaurante', 'impresora', 'usuario', 'dispositivo', 'rol', 'producto']
     const cuenta = (t: string) => Number(db.prepare(`SELECT count(*) AS n FROM ${t}`).get()?.n)
     const antes = tablas.map(cuenta)
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     expect(tablas.map(cuenta)).toEqual(antes)
     expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
     expect(db.prepare('PRAGMA integrity_check').all()).toEqual([{ integrity_check: 'ok' }])
@@ -141,7 +143,7 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
 
   it('las claves foráneas quedan encendidas y se siguen exigiendo en la cola nueva', () => {
     const { db, trabajo } = conCola()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     expect(db.prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 })
     expect(() => trabajo({ impresora_id: nuevoId() })).toThrow(/FOREIGN KEY/)
     expect(() =>
@@ -155,7 +157,7 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
 
   it('la tabla no deja restos: ni la temporal ni índices o disparadores duplicados', () => {
     const { db } = conCola()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     const objetos = db
       .prepare(
         "SELECT type, name FROM sqlite_schema WHERE tbl_name LIKE 'trabajo_impresion%' ORDER BY name",
@@ -182,7 +184,7 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
 
   it('las reglas de la tabla siguen vigentes con los trabajos migrados', () => {
     const { db, trabajo, pendiente, impreso, barra } = conCola()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     // No se borra ni se reemplaza uno que ya existía antes de migrar.
     expect(() => db.prepare('DELETE FROM trabajo_impresion WHERE id = ?').run(pendiente)).toThrow(
       /no se borra/,
@@ -204,7 +206,7 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
 
   it('el mismo evento con la misma comanda no se duplica en una impresora, ni tampoco migrado', () => {
     const { db, trabajo, pendiente, cocina } = conCola()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     const migrado = db.prepare('SELECT * FROM trabajo_impresion WHERE id = ?').get(pendiente)
     expect(() =>
       trabajo({
@@ -231,7 +233,7 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
 
   it('los trabajos sin evento (pruebas) pueden repetirse: el índice único los ignora', () => {
     const { db, trabajo } = conCola()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     expect(() => {
       trabajo({ tipo: 'prueba' })
       trabajo({ tipo: 'prueba' })
@@ -242,7 +244,7 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
 
   it('el índice de pendientes sigue sirviendo a la cola (restaurante, estado, creado_en)', () => {
     const { db } = conCola()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     const columnas = db
       .prepare("SELECT name FROM pragma_index_info('trabajo_impresion_pendiente') ORDER BY seqno")
       .all()
@@ -252,7 +254,7 @@ describe('migración 7: una base 6 con trabajos de impresión de todos los estad
 
   it('una precuenta sin evento ni comanda se guarda y se consulta como pendiente', () => {
     const { db, trabajo } = conCola()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     const id = trabajo({
       tipo: 'precuenta',
       evento_id: nuevoId(),
@@ -275,21 +277,21 @@ describe('migración 7: casos de borde', () => {
     const db = abrirBase(':memory:')
     aplicarMigraciones(db, HASTA_6)
     sembrar(db)
-    expect(aplicarMigraciones(db)).toEqual([7])
+    expect(aplicarMigraciones(db, HASTA_7)).toEqual([7])
     expect(filas(db)).toEqual([])
   })
 
   it('desde una base nueva se aplican las siete en orden', () => {
     const db = abrirBase(':memory:')
-    expect(aplicarMigraciones(db)).toEqual([1, 2, 3, 4, 5, 6, 7])
+    expect(aplicarMigraciones(db, HASTA_7)).toEqual([1, 2, 3, 4, 5, 6, 7])
     expect(versionActual(db)).toBe(7)
   })
 
   it('repetir la migración no hace nada y no toca los trabajos', () => {
     const { db } = conCola()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     const antes = filas(db)
-    expect(aplicarMigraciones(db)).toEqual([])
+    expect(aplicarMigraciones(db, HASTA_7)).toEqual([])
     expect(filas(db)).toEqual(antes)
   })
 
@@ -300,7 +302,7 @@ describe('migración 7: casos de borde', () => {
     trabajo({ impresora_id: nuevoId() })
     db.exec('PRAGMA foreign_keys = ON')
     const antes = filas(db)
-    expect(() => aplicarMigraciones(db)).toThrow(/referencias rotas/)
+    expect(() => aplicarMigraciones(db, HASTA_7)).toThrow(/referencias rotas/)
     expect(versionActual(db)).toBe(6)
     expect(filas(db)).toEqual(antes)
     // No quedó ninguna tabla a medias y la tabla vieja sigue aceptando comandas.
@@ -317,7 +319,7 @@ describe('migración 7: casos de borde', () => {
     const { db, trabajo } = conCola()
     expect(() => trabajo({ tipo: 'precuenta' })).toThrow()
     expect(() => trabajo({ tipo: 'ticket' })).toThrow()
-    aplicarMigraciones(db)
+    aplicarMigraciones(db, HASTA_7)
     expect(() => trabajo({ tipo: 'ticket' })).toThrow()
   })
 })
@@ -325,7 +327,7 @@ describe('migración 7: casos de borde', () => {
 describe('migración 7: datafono', () => {
   function migrada() {
     const base = baseVersion6()
-    aplicarMigraciones(base.db)
+    aplicarMigraciones(base.db, HASTA_7)
     const datafono = (campos: Record<string, string | number | null> = {}) =>
       insertarVersionado(base.db, 'datafono', base.restaurante, {
         nombre: 'Bold 1',

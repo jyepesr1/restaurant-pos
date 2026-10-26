@@ -25,6 +25,29 @@ export interface MovimientoTurno {
   hora: string
 }
 
+/** El nombre de cada medio en pantalla, en el papel y en los reportes. Los propios van por su nombre. */
+export const NOMBRE_MEDIO: Record<MedioPago, string> = {
+  efectivo: 'Efectivo',
+  tarjeta: 'Tarjeta',
+  nequi: 'Nequi',
+  daviplata: 'Daviplata',
+  breb: 'Bre-B',
+  transferencia: 'Transferencia',
+  bono: 'Bono',
+  otro: 'Otro',
+}
+
+/** El nombre de un medio en un pago: el propio por su nombre, aunque esté archivado. */
+export function nombreDeMedio(
+  medio: MedioPago,
+  medioPropioId: string | null | undefined,
+  propios: readonly { id: string; nombre: string }[],
+): string {
+  return medio === 'otro'
+    ? (propios.find((m) => m.id === medioPropioId)?.nombre ?? NOMBRE_MEDIO.otro)
+    : NOMBRE_MEDIO[medio]
+}
+
 /** Un medio que no es efectivo: se cuadra con su propio cierre (tarea 1.8). */
 export type MedioNoEfectivo = Exclude<MedioPago, 'efectivo'>
 
@@ -115,6 +138,24 @@ export function cobradoDelTurno(
   eventos: readonly EventoAplicable[],
   turnoId: string,
 ): CobradoPorMedio[] {
+  return cobradoSegun(eventos, (e) => e.datos.turno_caja_id === turnoId)
+}
+
+/** Los eventos que mueven lo cobrado por medio. */
+type EventoDeCobro = Extract<
+  EventoAplicable,
+  { tipo: 'PagoRegistrado' | 'PagoAnulado' | 'ReembolsoRegistrado' }
+>
+
+/**
+ * Lo cobrado por medio de pago con los eventos de cobro que `cuenta` acepta (los de un turno, los
+ * de unos días): cada pago suma; cada anulación o reembolso resta del medio de su pago. Los pagos
+ * que reversan pueden venir entre los eventos aunque no cuenten (son de otro turno o día).
+ */
+export function cobradoSegun(
+  eventos: readonly EventoAplicable[],
+  cuenta: (e: EventoDeCobro) => boolean,
+): CobradoPorMedio[] {
   const pagos = pagosPorId(eventos)
   const porMedio = new Map<string, CobradoPorMedio>()
   const sumar = (
@@ -137,7 +178,14 @@ export function cobradoDelTurno(
     porMedio.set(clave, m)
   }
   for (const e of eventos) {
-    if (e.tipo === 'PagoRegistrado' && e.datos.turno_caja_id === turnoId) {
+    if (
+      (e.tipo !== 'PagoRegistrado' &&
+        e.tipo !== 'PagoAnulado' &&
+        e.tipo !== 'ReembolsoRegistrado') ||
+      !cuenta(e)
+    )
+      continue
+    if (e.tipo === 'PagoRegistrado') {
       const d = e.datos
       sumar(
         { medio: d.medio, medioPropioId: d.medio_propio_id ?? null },
@@ -145,10 +193,10 @@ export function cobradoDelTurno(
         d.propina,
         1,
       )
-    } else if (e.tipo === 'PagoAnulado' && e.datos.turno_caja_id === turnoId) {
+    } else if (e.tipo === 'PagoAnulado') {
       const pago = pagos.get(e.datos.pago_id)
       if (pago) sumar(pago, -(pago.monto + pago.ajuste), -pago.propina, -1)
-    } else if (e.tipo === 'ReembolsoRegistrado' && e.datos.turno_caja_id === turnoId) {
+    } else {
       const pago = pagos.get(e.datos.pago_id)
       sumar(
         { medio: e.datos.medio, medioPropioId: pago?.medioPropioId ?? null },

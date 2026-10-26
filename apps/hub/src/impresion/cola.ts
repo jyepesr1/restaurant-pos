@@ -1,8 +1,10 @@
 import type { BaseSqlite, Fila } from '@pos/db'
 import {
+  type CierreZ,
   COLUMNAS,
   type Comanda,
   escpos,
+  lineasCierreZ,
   lineasComanda,
   lineasPrecuenta,
   lineasPrueba,
@@ -338,7 +340,9 @@ export class ColaImpresion {
         ? lineasPrueba(contenido as PruebaImpresion, formato)
         : trabajo.tipo === 'precuenta'
           ? lineasPrecuenta(contenido as Precuenta, formato)
-          : lineasComanda(contenido as Comanda, formato)
+          : trabajo.tipo === 'informe'
+            ? lineasCierreZ(contenido as CierreZ, formato)
+            : lineasComanda(contenido as Comanda, formato)
     return escpos(lineas, formato)
   }
 

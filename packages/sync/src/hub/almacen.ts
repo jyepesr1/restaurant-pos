@@ -41,6 +41,13 @@ export interface Cuarentena {
  * Lo que el hub necesita guardar (docs/SYNC.md). Síncrono: el hub usa `node:sqlite`, que lo es,
  * y así una transacción no puede intercalarse con otro mensaje.
  */
+/** Los eventos que mueven plata en un turno de caja (llevan `turno_caja_id`). */
+export const TIPOS_COBRO: readonly string[] = [
+  'PagoRegistrado',
+  'PagoAnulado',
+  'ReembolsoRegistrado',
+]
+
 export interface AlmacenHub {
   transaccion<T>(trabajo: () => T): T
   maxSecuencia(): number
@@ -61,6 +68,13 @@ export interface AlmacenHub {
   /** Cuántas comandas se numeraron en el día operativo: da el número de la siguiente. */
   comandasDelDia(dia: string): number
   eventosDesde(desde: number, limite: number): EventoPedido[]
+  /** Eventos de esos tipos con día operativo entre `desde` y `hasta` (inclusive), por secuencia. */
+  eventosDelPeriodo(tipos: readonly string[], desde: string, hasta: string): EventoPedido[]
+  /**
+   * Pagos, anulaciones de pago y reembolsos registrados en un turno de caja, por secuencia. `desde`
+   * es el día operativo en que se abrió: acota la búsqueda (un turno no recibe cobros de antes).
+   */
+  cobrosDeTurno(turnoId: string, desde: string): EventoPedido[]
   guardarEvento(evento: EventoPedido, huella: string, agregados: readonly string[]): void
   /** Si ya hay un rechazo con ese id y esa huella, no hace nada. */
   guardarRechazo(rechazo: Rechazo): void
@@ -140,6 +154,25 @@ export class AlmacenMemoria implements AlmacenHub {
       .map((e) => e.evento)
       .filter((e) => e.tipo === 'ItemsEnviados' && e.dia_operativo === dia)
       .reduce((n, e) => n + Object.keys(e.asignaciones.numeros_comanda ?? {}).length, 0)
+  }
+
+  eventosDelPeriodo(tipos: readonly string[], desde: string, hasta: string): EventoPedido[] {
+    return this.eventos
+      .map((e) => e.evento)
+      .filter((e) => tipos.includes(e.tipo) && e.dia_operativo >= desde && e.dia_operativo <= hasta)
+      .sort((a, b) => a.secuencia - b.secuencia)
+  }
+
+  cobrosDeTurno(turnoId: string, desde: string): EventoPedido[] {
+    return this.eventos
+      .map((e) => e.evento)
+      .filter(
+        (e) =>
+          TIPOS_COBRO.includes(e.tipo) &&
+          e.dia_operativo >= desde &&
+          (e.datos as { turno_caja_id?: string }).turno_caja_id === turnoId,
+      )
+      .sort((a, b) => a.secuencia - b.secuencia)
   }
 
   eventosDesde(desde: number, limite: number): EventoPedido[] {

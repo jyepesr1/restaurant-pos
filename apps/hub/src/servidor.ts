@@ -8,6 +8,7 @@ import type { ServicioAcceso } from './acceso/servicio'
 import { type OpcionesCatalogo, rutasCatalogo } from './catalogo'
 import { type OpcionesDiagnostico, rutasDiagnostico } from './diagnostico'
 import { type OpcionesImpresion, rutasImpresion } from './impresion/rutas'
+import { rutasReportes } from './reportes/rutas'
 import { type OpcionesSincronizacion, rutasSincronizacion } from './sincronizacion'
 
 export interface OpcionesServidor {
@@ -57,6 +58,7 @@ export function crearServidor({
   }
   if (impresion) {
     app.register(rutasImpresion, impresion)
+    app.register(rutasReportes, impresion)
   }
 
   // Un error interno no se le muestra al equipo (podría llevar SQL o rutas del PC): queda en el

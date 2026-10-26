@@ -5,6 +5,7 @@ import { sql as elementoPlano } from './0004_elemento_plano'
 import { sql as usuarioContrasena } from './0005_usuario_contrasena'
 import { sql as comandas } from './0006_comandas'
 import { sql as cobro } from './0007_cobro'
+import { sql as informe } from './0008_informe'
 
 export interface Migracion {
   version: number
@@ -25,4 +26,5 @@ export const MIGRACIONES: readonly Migracion[] = [
   { version: 5, nombre: 'usuario_contrasena', sql: usuarioContrasena },
   { version: 6, nombre: 'comandas', sql: comandas },
   { version: 7, nombre: 'cobro', sql: cobro, sinClavesForaneas: true },
+  { version: 8, nombre: 'informe', sql: informe, sinClavesForaneas: true },
 ]

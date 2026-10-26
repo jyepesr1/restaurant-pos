@@ -1,4 +1,4 @@
-import type { MedioPago } from '@pos/core'
+import { type MedioPago, NOMBRE_MEDIO } from '@pos/core'
 import { useCallback, useEffect, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
@@ -7,7 +7,6 @@ import { pesos } from '../ui/formato'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { PanelLateral } from '../ui/PanelLateral'
 import { sala } from './contexto'
-import { NOMBRE_MEDIO } from './cuentas'
 import { claseCampo } from './Entrar'
 import { MarcoSala } from './MarcoSala'
 import type {

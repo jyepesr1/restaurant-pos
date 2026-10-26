@@ -20,11 +20,14 @@ export {
   type CuadreTurno,
   claveDeMedio,
   cobradoDelTurno,
+  cobradoSegun,
   cuadreDeOtrosMedios,
   cuadreDeTurno,
   DENOMINACIONES,
   type MedioNoEfectivo,
   type MovimientoTurno,
+  NOMBRE_MEDIO,
+  nombreDeMedio,
   type ReporteMedio,
 } from './caja/turno'
 export { jsonCanonico, PROFUNDIDAD_MAXIMA } from './canonico'
@@ -82,6 +85,7 @@ export {
   descuentoDeItem,
   type ImpuestoDiscriminado,
   impuestosDelPedido,
+  impuestosDePedidos,
   precioUnidad,
   propinaDelPedido,
   propinaPendienteDeCuenta,
@@ -92,4 +96,15 @@ export {
   totalesItem,
   totalesPedido,
 } from './pedido/totales'
+export {
+  type Anulacion,
+  type Cancelacion,
+  type DescuentoInforme,
+  type EntradaInforme,
+  type Informe,
+  informe,
+  type ResumenVentas,
+  type VentasMesero,
+  type VentasProducto,
+} from './reportes/informe'
 export { diaOperativo } from './tiempo'

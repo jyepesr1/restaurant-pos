@@ -63,6 +63,7 @@ const SECCIONES: readonly { grupo: string; secciones: readonly Seccion[] }[] = [
   {
     grupo: 'Administración',
     secciones: [
+      { ruta: '/reportes', nombre: 'Reportes', icono: 'grafica', permisos: ['ver_reportes'] },
       {
         ruta: '/carta',
         nombre: 'Carta',

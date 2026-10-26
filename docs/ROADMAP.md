@@ -36,7 +36,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.6 | Precuenta, división, pagos mixtos y propina | ✅ |
 | 1.7 | Apertura, cierre y arqueo de caja | ✅ |
 | 1.8 | Datáfonos nivel 1 y conciliación en el cierre | ✅ (por totales; el importador espera un reporte real de Bold) |
-| 1.9 | Reportes básicos y `docs/KPIS.md` | ⏳ |
+| 1.9 | Reportes básicos y `docs/KPIS.md` | ✅ |
 | 1.10 | Hub en el PC de caja (Windows) | ⏳ |
 | 1.11 | Prueba de aceptación: servicio de 2 horas sin internet (y la e2e de la Fase 0) | ⏳ |
 
@@ -272,6 +272,60 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 7. Abre la mesa 8, **Mesa y pedido → Cancelar el pedido**, elige un motivo, escribe el PIN del administrador y toca **Cancelar el pedido**. La mesa 8 queda libre.
 8. Toca un plato enviado, cambia su nota y toca **Enviar el cambio a cocina**: sale una comanda «CAMBIO».
 
+### 1.9 — Reportes básicos y cierre Z ✅
+
+Decisiones del dueño del 26-oct-2026 ([ADR-011](DECISIONES.md#adr-011--reglas-de-operación-acordadas-para-el-piloto)). Las fórmulas están en [KPIS.md](KPIS.md).
+
+**Lo nuevo:**
+- **Reportes** en el menú, solo para quien tiene «Ver todos los reportes» (el mesero no ve nada por ahora). Se elige Hoy, Ayer, Últimos 7 días, Este mes, Mes pasado u Otras fechas (hasta 62 días), siempre por día operativo. Muestra:
+  - las cifras del período: ventas, cuentas, ticket promedio, comensales y propinas;
+  - los cierres de caja, con su diferencia en efectivo y en los demás medios, la justificación y «Reimprimir cierre»;
+  - ventas con el impuesto discriminado y el ajuste por redondeo del efectivo;
+  - por medio de pago, por mesero y por producto;
+  - anulaciones (con merma), cancelaciones, descuentos y cortesías;
+  - el fondo de propinas.
+- **Descargar CSV** para Excel (punto y coma, con tildes, montos sin puntos de miles).
+- **Cierre Z impreso**: sale solo al cerrar la caja, en la impresora de precuentas, con el cuadre, lo cobrado por medio, las ventas del día en que abrió el turno y lo anulado. Se reimprime desde Reportes, marcado como reimpresión.
+- **Mesa reabierta:** lo ya reportado de un día no cambia; la diferencia aparece el día en que se vuelve a cerrar.
+
+**Por dentro:**
+- `informe` en `@pos/core` calcula todo; el hub (`datosDeInforme`) solo junta los eventos del período.
+- Migración 8: la cola de impresión acepta el cierre Z.
+
+Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas`. Se corrigió:
+- una anulación de algo que después se pasó a otra mesa salía como «Producto» por $0;
+- los impuestos se redondeaban por mesa y luego se sumaban (3 × $16.000 daba $3.555 en vez de $3.556);
+- el cierre Z no mostraba el ajuste por redondeo, tomaba las ventas del día del cierre en vez del de apertura y contaba lo anulado distinto de la lista;
+- al cambiar rápido de período podían verse cifras de otro, y «Intentar de nuevo» recargaba el período equivocado;
+- «Reimprimir» con dos toques imprimía dos veces;
+- una fecha mal escrita daba un error interno;
+- un cierre Z pendiente salía sin nombre en la lista de impresión;
+- la búsqueda de los cobros de un turno recorría todo el historial.
+
+**Pruebas:** todas pasan con `pnpm check` (núcleo, sincronización, hub, impresión, base y app), con pruebas de propiedades sobre historias al azar.
+
+**Queda pendiente:**
+- El mesero no ve sus ventas (`ver_reportes_propios`); se decide después.
+- Los reportes se calculan en el PC de la caja cada vez: para períodos largos (más de 62 días) hará falta la nube (Fase 3) o guardar resúmenes por día.
+- El fondo de propinas es del período elegido, no un saldo acumulado.
+- Una anulación de pago cuyo pago original no aparece no resta nada (no debería pasar; no avisa).
+- Sin atajos de teclado en Reportes (es una pantalla de consulta).
+
+**Cómo probarlo:**
+
+1. Cierra el hub (**Ctrl+C**) y arráncalo con la versión nueva:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+2. Entra como administrador o con la cuenta de **Reportes**. En el menú de la izquierda debe aparecer **Reportes**.
+3. Abre **Reportes**: arriba ves «Hoy» marcado, el día en palabras y las cifras del día.
+4. Toca **Últimos 7 días**: cambia el título y las cifras. Toca **Otras fechas** y elige dos fechas: se carga solo.
+5. Toca **Descargar CSV** y abre el archivo en Excel: debe verse en columnas, con tildes y los montos sin puntos.
+6. En **Caja y pagos**, elige la impresora de precuentas. Abre la caja, cobra una mesa y **cierra la caja**: debe salir el papel «CIERRE DE CAJA».
+7. En **Reportes → Cierres de caja**, toca **Reimprimir cierre**: sale otra vez, con «Reimpresión» y la hora.
+
 ### 1.8 — Conciliación de datáfonos y apps en el cierre ✅
 
 Decisiones del dueño del 26-oct-2026 ([ADR-011](DECISIONES.md#adr-011--reglas-de-operación-acordadas-para-el-piloto)).
@@ -350,8 +404,8 @@ Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas`. Se
 **Queda pendiente:**
 - **Corregir un movimiento equivocado** (anularlo con motivo): necesita un evento nuevo.
 - **Cerrar una caja huérfana** (si se cambia el PC de caja con un turno abierto) desde otro equipo, con el PIN del administrador.
-- El pago de propinas no se controla contra el **fondo de propinas por día** ni deja elegir los días: llega con los reportes (1.9).
-- **Imprimir el cierre** y guardarlo para verlo después: llega con el cierre Z (1.9).
+- El pago de propinas no se controla contra el **fondo de propinas por día** ni deja elegir los días (los reportes de la 1.9 muestran el fondo del período).
+- ~~Imprimir el cierre y guardarlo para verlo después~~: hecho con el cierre Z (1.9).
 - Avisar en el cierre de pagos que quedaron en cuarentena o rechazados.
 - Retiros parciales durante el turno.
 

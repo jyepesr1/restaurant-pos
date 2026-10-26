@@ -1,6 +1,13 @@
 import type { EventoPedido } from '@pos/core'
 import { type BaseSqlite, enTransaccion, type Fila } from '@pos/db'
-import type { AlmacenHub, Conflicto, Cuarentena, Rechazo, TipoConflicto } from './almacen'
+import {
+  type AlmacenHub,
+  type Conflicto,
+  type Cuarentena,
+  type Rechazo,
+  TIPOS_COBRO,
+  type TipoConflicto,
+} from './almacen'
 
 const texto = (v: unknown) => (v === null || v === undefined ? null : String(v))
 
@@ -140,6 +147,29 @@ export class AlmacenSqlite implements AlmacenHub {
       )
       .get(this.restauranteId, dia)
     return Number(fila?.n ?? 0)
+  }
+
+  eventosDelPeriodo(tipos: readonly string[], desde: string, hasta: string): EventoPedido[] {
+    if (tipos.length === 0) return []
+    // Usa el índice evento_por_tipo_y_dia (migración 0006).
+    return this.db
+      .prepare(
+        `SELECT * FROM evento WHERE restaurante_id = ? AND tipo IN (${tipos.map(() => '?').join(', ')})
+           AND dia_operativo BETWEEN ? AND ? ORDER BY secuencia`,
+      )
+      .all(this.restauranteId, ...tipos, desde, hasta)
+      .map(aEvento)
+  }
+
+  cobrosDeTurno(turnoId: string, desde: string): EventoPedido[] {
+    // El índice evento_por_tipo_y_dia acota por tipo y día; el turno se compara después.
+    return this.db
+      .prepare(
+        `SELECT * FROM evento WHERE restaurante_id = ? AND tipo IN (${TIPOS_COBRO.map(() => '?').join(', ')})
+           AND dia_operativo >= ? AND json_extract(datos, '$.turno_caja_id') = ? ORDER BY secuencia`,
+      )
+      .all(this.restauranteId, ...TIPOS_COBRO, desde, turnoId)
+      .map(aEvento)
   }
 
   eventosDesde(desde: number, limite: number): EventoPedido[] {

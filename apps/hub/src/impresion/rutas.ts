@@ -90,20 +90,11 @@ const lista = (v: unknown): string[] => {
   return Array.isArray(l) ? l.map(String) : []
 }
 
-export async function rutasImpresion(
-  app: FastifyInstance,
-  {
-    db,
-    restauranteId,
-    acceso,
-    cola,
-    zonaHoraria,
-    alCambiar,
-    reloj = () => new Date().toISOString(),
-    permitirLocales = false,
-    esEquipoDelHub = () => false,
-  }: OpcionesImpresion,
-) {
+/**
+ * Lo que comparten las rutas de un equipo emparejado: el token del equipo se revisa antes de leer
+ * el cuerpo, y cada acción pide la sesión de alguien con permiso.
+ */
+export function guardasDeEquipo(acceso: ServicioAcceso) {
   const conexionDe = (req: FastifyRequest): Conexion | null => {
     const [esquema, token] = (req.headers.authorization ?? '').split(' ')
     const conexion = esquema === 'Bearer' && token ? acceso.autenticar(token) : null
@@ -151,6 +142,24 @@ export async function rutasImpresion(
     }
     return { usuarioId: r.usuarioId, dispositivoId: conexion.dispositivoId }
   }
+  return { conexionDe, conEquipo, datosInvalidos, quien }
+}
+
+export async function rutasImpresion(
+  app: FastifyInstance,
+  {
+    db,
+    restauranteId,
+    acceso,
+    cola,
+    zonaHoraria,
+    alCambiar,
+    reloj = () => new Date().toISOString(),
+    permitirLocales = false,
+    esEquipoDelHub = () => false,
+  }: OpcionesImpresion,
+) {
+  const { conexionDe, conEquipo, datosInvalidos, quien } = guardasDeEquipo(acceso)
 
   const estacionesActivas = () =>
     db
@@ -348,6 +357,7 @@ export async function rutasImpresion(
       .map((f) => {
         const c = JSON.parse(String(f.contenido)) as {
           destino?: string
+          reimpreso?: string | null
           estacion?: string
           numero?: number | null
         }
@@ -359,9 +369,13 @@ export async function rutasImpresion(
               ? 'Página de prueba'
               : f.tipo === 'precuenta'
                 ? ['Precuenta', c.destino].filter(Boolean).join(' · ')
-                : [c.estacion, c.destino, c.numero ? `#${c.numero}` : null]
-                    .filter(Boolean)
-                    .join(' · '),
+                : f.tipo === 'informe'
+                  ? c.reimpreso
+                    ? 'Cierre de caja (reimpresión)'
+                    : 'Cierre de caja'
+                  : [c.estacion, c.destino, c.numero ? `#${c.numero}` : null]
+                      .filter(Boolean)
+                      .join(' · '),
           intentos: Number(f.intentos),
           error: f.ultimo_error === null ? null : String(f.ultimo_error),
           creado_en: String(f.creado_en),

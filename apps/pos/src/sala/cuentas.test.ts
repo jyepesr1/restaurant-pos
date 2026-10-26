@@ -2,6 +2,7 @@ import {
   cobradoEnEfectivo,
   type EstadoPedido,
   MedioPago,
+  NOMBRE_MEDIO,
   nuevoId,
   propinaSugerida,
   totalesPedido,
@@ -13,7 +14,6 @@ import { describe, expect, it } from 'vitest'
 import {
   enPartesIguales,
   lineasDe,
-  NOMBRE_MEDIO,
   nombreDeMedio,
   nombreImpuesto,
   opcionesDeCobro,
