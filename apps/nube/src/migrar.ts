@@ -11,10 +11,10 @@ const cadena = await secret(
   'DATABASE_URL',
   'Pega la cadena de conexión de Neon (rol dueño, sin pooler) y presiona Enter: ',
 )
-const cliente = new Client({ connectionString: cadena })
+const client = new Client({ connectionString: cadena })
 try {
-  await cliente.connect()
-  const hechas = await migrar(sqlDePg(cliente))
+  await client.connect()
+  const hechas = await migrar(sqlDePg(client))
   const last = MIGRACIONES_NUBE.at(-1)?.version ?? 0
   console.log(
     hechas.length > 0
@@ -25,5 +25,5 @@ try {
   console.error('No se pudo migrar la base:', e instanceof Error ? e.message : e)
   process.exitCode = 1
 } finally {
-  await cliente.end().catch(() => {})
+  await client.end().catch(() => {})
 }

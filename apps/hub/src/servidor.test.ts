@@ -65,16 +65,16 @@ describe('servidor del hub', () => {
     }
 
     /** Petición HTTP real con la ruta tal cual, sin que el cliente la normalice. */
-    async function pedirCrudo(servidor: ReturnType<typeof crearServidor>, ruta: string) {
+    async function pedirCrudo(servidor: ReturnType<typeof crearServidor>, route: string) {
       await servidor.listen({ host: '127.0.0.1', port: 0 })
       const { port } = servidor.server.address() as AddressInfo
-      return new Promise<{ status: number; cuerpo: string }>((resolver, reject) => {
-        const req = request({ host: '127.0.0.1', port, path: ruta, method: 'GET' }, (res) => {
+      return new Promise<{ status: number; cuerpo: string }>((resolve, reject) => {
+        const req = request({ host: '127.0.0.1', port, path: route, method: 'GET' }, (res) => {
           let cuerpo = ''
           res.on('data', (chunk) => {
             cuerpo += chunk
           })
-          res.on('end', () => resolver({ status: res.statusCode ?? 0, cuerpo }))
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, cuerpo }))
         })
         req.on('error', reject)
         req.end()
@@ -148,10 +148,10 @@ describe('servidor del hub', () => {
       '/assets/..%2f..%2fsecreto.txt',
       '/..%5csecreto.txt',
       '/%252e%252e/secreto.txt',
-    ])('no expone archivos fuera de la carpeta de la app: %s', async (ruta) => {
+    ])('no expone archivos fuera de la carpeta de la app: %s', async (route) => {
       app = crearServidor({ dirApp: crearCarpetas() })
 
-      const res = await pedirCrudo(app, ruta)
+      const res = await pedirCrudo(app, route)
 
       expect(res.cuerpo).not.toContain('CONTENIDO-SECRETO')
     })

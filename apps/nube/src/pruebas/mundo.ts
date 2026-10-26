@@ -8,21 +8,21 @@ import { baseDePrueba } from './pglite'
 // por la fábrica del POS: la nube solo exige el sobre), restaurantes y hubs ya registrados.
 
 export const ADMIN = 'token-de-administracion-de-prueba'
-export const AHORA = new Date('2026-10-26T15:00:00.000Z')
+export const NOW = new Date('2026-10-26T15:00:00.000Z')
 /** Semilla fija de fast-check: las pruebas de propiedades son repetibles. */
-export const SEMILLA = 20261026
+export const SEED = 20261026
 
 const ALFABETO_ULID = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 
 /** Un ULID válido y determinista a partir de un número (y una letra de marca para distinguir). */
 export function ulid(n: number, brand = 'A'): string {
   let rest = n
-  let cola = ''
-  while (cola.length < 24) {
-    cola = ALFABETO_ULID[rest % 32] + cola
+  let queue = ''
+  while (queue.length < 24) {
+    queue = ALFABETO_ULID[rest % 32] + queue
     rest = Math.floor(rest / 32)
   }
-  return `0${brand}${cola}`
+  return `0${brand}${queue}`
 }
 
 export interface EventoPlano {
@@ -52,49 +52,49 @@ export function eventoPlano(n: number, extras: Partial<EventoPlano> = {}): Event
   }
 }
 
-export const batch = (from: number, cuantos: number) =>
-  Array.from({ length: cuantos }, (_, i) => eventoPlano(from + i))
+export const batch = (from: number, howMany: number) =>
+  Array.from({ length: howMany }, (_, i) => eventoPlano(from + i))
 
 export interface HubDePrueba {
   hub: HubAutenticado
   credential: string
-  restauranteId: string
+  restaurantId: string
 }
 
 export interface Mundo {
   sql: Sql
   db: Awaited<ReturnType<typeof baseDePrueba>>['db']
   nube: Nube
-  clock: { ahora: Date }
+  clock: { now: Date }
   /** Crea (si hace falta) el restaurante y registra un hub con un código nuevo. */
-  nuevoHub: (restauranteId?: string) => Promise<HubDePrueba>
+  newHub: (restaurantId?: string) => Promise<HubDePrueba>
   /** Una petición a la API con el token y el reloj de la prueba. */
-  request: (metodo: string, ruta: string, cuerpo?: unknown, token?: string) => Promise<Response>
+  request: (metodo: string, route: string, cuerpo?: unknown, token?: string) => Promise<Response>
 }
 
 export async function crearMundo(): Promise<Mundo> {
   const { sql, db } = await baseDePrueba()
-  const clock = { ahora: AHORA }
-  const nube = new Nube(sql, () => clock.ahora)
-  const nuevoHub = async (restauranteId = newId()): Promise<HubDePrueba> => {
-    await nube.crearRestaurante({ id: restauranteId, name: 'Restaurante de prueba' })
-    const code = await nube.crearCodigo(restauranteId)
+  const clock = { now: NOW }
+  const nube = new Nube(sql, () => clock.now)
+  const newHub = async (restaurantId = newId()): Promise<HubDePrueba> => {
+    await nube.crearRestaurante({ id: restaurantId, name: 'Restaurante de prueba' })
+    const code = await nube.crearCodigo(restaurantId)
     if (!code) throw new Error('sin código')
     const r = await nube.registrarHub({
       code: code.code,
       hub_id: newId(),
       location_id: newId(),
       name: 'Caja',
-      instancia: 'i',
+      instance: 'i',
     })
     if (!r.ok) throw new Error(r.reason)
     const hub = await nube.authenticate(r.credential)
     if (!hub) throw new Error('sin hub')
-    return { hub, credential: r.credential, restauranteId }
+    return { hub, credential: r.credential, restaurantId }
   }
-  const request: Mundo['request'] = (metodo, ruta, cuerpo, token) =>
+  const request: Mundo['request'] = (metodo, route, cuerpo, token) =>
     atender(
-      new Request(`https://cloud.faro.test${ruta}`, {
+      new Request(`https://cloud.faro.test${route}`, {
         method: metodo,
         headers: {
           ...(cuerpo !== undefined ? { 'content-type': 'application/json' } : {}),
@@ -107,13 +107,13 @@ export async function crearMundo(): Promise<Mundo> {
               ? cuerpo
               : JSON.stringify(cuerpo),
       }),
-      { sql, tokenAdmin: ADMIN, clock: () => clock.ahora },
+      { sql, tokenAdmin: ADMIN, clock: () => clock.now },
     )
-  return { sql, db, nube, clock, nuevoHub, request }
+  return { sql, db, nube, clock, newHub, request }
 }
 
 /** Lo guardado de un restaurante, ordenado por id, para comparar corridas distintas. */
-export async function eventosGuardados(db: Mundo['db'], restauranteId: string) {
+export async function eventosGuardados(db: Mundo['db'], restaurantId: string) {
   const r = await db.query<{
     id: string
     fingerprint: string
@@ -122,16 +122,16 @@ export async function eventosGuardados(db: Mundo['db'], restauranteId: string) {
     content: unknown
   }>(
     'SELECT id, fingerprint, hub_sequence::text, hub_id, content FROM events WHERE restaurant_id = $1 ORDER BY id',
-    [restauranteId],
+    [restaurantId],
   )
   return r.rows
 }
 
-export async function contar(db: Mundo['db'], tableName: string, restauranteId?: string) {
-  const r = restauranteId
+export async function count(db: Mundo['db'], tableName: string, restaurantId?: string) {
+  const r = restaurantId
     ? await db.query<{ n: number }>(
         `SELECT count(*)::int AS n FROM ${tableName} WHERE restaurant_id = $1`,
-        [restauranteId],
+        [restaurantId],
       )
     : await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${tableName}`)
   return r.rows[0]?.n ?? 0

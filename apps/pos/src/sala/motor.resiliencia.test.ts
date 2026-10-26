@@ -1,14 +1,14 @@
 import 'fake-indexeddb/auto'
 import { type NewEvent, newId, signEvent, validateNewEvent } from '@pos/core'
 import {
-  AlmacenMemoria,
-  type Catalogo,
+  type AccessControl,
+  type Catalog,
   type Channel,
-  type ControlAcceso,
+  type DeviceMessage,
+  FloorSync,
+  type Handlers,
   HubSync,
-  type Manejadores,
-  type MensajeDispositivo,
-  SalaSync,
+  MemoryStore,
 } from '@pos/sync'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
@@ -25,12 +25,12 @@ const MIN = 60_000
 
 const secretoDe = (sesionId: string) => `secreto-${sesionId}`
 
-const accesoConFirma: ControlAcceso = {
+const accesoConFirma: AccessControl = {
   verify: (_c, event) =>
     event.session_id && event.signature === signEvent(event, secretoDe(event.session_id))
-      ? { ok: true, authorizedById: null, autorizacionId: null }
+      ? { ok: true, authorizedById: null, authorizationId: null }
       : { ok: false, reason: 'invalid_signature' },
-  registrarUso: () => {},
+  recordUse: () => {},
 }
 
 // ── Tiempo: los temporizadores y Date son falsos; IndexedDB sigue en tiempo real ─────────────
@@ -72,82 +72,82 @@ async function until(condicion: () => Promise<boolean> | boolean, maxMs = 20_000
 // ── Hub en memoria con fallas ────────────────────────────────────────────────────────────────
 
 interface EquipoHub extends Equipo {
-  revocadoEn: string | null
+  revokedAt: string | null
 }
 
 function montarHub(options: { desfaseHubMs?: number } = {}) {
   const tokens = new Map<string, EquipoHub>()
-  const almacen = new AlmacenMemoria()
-  const hub = new HubSync(almacen, {
-    restauranteId: newId(),
+  const store = new MemoryStore()
+  const hub = new HubSync(store, {
+    restaurantId: newId(),
     timeZone: 'America/Bogota',
-    inicioDiaOperativo: '06:00',
-    instancia: 'hub-test',
+    businessDayStart: '06:00',
+    instance: 'hub-test',
     clock: () => new Date(Date.now() + (options.desfaseHubMs ?? 0)).toISOString(),
     access: accesoConFirma,
   })
-  const salaHub = new SalaSync(hub, (token) => {
+  const salaHub = new FloorSync(hub, (token) => {
     const e = tokens.get(token)
-    return e ? { dispositivoId: e.dispositivoId, type: e.type, revocadoEn: e.revocadoEn } : null
+    return e ? { deviceId: e.deviceId, type: e.type, revokedAt: e.revokedAt } : null
   })
 
-  const canales = new Set<{ cut: () => void }>()
+  const channels = new Set<{ cut: () => void }>()
   const h = {
     hub,
     tokens,
     salaHub,
     /** Mientras sea verdad, ningún intento de abrir llega al hub. */
-    caido: false,
+    down: false,
     aperturas: 0,
     /** Mensajes del dispositivo que llegaron al hub, en orden. */
-    recibidos: [] as MensajeDispositivo[],
+    received: [] as DeviceMessage[],
     /** Si devuelve true para un mensaje que ya llegó al hub, el canal se corta justo después. */
-    cortarTras: null as ((m: MensajeDispositivo) => boolean) | null,
+    cortarTras: null as ((m: DeviceMessage) => boolean) | null,
     cortarTodo() {
-      for (const c of [...canales]) c.cut()
+      for (const c of [...channels]) c.cut()
     },
-    open(m: Manejadores): Channel {
+    open(m: Handlers): Channel {
       h.aperturas += 1
-      let enlace: ReturnType<SalaSync['connect']> | null = null
+      let link: ReturnType<FloorSync['connect']> | null = null
       let closed = false
       const channel = {
         cut: () => {
           if (closed) return
           closed = true
-          canales.delete(channel)
-          enlace?.close()
-          enlace = null
-          m.alCerrar()
+          channels.delete(channel)
+          link?.close()
+          link = null
+          m.onClose()
         },
       }
-      canales.add(channel)
+      channels.add(channel)
       setTimeout(() => {
         if (closed) return
-        if (h.caido) {
+        if (h.down) {
           channel.cut()
           return
         }
-        enlace = salaHub.connect((msg) => {
+        link = salaHub.connect((msg) => {
           const copy = JSON.parse(JSON.stringify(msg))
           setTimeout(() => {
-            if (!closed) m.alMensaje(copy)
+            if (!closed) m.onMessage(copy)
           })
         })
-        m.alAbrir()
+        m.onOpen()
       })
       return {
         send: (msg) => {
-          if (!enlace || closed) return
-          const copy = JSON.parse(JSON.stringify(msg)) as MensajeDispositivo
-          h.recibidos.push(copy)
-          enlace.recibir(copy)
+          if (!link || closed) return
+          const copy = JSON.parse(JSON.stringify(msg)) as DeviceMessage
+          h.received.push(copy)
+          link.receive(copy)
           if (h.cortarTras?.(copy)) channel.cut()
         },
         close: () => {
           closed = true
-          canales.delete(channel)
-          enlace?.close()
-          enlace = null
+          channels.delete(channel)
+          link?.close()
+          link = null
         },
       }
     },
@@ -170,7 +170,7 @@ afterEach(async () => {
 interface OpcionesEquipo {
   /** Hace `ultimoUso` más viejo o más nuevo que ahora (ms). */
   haceMs?: number
-  catalog?: Catalogo | null
+  catalog?: Catalog | null
   /** El token no está en el hub (equipo retirado o hub reinstalado). */
   sinToken?: boolean
   /** Secreto distinto al que conoce el hub. */
@@ -184,11 +184,11 @@ async function device(h: Hub, name: string, o: OpcionesEquipo = {}) {
   const db = o.db ?? new BaseDispositivo(`resiliencia-${newId()}`)
   if (!o.db) bases.push(db)
   const e: EquipoHub = {
-    dispositivoId: newId(),
+    deviceId: newId(),
     token: newId(),
     name,
     type: 'waiter',
-    revocadoEn: null,
+    revokedAt: null,
   }
   if (!o.sinToken) h.tokens.set(e.token, e)
   const sesionId = newId()
@@ -200,18 +200,18 @@ async function device(h: Hub, name: string, o: OpcionesEquipo = {}) {
     ultimoUso: Date.now() - (o.haceMs ?? 0),
   }
   await db.saveSetting('device', {
-    dispositivoId: e.dispositivoId,
+    deviceId: e.deviceId,
     token: e.token,
     name: e.name,
     type: e.type,
   } satisfies Equipo)
   await db.saveSetting('session', session)
   if (o.catalog !== null) await db.saveSetting('catalog', o.catalog ?? catalogoDePrueba())
-  const sala = new Sala({ db, open: (m) => h.open(m) })
-  salas.push(sala)
-  if (o.sinConexion) sala.simularSinConexion(true)
-  await sala.cargar()
-  return { sala, db, e, session }
+  const floor = new Sala({ db, open: (m) => h.open(m) })
+  salas.push(floor)
+  if (o.sinConexion) floor.simularSinConexion(true)
+  await floor.load()
+  return { floor, db, e, session }
 }
 
 const item = (price = 1_000) => ({
@@ -231,22 +231,22 @@ const item = (price = 1_000) => ({
   price_channel_id: null,
 })
 
-const abrirPedido = (s: Sala, id = newId()) =>
+const openOrder = (s: Sala, id = newId()) =>
   s.record('OrderOpened', id, { channel: 'dine_in', table_id: null, guests: 1 }).then(() => id)
 
 const conectada = (s: Sala) => s.instantanea().connection === 'connected'
 const sinPendientes = (s: Sala) => s.instantanea().pendingList === 0
-const locales = async (s: Sala) => (await s.sync?.locales()) ?? []
+const locals = async (s: Sala) => (await s.sync?.locals()) ?? []
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 describe('registrar firma el evento', () => {
   it('lleva la firma de la sesión y el hub la acepta', async () => {
     const h = montarHub()
-    const { sala, session, e } = await device(h, 'Ana')
-    await until(() => conectada(sala))
+    const { floor, session, e } = await device(h, 'Ana')
+    await until(() => conectada(floor))
     const p = newId()
-    const event = await sala.record('OrderOpened', p, {
+    const event = await floor.record('OrderOpened', p, {
       channel: 'dine_in',
       table_id: null,
       guests: 2,
@@ -257,7 +257,7 @@ describe('registrar firma el evento', () => {
     expect(event).toMatchObject({
       session_id: session.sesionId,
       user_id: session.user.id,
-      device_id: e.dispositivoId,
+      device_id: e.deviceId,
       aggregate_type: 'order',
       aggregate_id: p,
       schema_version: 1,
@@ -266,36 +266,36 @@ describe('registrar firma el evento', () => {
     // El sobre trae la hora del dispositivo y la estimada del hub.
     expect(event.device_time).toBe(new Date(Date.now()).toISOString())
 
-    await until(() => sinPendientes(sala))
+    await until(() => sinPendientes(floor))
     expect(h.hub.order(p)).not.toBeNull()
   })
 
   it('con un secreto que el hub no reconoce el evento se rechaza y no se muestra', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana', { secret: 'secreto-equivocado' })
-    await until(() => conectada(sala))
-    const p = await abrirPedido(sala)
+    const { floor } = await device(h, 'Ana', { secret: 'secreto-equivocado' })
+    await until(() => conectada(floor))
+    const p = await openOrder(floor)
     // Persistir antes de mostrar: mientras el hub no responde, ya se ve.
-    expect(pedidosAbiertos(await locales(sala)).map((v) => v.status.id)).toEqual([p])
+    expect(pedidosAbiertos(await locals(floor)).map((v) => v.status.id)).toEqual([p])
 
-    await until(() => sinPendientes(sala))
-    const [l] = await locales(sala)
+    await until(() => sinPendientes(floor))
+    const [l] = await locals(floor)
     expect(l?.status).toBe('rejected')
     expect(l?.reason).toBe('invalid_signature')
-    expect(pedidosAbiertos(await locales(sala))).toEqual([])
+    expect(pedidosAbiertos(await locals(floor))).toEqual([])
     expect(h.hub.order(p)).toBeNull()
   })
 
   it('cada evento firmado cubre sus propios datos: la firma cambia con los datos', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana', { sinConexion: true })
+    const { floor } = await device(h, 'Ana', { sinConexion: true })
     const p = newId()
-    const a = await sala.record('OrderOpened', p, {
+    const a = await floor.record('OrderOpened', p, {
       channel: 'dine_in',
       table_id: null,
       guests: 1,
     })
-    const b = await sala.record('OrderOpened', newId(), {
+    const b = await floor.record('OrderOpened', newId(), {
       channel: 'dine_in',
       table_id: null,
       guests: 1,
@@ -308,53 +308,53 @@ describe('registrar firma el evento', () => {
 describe('el hub se cae a mitad de una operación', () => {
   it('cae justo después de aceptar un lote, sin que llegue la respuesta: al volver no se duplica nada', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana', { sinConexion: true })
-    const p = await abrirPedido(sala)
+    const { floor } = await device(h, 'Ana', { sinConexion: true })
+    const p = await openOrder(floor)
     const ids = []
     for (let i = 0; i < 5; i++) {
       const it = item(2_000)
-      await sala.record('ItemAdded', p, it)
+      await floor.record('ItemAdded', p, it)
       ids.push(it.item_id)
     }
-    expect(sala.instantanea().pendingList).toBe(6)
+    expect(floor.instantanea().pendingList).toBe(6)
 
     // El hub procesa el lote y se corta antes de que la respuesta llegue; sigue caído un rato.
     h.cortarTras = (m) => {
       if (m.type !== 'push') return false
-      h.caido = true
+      h.down = true
       return true
     }
-    sala.simularSinConexion(false)
-    await until(() => h.recibidos.some((m) => m.type === 'push'))
+    floor.simularSinConexion(false)
+    await until(() => h.received.some((m) => m.type === 'push'))
     await asentar(10)
     expect(h.hub.order(p)?.items).toBeDefined()
     expect(Object.keys(h.hub.order(p)?.items ?? {})).toHaveLength(5)
     // El dispositivo no vio la respuesta: sigue creyendo que están pendientes.
-    expect(sala.instantanea().pendingList).toBe(6)
-    expect(sala.instantanea().connection).not.toBe('connected')
+    expect(floor.instantanea().pendingList).toBe(6)
+    expect(floor.instantanea().connection).not.toBe('connected')
 
     // Mientras sigue caído hay reintentos, pero espaciados (no un ciclo apretado).
     const attempts = h.aperturas
     await advance(10_000)
     expect(h.aperturas - attempts).toBeLessThanOrEqual(6)
-    expect(sala.instantanea().pendingList).toBe(6)
+    expect(floor.instantanea().pendingList).toBe(6)
 
-    h.caido = false
+    h.down = false
     h.cortarTras = null
-    await until(() => sinPendientes(sala))
+    await until(() => sinPendientes(floor))
 
-    const confirmados = (await locales(sala)).filter((l) => l.status === 'confirmed')
-    expect(confirmados.map((l) => l.event.sequence)).toEqual([1, 2, 3, 4, 5, 6])
+    const allConfirmed = (await locals(floor)).filter((l) => l.status === 'confirmed')
+    expect(allConfirmed.map((l) => l.event.sequence)).toEqual([1, 2, 3, 4, 5, 6])
     expect(Object.keys(h.hub.order(p)?.items ?? {}).sort()).toEqual([...ids].sort())
-    expect(pedidosAbiertos(await locales(sala))[0]?.total).toBe(10_000)
+    expect(pedidosAbiertos(await locals(floor))[0]?.total).toBe(10_000)
   })
 
   it('cae entre dos lotes de 100: los 150 eventos quedan una sola vez y en orden', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana', { sinConexion: true })
-    const p = await abrirPedido(sala)
-    for (let i = 0; i < 149; i++) await sala.record('ItemAdded', p, item(1_000))
-    expect(sala.instantanea().pendingList).toBe(150)
+    const { floor } = await device(h, 'Ana', { sinConexion: true })
+    const p = await openOrder(floor)
+    for (let i = 0; i < 149; i++) await floor.record('ItemAdded', p, item(1_000))
+    expect(floor.instantanea().pendingList).toBe(150)
 
     let lotes = 0
     h.cortarTras = (m) => {
@@ -362,53 +362,53 @@ describe('el hub se cae a mitad de una operación', () => {
       // El primer lote llega completo y la conexión se corta antes de la respuesta.
       return m.type === 'push' && lotes === 1
     }
-    sala.simularSinConexion(false)
-    await until(() => sinPendientes(sala), 30_000)
+    floor.simularSinConexion(false)
+    await until(() => sinPendientes(floor), 30_000)
 
     const hubEventos = h.hub.order(p)
     expect(Object.keys(hubEventos?.items ?? {})).toHaveLength(149)
-    const confirmados = (await locales(sala)).filter((l) => l.status === 'confirmed')
-    expect(confirmados).toHaveLength(150)
-    expect(confirmados.map((l) => l.event.sequence)).toEqual(
+    const allConfirmed = (await locals(floor)).filter((l) => l.status === 'confirmed')
+    expect(allConfirmed).toHaveLength(150)
+    expect(allConfirmed.map((l) => l.event.sequence)).toEqual(
       Array.from({ length: 150 }, (_, i) => i + 1),
     )
-    expect(new Set(confirmados.map((l) => l.event.id)).size).toBe(150)
+    expect(new Set(allConfirmed.map((l) => l.event.id)).size).toBe(150)
   })
 
   it('el hub está apagado al arrancar: lo registrado se conserva y sube cuando vuelve', async () => {
     const h = montarHub()
-    h.caido = true
-    const { sala } = await device(h, 'Ana')
+    h.down = true
+    const { floor } = await device(h, 'Ana')
     await advance(3_000)
-    expect(sala.instantanea().connection).not.toBe('connected')
+    expect(floor.instantanea().connection).not.toBe('connected')
 
-    const p = await abrirPedido(sala)
-    await sala.record('ItemAdded', p, item(5_000))
-    expect(sala.instantanea().pendingList).toBe(2)
-    expect(pedidosAbiertos(await locales(sala))[0]?.total).toBe(5_000)
+    const p = await openOrder(floor)
+    await floor.record('ItemAdded', p, item(5_000))
+    expect(floor.instantanea().pendingList).toBe(2)
+    expect(pedidosAbiertos(await locals(floor))[0]?.total).toBe(5_000)
 
-    h.caido = false
+    h.down = false
     // La espera máxima entre reintentos es de 5 s (docs/SYNC.md).
-    await until(() => conectada(sala) && sinPendientes(sala), 8_000)
+    await until(() => conectada(floor) && sinPendientes(floor), 8_000)
     expect(h.hub.order(p)).not.toBeNull()
   })
 
   it('el proceso del hub se reinicia (nueva sala, misma base): el dispositivo reconecta solo', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana')
-    await until(() => conectada(sala))
-    const p = await abrirPedido(sala)
-    await until(() => sinPendientes(sala))
+    const { floor } = await device(h, 'Ana')
+    await until(() => conectada(floor))
+    const p = await openOrder(floor)
+    await until(() => sinPendientes(floor))
 
-    h.caido = true
+    h.down = true
     h.cortarTodo()
-    expect(sala.instantanea().connection).not.toBe('connected')
+    expect(floor.instantanea().connection).not.toBe('connected')
     // Sin conexión se sigue tomando el pedido.
-    await sala.record('ItemAdded', p, item(3_000))
-    expect(sala.instantanea().pendingList).toBe(1)
+    await floor.record('ItemAdded', p, item(3_000))
+    expect(floor.instantanea().pendingList).toBe(1)
 
-    h.caido = false
-    await until(() => conectada(sala) && sinPendientes(sala), 8_000)
+    h.down = false
+    await until(() => conectada(floor) && sinPendientes(floor), 8_000)
     expect(Object.keys(h.hub.order(p)?.items ?? {})).toHaveLength(1)
   })
 })
@@ -416,27 +416,27 @@ describe('el hub se cae a mitad de una operación', () => {
 describe('token inválido o revocado', () => {
   it('el hub no reconoce el token: queda errorHub, se detiene la conexión y no reintenta', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana', { sinToken: true })
-    await until(() => sala.instantanea().errorHub !== null)
+    const { floor } = await device(h, 'Ana', { sinToken: true })
+    await until(() => floor.instantanea().errorHub !== null)
 
-    expect(sala.instantanea().errorHub).toMatchObject({ code: 'invalid_token' })
-    expect(sala.instantanea().connection).toBe('disconnected')
+    expect(floor.instantanea().errorHub).toMatchObject({ code: 'invalid_token' })
+    expect(floor.instantanea().connection).toBe('disconnected')
 
     // Pasa un buen rato y no vuelve a intentarlo (cada intento solo gastaría batería y red).
     const attempts = h.aperturas
     await advance(60_000)
     expect(h.aperturas).toBe(attempts)
-    expect(sala.instantanea().connection).toBe('disconnected')
+    expect(floor.instantanea().connection).toBe('disconnected')
   })
 
   it('con el token inválido se puede seguir registrando: queda guardado como pendiente', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana', { sinToken: true })
-    await until(() => sala.instantanea().errorHub !== null)
-    await abrirPedido(sala)
-    expect(sala.instantanea().pendingList).toBe(1)
+    const { floor } = await device(h, 'Ana', { sinToken: true })
+    await until(() => floor.instantanea().errorHub !== null)
+    await openOrder(floor)
+    expect(floor.instantanea().pendingList).toBe(1)
     await advance(10_000)
-    expect(sala.instantanea().pendingList).toBe(1)
+    expect(floor.instantanea().pendingList).toBe(1)
   })
 
   it('app_vieja también detiene la conexión', async () => {
@@ -449,12 +449,12 @@ describe('token inválido o revocado', () => {
       })(),
       open: (m) => {
         h.aperturas += 1
-        setTimeout(() => m.alAbrir())
+        setTimeout(() => m.onOpen())
         return {
           send: (msg) => {
             if (msg.type === 'hello')
               setTimeout(() =>
-                m.alMensaje({ type: 'error', code: 'outdated_app', message: 'Actualiza la app' }),
+                m.onMessage({ type: 'error', code: 'outdated_app', message: 'Actualiza la app' }),
               )
           },
           close: () => {},
@@ -465,12 +465,12 @@ describe('token inválido o revocado', () => {
     await oldOne.sync // sin equipo todavía
     const db = (oldOne as unknown as { db: BaseDispositivo }).db
     await db.saveSetting('device', {
-      dispositivoId: newId(),
+      deviceId: newId(),
       token: 't',
       name: 'Viejo',
       type: 'waiter',
     })
-    await oldOne.cargar()
+    await oldOne.load()
     await until(() => oldOne.instantanea().errorHub !== null)
     expect(oldOne.instantanea().errorHub).toMatchObject({ code: 'outdated_app' })
     const attempts = h.aperturas
@@ -482,53 +482,53 @@ describe('token inválido o revocado', () => {
     const h = montarHub()
     const ana = await device(h, 'Ana')
     const beto = await device(h, 'Beto')
-    await until(() => conectada(ana.sala) && conectada(beto.sala))
+    await until(() => conectada(ana.floor) && conectada(beto.floor))
 
     // El gerente retira el equipo de Ana.
-    const ahora = new Date().toISOString()
+    const now = new Date().toISOString()
     const row = h.tokens.get(ana.e.token) as EquipoHub
-    row.revocadoEn = ahora
-    h.salaHub.revoke(ana.e.dispositivoId, ahora)
-    await until(() => ana.sala.instantanea().errorHub !== null)
-    expect(ana.sala.instantanea().errorHub?.code).toBe('revoked_token')
-    expect(conectada(ana.sala)).toBe(true)
+    row.revokedAt = now
+    h.salaHub.revoke(ana.e.deviceId, now)
+    await until(() => ana.floor.instantanea().errorHub !== null)
+    expect(ana.floor.instantanea().errorHub?.code).toBe('revoked_token')
+    expect(conectada(ana.floor)).toBe(true)
 
     // Lo que Beto hace después ya no le llega a Ana, pero a Beto sí le funciona.
-    const p = await abrirPedido(beto.sala)
-    await until(() => sinPendientes(beto.sala))
+    const p = await openOrder(beto.floor)
+    await until(() => sinPendientes(beto.floor))
     await advance(2_000)
-    expect(pedidosAbiertos(await locales(ana.sala))).toEqual([])
-    expect(pedidosAbiertos(await locales(beto.sala)).map((v) => v.status.id)).toEqual([p])
+    expect(pedidosAbiertos(await locals(ana.floor))).toEqual([])
+    expect(pedidosAbiertos(await locals(beto.floor)).map((v) => v.status.id)).toEqual([p])
   })
 
   it('lo que el equipo retirado hace después de la revocación no entra al salón', async () => {
     const h = montarHub()
     const ana = await device(h, 'Ana')
-    await until(() => conectada(ana.sala))
-    const ahora = new Date().toISOString()
-    ;(h.tokens.get(ana.e.token) as EquipoHub).revocadoEn = ahora
-    h.salaHub.revoke(ana.e.dispositivoId, ahora)
-    await until(() => ana.sala.instantanea().errorHub !== null)
+    await until(() => conectada(ana.floor))
+    const now = new Date().toISOString()
+    ;(h.tokens.get(ana.e.token) as EquipoHub).revokedAt = now
+    h.salaHub.revoke(ana.e.deviceId, now)
+    await until(() => ana.floor.instantanea().errorHub !== null)
 
     vi.setSystemTime(Date.now() + 5_000)
-    const p = await abrirPedido(ana.sala)
-    await until(() => sinPendientes(ana.sala))
+    const p = await openOrder(ana.floor)
+    await until(() => sinPendientes(ana.floor))
     expect(h.hub.order(p)).toBeNull()
-    const [l] = await locales(ana.sala)
+    const [l] = await locals(ana.floor)
     expect(l?.status).toBe('rejected')
-    expect(pedidosAbiertos(await locales(ana.sala))).toEqual([])
+    expect(pedidosAbiertos(await locals(ana.floor))).toEqual([])
   })
 })
 
 describe('olvidarEquipo', () => {
   it('borra credenciales y sesión, detiene la conexión y conserva los eventos guardados', async () => {
     const h = montarHub()
-    const { sala, db } = await device(h, 'Ana', { sinToken: true })
-    await until(() => sala.instantanea().errorHub !== null)
-    await abrirPedido(sala)
+    const { floor, db } = await device(h, 'Ana', { sinToken: true })
+    await until(() => floor.instantanea().errorHub !== null)
+    await openOrder(floor)
 
-    await sala.olvidarEquipo()
-    const i = sala.instantanea()
+    await floor.olvidarEquipo()
+    const i = floor.instantanea()
     expect(i).toMatchObject({
       device: null,
       session: null,
@@ -540,41 +540,41 @@ describe('olvidarEquipo', () => {
     // El catálogo y los eventos se quedan.
     expect(await db.leerAjuste('catalog')).toBeDefined()
     expect(await db.events.count()).toBe(1)
-    expect(sala.sync).toBeNull()
+    expect(floor.sync).toBeNull()
 
     const attempts = h.aperturas
     await advance(30_000)
     expect(h.aperturas).toBe(attempts)
 
     // Sin equipo no se puede crear nada ni llamar al hub.
-    await expect(abrirPedido(sala)).rejects.toThrow('Sin sesión')
-    await expect(sala.actualizarCatalogo()).rejects.toThrow('todavía no ha entrado')
+    await expect(openOrder(floor)).rejects.toThrow('Sin sesión')
+    await expect(floor.actualizarCatalogo()).rejects.toThrow('todavía no ha entrado')
   })
 
   it('al volver a abrir la app queda sin equipo (pide emparejar)', async () => {
     const h = montarHub()
-    const { sala, db } = await device(h, 'Ana', { sinToken: true })
-    await until(() => sala.instantanea().errorHub !== null)
-    await sala.olvidarEquipo()
+    const { floor, db } = await device(h, 'Ana', { sinToken: true })
+    await until(() => floor.instantanea().errorHub !== null)
+    await floor.olvidarEquipo()
     const another = new Sala({ db, open: (m) => h.open(m) })
     salas.push(another)
-    await another.cargar()
+    await another.load()
     expect(another.instantanea()).toMatchObject({ cargado: true, device: null, session: null })
     expect(another.instantanea().catalog).not.toBeNull()
   })
 
   it('emparejar de nuevo conecta con el token nuevo', async () => {
     const h = montarHub()
-    const { sala, db } = await device(h, 'Ana', { sinToken: true })
-    await until(() => sala.instantanea().errorHub !== null)
-    await sala.olvidarEquipo()
+    const { floor, db } = await device(h, 'Ana', { sinToken: true })
+    await until(() => floor.instantanea().errorHub !== null)
+    await floor.olvidarEquipo()
 
     const fresh: EquipoHub = {
-      dispositivoId: newId(),
+      deviceId: newId(),
       token: newId(),
       name: 'Ana',
       type: 'waiter',
-      revocadoEn: null,
+      revokedAt: null,
     }
     h.tokens.set(fresh.token, fresh)
     vi.stubGlobal(
@@ -585,7 +585,7 @@ describe('olvidarEquipo', () => {
         expect(JSON.parse(String(init?.body))).toEqual({ code: 'ABC123' })
         return new Response(
           JSON.stringify({
-            device_id: fresh.dispositivoId,
+            device_id: fresh.deviceId,
             token: fresh.token,
             name: fresh.name,
             type: fresh.type,
@@ -594,10 +594,10 @@ describe('olvidarEquipo', () => {
         )
       }),
     )
-    await sala.emparejar('  abc123 ')
-    await until(() => conectada(sala))
-    expect(sala.instantanea().device?.token).toBe(fresh.token)
-    expect(sala.instantanea().errorHub).toBeNull()
+    await floor.emparejar('  abc123 ')
+    await until(() => conectada(floor))
+    expect(floor.instantanea().device?.token).toBe(fresh.token)
+    expect(floor.instantanea().errorHub).toBeNull()
     expect(await db.leerAjuste<Equipo>('device')).toMatchObject({ token: fresh.token })
   })
 
@@ -607,17 +607,17 @@ describe('olvidarEquipo', () => {
   // rechazado con su motivo.
   it('lo pendiente de antes de olvidar el equipo no entra con el token nuevo: queda rechazado con motivo', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana', { sinToken: true })
-    await until(() => sala.instantanea().errorHub !== null)
-    const p = await abrirPedido(sala)
-    await sala.olvidarEquipo()
+    const { floor } = await device(h, 'Ana', { sinToken: true })
+    await until(() => floor.instantanea().errorHub !== null)
+    const p = await openOrder(floor)
+    await floor.olvidarEquipo()
 
     const fresh: EquipoHub = {
-      dispositivoId: newId(),
+      deviceId: newId(),
       token: newId(),
       name: 'Ana',
       type: 'waiter',
-      revocadoEn: null,
+      revokedAt: null,
     }
     h.tokens.set(fresh.token, fresh)
     vi.stubGlobal(
@@ -626,7 +626,7 @@ describe('olvidarEquipo', () => {
         async () =>
           new Response(
             JSON.stringify({
-              device_id: fresh.dispositivoId,
+              device_id: fresh.deviceId,
               token: fresh.token,
               name: 'Ana',
               type: 'waiter',
@@ -635,10 +635,10 @@ describe('olvidarEquipo', () => {
           ),
       ),
     )
-    await sala.emparejar('ABC123')
-    await until(() => sinPendientes(sala))
+    await floor.emparejar('ABC123')
+    await until(() => sinPendientes(floor))
     expect(h.hub.order(p)).toBeNull()
-    const [l] = await locales(sala)
+    const [l] = await locals(floor)
     expect(l).toMatchObject({ status: 'rejected', reason: 'device_mismatch' })
   })
 })
@@ -646,14 +646,14 @@ describe('olvidarEquipo', () => {
 describe('sesión que vence por inactividad', () => {
   it('se cierra exactamente a los minutos configurados y avisa al hub', async () => {
     const h = montarHub()
-    const { sala, session, db } = await device(h, 'Ana', {
-      catalog: catalogoDePrueba({ restaurant: { name: 'P', sesionInactividadMin: 10 } }),
+    const { floor, session, db } = await device(h, 'Ana', {
+      catalog: catalogoDePrueba({ restaurant: { name: 'P', sessionIdleMin: 10 } }),
     })
-    sala.vencerSesionSiToca(session.ultimoUso + 10 * MIN - 1)
-    expect(sala.instantanea().session).not.toBeNull()
-    sala.vencerSesionSiToca(session.ultimoUso + 10 * MIN)
-    expect(sala.instantanea().session).toBeNull()
-    expect(sala.instantanea().sessionClosedBy).toBe('inactivity')
+    floor.vencerSesionSiToca(session.ultimoUso + 10 * MIN - 1)
+    expect(floor.instantanea().session).not.toBeNull()
+    floor.vencerSesionSiToca(session.ultimoUso + 10 * MIN)
+    expect(floor.instantanea().session).toBeNull()
+    expect(floor.instantanea().sessionClosedBy).toBe('inactivity')
 
     await asentar(10)
     expect(await db.leerAjuste('session')).toBeUndefined()
@@ -669,92 +669,92 @@ describe('sesión que vence por inactividad', () => {
 
   it('sin catálogo guardado usa 30 minutos', async () => {
     const h = montarHub()
-    const { sala, session } = await device(h, 'Ana', { catalog: null })
-    sala.vencerSesionSiToca(session.ultimoUso + 29 * MIN)
-    expect(sala.instantanea().session).not.toBeNull()
-    sala.vencerSesionSiToca(session.ultimoUso + 30 * MIN)
-    expect(sala.instantanea().session).toBeNull()
+    const { floor, session } = await device(h, 'Ana', { catalog: null })
+    floor.vencerSesionSiToca(session.ultimoUso + 29 * MIN)
+    expect(floor.instantanea().session).not.toBeNull()
+    floor.vencerSesionSiToca(session.ultimoUso + 30 * MIN)
+    expect(floor.instantanea().session).toBeNull()
   })
 
   it('al abrir la app con una sesión ya vencida pide el PIN de nuevo', async () => {
     const h = montarHub()
-    const { sala, db } = await device(h, 'Ana', { haceMs: 31 * MIN })
-    expect(sala.instantanea().session).toBeNull()
+    const { floor, db } = await device(h, 'Ana', { haceMs: 31 * MIN })
+    expect(floor.instantanea().session).toBeNull()
     await asentar(10)
     expect(await db.leerAjuste('session')).toBeUndefined()
-    await expect(abrirPedido(sala)).rejects.toThrow('Sin sesión')
+    await expect(openOrder(floor)).rejects.toThrow('Sin sesión')
   })
 
   it('al volver a la pantalla (desbloquear el celular) revisa el vencimiento', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana')
+    const { floor } = await device(h, 'Ana')
     vi.setSystemTime(Date.now() + 45 * MIN)
-    expect(sala.instantanea().session).not.toBeNull()
-    sala.cambiarVisibilidad(false)
-    expect(sala.instantanea().session).not.toBeNull()
-    sala.cambiarVisibilidad(true)
-    expect(sala.instantanea().session).toBeNull()
+    expect(floor.instantanea().session).not.toBeNull()
+    floor.changeVisibility(false)
+    expect(floor.instantanea().session).not.toBeNull()
+    floor.changeVisibility(true)
+    expect(floor.instantanea().session).toBeNull()
   })
 
   it('cada toque aplaza el cierre: con toques cada 10 minutos nunca vence', async () => {
     const h = montarHub()
-    const { sala, session } = await device(h, 'Ana')
-    for (let i = 1; i <= 12; i++) sala.usar(session.ultimoUso + i * 10 * MIN)
-    expect(sala.instantanea().session).not.toBeNull()
-    expect(sala.instantanea().session?.ultimoUso).toBe(session.ultimoUso + 120 * MIN)
+    const { floor, session } = await device(h, 'Ana')
+    for (let i = 1; i <= 12; i++) floor.usar(session.ultimoUso + i * 10 * MIN)
+    expect(floor.instantanea().session).not.toBeNull()
+    expect(floor.instantanea().session?.ultimoUso).toBe(session.ultimoUso + 120 * MIN)
     // Y pasados 30 minutos sin toques, sí.
-    sala.vencerSesionSiToca(session.ultimoUso + 150 * MIN)
-    expect(sala.instantanea().session).toBeNull()
+    floor.vencerSesionSiToca(session.ultimoUso + 150 * MIN)
+    expect(floor.instantanea().session).toBeNull()
   })
 
   it('un toque ya vencido no revive la sesión', async () => {
     const h = montarHub()
-    const { sala, session } = await device(h, 'Ana')
-    sala.usar(session.ultimoUso + 40 * MIN)
-    expect(sala.instantanea().session).toBeNull()
-    sala.usar(session.ultimoUso + 40 * MIN + 1)
-    sala.usar(session.ultimoUso + 41 * MIN)
-    expect(sala.instantanea().session).toBeNull()
+    const { floor, session } = await device(h, 'Ana')
+    floor.usar(session.ultimoUso + 40 * MIN)
+    expect(floor.instantanea().session).toBeNull()
+    floor.usar(session.ultimoUso + 40 * MIN + 1)
+    floor.usar(session.ultimoUso + 41 * MIN)
+    expect(floor.instantanea().session).toBeNull()
     await asentar(10)
     expect(await bases[0]?.leerAjuste('session')).toBeUndefined()
   })
 
   it('salir sin conexión con el hub igual cierra la sesión aquí', async () => {
     const h = montarHub()
-    const { sala, db } = await device(h, 'Ana')
+    const { floor, db } = await device(h, 'Ana')
     vi.mocked(fetch).mockRejectedValue(new TypeError('Failed to fetch'))
-    await sala.exit()
-    expect(sala.instantanea().session).toBeNull()
+    await floor.exit()
+    expect(floor.instantanea().session).toBeNull()
     expect(await db.leerAjuste('session')).toBeUndefined()
   })
 
   it('registrar con la sesión ya vencida por inactividad no crea el evento', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana', { sinConexion: true })
+    const { floor } = await device(h, 'Ana', { sinConexion: true })
     // La sesión sigue "abierta" en pantalla (nadie tocó nada), pero pasó más de la inactividad.
     vi.setSystemTime(Date.now() + 31 * MIN)
-    expect(sala.instantanea().session).not.toBeNull()
-    await expect(abrirPedido(sala)).rejects.toThrow('Sin sesión')
-    expect(sala.instantanea().pendingList).toBe(0)
+    expect(floor.instantanea().session).not.toBeNull()
+    await expect(openOrder(floor)).rejects.toThrow('Sin sesión')
+    expect(floor.instantanea().pendingList).toBe(0)
   })
 })
 
 describe('toques rápidos', () => {
   it('cientos de toques en un segundo no escriben en IndexedDB', async () => {
     const h = montarHub()
-    const { sala, session, db } = await device(h, 'Ana')
+    const { floor, session, db } = await device(h, 'Ana')
     const escribir = vi.spyOn(db, 'saveSetting')
-    for (let i = 0; i < 300; i++) sala.usar(session.ultimoUso + i * 3)
+    for (let i = 0; i < 300; i++) floor.usar(session.ultimoUso + i * 3)
     expect(escribir).not.toHaveBeenCalled()
-    expect(sala.instantanea().session?.ultimoUso).toBe(session.ultimoUso)
+    expect(floor.instantanea().session?.ultimoUso).toBe(session.ultimoUso)
   })
 
   it('pasados 15 s se escribe una vez, y los toques del mismo instante no repiten la escritura', async () => {
     const h = montarHub()
-    const { sala, session, db } = await device(h, 'Ana')
+    const { floor, session, db } = await device(h, 'Ana')
     const escribir = vi.spyOn(db, 'saveSetting')
     const t = session.ultimoUso + 15_000
-    for (let i = 0; i < 50; i++) sala.usar(t)
+    for (let i = 0; i < 50; i++) floor.usar(t)
     expect(escribir).toHaveBeenCalledTimes(1)
     expect(escribir).toHaveBeenCalledWith('session', expect.objectContaining({ ultimoUso: t }))
     await asentar(5)
@@ -763,62 +763,65 @@ describe('toques rápidos', () => {
 
   it('14,9 s no escribe; toques cada 10 s por dos horas mantienen viva la sesión sin escribir en cada uno', async () => {
     const h = montarHub()
-    const { sala, session, db } = await device(h, 'Ana')
-    sala.usar(session.ultimoUso + 14_999)
+    const { floor, session, db } = await device(h, 'Ana')
+    floor.usar(session.ultimoUso + 14_999)
     const escribir = vi.spyOn(db, 'saveSetting')
     expect(escribir).not.toHaveBeenCalled()
 
-    let toques = 0
+    let taps = 0
     for (let t = 10_000; t <= 120 * MIN; t += 10_000) {
-      sala.usar(session.ultimoUso + t)
-      toques += 1
+      floor.usar(session.ultimoUso + t)
+      taps += 1
     }
-    expect(sala.instantanea().session).not.toBeNull()
-    expect(escribir.mock.calls.length).toBeLessThan(toques / 1.5)
+    expect(floor.instantanea().session).not.toBeNull()
+    expect(escribir.mock.calls.length).toBeLessThan(taps / 1.5)
     expect(escribir.mock.calls.length).toBeGreaterThan(0)
   })
 
   it('varios registrar a la vez guardan todo, cada evento una vez, y el hub los confirma', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana')
-    await until(() => conectada(sala))
-    const p = await abrirPedido(sala)
+    const { floor } = await device(h, 'Ana')
+    await until(() => conectada(floor))
+    const p = await openOrder(floor)
     const its = Array.from({ length: 12 }, () => item(1_500))
-    await Promise.all(its.map((it) => sala.record('ItemAdded', p, it)))
+    await Promise.all(its.map((it) => floor.record('ItemAdded', p, it)))
 
-    const all = await locales(sala)
+    const all = await locals(floor)
     expect(all).toHaveLength(13)
     expect(new Set(all.map((l) => l.position)).size).toBe(13)
     expect(new Set(all.map((l) => l.event.id)).size).toBe(13)
 
-    await until(() => sinPendientes(sala))
+    await until(() => sinPendientes(floor))
     const hub = h.hub.order(p)
     expect(Object.keys(hub?.items ?? {}).sort()).toEqual(its.map((i) => i.item_id).sort())
-    expect(pedidosAbiertos(await locales(sala))[0]?.total).toBe(18_000)
+    expect(pedidosAbiertos(await locals(floor))[0]?.total).toBe(18_000)
   })
 
   it('doble toque en "enviar a cocina": una sola comanda vale y los dos equipos ven lo mismo', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana')
-    await until(() => conectada(sala))
-    const p = await abrirPedido(sala)
+    const { floor } = await device(h, 'Ana')
+    await until(() => conectada(floor))
+    const p = await openOrder(floor)
     const it = item(8_000)
-    await sala.record('ItemAdded', p, it)
-    await until(() => sinPendientes(sala))
+    await floor.record('ItemAdded', p, it)
+    await until(() => sinPendientes(floor))
 
     const envio = () => ({
       tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [it.item_id] }],
     })
-    await Promise.all([sala.record('ItemsSent', p, envio()), sala.record('ItemsSent', p, envio())])
-    await until(() => sinPendientes(sala))
+    await Promise.all([
+      floor.record('ItemsSent', p, envio()),
+      floor.record('ItemsSent', p, envio()),
+    ])
+    await until(() => sinPendientes(floor))
 
     const enHub = h.hub.order(p)
     expect(enHub?.items[it.item_id]?.status).toBe('sent')
-    const [vista] = pedidosAbiertos(await locales(sala))
+    const [vista] = pedidosAbiertos(await locals(floor))
     expect(vista?.status.items[it.item_id]?.status).toBe('sent')
     expect(vista?.total).toBe(8_000)
     // El segundo envío no se pierde en silencio: o se rechazó o se aceptó como conflicto.
-    const envios = (await locales(sala)).filter((l) => l.event.type === 'ItemsSent')
+    const envios = (await locals(floor)).filter((l) => l.event.type === 'ItemsSent')
     expect(envios).toHaveLength(2)
     expect(envios.every((l) => l.status !== 'pending')).toBe(true)
   })
@@ -830,38 +833,38 @@ describe('reloj del dispositivo desfasado', () => {
     ['adelantado', -2 * 60 * MIN],
   ])(
     'con el hub %s 2 h respecto al dispositivo, la hora estimada sigue la del hub',
-    async (_n, desfase) => {
-      const h = montarHub({ desfaseHubMs: desfase })
-      const { sala } = await device(h, 'Ana')
-      await until(() => conectada(sala))
+    async (_n, offset) => {
+      const h = montarHub({ desfaseHubMs: offset })
+      const { floor } = await device(h, 'Ana')
+      await until(() => conectada(floor))
       await advance(500)
 
-      const event = await sala.record('OrderOpened', newId(), {
+      const event = await floor.record('OrderOpened', newId(), {
         channel: 'dine_in',
         table_id: null,
         guests: 1,
       })
       expect(event.device_time).toBe(new Date(Date.now()).toISOString())
       const variance = Date.parse(event.hub_estimated_time) - Date.now()
-      expect(Math.abs(variance - desfase)).toBeLessThan(1_000)
+      expect(Math.abs(variance - offset)).toBeLessThan(1_000)
 
-      await until(() => sinPendientes(sala))
-      const [l] = await locales(sala)
+      await until(() => sinPendientes(floor))
+      const [l] = await locals(floor)
       expect(l?.status).toBe('confirmed')
     },
   )
 
   it('tras reabrir la app sin conexión se acuerda del desfase aprendido', async () => {
     const h = montarHub({ desfaseHubMs: 2 * 60 * MIN })
-    const { sala, db } = await device(h, 'Ana')
-    await until(() => conectada(sala))
+    const { floor, db } = await device(h, 'Ana')
+    await until(() => conectada(floor))
     await asentar(10)
-    sala.simularSinConexion(true)
+    floor.simularSinConexion(true)
 
     const another = new Sala({ db, open: (m) => h.open(m) })
     salas.push(another)
     another.simularSinConexion(true)
-    await another.cargar()
+    await another.load()
     const event = await another.record('OrderOpened', newId(), {
       channel: 'dine_in',
       table_id: null,
@@ -873,8 +876,8 @@ describe('reloj del dispositivo desfasado', () => {
 
   it('sin haber hablado nunca con el hub, la hora estimada es la del dispositivo', async () => {
     const h = montarHub({ desfaseHubMs: 2 * 60 * MIN })
-    const { sala } = await device(h, 'Ana', { sinConexion: true })
-    const event = await sala.record('OrderOpened', newId(), {
+    const { floor } = await device(h, 'Ana', { sinConexion: true })
+    const event = await floor.record('OrderOpened', newId(), {
       channel: 'dine_in',
       table_id: null,
       guests: 1,
@@ -889,7 +892,7 @@ describe('arranque y corte simulado', () => {
     const { db } = await device(h, 'Ana', { sinConexion: true })
     const another = new Sala({ db, open: (m) => h.open(m) })
     salas.push(another)
-    const [a, b] = [another.cargar(), another.cargar()]
+    const [a, b] = [another.load(), another.load()]
     expect(a).toBe(b)
     await Promise.all([a, b])
     await until(() => conectada(another))
@@ -899,39 +902,39 @@ describe('arranque y corte simulado', () => {
 
   it('con el corte simulado las llamadas HTTP fallan como sin conexión, sin tocar la red', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana')
-    await until(() => conectada(sala))
-    sala.simularSinConexion(true)
+    const { floor } = await device(h, 'Ana')
+    await until(() => conectada(floor))
+    floor.simularSinConexion(true)
     vi.mocked(fetch).mockClear()
-    await expect(sala.actualizarCatalogo()).rejects.toMatchObject({ code: 'offline' })
-    await expect(sala.entrar('1234')).rejects.toMatchObject({ code: 'offline' })
+    await expect(floor.actualizarCatalogo()).rejects.toMatchObject({ code: 'offline' })
+    await expect(floor.entrar('1234')).rejects.toMatchObject({ code: 'offline' })
     expect(fetch).not.toHaveBeenCalled()
-    expect(sala.instantanea().connection).toBe('disconnected')
+    expect(floor.instantanea().connection).toBe('disconnected')
   })
 
   it('el latido y el pong no hacen releer la pantalla', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana')
-    await until(() => conectada(sala))
+    const { floor } = await device(h, 'Ana')
+    await until(() => conectada(floor))
     await advance(500)
-    const before = sala.instantanea().changes
-    h.salaHub.latir()
+    const before = floor.instantanea().changes
+    h.salaHub.beat()
     await advance(500)
-    expect(sala.instantanea().changes).toBe(before)
+    expect(floor.instantanea().changes).toBe(before)
   })
 
   it('apagar y devolver la conexión varias veces seguidas deja una sola conexión viva', async () => {
     const h = montarHub()
-    const { sala } = await device(h, 'Ana')
-    await until(() => conectada(sala))
+    const { floor } = await device(h, 'Ana')
+    await until(() => conectada(floor))
     for (let i = 0; i < 10; i++) {
-      sala.simularSinConexion(true)
-      sala.simularSinConexion(false)
+      floor.simularSinConexion(true)
+      floor.simularSinConexion(false)
     }
-    await until(() => conectada(sala))
-    const p = await abrirPedido(sala)
-    await until(() => sinPendientes(sala))
+    await until(() => conectada(floor))
+    const p = await openOrder(floor)
+    await until(() => sinPendientes(floor))
     expect(Object.keys(h.hub.order(p) ?? {})).not.toHaveLength(0)
-    expect((await locales(sala)).filter((l) => l.status === 'confirmed')).toHaveLength(1)
+    expect((await locals(floor)).filter((l) => l.status === 'confirmed')).toHaveLength(1)
   })
 })

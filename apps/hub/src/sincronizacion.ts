@@ -1,4 +1,4 @@
-import type { SalaSync } from '@pos/sync'
+import type { FloorSync } from '@pos/sync'
 import type { FastifyInstance } from 'fastify'
 
 // WebSocket de sincronización (docs/SYNC.md#mensajes-por-websocket): cada conexión es un
@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify'
 // con un error, no tumba la conexión.
 
 export interface OpcionesSincronizacion {
-  sala: SalaSync
+  floor: FloorSync
   /** Cada cuánto la sala manda un latido a los conectados (docs/SYNC.md: 5 s). */
   intervaloLatidoMs?: number
   /** Una conexión que no dice nada en este tiempo se cierra: no ocupa un lugar sin saludar. */
@@ -18,26 +18,26 @@ const ABIERTO = 1
 
 export async function rutasSincronizacion(
   app: FastifyInstance,
-  { sala, intervaloLatidoMs = 5000, esperaSaludoMs = 10_000, onFailure }: OpcionesSincronizacion,
+  { floor, intervaloLatidoMs = 5000, esperaSaludoMs = 10_000, onFailure }: OpcionesSincronizacion,
 ) {
-  const heartbeat = setInterval(() => sala.latir(), intervaloLatidoMs)
+  const heartbeat = setInterval(() => floor.beat(), intervaloLatidoMs)
   app.addHook('onClose', async () => clearInterval(heartbeat))
 
   app.get('/api/sync/ws', { websocket: true }, (socket) => {
-    const enlace = sala.connect((message) => {
+    const link = floor.connect((message) => {
       if (socket.readyState === ABIERTO) socket.send(JSON.stringify(message))
     })
     const sinSaludo = setTimeout(() => socket.close(1008, 'Sin saludo'), esperaSaludoMs)
     socket.on('message', (data) => {
       clearTimeout(sinSaludo)
-      let crudo: unknown = null
+      let raw: unknown = null
       try {
-        crudo = JSON.parse(data.toString())
+        raw = JSON.parse(data.toString())
       } catch {
         // La sala responde "mensaje_invalido" a lo que no es un mensaje.
       }
       try {
-        enlace.recibir(crudo)
+        link.receive(raw)
       } catch (error) {
         // El almacén del hub no responde (HubSync ya rechazó lo que era culpa de un evento): se
         // corta esta conexión; el dispositivo reconecta y reenvía.
@@ -47,7 +47,7 @@ export async function rutasSincronizacion(
     })
     socket.on('close', () => {
       clearTimeout(sinSaludo)
-      enlace.close()
+      link.close()
     })
   })
 }

@@ -89,10 +89,10 @@ describe('división', () => {
         fc.array(fc.integer({ min: 1, max: 200_000 }), { minLength: 1, maxLength: 8 }),
         fc.integer({ min: 2, max: 6 }),
         fc.array(fc.array(fc.integer({ min: 0, max: 5 }), { maxLength: 3 }), { maxLength: 8 }),
-        (prices, checks, quien) => {
+        (prices, checks, who) => {
           const lines = prices.map((p, i) => l(`i${i}`, 1, p))
           const asignadas = new Map<string, number[]>()
-          quien.forEach((de, i) => {
+          who.forEach((de, i) => {
             const validas = [...new Set(de.filter((c) => c < checks))]
             if (i < lines.length && validas.length > 0) asignadas.set(`i${i}`, validas)
           })

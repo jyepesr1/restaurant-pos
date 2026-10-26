@@ -147,8 +147,13 @@ describe('cuenta: por ítems (bordes)', () => {
 
 describe('cuenta: pagos (bordes)', () => {
   it('el abono no se redondea y el pago final sí: 128.750 + 128.750 → se cobra 128.700', () => {
-    const abono = pagoEnEfectivo({ balance: 257_500, amount: 128_750, tip: 11_900, tendered: 0 })
-    expect(abono).toMatchObject({ charged: 128_750, adjustment: 0, aEntregar: 140_650 })
+    const partialPayment = pagoEnEfectivo({
+      balance: 257_500,
+      amount: 128_750,
+      tip: 11_900,
+      tendered: 0,
+    })
+    expect(partialPayment).toMatchObject({ charged: 128_750, adjustment: 0, aEntregar: 140_650 })
     const final = pagoEnEfectivo({ balance: 128_750, amount: 128_750, tip: 11_900, tendered: 0 })
     expect(final).toMatchObject({ charged: 128_700, adjustment: -50, aEntregar: 140_600 })
   })

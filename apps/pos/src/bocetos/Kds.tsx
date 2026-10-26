@@ -42,8 +42,8 @@ function despachar(table: Mesa, ids: ReadonlySet<string>): Mesa {
 
 export function Kds() {
   const tables = useMesas()
-  const ahora = useAhora(5000)
-  const avisar = useAvisar()
+  const now = useAhora(5000)
+  const notify = useAvisar()
   const [filtro, setFiltro] = useState<Filtro>('todas')
   const [listos, setListos] = useState<Set<string>>(new Set())
 
@@ -90,7 +90,7 @@ export function Kds() {
         )}
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {tickets.map((c) => {
-            const m = minutosDesde(c.from, ahora)
+            const m = minutosDesde(c.from, now)
             const t = tiempoDeComanda(m)
             const all = c.items.every((i) => listos.has(i.id))
             return (
@@ -154,7 +154,7 @@ export function Kds() {
                     onClick={() => {
                       const ids = new Set(c.items.map((i) => i.id))
                       cambiarMesa(c.table.number, (table) => despachar(table, ids))
-                      avisar(`Mesa ${c.table.number} despachada (${c.station})`, () =>
+                      notify(`Mesa ${c.table.number} despachada (${c.station})`, () =>
                         cambiarMesa(c.table.number, (table) => ({
                           ...table,
                           status: table.status === 'ready' ? 'in_kitchen' : table.status,

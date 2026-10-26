@@ -51,7 +51,7 @@ describe('sin pistas sobre qué usuarios existen', () => {
       password: 'clave-correcta-1',
     })
     api.access.archivarUsuario(archivada.userId)
-    const casos: { user: string; password: string }[] = [
+    const cases: { user: string; password: string }[] = [
       { user: api.people.admin.user as string, password: 'clave-equivocada' },
       { user: 'nadie', password: 'clave-equivocada' },
       { user: 'archivada', password: 'clave-correcta-1' },
@@ -65,7 +65,7 @@ describe('sin pistas sobre qué usuarios existen', () => {
       { user: "' OR 1=1 --", password: 'clave-equivocada' },
     ]
     const respuestas = []
-    for (const [i, c] of casos.entries()) {
+    for (const [i, c] of cases.entries()) {
       // IP distinta para cada caso y reloj corrido: cada uno es su primer intento.
       respuestas.push(cuerpoDe(await api.post('/api/sign-in', c, { ip: `10.2.0.${i + 1}` })))
       api.advance(11 * 60_000)
@@ -99,13 +99,13 @@ describe('sin pistas sobre qué usuarios existen', () => {
 
   it('el PIN de alguien con contraseña y un PIN que no existe fallan igual', async () => {
     const api = montarApi()
-    const conUsuario = await api.post(
+    const withUser = await api.post(
       '/api/sign-in',
       { pin: api.people.admin.pin },
       { ip: '10.0.0.50' },
     )
     const nonexistent = await api.post('/api/sign-in', { pin: '0007' }, { ip: '10.0.0.51' })
-    expect(cuerpoDe(conUsuario)).toEqual(cuerpoDe(nonexistent))
+    expect(cuerpoDe(withUser)).toEqual(cuerpoDe(nonexistent))
   })
 
   it('la espera de una cuenta que no existe se anota igual que la de una real: ambas se bloquean a la 3.ª', async () => {

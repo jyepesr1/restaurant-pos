@@ -7,10 +7,10 @@ import { agotados, masPedidos, type PedidoVisible, pedidosAbiertos } from './pro
 
 // Una sola sala por pestaña: la abre la app al arrancar y la comparten todas las pantallas.
 
-export const sala = new Sala()
+export const floor = new Sala()
 
 export function useSala(): Instantanea {
-  return useSyncExternalStore(sala.suscribir, sala.instantanea)
+  return useSyncExternalStore(floor.suscribir, floor.instantanea)
 }
 
 export interface VistaLocal {
@@ -30,24 +30,24 @@ export interface VistaLocal {
 /** Lo que sale de los eventos guardados aquí; se relee cada vez que algo cambia. */
 export function useVistaLocal(): VistaLocal | null {
   const { changes, device: deEquipo } = useSala()
-  const device = deEquipo?.dispositivoId ?? null
+  const device = deEquipo?.deviceId ?? null
   const [vista, setVista] = useState<VistaLocal | null>(null)
   // biome-ignore lint/correctness/useExhaustiveDependencies: `cambios` avisa que hay que releer
   useEffect(() => {
     let current = true
-    sala.sync
-      ?.locales()
-      .then((locales) => {
+    floor.sync
+      ?.locals()
+      .then((locals) => {
         if (!current) return
-        const orders = pedidosAbiertos(locales)
-        const shift = device ? turnoDeCaja(locales, device) : null
+        const orders = pedidosAbiertos(locals)
+        const shift = device ? turnoDeCaja(locals, device) : null
         setVista({
           orders,
-          agotados: agotados(locales),
-          masPedidos: masPedidos(locales),
-          tickets: comandasEnCocina(locales, orders),
+          agotados: agotados(locals),
+          masPedidos: masPedidos(locals),
+          tickets: comandasEnCocina(locals, orders),
           shift,
-          reconciliation: shift ? cuadreDeCaja(locales, shift.id) : null,
+          reconciliation: shift ? cuadreDeCaja(locals, shift.id) : null,
         })
       })
       .catch((error) => console.error('No se pudieron leer los pedidos:', error))

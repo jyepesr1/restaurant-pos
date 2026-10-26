@@ -23,24 +23,23 @@ function scenario(modifiers: Parameters<typeof pedidoConItemEnviado>[1] = []) {
   const p = pedidoConItemEnviado(m, modifiers)
   const base = () =>
     Number(m.db.prepare('SELECT coalesce(max(sequence), 0) AS s FROM events').get()?.s)
-  const crear = (type: string, data: unknown, extras: Record<string, unknown> = {}) =>
+  const create = (type: string, data: unknown, extras: Record<string, unknown> = {}) =>
     m.event(p.connection, p.session, type, data, {
       aggregate_id: p.order,
       base_sequence: base(),
       ...extras,
     } as never)
   const voidItem = (extras: Record<string, unknown> = {}) =>
-    crear('ItemVoided', datosAnular(p.itemId), { reason: REASON, ...extras })
+    create('ItemVoided', datosAnular(p.itemId), { reason: REASON, ...extras })
   const cancel = (extras: Record<string, unknown> = {}) =>
-    crear('OrderCanceled', {}, { reason: REASON, ...extras })
-  const send = (e: unknown) => m.hub.recibirLote(p.connection, [e]).resultados[0]
+    create('OrderCanceled', {}, { reason: REASON, ...extras })
+  const send = (e: unknown) => m.hub.receiveBatch(p.connection, [e]).results[0]
   const autorizar = (pin: string, e: Parameters<typeof autorizarEvento>[4], action: string) =>
     autorizarEvento(m, p.connection, p.session, pin, e, action)
-  return { m, ...p, crear, voidItem, cancel, send, autorizar, base }
+  return { m, ...p, create, voidItem, cancel, send, autorizar, base }
 }
 
-const pinDe = (m: MontajeHub, quien: 'manager' | 'cashier' | 'admin' | 'waiter2') =>
-  m.people[quien].pin
+const pinDe = (m: MontajeHub, who: 'manager' | 'cashier' | 'admin' | 'waiter2') => m.people[who].pin
 
 describe('anular lo enviado (ItemAnulado)', () => {
   it('el mesero sin el permiso y sin comprobante: se rechaza (sin_permiso) y el plato sigue', () => {
@@ -51,12 +50,12 @@ describe('anular lo enviado (ItemAnulado)', () => {
 
   it.each(['manager', 'cashier', 'admin'] as const)(
     'con el PIN de %s se acepta y queda quién lo autorizó',
-    (quien) => {
+    (who) => {
       const e = scenario()
-      const { event } = e.autorizar(pinDe(e.m, quien), e.voidItem(), 'void_sent_item')
+      const { event } = e.autorizar(pinDe(e.m, who), e.voidItem(), 'void_sent_item')
       expect(e.send(event)).toMatchObject({
         status: 'confirmed',
-        aceptacion: { authorized_by_id: e.m.people[quien].userId },
+        acceptance: { authorized_by_id: e.m.people[who].userId },
       })
       expect(e.m.hub.order(e.order)?.items[e.itemId]?.status).toBe('voided')
     },
@@ -75,7 +74,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
     const sinMotivo = e.voidItem({ reason: null })
     const { event } = e.autorizar(pinDe(e.m, 'manager'), sinMotivo, 'void_sent_item')
     expect(e.send(event)).toMatchObject({ status: 'rejected' })
-    expect(String((e.send(event) as { reason?: string }).reason)).toContain('esquema')
+    expect(String((e.send(event) as { reason?: string }).reason)).toContain('schema')
   })
 
   it('el PIN de otro mesero (sin el permiso) no autoriza: no hay comprobante', () => {
@@ -84,7 +83,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
       ...e.session,
       pin: pinDe(e.m, 'waiter2'),
       action: 'void_sent_item',
-      agregadoId: e.order,
+      aggregateId: e.order,
       eventId: newId(),
       fingerprint: 'a'.repeat(64),
     })
@@ -98,7 +97,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
       ...e.session,
       pin: pinDe(e.m, 'manager'),
       action: 'void_sent_item',
-      agregadoId: e.order,
+      aggregateId: e.order,
       eventId: borrador.id,
       fingerprint: authorizableFingerprint(borrador),
     })
@@ -106,12 +105,12 @@ describe('anular lo enviado (ItemAnulado)', () => {
     e.m.advance(VIGENCIA_AUTORIZACION_MS + 1_000)
     // El evento se rehace con la hora de ahora (la huella incluye la hora, así que también
     // cambia): se prueba con la hora tardía puesta a mano sobre el mismo contenido.
-    const tarde = firmar(e.session, {
+    const late = firmar(e.session, {
       ...borrador,
-      authorization_id: a.autorizacionId,
+      authorization_id: a.authorizationId,
       hub_estimated_time: e.m.clock(),
     })
-    expect(e.send(tarde)).toMatchObject({ status: 'rejected', reason: 'invalid_authorization' })
+    expect(e.send(late)).toMatchObject({ status: 'rejected', reason: 'invalid_authorization' })
   })
 
   it('un comprobante que llega más de 12 horas después de emitido no vale', () => {
@@ -131,7 +130,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
     const deNueva = firmar(newOne, {
       ...borrador,
       session_id: newOne.sesionId,
-      authorization_id: comprobante.autorizacionId,
+      authorization_id: comprobante.authorizationId,
     })
     expect(e.send(deNueva)).toMatchObject({
       status: 'rejected',
@@ -146,7 +145,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
     const changed = firmar(e.session, {
       ...borrador,
       data: { ...borrador.data, already_prepared: true },
-      authorization_id: comprobante.autorizacionId,
+      authorization_id: comprobante.authorizationId,
     } as never)
     expect(e.send(changed)).toMatchObject({
       status: 'rejected',
@@ -156,7 +155,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
     const otroMotivo = firmar(e.session, {
       ...borrador,
       reason: 'Demora',
-      authorization_id: comprobante.autorizacionId,
+      authorization_id: comprobante.authorizationId,
     })
     expect(e.send(otroMotivo)).toMatchObject({
       status: 'rejected',
@@ -172,7 +171,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
     // Otro evento distinto con el mismo comprobante.
     const secondOne = firmar(e.session, {
       ...e.voidItem(),
-      authorization_id: comprobante.autorizacionId,
+      authorization_id: comprobante.authorizationId,
     })
     expect(e.send(secondOne)).toMatchObject({
       status: 'rejected',
@@ -183,7 +182,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
       ...e.session,
       pin: pinDe(e.m, 'admin'),
       action: 'void_sent_item',
-      agregadoId: e.order,
+      aggregateId: e.order,
       eventId: firstOne.id,
       fingerprint: authorizableFingerprint(firstOne),
     })
@@ -207,7 +206,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
       ...s,
       pin: m.people.cashier.pin,
       action: 'void_sent_item',
-      agregadoId: p.order,
+      aggregateId: p.order,
       eventId: newId(),
       fingerprint: 'b'.repeat(64),
     })
@@ -224,16 +223,16 @@ describe('anular lo enviado (ItemAnulado)', () => {
       reason: REASON,
       base_sequence: 3,
     })
-    expect(m.hub.recibirLote(connection, [voidItem]).resultados[0]).toMatchObject({
+    expect(m.hub.receiveBatch(connection, [voidItem]).results[0]).toMatchObject({
       status: 'confirmed',
-      aceptacion: { authorized_by_id: null },
+      acceptance: { authorized_by_id: null },
     })
   })
 
   it('el comprobante se gasta solo si el evento se acepta: un rechazo por reglas lo deja usable', () => {
     const e = scenario()
     // Más unidades de las que hay: el reductor lo rechaza.
-    const demasiadas = e.crear(
+    const demasiadas = e.create(
       'ItemVoided',
       { ...datosAnular(e.itemId), quantity: 5 },
       { reason: REASON },
@@ -242,7 +241,7 @@ describe('anular lo enviado (ItemAnulado)', () => {
     expect(e.send(event)).toMatchObject({ status: 'rejected', reason: 'invalid_quantity' })
     const row = e.m.db
       .prepare('SELECT used_at FROM authorizations WHERE id = ?')
-      .get(comprobante.autorizacionId)
+      .get(comprobante.authorizationId)
     expect(row?.used_at).toBeNull()
   })
 })
@@ -254,12 +253,12 @@ describe('cancelar el pedido (PedidoCancelado)', () => {
     expect(e.m.hub.order(e.order)?.status).toBe('open')
   })
 
-  it.each(['manager', 'admin'] as const)('con el PIN de %s se cancela', (quien) => {
+  it.each(['manager', 'admin'] as const)('con el PIN de %s se cancela', (who) => {
     const e = scenario()
-    const { event } = e.autorizar(pinDe(e.m, quien), e.cancel(), 'cancel_order')
+    const { event } = e.autorizar(pinDe(e.m, who), e.cancel(), 'cancel_order')
     expect(e.send(event)).toMatchObject({
       status: 'confirmed',
-      aceptacion: { authorized_by_id: e.m.people[quien].userId },
+      acceptance: { authorized_by_id: e.m.people[who].userId },
     })
     expect(e.m.hub.order(e.order)?.status).toBe('canceled')
   })
@@ -270,7 +269,7 @@ describe('cancelar el pedido (PedidoCancelado)', () => {
       ...e.session,
       pin: pinDe(e.m, 'cashier'),
       action: 'cancel_order',
-      agregadoId: e.order,
+      aggregateId: e.order,
       eventId: newId(),
       fingerprint: 'c'.repeat(64),
     })
@@ -305,12 +304,12 @@ describe('cancelar el pedido (PedidoCancelado)', () => {
     const [m1, m2] = [newId(), newId()]
     const order = newId()
     const en = { aggregate_id: order }
-    const r = m.hub.recibirLote(connection, [
+    const r = m.hub.receiveBatch(connection, [
       m.event(connection, s, 'OrderOpened', { ...ABRIR, table_id: m1 }, en),
       m.event(connection, s, 'TablesMerged', { table_ids: [m2] }, { ...en, base_sequence: 1 }),
     ])
-    expect(r.resultados.map((x) => x.status)).toEqual(['confirmed', 'confirmed'])
-    expect(m.hub.tienePedidoAbierto(m2)).toBe(true)
+    expect(r.results.map((x) => x.status)).toEqual(['confirmed', 'confirmed'])
+    expect(m.hub.hasOpenOrder(m2)).toBe(true)
     const cancel = m.event(
       connection,
       s,
@@ -323,9 +322,9 @@ describe('cancelar el pedido (PedidoCancelado)', () => {
       },
     )
     const a = autorizarEvento(m, connection, s, m.people.admin.pin, cancel, 'cancel_order')
-    expect(m.hub.recibirLote(connection, [a.event]).resultados[0]?.status).toBe('confirmed')
-    expect(m.hub.tienePedidoAbierto(m1)).toBe(false)
-    expect(m.hub.tienePedidoAbierto(m2)).toBe(false)
+    expect(m.hub.receiveBatch(connection, [a.event]).results[0]?.status).toBe('confirmed')
+    expect(m.hub.hasOpenOrder(m1)).toBe(false)
+    expect(m.hub.hasOpenOrder(m2)).toBe(false)
   })
 })
 
@@ -335,7 +334,7 @@ describe('cambiar un plato ya enviado (ItemModificadoTrasEnvio)', () => {
   it('cambiar solo la nota lo hace el mesero sin comprobante', () => {
     const e = scenario([extra])
     const r = e.send(
-      e.crear('ItemModifiedAfterSend', {
+      e.create('ItemModifiedAfterSend', {
         item_id: e.itemId,
         ticket_id: e.comandaId,
         notes: 'sin hielo',
@@ -347,7 +346,7 @@ describe('cambiar un plato ya enviado (ItemModificadoTrasEnvio)', () => {
 
   it('quitar el extra (abaratar) sin comprobante se rechaza; con el PIN del cajero se acepta', () => {
     const e = scenario([extra])
-    const change = e.crear('ItemModifiedAfterSend', {
+    const change = e.create('ItemModifiedAfterSend', {
       item_id: e.itemId,
       ticket_id: e.comandaId,
       modifiers: [],
@@ -361,7 +360,7 @@ describe('cambiar un plato ya enviado (ItemModificadoTrasEnvio)', () => {
   it('cambiar a un extra más caro lo hace el mesero solo', () => {
     const e = scenario([extra])
     const r = e.send(
-      e.crear('ItemModifiedAfterSend', {
+      e.create('ItemModifiedAfterSend', {
         item_id: e.itemId,
         ticket_id: e.comandaId,
         modifiers: [{ ...extra, extra_price: 5000 }],
@@ -379,7 +378,7 @@ describe('mover, cambiar y unir mesas lo hace cualquier mesero', () => {
     const [m1, m2, m3] = [newId(), newId(), newId()]
     const order = newId()
     const en = { aggregate_id: order }
-    const r = m.hub.recibirLote(connection, [
+    const r = m.hub.receiveBatch(connection, [
       m.event(connection, s, 'OrderOpened', { ...ABRIR, table_id: m1 }, en),
       m.event(connection, s, 'TablesMerged', { table_ids: [m2] }, { ...en, base_sequence: 1 }),
       m.event(connection, s, 'TablesSeparated', { table_ids: [m2] }, { ...en, base_sequence: 2 }),
@@ -391,7 +390,7 @@ describe('mover, cambiar y unir mesas lo hace cualquier mesero', () => {
         { ...en, base_sequence: 3 },
       ),
     ])
-    expect(r.resultados.map((x) => x.status)).toEqual([
+    expect(r.results.map((x) => x.status)).toEqual([
       'confirmed',
       'confirmed',
       'confirmed',
@@ -420,7 +419,7 @@ describe('mover, cambiar y unir mesas lo hace cualquier mesero', () => {
       voided_quantity: 0,
       added_by: m.people.waiter.userId,
     }
-    const r = m.hub.recibirLote(p.connection, [
+    const r = m.hub.receiveBatch(p.connection, [
       m.event(
         p.connection,
         p.session,
@@ -436,7 +435,7 @@ describe('mover, cambiar y unir mesas lo hace cualquier mesero', () => {
         { aggregate_id: p.order, related: [target], base_sequence: 3 },
       ),
     ])
-    expect(r.resultados.map((x) => x.status)).toEqual(['confirmed', 'confirmed'])
+    expect(r.results.map((x) => x.status)).toEqual(['confirmed', 'confirmed'])
     expect(m.hub.order(target)?.items[p.itemId]?.status).toBe('sent')
   })
 })

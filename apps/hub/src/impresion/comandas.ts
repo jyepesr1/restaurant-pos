@@ -9,9 +9,9 @@ import {
   orderTip,
   orderTotals,
 } from '@pos/core'
-import type { BaseSqlite, Fila } from '@pos/db'
+import type { Row, SqliteDatabase } from '@pos/db'
 import { type PreBill, type Ticket, type TicketItem, type TicketType, taxName } from '@pos/printing'
-import type { CambioPedido } from '@pos/sync'
+import type { OrderChange } from '@pos/sync'
 import { encolarCierreZ } from '../reportes/cierre-z'
 
 // De un evento aceptado a los trabajos de impresión de sus comandas (ADR-015). Corre dentro de la
@@ -31,14 +31,14 @@ const CANALES: Record<string, string> = {
 /** Una comanda ya enviada: de qué estación es, qué llevaba y su número del día. */
 interface Enviada {
   comandaId: string
-  estacionId: string
+  stationId: string
   itemIds: string[]
   number: number | null
 }
 
 export interface OpcionesComandas {
-  db: BaseSqlite
-  restauranteId: string
+  db: SqliteDatabase
+  restaurantId: string
   timeZone: string
 }
 
@@ -46,7 +46,7 @@ export interface OpcionesComandas {
 export function trabajosDeEvento(
   o: OpcionesComandas,
   event: OrderEvent,
-  changes: readonly CambioPedido[],
+  changes: readonly OrderChange[],
 ): number {
   // Al cerrar la caja sale el cierre Z (tarea 1.9).
   // Un fallo aquí no es de una comanda: se registra aparte y el cierre se reimprime desde Reportes.
@@ -64,7 +64,7 @@ export function trabajosDeEvento(
   if (!after) return 0
   if (event.type === 'PreBillPrinted') return trabajoDePrecuenta(o, event, after)
 
-  const porCrear: { comandaId: string; estacionId: string; ticket: Ticket }[] = []
+  const porCrear: { comandaId: string; stationId: string; ticket: Ticket }[] = []
   const build = (
     type: TicketType,
     sent: Enviada,
@@ -75,7 +75,7 @@ export function trabajosDeEvento(
     if (items.length > 0)
       porCrear.push({
         comandaId: sent.comandaId,
-        estacionId: sent.estacionId,
+        stationId: sent.stationId,
         ticket: { ...datosComanda(o, event, order, type, sent, items), before: from },
       })
   }
@@ -109,7 +109,7 @@ export function trabajosDeEvento(
           'newOne',
           {
             comandaId: c.ticket_id,
-            estacionId: c.station_id,
+            stationId: c.station_id,
             itemIds: c.item_ids,
             number: event.assignments.ticket_numbers?.[c.ticket_id] ?? null,
           },
@@ -167,11 +167,11 @@ export function trabajosDeEvento(
       const porEstacion = new Map<string, Enviada>()
       for (const e of enviadas(o, after.id))
         if (e.itemIds.some((id) => EN_COCINA.has(after.items[id]?.status ?? '')))
-          porEstacion.set(e.estacionId, e)
+          porEstacion.set(e.stationId, e)
       for (const e of porEstacion.values())
         porCrear.push({
           comandaId: e.comandaId,
-          estacionId: e.estacionId,
+          stationId: e.stationId,
           ticket: datosComanda(o, event, after, 'note', e, []),
         })
       break
@@ -188,14 +188,14 @@ export function trabajosDeEvento(
       return 0
   }
 
-  // Todo o nada: la transacción del evento no tiene savepoints propios (`enTransaccion`), y una
+  // Todo o nada: la transacción del evento no tiene savepoints propios (`inTransaction`), y una
   // comanda a medias es peor que ninguna (ADR-015).
   if (porCrear.length === 0) return 0
   o.db.exec('SAVEPOINT comandas')
   try {
-    const creados = insertar(o, event, porCrear)
+    const createdList = insert(o, event, porCrear)
     o.db.exec('RELEASE comandas')
-    return creados
+    return createdList
   } catch (error) {
     o.db.exec('ROLLBACK TO comandas')
     o.db.exec('RELEASE comandas')
@@ -203,14 +203,14 @@ export function trabajosDeEvento(
   }
 }
 
-function insertar(
+function insert(
   o: OpcionesComandas,
   event: OrderEvent,
-  porCrear: readonly { comandaId: string; estacionId: string; ticket: Ticket }[],
+  porCrear: readonly { comandaId: string; stationId: string; ticket: Ticket }[],
 ): number {
-  let creados = 0
-  for (const { comandaId, estacionId, ticket } of porCrear) {
-    for (const impresoraId of impresorasDe(o, estacionId)) {
+  let createdList = 0
+  for (const { comandaId, stationId, ticket } of porCrear) {
+    for (const printerId of impresorasDe(o, stationId)) {
       o.db
         .prepare(
           `INSERT INTO print_jobs
@@ -220,17 +220,17 @@ function insertar(
         )
         .run(
           newId(),
-          o.restauranteId,
-          impresoraId,
+          o.restaurantId,
+          printerId,
           event.id,
           comandaId,
           JSON.stringify(ticket),
           event.received_at,
         )
-      creados += 1
+      createdList += 1
     }
   }
-  return creados
+  return createdList
 }
 
 /**
@@ -244,14 +244,10 @@ function trabajoDePrecuenta(
 ): number {
   const row = value(o, 'SELECT name, config FROM restaurants WHERE id = ?')
   const config = fullConfig(JSON.parse(String(row?.config ?? '{}')))
-  const impresoraId = config.pre_bill_printer_id
+  const printerId = config.pre_bill_printer_id
   if (
-    !impresoraId ||
-    !value(
-      o,
-      'SELECT 1 FROM printers WHERE restaurant_id = ? AND id = ? AND active = 1',
-      impresoraId,
-    )
+    !printerId ||
+    !value(o, 'SELECT 1 FROM printers WHERE restaurant_id = ? AND id = ? AND active = 1', printerId)
   )
     return 0
   const waiter = value(
@@ -303,14 +299,7 @@ function trabajoDePrecuenta(
        VALUES (?, ?, ?, 'preBill', ?, 'preBill', ?, ?)
        ON CONFLICT DO NOTHING`,
     )
-    .run(
-      newId(),
-      o.restauranteId,
-      impresoraId,
-      event.id,
-      JSON.stringify(preBill),
-      event.received_at,
-    )
+    .run(newId(), o.restaurantId, printerId, event.id, JSON.stringify(preBill), event.received_at)
   return 1
 }
 
@@ -322,14 +311,14 @@ const timeOf = (o: OpcionesComandas, iso: string) =>
   }).format(new Date(iso))
 
 /** Impresoras activas que imprimen esa estación. */
-export function impresorasDe(o: OpcionesComandas, estacionId: string): string[] {
+export function impresorasDe(o: OpcionesComandas, stationId: string): string[] {
   return o.db
     .prepare(
       `SELECT i.id FROM printers i, json_each(i.station_ids) e
        WHERE i.restaurant_id = ? AND i.active = 1 AND e.value = ?
        ORDER BY i.created_at, i.id`,
     )
-    .all(o.restauranteId, estacionId)
+    .all(o.restaurantId, stationId)
     .map((f) => String(f.id))
 }
 
@@ -348,7 +337,7 @@ function enviadaDe(o: OpcionesComandas, orderId: string, itemId: string): Enviad
                      WHERE i.value = ?)
        ORDER BY e.sequence DESC LIMIT 1`,
     )
-    .all(o.restauranteId, itemId)
+    .all(o.restaurantId, itemId)
   return deFilas(rows).find((e) => e.itemIds.includes(itemId))
 }
 
@@ -362,7 +351,7 @@ function enviadaGlobal(o: OpcionesComandas, comandaId: string): Enviada | undefi
                      WHERE json_extract(c.value, '$.ticket_id') = ?)
        LIMIT 1`,
     )
-    .all(o.restauranteId, comandaId)
+    .all(o.restaurantId, comandaId)
   return deFilas(rows).find((e) => e.comandaId === comandaId)
 }
 
@@ -375,23 +364,23 @@ function enviadas(o: OpcionesComandas, orderId: string): Enviada[] {
        WHERE a.restaurant_id = ? AND a.aggregate_id = ? AND e.type = 'ItemsSent'
        ORDER BY a.sequence`,
     )
-    .all(o.restauranteId, orderId)
+    .all(o.restaurantId, orderId)
   return deFilas(rows)
 }
 
-function deFilas(rows: readonly Fila[]): Enviada[] {
+function deFilas(rows: readonly Row[]): Enviada[] {
   return rows.flatMap((f) => {
     const data = JSON.parse(String(f.data)) as {
       tickets: { ticket_id: string; station_id: string; item_ids: string[] }[]
     }
-    const numeros = (
+    const numbers = (
       JSON.parse(String(f.assignments)) as { ticket_numbers?: Record<string, number> }
     ).ticket_numbers
     return data.tickets.map((c) => ({
       comandaId: c.ticket_id,
-      estacionId: c.station_id,
+      stationId: c.station_id,
       itemIds: c.item_ids,
-      number: numeros?.[c.ticket_id] ?? null,
+      number: numbers?.[c.ticket_id] ?? null,
     }))
   })
 }
@@ -416,7 +405,7 @@ function itemComanda(i: OrderItem): TicketItem {
 }
 
 const value = (o: OpcionesComandas, sql: string, ...params: string[]) =>
-  o.db.prepare(sql).get(o.restauranteId, ...params)
+  o.db.prepare(sql).get(o.restaurantId, ...params)
 
 /** «Mesa 5», «Mesa 5 + 6» (un grupo con mesas unidas), «Para llevar»… */
 function destinoDe(o: OpcionesComandas, order: OrderState): string {
@@ -444,7 +433,7 @@ function datosComanda(
   const station = value(
     o,
     'SELECT name FROM stations WHERE restaurant_id = ? AND id = ?',
-    sent.estacionId,
+    sent.stationId,
   )
   const waiter = value(
     o,

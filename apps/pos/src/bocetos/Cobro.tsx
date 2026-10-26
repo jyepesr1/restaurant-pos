@@ -21,16 +21,14 @@ const BILLETES = [20_000, 50_000, 100_000]
 
 export function Cobro() {
   const number = useMesaDeLaRuta(12)
-  const { parametros } = useRuta()
+  const { params } = useRuta()
   const table = useMesas().find((m) => m.number === number)
-  const avisar = useAvisar()
+  const notify = useAvisar()
 
   const balance = table ? saldoMesa(table) : 0
-  const order = soloDigitos(parametros.get('amount') ?? '')
+  const order = soloDigitos(params.get('amount') ?? '')
   const amount = order > 0 && order <= balance ? order : balance
-  const suggested = parametros.has('tip')
-    ? soloDigitos(parametros.get('tip') ?? '')
-    : propinaSobre(amount)
+  const suggested = params.has('tip') ? soloDigitos(params.get('tip') ?? '') : propinaSobre(amount)
 
   const [method, setMedio] = useState<Medio>('cash')
   const [tip, setPropina] = useState(() => propinaParaEfectivo(suggested))
@@ -79,11 +77,11 @@ export function Cobro() {
     setUltimoCambio(method === 'cash' ? calculo.change : null)
     if (closes) {
       // La mesa se cierra sola al quedar en 0: un toque menos. Se puede deshacer el cierre.
-      avisar(`Mesa ${number} pagada y cerrada`, () =>
+      notify(`Mesa ${number} pagada y cerrada`, () =>
         cambiarMesa(number, (m) => ({ ...m, status: 'preBill' })),
       )
     } else {
-      avisar(`Pago registrado. Queda ${pesos(balance - amount)}`)
+      notify(`Pago registrado. Queda ${pesos(balance - amount)}`)
       navegar(`/mockups/pre-bill?table=${number}`)
     }
   }

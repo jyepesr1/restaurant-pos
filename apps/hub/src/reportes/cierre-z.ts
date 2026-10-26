@@ -6,27 +6,27 @@ import {
   type PaymentMethod,
   report,
 } from '@pos/core'
-import type { BaseSqlite } from '@pos/db'
+import type { SqliteDatabase } from '@pos/db'
 import { taxName, type ZReport } from '@pos/printing'
-import { cierreDeTurno, datosDeInforme } from '@pos/sync'
-import { AlmacenSqlite } from '@pos/sync/sqlite'
+import { reportData, shiftClose } from '@pos/sync'
+import { SqliteStore } from '@pos/sync/sqlite'
 
 // El cierre Z (tarea 1.9, docs/KPIS.md#cierre-z-impreso): sale en la impresora de precuentas al
 // cerrar la caja y se reimprime desde Reportes. Los montos se congelan al crear el trabajo: una
 // reimpresión vuelve a calcularlos con lo guardado y dice que es una reimpresión.
 
 export interface OpcionesCierreZ {
-  db: BaseSqlite
-  restauranteId: string
+  db: SqliteDatabase
+  restaurantId: string
   timeZone: string
 }
 
 /** La configuración del restaurante con sus valores por defecto. */
-export const configDe = (o: { db: BaseSqlite; restauranteId: string }) =>
+export const configDe = (o: { db: SqliteDatabase; restaurantId: string }) =>
   fullConfig(
     JSON.parse(
       String(
-        o.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(o.restauranteId)?.config ??
+        o.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(o.restaurantId)?.config ??
           '{}',
       ),
     ),
@@ -37,7 +37,7 @@ export function nombresDeUsuarios(o: OpcionesCierreZ, ids: Iterable<string>) {
   const names: Record<string, string> = {}
   const consulta = o.db.prepare('SELECT name FROM users WHERE restaurant_id = ? AND id = ?')
   for (const id of new Set(ids))
-    names[id] = String(consulta.get(o.restauranteId, id)?.name ?? 'Alguien')
+    names[id] = String(consulta.get(o.restaurantId, id)?.name ?? 'Alguien')
   return names
 }
 
@@ -66,27 +66,27 @@ export function armarCierreZ(
   shiftId: string,
   reprintedAt: string | null,
 ): ZReport | null {
-  const almacen = new AlmacenSqlite(o.db, o.restauranteId)
-  const closeout = cierreDeTurno(almacen, shiftId)
+  const store = new SqliteStore(o.db, o.restaurantId)
+  const closeout = shiftClose(store, shiftId)
   const closed = closeout?.reconciliation.closed
   if (!closeout || !closed) return null
   const config = configDe(o)
   // Un turno es de un día: aunque se cierre pasadas las 6 a. m., lleva las ventas del día en que abrió.
-  const day = closeout.diaApertura
-  const r = report({ ...datosDeInforme(almacen, day, day), config })
-  const names = nombresDeUsuarios(o, [closeout.abiertoPor, closeout.cerradoPor])
+  const day = closeout.openingDay
+  const r = report({ ...reportData(store, day, day), config })
+  const names = nombresDeUsuarios(o, [closeout.openedBy, closeout.closedBy])
   const method = (m: { method: PaymentMethod; customMethodId: string | null }) =>
     methodName(m.method, m.customMethodId, config.custom_methods)
   const c = closeout.reconciliation
   return {
     restaurant: String(
-      o.db.prepare('SELECT name FROM restaurants WHERE id = ?').get(o.restauranteId)?.name ?? '',
+      o.db.prepare('SELECT name FROM restaurants WHERE id = ?').get(o.restaurantId)?.name ?? '',
     ),
     day: diaEnPalabras(day),
     opened: fechaHora(c.openedAt, o.timeZone),
     closed: fechaHora(closed.time, o.timeZone),
-    openedByName: names[closeout.abiertoPor] ?? '',
-    closedByName: names[closeout.cerradoPor] ?? '',
+    openedByName: names[closeout.openedBy] ?? '',
+    closedByName: names[closeout.closedBy] ?? '',
     cash: {
       base: c.base,
       charged: c.cash.charged,
@@ -133,7 +133,7 @@ export function impresoraDeCierre(o: OpcionesCierreZ): string | null {
   if (!id) return null
   const activa = o.db
     .prepare('SELECT 1 FROM printers WHERE restaurant_id = ? AND id = ? AND active = 1')
-    .get(o.restauranteId, id)
+    .get(o.restaurantId, id)
   return activa ? id : null
 }
 
@@ -144,11 +144,11 @@ export function impresoraDeCierre(o: OpcionesCierreZ): string | null {
 export function encolarCierreZ(
   o: OpcionesCierreZ,
   shiftId: string,
-  cuando: { event: OrderEvent } | { reprintedAt: string },
+  when: { event: OrderEvent } | { reprintedAt: string },
 ): 'queued' | 'no_printer' | 'no_closeout' {
-  const impresoraId = impresoraDeCierre(o)
-  if (!impresoraId) return 'no_printer'
-  const reprintedAt = 'reprintedAt' in cuando ? cuando.reprintedAt : null
+  const printerId = impresoraDeCierre(o)
+  if (!printerId) return 'no_printer'
+  const reprintedAt = 'reprintedAt' in when ? when.reprintedAt : null
   const z = armarCierreZ(o, shiftId, reprintedAt)
   if (!z) return 'no_closeout'
   o.db
@@ -160,11 +160,11 @@ export function encolarCierreZ(
     )
     .run(
       newId(),
-      o.restauranteId,
-      impresoraId,
-      'event' in cuando ? cuando.event.id : null,
+      o.restaurantId,
+      printerId,
+      'event' in when ? when.event.id : null,
       JSON.stringify(z),
-      'event' in cuando ? cuando.event.received_at : (reprintedAt as string),
+      'event' in when ? when.event.received_at : (reprintedAt as string),
     )
   return 'queued'
 }

@@ -29,16 +29,16 @@ const Contexto = createContext<Avisar | null>(null)
 
 /** `avisar("Quitaste Aperol Spritz", () => volverAAgregarlo())`. */
 export function useAvisar(): Avisar {
-  const avisar = useContext(Contexto)
-  if (!avisar) throw new Error('useAvisar necesita <ProveedorAvisos> más arriba')
-  return avisar
+  const notify = useContext(Contexto)
+  if (!notify) throw new Error('useAvisar necesita <ProveedorAvisos> más arriba')
+  return notify
 }
 
 export function ProveedorAvisos({ children }: { children: ReactNode }) {
-  const [avisos, setAvisos] = useState<Aviso[]>([])
+  const [alerts, setAvisos] = useState<Aviso[]>([])
   const next = useRef(0)
 
-  const avisar = useCallback<Avisar>((text, undo) => {
+  const notify = useCallback<Avisar>((text, undo) => {
     next.current += 1
     const alert = { id: next.current, text, undo }
     setAvisos((a) => [...a, alert].slice(-MAXIMO))
@@ -46,7 +46,7 @@ export function ProveedorAvisos({ children }: { children: ReactNode }) {
   const remove = useCallback((id: number) => setAvisos((a) => a.filter((x) => x.id !== id)), [])
 
   return (
-    <Contexto.Provider value={avisar}>
+    <Contexto.Provider value={notify}>
       {children}
       {/* En el celular, encima de la barra inferior (Pedido · Enviar): nunca la tapa. En tablet y
           caja, abajo a la izquierda, junto a la barra lateral: lejos del panel del pedido y su
@@ -55,7 +55,7 @@ export function ProveedorAvisos({ children }: { children: ReactNode }) {
         className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex flex-col items-center gap-2 px-4 md:right-auto md:bottom-4 md:left-24 md:items-start md:px-0 lg:left-72"
         aria-live="polite"
       >
-        {avisos.map((a) => (
+        {alerts.map((a) => (
           <TarjetaAviso key={a.id} alert={a} alTerminar={() => remove(a.id)} />
         ))}
       </div>

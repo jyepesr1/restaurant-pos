@@ -1,6 +1,6 @@
 import { fullConfig, newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
-import { insertarVersionado, SISTEMA } from '../acceso/registros'
+import { insertVersioned, SISTEMA } from '../acceso/registros'
 import { leerCatalogo } from '../catalogo'
 import { type Equipo, montarImpresion } from './montaje-impresion'
 import { direccionValida } from './rutas'
@@ -29,26 +29,26 @@ async function mundo(options: Parameters<typeof montarImpresion>[0] = {}) {
     active: true,
     ...fields,
   })
-  const crear = async (fields: Json = {}) => {
+  const create = async (fields: Json = {}) => {
     const r = await llamar(admin, '/api/printers', { printer: impresoraValida(fields) })
     expect(r.statusCode).toBe(200)
     return r.json().id as string
   }
   const config = async () => (await llamar(admin, '/api/kitchen/config')).json()
-  return { t, admin, cashier, manager, waiter, llamar, impresoraValida, crear, config }
+  return { t, admin, cashier, manager, waiter, llamar, impresoraValida, create, config }
 }
 
 type Mundo = Awaited<ReturnType<typeof mundo>>
 
 /** Cada ruta, con un cuerpo válido y quién puede llamarla. */
-const RUTAS = (m: Mundo, id: { printer: string; trabajo: string; screen: string }) => [
+const RUTAS = (m: Mundo, id: { printer: string; job: string; screen: string }) => [
   { url: '/api/kitchen/config', cuerpo: {}, quienes: ['admin'] },
   { url: '/api/printers', cuerpo: { printer: m.impresoraValida() }, quienes: ['admin'] },
   { url: '/api/printers/test', cuerpo: { printer_id: id.printer }, quienes: ['admin'] },
   { url: '/api/printing/pending', cuerpo: {}, quienes: ['admin', 'cashier', 'manager'] },
   {
     url: '/api/printing/discard',
-    cuerpo: { trabajo_id: id.trabajo },
+    cuerpo: { trabajo_id: id.job },
     quienes: ['admin', 'cashier', 'manager'],
   },
   {
@@ -70,7 +70,7 @@ const cuerpoValido = (m: Mundo, url: string): Json =>
     '/api/screens/stations': { device_id: newId(), station_ids: [m.t.kitchen] },
     '/api/kitchen/timers': { amarillo: 8, rojo: 16 },
   })[url] as Json
-const TODAS = ['admin', 'cashier', 'manager', 'waiter'] as const
+const ALL = ['admin', 'cashier', 'manager', 'waiter'] as const
 const URLS = [
   '/api/kitchen/config',
   '/api/printers',
@@ -136,7 +136,7 @@ describe('quién puede llamar cada ruta', () => {
     const m = await mundo()
     const { t, admin, waiter } = m
     const r = await t.post(
-      `/api/devices/${waiter.connection.dispositivoId}/revoke`,
+      `/api/devices/${waiter.connection.deviceId}/revoke`,
       admin.cuerpoSesion,
       admin.token,
     )
@@ -168,17 +168,17 @@ describe('quién puede llamar cada ruta', () => {
         `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
          VALUES (?, ?, ?, 'test', '{"printer":"x","stations":[],"time":"y"}', ?)`,
       )
-      .run(trabajoId, t.restauranteId, imp.id, new Date(t.clock()).toISOString())
-    for (const ruta of RUTAS(m, { printer: imp.id, trabajo: trabajoId, screen: newId() })) {
-      for (const quien of TODAS) {
-        const device = m[quien]
-        const r = await llamar(device, ruta.url, ruta.cuerpo)
-        if (ruta.quienes.includes(quien)) {
+      .run(trabajoId, t.restaurantId, imp.id, new Date(t.clock()).toISOString())
+    for (const route of RUTAS(m, { printer: imp.id, job: trabajoId, screen: newId() })) {
+      for (const who of ALL) {
+        const device = m[who]
+        const r = await llamar(device, route.url, route.cuerpo)
+        if (route.quienes.includes(who)) {
           // El permiso alcanza; puede fallar por datos (la pantalla de prueba no existe), nunca por permiso.
-          expect(r.statusCode, `${quien} ${ruta.url}`).not.toBe(403)
-          expect(r.statusCode, `${quien} ${ruta.url}`).not.toBe(401)
+          expect(r.statusCode, `${who} ${route.url}`).not.toBe(403)
+          expect(r.statusCode, `${who} ${route.url}`).not.toBe(401)
         } else {
-          expect(r.statusCode, `${quien} ${ruta.url}`).toBe(403)
+          expect(r.statusCode, `${who} ${route.url}`).toBe(403)
           expect(r.json()).toMatchObject({ error: 'no_permission' })
         }
       }
@@ -273,7 +273,7 @@ describe('direccionValida', () => {
 })
 
 describe('POST /api/impresoras: datos inválidos', () => {
-  const malos: [string, Json][] = [
+  const badOnes: [string, Json][] = [
     ['IP con nombre', { address: 'impresora.local' }],
     ['IP rara', { address: '999.1.1.1' }],
     ['IP pública', { address: '8.8.8.8' }],
@@ -305,7 +305,7 @@ describe('POST /api/impresoras: datos inválidos', () => {
     ['id que no existe', { id: newId() }],
   ]
 
-  it.each(malos)('rechaza %s con 400 y no guarda nada', async (_, fields) => {
+  it.each(badOnes)('rechaza %s con 400 y no guarda nada', async (_, fields) => {
     const m = await mundo()
     const r = await m.llamar(m.admin, '/api/printers', { printer: m.impresoraValida(fields) })
     expect(r.statusCode).toBe(400)
@@ -323,7 +323,7 @@ describe('POST /api/impresoras: datos inválidos', () => {
          VALUES (?, ?, '2026-10-24T20:00:00.000Z', '2026-10-24T20:00:00.000Z', 1, 'Otro', '{}')`,
       )
       .run(other, other)
-    const ajena = insertarVersionado(
+    const ajena = insertVersioned(
       m.t.db,
       'stations',
       other,
@@ -341,14 +341,14 @@ describe('POST /api/impresoras: datos inválidos', () => {
   it('una estación archivada del mismo restaurante se descarta en silencio', async () => {
     const m = await mundo()
     m.t.db.prepare('UPDATE stations SET active = 0 WHERE id = ?').run(m.t.postres)
-    const id = await m.crear({ station_ids: [m.t.kitchen, m.t.postres, m.t.kitchen] })
+    const id = await m.create({ station_ids: [m.t.kitchen, m.t.postres, m.t.kitchen] })
     const cfg = await m.config()
     expect(cfg.printers.find((i: Json) => i.id === id).station_ids).toEqual([m.t.kitchen])
   })
 
   it('una impresora no puede ser su propio respaldo', async () => {
     const m = await mundo()
-    const id = await m.crear()
+    const id = await m.create()
     const r = await m.llamar(m.admin, '/api/printers', {
       printer: m.impresoraValida({ id, fallback_id: id }),
     })
@@ -358,7 +358,7 @@ describe('POST /api/impresoras: datos inválidos', () => {
 
   it('el respaldo debe existir, estar activo y ser de este restaurante', async () => {
     const m = await mundo()
-    const archivada = await m.crear({ name: 'Vieja' })
+    const archivada = await m.create({ name: 'Vieja' })
     await m.llamar(m.admin, '/api/printers', {
       printer: m.impresoraValida({ id: archivada, name: 'Vieja', active: false }),
     })
@@ -369,7 +369,7 @@ describe('POST /api/impresoras: datos inválidos', () => {
          VALUES (?, ?, '2026-10-24T20:00:00.000Z', '2026-10-24T20:00:00.000Z', 1, 'Otro', '{}')`,
       )
       .run(other, other)
-    const ajena = insertarVersionado(
+    const ajena = insertVersioned(
       m.t.db,
       'printers',
       other,
@@ -395,7 +395,7 @@ describe('POST /api/impresoras: datos inválidos', () => {
          VALUES (?, ?, '2026-10-24T20:00:00.000Z', '2026-10-24T20:00:00.000Z', 1, 'Otro', '{}')`,
       )
       .run(other, other)
-    const ajena = insertarVersionado(
+    const ajena = insertVersioned(
       m.t.db,
       'printers',
       other,
@@ -416,7 +416,7 @@ describe('POST /api/impresoras: datos inválidos', () => {
 describe('POST /api/impresoras: crear, editar y archivar', () => {
   it('crea una impresora de red con el puerto por defecto y la deja en la configuración', async () => {
     const m = await mundo()
-    const id = await m.crear({ port: null, name: '  Cocina  ' })
+    const id = await m.create({ port: null, name: '  Cocina  ' })
     const cfg = await m.config()
     expect(cfg.printers).toEqual([
       {
@@ -434,21 +434,21 @@ describe('POST /api/impresoras: crear, editar y archivar', () => {
     ])
     expect(cfg.stations.map((e: Json) => e.name)).toEqual(['Cocina', 'Barra', 'Postres'])
     expect(cfg.tiempos).toEqual({ amarillo: 10, rojo: 20 })
-    expect(cfg.pantallas).toEqual([])
+    expect(cfg.screens).toEqual([])
     // Los equipos se enteran: la carta cambió de versión.
     expect(m.t.cambiosCatalogo.length).toBeGreaterThan(0)
   })
 
   it('las estaciones repetidas se guardan una sola vez', async () => {
     const m = await mundo()
-    await m.crear({ station_ids: [m.t.kitchen, m.t.kitchen, m.t.bar] })
+    await m.create({ station_ids: [m.t.kitchen, m.t.kitchen, m.t.bar] })
     const cfg = await m.config()
     expect(cfg.printers[0].station_ids).toEqual([m.t.kitchen, m.t.bar])
   })
 
   it('una impresora USB guarda el nombre de Windows y no lleva puerto', async () => {
     const m = await mundo()
-    await m.crear({ connection: 'usb', address: 'POS-80 Caja', port: 9100 })
+    await m.create({ connection: 'usb', address: 'POS-80 Caja', port: 9100 })
     const cfg = await m.config()
     expect(cfg.printers[0]).toMatchObject({
       connection: 'usb',
@@ -459,7 +459,7 @@ describe('POST /api/impresoras: crear, editar y archivar', () => {
 
   it('editar conserva el id, sube la versión y deja quién lo cambió', async () => {
     const m = await mundo()
-    const id = await m.crear()
+    const id = await m.create()
     const before = m.t.db.prepare('SELECT version FROM printers WHERE id = ?').get(id)
     const r = await m.llamar(m.admin, '/api/printers', {
       printer: m.impresoraValida({
@@ -483,7 +483,7 @@ describe('POST /api/impresoras: crear, editar y archivar', () => {
 
   it('cambiar las estaciones de una impresora cambia a dónde van las comandas nuevas', async () => {
     const m = await mundo()
-    const id = await m.crear({ station_ids: [m.t.kitchen] })
+    const id = await m.create({ station_ids: [m.t.kitchen] })
     await m.llamar(m.admin, '/api/printers', {
       printer: m.impresoraValida({ id, station_ids: [m.t.bar] }),
     })
@@ -498,20 +498,20 @@ describe('POST /api/impresoras: crear, editar y archivar', () => {
 
   it('archivar una impresora quita el respaldo de las que la apuntaban', async () => {
     const m = await mundo()
-    const respaldo = await m.crear({
+    const fallback = await m.create({
       name: 'Respaldo',
       address: '192.168.1.51',
       station_ids: [],
     })
-    const a = await m.crear({ name: 'A', address: '192.168.1.52', fallback_id: respaldo })
-    const b = await m.crear({ name: 'B', address: '192.168.1.53', fallback_id: respaldo })
-    const c = await m.crear({ name: 'C', address: '192.168.1.54', fallback_id: a })
+    const a = await m.create({ name: 'A', address: '192.168.1.52', fallback_id: fallback })
+    const b = await m.create({ name: 'B', address: '192.168.1.53', fallback_id: fallback })
+    const c = await m.create({ name: 'C', address: '192.168.1.54', fallback_id: a })
     const before = Number(
       m.t.db.prepare('SELECT version FROM printers WHERE id = ?').get(a)?.version,
     )
     const r = await m.llamar(m.admin, '/api/printers', {
       printer: m.impresoraValida({
-        id: respaldo,
+        id: fallback,
         name: 'Respaldo',
         address: '192.168.1.51',
         station_ids: [],
@@ -525,7 +525,7 @@ describe('POST /api/impresoras: crear, editar y archivar', () => {
     expect(lookup(b).fallback_id).toBeNull()
     // La que apuntaba a otra (que sigue activa) no se toca.
     expect(lookup(c).fallback_id).toBe(a)
-    expect(lookup(respaldo).active).toBe(false)
+    expect(lookup(fallback).active).toBe(false)
     expect(
       Number(m.t.db.prepare('SELECT version FROM printers WHERE id = ?').get(a)?.version),
     ).toBeGreaterThan(before)
@@ -533,8 +533,8 @@ describe('POST /api/impresoras: crear, editar y archivar', () => {
 
   it('archivar no borra la impresora ni sus comandas pendientes, y la archivada sale al final de la lista', async () => {
     const m = await mundo()
-    const vieja = await m.crear({ name: 'Aaa vieja', address: '192.168.1.60' })
-    await m.crear({ name: 'Zzz nueva', address: '192.168.1.61', station_ids: [m.t.bar] })
+    const vieja = await m.create({ name: 'Aaa vieja', address: '192.168.1.60' })
+    await m.create({ name: 'Zzz nueva', address: '192.168.1.61', station_ids: [m.t.bar] })
     const ana = m.t.device('waiter2')
     const { order, items } = m.t.orderWith(ana, [{ name: 'Pizza', station: m.t.kitchen }])
     m.t.send(ana, order, items)
@@ -558,7 +558,7 @@ describe('POST /api/impresoras: crear, editar y archivar', () => {
 
   it('reactivar una impresora archivada la deja otra vez recibiendo comandas', async () => {
     const m = await mundo()
-    const id = await m.crear()
+    const id = await m.create()
     const data = (active: boolean) => m.impresoraValida({ id, active })
     await m.llamar(m.admin, '/api/printers', { printer: data(false) })
     await m.llamar(m.admin, '/api/printers', { printer: data(true) })
@@ -596,26 +596,26 @@ describe('POST /api/impresoras: crear, editar y archivar', () => {
     const { order, items } = m.t.orderWith(ana, [{ name: 'Pizza', station: m.t.kitchen }])
     m.t.send(ana, order, items)
     for (let i = 0; i < 8; i++) {
-      await m.t.cola.runOnce()
-      await m.t.cola.runOnce()
+      await m.t.queue.runOnce()
+      await m.t.queue.runOnce()
       m.t.advance(60_000)
     }
     expect(m.t.pendingList()).toBe(1)
     b.papel.apagada = false
     for (let i = 0; i < 3; i++) {
-      await m.t.cola.runOnce()
-      await m.t.cola.runOnce()
+      await m.t.queue.runOnce()
+      await m.t.queue.runOnce()
       m.t.advance(60_000)
     }
     expect(m.t.pendingList()).toBe(0)
-    expect(b.papel.recibidos.length + a.papel.recibidos.length).toBe(1)
+    expect(b.papel.received.length + a.papel.received.length).toBe(1)
   })
 })
 
 describe('con la impresora de prueba (permitirLocales)', () => {
   it('acepta 127.0.0.1 y cualquier puerto, y el trabajo sale por la red de verdad', async () => {
     const m = await mundo({ permitirLocales: true })
-    const id = await m.crear({ address: '127.0.0.1', port: 4455 })
+    const id = await m.create({ address: '127.0.0.1', port: 4455 })
     const row = m.t.db.prepare('SELECT address, port FROM printers WHERE id = ?').get(id)
     expect(row).toEqual({ address: '127.0.0.1', port: 4455 })
   })
@@ -636,8 +636,8 @@ describe('POST /api/impresoras/prueba', () => {
     const r = await m.llamar(m.admin, '/api/printers/test', { printer_id: imp.id })
     expect(r.statusCode).toBe(201)
     const trabajoId = r.json().trabajo_id as string
-    await m.t.cola.ready()
-    await m.t.cola.runOnce()
+    await m.t.queue.ready()
+    await m.t.queue.runOnce()
     expect(m.t.trabajos().find((f) => f.id === trabajoId)).toMatchObject({
       type: 'test',
       status: 'printed',
@@ -653,8 +653,8 @@ describe('POST /api/impresoras/prueba', () => {
     const imp = m.t.impresoraNueva('Cocina', [m.t.kitchen])
     imp.papel.apagada = true
     await m.llamar(m.admin, '/api/printers/test', { printer_id: imp.id })
-    await m.t.cola.ready()
-    await m.t.cola.runOnce()
+    await m.t.queue.ready()
+    await m.t.queue.runOnce()
     const list = (await m.llamar(m.admin, '/api/printing/pending')).json()
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({ que: 'Página de prueba', printer: 'Cocina' })
@@ -706,7 +706,7 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
       m.t.send(ana, order, items)
       m.t.advance(1000)
     }
-    await m.t.cola.runOnce()
+    await m.t.queue.runOnce()
     return { m, imp }
   }
 
@@ -728,8 +728,8 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
     const { m, imp } = await conPendientes()
     imp.papel.apagada = false
     m.t.advance(2000)
-    await m.t.cola.runOnce()
-    await m.t.cola.runOnce()
+    await m.t.queue.runOnce()
+    await m.t.queue.runOnce()
     expect((await m.llamar(m.admin, '/api/printing/pending')).json()).toEqual([])
   })
 
@@ -749,7 +749,7 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
     expect(row).toMatchObject({
       status: 'discarded',
       discarded_by_id: m.cashier.session.user.id,
-      discarded_device_id: m.cashier.connection.dispositivoId,
+      discarded_device_id: m.cashier.connection.deviceId,
     })
     expect(row?.finished_at).not.toBeNull()
     expect(m.t.db.prepare('SELECT count(*) AS n FROM print_jobs').get()).toEqual({ n: 3 })
@@ -768,8 +768,8 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
     expect(another.json().message).toBe('Esa comanda ya salió o ya se descartó')
     imp.papel.apagada = false
     m.t.advance(2000)
-    await m.t.cola.runOnce()
-    await m.t.cola.runOnce()
+    await m.t.queue.runOnce()
+    await m.t.queue.runOnce()
     expect(
       (await m.llamar(m.admin, '/api/printing/discard', { trabajo_id: secondOne.id })).statusCode,
     ).toBe(400)
@@ -784,8 +784,8 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
       await m.llamar(m.admin, '/api/printing/discard', { trabajo_id: x.id })
     imp.papel.apagada = false
     m.t.advance(60_000)
-    await m.t.cola.runOnce()
-    expect(imp.papel.recibidos).toHaveLength(0)
+    await m.t.queue.runOnce()
+    expect(imp.papel.received).toHaveLength(0)
   })
 
   it('no se descarta el trabajo de otro restaurante', async () => {
@@ -797,7 +797,7 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
          VALUES (?, ?, '2026-10-24T20:00:00.000Z', '2026-10-24T20:00:00.000Z', 1, 'Otro', '{}')`,
       )
       .run(other, other)
-    const impAjena = insertarVersionado(
+    const impAjena = insertVersioned(
       m.t.db,
       'printers',
       other,
@@ -805,16 +805,16 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
       SISTEMA,
       '2026-10-24T20:00:00.000Z',
     )
-    const trabajo = newId()
+    const job = newId()
     m.t.db
       .prepare(
         `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
          VALUES (?, ?, ?, 'test', '{}', '2026-10-24T20:00:00.000Z')`,
       )
-      .run(trabajo, other, impAjena)
-    const r = await m.llamar(m.admin, '/api/printing/discard', { trabajo_id: trabajo })
+      .run(job, other, impAjena)
+    const r = await m.llamar(m.admin, '/api/printing/discard', { trabajo_id: job })
     expect(r.statusCode).toBe(400)
-    expect(m.t.db.prepare('SELECT status FROM print_jobs WHERE id = ?').get(trabajo)).toEqual({
+    expect(m.t.db.prepare('SELECT status FROM print_jobs WHERE id = ?').get(job)).toEqual({
       status: 'pending',
     })
     expect((await m.llamar(m.admin, '/api/printing/pending')).json()).toEqual([])
@@ -823,14 +823,14 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
   it('la lista se corta en 200 comandas', async () => {
     const m = await mundo()
     const imp = m.t.impresoraNueva('Cocina', [m.t.kitchen])
-    const insertar = m.t.db.prepare(
+    const insert = m.t.db.prepare(
       `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
        VALUES (?, ?, ?, 'ticket', '{"station":"Cocina","target":"Mesa","number":1}', ?)`,
     )
     for (let i = 0; i < 230; i++)
-      insertar.run(
+      insert.run(
         newId(),
-        m.t.restauranteId,
+        m.t.restaurantId,
         imp.id,
         new Date(Date.UTC(2026, 9, 24, 20, 0, i)).toISOString(),
       )
@@ -855,7 +855,7 @@ describe('POST /api/impresion/pendientes y /descartar', () => {
           `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
            VALUES (?, ?, ?, 'ticket', ?, ?)`,
         )
-        .run(newId(), m.t.restauranteId, imp.id, content, new Date(m.t.clock()).toISOString())
+        .run(newId(), m.t.restaurantId, imp.id, content, new Date(m.t.clock()).toISOString())
     const r = await m.llamar(m.admin, '/api/printing/pending')
     expect(r.statusCode).toBe(200)
     expect(r.json()).toHaveLength(4)
@@ -868,8 +868,8 @@ describe('POST /api/cocina/tiempos', () => {
     const r = await m.llamar(m.admin, '/api/kitchen/timers', { amarillo: 7, rojo: 15 })
     expect(r.statusCode).toBe(204)
     expect((await m.config()).tiempos).toEqual({ amarillo: 7, rojo: 15 })
-    const catalog = leerCatalogo(m.t.db, m.t.restauranteId)
-    expect(catalog.restaurant).toMatchObject({ cocinaAmarilloMin: 7, cocinaRojoMin: 15 })
+    const catalog = leerCatalogo(m.t.db, m.t.restaurantId)
+    expect(catalog.restaurant).toMatchObject({ kitchenYellowMin: 7, kitchenRedMin: 15 })
     expect(m.t.cambiosCatalogo.length).toBeGreaterThan(0)
   })
 
@@ -910,12 +910,12 @@ describe('POST /api/cocina/tiempos', () => {
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
       .run(
         JSON.stringify({ ...config, session_idle_min: 45, brand: 'la-spritzzeria' }),
-        m.t.restauranteId,
+        m.t.restaurantId,
       )
     await m.llamar(m.admin, '/api/kitchen/timers', { amarillo: 12, rojo: 25 })
     const row = m.t.db
       .prepare('SELECT config, user_id FROM restaurants WHERE id = ?')
-      .get(m.t.restauranteId)
+      .get(m.t.restaurantId)
     expect(JSON.parse(String(row?.config))).toMatchObject({
       session_idle_min: 45,
       brand: 'la-spritzzeria',
@@ -927,9 +927,9 @@ describe('POST /api/cocina/tiempos', () => {
 
   it('un restaurante con la configuración vacía recibe los valores de fábrica y los guarda completos', async () => {
     const m = await mundo()
-    m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restauranteId)
+    m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restaurantId)
     await m.llamar(m.admin, '/api/kitchen/timers', { amarillo: 3, rojo: 4 })
-    const row = m.t.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(m.t.restauranteId)
+    const row = m.t.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(m.t.restaurantId)
     expect(JSON.parse(String(row?.config))).toMatchObject({
       kitchen_yellow_min: 3,
       kitchen_red_min: 4,
@@ -953,11 +953,11 @@ describe('POST /api/cocina/configuracion y /api/pantallas/estaciones', () => {
       tablet.token,
     )
     expect(c.statusCode).toBe(201)
-    const device = tablet.connection.dispositivoId
+    const device = tablet.connection.deviceId
     const patch = (station_ids: unknown, device_id: string = device) =>
       m.llamar(m.admin, '/api/screens/stations', { device_id, station_ids })
     expect((await patch([m.t.kitchen, m.t.bar])).statusCode).toBe(204)
-    expect((await m.config()).pantallas).toMatchObject([
+    expect((await m.config()).screens).toMatchObject([
       { device_id: device, name: 'Cocina', station_ids: [m.t.kitchen, m.t.bar] },
     ])
     expect((await patch([])).statusCode).toBe(400)
@@ -965,13 +965,13 @@ describe('POST /api/cocina/configuracion y /api/pantallas/estaciones', () => {
     expect((await patch(['x'])).statusCode).toBe(400)
     expect((await patch([m.t.kitchen], newId())).statusCode).toBe(400)
     // Un equipo que no es pantalla no sirve.
-    expect((await patch([m.t.kitchen], m.waiter.connection.dispositivoId)).statusCode).toBe(400)
+    expect((await patch([m.t.kitchen], m.waiter.connection.deviceId)).statusCode).toBe(400)
     // Solo estaciones archivadas dejaría la pantalla sin nada: se rechaza.
     m.t.db.prepare('UPDATE stations SET active = 0 WHERE id = ?').run(m.t.postres)
     expect((await patch([m.t.postres])).statusCode).toBe(400)
     // Mezcladas con una activa, la archivada se descarta.
     expect((await patch([m.t.postres, m.t.bar])).statusCode).toBe(204)
-    expect((await m.config()).pantallas[0].station_ids).toEqual([m.t.bar])
+    expect((await m.config()).screens[0].station_ids).toEqual([m.t.bar])
   })
 
   it('una pantalla retirada ya no sale en la configuración ni se puede editar', async () => {
@@ -983,14 +983,14 @@ describe('POST /api/cocina/configuracion y /api/pantallas/estaciones', () => {
       tablet.token,
     )
     const r = await m.t.post(
-      `/api/devices/${tablet.connection.dispositivoId}/revoke`,
+      `/api/devices/${tablet.connection.deviceId}/revoke`,
       m.admin.cuerpoSesion,
       m.admin.token,
     )
     expect(r.statusCode).toBe(200)
-    expect((await m.config()).pantallas).toEqual([])
+    expect((await m.config()).screens).toEqual([])
     const e = await m.llamar(m.admin, '/api/screens/stations', {
-      device_id: tablet.connection.dispositivoId,
+      device_id: tablet.connection.deviceId,
       station_ids: [m.t.kitchen],
     })
     expect(e.statusCode).toBe(400)
@@ -1003,7 +1003,7 @@ describe('POST /api/cocina/configuracion y /api/pantallas/estaciones', () => {
     const ana = m.t.device('waiter2')
     const { order, items } = m.t.orderWith(ana, [{ name: 'Pizza', station: m.t.kitchen }])
     m.t.send(ana, order, items)
-    await m.t.cola.runOnce()
+    await m.t.queue.runOnce()
     expect((await m.config()).statuses).toEqual([
       expect.objectContaining({ id: imp.id, status: 'failed', pendingList: 1 }),
     ])

@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { abrirBase } from '@pos/db/node'
+import { openDatabase } from '@pos/db/node'
 import { secret } from './consola'
 
 // `pnpm --filter @pos/nube admin <orden>`: lo que hace el administrador de Faro en la nube
@@ -25,7 +25,7 @@ if (!nube || !['restaurant', 'code', 'revoke'].includes(position ?? '')) {
 /** El restaurante de la base del hub de este equipo. */
 function restauranteLocal(): { id: string; name: string } {
   const dir = process.env.DATA_DIR || fileURLToPath(new URL('../../hub/datos', import.meta.url))
-  const db = abrirBase(join(dir, 'pos.sqlite'))
+  const db = openDatabase(join(dir, 'pos.sqlite'))
   try {
     const row = db.prepare('SELECT id, name FROM restaurants LIMIT 1').get()
     if (!row)
@@ -37,8 +37,8 @@ function restauranteLocal(): { id: string; name: string } {
 }
 
 const token = await secret('TOKEN_ADMIN', 'Token de administración de la nube: ')
-const request = async (ruta: string, cuerpo: object) => {
-  const r = await fetch(`${nube}${ruta}`, {
+const request = async (route: string, cuerpo: object) => {
+  const r = await fetch(`${nube}${route}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify(cuerpo),

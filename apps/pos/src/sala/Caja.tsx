@@ -9,7 +9,7 @@ import {
   type PaymentMethod,
   type ShiftReconciliation,
 } from '@pos/core'
-import type { Catalogo } from '@pos/sync'
+import type { Catalog } from '@pos/sync'
 import { useEffect, useRef, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
@@ -18,7 +18,7 @@ import { conPuntos, pesos, soloDigitos } from '../ui/formato'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { PanelLateral } from '../ui/PanelLateral'
 import { navegar } from '../ui/ruta'
-import { sala, useSala, useVistaLocal } from './contexto'
+import { floor, useSala, useVistaLocal } from './contexto'
 import { methodName, type ReglasCobro, reglasDe } from './cuentas'
 import { claseCampo } from './Entrar'
 import { MarcoSala } from './MarcoSala'
@@ -50,7 +50,7 @@ const SIN_RED =
 const message = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
 
 /** «las 6:30 p. m.» hoy; «ayer a las…» o la fecha si es de antes. */
-function cuando(iso: string): string {
+function when(iso: string): string {
   const date = new Date(iso)
   const time = new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit' }).format(date)
   const today = new Date()
@@ -64,15 +64,15 @@ function cuando(iso: string): string {
 }
 
 /** El día operativo de un instante, con la zona y el inicio del día del restaurante. */
-const diaDe = (iso: string, reglas: ReglasCobro | null) =>
-  businessDay(iso, reglas?.timeZone ?? 'America/Bogota', reglas?.inicioDiaOperativo ?? '06:00')
+const diaDe = (iso: string, rules: ReglasCobro | null) =>
+  businessDay(iso, rules?.timeZone ?? 'America/Bogota', rules?.businessDayStart ?? '06:00')
 
 /** Un valor que puede ser negativo (un medio con solo devoluciones): «-5.000» → -5000. */
 export const withSign = (text: string) =>
   (text.trim().startsWith('-') ? -1 : 1) * soloDigitos(text) || 0
 
 /** «Mesa 4», «Mesa 5 + 6», «Para llevar». */
-function nombreDePedido(catalog: Catalogo | null, tableId: string | null, merged: string[]) {
+function nombreDePedido(catalog: Catalog | null, tableId: string | null, merged: string[]) {
   if (!tableId) return 'Sin mesa'
   const names = [tableId, ...merged].map(
     (id) => catalog?.tables.find((m) => m.id === id)?.name ?? '?',
@@ -105,9 +105,9 @@ const claveMedio = methodKeyOf
  * un mismo proveedor entregan un solo cierre.
  */
 export function mediosDelCierre(
-  reglas: ReglasCobro | null,
+  rules: ReglasCobro | null,
   reconciliation: ShiftReconciliation,
-  catalog: Catalogo | null,
+  catalog: Catalog | null,
 ): MedioDelCierre[] {
   const proveedores = [...new Set((catalog?.cardTerminals ?? []).map((d) => d.provider ?? 'other'))]
   const card =
@@ -120,7 +120,7 @@ export function mediosDelCierre(
     if (method === 'cash' || (method === 'other' && !customMethodId)) return
     const key = claveMedio({ method, customMethodId })
     if (list.some((m) => m.key === key)) return
-    const name = methodName(method, customMethodId, reglas)
+    const name = methodName(method, customMethodId, rules)
     list.push({
       key,
       method,
@@ -129,8 +129,8 @@ export function mediosDelCierre(
       etiqueta: method === 'card' ? card : `Llegó por ${name}`,
     })
   }
-  for (const m of reglas?.mediosPago ?? []) add(m, null)
-  for (const m of reglas?.mediosPropios ?? []) add('other', m.id)
+  for (const m of rules?.paymentMethods ?? []) add(m, null)
+  for (const m of rules?.customMethods ?? []) add('other', m.id)
   for (const m of reconciliation.byMethod) add(m.method, m.customMethodId)
   return list
 }
@@ -138,7 +138,7 @@ export function mediosDelCierre(
 export function Caja() {
   const { device, connection, session, catalog } = useSala()
   const vista = useVistaLocal()
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const [base, setBase] = useState(0)
   const [ocupado, setOcupado] = useState(false)
   const [moviendo, setMoviendo] = useState<Movement | null>(null)
@@ -151,26 +151,26 @@ export function Caja() {
   const [closed, setCerrado] = useState<ShiftReconciliation | null>(null)
 
   if (!vista) return null
-  const reglas = reglasDe(catalog)
+  const rules = reglasDe(catalog)
   const esCaja = device?.type === 'register'
   const permissions = session?.permissions ?? []
   const puedeAbrir = permissions.includes('open_register_shift')
   const puedeMover = permissions.includes('cash_movement')
   const puedeCerrar = permissions.includes('close_register_shift')
-  const enLinea = connection === 'connected'
+  const online = connection === 'connected'
   const shift = vista.shift
   const reconciliation = vista.reconciliation
   // Un turno de un día operativo anterior: hay que cerrarlo para cuadrar ese día.
   const deOtroDia =
-    shift !== null && diaDe(shift.openedAt, reglas) !== diaDe(new Date().toISOString(), reglas)
+    shift !== null && diaDe(shift.openedAt, rules) !== diaDe(new Date().toISOString(), rules)
 
-  const hacer = async (trabajo: () => Promise<void>) => {
+  const hacer = async (job: () => Promise<void>) => {
     if (ocupado) return
     setOcupado(true)
     try {
-      await trabajo()
+      await job()
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     } finally {
       setOcupado(false)
     }
@@ -178,15 +178,15 @@ export function Caja() {
 
   const open = () =>
     hacer(async () => {
-      await sala.abrirTurno(base)
+      await floor.openShift(base)
       setCerrado(null)
-      avisar(`Caja abierta con ${pesos(base)} de base`)
+      notify(`Caja abierta con ${pesos(base)} de base`)
       // Si venía de cobrar una cuenta, vuelve a ella.
       const back = new URLSearchParams(location.search).get('back')
       if (back?.startsWith('/check?')) navegar(back)
     })
 
-  const sinRed = !enLinea && (
+  const sinRed = !online && (
     <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">{SIN_RED}</p>
   )
 
@@ -201,10 +201,10 @@ export function Caja() {
         ) : shift && reconciliation && cerrando ? (
           <Cierre
             reconciliation={reconciliation}
-            reglas={reglas}
+            rules={rules}
             cantidades={cantidades}
             alCambiarCantidades={setCantidades}
-            medios={mediosDelCierre(reglas, reconciliation, catalog)}
+            methods={mediosDelCierre(rules, reconciliation, catalog)}
             reports={reports}
             alCambiarReportes={setReportes}
             mesasAbiertas={vista.orders
@@ -215,9 +215,9 @@ export function Caja() {
               }))
               .filter((m) => m.balance > 0)}
             sinRed={sinRed}
-            enLinea={enLinea}
+            online={online}
             alVolver={() => setCerrando(false)}
-            alCerrar={(c) => {
+            onClose={(c) => {
               setCerrando(false)
               setCantidades({})
               setReportes({})
@@ -228,7 +228,7 @@ export function Caja() {
           <>
             <section className="rounded-2xl border border-linea bg-superficie p-4 shadow-flota">
               <p className="text-lg font-semibold">
-                {`Caja abierta desde ${cuando(shift.openedAt)}`}
+                {`Caja abierta desde ${when(shift.openedAt)}`}
                 {shift.porConfirmar && (
                   <span className="ml-2 text-sm font-normal text-texto-suave">(sin confirmar)</span>
                 )}
@@ -243,7 +243,7 @@ export function Caja() {
             )}
             <Cobrado
               reconciliation={reconciliation}
-              reglas={reglas}
+              rules={rules}
               conMontos={permissions.includes('view_reports')}
             />
             <Movimientos reconciliation={reconciliation} />
@@ -251,7 +251,7 @@ export function Caja() {
             {puedeMover && (
               <div className="grid grid-cols-3 gap-2">
                 {(['entry', 'output', 'tip_payout'] as const).map((t) => (
-                  <Boton key={t} disabled={!enLinea || ocupado} onClick={() => setMoviendo(t)}>
+                  <Boton key={t} disabled={!online || ocupado} onClick={() => setMoviendo(t)}>
                     {NOMBRE_MOVIMIENTO[t]}
                   </Boton>
                 ))}
@@ -262,7 +262,7 @@ export function Caja() {
                 variant="main"
                 large
                 icono="check"
-                disabled={!enLinea || shift.porConfirmar}
+                disabled={!online || shift.porConfirmar}
                 onClick={() => setCerrando(true)}
               >
                 Cerrar la caja
@@ -273,23 +273,23 @@ export function Caja() {
               type={moviendo}
               reconciliation={reconciliation}
               ocupado={ocupado}
-              alCerrar={() => setMoviendo(null)}
+              onClose={() => setMoviendo(null)}
               onSave={(data) =>
                 hacer(async () => {
-                  await sala.registrarConfirmado('CashMovementRecorded', shift.id, {
+                  await floor.registrarConfirmado('CashMovementRecorded', shift.id, {
                     ...data,
                     days:
-                      data.type === 'tip_payout' ? [diaDe(new Date().toISOString(), reglas)] : [],
+                      data.type === 'tip_payout' ? [diaDe(new Date().toISOString(), rules)] : [],
                   })
                   setMoviendo(null)
-                  avisar(`${NOMBRE_MOVIMIENTO[data.type]} de ${pesos(data.amount)} registrada`)
+                  notify(`${NOMBRE_MOVIMIENTO[data.type]} de ${pesos(data.amount)} registrada`)
                 })
               }
             />
           </>
         ) : (
           <>
-            {closed && <Result reconciliation={closed} reglas={reglas} />}
+            {closed && <Result reconciliation={closed} rules={rules} />}
             {!puedeAbrir ? (
               <p className="rounded-2xl bg-proceso-suave p-4 text-proceso-texto">
                 La caja está cerrada. Pídele a quien tenga el permiso que la abra.
@@ -315,7 +315,7 @@ export function Caja() {
                   variant="main"
                   large
                   icono="bill"
-                  disabled={ocupado || !enLinea}
+                  disabled={ocupado || !online}
                   onClick={open}
                 >
                   {base === 0 ? 'Abrir sin base' : `Abrir con ${pesos(base)}`}
@@ -330,7 +330,7 @@ export function Caja() {
 }
 
 /** «3 pagos»; nada si quedó en 0 o menos (una anulación de otro turno). */
-const cuantos = (n: number) => (n > 0 ? ` · ${n === 1 ? '1 pago' : `${n} pagos`}` : '')
+const howMany = (n: number) => (n > 0 ? ` · ${n === 1 ? '1 pago' : `${n} pagos`}` : '')
 
 /**
  * Lo cobrado en el turno por medio, con el total. El cajero solo ve cuántos pagos hay: con los
@@ -339,11 +339,11 @@ const cuantos = (n: number) => (n > 0 ? ` · ${n === 1 ? '1 pago' : `${n} pagos`
  */
 function Cobrado({
   reconciliation,
-  reglas,
+  rules,
   conMontos,
 }: {
   reconciliation: ShiftReconciliation
-  reglas: ReglasCobro | null
+  rules: ReglasCobro | null
   conMontos: boolean
 }) {
   const sale = reconciliation.byMethod.reduce((a, m) => a + m.sale, 0)
@@ -362,7 +362,7 @@ function Cobrado({
             <ul className="flex flex-col gap-1">
               {reconciliation.byMethod.map((m) => (
                 <li key={methodKeyOf(m)}>
-                  {`${methodName(m.method, m.customMethodId, reglas)}${cuantos(m.payments)}`}
+                  {`${methodName(m.method, m.customMethodId, rules)}${howMany(m.payments)}`}
                 </li>
               ))}
             </ul>
@@ -390,7 +390,7 @@ function Cobrado({
           </dd>
           {reconciliation.byMethod.map((m) => (
             <div key={`${m.method}${m.customMethodId ?? ''}`} className="contents">
-              <dt>{`${methodName(m.method, m.customMethodId, reglas)}${cuantos(m.payments)}`}</dt>
+              <dt>{`${methodName(m.method, m.customMethodId, rules)}${howMany(m.payments)}`}</dt>
               <dd className="text-right">
                 {pesos(m.sale)}
                 {m.tip !== 0 && (
@@ -441,13 +441,13 @@ function PanelMovimiento({
   type,
   reconciliation,
   ocupado,
-  alCerrar,
+  onClose,
   onSave,
 }: {
   type: Movement | null
   reconciliation: ShiftReconciliation
   ocupado: boolean
-  alCerrar: () => void
+  onClose: () => void
   onSave: (data: DatosMovimiento) => void
 }) {
   // El mismo id en cada intento: reintentar no registra el movimiento dos veces.
@@ -465,7 +465,7 @@ function PanelMovimiento({
     type !== null &&
     amount > 0 &&
     (type === 'tip_payout' ? toWhom.trim().length > 0 : description.length > 0)
-  const guardar = () =>
+  const save = () =>
     type &&
     onSave({
       movement_id: movimientoId,
@@ -478,7 +478,7 @@ function PanelMovimiento({
     <PanelLateral
       opened={type !== null}
       title={type ? NOMBRE_MOVIMIENTO[type] : 'Movimiento'}
-      alCerrar={alCerrar}
+      onClose={onClose}
       pie={
         confirmando ? (
           <div
@@ -491,7 +491,7 @@ function PanelMovimiento({
             </p>
             <div className="grid grid-cols-[2fr_3fr] gap-2">
               <Boton onClick={() => setConfirmando(false)}>Volver</Boton>
-              <Boton variant="main" disabled={ocupado} onClick={guardar}>
+              <Boton variant="main" disabled={ocupado} onClick={save}>
                 {ocupado ? 'Registrando…' : `Sí, registrar ${pesos(amount)}`}
               </Boton>
             </div>
@@ -591,33 +591,33 @@ function PanelMovimiento({
  */
 function Cierre({
   reconciliation,
-  reglas,
+  rules,
   cantidades,
   alCambiarCantidades,
-  medios,
+  methods,
   reports,
   alCambiarReportes,
   mesasAbiertas,
   sinRed,
-  enLinea,
+  online,
   alVolver,
-  alCerrar,
+  onClose,
 }: {
   reconciliation: ShiftReconciliation
-  reglas: ReglasCobro | null
+  rules: ReglasCobro | null
   cantidades: Record<string, number>
   alCambiarCantidades: (c: Record<string, number>) => void
-  medios: MedioDelCierre[]
+  methods: MedioDelCierre[]
   /** Lo escrito en cada medio (texto, para poder empezar con «-»). */
   reports: Record<string, string>
   alCambiarReportes: (r: Record<string, string>) => void
   mesasAbiertas: { id: string; name: string; balance: number }[]
   sinRed: React.ReactNode
-  enLinea: boolean
+  online: boolean
   alVolver: () => void
-  alCerrar: (reconciliation: ShiftReconciliation) => void
+  onClose: (reconciliation: ShiftReconciliation) => void
 }) {
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const [arqueoId, setArqueoId] = useState<string | null>(null)
   // El cuadre de los demás medios con lo reportado en el conteo guardado.
   const [others, setOtros] = useState<MethodReconciliation[]>([])
@@ -627,7 +627,7 @@ function Cierre({
   // Lo esperado queda fijo al guardar el conteo: si después entra un pago, hay que recontar.
   const [esperadoAlContar, setEsperadoAlContar] = useState<number | null>(null)
   const fields = useRef<(HTMLInputElement | null)[]>([])
-  const guardar = useRef<HTMLButtonElement>(null)
+  const save = useRef<HTMLButtonElement>(null)
   const textoJustificacion = useRef<HTMLTextAreaElement>(null)
   const botonCerrar = useRef<HTMLButtonElement>(null)
   const key = (d: (typeof DENOMINATIONS)[number]) => `${d.type}${d.value}`
@@ -639,20 +639,20 @@ function Cierre({
   const variance = counted - expected
   // Los medios con cobros en el turno deben tener su cierre escrito (un vacío no es un 0).
   const conCobros = new Set(reconciliation.byMethod.map(methodKeyOf))
-  const sinEscribir = medios.filter((m) => conCobros.has(m.key) && !(reports[m.key] ?? '').trim())
-  const umbral = reglas?.umbralDiferencia ?? 1000
-  const large = (d: number) => d !== 0 && Math.abs(d) >= Math.max(1, umbral)
+  const sinEscribir = methods.filter((m) => conCobros.has(m.key) && !(reports[m.key] ?? '').trim())
+  const threshold = rules?.varianceThreshold ?? 1000
+  const large = (d: number) => d !== 0 && Math.abs(d) >= Math.max(1, threshold)
   const pideJustificar = large(variance) || others.some((o) => large(o.variance))
   const hayDiferencia = variance !== 0 || others.some((o) => o.variance !== 0)
   // Las líneas que pasan el umbral, para decir qué hay que explicar.
   const nombreOtro = (o: MethodReconciliation) =>
-    medios.find((m) => m.key === methodKeyOf(o))?.name ??
-    methodName(o.method, o.customMethodId, reglas)
+    methods.find((m) => m.key === methodKeyOf(o))?.name ??
+    methodName(o.method, o.customMethodId, rules)
   const porExplicar = [
     ...(large(variance) ? ['cash'] : []),
     ...others.filter((o) => large(o.variance)).map(nombreOtro),
   ]
-  const inicioDia = reglas?.inicioDiaOperativo ?? '06:00'
+  const inicioDia = rules?.businessDayStart ?? '06:00'
 
   // Al guardar el conteo, el foco sigue el camino: la justificación si hace falta, si no, cerrar.
   // biome-ignore lint/correctness/useExhaustiveDependencies: solo al cambiar de conteo, no al escribir
@@ -662,13 +662,13 @@ function Cierre({
     else botonCerrar.current?.focus()
   }, [arqueoId])
 
-  const hacer = async (trabajo: () => Promise<void>) => {
+  const hacer = async (job: () => Promise<void>) => {
     if (ocupado) return
     setOcupado(true)
     try {
-      await trabajo()
+      await job()
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     } finally {
       setOcupado(false)
     }
@@ -681,12 +681,12 @@ function Cierre({
       const porValor = new Map<number, number>()
       for (const d of DENOMINATIONS)
         if (cantidadDe(d) > 0) porValor.set(d.value, (porValor.get(d.value) ?? 0) + cantidadDe(d))
-      const reportados = medios.map((m) => ({
+      const reportados = methods.map((m) => ({
         method: m.method,
         custom_method_id: m.customMethodId,
         reported: withSign(reports[m.key] ?? ''),
       }))
-      await sala.registrarConfirmado('CashCountRecorded', reconciliation.shiftId, {
+      await floor.registrarConfirmado('CashCountRecorded', reconciliation.shiftId, {
         cash_count_id: id,
         tally: [...porValor].map(([value, quantity]) => ({ value, quantity })),
         counted_cash: counted,
@@ -714,7 +714,7 @@ function Cierre({
     hacer(async () => {
       if (!arqueoId) return
       const final = justification.trim() || null
-      await sala.registrarConfirmado('ShiftClosed', reconciliation.shiftId, {
+      await floor.registrarConfirmado('ShiftClosed', reconciliation.shiftId, {
         cash_count_id: arqueoId,
         expected_cash: expected,
         counted_cash: counted,
@@ -728,8 +728,8 @@ function Cierre({
           variance: o.variance,
         })),
       })
-      avisar('Caja cerrada')
-      alCerrar({
+      notify('Caja cerrada')
+      onClose({
         ...reconciliation,
         closed: {
           expected,
@@ -770,15 +770,15 @@ function Cierre({
         >
           <p>Cuenta el efectivo del cajón: cuántos billetes y monedas hay de cada uno.</p>
           <p className="text-sm text-texto-suave">
-            {umbral <= 1
+            {threshold <= 1
               ? 'Si algo no cuadra, se pide explicarlo.'
-              : `Si algo no cuadra desde ${pesos(umbral)}, se pide explicarlo.`}
+              : `Si algo no cuadra desde ${pesos(threshold)}, se pide explicarlo.`}
           </p>
           <ul className="flex flex-col gap-2">
             {DENOMINATIONS.map((d, i) => {
               const n = cantidadDe(d)
               const name = `${d.type === 'bill' ? 'billetes' : 'monedas'} de ${pesos(d.value)}`
-              const poner = (v: number) =>
+              const put = (v: number) =>
                 alCambiarCantidades({
                   ...cantidades,
                   [key(d)]: Math.min(CANTIDAD_MAXIMA, Math.max(0, v)),
@@ -795,7 +795,7 @@ function Cierre({
                     tabIndex={-1}
                     aria-label={`Quitar uno: ${name}`}
                     disabled={n === 0}
-                    onClick={() => poner(n - 1)}
+                    onClick={() => put(n - 1)}
                   />
                   <input
                     ref={(el) => {
@@ -807,20 +807,20 @@ function Cierre({
                     value={n ? String(n) : ''}
                     placeholder="0"
                     onFocus={(e) => e.currentTarget.select()}
-                    onChange={(e) => poner(soloDigitos(e.target.value))}
+                    onChange={(e) => put(soloDigitos(e.target.value))}
                     onKeyDown={(e) => {
                       if (e.key !== 'Enter') return
                       e.preventDefault()
                       const next = fields.current[i + 1]
                       if (next) next.focus()
-                      else guardar.current?.focus()
+                      else save.current?.focus()
                     }}
                   />
                   <Boton
                     icono="more"
                     tabIndex={-1}
                     aria-label={`Agregar uno: ${name}`}
-                    onClick={() => poner(n + 1)}
+                    onClick={() => put(n + 1)}
                   />
                   <span className="cifras ml-auto text-right text-texto-suave">
                     {pesos(d.value * n)}
@@ -833,13 +833,13 @@ function Cierre({
             <span className="font-semibold">Contado</span>
             <span className="font-titulo text-3xl font-bold">{pesos(counted)}</span>
           </p>
-          {medios.length > 0 && (
+          {methods.length > 0 && (
             <div className="flex flex-col gap-2 border-t border-linea pt-3">
               <h3 className="font-semibold">Los demás medios</h3>
               <p className="text-sm text-texto-suave">
                 {`Escribe el total del cierre del datáfono (en su app o en el papel del cierre) y lo que llegó a cada app, desde las ${inicioDia} de hoy. Si solo hubo devoluciones, empieza con «-».`}
               </p>
-              {medios.map((m, j) => (
+              {methods.map((m, j) => (
                 <label key={m.key} className="flex items-center gap-2">
                   <span className="flex-1">{m.etiqueta}</span>
                   <input
@@ -862,7 +862,7 @@ function Cierre({
                       e.preventDefault()
                       const next = fields.current[DENOMINATIONS.length + j + 1]
                       if (next) next.focus()
-                      else guardar.current?.focus()
+                      else save.current?.focus()
                     }}
                   />
                 </label>
@@ -876,10 +876,10 @@ function Cierre({
           )}
           {sinRed}
           <Boton
-            ref={guardar}
+            ref={save}
             variant="main"
             large
-            disabled={ocupado || !enLinea || sinEscribir.length > 0}
+            disabled={ocupado || !online || sinEscribir.length > 0}
             onClick={guardarConteo}
           >
             {ocupado ? 'Guardando…' : 'Guardar el conteo'}
@@ -902,7 +902,7 @@ function Cierre({
                 time: '',
               },
             }}
-            reglas={reglas}
+            rules={rules}
             title="Así queda la caja"
           />
           {cambioDespues && (
@@ -919,9 +919,9 @@ function Cierre({
               </span>
               {pideJustificar && (
                 <span className="block text-sm text-texto-suave">
-                  {umbral <= 1
+                  {threshold <= 1
                     ? 'Toda diferencia se explica; queda en el informe.'
-                    : `Desde ${pesos(umbral)} de diferencia hay que explicarla; queda en el informe.`}
+                    : `Desde ${pesos(threshold)} de diferencia hay que explicarla; queda en el informe.`}
                 </span>
               )}
               <textarea
@@ -973,7 +973,7 @@ function Cierre({
                 variant="main"
                 large
                 disabled={
-                  ocupado || !enLinea || cambioDespues || (pideJustificar && !justification.trim())
+                  ocupado || !online || cambioDespues || (pideJustificar && !justification.trim())
                 }
                 onClick={() => setConfirmando(true)}
               >
@@ -990,11 +990,11 @@ function Cierre({
 /** Cómo quedó (o queda) la caja: lo esperado, lo contado, la diferencia y los otros medios. */
 function Result({
   reconciliation,
-  reglas,
+  rules,
   title = 'Cómo quedó la caja',
 }: {
   reconciliation: ShiftReconciliation
-  reglas: ReglasCobro | null
+  rules: ReglasCobro | null
   title?: string
 }) {
   const c = reconciliation.closed
@@ -1015,7 +1015,7 @@ function Result({
       <h2 className="text-lg font-semibold">
         {title}
         {c.time && (
-          <span className="ml-2 text-sm font-normal text-texto-suave">{`· cerrada a ${cuando(c.time)}`}</span>
+          <span className="ml-2 text-sm font-normal text-texto-suave">{`· cerrada a ${when(c.time)}`}</span>
         )}
       </h2>
       <dl className="cifras grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
@@ -1043,7 +1043,7 @@ function Result({
             {c.otherMethods.map((m) => (
               <li key={claveMedio(m)} className="flex flex-wrap items-center justify-between gap-2">
                 <span>
-                  {methodName(m.method, m.customMethodId, reglas)}
+                  {methodName(m.method, m.customMethodId, rules)}
                   <span className="block text-sm text-texto-suave">{`En la caja ${pesos(m.expected)} · según su cierre ${pesos(m.reported)}`}</span>
                 </span>
                 <Diferencia value={m.variance} />
@@ -1058,7 +1058,7 @@ function Result({
             <ul className="cifras mt-1 flex flex-col gap-1">
               {digitales.map((m) => (
                 <li key={claveMedio(m)} className="flex justify-between">
-                  <span>{methodName(m.method, m.customMethodId, reglas)}</span>
+                  <span>{methodName(m.method, m.customMethodId, rules)}</span>
                   <span>{pesos(m.sale + m.tip)}</span>
                 </li>
               ))}

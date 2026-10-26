@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { montarAcceso } from './acceso/montaje'
 import { leerCatalogo } from './catalogo'
 import { leerCarta } from './seed/carta'
-import { sembrar } from './seed/sembrar'
+import { seed } from './seed/sembrar'
 import { crearServidor } from './servidor'
 
 // Montaje de las pruebas del catálogo: un hub con la carta real del piloto sembrada, el servidor
@@ -18,13 +18,13 @@ export const CARTA = leerCarta(
 
 export function montarCarta() {
   const m = montarAcceso()
-  sembrar(
+  seed(
     m.db,
     m.access,
-    { restauranteId: m.restauranteId, roles: m.roles, menu: CARTA, sinPersonal: true },
+    { restaurantId: m.restaurantId, roles: m.roles, menu: CARTA, sinPersonal: true },
     m.clock(),
   )
-  const catalog = () => leerCatalogo(m.db, m.restauranteId)
+  const catalog = () => leerCatalogo(m.db, m.restaurantId)
   const products = () => catalog().categories.flatMap((c) => c.products)
   const product = (name: string) => {
     const p = products().find((x) => x.name === name)
@@ -36,22 +36,22 @@ export function montarCarta() {
 
 export async function montarServidor() {
   const m = montarCarta()
-  const avisos: number[] = []
+  const alerts: number[] = []
   const app = crearServidor({
     access: m.access,
     catalog: {
       db: m.db,
-      restauranteId: m.restauranteId,
+      restaurantId: m.restaurantId,
       access: m.access,
-      onChange: (v) => avisos.push(v),
+      onChange: (v) => alerts.push(v),
       clock: m.clock,
     },
   })
   await app.ready()
   const register = m.emparejar('register')
   type Sesion = { session_id: string; secret: string }
-  const sesionDe = (quien: keyof typeof m.people, connection = register.connection): Sesion => {
-    const s = m.entrar(connection, quien)
+  const sesionDe = (who: keyof typeof m.people, connection = register.connection): Sesion => {
+    const s = m.entrar(connection, who)
     return { session_id: s.sesionId, secret: s.secret }
   }
   const send = async (session: Sesion, changes: unknown, token = register.token, extra = {}) => {
@@ -72,11 +72,11 @@ export async function montarServidor() {
     })
   const impuestoId = String(m.db.prepare('SELECT id FROM taxes LIMIT 1').get()?.id)
   const categoriaId = m.catalog().categories[0]?.id as string
-  const historial = () => m.db.prepare('SELECT * FROM catalog_changes ORDER BY version').all()
+  const history = () => m.db.prepare('SELECT * FROM catalog_changes ORDER BY version').all()
   return {
     ...m,
     app,
-    avisos,
+    alerts,
     register,
     sesionDe,
     editar,
@@ -84,7 +84,7 @@ export async function montarServidor() {
     edicion,
     impuestoId,
     categoriaId,
-    historial,
+    history,
   }
 }
 

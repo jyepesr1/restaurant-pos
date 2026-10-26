@@ -9,8 +9,8 @@ export const DIGITOS = 4
 export function TecladoPin({
   title = 'Escribe tu PIN',
   error,
-  intento = 0,
-  esperaMs = 0,
+  attempt = 0,
+  waitMs = 0,
   ocupado = false,
   alCompletar,
 }: {
@@ -18,9 +18,9 @@ export function TecladoPin({
   /** Mensaje del último intento fallido. */
   error?: string | null
   /** Cambia en cada intento fallido: así dos errores iguales seguidos también se notan. */
-  intento?: number
+  attempt?: number
   /** Mientras dure, el teclado no acepta nada (espera tras errores, ADR-008). */
-  esperaMs?: number
+  waitMs?: number
   /** Esperando la respuesta del hub. */
   ocupado?: boolean
   /** Se llama una sola vez por PIN completo. */
@@ -28,45 +28,45 @@ export function TecladoPin({
 }) {
   const idTitulo = useId()
   const [pin, setPin] = useState('')
-  const [restante, setRestante] = useState(esperaMs)
+  const [restante, setRestante] = useState(waitMs)
   const bloqueado = ocupado || restante > 0
   // El PIN en curso, fuera del estado de React: así el envío no depende de cuántas veces React
   // ejecute un actualizador (en desarrollo lo hace dos veces).
-  const enCurso = useRef('')
+  const inProgress = useRef('')
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `intento` reinicia la espera aunque dure lo mismo
   useEffect(() => {
-    setRestante(esperaMs)
-    if (esperaMs <= 0) return
-    const fin = Date.now() + esperaMs
+    setRestante(waitMs)
+    if (waitMs <= 0) return
+    const fin = Date.now() + waitMs
     const intervalo = setInterval(() => {
       const queda = Math.max(0, fin - Date.now())
       setRestante(queda)
       if (queda === 0) clearInterval(intervalo)
     }, 250)
     return () => clearInterval(intervalo)
-  }, [esperaMs, intento])
+  }, [waitMs, attempt])
 
   const tocar = useCallback(
     (digito: string) => {
-      if (bloqueado || enCurso.current.length >= DIGITOS) return
-      const fresh = enCurso.current + digito
+      if (bloqueado || inProgress.current.length >= DIGITOS) return
+      const fresh = inProgress.current + digito
       if (fresh.length === DIGITOS) {
         // Se envía y queda listo para el próximo intento.
-        enCurso.current = ''
+        inProgress.current = ''
         setPin('')
         alCompletar(fresh)
         return
       }
-      enCurso.current = fresh
+      inProgress.current = fresh
       setPin(fresh)
     },
     [alCompletar, bloqueado],
   )
   const erase = useCallback(() => {
     if (bloqueado) return
-    enCurso.current = enCurso.current.slice(0, -1)
-    setPin(enCurso.current)
+    inProgress.current = inProgress.current.slice(0, -1)
+    setPin(inProgress.current)
   }, [bloqueado])
 
   useEffect(() => {
@@ -102,7 +102,7 @@ export function TecladoPin({
       </output>
       {/* Solo se anuncia el cambio de mensaje, no cada segundo de la cuenta atrás. */}
       {/* `key`: el mismo error dos veces seguidas también se anuncia. */}
-      <p key={intento} className="min-h-6 text-center text-alerta-texto" role="alert">
+      <p key={attempt} className="min-h-6 text-center text-alerta-texto" role="alert">
         {restante > 0 ? 'Demasiados intentos.' : ocupado ? 'Comprobando…' : (error ?? '')}
       </p>
       <p className="cifras min-h-6 text-center text-texto-suave" aria-hidden="true">

@@ -10,10 +10,10 @@ import { type Equipo, type MontajeImpresion, montarImpresion } from './montaje-i
 
 const turnoYPago = (register: Equipo, order: string, amount: number, extra: object = {}) => {
   const shift = newId()
-  const opened = register.mandar(
+  const opened = register.submit(
     shift,
     'ShiftOpened',
-    { register_id: register.connection.dispositivoId, base: 0 },
+    { register_id: register.connection.deviceId, base: 0 },
     { aggregate_type: 'register_shift' },
   )
   expect(opened.status).toBe('confirmed')
@@ -26,7 +26,7 @@ const payment = (
   amount: number,
   extra: object = {},
 ) =>
-  register.mandar(order, 'PaymentRecorded', {
+  register.submit(order, 'PaymentRecorded', {
     payment_id: newId(),
     check_id: null,
     register_shift_id: shift,
@@ -53,16 +53,16 @@ function mundo(options: { width?: 58 | 80; conImpresora?: boolean } = {}) {
   if (options.conImpresora !== false) {
     t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ pre_bill_printer_id: printer.id }), t.restauranteId)
+      .run(JSON.stringify({ pre_bill_printer_id: printer.id }), t.restaurantId)
   }
   const agregarCon = (order: string, price: number, fields: object = {}) => {
     const it = { ...item(), unit_price: price, ...fields }
-    const r = ana.mandar(order, 'ItemAdded', it)
+    const r = ana.submit(order, 'ItemAdded', it)
     expect(r.status).toBe('confirmed')
     return it
   }
   const preBill = (order: string, checkId: string | null = null, extra: object = {}) =>
-    ana.mandar(order, 'PreBillPrinted', {
+    ana.submit(order, 'PreBillPrinted', {
       check_id: checkId,
       subtotal: 0,
       suggested_tip: 0,
@@ -97,7 +97,7 @@ describe('trabajoDePrecuenta: cuándo se crea', () => {
       status: 'pending',
       attempts: 0,
       ticket_id: 'preBill',
-      restaurant_id: t.restauranteId,
+      restaurant_id: t.restaurantId,
     })
     expect(trabajos[0]?.event_id).toBeTruthy()
   })
@@ -140,7 +140,7 @@ describe('trabajoDePrecuenta: cuándo se crea', () => {
       .run(ajena, other, new Date(t.clock()).toISOString(), new Date(t.clock()).toISOString())
     t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ pre_bill_printer_id: ajena }), t.restauranteId)
+      .run(JSON.stringify({ pre_bill_printer_id: ajena }), t.restaurantId)
     const order = t.open(ana)
     agregarCon(order, 40_900)
     expect(preBill(order).status).toBe('confirmed')
@@ -165,7 +165,7 @@ describe('trabajoDePrecuenta: cuándo se crea', () => {
     const { t, ana, agregarCon } = mundo()
     const order = t.open(ana)
     agregarCon(order, 40_900)
-    ana.mandar(order, 'GuestsChanged', { guests: 3 })
+    ana.submit(order, 'GuestsChanged', { guests: 3 })
     expect(t.trabajos("WHERE type = 'preBill'")).toEqual([])
   })
 })
@@ -277,7 +277,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
       { id: dish.item_id, station: t.kitchen },
     ])
     const voidItem = (item_id: string, quantity: number) =>
-      ana.mandar(order, 'ItemVoided', {
+      ana.submit(order, 'ItemVoided', {
         item_id,
         quantity,
         already_prepared: false,
@@ -286,7 +286,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
     // El mesero no puede anular lo enviado: lo hace quien tiene el permiso.
     const cashier = t.device('cashier', 'register')
     const anulaCajero = (item_id: string, quantity: number) =>
-      cashier.mandar(order, 'ItemVoided', {
+      cashier.submit(order, 'ItemVoided', {
         item_id,
         quantity,
         already_prepared: false,
@@ -308,7 +308,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
     const cashier = t.device('cashier', 'register')
     const order = t.open(ana)
     const dish = agregarCon(order, 53_800)
-    const r = cashier.mandar(
+    const r = cashier.submit(
       order,
       'DiscountApplied',
       {
@@ -388,7 +388,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
     const { t, ana, agregarCon, preBill, guardada, printer } = mundo()
     t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ pre_bill_printer_id: printer.id, suggested_tip: 500 }), t.restauranteId)
+      .run(JSON.stringify({ pre_bill_printer_id: printer.id, suggested_tip: 500 }), t.restaurantId)
     const order = t.open(ana)
     agregarCon(order, 100_000)
     preBill(order, null, { suggested_tip: 4_630 })
@@ -399,7 +399,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
     const { t, ana, agregarCon, preBill, guardada, printer } = mundo()
     t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ pre_bill_printer_id: printer.id, suggested_tip: 0 }), t.restauranteId)
+      .run(JSON.stringify({ pre_bill_printer_id: printer.id, suggested_tip: 0 }), t.restaurantId)
     const order = t.open(ana)
     agregarCon(order, 100_000)
     preBill(order, null, { suggested_tip: 0 })
@@ -415,7 +415,7 @@ describe('trabajoDePrecuenta: los montos cuadran con el pedido', () => {
     const m6 = t.table('6')
     const group = t.open(ana, m5)
     agregarCon(group, 10_000)
-    expect(ana.mandar(group, 'TablesMerged', { table_ids: [m6] }).status).toBe('confirmed')
+    expect(ana.submit(group, 'TablesMerged', { table_ids: [m6] }).status).toBe('confirmed')
     preBill(group)
     expect(guardada().map((p) => p.target)).toEqual(['Para llevar', 'Mesa 5 + 6'])
   })
@@ -444,7 +444,7 @@ describe('trabajoDePrecuenta: cuenta dividida', () => {
         items: [],
       },
     ]
-    expect(cashier.mandar(order, 'CheckSplit', { checks }).status).toBe('confirmed')
+    expect(cashier.submit(order, 'CheckSplit', { checks }).status).toBe('confirmed')
     return { ...m, order, checks }
   }
 
@@ -480,10 +480,10 @@ describe('trabajoDePrecuenta: cuenta dividida', () => {
     const { t, cashier, preBill, guardada, order, checks } = divided()
     const check = checks[0]?.check_id as string
     const shift = newId()
-    cashier.mandar(
+    cashier.submit(
       shift,
       'ShiftOpened',
-      { register_id: cashier.connection.dispositivoId, base: 0 },
+      { register_id: cashier.connection.deviceId, base: 0 },
       { aggregate_type: 'register_shift' },
     )
     expect(payment(cashier, order, shift, 20_000, { check_id: check }).status).toBe('confirmed')
@@ -510,7 +510,7 @@ describe('trabajoDePrecuenta: cuenta dividida', () => {
 
   it('una cuenta que ya no existe (se deshizo la división) imprime el saldo del pedido', () => {
     const { cashier, preBill, guardada, order, checks } = divided()
-    expect(cashier.mandar(order, 'SplitUndone', {}).status).toBe('confirmed')
+    expect(cashier.submit(order, 'SplitUndone', {}).status).toBe('confirmed')
     preBill(order, checks[0]?.check_id, { suggested_tip: 9_259 })
     expect(guardada()[0]).toMatchObject({ check: null, subtotal: 100_000, tip: 9_259 })
   })
@@ -537,7 +537,7 @@ describe('trabajoDePrecuenta: cuenta dividida', () => {
         items: [],
       },
     ]
-    expect(cashier.mandar(order, 'CheckSplit', { checks }).status).toBe('confirmed')
+    expect(cashier.submit(order, 'CheckSplit', { checks }).status).toBe('confirmed')
     preBill(order, checks[0]?.check_id, { suggested_tip: 2_778 })
     expect(guardada()[0]).toMatchObject({
       total: 100_000,
@@ -556,15 +556,15 @@ describe('trabajoDePrecuenta: sin repetirse', () => {
     agregarCon(order, 40_900)
     const event = t.device('waiter')
     const data = { check_id: null, subtotal: 0, suggested_tip: 0 }
-    const crudo = t.event(event.connection, event.session, 'PreBillPrinted', data, {
+    const raw = t.event(event.connection, event.session, 'PreBillPrinted', data, {
       aggregate_id: order,
       base_sequence: Number(t.db.prepare('SELECT max(sequence) AS s FROM events').get()?.s ?? 0),
     } as never)
-    const a = t.hub.recibirLote(event.connection, [crudo])
-    const b = t.hub.recibirLote(event.connection, [crudo])
-    expect(a.resultados[0]?.status).toBe('confirmed')
-    expect(b.resultados[0]?.status).toBe('confirmed')
-    expect(b.aceptados).toEqual([])
+    const a = t.hub.receiveBatch(event.connection, [raw])
+    const b = t.hub.receiveBatch(event.connection, [raw])
+    expect(a.results[0]?.status).toBe('confirmed')
+    expect(b.results[0]?.status).toBe('confirmed')
+    expect(b.acceptedEvents).toEqual([])
     expect(t.trabajos("WHERE type = 'preBill'")).toHaveLength(1)
   })
 
@@ -606,7 +606,7 @@ describe('la cola imprime la precuenta', () => {
     const order = t.open(ana, t.table('5'))
     agregarCon(order, 40_900, { name: 'Garden Margarita', quantity: 2 })
     preBill(order, null, { suggested_tip: 7_574 })
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const [papel] = printer.papel.texts()
     expect(papel).toContain('PRECUENTA')
     expect(papel).toContain('Mesa 5')
@@ -621,7 +621,7 @@ describe('la cola imprime la precuenta', () => {
       attempts: 1,
       printed_on_id: printer.id,
     })
-    expect(printer.papel.recibidos).toHaveLength(1)
+    expect(printer.papel.received).toHaveLength(1)
   })
 
   it('si el cliente pidió otra propina, el papel dice «Propina» (no «sugerida») y suma esa', async () => {
@@ -629,7 +629,7 @@ describe('la cola imprime la precuenta', () => {
     const order = t.open(ana, t.table('5'))
     agregarCon(order, 40_900)
     preBill(order, null, { suggested_tip: 5_000 })
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const papel = (printer.papel.texts()[0] ?? '').replace(/[ ]+/g, ' ')
     expect(papel).toContain('Propina $5.000')
     expect(papel).not.toContain('Propina sugerida')
@@ -641,7 +641,7 @@ describe('la cola imprime la precuenta', () => {
     const order = t.open(ana, t.table('5'))
     agregarCon(order, 40_900)
     preBill(order, null, { suggested_tip: 0 })
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const papel = (printer.papel.texts()[0] ?? '').replace(/[ ]+/g, ' ')
     expect(papel).toContain('A pagar $40.900')
     expect(papel).not.toContain('Propina')
@@ -652,7 +652,7 @@ describe('la cola imprime la precuenta', () => {
     const order = t.open(ana, t.table('5'))
     agregarCon(order, 40_900, { name: 'Garden Margarita con nombre bien largo', quantity: 2 })
     preBill(order)
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const text = printer.papel.texts()[0] ?? ''
     expect(text).toContain('$81.800')
     for (const line of text.split('\n')) expect(line.length, line).toBeLessThanOrEqual(COLUMNS[58])
@@ -663,11 +663,11 @@ describe('la cola imprime la precuenta', () => {
     const order = t.open(ana)
     agregarCon(order, 40_900)
     preBill(order)
-    await t.cola.runOnce()
-    await t.cola.runOnce()
+    await t.queue.runOnce()
+    await t.queue.runOnce()
     t.advance(60_000)
-    await t.cola.runOnce()
-    expect(printer.papel.recibidos).toHaveLength(1)
+    await t.queue.runOnce()
+    expect(printer.papel.received).toHaveLength(1)
   })
 
   it('con la impresora apagada se queda pendiente y sale cuando vuelve, con los mismos montos', async () => {
@@ -676,14 +676,14 @@ describe('la cola imprime la precuenta', () => {
     agregarCon(order, 40_900)
     printer.papel.apagada = true
     preBill(order)
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     expect(t.pendingList()).toBe(1)
     expect(t.trabajos()[0]).toMatchObject({ attempts: 1 })
     // El pedido cambia mientras tanto: la precuenta ya quedó fijada con lo de ese momento.
     agregarCon(order, 10_000)
     printer.papel.apagada = false
     t.advance(5_000)
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     expect(t.pendingList()).toBe(0)
     const text = printer.papel.texts()[0] ?? ''
     expect(text).toContain('$40.900')
@@ -692,23 +692,23 @@ describe('la cola imprime la precuenta', () => {
 
   it('la precuenta pasa a la impresora de respaldo si la principal sigue caída', async () => {
     const { t, ana, agregarCon, preBill, printer } = mundo()
-    const respaldo = t.impresoraNueva('Barra', [])
-    t.db.prepare('UPDATE printers SET fallback_id = ? WHERE id = ?').run(respaldo.id, printer.id)
+    const fallback = t.impresoraNueva('Barra', [])
+    t.db.prepare('UPDATE printers SET fallback_id = ? WHERE id = ?').run(fallback.id, printer.id)
     printer.papel.apagada = true
     const order = t.open(ana)
     agregarCon(order, 40_900)
     preBill(order)
     // Tres fallos seguidos; justo después, con la espera de la principal sin vencer, sale por el respaldo.
     for (let i = 0; i < 3; i++) {
-      await t.cola.runOnce()
+      await t.queue.runOnce()
       t.advance(60_000)
     }
     t.advance(-60_000 + 1)
-    await t.cola.runOnce()
-    expect(respaldo.papel.texts()[0]).toContain('PRECUENTA')
+    await t.queue.runOnce()
+    expect(fallback.papel.texts()[0]).toContain('PRECUENTA')
     expect(t.trabajos("WHERE type = 'preBill'")[0]).toMatchObject({
       status: 'printed',
-      printed_on_id: respaldo.id,
+      printed_on_id: fallback.id,
     })
   })
 
@@ -721,11 +721,11 @@ describe('la cola imprime la precuenta', () => {
         `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, event_id, ticket_id, content, created_at)
          VALUES (?, ?, ?, 'preBill', ?, 'preBill', '{"lines":"no es lista"}', ?)`,
       )
-      .run(broken, t.restauranteId, printer.id, newId(), new Date(t.clock()).toISOString())
+      .run(broken, t.restaurantId, printer.id, newId(), new Date(t.clock()).toISOString())
     const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }])
     t.send(ana, order, items)
-    await t.cola.runOnce()
-    await t.cola.runOnce()
+    await t.queue.runOnce()
+    await t.queue.runOnce()
     expect(t.trabajos("WHERE type = 'ticket'")[0]).toMatchObject({ status: 'printed' })
   })
 })
@@ -746,7 +746,7 @@ describe('«Pedidos que no han salido»: la precuenta se nombra', () => {
     const order = t.open(ana, t.table('5'))
     agregarCon(order, 40_900)
     preBill(order)
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const list = await pendingList(t, admin)
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({ que: 'Precuenta · Mesa 5', printer: 'Caja', attempts: 1 })
@@ -769,10 +769,10 @@ describe('«Pedidos que no han salido»: la precuenta se nombra', () => {
     const order = t.open(ana, t.table('5'))
     agregarCon(order, 40_900)
     preBill(order)
-    const [trabajo] = await pendingList(t, admin)
+    const [job] = await pendingList(t, admin)
     const r = await t.post(
       '/api/printing/discard',
-      { ...admin.cuerpoSesion, trabajo_id: trabajo?.id },
+      { ...admin.cuerpoSesion, trabajo_id: job?.id },
       admin.token,
     )
     expect(r.statusCode).toBe(204)
@@ -805,7 +805,7 @@ describe('«Pedidos que no han salido»: la precuenta se nombra', () => {
         `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
          VALUES (?, ?, ?, 'preBill', '{}', ?)`,
       )
-      .run(newId(), t.restauranteId, printer.id, new Date(t.clock()).toISOString())
+      .run(newId(), t.restaurantId, printer.id, new Date(t.clock()).toISOString())
     const list = await pendingList(t, admin)
     expect(list[0]?.que).toBe('Precuenta')
   })

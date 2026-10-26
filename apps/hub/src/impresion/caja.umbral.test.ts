@@ -15,20 +15,20 @@ function mundo(timeZone?: string) {
   const waiter = t.device('waiter')
   const llamar = (e: Equipo, url: string, extra: Json = {}) =>
     t.post(url, { ...e.cuerpoSesion, ...extra }, e.token)
-  const umbral = (pesos: unknown, e: Equipo = admin) =>
+  const threshold = (pesos: unknown, e: Equipo = admin) =>
     llamar(e, '/api/register/threshold', { pesos })
-  const catalog = () => leerCatalogo(t.db, t.restauranteId)
+  const catalog = () => leerCatalogo(t.db, t.restaurantId)
   const guardada = () =>
     fullConfig(
       JSON.parse(
         String(
-          t.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(t.restauranteId)?.config,
+          t.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(t.restaurantId)?.config,
         ),
       ),
     )
   const settings = async (e: Equipo = admin) =>
     (await llamar(e, '/api/register/config')).json() as { register_variance_threshold: number }
-  return { t, admin, cashier, waiter, llamar, umbral, catalog, guardada, settings }
+  return { t, admin, cashier, waiter, llamar, threshold, catalog, guardada, settings }
 }
 
 describe('POST /api/caja/umbral', () => {
@@ -36,11 +36,11 @@ describe('POST /api/caja/umbral', () => {
     'guarda $%i: 204, queda en la configuración y la carta',
     async (pesos) => {
       const m = mundo()
-      const r = await m.umbral(pesos)
+      const r = await m.threshold(pesos)
       expect(r.statusCode).toBe(204)
       expect(r.body).toBe('')
       expect(m.guardada().register_variance_threshold).toBe(pesos)
-      expect(m.catalog().restaurant.checkout?.umbralDiferencia).toBe(pesos)
+      expect(m.catalog().restaurant.checkout?.varianceThreshold).toBe(pesos)
       expect((await m.settings()).register_variance_threshold).toBe(pesos)
     },
   )
@@ -48,28 +48,28 @@ describe('POST /api/caja/umbral', () => {
   it('de fábrica es $1.000, en la configuración y en la carta', async () => {
     const m = mundo()
     expect((await m.settings()).register_variance_threshold).toBe(1000)
-    expect(m.catalog().restaurant.checkout?.umbralDiferencia).toBe(1000)
+    expect(m.catalog().restaurant.checkout?.varianceThreshold).toBe(1000)
   })
 
   it('avisa del cambio (sube la versión de la carta) y deja el autor', async () => {
     const m = mundo()
     const before = m.catalog().version
-    await m.umbral(2_000)
+    await m.threshold(2_000)
     expect(m.catalog().version).toBeGreaterThan(before)
     expect(m.t.cambiosCatalogo).toEqual([m.catalog().version])
     const row = m.t.db
       .prepare('SELECT user_id, device_id FROM restaurants WHERE id = ?')
-      .get(m.t.restauranteId)
+      .get(m.t.restaurantId)
     expect(row).toEqual({
       user_id: m.t.people.admin.userId,
-      device_id: m.admin.connection.dispositivoId,
+      device_id: m.admin.connection.deviceId,
     })
   })
 
   it('el mismo valor no sube la versión ni avisa', async () => {
     const m = mundo()
     const v = m.catalog().version
-    await m.umbral(1000)
+    await m.threshold(1000)
     expect(m.catalog().version).toBe(v)
     expect(m.t.cambiosCatalogo).toEqual([])
   })
@@ -77,7 +77,7 @@ describe('POST /api/caja/umbral', () => {
   it('no toca el resto de la configuración', async () => {
     const m = mundo()
     const before = { ...m.guardada(), register_variance_threshold: 0 }
-    await m.umbral(0)
+    await m.threshold(0)
     expect(m.guardada()).toEqual(before)
   })
 
@@ -92,7 +92,7 @@ describe('POST /api/caja/umbral', () => {
     ['ausente', undefined],
   ])('rechaza %s con 400 y no cambia nada', async (_, pesos) => {
     const m = mundo()
-    const r = await m.umbral(pesos)
+    const r = await m.threshold(pesos)
     expect(r.statusCode).toBe(400)
     expect(r.json()).toMatchObject({
       error: 'invalid_data',
@@ -148,10 +148,10 @@ describe('POST /api/caja/umbral', () => {
   })
 
   it('el cajero y el mesero, que no administran dispositivos: 403 y no cambian nada', async () => {
-    for (const quien of ['cashier', 'waiter'] as const) {
+    for (const who of ['cashier', 'waiter'] as const) {
       const m = mundo()
-      const r = await m.umbral(5_000, m[quien])
-      expect(r.statusCode, quien).toBe(403)
+      const r = await m.threshold(5_000, m[who])
+      expect(r.statusCode, who).toBe(403)
       expect(m.guardada().register_variance_threshold).toBe(1000)
       expect(m.t.cambiosCatalogo).toEqual([])
     }
@@ -160,17 +160,17 @@ describe('POST /api/caja/umbral', () => {
   it('una sesión cerrada: 401', async () => {
     const m = mundo()
     await m.t.post('/api/sessions/close', m.admin.cuerpoSesion, m.admin.token)
-    expect((await m.umbral(5_000)).statusCode).toBe(401)
+    expect((await m.threshold(5_000)).statusCode).toBe(401)
   })
 
   it('un equipo retirado pierde el acceso', async () => {
     const m = mundo()
     await m.t.post(
-      `/api/devices/${m.waiter.connection.dispositivoId}/revoke`,
+      `/api/devices/${m.waiter.connection.deviceId}/revoke`,
       m.admin.cuerpoSesion,
       m.admin.token,
     )
-    expect((await m.umbral(5_000, m.waiter)).statusCode).toBe(401)
+    expect((await m.threshold(5_000, m.waiter)).statusCode).toBe(401)
   })
 
   it('el umbral de un restaurante no cambia el de otro', async () => {
@@ -185,16 +185,16 @@ describe('POST /api/caja/umbral', () => {
     m.t.db
       .prepare("INSERT INTO counters (restaurant_id, name, value) VALUES (?, 'catalog', 1)")
       .run(other)
-    await m.umbral(7_000)
-    expect(leerCatalogo(m.t.db, other).restaurant.checkout?.umbralDiferencia).toBe(1000)
-    expect(m.catalog().restaurant.checkout?.umbralDiferencia).toBe(7_000)
+    await m.threshold(7_000)
+    expect(leerCatalogo(m.t.db, other).restaurant.checkout?.varianceThreshold).toBe(1000)
+    expect(m.catalog().restaurant.checkout?.varianceThreshold).toBe(7_000)
   })
 })
 
 describe('POST /api/caja/configuracion: el umbral', () => {
   it('lo trae junto con los medios, la propina y los datáfonos', async () => {
     const m = mundo()
-    await m.umbral(3_000)
+    await m.threshold(3_000)
     const r = (await m.llamar(m.admin, '/api/register/config')).json() as Json
     expect(r).toMatchObject({ register_variance_threshold: 3_000, suggested_tip: 1000 })
     expect(Object.keys(r)).toEqual(
@@ -204,7 +204,7 @@ describe('POST /api/caja/configuracion: el umbral', () => {
 
   it('con una configuración vieja sin el campo, $1.000', async () => {
     const m = mundo()
-    m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restauranteId)
+    m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restaurantId)
     expect((await m.settings()).register_variance_threshold).toBe(1000)
   })
 
@@ -219,41 +219,41 @@ describe('catálogo: cobro.umbralDiferencia, zonaHoraria e inicioDiaOperativo', 
     const m = mundo()
     m.t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ register_variance_threshold: 250 }), m.t.restauranteId)
-    expect(m.catalog().restaurant.checkout?.umbralDiferencia).toBe(250)
+      .run(JSON.stringify({ register_variance_threshold: 250 }), m.t.restaurantId)
+    expect(m.catalog().restaurant.checkout?.varianceThreshold).toBe(250)
   })
 
   it('un umbral de $0 llega como 0 (no se confunde con «sin umbral»)', () => {
     const m = mundo()
     m.t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ register_variance_threshold: 0 }), m.t.restauranteId)
-    expect(m.catalog().restaurant.checkout?.umbralDiferencia).toBe(0)
+      .run(JSON.stringify({ register_variance_threshold: 0 }), m.t.restaurantId)
+    expect(m.catalog().restaurant.checkout?.varianceThreshold).toBe(0)
   })
 
   it('una configuración vieja sin el campo trae $1.000', () => {
     const m = mundo()
-    m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restauranteId)
-    expect(m.catalog().restaurant.checkout?.umbralDiferencia).toBe(1000)
+    m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restaurantId)
+    expect(m.catalog().restaurant.checkout?.varianceThreshold).toBe(1000)
   })
 
   it('trae la zona horaria de la sede y el inicio del día operativo de la configuración', () => {
     const m = mundo()
     expect(m.catalog().restaurant.checkout).toMatchObject({
       timeZone: 'America/Bogota',
-      inicioDiaOperativo: '06:00',
+      businessDayStart: '06:00',
     })
     m.t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ business_day_start: '04:30' }), m.t.restauranteId)
-    expect(m.catalog().restaurant.checkout?.inicioDiaOperativo).toBe('04:30')
+      .run(JSON.stringify({ business_day_start: '04:30' }), m.t.restaurantId)
+    expect(m.catalog().restaurant.checkout?.businessDayStart).toBe('04:30')
   })
 
   it('la zona horaria sigue a la sede activa del restaurante', () => {
     const m = mundo()
     m.t.db
       .prepare('UPDATE locations SET time_zone = ? WHERE restaurant_id = ?')
-      .run('America/Mexico_City', m.t.restauranteId)
+      .run('America/Mexico_City', m.t.restaurantId)
     expect(m.catalog().restaurant.checkout?.timeZone).toBe('America/Mexico_City')
   })
 

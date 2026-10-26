@@ -29,8 +29,8 @@ import {
 // - `limites` contiene las cuatro esquinas de cada figura, girada o no.
 // - `siguienteNombre` da el menor número libre.
 
-const SEMILLA = 20_261_024
-const CORRIDAS = 300
+const SEED = 20_261_024
+const RUNS = 300
 
 // ── Geometría ────────────────────────────────────────────────────────────────────────────────
 
@@ -100,7 +100,7 @@ describe('mover, girar y medir', () => {
           expect(enCuadricula(g.height)).toBe(true)
         }
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -113,8 +113,8 @@ describe('mover, girar y medir', () => {
           g.height,
           g.rotation,
         ])
-        const medida = measure(g, a, b)
-        expect([medida.x, medida.y, medida.rotation]).toEqual([g.x, g.y, g.rotation])
+        const size = measure(g, a, b)
+        expect([size.x, size.y, size.rotation]).toEqual([g.x, g.y, g.rotation])
         const girada = rotate(g, 90)
         expect([girada.x, girada.y, girada.width, girada.height]).toEqual([
           g.x,
@@ -123,7 +123,7 @@ describe('mover, girar y medir', () => {
           g.height,
         ])
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -135,7 +135,7 @@ describe('mover, girar y medir', () => {
         const t = measure(g, a, b)
         expect(measure(t, t.width, t.height)).toEqual(t)
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -145,7 +145,7 @@ describe('mover, girar y medir', () => {
         expect(move(g, g.x, g.y)).toEqual(g)
         expect(measure(g, g.width, g.height)).toEqual(g)
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -161,7 +161,7 @@ describe('mover, girar y medir', () => {
           expect(rotate(rotate(g, a), -a).rotation).toBe(g.rotation)
         },
       ),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -230,7 +230,7 @@ describe('limites', () => {
             }
         },
       ),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -251,7 +251,7 @@ describe('limites', () => {
           expect(register.y + register.height).toBe(Math.max(...g.map((f) => f.y + f.height)))
         },
       ),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -272,7 +272,7 @@ describe('limites', () => {
           expect(conMargen.height).toBeCloseTo(before.height + 80)
         },
       ),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -281,7 +281,7 @@ describe('limites', () => {
       fc.property(fc.array(arbFigura, { minLength: 1, maxLength: 8 }), (figuras) => {
         expect(limites([...figuras].reverse())).toEqual(limites(figuras))
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -318,7 +318,7 @@ describe('siguienteNombre', () => {
         expect(usados.has(n)).toBe(false)
         for (let k = 1; k < Number(n); k++) expect(usados.has(String(k))).toBe(true)
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -342,20 +342,20 @@ describe('lugarLibre: poner mesas y elementos nuevos en un salón que se llena',
   const TYPES = Object.keys(TIPOS_ELEMENTO) as TipoElemento[]
 
   function llenar(
-    veces: { table: FormaMesa } | { element: TipoElemento },
+    times: { table: FormaMesa } | { element: TipoElemento },
     n: number,
     b = zonaNueva({ zones: [] } as unknown as CatalogoEdicion),
   ) {
     for (let i = 0; i < n; i++) {
-      if ('table' in veces)
+      if ('table' in times)
         b.tables.push(
           nuevaMesa(
             b,
-            veces.table,
+            times.table,
             b.tables.map((m) => m.name),
           ),
         )
-      else b.elements.push(nuevoElemento(b, veces.element))
+      else b.elements.push(nuevoElemento(b, times.element))
     }
     return b
   }
@@ -410,7 +410,7 @@ describe('lugarLibre: poner mesas y elementos nuevos en un salón que se llena',
           }
         },
       ),
-      { seed: SEMILLA, numRuns: 100 },
+      { seed: SEED, numRuns: 100 },
     )
   })
 
@@ -452,11 +452,11 @@ describe('lugarLibre: poner mesas y elementos nuevos en un salón que se llena',
 
   it('un elemento ancho que no cabe a la derecha baja de fila en vez de salirse del salón habitual', () => {
     const b = llenar({ element: 'wall' }, 1)
-    const segunda = nuevoElemento(b, 'wall')
-    b.elements.push(segunda)
+    const second = nuevoElemento(b, 'wall')
+    b.elements.push(second)
     const tercera = nuevoElemento(b, 'wall')
     // 300 + 40 + 300 + 40 + 300 > 1500 no cabe una tercera en la misma fila.
-    expect(segunda.y).toBe(0)
+    expect(second.y).toBe(0)
     expect(tercera.x + tercera.width).toBeLessThanOrEqual(1500)
   })
 
@@ -470,7 +470,7 @@ describe('lugarLibre: poner mesas y elementos nuevos en un salón que se llena',
 // ── Guardar y volver a abrir ─────────────────────────────────────────────────────────────────
 
 type Registro = Record<string, string | number | boolean | null>
-const CAMPOS: Record<'zones' | 'dining_tables' | 'floor_plan_elements', string[]> = {
+const FIELDS: Record<'zones' | 'dining_tables' | 'floor_plan_elements', string[]> = {
   zones: ['name', 'position', 'level', 'active'],
   dining_tables: [
     'zone_id',
@@ -502,10 +502,10 @@ const entero = (v: unknown, min: number, max: number) =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 
 /** Aplica los cambios como lo haría el hub (`edicion-catalogo.ts`); lanza si los rechazaría. */
-function apply(source: CatalogoEdicion, enviados: CambioCatalogo[]): CatalogoEdicion {
+function apply(source: CatalogoEdicion, sentList: CambioCatalogo[]): CatalogoEdicion {
   const c = structuredClone(source)
   // Viajan por la red como JSON (así -0 llega como 0).
-  const changes: CambioCatalogo[] = JSON.parse(JSON.stringify(enviados))
+  const changes: CambioCatalogo[] = JSON.parse(JSON.stringify(sentList))
   let version = c.version
   const tocados: {
     entity: 'zones' | 'dining_tables' | 'floor_plan_elements'
@@ -522,13 +522,13 @@ function apply(source: CatalogoEdicion, enviados: CambioCatalogo[]): CatalogoEdi
     const keys = Object.keys(change.data)
     if (keys.length === 0) throw new Error(`${donde}: no cambia nada`)
     for (const k of keys)
-      if (!CAMPOS[e].includes(k)) throw new Error(`${donde}: campo ${k} no existe`)
+      if (!FIELDS[e].includes(k)) throw new Error(`${donde}: campo ${k} no existe`)
     const zonaRef = change.data.zone_id
     if (typeof zonaRef === 'string' && !c.zones.some((z) => z.id === zonaRef))
       throw new Error(`${donde}: zone_id no existe`)
     const current = tableName(e).find((f) => f.id === change.id)
     if (!current) {
-      for (const k of CAMPOS[e])
+      for (const k of FIELDS[e])
         if (!(k in change.data)) throw new Error(`${donde}: falta ${k} al crear`)
       tableName(e).push({ id: change.id, version: ++version, ...change.data } as Registro & {
         id: string
@@ -839,16 +839,16 @@ function editar(c: CatalogoEdicion, b: BorradorZona, e: Edicion): BorradorZona {
 
 /** Cómo debe quedar el borrador al volver a abrirlo: solo lo activo, ya guardado y recortado. */
 function expected(b: BorradorZona): BorradorZona {
-  const porId = <T extends { id: string }>(list: T[]) =>
+  const byId = <T extends { id: string }>(list: T[]) =>
     [...list].sort((p, q) => p.id.localeCompare(q.id))
   return {
     ...b,
     fresh: false,
     name: b.name.trim(),
-    tables: porId(
+    tables: byId(
       b.tables.filter((m) => m.active).map((m) => ({ ...m, fresh: false, name: m.name.trim() })),
     ),
-    elements: porId(
+    elements: byId(
       b.elements
         .filter((x) => x.active)
         .map((x) => ({
@@ -894,7 +894,7 @@ describe('guardar una zona y volver a abrirla', () => {
         for (const z of c.zones.filter((z) => z.id !== b.id))
           expect(borradorDeZona(c2, z.id)).toEqual(borradorDeZona(c, z.id))
       }),
-      { seed: SEMILLA, numRuns: 400 },
+      { seed: SEED, numRuns: 400 },
     )
     // La propiedad no es vacía: la mayoría de las ediciones generadas se pueden guardar.
     expect(comprobadas).toBeGreaterThan(200)
@@ -915,7 +915,7 @@ describe('guardar una zona y volver a abrirla', () => {
         for (const x of changes.filter((x) => x.entity !== 'zones'))
           expect(x.data.active).toBe(true)
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -933,7 +933,7 @@ describe('guardar una zona y volver a abrirla', () => {
         const names = c2.tables.filter((m) => m.active).map((m) => m.name.trim().toLowerCase())
         expect(new Set(names).size).toBe(names.length)
       }),
-      { seed: SEMILLA, numRuns: 400 },
+      { seed: SEED, numRuns: 400 },
     )
   })
 
@@ -946,8 +946,8 @@ describe('guardar una zona y volver a abrirla', () => {
         b = { ...b, active: false }
         const changes = cambiosDeZona(c, b)
         // Solo existentes: lo creado en esta sesión y no guardado no viaja.
-        const nuevos = new Set([...b.tables, ...b.elements].filter((x) => x.fresh).map((x) => x.id))
-        expect(changes.some((x) => nuevos.has(x.id))).toBe(false)
+        const newer = new Set([...b.tables, ...b.elements].filter((x) => x.fresh).map((x) => x.id))
+        expect(changes.some((x) => newer.has(x.id))).toBe(false)
         expect(changes.at(-1)).toMatchObject({ entity: 'zones', data: { active: false } })
         if (problemasDeZona(c, b).length > 0) return
         const c2 = apply(c, changes)
@@ -955,7 +955,7 @@ describe('guardar una zona y volver a abrirla', () => {
         expect(c2.elements.filter((x) => x.zone_id === 'ZONA-SALON' && x.active)).toEqual([])
         expect(c2.zones.find((z) => z.id === 'ZONA-SALON')?.active).toBe(false)
       }),
-      { seed: SEMILLA, numRuns: 200 },
+      { seed: SEED, numRuns: 200 },
     )
   })
 })

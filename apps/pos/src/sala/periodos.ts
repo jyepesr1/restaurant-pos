@@ -1,7 +1,7 @@
 import type { PaymentMethod } from '@pos/core'
 import type { ReglasCobro } from './cuentas'
 import { methodName } from './cuentas'
-import type { Reporte } from './motor'
+import type { PeriodReport } from './motor'
 
 // Lo que calcula la pantalla Reportes (tarea 1.9) sin dibujar nada: los períodos que se eligen
 // con un toque, las fechas en palabras y el CSV para Excel (docs/KPIS.md#exportar).
@@ -104,18 +104,18 @@ const NOMBRE_REGLA = { percent: 'Porcentaje', value: 'Valor', comp: 'Cortesía' 
  * pesos, sin separador de miles. Una sección tras otra, con una línea en blanco entre ellas.
  */
 export function csvDeReporte(
-  r: Reporte,
+  r: PeriodReport,
   period: Periodo,
-  reglas: ReglasCobro | null,
+  rules: ReglasCobro | null,
   restaurant: string,
 ): string {
   const { report: inf } = r
   const v = inf.sales
-  const quien = (id: string | null) => (id ? (r.usuarios[id] ?? '') : '')
-  const time = (iso: string) => fechaHoraCsv(iso, reglas?.timeZone ?? 'America/Bogota')
+  const who = (id: string | null) => (id ? (r.usuarios[id] ?? '') : '')
+  const time = (iso: string) => fechaHoraCsv(iso, rules?.timeZone ?? 'America/Bogota')
   const order = (n: number | null) => (n === null ? '' : n)
   const method = (m: { method: PaymentMethod; customMethodId: string | null }) =>
-    methodName(m.method, m.customMethodId, reglas)
+    methodName(m.method, m.customMethodId, rules)
   const sections: (string | number)[][][] = [
     [
       ['Reporte', restaurant],
@@ -145,7 +145,7 @@ export function csvDeReporte(
     ],
     [
       ['Mesero', 'Neto', 'Cuentas', 'Ticket promedio'],
-      ...inf.byWaiter.map((m) => [quien(m.userId), m.net, m.checks, m.averageTicket]),
+      ...inf.byWaiter.map((m) => [who(m.userId), m.net, m.checks, m.averageTicket]),
     ],
     [['Producto', 'Unidades', 'Neto'], ...inf.byProduct.map((p) => [p.name, p.units, p.net])],
     [
@@ -167,8 +167,8 @@ export function csvDeReporte(
         a.value,
         a.reason ?? '',
         a.alreadyPrepared ? 'Sí' : 'No',
-        quien(a.userId),
-        quien(a.authorizedById),
+        who(a.userId),
+        who(a.authorizedById),
         time(a.time),
       ]),
     ],
@@ -178,8 +178,8 @@ export function csvDeReporte(
         order(c.orderNumber),
         c.value,
         c.reason ?? '',
-        quien(c.userId),
-        quien(c.authorizedById),
+        who(c.userId),
+        who(c.authorizedById),
         time(c.time),
       ]),
     ],
@@ -206,8 +206,8 @@ export function csvDeReporte(
       ],
       ...r.closings.map((c) => [
         c.businessDay,
-        quien(c.abiertoPor),
-        quien(c.cerradoPor),
+        who(c.openedBy),
+        who(c.closedBy),
         c.base,
         c.closed.expected,
         c.closed.counted,

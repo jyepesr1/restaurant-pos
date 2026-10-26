@@ -3,7 +3,7 @@ import fc from 'fast-check'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { atender } from './api'
 import { normalizarCodigo, VIGENCIA_CODIGO_MS } from './nube'
-import { ADMIN, AHORA, batch, crearMundo, type Mundo, SEMILLA } from './pruebas/mundo'
+import { ADMIN, batch, crearMundo, type Mundo, NOW, SEED } from './pruebas/mundo'
 
 // El registro de un hub con un código (ADR-016): un solo hub por código, vigencia de 24 horas,
 // reintento del mismo hub, y credenciales que no sirven si son inventadas o el hub fue revocado.
@@ -33,7 +33,7 @@ const record = (code: string, hubId = newId(), extras: Record<string, unknown> =
     hub_id: hubId,
     location_id: newId(),
     name: 'Caja',
-    instancia: 'i',
+    instance: 'i',
     ...extras,
   })
 
@@ -90,11 +90,11 @@ describe('código de un solo uso', () => {
     const first = (await (await record(code, hubId)).json()) as { credential: string }
     const r2 = await record(code, hubId)
     expect(r2.status).toBe(201)
-    const segunda = (await r2.json()) as { credential: string; restaurant_id: string }
-    expect(segunda.restaurant_id).toBe(restaurant)
-    expect(segunda.credential).not.toBe(first.credential)
+    const second = (await r2.json()) as { credential: string; restaurant_id: string }
+    expect(second.restaurant_id).toBe(restaurant)
+    expect(second.credential).not.toBe(first.credential)
     expect(await m.nube.authenticate(first.credential)).toBeNull()
-    expect((await m.nube.authenticate(segunda.credential))?.id).toBe(hubId)
+    expect((await m.nube.authenticate(second.credential))?.id).toBe(hubId)
     expect(await hubsDe(restaurant)).toHaveLength(1)
   })
 
@@ -102,11 +102,11 @@ describe('código de un solo uso', () => {
     const { code } = await restauranteConCodigo()
     const hubId = newId()
     expect((await record(code, hubId)).status).toBe(201)
-    m.clock.ahora = new Date(AHORA.getTime() + VIGENCIA_CODIGO_MS + 1)
+    m.clock.now = new Date(NOW.getTime() + VIGENCIA_CODIGO_MS + 1)
     try {
       expect((await record(code, hubId)).status).toBe(403)
     } finally {
-      m.clock.ahora = AHORA
+      m.clock.now = NOW
     }
   })
 
@@ -176,7 +176,7 @@ describe('código mal escrito', () => {
         expect(r.status, JSON.stringify(escrito)).toBe(201)
         expect(await hubsDe(restaurant)).toHaveLength(1)
       }),
-      { seed: SEMILLA, numRuns: 30 },
+      { seed: SEED, numRuns: 30 },
     )
   })
 
@@ -184,7 +184,7 @@ describe('código mal escrito', () => {
     const { restaurant, code } = await restauranteConCodigo()
     const letras = code.replaceAll('-', '')
     const another = letras[0] === 'A' ? 'B' : 'A'
-    const malos = [
+    const badOnes = [
       `${another}${letras.slice(1)}`,
       letras.slice(1),
       letras.slice(0, -1),
@@ -194,7 +194,7 @@ describe('código mal escrito', () => {
       letras.replaceAll(/[2-9]/g, 'O'),
       `${letras.slice(0, 6)}${letras.slice(6).toLowerCase().replace(/[a-z]/, 'l')}`,
     ].filter((c) => normalizarCodigo(c) !== letras)
-    for (const badCase of malos) expect((await record(badCase)).status, badCase).toBe(403)
+    for (const badCase of badOnes) expect((await record(badCase)).status, badCase).toBe(403)
     expect(await hubsDe(restaurant)).toHaveLength(0)
     expect((await record(code)).status).toBe(201)
   })
@@ -223,7 +223,7 @@ describe('código mal escrito', () => {
           .rows[0]
         expect(after?.n).toBe(before?.n)
       }),
-      { seed: SEMILLA, numRuns: 40 },
+      { seed: SEED, numRuns: 40 },
     )
   })
 
@@ -238,25 +238,25 @@ describe('vigencia del código', () => {
   it('vence exactamente a las 24 horas: un milisegundo antes sirve, justo en el instante ya no', async () => {
     const a = await restauranteConCodigo()
     const b = await restauranteConCodigo()
-    expect(a.venceEn).toBe(new Date(AHORA.getTime() + VIGENCIA_CODIGO_MS).toISOString())
+    expect(a.venceEn).toBe(new Date(NOW.getTime() + VIGENCIA_CODIGO_MS).toISOString())
     try {
-      m.clock.ahora = new Date(AHORA.getTime() + VIGENCIA_CODIGO_MS - 1)
+      m.clock.now = new Date(NOW.getTime() + VIGENCIA_CODIGO_MS - 1)
       expect((await record(a.code)).status).toBe(201)
-      m.clock.ahora = new Date(AHORA.getTime() + VIGENCIA_CODIGO_MS)
+      m.clock.now = new Date(NOW.getTime() + VIGENCIA_CODIGO_MS)
       expect((await record(b.code)).status).toBe(403)
     } finally {
-      m.clock.ahora = AHORA
+      m.clock.now = NOW
     }
   })
 
   it('un código vencido no se puede registrar aunque nadie lo haya usado, y uno nuevo sí', async () => {
     const { restaurant, code } = await restauranteConCodigo()
     try {
-      m.clock.ahora = new Date(AHORA.getTime() + 3 * VIGENCIA_CODIGO_MS)
+      m.clock.now = new Date(NOW.getTime() + 3 * VIGENCIA_CODIGO_MS)
       expect((await record(code)).status).toBe(403)
       expect((await record(await nuevoCodigoDe(restaurant))).status).toBe(201)
     } finally {
-      m.clock.ahora = AHORA
+      m.clock.now = NOW
     }
   })
 
@@ -264,10 +264,10 @@ describe('vigencia del código', () => {
     const { code } = await restauranteConCodigo()
     try {
       // Reloj muy adelantado = código vencido; muy atrasado = código aún vigente.
-      m.clock.ahora = new Date(AHORA.getTime() - 5 * VIGENCIA_CODIGO_MS)
+      m.clock.now = new Date(NOW.getTime() - 5 * VIGENCIA_CODIGO_MS)
       expect((await record(code)).status).toBe(201)
     } finally {
-      m.clock.ahora = AHORA
+      m.clock.now = NOW
     }
   })
 })
@@ -308,7 +308,7 @@ describe('credenciales', () => {
   })
 
   it('encabezados de autorización raros: sin esquema Bearer, vacíos o con partes de más', async () => {
-    const { credential } = await m.nuevoHub()
+    const { credential } = await m.newHub()
     const request = (authorization: string | null) =>
       atender(
         new Request('https://cloud.faro.test/v1/events/last', {
@@ -333,13 +333,13 @@ describe('credenciales', () => {
         const r = await m.request('GET', '/v1/events/last', undefined, token)
         expect(r.status).toBe(401)
       }),
-      { seed: SEMILLA, numRuns: 40 },
+      { seed: SEED, numRuns: 40 },
     )
   })
 
   it('un hub revocado no sube ni lee, pero los demás hubs siguen', async () => {
-    const a = await m.nuevoHub()
-    const b = await m.nuevoHub()
+    const a = await m.newHub()
+    const b = await m.newHub()
     expect(
       (await m.request('POST', '/v1/events', { events: batch(1, 2) }, a.credential)).status,
     ).toBe(200)
@@ -356,7 +356,7 @@ describe('credenciales', () => {
   })
 
   it('revocar dos veces o un hub que no existe es 404, y no cambia la fecha de revocación', async () => {
-    const a = await m.nuevoHub()
+    const a = await m.newHub()
     const token = ADMIN
     expect(
       (await m.request('POST', '/v1/admin/hubs/revoke', { hub_id: a.hub.id }, token)).status,
@@ -366,13 +366,13 @@ describe('credenciales', () => {
         a.hub.id,
       ])
     ).rows
-    m.clock.ahora = new Date(AHORA.getTime() + 60_000)
+    m.clock.now = new Date(NOW.getTime() + 60_000)
     try {
       expect(
         (await m.request('POST', '/v1/admin/hubs/revoke', { hub_id: a.hub.id }, token)).status,
       ).toBe(404)
     } finally {
-      m.clock.ahora = AHORA
+      m.clock.now = NOW
     }
     const [after] = (
       await m.db.query<{ r: string }>('SELECT revoked_at::text AS r FROM hubs WHERE id = $1', [
@@ -386,7 +386,7 @@ describe('credenciales', () => {
   })
 
   it('la credencial de un hub revocado guarda sus eventos anteriores (nada se borra)', async () => {
-    const a = await m.nuevoHub()
+    const a = await m.newHub()
     await m.request('POST', '/v1/events', { events: batch(1, 3) }, a.credential)
     await m.request('POST', '/v1/admin/hubs/revoke', { hub_id: a.hub.id }, ADMIN)
     const n = (
@@ -398,17 +398,17 @@ describe('credenciales', () => {
   })
 
   it('el token de administración no sirve como credencial de hub, y la credencial de hub no sirve como administración', async () => {
-    const a = await m.nuevoHub()
+    const a = await m.newHub()
     expect((await m.request('GET', '/v1/events/last', undefined, ADMIN)).status).toBe(401)
     expect(
-      (await m.request('POST', '/v1/admin/codes', { restaurant_id: a.restauranteId }, a.credential))
+      (await m.request('POST', '/v1/admin/codes', { restaurant_id: a.restaurantId }, a.credential))
         .status,
     ).toBe(401)
   })
 
   it('un token de administración enorme, vacío o casi igual es 401', async () => {
-    const { restauranteId } = await m.nuevoHub()
-    const cuerpo = { restaurant_id: restauranteId }
+    const { restaurantId } = await m.newHub()
+    const cuerpo = { restaurant_id: restaurantId }
     for (const t of [
       '',
       'x',

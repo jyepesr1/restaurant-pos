@@ -1,13 +1,13 @@
 import 'fake-indexeddb/auto'
 import { newId, orderTotals, signEvent } from '@pos/core'
 import {
-  AlmacenMemoria,
+  type AccessControl,
   type Channel,
-  type ControlAcceso,
+  type DeviceMessage,
+  FloorSync,
+  type Handlers,
   HubSync,
-  type Manejadores,
-  type MensajeDispositivo,
-  SalaSync,
+  MemoryStore,
 } from '@pos/sync'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
@@ -27,22 +27,22 @@ import { catalogoDePrueba, datosItem } from './pruebas'
 // temporizadores son falsos: nada espera de verdad.
 
 const T0 = new Date('2026-10-26T15:00:00.000Z')
-const REGLAS: ReglasCobro = {
-  mediosPago: ['cash', 'card', 'nequi'],
+const RULES: ReglasCobro = {
+  paymentMethods: ['cash', 'card', 'nequi'],
   suggestedTip: 1000,
-  redondeoModo: 'half_up',
-  redondeoEfectivo: 100,
+  roundingMode: 'half_up',
+  cashRounding: 100,
   cashRoundingMode: 'nearest_half_down',
-  imprimePrecuenta: false,
+  printsPreBill: false,
 }
-const DATAFONO = newId()
+const CARD_TERMINAL = newId()
 
-const accesoConFirma: ControlAcceso = {
+const accesoConFirma: AccessControl = {
   verify: (_c, event) =>
     event.session_id && event.signature === signEvent(event, `secreto-${event.session_id}`)
-      ? { ok: true, authorizedById: null, autorizacionId: null }
+      ? { ok: true, authorizedById: null, authorizationId: null }
       : { ok: false, reason: 'invalid_signature' },
-  registrarUso: () => {},
+  recordUse: () => {},
 }
 
 beforeEach(() => {
@@ -73,7 +73,7 @@ async function until(condicion: () => Promise<boolean> | boolean, maxMs = 20_000
   throw new Error('No se cumplió en el tiempo simulado')
 }
 /** Deja correr el reloj simulado hasta que la promesa termine (bien o mal). */
-async function resolver<T>(
+async function resolve<T>(
   promesa: Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; error: Error }> {
   let r: { ok: true; value: T } | { ok: false; error: Error } | null = null
@@ -91,52 +91,52 @@ async function resolver<T>(
 
 function montarHub() {
   const tokens = new Map<string, Equipo>()
-  const hub = new HubSync(new AlmacenMemoria(), {
-    restauranteId: newId(),
+  const hub = new HubSync(new MemoryStore(), {
+    restaurantId: newId(),
     timeZone: 'America/Bogota',
-    inicioDiaOperativo: '06:00',
-    instancia: 'hub-test',
+    businessDayStart: '06:00',
+    instance: 'hub-test',
     clock: () => new Date(Date.now()).toISOString(),
     access: accesoConFirma,
-    reglasCobro: () => ({
+    checkoutRules: () => ({
       multiple: 100,
       mode: 'nearest_half_down',
-      medios: REGLAS.mediosPago,
-      cardTerminals: [DATAFONO],
+      methods: RULES.paymentMethods,
+      cardTerminals: [CARD_TERMINAL],
     }),
   })
-  const salaHub = new SalaSync(hub, (token) => {
+  const salaHub = new FloorSync(hub, (token) => {
     const e = tokens.get(token)
-    return e ? { dispositivoId: e.dispositivoId, type: e.type, revocadoEn: null } : null
+    return e ? { deviceId: e.deviceId, type: e.type, revokedAt: null } : null
   })
   const h = {
     hub,
     tokens,
-    recibidos: [] as MensajeDispositivo[],
-    open(m: Manejadores): Channel {
-      let enlace: ReturnType<SalaSync['connect']> | null = null
+    received: [] as DeviceMessage[],
+    open(m: Handlers): Channel {
+      let link: ReturnType<FloorSync['connect']> | null = null
       let closed = false
       setTimeout(() => {
         if (closed) return
-        enlace = salaHub.connect((msg) => {
+        link = salaHub.connect((msg) => {
           const copy = JSON.parse(JSON.stringify(msg))
           setTimeout(() => {
-            if (!closed) m.alMensaje(copy)
+            if (!closed) m.onMessage(copy)
           })
         })
-        m.alAbrir()
+        m.onOpen()
       })
       return {
         send: (msg) => {
-          if (!enlace || closed) return
-          const copy = JSON.parse(JSON.stringify(msg)) as MensajeDispositivo
-          h.recibidos.push(copy)
-          enlace.recibir(copy)
+          if (!link || closed) return
+          const copy = JSON.parse(JSON.stringify(msg)) as DeviceMessage
+          h.received.push(copy)
+          link.receive(copy)
         },
         close: () => {
           closed = true
-          enlace?.close()
-          enlace = null
+          link?.close()
+          link = null
         },
       }
     },
@@ -159,7 +159,7 @@ afterEach(async () => {
 async function register(h: Hub, name = 'Caja 1') {
   const db = new BaseDispositivo(`checkout-${newId()}`)
   bases.push(db)
-  const e: Equipo = { dispositivoId: newId(), token: newId(), name, type: 'register' }
+  const e: Equipo = { deviceId: newId(), token: newId(), name, type: 'register' }
   h.tokens.set(e.token, e)
   const sesionId = newId()
   const session: Sesion = {
@@ -178,25 +178,25 @@ async function register(h: Hub, name = 'Caja 1') {
   await db.saveSetting('device', e)
   await db.saveSetting('session', session)
   await db.saveSetting('catalog', catalogoDePrueba())
-  const sala = new Sala({ db, open: (m) => h.open(m) })
-  salas.push(sala)
-  await sala.cargar()
-  await until(() => sala.instantanea().connection === 'connected')
-  return { sala, e }
+  const floor = new Sala({ db, open: (m) => h.open(m) })
+  salas.push(floor)
+  await floor.load()
+  await until(() => floor.instantanea().connection === 'connected')
+  return { floor, e }
 }
 
-const locales = async (s: Sala) => (await s.sync?.locales()) ?? []
+const locals = async (s: Sala) => (await s.sync?.locals()) ?? []
 const stateOf = async (s: Sala, id: string) =>
-  pedidosAbiertos(await locales(s)).find((p) => p.status.id === id)?.status ?? null
+  pedidosAbiertos(await locals(s)).find((p) => p.status.id === id)?.status ?? null
 const sinPendientes = (s: Sala) => s.instantanea().pendingList === 0
 
 /** Un pedido de dos productos que suma $100.050, ya en el hub. */
-async function pedidoDeCien(sala: Sala) {
+async function pedidoDeCien(floor: Sala) {
   const order = newId()
-  await sala.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
-  await sala.record('ItemAdded', order, datosItem({ unit_price: 60_050, name: 'Tagliata' }))
-  await sala.record('ItemAdded', order, datosItem({ unit_price: 40_000, name: 'Pizza' }))
-  await until(() => sinPendientes(sala))
+  await floor.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
+  await floor.record('ItemAdded', order, datosItem({ unit_price: 60_050, name: 'Tagliata' }))
+  await floor.record('ItemAdded', order, datosItem({ unit_price: 40_000, name: 'Pizza' }))
+  await until(() => sinPendientes(floor))
   return order
 }
 
@@ -208,9 +208,9 @@ const datosPago = (
   tip: number,
   tendered = 0,
 ) => {
-  const c = pagoEnEfectivo({ balance, amount: balance, tip, tendered }, REGLAS)
+  const c = pagoEnEfectivo({ balance, amount: balance, tip, tendered }, RULES)
   const served = tendered || c.aEntregar
-  const f = pagoEnEfectivo({ balance, amount: balance, tip, tendered: served }, REGLAS)
+  const f = pagoEnEfectivo({ balance, amount: balance, tip, tendered: served }, RULES)
   return {
     payment_id: newId(),
     check_id: checkId,
@@ -225,7 +225,7 @@ const datosPago = (
     cardTerminal:
       method === 'card'
         ? {
-            card_terminal_id: DATAFONO,
+            card_terminal_id: CARD_TERMINAL,
             franchise: null,
             last4: null,
             approval_code: null,
@@ -240,33 +240,33 @@ const datosPago = (
 describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → cerrar', () => {
   it('todo se confirma, el pedido queda cerrado y el resumen del turno cuadra', async () => {
     const h = montarHub()
-    const { sala, e } = await register(h)
-    const shift = await sala.abrirTurno(200_000)
-    await until(() => sinPendientes(sala))
-    expect(h.hub.turnoAbierto(e.dispositivoId)).toMatchObject({ id: shift, base: 200_000 })
+    const { floor, e } = await register(h)
+    const shift = await floor.openShift(200_000)
+    await until(() => sinPendientes(floor))
+    expect(h.hub.openShift(e.deviceId)).toMatchObject({ id: shift, base: 200_000 })
 
-    const order = await pedidoDeCien(sala)
-    const status = await stateOf(sala, order)
+    const order = await pedidoDeCien(floor)
+    const status = await stateOf(floor, order)
     if (!status) throw new Error('sin pedido')
-    const checks = enPartesIguales(status, 2, REGLAS, newId)
+    const checks = enPartesIguales(status, 2, RULES, newId)
     expect(checks.map((c) => c.amount)).toEqual([50_025, 50_025])
-    await sala.record('CheckSplit', order, { checks })
-    await until(() => sinPendientes(sala))
+    await floor.record('CheckSplit', order, { checks })
+    await until(() => sinPendientes(floor))
 
     // Cuenta 1 en efectivo: 50.025 se cobra a 50.000 (−25) con la propina redondeada.
     const p1 = datosPago(shift, checks[0]?.check_id as string, 'cash', 50_025, 4_600, 60_000)
     expect(p1).toMatchObject({ rounding_adjustment: -25, change: 5_400 })
-    const r1 = await resolver(sala.registrarConfirmado('PaymentRecorded', order, p1))
+    const r1 = await resolve(floor.registrarConfirmado('PaymentRecorded', order, p1))
     expect(r1.ok).toBe(true)
 
     // Cuenta 2 con tarjeta.
     const p2 = datosPago(shift, checks[1]?.check_id as string, 'card', 50_025, 4_629)
-    const r2 = await resolver(sala.registrarConfirmado('PaymentRecorded', order, p2))
+    const r2 = await resolve(floor.registrarConfirmado('PaymentRecorded', order, p2))
     expect(r2.ok).toBe(true)
 
-    const closeout = await resolver(sala.registrarConfirmado('OrderClosed', order, {}))
+    const closeout = await resolve(floor.registrarConfirmado('OrderClosed', order, {}))
     expect(closeout.ok).toBe(true)
-    await until(() => sinPendientes(sala))
+    await until(() => sinPendientes(floor))
 
     const closed = h.hub.order(order)
     expect(closed?.status).toBe('closed')
@@ -277,10 +277,10 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
       tips: 9_229,
     })
     // El pedido ya no está abierto en la caja y todo lo guardado aquí está confirmado.
-    expect(await stateOf(sala, order)).toBeNull()
-    const guardados = await locales(sala)
-    expect(guardados.every((l) => l.status === 'confirmed')).toBe(true)
-    expect(guardados.map((l) => l.event.type)).toEqual([
+    expect(await stateOf(floor, order)).toBeNull()
+    const savedList = await locals(floor)
+    expect(savedList.every((l) => l.status === 'confirmed')).toBe(true)
+    expect(savedList.map((l) => l.event.type)).toEqual([
       'ShiftOpened',
       'OrderOpened',
       'ItemAdded',
@@ -290,13 +290,13 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
       'PaymentRecorded',
       'OrderClosed',
     ])
-    const resumen = resumenTurno(guardados, shift)
+    const resumen = resumenTurno(savedList, shift)
     expect(resumen.payments).toBe(2)
     expect(resumen.byMethod).toEqual([
       { method: 'cash', customMethodId: null, sale: 50_000, tip: 4_600, payments: 1 },
       { method: 'card', customMethodId: null, sale: 50_025, tip: 4_629, payments: 1 },
     ])
-    expect(turnoDeCaja(guardados, e.dispositivoId)).toMatchObject({
+    expect(turnoDeCaja(savedList, e.deviceId)).toMatchObject({
       id: shift,
       porConfirmar: false,
     })
@@ -304,15 +304,15 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
 
   it('cerrar con saldo pendiente: el hub lo rechaza y registrarConfirmado lanza el motivo en palabras', async () => {
     const h = montarHub()
-    const { sala } = await register(h)
-    const shift = await sala.abrirTurno(0)
-    const order = await pedidoDeCien(sala)
+    const { floor } = await register(h)
+    const shift = await floor.openShift(0)
+    const order = await pedidoDeCien(floor)
     const partial = datosPago(shift, null, 'nequi', 100_050, 0)
-    const r = await resolver(
-      sala.registrarConfirmado('PaymentRecorded', order, { ...partial, amount: 50_000 }),
+    const r = await resolve(
+      floor.registrarConfirmado('PaymentRecorded', order, { ...partial, amount: 50_000 }),
     )
     expect(r.ok).toBe(true)
-    const closeout = await resolver(sala.registrarConfirmado('OrderClosed', order, {}))
+    const closeout = await resolve(floor.registrarConfirmado('OrderClosed', order, {}))
     expect(closeout).toMatchObject({ ok: false })
     expect((closeout as { error: Error }).error.message).toBe(
       'Todavía queda saldo: alguien agregó algo mientras cobrabas.',
@@ -322,45 +322,45 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
 
   it('cobrar sin turno abierto: el hub lo rechaza con «sin_turno» dicho en palabras y el pago desaparece', async () => {
     const h = montarHub()
-    const { sala } = await register(h)
-    const order = await pedidoDeCien(sala)
-    const falso = newId()
-    const r = await resolver(
-      sala.registrarConfirmado(
+    const { floor } = await register(h)
+    const order = await pedidoDeCien(floor)
+    const fake = newId()
+    const r = await resolve(
+      floor.registrarConfirmado(
         'PaymentRecorded',
         order,
-        datosPago(falso, null, 'nequi', 100_050, 0),
+        datosPago(fake, null, 'nequi', 100_050, 0),
       ),
     )
     expect(r).toMatchObject({ ok: false })
     expect((r as { error: Error }).error.message).toBe(
       'La caja no tiene turno abierto: ábrela en «Caja».',
     )
-    expect(Object.keys((await stateOf(sala, order))?.payments ?? {})).toEqual([])
+    expect(Object.keys((await stateOf(floor, order))?.payments ?? {})).toEqual([])
   })
 
   it('un segundo turno de la misma caja se rechaza (turno_ya_abierto) y el primero sigue', async () => {
     const h = montarHub()
-    const { sala, e } = await register(h)
-    const firstOne = await sala.abrirTurno(100)
-    await until(() => sinPendientes(sala))
-    await sala.abrirTurno(999)
-    await until(() => sinPendientes(sala))
-    expect(h.hub.turnoAbierto(e.dispositivoId)).toMatchObject({ id: firstOne, base: 100 })
-    const rechazados = (await locales(sala)).filter((l) => l.status === 'rejected')
-    expect(rechazados).toHaveLength(1)
-    expect(rechazados[0]?.reason).toBe('shift_already_open')
-    expect(turnoDeCaja(await locales(sala), e.dispositivoId)?.id).toBe(firstOne)
+    const { floor, e } = await register(h)
+    const firstOne = await floor.openShift(100)
+    await until(() => sinPendientes(floor))
+    await floor.openShift(999)
+    await until(() => sinPendientes(floor))
+    expect(h.hub.openShift(e.deviceId)).toMatchObject({ id: firstOne, base: 100 })
+    const rejectedList = (await locals(floor)).filter((l) => l.status === 'rejected')
+    expect(rejectedList).toHaveLength(1)
+    expect(rejectedList[0]?.reason).toBe('shift_already_open')
+    expect(turnoDeCaja(await locals(floor), e.deviceId)?.id).toBe(firstOne)
   })
 
   it('una tarjeta con un datáfono que ya no existe se rechaza con su mensaje', async () => {
     const h = montarHub()
-    const { sala } = await register(h)
-    const shift = await sala.abrirTurno(0)
-    const order = await pedidoDeCien(sala)
+    const { floor } = await register(h)
+    const shift = await floor.openShift(0)
+    const order = await pedidoDeCien(floor)
     const payment = datosPago(shift, null, 'card', 100_050, 0)
-    const r = await resolver(
-      sala.registrarConfirmado('PaymentRecorded', order, {
+    const r = await resolve(
+      floor.registrarConfirmado('PaymentRecorded', order, {
         ...payment,
         cardTerminal: { ...(payment.cardTerminal as object), card_terminal_id: newId() } as never,
       }),
@@ -370,12 +370,12 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
 
   it('el mismo pago reenviado (mismo pago_id) no se cobra dos veces', async () => {
     const h = montarHub()
-    const { sala } = await register(h)
-    const shift = await sala.abrirTurno(0)
-    const order = await pedidoDeCien(sala)
+    const { floor } = await register(h)
+    const shift = await floor.openShift(0)
+    const order = await pedidoDeCien(floor)
     const partial = { ...datosPago(shift, null, 'nequi', 100_050, 0), amount: 30_000 }
-    await resolver(sala.registrarConfirmado('PaymentRecorded', order, partial))
-    const another = await resolver(sala.registrarConfirmado('PaymentRecorded', order, partial))
+    await resolve(floor.registrarConfirmado('PaymentRecorded', order, partial))
+    const another = await resolve(floor.registrarConfirmado('PaymentRecorded', order, partial))
     expect(another).toMatchObject({ ok: false })
     expect(Object.keys(h.hub.order(order)?.payments ?? {})).toHaveLength(1)
     expect(orderTotals(h.hub.order(order) as never).paid).toBe(30_000)
@@ -383,12 +383,12 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
 
   it('sin que el hub conteste, registrarConfirmado falla diciendo que quedó pendiente (no cobrar otra vez)', async () => {
     const h = montarHub()
-    const { sala } = await register(h)
-    const shift = await sala.abrirTurno(0)
-    const order = await pedidoDeCien(sala)
-    sala.simularSinConexion(true)
-    const r = await resolver(
-      sala.registrarConfirmado(
+    const { floor } = await register(h)
+    const shift = await floor.openShift(0)
+    const order = await pedidoDeCien(floor)
+    floor.simularSinConexion(true)
+    const r = await resolve(
+      floor.registrarConfirmado(
         'PaymentRecorded',
         order,
         datosPago(shift, null, 'nequi', 100_050, 0),
@@ -397,8 +397,8 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
     expect(r).toMatchObject({ ok: false })
     expect((r as { error: Error }).error.message).toMatch(/Quedó pendiente/)
     // Se guardó aquí: al volver la conexión llega al hub una sola vez.
-    sala.simularSinConexion(false)
-    await until(() => sinPendientes(sala))
+    floor.simularSinConexion(false)
+    await until(() => sinPendientes(floor))
     expect(Object.keys(h.hub.order(order)?.payments ?? {})).toHaveLength(1)
   })
 })

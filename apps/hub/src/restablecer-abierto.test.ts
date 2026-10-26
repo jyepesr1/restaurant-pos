@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { abrirBase } from '@pos/db/node'
+import { openDatabase } from '@pos/db/node'
 import { afterEach, describe, expect, it } from 'vitest'
 import { contrasenaCoincide } from './acceso/secretos'
 
@@ -22,16 +22,16 @@ const correr = (script: string, dirDatos: string) => {
 }
 
 describe('restablecer-admin con el hub abierto', { timeout: 90_000 }, () => {
-  let carpeta = ''
-  afterEach(() => rmSync(carpeta, { recursive: true, force: true }))
+  let folder = ''
+  afterEach(() => rmSync(folder, { recursive: true, force: true }))
 
   it('no cambia la contraseña, sale con código 1, explica que hay que cerrar el hub y no escribe archivos', () => {
-    carpeta = mkdtempSync(join(tmpdir(), 'pos-restablecer-abierto-'))
-    expect(correr('src/seed/main.ts', carpeta).code).toBe(0)
-    const before = readdirSync(carpeta).sort()
+    folder = mkdtempSync(join(tmpdir(), 'pos-restablecer-abierto-'))
+    expect(correr('src/seed/main.ts', folder).code).toBe(0)
+    const before = readdirSync(folder).sort()
 
     // El «hub»: abre la base como lo hace main.ts (exclusiva) y la mantiene.
-    const hub = abrirBase(join(carpeta, 'pos.sqlite'), { exclusiva: true })
+    const hub = openDatabase(join(folder, 'pos.sqlite'), { exclusive: true })
     const fingerprint = () =>
       String(
         hub
@@ -40,7 +40,7 @@ describe('restablecer-admin con el hub abierto', { timeout: 90_000 }, () => {
       )
     const huellaAntes = fingerprint()
     try {
-      const r = correr('src/restablecer.ts', carpeta)
+      const r = correr('src/restablecer.ts', folder)
       expect(r.code).toBe(1)
       expect(r.output).toMatch(/el hub está abierto/)
       expect(r.output).toMatch(/No se cambió nada/)
@@ -50,23 +50,23 @@ describe('restablecer-admin con el hub abierto', { timeout: 90_000 }, () => {
       hub.close()
     }
     // Sin archivo nuevo de contraseña.
-    expect(readdirSync(carpeta).filter((f) => /^restablecer-/.test(f))).toEqual([])
+    expect(readdirSync(folder).filter((f) => /^restablecer-/.test(f))).toEqual([])
     expect(
-      readdirSync(carpeta)
+      readdirSync(folder)
         .sort()
         .filter((f) => !f.startsWith('pos.sqlite')),
     ).toEqual(before.filter((f) => !f.startsWith('pos.sqlite')))
   })
 
   it('al cerrar el hub, el mismo comando sí funciona y la contraseña anterior deja de servir', () => {
-    carpeta = mkdtempSync(join(tmpdir(), 'pos-restablecer-abierto-'))
-    correr('src/seed/main.ts', carpeta)
-    const hub = abrirBase(join(carpeta, 'pos.sqlite'), { exclusiva: true })
-    expect(correr('src/restablecer.ts', carpeta).code).toBe(1)
+    folder = mkdtempSync(join(tmpdir(), 'pos-restablecer-abierto-'))
+    correr('src/seed/main.ts', folder)
+    const hub = openDatabase(join(folder, 'pos.sqlite'), { exclusive: true })
+    expect(correr('src/restablecer.ts', folder).code).toBe(1)
     hub.close()
-    const r = correr('src/restablecer.ts', carpeta)
+    const r = correr('src/restablecer.ts', folder)
     expect(r.code).toBe(0)
-    const db = abrirBase(join(carpeta, 'pos.sqlite'))
+    const db = openDatabase(join(folder, 'pos.sqlite'))
     const fingerprint = String(
       db.prepare("SELECT password_hash AS h FROM user_credentials WHERE username = 'admin'").get()
         ?.h,

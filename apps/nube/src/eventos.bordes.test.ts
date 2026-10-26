@@ -2,12 +2,12 @@ import fc from 'fast-check'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { MAX_BYTES_EVENTO } from './nube'
 import {
-  contar,
+  count,
   crearMundo,
   eventoPlano,
   eventosGuardados,
   type Mundo,
-  SEMILLA,
+  SEED,
   statuses,
 } from './pruebas/mundo'
 
@@ -19,8 +19,8 @@ beforeAll(async () => {
   m = await crearMundo()
 })
 
-const mayorContigua = (secuencias: number[]) => {
-  const conjunto = new Set(secuencias)
+const mayorContigua = (sequences: number[]) => {
+  const conjunto = new Set(sequences)
   let k = 0
   while (conjunto.has(k + 1)) k++
   return k
@@ -28,7 +28,7 @@ const mayorContigua = (secuencias: number[]) => {
 
 describe('ultima_secuencia: contigua desde 1', () => {
   it('sin eventos es 0, y con huecos se queda antes del hueco', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     expect(await m.nube.lastSequence(hub)).toBe(0)
     await m.nube.recibirEventos(hub, [
       eventoPlano(1),
@@ -42,7 +42,7 @@ describe('ultima_secuencia: contigua desde 1', () => {
   })
 
   it('si falta la secuencia 1, es 0 aunque haya eventos guardados', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     await m.nube.recibirEventos(hub, [eventoPlano(2), eventoPlano(3)])
     expect(await m.nube.lastSequence(hub)).toBe(0)
   })
@@ -52,35 +52,35 @@ describe('ultima_secuencia: contigua desde 1', () => {
       fc.asyncProperty(
         fc.array(fc.integer({ min: 1, max: 25 }), { minLength: 1, maxLength: 40 }),
         fc.array(fc.integer({ min: 1, max: 6 }), { minLength: 1, maxLength: 8 }),
-        async (secuencias, sizes) => {
-          const { hub } = await m.nuevoHub()
+        async (sequences, sizes) => {
+          const { hub } = await m.newHub()
           let previous = 0
           let from = 0
           let i = 0
           const llegados: number[] = []
-          while (from < secuencias.length) {
+          while (from < sequences.length) {
             const tam = sizes[i++ % sizes.length] ?? 1
-            const chunk = secuencias.slice(from, from + tam)
+            const chunk = sequences.slice(from, from + tam)
             await m.nube.recibirEventos(
               hub,
               chunk.map((s) => eventoPlano(s)),
             )
             llegados.push(...chunk)
             from += tam
-            const ahora = await m.nube.lastSequence(hub)
-            expect(ahora).toBe(mayorContigua(llegados))
+            const now = await m.nube.lastSequence(hub)
+            expect(now).toBe(mayorContigua(llegados))
             // Nunca retrocede.
-            expect(ahora).toBeGreaterThanOrEqual(previous)
-            previous = ahora
+            expect(now).toBeGreaterThanOrEqual(previous)
+            previous = now
           }
         },
       ),
-      { seed: SEMILLA, numRuns: 25 },
+      { seed: SEED, numRuns: 25 },
     )
   })
 
   it('dos eventos con la misma secuencia del hub (ids distintos) no la cuentan dos veces', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     await m.nube.recibirEventos(hub, [
       eventoPlano(1),
       eventoPlano(2, { sequence: 1 }),
@@ -90,7 +90,7 @@ describe('ultima_secuencia: contigua desde 1', () => {
   })
 
   it('un evento inválido no cuenta: el hub debe reenviarlo', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     await m.nube.recibirEventos(hub, [
       eventoPlano(1),
       { ...eventoPlano(2), data: 'x' },
@@ -100,7 +100,7 @@ describe('ultima_secuencia: contigua desde 1', () => {
   })
 
   it('una variante distinta de un evento guardado no mueve la secuencia', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     await m.nube.recibirEventos(hub, [eventoPlano(1)])
     await m.nube.recibirEventos(hub, [
       eventoPlano(2),
@@ -110,32 +110,32 @@ describe('ultima_secuencia: contigua desde 1', () => {
   })
 
   it('dos hubs del mismo restaurante llevan cada uno su cuenta', async () => {
-    const a = await m.nuevoHub()
+    const a = await m.newHub()
     await m.nube.recibirEventos(a.hub, [eventoPlano(1), eventoPlano(2)])
-    const b = await m.nuevoHub()
+    const b = await m.newHub()
     await m.nube.recibirEventos(b.hub, [eventoPlano(101, { sequence: 1 })])
     expect(await m.nube.lastSequence(a.hub)).toBe(2)
     expect(await m.nube.lastSequence(b.hub)).toBe(1)
   })
 
   it('muchos eventos a la vez: 500 en un lote y la secuencia llega a 500', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const r = await m.nube.recibirEventos(
       hub,
       Array.from({ length: 500 }, (_, i) => eventoPlano(i + 1)),
     )
     expect(statuses(r).every((e) => e === 'saved')).toBe(true)
     expect(await m.nube.lastSequence(hub)).toBe(500)
-    expect(await contar(m.db, 'events', restauranteId)).toBe(500)
+    expect(await count(m.db, 'events', restaurantId)).toBe(500)
   })
 
   it('una secuencia muy grande (límite de enteros seguros) se guarda sin perder precisión', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const [r] = await m.nube.recibirEventos(hub, [
       eventoPlano(1, { sequence: Number.MAX_SAFE_INTEGER }),
     ])
     expect(r?.status).toBe('saved')
-    const [row] = await eventosGuardados(m.db, restauranteId)
+    const [row] = await eventosGuardados(m.db, restaurantId)
     expect(row?.hub_sequence).toBe(String(Number.MAX_SAFE_INTEGER))
     expect(await m.nube.lastSequence(hub)).toBe(0)
   })
@@ -171,28 +171,28 @@ describe('formato de un evento', () => {
   ]
 
   it.each(invalidCases)('%s: es inválido y no tumba al resto del lote', async (_nombre, change) => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const badCase = { ...eventoPlano(2), ...change }
     const r = await m.nube.recibirEventos(hub, [eventoPlano(1), badCase, eventoPlano(3)])
     expect(r[1]?.status).toBe('invalid')
     expect([r[0]?.status, r[2]?.status]).toEqual(['saved', 'saved'])
-    expect(await contar(m.db, 'events', restauranteId)).toBe(2)
+    expect(await count(m.db, 'events', restaurantId)).toBe(2)
   })
 
   it('lo que no es objeto (null, números, texto, listas) es inválido y no devuelve un id', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     const r = await m.nube.recibirEventos(hub, [null, 1, 'x', [], true, undefined, {}])
     expect(r).toEqual(Array(7).fill({ id: null, status: 'invalid', reason: 'format' }))
   })
 
   it('un id inválido que es un texto largo no se devuelve al hub (no se repite cualquier cosa)', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     const [r] = await m.nube.recibirEventos(hub, [{ ...eventoPlano(1), id: 'x'.repeat(5000) }])
     expect(r).toEqual({ id: null, status: 'invalid', reason: 'format' })
   })
 
   it('campos de más se conservan (la nube no rechaza lo que el hub aceptó)', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const e = eventoPlano(1, {
       schema_version: 3,
       related: [],
@@ -200,22 +200,22 @@ describe('formato de un evento', () => {
     })
     const [r] = await m.nube.recibirEventos(hub, [e])
     expect(r?.status).toBe('saved')
-    const [row] = await eventosGuardados(m.db, restauranteId)
+    const [row] = await eventosGuardados(m.db, restaurantId)
     expect(row?.content).toEqual(e)
   })
 
   it('la misma estructura inválida dos veces en el lote se responde dos veces', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     const badCase = { ...eventoPlano(1), sequence: 0 }
     const r = await m.nube.recibirEventos(hub, [badCase, badCase])
     expect(statuses(r)).toEqual(['invalid', 'invalid'])
   })
 
   it('un lote entero de inválidos no toca la base', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const r = await m.nube.recibirEventos(hub, [{}, { id: 'x' }])
     expect(statuses(r)).toEqual(['invalid', 'invalid'])
-    expect(await contar(m.db, 'events', restauranteId)).toBe(0)
+    expect(await count(m.db, 'events', restaurantId)).toBe(0)
   })
 
   it('propiedad: con datos arbitrarios nunca falla el lote entero; cada evento es guardado o inválido', async () => {
@@ -223,7 +223,7 @@ describe('formato de un evento', () => {
       fc.asyncProperty(
         fc.array(fc.jsonValue(), { minLength: 1, maxLength: 6 }),
         async (cualquiera) => {
-          const { hub } = await m.nuevoHub()
+          const { hub } = await m.newHub()
           const events = cualquiera.map((v, i) => eventoPlano(i + 1, { data: { v } }))
           const r = await m.nube.recibirEventos(hub, [...events, ...cualquiera])
           expect(r).toHaveLength(events.length + cualquiera.length)
@@ -232,7 +232,7 @@ describe('formato de un evento', () => {
           for (const x of r.slice(events.length)) expect(x.status).toBe('invalid')
         },
       ),
-      { seed: SEMILLA, numRuns: 25 },
+      { seed: SEED, numRuns: 25 },
     )
   })
 })
@@ -246,7 +246,7 @@ describe('tamaño', () => {
   }
 
   it('el límite es exacto: 64 KB entra, un byte más no', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     const justo = conTamano(1, MAX_BYTES_EVENTO)
     const demas = conTamano(2, MAX_BYTES_EVENTO + 1)
     expect(new TextEncoder().encode(JSON.stringify(justo)).length).toBe(MAX_BYTES_EVENTO)
@@ -258,7 +258,7 @@ describe('tamaño', () => {
   })
 
   it('el límite se mide en bytes, no en caracteres (tildes y emojis pesan más)', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     const e = eventoPlano(1, { data: { notes: 'ñ'.repeat(MAX_BYTES_EVENTO / 2) } })
     const [r] = await m.nube.recibirEventos(hub, [e])
     expect(r?.status).toBe('invalid')
@@ -268,16 +268,16 @@ describe('tamaño', () => {
   })
 
   it('un evento enorme que se repite en el lote no se cuenta como guardado', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const large = conTamano(1, MAX_BYTES_EVENTO + 10)
     const r = await m.nube.recibirEventos(hub, [large, large])
     expect(statuses(r)).toEqual(['invalid', 'invalid'])
-    expect(await contar(m.db, 'events', restauranteId)).toBe(0)
+    expect(await count(m.db, 'events', restaurantId)).toBe(0)
   })
 })
 
 describe('texto que Postgres no acepta', () => {
-  const casos: [string, (text: string) => Record<string, unknown>][] = [
+  const cases: [string, (text: string) => Record<string, unknown>][] = [
     ['\\u0000 en un dato', (t) => ({ data: { note: t } })],
     ['\\u0000 en el nombre de un dato', (t) => ({ data: { [t]: 1 } })],
     ['\\u0000 en una lista anidada', (t) => ({ data: { a: [{ b: [t] }] } })],
@@ -285,11 +285,11 @@ describe('texto que Postgres no acepta', () => {
     ['\\u0000 en un campo extra', (t) => ({ extra: t })],
     ['\\u0000 en el nombre de un campo extra', (t) => ({ [t]: 1 })],
   ]
-  const malos = ['a\u0000b', '\ud800', 'x\udfff', '\u0000']
-  for (const [name, hacer] of casos)
+  const badOnes = ['a\u0000b', '\ud800', 'x\udfff', '\u0000']
+  for (const [name, hacer] of cases)
     it(`${name} o un sustituto suelto: ese evento es inválido y el lote sigue`, async () => {
-      const { hub, restauranteId } = await m.nuevoHub()
-      for (const [i, t] of malos.entries()) {
+      const { hub, restaurantId } = await m.newHub()
+      for (const [i, t] of badOnes.entries()) {
         const r = await m.nube.recibirEventos(hub, [
           eventoPlano(10 * i + 1),
           eventoPlano(10 * i + 2, hacer(t)),
@@ -301,22 +301,22 @@ describe('texto que Postgres no acepta', () => {
         })
         expect([r[0]?.status, r[2]?.status]).toEqual(['saved', 'saved'])
       }
-      expect(await contar(m.db, 'events', restauranteId)).toBe(malos.length * 2)
+      expect(await count(m.db, 'events', restaurantId)).toBe(badOnes.length * 2)
     })
 
   it('texto válido raro (emojis, tildes, ñ, controles comunes, par sustituto completo) sí se guarda', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const notes = 'Té con ñandú 🍹 \t\n\r   \u{1F600} \u0001'
     const [r] = await m.nube.recibirEventos(hub, [eventoPlano(1, { data: { notes } })])
     expect(r?.status).toBe('saved')
-    const [row] = await eventosGuardados(m.db, restauranteId)
+    const [row] = await eventosGuardados(m.db, restaurantId)
     expect(row?.content).toMatchObject({ data: { notes } })
   })
 
   it('propiedad: cualquier texto Unicode arbitrario nunca produce un error en el lote', async () => {
     await fc.assert(
       fc.asyncProperty(fc.string({ unit: 'binary', maxLength: 40 }), async (text) => {
-        const { hub } = await m.nuevoHub()
+        const { hub } = await m.newHub()
         const [r, s] = await m.nube.recibirEventos(hub, [
           eventoPlano(1, { data: { text } }),
           eventoPlano(2),
@@ -324,7 +324,7 @@ describe('texto que Postgres no acepta', () => {
         expect(['saved', 'invalid']).toContain(r?.status)
         expect(s?.status).toBe('saved')
       }),
-      { seed: SEMILLA, numRuns: 40 },
+      { seed: SEED, numRuns: 40 },
     )
   })
 })
@@ -341,30 +341,30 @@ describe('fechas en el borde de lo que acepta Postgres', () => {
     { business_day: '2026-02-29' },
   ]
   it.each(fechas)('%j: se guarda o se rechaza ese evento, sin romper el lote', async (f) => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     const r = await m.nube.recibirEventos(hub, [eventoPlano(1), eventoPlano(2, f), eventoPlano(3)])
     expect([r[0]?.status, r[2]?.status]).toEqual(['saved', 'saved'])
     expect(['saved', 'invalid']).toContain(r[1]?.status)
   })
 
   it('un reloj del dispositivo desfasado (fecha en el futuro o en el pasado) no cambia lo guardado', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const e = eventoPlano(1, { received_at: '2031-01-01T00:00:00Z', business_day: '2019-05-05' })
     const [r] = await m.nube.recibirEventos(hub, [e])
     expect(r?.status).toBe('saved')
-    const [row] = await eventosGuardados(m.db, restauranteId)
+    const [row] = await eventosGuardados(m.db, restaurantId)
     expect(row?.content).toEqual(e)
     const [two] = await m.nube.recibirEventos(hub, [e])
     expect(two?.status).toBe('already_stored')
   })
 
   it('la fecha de guardado la pone la nube, no el evento', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     await m.nube.recibirEventos(hub, [eventoPlano(1, { received_at: '2000-01-01T00:00:00Z' })])
     const [row] = (
       await m.db.query<{ vieja: boolean }>(
         "SELECT saved_at > '2020-01-01' AS vieja FROM events WHERE restaurant_id = $1",
-        [restauranteId],
+        [restaurantId],
       )
     ).rows
     expect(row?.vieja).toBe(true)
@@ -373,7 +373,7 @@ describe('fechas en el borde de lo que acepta Postgres', () => {
 
 describe('anidamiento extremo', () => {
   it('un dato anidado a miles de niveles no tumba el lote', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     let hondo: unknown = 'fin'
     for (let i = 0; i < 5000; i++) hondo = { a: hondo }
     const [a, b, c] = await m.nube.recibirEventos(hub, [

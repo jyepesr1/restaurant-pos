@@ -1,7 +1,7 @@
 import { BasisPoints, isValidId, Price } from '@pos/core'
-import { type BaseSqlite, enTransaccion, type ValorSql } from '@pos/db'
+import { inTransaction, type SqliteDatabase, type SqlValue } from '@pos/db'
 import { z } from 'zod'
-import { type Autor, actualizarVersionado, insertarVersionado } from './acceso/registros'
+import { type Autor, actualizarVersionado, insertVersioned } from './acceso/registros'
 
 // Edición del catálogo y del plano del salón desde la caja (tareas 1.1 y 1.2). Un pedido de edición trae una lista de cambios
 // que se aplican juntos o ninguno: así, crear un producto con sus variantes no deja nunca un
@@ -21,7 +21,7 @@ const Coordenada = z.int().min(-10_000).max(10_000)
 const Medida = z.int().min(5).max(10_000)
 const Rotacion = z.int().min(0).max(359)
 
-const ENTIDADES = {
+const ENTITIES = {
   // La sede la pone el hub al crear la zona: por ahora hay una sola.
   zones: z.strictObject({
     name: Nombre,
@@ -102,8 +102,8 @@ const ENTIDADES = {
   }),
 } as const
 
-export type EntidadEditable = keyof typeof ENTIDADES
-const NOMBRES = Object.keys(ENTIDADES) as [EntidadEditable, ...EntidadEditable[]]
+export type EntidadEditable = keyof typeof ENTITIES
+const NOMBRES = Object.keys(ENTITIES) as [EntidadEditable, ...EntidadEditable[]]
 
 /** A qué tabla apunta cada campo que es una referencia. */
 const REFERENCIAS: Record<string, string> = {
@@ -139,27 +139,27 @@ export const PedidoEdicion = z.strictObject({
 export type CambioCatalogo = z.infer<typeof PedidoEdicion>['changes'][number]
 
 /** Si todos los cambios son solo de precio de registros que ya existen. */
-export function soloPrecios(db: BaseSqlite, restauranteId: string, changes: CambioCatalogo[]) {
+export function soloPrecios(db: SqliteDatabase, restaurantId: string, changes: CambioCatalogo[]) {
   return changes.every((c) => {
     const fields = CAMPOS_DE_PRECIO[c.entity]
     return (
       fields !== undefined &&
-      existe(db, restauranteId, c.entity, c.id) &&
+      exists(db, restaurantId, c.entity, c.id) &&
       Object.keys(c.data).every((k) => fields.includes(k))
     )
   })
 }
 
-const existe = (db: BaseSqlite, restauranteId: string, tableName: string, id: string) =>
+const exists = (db: SqliteDatabase, restaurantId: string, tableName: string, id: string) =>
   db
     .prepare(`SELECT 1 FROM ${tableName} WHERE restaurant_id = ? AND id = ?`)
-    .get(restauranteId, id) !== undefined
+    .get(restaurantId, id) !== undefined
 
-const aSql = (data: Record<string, unknown>): Record<string, ValorSql> =>
+const aSql = (data: Record<string, unknown>): Record<string, SqlValue> =>
   Object.fromEntries(
     Object.entries(data).map(([k, v]) => [
       k,
-      typeof v === 'boolean' ? (v ? 1 : 0) : (v as ValorSql),
+      typeof v === 'boolean' ? (v ? 1 : 0) : (v as SqlValue),
     ]),
   )
 
@@ -193,18 +193,18 @@ function mensajeDeRestriccion(error: unknown): string | null {
   return 'No cumple las reglas de la carta'
 }
 
-function sedePrincipal(db: BaseSqlite, restauranteId: string): string {
+function sedePrincipal(db: SqliteDatabase, restaurantId: string): string {
   const location = db
     .prepare(
       'SELECT id FROM locations WHERE restaurant_id = ? AND active = 1 ORDER BY created_at LIMIT 1',
     )
-    .get(restauranteId)
+    .get(restaurantId)
   if (!location) throw new ErrorEdicion('El restaurante no tiene sede')
   return String(location.id)
 }
 
-const read = (db: BaseSqlite, restauranteId: string, tableName: string, id: string) =>
-  db.prepare(`SELECT * FROM ${tableName} WHERE restaurant_id = ? AND id = ?`).get(restauranteId, id)
+const read = (db: SqliteDatabase, restaurantId: string, tableName: string, id: string) =>
+  db.prepare(`SELECT * FROM ${tableName} WHERE restaurant_id = ? AND id = ?`).get(restaurantId, id)
 
 /**
  * Aplica los cambios en una transacción. Devuelve la versión del catálogo que quedó y cuántos
@@ -213,15 +213,15 @@ const read = (db: BaseSqlite, restauranteId: string, tableName: string, id: stri
  * si algo no vale; entonces no se aplica nada.
  */
 export function aplicarCambios(
-  db: BaseSqlite,
-  restauranteId: string,
+  db: SqliteDatabase,
+  restaurantId: string,
   changes: CambioCatalogo[],
   autor: Autor,
-  ahora: string,
+  now: string,
   /** Si la mesa tiene un pedido abierto: entonces no se archiva (el pedido quedaría sin mesa). */
-  mesaOcupada: (tableId: string) => boolean = () => false,
+  occupiedTable: (tableId: string) => boolean = () => false,
 ): { version: number; cambiados: number } {
-  return enTransaccion(db, () => {
+  return inTransaction(db, () => {
     const tocados: { entity: EntidadEditable; id: string; donde: string }[] = []
     for (const [i, c] of changes.entries()) {
       const donde = `Cambio ${i + 1} (${c.entity})`
@@ -231,20 +231,20 @@ export function aplicarCambios(
         .prepare(
           'SELECT entity FROM catalog_changes WHERE restaurant_id = ? AND record_id = ? AND entity <> ? LIMIT 1',
         )
-        .get(restauranteId, c.id, c.entity)
+        .get(restaurantId, c.id, c.entity)
       if (other) throw new ErrorEdicion(`${donde}: ese id ya es de otro tipo de registro`)
 
-      const current = read(db, restauranteId, c.entity, c.id)
-      const esquema = ENTIDADES[c.entity]
-      const lectura = (current ? esquema.partial() : esquema).safeParse(c.data)
-      if (!lectura.success) {
-        const issue = lectura.error.issues[0]
+      const current = read(db, restaurantId, c.entity, c.id)
+      const esquema = ENTITIES[c.entity]
+      const parsed = (current ? esquema.partial() : esquema).safeParse(c.data)
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
         throw new ErrorEdicion(`${donde}: ${issue?.path.join('.') || 'datos'}: ${issue?.message}`)
       }
-      let data = aSql(lectura.data as Record<string, unknown>)
+      let data = aSql(parsed.data as Record<string, unknown>)
       for (const [field, tableName] of Object.entries(REFERENCIAS)) {
         const value = data[field]
-        if (typeof value === 'string' && !read(db, restauranteId, tableName, value))
+        if (typeof value === 'string' && !read(db, restaurantId, tableName, value))
           throw new ErrorEdicion(`${donde}: ${field} no existe`)
       }
       if (current) {
@@ -254,10 +254,10 @@ export function aplicarCambios(
         data = Object.fromEntries(Object.entries(data).filter(([k, v]) => current[k] !== v))
         if (Object.keys(data).length === 0) continue
       }
-      if (!current && c.entity === 'zones') data.location_id = sedePrincipal(db, restauranteId)
+      if (!current && c.entity === 'zones') data.location_id = sedePrincipal(db, restaurantId)
       try {
-        if (current) actualizarVersionado(db, c.entity, restauranteId, c.id, data, autor, ahora)
-        else insertarVersionado(db, c.entity, restauranteId, data, autor, ahora, c.id)
+        if (current) actualizarVersionado(db, c.entity, restaurantId, c.id, data, autor, now)
+        else insertVersioned(db, c.entity, restaurantId, data, autor, now, c.id)
       } catch (error) {
         const message = mensajeDeRestriccion(error)
         if (!message) throw error
@@ -268,18 +268,18 @@ export function aplicarCambios(
 
     // Con todo aplicado (un mismo pedido puede archivar productos y luego su categoría):
     for (const t of tocados) {
-      const row = read(db, restauranteId, t.entity, t.id)
+      const row = read(db, restaurantId, t.entity, t.id)
       if (!row) continue
       if (row.active === 1) {
         // Lo activo no apunta a algo archivado: no desaparecería de la carta sin avisar.
         for (const [field, tableName] of Object.entries(REFERENCIAS)) {
           const ref = row[field]
-          if (typeof ref === 'string' && read(db, restauranteId, tableName, ref)?.active !== 1)
+          if (typeof ref === 'string' && read(db, restaurantId, tableName, ref)?.active !== 1)
             throw new ErrorEdicion(`${t.donde}: ${field.replace('_id', '')} está archivado`)
         }
         continue
       }
-      if (t.entity === 'dining_tables' && mesaOcupada(t.id))
+      if (t.entity === 'dining_tables' && occupiedTable(t.id))
         throw new ErrorEdicion(`${t.donde}: la mesa ${row.name} tiene un pedido abierto`)
       const dep = DEPENDIENTES[t.entity]
       if (dep) {
@@ -287,7 +287,7 @@ export function aplicarCambios(
           .prepare(
             `SELECT count(*) AS n FROM ${dep.tableName} WHERE restaurant_id = ? AND ${dep.field} = ? AND active = 1`,
           )
-          .get(restauranteId, t.id)
+          .get(restaurantId, t.id)
         const n = Number(usan?.n ?? 0)
         if (n > 0) throw new ErrorEdicion(`${t.donde}: lo usan ${n} ${dep.que}; cámbialos primero`)
       }
@@ -297,16 +297,16 @@ export function aplicarCambios(
           .prepare(
             'SELECT id FROM product_modifier_groups WHERE restaurant_id = ? AND group_id = ? AND active = 1',
           )
-          .all(restauranteId, t.id)
+          .all(restaurantId, t.id)
         for (const e of links)
           actualizarVersionado(
             db,
             'product_modifier_groups',
-            restauranteId,
+            restaurantId,
             String(e.id),
             { active: 0 },
             autor,
-            ahora,
+            now,
           )
       }
     }
@@ -316,7 +316,7 @@ export function aplicarCambios(
       const seenSet = new Set<string>()
       const names = db
         .prepare('SELECT name FROM dining_tables WHERE restaurant_id = ? AND active = 1')
-        .all(restauranteId)
+        .all(restaurantId)
         .map((f) => String(f.name))
       for (const name of names) {
         const key = name.trim().normalize('NFC').toLocaleLowerCase('es')
@@ -326,17 +326,17 @@ export function aplicarCambios(
     }
     const row = db
       .prepare("SELECT value FROM counters WHERE restaurant_id = ? AND name = 'catalog'")
-      .get(restauranteId)
+      .get(restaurantId)
     return { version: Number(row?.value ?? 0), cambiados: tocados.length }
   })
 }
 
 /** Todo el catálogo, también lo archivado, para el editor. */
-export function catalogoParaEditar(db: BaseSqlite, restauranteId: string) {
+export function catalogoParaEditar(db: SqliteDatabase, restaurantId: string) {
   const allRows = (tableName: string, position: string) =>
     db
       .prepare(`SELECT * FROM ${tableName} WHERE restaurant_id = ? ORDER BY ${position}`)
-      .all(restauranteId)
+      .all(restaurantId)
       .map(({ restaurant_id: _r, created_at: _c, user_id: _u, device_id: _d, ...f }) => ({
         ...f,
         active: f.active === 1,
@@ -344,7 +344,7 @@ export function catalogoParaEditar(db: BaseSqlite, restauranteId: string) {
       }))
   const version = db
     .prepare("SELECT value FROM counters WHERE restaurant_id = ? AND name = 'catalog'")
-    .get(restauranteId)
+    .get(restaurantId)
   return {
     version: Number(version?.value ?? 0),
     zones: allRows('zones', 'level, position, name').map((z) => {

@@ -21,7 +21,7 @@ export interface Api extends MontajeAcceso {
   post: (url: string, cuerpo: unknown, options?: OpcionesPost) => Promise<Respuesta>
   /** Entra con usuario y contraseña y devuelve lo necesario para llamar a la API de personal. */
   signInAdmin: (
-    quien?: 'admin' | 'cashier',
+    who?: 'admin' | 'cashier',
     // biome-ignore lint/suspicious/noExplicitAny: respuesta JSON de prueba, sin tipo
   ) => Promise<{ token: string; session: Sesion; cuerpo: any }>
   /** Cuerpo de `/api/personal/*` con la sesión incluida. */
@@ -42,7 +42,7 @@ export function montarApi(m: MontajeAcceso = montarAcceso()): Api {
     access: m.access,
     catalog: {
       db: m.db,
-      restauranteId: m.restauranteId,
+      restaurantId: m.restaurantId,
       access: m.access,
       clock: m.clock,
       onChange: (v) => cambiosCatalogo.push(v),
@@ -56,8 +56,8 @@ export function montarApi(m: MontajeAcceso = montarAcceso()): Api {
       remoteAddress: ip,
       headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...cabeceras },
     }) as unknown as Promise<Respuesta>
-  const signInAdmin: Api['signInAdmin'] = async (quien = 'admin') => {
-    const p = m.people[quien]
+  const signInAdmin: Api['signInAdmin'] = async (who = 'admin') => {
+    const p = m.people[who]
     const r = await post('/api/sign-in', { user: p.user, password: p.password })
     if (r.statusCode !== 201) throw new Error(`No entró: ${r.body}`)
     const cuerpo = r.json()

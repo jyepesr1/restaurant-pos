@@ -13,12 +13,12 @@ import { ARCHIVO_CLAVE } from './acceso/secretos'
 const DIR_HUB = fileURLToPath(new URL('..', import.meta.url))
 
 function puertoLibre(): Promise<number> {
-  return new Promise((resolver, reject) => {
+  return new Promise((resolve, reject) => {
     const servidor = createServer()
     servidor.once('error', reject)
     servidor.listen(0, '127.0.0.1', () => {
       const { port } = servidor.address() as { port: number }
-      servidor.close(() => resolver(port))
+      servidor.close(() => resolve(port))
     })
   })
 }
@@ -27,7 +27,7 @@ interface HubArrancado {
   child: ChildProcess
   output: () => string
   url: string
-  detener: () => Promise<void>
+  stop: () => Promise<void>
 }
 
 function arrancarHub(env: Record<string, string>): Promise<HubArrancado> {
@@ -42,24 +42,24 @@ function arrancarHub(env: Record<string, string>): Promise<HubArrancado> {
   }
   child.stdout?.on('data', acumular)
   child.stderr?.on('data', acumular)
-  const terminado = new Promise<void>((resolver) => child.once('exit', () => resolver()))
+  const terminado = new Promise<void>((resolve) => child.once('exit', () => resolve()))
 
-  return new Promise((resolver, reject) => {
-    const revisar = () => {
+  return new Promise((resolve, reject) => {
+    const review = () => {
       if (text.includes('Hub en marcha')) {
-        child.stdout?.off('data', revisar)
-        resolver({
+        child.stdout?.off('data', review)
+        resolve({
           child,
           output: () => text,
           url: `http://127.0.0.1:${env.PORT}`,
-          detener: async () => {
+          stop: async () => {
             child.kill('SIGKILL')
             await terminado
           },
         })
       }
     }
-    child.stdout?.on('data', revisar)
+    child.stdout?.on('data', review)
     child.once('exit', (code) =>
       reject(new Error(`El hub terminó con código ${code} antes de arrancar:\n${text}`)),
     )
@@ -69,19 +69,19 @@ function arrancarHub(env: Record<string, string>): Promise<HubArrancado> {
 const ARCHIVO_PIN_ADMIN = 'pin-administrador.txt'
 
 describe('acceso con el proceso real del hub', () => {
-  let carpeta: string
+  let folder: string
   let hub: HubArrancado | undefined
 
   beforeEach(() => {
-    carpeta = mkdtempSync(join(tmpdir(), 'pos-acceso-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-acceso-'))
   })
   afterEach(async () => {
-    await hub?.detener()
+    await hub?.stop()
     hub = undefined
-    rmSync(carpeta, { recursive: true, force: true })
+    rmSync(folder, { recursive: true, force: true })
   })
 
-  const dirDatos = () => join(carpeta, 'data')
+  const dirDatos = () => join(folder, 'data')
   const rutaPin = () => join(dirDatos(), ARCHIVO_PIN_ADMIN)
   /**
    * Usuario, contraseña y PIN para autorizar del administrador, como los dejó el hub en su
@@ -90,20 +90,20 @@ describe('acceso con el proceso real del hub', () => {
   const datosDeArchivo = (erase = true) => {
     const text = readFileSync(rutaPin(), 'utf8')
     if (erase) rmSync(rutaPin())
-    const dato = (etiqueta: string) => new RegExp(`${etiqueta}:\\s+(\\S+)`).exec(text)?.[1]
+    const datum = (etiqueta: string) => new RegExp(`${etiqueta}:\\s+(\\S+)`).exec(text)?.[1]
     return {
-      user: dato('Usuario'),
-      password: dato('Contraseña'),
-      pin: dato('PIN para autorizar'),
+      user: datum('Usuario'),
+      password: datum('Contraseña'),
+      pin: datum('PIN para autorizar'),
     }
   }
-  const entorno = async () => ({
+  const environment = async () => ({
     DATA_DIR: dirDatos(),
-    DIR_APP: join(carpeta, 'sin-app'),
+    DIR_APP: join(folder, 'sin-app'),
     PORT: String(await puertoLibre()),
   })
-  const post = (h: HubArrancado, ruta: string, cuerpo: object, token?: string) =>
-    fetch(h.url + ruta, {
+  const post = (h: HubArrancado, route: string, cuerpo: object, token?: string) =>
+    fetch(h.url + route, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -117,13 +117,13 @@ describe('acceso con el proceso real del hub', () => {
   type Entrada = { session_id: string; secret: string; device: { token: string } | null }
 
   it('al reiniciar con la misma carpeta, la contraseña del administrador y el token del equipo siguen sirviendo', async () => {
-    hub = await arrancarHub(await entorno())
+    hub = await arrancarHub(await environment())
     const { user, password } = datosDeArchivo()
     const first = (await (await entrar(hub, { user, password })).json()) as Entrada
     const token = first.device?.token as string
-    await hub.detener() // se apaga de golpe, sin cerrar nada
+    await hub.stop() // se apaga de golpe, sin cerrar nada
 
-    hub = await arrancarHub({ ...(await entorno()), DATA_DIR: dirDatos() })
+    hub = await arrancarHub({ ...(await environment()), DATA_DIR: dirDatos() })
     // No se muestra ni se escribe nada nuevo: el administrador ya existe.
     expect(existsSync(rutaPin())).toBe(false)
     expect(hub.output()).not.toMatch(/datos del administrador|Contraseña:/)
@@ -144,7 +144,7 @@ describe('acceso con el proceso real del hub', () => {
   })
 
   it('con la clave borrada: PIN nuevo para autorizar y aviso al arrancar; la contraseña y el equipo siguen sirviendo', async () => {
-    const env = await entorno()
+    const env = await environment()
     hub = await arrancarHub(env)
     const primeros = datosDeArchivo()
     const token = (
@@ -152,16 +152,16 @@ describe('acceso con el proceso real del hub', () => {
         await entrar(hub, { user: primeros.user, password: primeros.password })
       ).json()) as Entrada
     ).device?.token as string
-    await hub.detener()
+    await hub.stop()
     expect(existsSync(join(dirDatos(), ARCHIVO_CLAVE))).toBe(true)
     rmSync(join(dirDatos(), ARCHIVO_CLAVE))
 
     hub = await arrancarHub({ ...env, PORT: String(await puertoLibre()) })
     expect(hub.output()).toMatch(/Falta la clave de los PIN/)
-    const nuevos = datosDeArchivo()
-    expect(nuevos.pin).toMatch(/^\d{4}$/)
+    const newer = datosDeArchivo()
+    expect(newer.pin).toMatch(/^\d{4}$/)
     // La contraseña no depende de esa clave: no se cambia ni se vuelve a mostrar.
-    expect(nuevos.password).toBeUndefined()
+    expect(newer.password).toBeUndefined()
     expect(existsSync(join(dirDatos(), ARCHIVO_CLAVE))).toBe(true)
     const another = await entrar(hub, { user: primeros.user, password: primeros.password }, token)
     expect(another.status).toBe(201)
@@ -169,9 +169,9 @@ describe('acceso con el proceso real del hub', () => {
   })
 
   it('una clave dañada detiene el arranque con un mensaje claro', async () => {
-    const env = await entorno()
+    const env = await environment()
     hub = await arrancarHub(env)
-    await hub.detener()
+    await hub.stop()
     hub = undefined
     writeFileSync(join(dirDatos(), ARCHIVO_CLAVE), 'corta')
 
@@ -181,7 +181,7 @@ describe('acceso con el proceso real del hub', () => {
   })
 
   it('el log del hub no escribe PIN, contraseñas ni tokens, tampoco cuando están errados', async () => {
-    hub = await arrancarHub(await entorno())
+    hub = await arrancarHub(await environment())
     const { user, password, pin } = datosDeArchivo(false)
     const r = (await (await entrar(hub, { user, password })).json()) as Entrada
     const token = r.device?.token as string
@@ -200,17 +200,17 @@ describe('acceso con el proceso real del hub', () => {
   })
 
   it('las esperas por intentos viven en memoria: tras reiniciar el hub, se puede volver a intentar', async () => {
-    hub = await arrancarHub(await entorno())
+    hub = await arrancarHub(await environment())
     const { user, password } = datosDeArchivo()
     // Sin token, la espera va por la IP y por el usuario.
-    for (const mala of ['mala-1-xx', 'mala-2-xx', 'mala-3-xx'])
-      await entrar(hub, { user, password: mala })
+    for (const bad of ['mala-1-xx', 'mala-2-xx', 'mala-3-xx'])
+      await entrar(hub, { user, password: bad })
     const delay = await entrar(hub, { user, password })
     expect(delay.status).toBe(429)
     expect(Number(delay.headers.get('retry-after'))).toBeGreaterThan(0)
-    await hub.detener()
+    await hub.stop()
 
-    hub = await arrancarHub({ ...(await entorno()), DATA_DIR: dirDatos() })
+    hub = await arrancarHub({ ...(await environment()), DATA_DIR: dirDatos() })
     expect((await entrar(hub, { user, password })).status).toBe(201)
   })
 })

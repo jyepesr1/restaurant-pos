@@ -1,6 +1,6 @@
 import { BRANDS, canonicalJson, fullConfig } from '@pos/core'
-import type { BaseSqlite, Fila } from '@pos/db'
-import type { Catalogo } from '@pos/sync'
+import type { Row, SqliteDatabase } from '@pos/db'
+import type { Catalog } from '@pos/sync'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { actualizarVersionado } from './acceso/registros'
@@ -22,8 +22,8 @@ import { ErrorFoto, guardarFoto, leerFoto, urlFoto } from './fotos'
 const text = (v: unknown) => String(v)
 const number = (v: unknown) => Number(v)
 
-export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
-  const allRows = (sql: string): Fila[] => db.prepare(sql).all(restauranteId)
+export function leerCatalogo(db: SqliteDatabase, restaurantId: string): Catalog {
+  const allRows = (sql: string): Row[] => db.prepare(sql).all(restaurantId)
   const activeRows = (tableName: string, position = 'position, name') =>
     allRows(
       `SELECT * FROM ${tableName} WHERE restaurant_id = ? AND active = 1 ORDER BY ${position}`,
@@ -32,11 +32,11 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
   const version = number(
     db
       .prepare("SELECT value FROM counters WHERE restaurant_id = ? AND name = 'catalog'")
-      .get(restauranteId)?.value ?? 0,
+      .get(restaurantId)?.value ?? 0,
   )
   const restaurant = db
     .prepare('SELECT name, config FROM restaurants WHERE id = ?')
-    .get(restauranteId)
+    .get(restaurantId)
   const config = fullConfig(JSON.parse(String(restaurant?.config ?? '{}')))
   const taxes = new Map(activeRows('taxes', 'name').map((f) => [text(f.id), f]))
   const variants = activeRows('variants')
@@ -53,42 +53,42 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
   const printedOnes = new Set(
     activeRows('printers', 'name').flatMap((f) => listaJson(f.station_ids)),
   )
-  const pantallas = allRows(
+  const screens = allRows(
     `SELECT id, name, station_ids FROM devices
      WHERE restaurant_id = ? AND active = 1 AND type = 'kds' AND revoked_at IS NULL
      ORDER BY name, id`,
   ).map((f) => ({
-    dispositivoId: text(f.id),
+    deviceId: text(f.id),
     name: text(f.name),
-    estacionIds: listaJson(f.station_ids),
+    stationIds: listaJson(f.station_ids),
   }))
 
   return {
     version,
     restaurant: {
       name: text(restaurant?.name ?? ''),
-      sesionInactividadMin: config.session_idle_min,
+      sessionIdleMin: config.session_idle_min,
       brand: config.brand,
-      cocinaAmarilloMin: config.kitchen_yellow_min,
-      cocinaRojoMin: config.kitchen_red_min,
-      usarCursos: config.courses_enabled,
+      kitchenYellowMin: config.kitchen_yellow_min,
+      kitchenRedMin: config.kitchen_red_min,
+      coursesEnabled: config.courses_enabled,
       checkout: {
-        mediosPago: config.payment_methods,
-        mediosPropios: config.custom_methods
+        paymentMethods: config.payment_methods,
+        customMethods: config.custom_methods
           .filter((m) => m.active)
           .map(({ id, name }) => ({ id, name })),
-        mediosPropiosArchivados: config.custom_methods
+        archivedCustomMethods: config.custom_methods
           .filter((m) => !m.active)
           .map(({ id, name }) => ({ id, name })),
         suggestedTip: config.suggested_tip,
-        redondeoModo: config.rounding_mode,
-        redondeoEfectivo: config.cash_rounding,
+        roundingMode: config.rounding_mode,
+        cashRounding: config.cash_rounding,
         cashRoundingMode: config.cash_rounding_mode,
-        umbralDiferencia: config.register_variance_threshold,
-        timeZone: zonaHorariaDe(db, restauranteId),
-        inicioDiaOperativo: config.business_day_start,
+        varianceThreshold: config.register_variance_threshold,
+        timeZone: zonaHorariaDe(db, restaurantId),
+        businessDayStart: config.business_day_start,
         // Solo si la impresora elegida sigue activa.
-        imprimePrecuenta:
+        printsPreBill:
           config.pre_bill_printer_id !== null &&
           allRows('SELECT id FROM printers WHERE restaurant_id = ? AND active = 1').some(
             (f) => text(f.id) === config.pre_bill_printer_id,
@@ -105,22 +105,22 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
       .filter((f) => idsZonas.has(text(f.zone_id)))
       .map((f) => ({
         id: text(f.id),
-        zonaId: text(f.zone_id),
+        zoneId: text(f.zone_id),
         name: text(f.name),
         x: number(f.x),
         y: number(f.y),
         width: number(f.width),
         height: number(f.height),
         rotation: number(f.rotation),
-        shape: text(f.shape) as Catalogo['tables'][number]['shape'],
+        shape: text(f.shape) as Catalog['tables'][number]['shape'],
         capacity: number(f.capacity),
       })),
     elements: activeRows('floor_plan_elements', 'zone_id, version')
       .filter((f) => idsZonas.has(text(f.zone_id)))
       .map((f) => ({
         id: text(f.id),
-        zonaId: text(f.zone_id),
-        type: text(f.type) as Catalogo['elements'][number]['type'],
+        zoneId: text(f.zone_id),
+        type: text(f.type) as Catalog['elements'][number]['type'],
         text: f.text === null ? null : text(f.text),
         x: number(f.x),
         y: number(f.y),
@@ -137,18 +137,18 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
     stations: activeRows('stations').map((f) => ({
       id: text(f.id),
       name: text(f.name),
-      imprime: printedOnes.has(text(f.id)),
-      screen: pantallas.some((p) => p.estacionIds.includes(text(f.id))),
+      prints: printedOnes.has(text(f.id)),
+      screen: screens.some((p) => p.stationIds.includes(text(f.id))),
     })),
-    pantallas,
+    screens,
     categories: activeRows('categories').map((c) => ({
       id: text(c.id),
       name: text(c.name),
-      estacionId: c.station_id === null ? null : text(c.station_id),
+      stationId: c.station_id === null ? null : text(c.station_id),
       products: products
         .filter((p) => p.category_id === c.id && taxes.has(text(p.tax_id)))
         .map((p) => {
-          const tax = taxes.get(text(p.tax_id)) as Fila
+          const tax = taxes.get(text(p.tax_id)) as Row
           return {
             id: text(p.id),
             name: text(p.name),
@@ -166,7 +166,7 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
             groups: links
               .filter((e) => e.product_id === p.id && groups.has(text(e.group_id)))
               .map((e) => {
-                const g = groups.get(text(e.group_id)) as Fila
+                const g = groups.get(text(e.group_id)) as Row
                 return {
                   id: text(g.id),
                   name: text(g.name),
@@ -188,13 +188,13 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
 }
 
 export interface OpcionesCatalogo {
-  db: BaseSqlite
-  restauranteId: string
+  db: SqliteDatabase
+  restaurantId: string
   access: ServicioAcceso
   /** El catálogo cambió (lo editaron desde la caja): avisar a los equipos conectados. */
   onChange?: (version: number) => void
   /** Si una mesa tiene un pedido abierto (no se puede archivar). */
-  mesaOcupada?: (tableId: string) => boolean
+  occupiedTable?: (tableId: string) => boolean
   /** Carpeta de las fotos de los productos (`datos/fotos`). Sin ella no se suben ni se sirven. */
   dirFotos?: string
   clock?: () => string
@@ -215,10 +215,10 @@ export async function rutasCatalogo(
   app: FastifyInstance,
   {
     db,
-    restauranteId,
+    restaurantId,
     access,
     onChange,
-    mesaOcupada,
+    occupiedTable,
     dirFotos,
     clock = () => new Date().toISOString(),
   }: OpcionesCatalogo,
@@ -226,7 +226,7 @@ export async function rutasCatalogo(
   const device = (req: FastifyRequest, reply: FastifyReply) => {
     const [esquema, token] = (req.headers.authorization ?? '').split(' ')
     const connection = esquema === 'Bearer' && token ? access.authenticate(token) : null
-    if (connection && !connection.revocadoEn) return connection
+    if (connection && !connection.revokedAt) return connection
     reply
       .code(401)
       .send({ error: 'invalid_token', message: 'Este equipo ya no tiene acceso: vuelve a entrar' })
@@ -235,12 +235,12 @@ export async function rutasCatalogo(
 
   app.get('/api/catalog', async (req, reply) => {
     if (!device(req, reply)) return reply
-    return leerCatalogo(db, restauranteId)
+    return leerCatalogo(db, restaurantId)
   })
 
   app.get('/api/catalog/editing', async (req, reply) => {
     if (!device(req, reply)) return reply
-    return catalogoParaEditar(db, restauranteId)
+    return catalogoParaEditar(db, restaurantId)
   })
 
   app.post('/api/catalog/changes', async (req, reply) => {
@@ -252,23 +252,23 @@ export async function rutasCatalogo(
         .code(400)
         .send({ error: 'invalid_data', message: 'Datos con formato inesperado' })
     const { session_id, secret, changes } = cuerpo.data
-    const permission = soloPrecios(db, restauranteId, changes) ? 'edit_prices' : 'edit_catalog'
-    let quien = access.usuarioConPermiso(connection, { sesionId: session_id, secret }, permission)
+    const permission = soloPrecios(db, restaurantId, changes) ? 'edit_prices' : 'edit_catalog'
+    let who = access.usuarioConPermiso(connection, { sesionId: session_id, secret }, permission)
     // Quien edita el catálogo también puede cambiar precios.
-    if (!quien.ok && quien.code === 'no_permission' && permission === 'edit_prices')
-      quien = access.usuarioConPermiso(connection, { sesionId: session_id, secret }, 'edit_catalog')
-    if (!quien.ok) {
-      const status = quien.code === 'no_permission' ? 403 : 401
-      return reply.code(status).send({ error: quien.code, message: quien.message })
+    if (!who.ok && who.code === 'no_permission' && permission === 'edit_prices')
+      who = access.usuarioConPermiso(connection, { sesionId: session_id, secret }, 'edit_catalog')
+    if (!who.ok) {
+      const status = who.code === 'no_permission' ? 403 : 401
+      return reply.code(status).send({ error: who.code, message: who.message })
     }
     try {
       const { version, cambiados } = aplicarCambios(
         db,
-        restauranteId,
+        restaurantId,
         changes,
-        { userId: quien.userId, dispositivoId: connection.dispositivoId },
+        { userId: who.userId, deviceId: connection.deviceId },
         clock(),
-        mesaOcupada,
+        occupiedTable,
       )
       if (cambiados > 0) onChange?.(version)
       return reply.code(200).send({ version, cambiados })
@@ -288,24 +288,24 @@ export async function rutasCatalogo(
   ) => {
     const connection = device(req, reply)
     if (!connection) return null
-    const quien = access.usuarioConPermiso(
+    const who = access.usuarioConPermiso(
       connection,
       { sesionId: cuerpo.session_id, secret: cuerpo.secret },
       permission,
     )
-    if (!quien.ok) {
+    if (!who.ok) {
       reply
-        .code(quien.code === 'no_permission' ? 403 : 401)
-        .send({ error: quien.code, message: quien.message })
+        .code(who.code === 'no_permission' ? 403 : 401)
+        .send({ error: who.code, message: who.message })
       return null
     }
-    return { userId: quien.userId, dispositivoId: connection.dispositivoId }
+    return { userId: who.userId, deviceId: connection.deviceId }
   }
-  const versionActual = () =>
+  const currentVersion = () =>
     Number(
       db
         .prepare("SELECT value FROM counters WHERE restaurant_id = ? AND name = 'catalog'")
-        .get(restauranteId)?.value ?? 0,
+        .get(restaurantId)?.value ?? 0,
     )
   const datosInvalidos = (reply: FastifyReply, message = 'Datos con formato inesperado') =>
     reply.code(400).send({ error: 'invalid_data', message })
@@ -323,19 +323,19 @@ export async function rutasCatalogo(
     if (!cuerpo.success) return datosInvalidos(reply, 'Esa marca no existe')
     const autor = conPermiso(req, reply, cuerpo.data, 'manage_users')
     if (!autor) return reply
-    const row = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)
+    const row = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restaurantId)
     const current = JSON.parse(String(row?.config ?? '{}')) as Record<string, unknown>
     if (current.brand !== cuerpo.data.brand) {
       actualizarVersionado(
         db,
         'restaurants',
-        restauranteId,
-        restauranteId,
+        restaurantId,
+        restaurantId,
         { config: canonicalJson(fullConfig({ ...current, brand: cuerpo.data.brand })) },
         autor,
         clock(),
       )
-      onChange?.(versionActual())
+      onChange?.(currentVersion())
     }
     return reply.send({ brand: cuerpo.data.brand })
   })
@@ -356,7 +356,7 @@ export async function rutasCatalogo(
       if (!autor) return reply
       const product = db
         .prepare('SELECT photo FROM products WHERE restaurant_id = ? AND id = ?')
-        .get(restauranteId, cuerpo.data.product_id)
+        .get(restaurantId, cuerpo.data.product_id)
       if (!product) return datosInvalidos(reply, 'Ese producto no existe')
       let name: string | null = null
       try {
@@ -369,13 +369,13 @@ export async function rutasCatalogo(
         actualizarVersionado(
           db,
           'products',
-          restauranteId,
+          restaurantId,
           cuerpo.data.product_id,
           { photo: name },
           autor,
           clock(),
         )
-        onChange?.(versionActual())
+        onChange?.(currentVersion())
       }
       return reply.send({ photo: urlFoto(name) })
     },

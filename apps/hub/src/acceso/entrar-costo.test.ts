@@ -4,36 +4,36 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // mira cuánto trabajo de scrypt (el parámetro N) hace el hub en cada caso. Si el trabajo es
 // distinto, el tiempo lo es y se puede adivinar quién existe.
 
-const llamadas: number[] = []
+const calls: number[] = []
 vi.mock('node:crypto', async (importar) => {
   const real = await importar<typeof import('node:crypto')>()
   return {
     ...real,
     scryptSync: (...args: Parameters<typeof real.scryptSync>) => {
-      llamadas.push(Number((args[3] as { N: number }).N))
+      calls.push(Number((args[3] as { N: number }).N))
       return real.scryptSync(...args)
     },
   }
 })
 
-const { aplicarMigraciones } = await import('@pos/db')
-const { abrirBase } = await import('@pos/db/node')
+const { applyMigrations } = await import('@pos/db')
+const { openDatabase } = await import('@pos/db/node')
 const { asegurarRestaurante, asegurarRoles } = await import('./inicial')
 const { ServicioAcceso } = await import('./servicio')
 const { COSTO_CONTRASENA } = await import('./secretos')
 
 function hub() {
-  const db = abrirBase(':memory:')
-  aplicarMigraciones(db)
-  const ahora = '2026-10-24T20:00:00.000Z'
-  const restauranteId = asegurarRestaurante(db, ahora)
-  const roles = asegurarRoles(db, restauranteId, ahora)
+  const db = openDatabase(':memory:')
+  applyMigrations(db)
+  const now = '2026-10-24T20:00:00.000Z'
+  const restaurantId = asegurarRestaurante(db, now)
+  const roles = asegurarRoles(db, restaurantId, now)
   // El costo real de producción: así se ve la diferencia que habría en una instalación.
   const access = new ServicioAcceso({
     db,
-    restauranteId,
+    restaurantId,
     key: Buffer.alloc(32, 9),
-    clock: () => ahora,
+    clock: () => now,
   })
   access.crearUsuario({
     name: 'Caja',
@@ -43,22 +43,22 @@ function hub() {
   })
   // Calienta el relleno (se calcula en el primer intento con un usuario que no existe).
   access.entrar({ user: 'calentar', password: 'no-importa-xx' }, null, '10.9.0.1')
-  llamadas.length = 0
+  calls.length = 0
   return access
 }
 
 /** El trabajo de scrypt que hizo un intento fallido (cada intento, desde una IP nueva). */
 let n = 0
 function trabajoDe(access: ReturnType<typeof hub>, user: string, password: string) {
-  llamadas.length = 0
+  calls.length = 0
   const r = access.entrar({ user, password }, null, `10.0.0.${++n}`)
   expect(r).toMatchObject({ ok: false, code: 'invalid_credentials' })
-  return [...llamadas]
+  return [...calls]
 }
 
 describe('el costo de comprobar una contraseña no delata si el usuario existe', () => {
   beforeEach(() => {
-    llamadas.length = 0
+    calls.length = 0
   })
 
   it('un usuario real con la contraseña errada hace un scrypt de costo completo', () => {
@@ -105,11 +105,11 @@ describe('el costo de comprobar una contraseña no delata si el usuario existe',
   it('durante la espera por fallos no se hace ningún scrypt: el atacante no gasta el CPU del hub', () => {
     const access = hub()
     for (let i = 0; i < 3; i++) trabajoDe(access, 'caja', `mala-${i}-xxxxxxx`)
-    llamadas.length = 0
+    calls.length = 0
     for (let i = 0; i < 50; i++) {
       const r = access.entrar({ user: 'caja', password: 'otra-mala-xx' }, null, `10.9.9.${i}`)
       expect(r).toMatchObject({ ok: false, code: 'wait' })
     }
-    expect(llamadas).toEqual([])
+    expect(calls).toEqual([])
   })
 })

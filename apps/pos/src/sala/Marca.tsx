@@ -3,7 +3,7 @@ import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
 import { MarcaFaro } from '../ui/Logo'
 import { BRANDS, type Marca as MarcaId } from '../ui/marca'
-import { sala, useSala } from './contexto'
+import { floor, useSala } from './contexto'
 import { MarcoSala } from './MarcoSala'
 
 // La marca del restaurante (tarea 1.3c): con cuál se ve Faro en todos los equipos. Es opcional:
@@ -34,7 +34,7 @@ const MUESTRA: Record<
 
 export function Marca() {
   const { catalog } = useSala()
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const current = (catalog?.restaurant.brand ?? 'faro') as MarcaId
   const [guardando, setGuardando] = useState<MarcaId | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -44,10 +44,10 @@ export function Marca() {
     setGuardando(brand)
     setError(null)
     try {
-      await sala.cambiarMarca(brand)
+      await floor.cambiarMarca(brand)
       const text = `Ahora todos los equipos se ven con ${BRANDS.find((m) => m.brand === brand)?.name}`
-      if (deshacible) avisar(text, () => void select(previous, false))
-      else avisar(text)
+      if (deshacible) notify(text, () => void select(previous, false))
+      else notify(text)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cambiar la marca')
     }

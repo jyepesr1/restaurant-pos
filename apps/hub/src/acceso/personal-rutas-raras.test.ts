@@ -83,8 +83,8 @@ describe('personas con datos raros', () => {
     for (const name of names)
       expect((await person({ name, role_id: api.roles.waiter })).statusCode, name).toBe(200)
     const readResult = (await api.post('/api/staff/read', session, { token })).json()
-    const guardados = readResult.people.map((p: { name: string }) => p.name)
-    for (const name of names) expect(guardados).toContain(name.trim())
+    const savedList = readResult.people.map((p: { name: string }) => p.name)
+    for (const name of names) expect(savedList).toContain(name.trim())
     expect(Number(api.db.prepare('SELECT count(*) AS n FROM users').get()?.n)).toBeGreaterThan(
       names.length,
     )
@@ -265,15 +265,15 @@ describe('sin permiso, sin sesión o con credenciales ajenas', () => {
   it('cajero, reportes y mesero: 403 en las tres rutas, sin efecto', async () => {
     const t = await conCajaYReportes()
     const before = JSON.stringify(t.api.db.prepare('SELECT * FROM users ORDER BY id').all())
-    for (const quien of [t.cashier, t.reports, t.waiter])
+    for (const who of [t.cashier, t.reports, t.waiter])
       for (const url of RUTAS) {
         const cuerpo =
           url === '/api/staff/read'
-            ? quien.session
+            ? who.session
             : url === '/api/staff/roles'
-              ? { ...quien.session, role: { name: 'Colado', permissions: [] } }
-              : { ...quien.session, person: { name: 'Colado', role_id: t.api.roles.waiter } }
-        expect((await t.api.post(url, cuerpo, { token: quien.token })).statusCode, url).toBe(403)
+              ? { ...who.session, role: { name: 'Colado', permissions: [] } }
+              : { ...who.session, person: { name: 'Colado', role_id: t.api.roles.waiter } }
+        expect((await t.api.post(url, cuerpo, { token: who.token })).statusCode, url).toBe(403)
       }
     expect(JSON.stringify(t.api.db.prepare('SELECT * FROM users ORDER BY id').all())).toBe(before)
   })
@@ -410,12 +410,12 @@ describe('sin permiso, sin sesión o con credenciales ajenas', () => {
     )
     for (const secret of [t.session.secret, t.token, t.session.session_id])
       expect(r.body).not.toContain(secret)
-    const mala = await t.api.post(
+    const bad = await t.api.post(
       '/api/staff/read',
       { ...t.session, secret: 'secreto-que-no-es' },
       { token: t.token },
     )
-    expect(mala.body).not.toContain('secreto-que-no-es')
+    expect(bad.body).not.toContain('secreto-que-no-es')
   })
 
   it('un aluvión de peticiones malas no tumba al hub: la buena después responde', async () => {

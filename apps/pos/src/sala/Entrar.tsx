@@ -2,7 +2,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { Boton } from '../ui/Boton'
 import { TecladoPin } from '../ui/TecladoPin'
 import { ErrorApi } from './api'
-import { sala, useSala } from './contexto'
+import { floor, useSala } from './contexto'
 import { MarcoSala } from './MarcoSala'
 
 // Entrar (ADR-013). Desde cualquier navegador de la red, sin emparejarlo: los meseros con su PIN;
@@ -39,18 +39,18 @@ export function Entrar() {
     () => modoRecordado() ?? (device?.type === 'register' ? 'password' : 'pin'),
   )
   const [error, setError] = useState<string | null>(null)
-  const [intento, setIntento] = useState(0)
-  const [esperaMs, setEsperaMs] = useState(0)
+  const [attempt, setIntento] = useState(0)
+  const [waitMs, setEsperaMs] = useState(0)
   const [ocupado, setOcupado] = useState(false)
 
   const tryAction = async (data: string | { user: string; password: string }) => {
     setOcupado(true)
     try {
-      await sala.entrar(data)
+      await floor.entrar(data)
       recordarModo(typeof data === 'string' ? 'pin' : 'password')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
-      setEsperaMs(e instanceof ErrorApi ? e.esperaMs : 0)
+      setEsperaMs(e instanceof ErrorApi ? e.waitMs : 0)
       setIntento((i) => i + 1)
       setOcupado(false)
     }
@@ -74,8 +74,8 @@ export function Entrar() {
                   : 'Escribe tu PIN'
               }
               error={error}
-              intento={intento}
-              esperaMs={esperaMs}
+              attempt={attempt}
+              waitMs={waitMs}
               ocupado={ocupado}
               alCompletar={(pin) => void tryAction(pin)}
             />
@@ -88,8 +88,8 @@ export function Entrar() {
             <ConContrasena
               title={porInactividad ? 'Se cerró tu sesión por no usarla un rato' : 'Entrar'}
               error={error}
-              intento={intento}
-              esperaMs={esperaMs}
+              attempt={attempt}
+              waitMs={waitMs}
               ocupado={ocupado}
               alEnviar={(user, password) => void tryAction({ user, password })}
             />
@@ -111,15 +111,15 @@ export function Entrar() {
 function ConContrasena({
   title,
   error,
-  intento,
-  esperaMs,
+  attempt,
+  waitMs,
   ocupado,
   alEnviar,
 }: {
   title: string
   error: string | null
-  intento: number
-  esperaMs: number
+  attempt: number
+  waitMs: number
   ocupado: boolean
   alEnviar: (user: string, password: string) => void
 }) {
@@ -131,23 +131,23 @@ function ConContrasena({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `intento` reinicia la espera aunque dure lo mismo
   useEffect(() => {
-    setRestante(esperaMs)
-    if (esperaMs <= 0) return
-    const fin = Date.now() + esperaMs
+    setRestante(waitMs)
+    if (waitMs <= 0) return
+    const fin = Date.now() + waitMs
     const clock = setInterval(() => {
       const queda = Math.max(0, fin - Date.now())
       setRestante(queda)
       if (queda === 0) clearInterval(clock)
     }, 250)
     return () => clearInterval(clock)
-  }, [esperaMs, intento])
+  }, [waitMs, attempt])
 
   // Tras un error se vuelve a escribir la contraseña; el usuario se conserva.
   useEffect(() => {
-    if (intento === 0) return
+    if (attempt === 0) return
     setContrasena('')
     campoContrasena.current?.focus()
-  }, [intento])
+  }, [attempt])
 
   const bloqueado = ocupado || restante > 0
   const send = (e: FormEvent) => {
@@ -195,7 +195,7 @@ function ConContrasena({
         />
       </label>
       {/* Solo se anuncia el cambio de mensaje, no cada segundo de la cuenta atrás. */}
-      <p key={intento} className="min-h-6 text-center text-alerta-texto" role="alert">
+      <p key={attempt} className="min-h-6 text-center text-alerta-texto" role="alert">
         {restante > 0
           ? 'Demasiados intentos.'
           : ocupado

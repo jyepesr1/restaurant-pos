@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import type { ReglasCobro } from './cuentas'
-import type { CierreReporte, Reporte } from './motor'
+import type { CierreReporte, PeriodReport } from './motor'
 import {
   type Atajo,
   celda,
@@ -203,13 +203,13 @@ const report = fc.record({
 type Caso = typeof report extends fc.Arbitrary<infer T> ? T : never
 
 const ID_PROPIO = '01JB0000000000000000000099'
-const REGLAS = (c: Caso) =>
+const RULES = (c: Caso) =>
   ({
     timeZone: 'America/Bogota',
-    mediosPropios: [{ id: ID_PROPIO, name: c.medioPropio }],
+    customMethods: [{ id: ID_PROPIO, name: c.medioPropio }],
   }) as unknown as ReglasCobro
 
-function build(c: Caso): Reporte {
+function build(c: Caso): PeriodReport {
   const [n0, n1, n2, n3, n4, n5, n6, n7] = c.nets as [
     number,
     number,
@@ -225,8 +225,8 @@ function build(c: Caso): Reporte {
     shiftId: 't1',
     businessDay: '2026-10-24',
     openedAt: c.time,
-    abiertoPor: 'u0',
-    cerradoPor: 'u0',
+    openedBy: 'u0',
+    closedBy: 'u0',
     base: n0,
     byMethod: [],
     closed: {
@@ -365,19 +365,14 @@ describe('CSV: el reporte entero', () => {
   it('con cualquier texto: BOM al inicio, mismas secciones, filas parejas y nada que sea fórmula', () => {
     fc.assert(
       fc.property(report, (c) => {
-        const csv = csvDeReporte(build(c), period, REGLAS(c), c.restaurant)
+        const csv = csvDeReporte(build(c), period, RULES(c), c.restaurant)
         expect(csv.startsWith('﻿')).toBe(true)
         expect(csv.indexOf('﻿', 1)).toBe(-1)
         expect(csv.endsWith('\r\n')).toBe(true)
         const groups = sections(csv)
         // Tantas secciones como en un reporte vacío de textos (los textos no crean ni quitan).
         const referencia = sections(
-          csvDeReporte(
-            build({ ...c, product: [], waiter: [], reason: [] }),
-            period,
-            REGLAS(c),
-            'R',
-          ),
+          csvDeReporte(build({ ...c, product: [], waiter: [], reason: [] }), period, RULES(c), 'R'),
         )
         // Las secciones con filas de datos pueden quedar solo con encabezado, pero siguen ahí.
         expect(groups.length).toBe(referencia.length)
@@ -399,7 +394,7 @@ describe('CSV: el reporte entero', () => {
     fc.assert(
       fc.property(report, (c) => {
         const r = build(c)
-        const groups = sections(csvDeReporte(r, period, REGLAS(c), c.restaurant))
+        const groups = sections(csvDeReporte(r, period, RULES(c), c.restaurant))
         expect(groups[0]?.[0]).toEqual(['Reporte', neutralizado(c.restaurant)].map((x) => x))
         const products = groups.find((g) => g[0]?.[0] === 'Producto') ?? []
         expect(products.slice(1).map((f) => f[0])).toEqual(c.product.map(neutralizado))
@@ -407,8 +402,8 @@ describe('CSV: el reporte entero', () => {
         expect(waiters.slice(1).map((f) => f[0])).toEqual(c.waiter.map(neutralizado))
         const voids = groups.find((g) => g[0]?.[0] === 'Anulación') ?? []
         expect(voids.slice(1).map((f) => f[4])).toEqual(c.reason.map(neutralizado))
-        const medios = groups.find((g) => g[0]?.[0] === 'Medio de pago') ?? []
-        expect(medios[1]?.[0]).toBe(neutralizado(c.medioPropio))
+        const methods = groups.find((g) => g[0]?.[0] === 'Medio de pago') ?? []
+        expect(methods[1]?.[0]).toBe(neutralizado(c.medioPropio))
         const closings =
           groups.find((g) => g[0]?.[0] === 'Cierre de caja' && g[0]?.[1] === 'Abrió') ?? []
         expect(closings[1]?.[7]).toBe(neutralizado(c.justification ?? ''))
@@ -422,7 +417,7 @@ describe('CSV: el reporte entero', () => {
       fc.property(report, (c) => {
         const r = build(c)
         const v = r.report.sales
-        const groups = sections(csvDeReporte(r, period, REGLAS(c), 'R'))
+        const groups = sections(csvDeReporte(r, period, RULES(c), 'R'))
         const sales = new Map(
           (groups.find((g) => g[0]?.[0] === 'Ventas') ?? []).map((f) => [f[0], f[1]]),
         )
@@ -435,8 +430,8 @@ describe('CSV: el reporte entero', () => {
         for (const g of groups)
           if (['Ventas', 'Fondo de propinas'].includes(g[0]?.[0] ?? ''))
             for (const f of g.slice(1)) expect(f[1], f[0]).toMatch(/^-?\d+$/)
-        const medios = groups.find((g) => g[0]?.[0] === 'Medio de pago') ?? []
-        for (const f of medios.slice(1)) for (const x of f.slice(1)) expect(x).toMatch(/^-?\d+$/)
+        const methods = groups.find((g) => g[0]?.[0] === 'Medio de pago') ?? []
+        for (const f of methods.slice(1)) for (const x of f.slice(1)) expect(x).toMatch(/^-?\d+$/)
         const closeout =
           groups.find((g) => g[0]?.[0] === 'Cierre de caja' && g[0]?.[1] === 'Abrió') ?? []
         for (const x of (closeout[1] ?? []).slice(3, 7)) expect(x).toMatch(/^-?\d+$/)
@@ -455,7 +450,7 @@ describe('CSV: el reporte entero', () => {
   it('el descuento por porcentaje lleva el valor en porcentaje con coma y trae su pedido', () => {
     fc.assert(
       fc.property(report, (c) => {
-        const groups = sections(csvDeReporte(build(c), period, REGLAS(c), 'R'))
+        const groups = sections(csvDeReporte(build(c), period, RULES(c), 'R'))
         const d = groups.find((g) => g[0]?.[0] === 'Descuento') ?? []
         expect(d[0]).toEqual(['Descuento', 'Pedido', 'Valor', 'Monto', 'Motivo'])
         expect(d[1]?.slice(0, 3)).toEqual(['Porcentaje', '4', puntosEnPorcentaje(c.rate)])
@@ -466,7 +461,7 @@ describe('CSV: el reporte entero', () => {
   })
 
   it('un reporte vacío sigue siendo un CSV válido, con BOM', () => {
-    const empty: Reporte = {
+    const empty: PeriodReport = {
       today: '2026-10-24',
       usuarios: {},
       printer: false,

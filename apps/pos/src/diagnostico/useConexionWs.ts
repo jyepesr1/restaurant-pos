@@ -52,19 +52,19 @@ export function useConexionWs(): EstadoWs {
   useEffect(() => {
     let active = true
     let socket: WebSocket | undefined
-    let reintento: ReturnType<typeof setTimeout> | undefined
+    let retry: ReturnType<typeof setTimeout> | undefined
     let attempts = 0
     let aperturas = 0
     let closings = 0
-    let ultimoMensajeEn = Date.now()
+    let lastMessageAt = Date.now()
     // Cada ocultamiento invalida los pings en vuelo: su latencia incluiría el tiempo dormido.
-    let generacion = 0
+    let generation = 0
     const muestras: number[] = []
 
     let ocultaDesde: number | null = null
     let visibleDesde: number | null = null
     let cierresAlOcultar = 0
-    let comprobacion: { recibioMensaje: boolean; terminar: () => void } | undefined
+    let pendingCheck: { recibioMensaje: boolean; terminar: () => void } | undefined
 
     const cambiarCanal = (channel: EstadoCanal) =>
       setEstado((previous) => (previous.channel === channel ? previous : { ...previous, channel }))
@@ -75,14 +75,14 @@ export function useConexionWs(): EstadoWs {
       socket = fresh
       const limiteConexion = setTimeout(() => {
         if (fresh.readyState === WebSocket.CONNECTING) {
-          descartar(fresh, { reason: 'timed-out' }, 'disconnected')
+          discard(fresh, { reason: 'timed-out' }, 'disconnected')
         }
       }, TIEMPO_MAXIMO_CONEXION_MS)
 
       fresh.onopen = () => {
         clearTimeout(limiteConexion)
         attempts = 0
-        ultimoMensajeEn = Date.now()
+        lastMessageAt = Date.now()
         // Cuánto tardó en recuperarse la conexión desde que el usuario volvió a la pantalla.
         const recuperacion =
           visibleDesde === null ? {} : { msDesdeVisible: Date.now() - visibleDesde }
@@ -93,14 +93,14 @@ export function useConexionWs(): EstadoWs {
       }
 
       fresh.onmessage = ({ data }) => {
-        ultimoMensajeEn = Date.now()
-        if (comprobacion) comprobacion.recibioMensaje = true
+        lastMessageAt = Date.now()
+        if (pendingCheck) pendingCheck.recibioMensaje = true
         cambiarCanal('connected')
 
         const text = String(data)
         if (!text.startsWith('pong:')) return
         const [gen, sent] = text.slice('pong:'.length).split(':').map(Number)
-        if (gen !== generacion || document.hidden || sent === undefined) return
+        if (gen !== generation || document.hidden || sent === undefined) return
         muestras.push(Math.round(performance.now() - sent))
         if (muestras.length > MAXIMO_MUESTRAS) muestras.shift()
         setEstado((previous) => ({ ...previous, latencia: calcularLatencia(muestras) }))
@@ -108,12 +108,12 @@ export function useConexionWs(): EstadoWs {
 
       fresh.onclose = ({ code }) => {
         clearTimeout(limiteConexion)
-        alCerrar(fresh, { code: code })
+        onClose(fresh, { code: code })
       }
     }
 
     /** Suelta un socket que ya no se usa: sus eventos tardíos no deben afectar el estado. */
-    function soltar(oldOne: WebSocket) {
+    function release(oldOne: WebSocket) {
       oldOne.onopen = null
       oldOne.onmessage = null
       oldOne.onclose = null
@@ -121,19 +121,19 @@ export function useConexionWs(): EstadoWs {
     }
 
     /** Abandona un socket colgado o muerto sin esperar a que el navegador lo cierre. */
-    function descartar(oldOne: WebSocket, detalle: Record<string, unknown>, channel: EstadoCanal) {
-      alCerrar(oldOne, detalle, channel)
-      soltar(oldOne)
+    function discard(oldOne: WebSocket, detalle: Record<string, unknown>, channel: EstadoCanal) {
+      onClose(oldOne, detalle, channel)
+      release(oldOne)
     }
 
     /** Conecta ya, sin esperar el reintento programado (que el navegador pudo congelar). */
     function reconectarAhora() {
-      clearTimeout(reintento)
+      clearTimeout(retry)
       attempts = 0
       connect()
     }
 
-    function alCerrar(
+    function onClose(
       closed: WebSocket,
       detalle: Record<string, unknown>,
       channel: EstadoCanal = 'disconnected',
@@ -144,27 +144,27 @@ export function useConexionWs(): EstadoWs {
       registrarEvento('ws-closed', detalle)
       cambiarCanal(channel)
       attempts += 1
-      reintento = setTimeout(connect, Math.min(1000 * attempts, ESPERA_MAXIMA_RECONEXION_MS))
+      retry = setTimeout(connect, Math.min(1000 * attempts, ESPERA_MAXIMA_RECONEXION_MS))
     }
 
     const ping = setInterval(() => {
       if (socket?.readyState === WebSocket.OPEN && !document.hidden) {
-        socket.send(`ping:${generacion}:${performance.now()}`)
+        socket.send(`ping:${generation}:${performance.now()}`)
       }
     }, INTERVALO_PING_MS)
 
     // El navegador puede tardar minutos en avisar que una conexión murió (Wi-Fi caído sin
     // cierre limpio): si no llega nada en un buen rato, se descarta y se abre otra.
-    const vigilancia = setInterval(() => {
+    const watchdog = setInterval(() => {
       if (document.hidden || socket?.readyState !== WebSocket.OPEN) return
-      if (Date.now() - ultimoMensajeEn < SIN_RESPUESTA_MS) return
-      descartar(socket, { reason: 'no-response' }, 'no-response')
+      if (Date.now() - lastMessageAt < SIN_RESPUESTA_MS) return
+      discard(socket, { reason: 'no-response' }, 'no-response')
     }, INTERVALO_VIGILANCIA_MS)
 
     function alCambiarVisibilidad() {
       if (document.hidden) {
-        comprobacion?.terminar()
-        generacion += 1
+        pendingCheck?.terminar()
+        generation += 1
         visibleDesde = null
         ocultaDesde = Date.now()
         cierresAlOcultar = closings
@@ -173,25 +173,25 @@ export function useConexionWs(): EstadoWs {
       }
 
       if (ocultaDesde === null) return
-      const volvioEn = Date.now()
-      const duracionMs = volvioEn - ocultaDesde
+      const returnedAt = Date.now()
+      const duracionMs = returnedAt - ocultaDesde
       ocultaDesde = null
       // Tras dormir, el vigilante no debe matar la conexión antes de que lleguen mensajes.
-      ultimoMensajeEn = volvioEn
+      lastMessageAt = returnedAt
       // Toda reconexión que ocurra desde ahora se mide desde que el usuario volvió.
-      visibleDesde = volvioEn
+      visibleDesde = returnedAt
       const abiertoAlVolver = socket?.readyState === WebSocket.OPEN
       // Solo este socket (el que sobrevivió al bloqueo) puede resultar mudo; uno reabierto tras
       // volver aún no ha recibido nada porque el hub no envía mensajes al abrir.
       const socketAlVolver = abiertoAlVolver ? socket : undefined
       if (abiertoAlVolver) {
-        socket?.send(`ping:${generacion}:${performance.now()}`)
+        socket?.send(`ping:${generation}:${performance.now()}`)
       } else {
         // Sin conexión al volver: no esperar el reintento ni un intento colgado mientras dormía.
         if (socket?.readyState === WebSocket.CONNECTING) {
-          descartar(socket, { reason: 'retry-on-return' }, 'connecting')
+          discard(socket, { reason: 'retry-on-return' }, 'connecting')
         } else if (socket) {
-          soltar(socket)
+          release(socket)
         }
         reconectarAhora()
       }
@@ -199,9 +199,9 @@ export function useConexionWs(): EstadoWs {
       const current = {
         recibioMensaje: false,
         terminar: () => {
-          clearTimeout(limite)
-          if (comprobacion !== current) return
-          comprobacion = undefined
+          clearTimeout(limit)
+          if (pendingCheck !== current) return
+          pendingCheck = undefined
           const conexionMantenida =
             abiertoAlVolver && current.recibioMensaje && closings === cierresAlOcultar
           registrarEvento('visible', { duracionMs, conexionMantenida, abiertoAlVolver })
@@ -215,13 +215,13 @@ export function useConexionWs(): EstadoWs {
             socket?.readyState === WebSocket.OPEN &&
             !current.recibioMensaje
           if (!document.hidden && socket && mudo) {
-            descartar(socket, { reason: 'no-response-on-return' }, 'no-response')
+            discard(socket, { reason: 'no-response-on-return' }, 'no-response')
             reconectarAhora()
           }
         },
       }
-      const limite = setTimeout(() => current.terminar(), ESPERA_COMPROBACION_MS)
-      comprobacion = current
+      const limit = setTimeout(() => current.terminar(), ESPERA_COMPROBACION_MS)
+      pendingCheck = current
     }
 
     document.addEventListener('visibilitychange', alCambiarVisibilidad)
@@ -231,8 +231,8 @@ export function useConexionWs(): EstadoWs {
       active = false
       document.removeEventListener('visibilitychange', alCambiarVisibilidad)
       clearInterval(ping)
-      clearInterval(vigilancia)
-      clearTimeout(reintento)
+      clearInterval(watchdog)
+      clearTimeout(retry)
       socket?.close()
     }
   }, [])

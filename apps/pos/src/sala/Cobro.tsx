@@ -1,5 +1,5 @@
 import { newId, type OrderState, type PaymentMethod } from '@pos/core'
-import type { Catalogo } from '@pos/sync'
+import type { Catalog } from '@pos/sync'
 import { useEffect, useRef, useState } from 'react'
 import { Boton } from '../ui/Boton'
 import { Etiqueta } from '../ui/Etiqueta'
@@ -90,23 +90,23 @@ const percent = (puntos: number) => `${`${puntos / 100}`.replace('.', ',')} %`
 export function PanelCobro({
   cobrando,
   order,
-  reglas,
+  rules,
   cardTerminals,
   ocupado,
-  alCerrar,
+  onClose,
   alCobrar,
 }: {
   cobrando: Cobrando | null
   order: OrderState
-  reglas: ReglasCobro
-  cardTerminals: NonNullable<Catalogo['cardTerminals']>
+  rules: ReglasCobro
+  cardTerminals: NonNullable<Catalog['cardTerminals']>
   ocupado: boolean
-  alCerrar: () => void
+  onClose: () => void
   alCobrar: (payment: PagoNuevo) => void
 }) {
   if (!cobrando)
     return (
-      <PanelLateral opened={false} title="Cobrar" alCerrar={alCerrar}>
+      <PanelLateral opened={false} title="Cobrar" onClose={onClose}>
         {null}
       </PanelLateral>
     )
@@ -115,10 +115,10 @@ export function PanelCobro({
       key={`${cobrando.checkId}-${cobrando.available}`}
       cobrando={cobrando}
       order={order}
-      reglas={reglas}
+      rules={rules}
       cardTerminals={cardTerminals}
       ocupado={ocupado}
-      alCerrar={alCerrar}
+      onClose={onClose}
       alCobrar={alCobrar}
     />
   )
@@ -127,23 +127,23 @@ export function PanelCobro({
 function FormularioCobro({
   cobrando,
   order,
-  reglas,
+  rules,
   cardTerminals,
   ocupado,
-  alCerrar,
+  onClose,
   alCobrar,
 }: {
   cobrando: Cobrando
   order: OrderState
-  reglas: ReglasCobro
-  cardTerminals: NonNullable<Catalogo['cardTerminals']>
+  rules: ReglasCobro
+  cardTerminals: NonNullable<Catalog['cardTerminals']>
   ocupado: boolean
-  alCerrar: () => void
+  onClose: () => void
   alCobrar: (payment: PagoNuevo) => void
 }) {
   // El mismo id en cada intento: si el hub tarda y se reintenta, no queda un pago doble.
   const [paymentId] = useState(newId)
-  const options = opcionesDeCobro(reglas)
+  const options = opcionesDeCobro(rules)
   const { available } = cobrando
   const [key, setClave] = useState(options[0]?.key ?? 'cash')
   const option: OpcionCobro =
@@ -195,20 +195,20 @@ function FormularioCobro({
   /** La propina con un porcentaje; en efectivo, redondeada para pagarla con billetes. */
   const conPorcentaje = (puntos: number) => {
     const exacta =
-      puntos === reglas.suggestedTip
-        ? propinaDePago(order, cobrando.check, available, value, reglas)
-        : propinaConPorcentaje(order, available, value, puntos, reglas)
-    return esEfectivo ? propinaParaEfectivo(exacta, reglas) : exacta
+      puntos === rules.suggestedTip
+        ? propinaDePago(order, cobrando.check, available, value, rules)
+        : propinaConPorcentaje(order, available, value, puntos, rules)
+    return esEfectivo ? propinaParaEfectivo(exacta, rules) : exacta
   }
   const tip =
     eleccion.type === 'value'
       ? eleccion.pesos
-      : conPorcentaje(eleccion.type === 'suggested' ? reglas.suggestedTip : eleccion.puntos)
+      : conPorcentaje(eleccion.type === 'suggested' ? rules.suggestedTip : eleccion.puntos)
   const select = (e: Eleccion) => {
     setEleccion(e)
     setConfirmando(false)
   }
-  const rapidos = [...new Set([0, 500, reglas.suggestedTip])].sort((a, b) => a - b)
+  const rapidos = [...new Set([0, 500, rules.suggestedTip])].sort((a, b) => a - b)
 
   const elegirOpcion = (o: OpcionCobro) => {
     setClave(o.key)
@@ -217,12 +217,12 @@ function FormularioCobro({
   }
 
   const cash = montoValido
-    ? pagoEnEfectivo({ balance: available, amount, tip, tendered: 0 }, reglas)
+    ? pagoEnEfectivo({ balance: available, amount, tip, tendered: 0 }, rules)
     : null
   // Por defecto, el cliente entrega justo lo que hay que cobrar (un toque menos).
   const served = tendered ?? cash?.aEntregar ?? 0
   const calculo = montoValido
-    ? pagoEnEfectivo({ balance: available, amount, tip, tendered: served }, reglas)
+    ? pagoEnEfectivo({ balance: available, amount, tip, tendered: served }, rules)
     : null
   const aCobrar = esEfectivo ? (calculo?.aEntregar ?? 0) : amount + tip
   const sinDatafono = option.method === 'card' && cardTerminal === null
@@ -329,7 +329,7 @@ function FormularioCobro({
   )
 
   return (
-    <PanelLateral opened title={`Cobrar · ${cobrando.name}`} alCerrar={alCerrar} pie={pie}>
+    <PanelLateral opened title={`Cobrar · ${cobrando.name}`} onClose={onClose} pie={pie}>
       <div className="flex flex-col gap-4">
         <section
           className="rounded-2xl border border-linea bg-superficie-2/60 p-4"
@@ -384,7 +384,7 @@ function FormularioCobro({
               const elegida =
                 p === 0
                   ? eleccion.type === 'value' && eleccion.pesos === 0
-                  : p === reglas.suggestedTip
+                  : p === rules.suggestedTip
                     ? eleccion.type === 'suggested'
                     : eleccion.type === 'percent' && eleccion.puntos === p
               return (
@@ -395,7 +395,7 @@ function FormularioCobro({
                     select(
                       p === 0
                         ? { type: 'value', pesos: 0 }
-                        : p === reglas.suggestedTip
+                        : p === rules.suggestedTip
                           ? { type: 'suggested' }
                           : { type: 'percent', puntos: p },
                     )
@@ -403,7 +403,7 @@ function FormularioCobro({
                 >
                   {p === 0
                     ? 'Sin propina'
-                    : p === reglas.suggestedTip
+                    : p === rules.suggestedTip
                       ? `${percent(p)} (sugerida)`
                       : percent(p)}
                 </Opcion>
@@ -453,7 +453,7 @@ function FormularioCobro({
           >
             <p className="text-texto-suave">
               {calculo.adjustment !== 0
-                ? `A cobrar (venta redondeada a ${pesos(reglas.redondeoEfectivo)} + propina)`
+                ? `A cobrar (venta redondeada a ${pesos(rules.cashRounding)} + propina)`
                 : 'A cobrar (venta + propina)'}
             </p>
             <p className="cifras font-titulo text-3xl font-bold">{pesos(calculo.aEntregar)}</p>

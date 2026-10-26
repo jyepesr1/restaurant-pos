@@ -6,19 +6,19 @@ import { SISTEMA } from './registros'
 
 // Personal y roles (tarea 1.3b): el administrador decide los permisos de cada rol.
 
-const montar = () => {
+const setup = () => {
   const m = montarAcceso()
   const role = (data: Parameters<typeof guardarRol>[3]) =>
-    guardarRol(m.db, m.restauranteId, m.access, data, SISTEMA, m.clock())
+    guardarRol(m.db, m.restaurantId, m.access, data, SISTEMA, m.clock())
   const person = (data: Parameters<typeof guardarPersona>[3]) =>
-    guardarPersona(m.db, m.restauranteId, m.access, data, SISTEMA, m.clock())
-  const read = () => leerPersonal(m.db, m.restauranteId, m.access)
+    guardarPersona(m.db, m.restaurantId, m.access, data, SISTEMA, m.clock())
+  const read = () => leerPersonal(m.db, m.restaurantId, m.access)
   return { ...m, role, person, read }
 }
 
 describe('roles', () => {
   it('se crea un rol con los permisos que se quieran, y quitar uno lo archiva sin borrarlo', () => {
-    const m = montar()
+    const m = setup()
     const id = m.role({ name: 'Bartender', permissions: ['take_order', 'mark_product_sold_out'] })
     const ana = m.person({ name: 'Bea', rolId: id })
     expect(m.access.permisosDe(ana.userId)).toEqual(['mark_product_sold_out', 'take_order'])
@@ -44,7 +44,7 @@ describe('roles', () => {
   })
 
   it('a un rol de fábrica se le cambian los permisos, pero no el nombre ni se archiva', () => {
-    const m = montar()
+    const m = setup()
     m.role({ id: m.roles.cashier, name: 'Cajero', permissions: ['take_order', 'comp'] })
     expect(m.access.permisosDe(m.people.cashier.userId)).toEqual(['comp', 'take_order'])
     expect(() => m.role({ id: m.roles.cashier, name: 'Caja', permissions: [] })).toThrow(
@@ -56,14 +56,14 @@ describe('roles', () => {
   })
 
   it('no hay dos roles activos con el mismo nombre, sin importar mayúsculas ni tildes iguales', () => {
-    const m = montar()
+    const m = setup()
     expect(() => m.role({ name: 'mesero', permissions: [] })).toThrow(/Ya hay un rol/)
     expect(() => m.role({ name: '  ', permissions: [] })).toThrow(ErrorPersonal)
     expect(() => m.role({ name: 'X', permissions: ['delete_all'] })).toThrow(/desconocido/)
   })
 
   it('un rol con personas no se archiva; vacío, sí', () => {
-    const m = montar()
+    const m = setup()
     expect(() =>
       m.role({ id: m.roles.manager, name: 'Gerente', permissions: [], active: false }),
     ).toThrow(/tiene personas/)
@@ -75,7 +75,7 @@ describe('roles', () => {
   })
 
   it('no deja al restaurante sin nadie que pueda administrar el personal', () => {
-    const m = montar()
+    const m = setup()
     const all = m.read().roles.find((r) => r.id === m.roles.admin)?.permissions ?? []
     expect(() =>
       m.role({
@@ -91,7 +91,7 @@ describe('roles', () => {
 
 describe('quien entra con PIN no puede tener permisos de caja ni de administración', () => {
   it('ni al crearla, ni al darle ese permiso a su rol', () => {
-    const m = montar()
+    const m = setup()
     expect(() => m.person({ name: 'Pía', rolId: m.roles.cashier })).toThrow(
       /Pía entra con PIN y su rol permite «/,
     )
@@ -115,7 +115,7 @@ describe('quien entra con PIN no puede tener permisos de caja ni de administraci
   })
 
   it('el PIN de alguien con permisos de caja no abre sesión, aunque no tenga contraseña (base vieja)', () => {
-    const m = montar()
+    const m = setup()
     // Como quedaría un Gerente de antes de ADR-013: rol que cobra, persona sin contraseña.
     const ana = m.people.waiter
     m.db.prepare('UPDATE users SET role_id = ? WHERE id = ?').run(m.roles.cashier, ana.userId)
@@ -130,7 +130,7 @@ describe('quien entra con PIN no puede tener permisos de caja ni de administraci
 
 describe('volver a activar a alguien', () => {
   it('si su PIN quedó en otra persona, recibe uno nuevo; si su usuario, hay que ponerle otro', () => {
-    const m = montar()
+    const m = setup()
     const ana = m.people.waiter
     const data = { id: ana.userId, name: 'Ana', rolId: m.roles.waiter }
     m.person({ ...data, active: false })
@@ -167,7 +167,7 @@ describe('volver a activar a alguien', () => {
 
 describe('personas', () => {
   it('un mesero nuevo entra con su PIN; alguien de caja, con usuario y contraseña', () => {
-    const m = montar()
+    const m = setup()
     const waiter = m.person({ name: 'Pedro', rolId: m.roles.waiter })
     expect(waiter.pin).toMatch(/^\d{4}$/)
     expect(m.access.entrar({ pin: waiter.pin as string }, null, 'ip-1')).toMatchObject({ ok: true })
@@ -191,7 +191,7 @@ describe('personas', () => {
   })
 
   it('el usuario es único en el restaurante y la contraseña tiene al menos 8 caracteres', () => {
-    const m = montar()
+    const m = setup()
     const withIt = (user: string, password?: string) => () =>
       m.person({
         name: 'X',
@@ -207,7 +207,7 @@ describe('personas', () => {
   })
 
   it('pasar a alguien de PIN a contraseña y de vuelta; cambiar el rol cierra su sesión', () => {
-    const m = montar()
+    const m = setup()
     const { connection } = m.emparejar('waiter')
     const session = m.entrar(connection, 'waiter')
     const data = { id: m.people.waiter.userId, name: 'Ana' }
@@ -249,7 +249,7 @@ describe('personas', () => {
   })
 
   it('regenerar el PIN da uno nuevo y el viejo deja de servir; archivar libera el usuario', () => {
-    const m = montar()
+    const m = setup()
     const { connection } = m.emparejar('waiter')
     const data = { id: m.people.waiter.userId, name: 'Ana', rolId: m.roles.waiter }
     const r = m.person({ ...data, regenerarPin: true })
@@ -266,7 +266,7 @@ describe('personas', () => {
   })
 
   it('no se archiva a la última persona que administra el personal', () => {
-    const m = montar()
+    const m = setup()
     expect(() =>
       m.person({
         id: m.people.admin.userId,
@@ -291,7 +291,7 @@ describe('personas', () => {
 
 describe('equipos en la pantalla de personal', () => {
   it('cada equipo con su último uso y quién; el retirado al final', () => {
-    const m = montar()
+    const m = setup()
     const phone = m.access.entrar({ pin: m.people.waiter.pin }, null, 'ip-1')
     const register = m.access.entrar({ user: 'carlos', password: 'clave-de-carlos' }, null, 'ip-2')
     if (!phone.ok || !register.ok || !phone.device || !register.device) throw new Error('no entró')
@@ -307,10 +307,10 @@ describe('equipos en la pantalla de personal', () => {
     if (!admin.ok || !admin.device) throw new Error('no entró')
     const connection = m.access.authenticate(admin.device.token)
     if (!connection) throw new Error('sin conexión')
-    m.access.revocarDispositivo(connection, { ...admin, dispositivoId: phone.device.dispositivoId })
+    m.access.revocarDispositivo(connection, { ...admin, deviceId: phone.device.deviceId })
 
     const devices = m.read().devices
-    expect(devices.map((e) => [e.name, e.type, e.ultimaPersona, e.revocadoEn !== null])).toEqual([
+    expect(devices.map((e) => [e.name, e.type, e.ultimaPersona, e.revokedAt !== null])).toEqual([
       ['Equipo de Administrador', 'register', 'Administrador', false],
       ['Equipo de Carlos', 'register', 'Carlos', false],
       ['Equipo de Ana', 'waiter', 'Ana', true],
@@ -320,13 +320,13 @@ describe('equipos en la pantalla de personal', () => {
 
 describe('API de personal', () => {
   function montarApi() {
-    const m = montar()
+    const m = setup()
     const changes: number[] = []
     const app = crearServidor({
       access: m.access,
       catalog: {
         db: m.db,
-        restauranteId: m.restauranteId,
+        restaurantId: m.restaurantId,
         access: m.access,
         clock: m.clock,
         onChange: (v) => changes.push(v),
@@ -372,13 +372,13 @@ describe('API de personal', () => {
     expect(person.json().pin).toMatch(/^\d{4}$/)
     expect(api.changes).toHaveLength(2)
 
-    const repetido = await api.post(
+    const duplicate = await api.post(
       '/api/staff/roles',
       { ...session, role: { name: 'barra', permissions: [] } },
       token,
     )
-    expect(repetido.statusCode).toBe(400)
-    expect(repetido.json().message).toMatch(/Ya hay un rol/)
+    expect(duplicate.statusCode).toBe(400)
+    expect(duplicate.json().message).toMatch(/Ya hay un rol/)
   })
 
   it('sin el permiso responde 403; sin sesión, 401; con datos raros, 400', async () => {

@@ -1,54 +1,54 @@
 import { DatabaseSync } from 'node:sqlite'
-import type { BaseSqlite } from './sqlite'
+import type { SqliteDatabase } from './sqlite'
 
-export interface OpcionesApertura {
+export interface OpenOptions {
   /**
-   * Toma la base en exclusiva mientras el proceso viva: un segundo hub sobre la misma carpeta
-   * de datos no puede abrirla. Se usa en el hub, no en pruebas.
+   * Holds the database exclusively while the process lives: a second hub on the same data
+   * folder cannot open it. Used in the hub, not in tests.
    */
-  exclusiva?: boolean
-  /** Cuánto esperar si la base está ocupada antes de fallar. */
-  esperaMs?: number
+  exclusive?: boolean
+  /** How long to wait if the database is busy before failing. */
+  waitMs?: number
 }
 
-export class BaseOcupadaError extends Error {
+export class DatabaseBusyError extends Error {
   constructor() {
     super('Otro hub ya está usando esta base de datos. Cierra el otro antes de abrir este.')
   }
 }
 
 /**
- * Abre la base del hub con `node:sqlite` (incluido en Node, sin módulos nativos que compilar
- * en Windows). Solo para Node: la nube usará el SQLite de su propia plataforma.
- * Una sola conexión por proceso: `node:sqlite` es síncrono y una espera bloquea el hub.
+ * Opens the hub database with `node:sqlite` (bundled with Node, no native modules to compile
+ * on Windows). Node only: the cloud will use its own platform's SQLite.
+ * A single connection per process: `node:sqlite` is synchronous and a wait blocks the hub.
  */
-export function abrirBase(
-  ruta: string,
-  { exclusiva = false, esperaMs = 5000 }: OpcionesApertura = {},
-): BaseSqlite {
-  const db = new DatabaseSync(ruta)
+export function openDatabase(
+  route: string,
+  { exclusive = false, waitMs = 5000 }: OpenOptions = {},
+): SqliteDatabase {
+  const db = new DatabaseSync(route)
   try {
-    // busy_timeout primero: pasar a WAL necesita un bloqueo y debe poder esperar.
-    db.exec(`PRAGMA busy_timeout = ${Math.trunc(esperaMs)}`)
-    if (exclusiva) db.exec('PRAGMA locking_mode = EXCLUSIVE')
+    // busy_timeout first: switching to WAL needs a lock and must be able to wait.
+    db.exec(`PRAGMA busy_timeout = ${Math.trunc(waitMs)}`)
+    if (exclusive) db.exec('PRAGMA locking_mode = EXCLUSIVE')
 
     const mode = db.prepare('PRAGMA journal_mode = WAL').get()?.journal_mode
-    if (ruta !== ':memory:' && mode !== 'wal') {
+    if (route !== ':memory:' && mode !== 'wal') {
       throw new Error(`No se pudo activar el modo WAL (quedó en "${String(mode)}")`)
     }
-    // FULL: sin UPS, un corte de luz no debe perder la última transacción confirmada (ADR-003).
-    // recursive_triggers: refuerzo para que un REPLACE dispare los bloqueos de borrado.
+    // FULL: without a UPS, a power outage must not lose the last committed transaction (ADR-003).
+    // recursive_triggers: extra safeguard so a REPLACE fires the delete blocks.
     db.exec(`
       PRAGMA synchronous = FULL;
       PRAGMA foreign_keys = ON;
       PRAGMA recursive_triggers = ON;
     `)
-    // En modo exclusivo el bloqueo se toma con la primera escritura: hacerla ya.
-    if (exclusiva) db.exec('BEGIN IMMEDIATE; COMMIT;')
+    // In exclusive mode the lock is taken on the first write: do it now.
+    if (exclusive) db.exec('BEGIN IMMEDIATE; COMMIT;')
   } catch (error) {
     db.close()
     if (error instanceof Error && /database is locked/i.test(error.message)) {
-      throw new BaseOcupadaError()
+      throw new DatabaseBusyError()
     }
     throw error
   }

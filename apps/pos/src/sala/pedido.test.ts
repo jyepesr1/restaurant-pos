@@ -1,5 +1,5 @@
 import { newId, rebuild } from '@pos/core'
-import type { Catalogo } from '@pos/sync'
+import type { Catalog } from '@pos/sync'
 import { describe, expect, it } from 'vitest'
 import {
   comandasPorEstacion,
@@ -202,16 +202,16 @@ describe('comandasPorEstacion', () => {
     return status
   }
 
-  const catalog: Catalogo = catalogoDePrueba({
+  const catalog: Catalog = catalogoDePrueba({
     categories: [
       {
         id: 'C1',
         name: 'Pizzas',
-        estacionId: 'E-COCINA',
+        stationId: 'E-COCINA',
         products: [product({ id: enCocina })],
       },
-      { id: 'C2', name: 'Tragos', estacionId: 'E-BARRA', products: [product({ id: enBarra })] },
-      { id: 'C3', name: 'Varios', estacionId: null, products: [product({ id: sinEstacion })] },
+      { id: 'C2', name: 'Tragos', stationId: 'E-BARRA', products: [product({ id: enBarra })] },
+      { id: 'C3', name: 'Varios', stationId: null, products: [product({ id: sinEstacion })] },
     ],
   })
 
@@ -225,8 +225,8 @@ describe('comandasPorEstacion', () => {
     expect(bar?.item_ids).toHaveLength(1)
     expect(new Set(r?.tickets.map((c) => c.ticket_id)).size).toBe(2)
     // Todos los pendientes salen en alguna comanda, sin repetirse.
-    const enviados = r?.tickets.flatMap((c) => c.item_ids) ?? []
-    expect(new Set(enviados)).toEqual(new Set(porEnviar(status).map((i) => i.id)))
+    const sentList = r?.tickets.flatMap((c) => c.item_ids) ?? []
+    expect(new Set(sentList)).toEqual(new Set(porEnviar(status).map((i) => i.id)))
   })
 
   it('una categoría sin estación va a la primera estación del restaurante', () => {

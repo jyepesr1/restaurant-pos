@@ -10,15 +10,15 @@ import { ServicioAcceso } from './servicio'
 // la clave; los PIN sí, y se regeneran.
 
 describe('contraseñas tras reiniciar el hub o perder la clave de los PIN', () => {
-  let carpeta = ''
+  let folder = ''
   let hubs: ReturnType<typeof hubEnCarpeta>
   beforeEach(() => {
-    carpeta = mkdtempSync(join(tmpdir(), 'pos-reinicio-clave-'))
-    hubs = hubEnCarpeta(join(carpeta, 'data'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-reinicio-clave-'))
+    hubs = hubEnCarpeta(join(folder, 'data'))
   })
   afterEach(() => {
     hubs.apagar()
-    rmSync(carpeta, { recursive: true, force: true })
+    rmSync(folder, { recursive: true, force: true })
   })
 
   function conGente() {
@@ -46,7 +46,7 @@ describe('contraseñas tras reiniciar el hub o perder la clave de los PIN', () =
     const { h } = conGente()
     const admin = { user: h.admin.user as string, password: h.admin.password as string }
     hubs.apagar()
-    rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
+    rmSync(join(folder, 'data', ARCHIVO_CLAVE))
 
     const d = hubs.spinUp()
     expect(d.claveNueva).toBe(true)
@@ -62,13 +62,13 @@ describe('contraseñas tras reiniciar el hub o perder la clave de los PIN', () =
     // El administrador recibió un PIN nuevo para autorizar y no se le dio otra contraseña.
     expect(d.admin.pin).toMatch(/^\d{4}$/)
     expect(d.admin.password).toBeNull()
-    expect(d.admin.avisos.join(' ')).toMatch(/clave de los PIN/)
+    expect(d.admin.alerts.join(' ')).toMatch(/clave de los PIN/)
   })
 
   it('con la clave perdida, el PIN del mesero y el de autorizar del cajero dejan de servir hasta regenerarlos', () => {
     const { h, cashier, ana } = conGente()
     hubs.apagar()
-    rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
+    rmSync(join(folder, 'data', ARCHIVO_CLAVE))
     const d = hubs.spinUp()
     expect(d.access.entrar({ pin: ana.pin }, null, '10.0.1.1')).toMatchObject({
       ok: false,
@@ -86,7 +86,7 @@ describe('contraseñas tras reiniciar el hub o perder la clave de los PIN', () =
       secret: sesionAna.secret,
       pin: cashier.pin,
       action: 'void_sent_item',
-      agregadoId: '0'.repeat(26),
+      aggregateId: '0'.repeat(26),
       eventId: '1'.repeat(26),
       fingerprint: 'a'.repeat(64),
     })
@@ -96,7 +96,7 @@ describe('contraseñas tras reiniciar el hub o perder la clave de los PIN', () =
       secret: sesionAna.secret,
       pin: pinCarlos,
       action: 'void_sent_item',
-      agregadoId: '0'.repeat(26),
+      aggregateId: '0'.repeat(26),
       eventId: '2'.repeat(26),
       fingerprint: 'b'.repeat(64),
     })
@@ -114,7 +114,7 @@ describe('contraseñas tras reiniciar el hub o perder la clave de los PIN', () =
       )
     const before = huellas()
     hubs.apagar()
-    rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
+    rmSync(join(folder, 'data', ARCHIVO_CLAVE))
     const d = hubs.spinUp()
     expect(
       JSON.stringify(
@@ -131,7 +131,7 @@ describe('contraseñas tras reiniciar el hub o perder la clave de los PIN', () =
       hubs.apagar()
       const d = hubs.spinUp()
       expect(d.claveNueva).toBe(false)
-      expect(d.admin).toEqual({ pin: null, user: null, password: null, avisos: [] })
+      expect(d.admin).toEqual({ pin: null, user: null, password: null, alerts: [] })
       expect(entra(d, 'carlos', 'clave-de-carlos', i + 1)).toMatchObject({ ok: true })
     }
     const d = hubs.spinUp()
@@ -142,10 +142,10 @@ describe('contraseñas tras reiniciar el hub o perder la clave de los PIN', () =
 
   it('una contraseña guardada con un costo sigue sirviendo si el hub cambia el costo para las nuevas', () => {
     const { h } = conGente()
-    const { key } = cargarClave(join(carpeta, 'data'))
+    const { key } = cargarClave(join(folder, 'data'))
     const mas_caro = new ServicioAcceso({
       db: h.db,
-      restauranteId: h.restauranteId,
+      restaurantId: h.restaurantId,
       key,
       costoContrasena: 6,
     })

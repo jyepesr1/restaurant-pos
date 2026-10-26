@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { abrirBase } from '@pos/db/node'
+import { openDatabase } from '@pos/db/node'
 import { afterEach, describe, expect, it } from 'vitest'
 
 // `pnpm seed` como lo corre el usuario: un proceso aparte sobre una carpeta de datos.
@@ -20,33 +20,33 @@ const seed = (dirDatos: string) => {
 }
 
 describe('pnpm seed (proceso real)', { timeout: 60_000 }, () => {
-  let carpeta = ''
-  afterEach(() => rmSync(carpeta, { recursive: true, force: true }))
+  let folder = ''
+  afterEach(() => rmSync(folder, { recursive: true, force: true }))
 
   it('la primera vez crea todo y deja los PIN en un archivo; la segunda no cambia nada', () => {
-    carpeta = mkdtempSync(join(tmpdir(), 'pos-seed-'))
-    const first = seed(carpeta)
+    folder = mkdtempSync(join(tmpdir(), 'pos-seed-'))
+    const first = seed(folder)
     expect(first.code).toBe(0)
     expect(first.output).toMatch(/products\s+98 nuevos/)
     // Sin ventana, los PIN no salen en la consola: van a un archivo.
     expect(first.output).not.toMatch(/Mesero 1\s+PIN \d{4}/)
     // Un archivo por corrida: primero el del administrador, luego el del personal.
-    const archivos = readdirSync(carpeta).filter((f) => /^pines-.*\.txt$/.test(f))
-    const pins = archivos.map((f) => readFileSync(join(carpeta, f), 'utf8')).join('')
+    const archivos = readdirSync(folder).filter((f) => /^pines-.*\.txt$/.test(f))
+    const pins = archivos.map((f) => readFileSync(join(folder, f), 'utf8')).join('')
     expect(pins).toMatch(/Contraseña:\s+\S+[\s\S]*PIN para autorizar:\s+\d{4}/)
     expect(pins).toMatch(/Mesero 3\s+PIN \d{4}/)
 
-    const segunda = seed(carpeta)
-    expect(segunda.code).toBe(0)
-    expect(segunda.output).toMatch(/products\s+0 nuevos, 0 cambiados, 98 iguales/)
-    expect(segunda.output).toContain('No se creó personal nuevo')
+    const second = seed(folder)
+    expect(second.code).toBe(0)
+    expect(second.output).toMatch(/products\s+0 nuevos, 0 cambiados, 98 iguales/)
+    expect(second.output).toContain('No se creó personal nuevo')
   })
 
   it('con el hub abierto no toca nada y lo dice', () => {
-    carpeta = mkdtempSync(join(tmpdir(), 'pos-seed-'))
-    const hubAbierto = abrirBase(join(carpeta, 'pos.sqlite'), { exclusiva: true })
+    folder = mkdtempSync(join(tmpdir(), 'pos-seed-'))
+    const hubAbierto = openDatabase(join(folder, 'pos.sqlite'), { exclusive: true })
     try {
-      const r = seed(carpeta)
+      const r = seed(folder)
       expect(r.code).toBe(1)
       expect(r.output).toContain('el hub está abierto')
     } finally {

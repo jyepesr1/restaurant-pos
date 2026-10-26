@@ -2,11 +2,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newId } from '@pos/core'
-import type { MensajeHub } from '@pos/sync'
+import type { HubMessage } from '@pos/sync'
 import { afterEach, describe, expect, it } from 'vitest'
 import { montarAcceso } from './acceso/montaje'
 import { ABRIR, item } from './acceso/montaje-hub'
-import { insertarVersionado, SISTEMA } from './acceso/registros'
+import { insertVersioned, SISTEMA } from './acceso/registros'
 import { prepararSincronizacion } from './arranque'
 
 // `prepararSincronizacion` (lo que corre en el hub real): las reglas de cobro se leen de la base en
@@ -22,53 +22,53 @@ function mundo() {
   const m = montarAcceso()
   const dir = mkdtempSync(join(tmpdir(), 'hub-checkout-'))
   carpetas.push(dir)
-  const sala = prepararSincronizacion(m.db, dir, m.restauranteId, m.access)
+  const floor = prepararSincronizacion(m.db, dir, m.restaurantId, m.access)
   const register = m.emparejar('register')
   const session = m.entrar(register.connection, 'cashier')
-  const recibidos: MensajeHub[] = []
-  const enlace = sala.connect((message) => recibidos.push(message))
-  enlace.recibir({
+  const received: HubMessage[] = []
+  const link = floor.connect((message) => received.push(message))
+  link.receive({
     type: 'hello',
     token: register.token,
-    hub_instancia: null,
+    hub_instance: null,
     until: 0,
     version_app: 'pruebas',
   })
   let batch = 0
-  const maxSecuencia = () =>
+  const maxSequence = () =>
     Number(
       m.db
         .prepare('SELECT coalesce(max(sequence), 0) AS s FROM events WHERE restaurant_id = ?')
-        .get(m.restauranteId)?.s,
+        .get(m.restaurantId)?.s,
     )
   /** Manda eventos al hub real y devuelve cómo le fue a cada uno. */
-  const mandar = (
+  const submit = (
     events: { type: string; aggregate: string; data: unknown; extras?: object }[],
   ): string[] => {
     batch += 1
-    enlace.recibir({
+    link.receive({
       type: 'push',
-      lote_id: `lote-${batch}`,
+      batch_id: `lote-${batch}`,
       events: events.map((e) =>
         m.event(register.connection, session, e.type, e.data, {
           aggregate_id: e.aggregate,
-          base_sequence: maxSecuencia(),
+          base_sequence: maxSequence(),
           ...(e.extras ?? {}),
         } as never),
       ),
     })
-    const latest = recibidos.filter((x) => x.type === 'result').at(-1)
+    const latest = received.filter((x) => x.type === 'result').at(-1)
     if (latest?.type !== 'result') throw new Error('Sin resultado')
-    return latest.resultados.map((r) => (r.status === 'rejected' ? r.reason : r.status))
+    return latest.results.map((r) => (r.status === 'rejected' ? r.reason : r.status))
   }
 
   const shift = newId()
   expect(
-    mandar([
+    submit([
       {
         type: 'ShiftOpened',
         aggregate: shift,
-        data: { register_id: register.connection.dispositivoId, base: 100_000 },
+        data: { register_id: register.connection.deviceId, base: 100_000 },
         extras: { aggregate_type: 'register_shift' },
       },
     ]),
@@ -77,7 +77,7 @@ function mundo() {
   const orderWith = (price: number) => {
     const order = newId()
     expect(
-      mandar([
+      submit([
         { type: 'OrderOpened', aggregate: order, data: ABRIR },
         { type: 'ItemAdded', aggregate: order, data: { ...item(), unit_price: price } },
       ]),
@@ -85,10 +85,10 @@ function mundo() {
     return order
   }
   const cardTerminal = (name = 'Bold 1', extra: Record<string, string | number> = {}) =>
-    insertarVersionado(
+    insertVersioned(
       m.db,
       'card_terminals',
-      m.restauranteId,
+      m.restaurantId,
       { name, provider: 'bold', ...extra },
       SISTEMA,
       m.clock(),
@@ -96,7 +96,7 @@ function mundo() {
   const ponerConfig = (config: object) =>
     m.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify(config), m.restauranteId)
+      .run(JSON.stringify(config), m.restaurantId)
 
   const base = {
     check_id: null,
@@ -145,8 +145,8 @@ function mundo() {
     cardTerminal: null,
   })
   const pay = (order: string, data: unknown) =>
-    mandar([{ type: 'PaymentRecorded', aggregate: order, data }])[0]
-  return { m, mandar, orderWith, cardTerminal, ponerConfig, nequi, card, cash, pay, shift }
+    submit([{ type: 'PaymentRecorded', aggregate: order, data }])[0]
+  return { m, submit, orderWith, cardTerminal, ponerConfig, nequi, card, cash, pay, shift }
 }
 
 describe('reglas de cobro del hub real', () => {
@@ -214,14 +214,14 @@ describe('reglas de cobro del hub real', () => {
          VALUES (?, ?, ?, ?, 1, 'Otro', '{}')`,
       )
       .run(other, other, m.clock(), m.clock())
-    const ajeno = newId()
+    const outsider = newId()
     m.db
       .prepare(
         `INSERT INTO card_terminals (id, restaurant_id, created_at, updated_at, version, name, provider)
          VALUES (?, ?, ?, ?, 1, 'Bold ajeno', 'bold')`,
       )
-      .run(ajeno, other, m.clock(), m.clock())
-    expect(pay(orderWith(10_000), card(10_000, ajeno))).toBe('unknown_card_terminal')
+      .run(outsider, other, m.clock(), m.clock())
+    expect(pay(orderWith(10_000), card(10_000, outsider))).toBe('unknown_card_terminal')
   })
 
   it('la regla de redondeo viene de la configuración: otro múltiplo, redondeo_distinto', () => {
@@ -278,7 +278,7 @@ describe('reglas de cobro del hub real', () => {
 
   it('una configuración dañada no deja sin servicio: toma los valores de fábrica', () => {
     const { m, orderWith, pay, nequi } = mundo()
-    m.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.restauranteId)
+    m.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.restaurantId)
     expect(pay(orderWith(10_000), nequi(10_000))).toBe('confirmed')
   })
 })

@@ -6,14 +6,14 @@ import {
   type OrderState,
   priceWithExtras,
 } from '@pos/core'
-import type { Catalogo } from '@pos/sync'
+import type { Catalog } from '@pos/sync'
 import { itemsVigentes } from './proyeccion'
 
 // Lo que se guarda al tomar un pedido, armado desde el catálogo. El ítem lleva copia del nombre,
 // el precio y el impuesto vigentes (docs/MODELO_DATOS.md): si la carta cambia después, el pedido
 // no cambia.
 
-export type ProductoCatalogo = Catalogo['categories'][number]['products'][number]
+export type ProductoCatalogo = Catalog['categories'][number]['products'][number]
 export type GrupoCatalogo = ProductoCatalogo['groups'][number]
 export type OpcionCatalogo = GrupoCatalogo['options'][number]
 
@@ -45,7 +45,7 @@ export function faltaElegir(
 }
 
 export function datosItem(
-  catalog: Catalogo,
+  catalog: Catalog,
   p: ProductoCatalogo,
   variantId: string | null,
   elegidas: Record<string, string[]>,
@@ -141,9 +141,9 @@ export const unidadesPorEnviar = (status: OrderState) =>
  * Una comanda por estación con lo que falta enviar. La estación es la de la categoría del
  * producto; si no tiene, la primera del restaurante. Sin estaciones no hay a dónde enviar.
  */
-export function comandasPorEstacion(catalog: Catalogo, status: OrderState): DatosEnvio | null {
+export function comandasPorEstacion(catalog: Catalog, status: OrderState): DatosEnvio | null {
   const estacionDe = new Map(
-    catalog.categories.flatMap((c) => c.products.map((p) => [p.id, c.estacionId] as const)),
+    catalog.categories.flatMap((c) => c.products.map((p) => [p.id, c.stationId] as const)),
   )
   const porDefecto = catalog.stations[0]?.id ?? null
   const groups = new Map<string, string[]>()
@@ -206,7 +206,7 @@ export function lineaIgual(status: OrderState | null, d: DatosItem): OrderItem |
 
 /** Comandas solo con lo de un curso (al marcharlo), por estación. */
 export function comandasDeCurso(
-  catalog: Catalogo,
+  catalog: Catalog,
   status: OrderState,
   course: Course,
 ): DatosEnvio | null {

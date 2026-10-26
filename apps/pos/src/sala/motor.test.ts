@@ -1,13 +1,13 @@
 import 'fake-indexeddb/auto'
 import { newId, signEvent } from '@pos/core'
 import {
-  AlmacenMemoria,
-  type Catalogo,
+  type AccessControl,
+  type Catalog,
   type Channel,
-  type ControlAcceso,
+  FloorSync,
+  type Handlers,
   HubSync,
-  type Manejadores,
-  SalaSync,
+  MemoryStore,
 } from '@pos/sync'
 import { afterEach, describe, expect, it } from 'vitest'
 import { BaseDispositivo } from './almacen'
@@ -21,18 +21,18 @@ import { pedidosAbiertos } from './proyeccion'
 const secretoDe = (sesionId: string) => `secreto-${sesionId}`
 
 /** Exige que cada evento venga firmado con el secreto de su sesión. */
-const accesoConFirma: ControlAcceso = {
+const accesoConFirma: AccessControl = {
   verify: (_c, event) =>
     event.session_id && event.signature === signEvent(event, secretoDe(event.session_id))
-      ? { ok: true, authorizedById: null, autorizacionId: null }
+      ? { ok: true, authorizedById: null, authorizationId: null }
       : { ok: false, reason: 'invalid_signature' },
-  registrarUso: () => {},
+  recordUse: () => {},
 }
 
 const tableId = newId()
-const catalog: Catalogo = {
+const catalog: Catalog = {
   version: 3,
-  restaurant: { name: 'Prueba', sesionInactividadMin: 30 },
+  restaurant: { name: 'Prueba', sessionIdleMin: 30 },
   zones: [{ id: newId(), name: 'Salón', level: 1 }],
   tables: [],
   elements: [],
@@ -52,33 +52,33 @@ afterEach(async () => {
 
 function montarHub() {
   const tokens = new Map<string, Equipo>()
-  const hub = new HubSync(new AlmacenMemoria(), {
-    restauranteId: newId(),
+  const hub = new HubSync(new MemoryStore(), {
+    restaurantId: newId(),
     timeZone: 'America/Bogota',
-    inicioDiaOperativo: '06:00',
-    instancia: 'hub-test',
+    businessDayStart: '06:00',
+    instance: 'hub-test',
     clock: () => new Date().toISOString(),
     access: accesoConFirma,
   })
-  const salaHub = new SalaSync(hub, (token) => {
+  const salaHub = new FloorSync(hub, (token) => {
     const e = tokens.get(token)
-    return e ? { dispositivoId: e.dispositivoId, type: e.type, revocadoEn: null } : null
+    return e ? { deviceId: e.deviceId, type: e.type, revokedAt: null } : null
   })
   /** Un "WebSocket" en memoria: los mensajes viajan como JSON y llegan en otra vuelta. */
-  const open = (m: Manejadores): Channel => {
-    let enlace: ReturnType<SalaSync['connect']> | null = null
+  const open = (m: Handlers): Channel => {
+    let link: ReturnType<FloorSync['connect']> | null = null
     setTimeout(() => {
-      enlace = salaHub.connect((msg) => {
+      link = salaHub.connect((msg) => {
         const copy = JSON.parse(JSON.stringify(msg))
-        setTimeout(() => enlace && m.alMensaje(copy))
+        setTimeout(() => link && m.onMessage(copy))
       })
-      m.alAbrir()
+      m.onOpen()
     })
     return {
-      send: (msg) => enlace?.recibir(JSON.parse(JSON.stringify(msg))),
+      send: (msg) => link?.receive(JSON.parse(JSON.stringify(msg))),
       close: () => {
-        enlace?.close()
-        enlace = null
+        link?.close()
+        link = null
       },
     }
   }
@@ -88,7 +88,7 @@ function montarHub() {
 async function device(h: ReturnType<typeof montarHub>, name: string) {
   const db = new BaseDispositivo(`prueba-${newId()}`)
   bases.push(db)
-  const e: Equipo = { dispositivoId: newId(), token: newId(), name, type: 'waiter' }
+  const e: Equipo = { deviceId: newId(), token: newId(), name, type: 'waiter' }
   h.tokens.set(e.token, e)
   const sesionId = newId()
   const session: Sesion = {
@@ -101,10 +101,10 @@ async function device(h: ReturnType<typeof montarHub>, name: string) {
   await db.saveSetting('device', e)
   await db.saveSetting('session', session)
   await db.saveSetting('catalog', catalog)
-  const sala = new Sala({ db, open: h.open })
-  salas.push(sala)
-  await sala.cargar()
-  return sala
+  const floor = new Sala({ db, open: h.open })
+  salas.push(floor)
+  await floor.load()
+  return floor
 }
 
 const item = (name: string, price: number) => ({
@@ -133,7 +133,7 @@ async function esperar(condicion: () => Promise<boolean> | boolean, ms = 3000) {
 }
 
 const vista = async (s: Sala) =>
-  pedidosAbiertos((await s.sync?.locales()) ?? []).map((p) => ({
+  pedidosAbiertos((await s.sync?.locals()) ?? []).map((p) => ({
     id: p.status.id,
     total: p.total,
     items: Object.keys(p.status.items).sort(),
@@ -176,8 +176,8 @@ describe('Sala (motor de la app)', () => {
       )
     })
     expect(h.hub.order(p1)).not.toBeNull()
-    const confirmados = (await ana.sync?.locales())?.filter((l) => l.status === 'confirmed')
-    expect(confirmados?.map((l) => l.event.sequence).sort()).toEqual([1, 2, 3, 4, 5])
+    const allConfirmed = (await ana.sync?.locals())?.filter((l) => l.status === 'confirmed')
+    expect(allConfirmed?.map((l) => l.event.sequence).sort()).toEqual([1, 2, 3, 4, 5])
   })
 
   it('sin sesión no se puede crear un evento; tras el tiempo sin uso la sesión se cierra', async () => {

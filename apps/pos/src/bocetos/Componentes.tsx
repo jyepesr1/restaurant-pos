@@ -19,7 +19,7 @@ const TONOS: { tono: Tono; name: string; uso: string }[] = [
 ]
 
 export function Componentes() {
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const [panel, setPanel] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [delay, setEspera] = useState(0)
@@ -85,7 +85,7 @@ export function Componentes() {
           </h2>
           <div className="flex flex-wrap gap-2">
             <Boton
-              onClick={() => avisar('Quitaste Aperol Spritz', () => avisar('Volvió Aperol Spritz'))}
+              onClick={() => notify('Quitaste Aperol Spritz', () => notify('Volvió Aperol Spritz'))}
             >
               Mostrar aviso
             </Boton>
@@ -94,7 +94,7 @@ export function Componentes() {
           <PanelLateral
             opened={panel}
             title="Panel lateral"
-            alCerrar={() => setPanel(false)}
+            onClose={() => setPanel(false)}
             pie={
               <Boton variant="main" className="w-full" onClick={() => setPanel(false)}>
                 Listo
@@ -113,13 +113,13 @@ export function Componentes() {
           <div className="rounded-2xl border border-borde bg-superficie p-4">
             <TecladoPin
               error={error}
-              intento={attempts}
-              esperaMs={delay}
+              attempt={attempts}
+              waitMs={delay}
               alCompletar={(pin) => {
                 if (pin === '2468') {
                   setError(null)
                   setEspera(0)
-                  avisar('Hola, Mesero 1')
+                  notify('Hola, Mesero 1')
                   return
                 }
                 const n = attempts + 1

@@ -1,4 +1,4 @@
-import type { Conexion } from '@pos/sync'
+import type { Connection } from '@pos/sync'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { CodigoAcceso, ErrorAcceso, ServicioAcceso } from './servicio'
@@ -54,11 +54,11 @@ const Cuerpos = {
 }
 
 function enviarError(reply: FastifyReply, e: ErrorAcceso) {
-  if (e.esperaMs) reply.header('retry-after', Math.ceil(e.esperaMs / 1000))
+  if (e.waitMs) reply.header('retry-after', Math.ceil(e.waitMs / 1000))
   return reply.code(ESTADO[e.code]).send({
     error: e.code,
     message: e.message,
-    ...(e.esperaMs ? { espera_ms: e.esperaMs } : {}),
+    ...(e.waitMs ? { espera_ms: e.waitMs } : {}),
   })
 }
 
@@ -70,13 +70,13 @@ function read<T>(esquema: z.ZodType<T>, req: FastifyRequest, reply: FastifyReply
 }
 
 export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRutasAcceso) {
-  const delToken = (req: FastifyRequest): Conexion | null => {
+  const delToken = (req: FastifyRequest): Connection | null => {
     const [esquema, token] = (req.headers.authorization ?? '').split(' ')
     return esquema === 'Bearer' && token ? access.authenticate(token) : null
   }
 
   /** El dispositivo del token, o responde 401. */
-  const device = (req: FastifyRequest, reply: FastifyReply): Conexion | null => {
+  const device = (req: FastifyRequest, reply: FastifyReply): Connection | null => {
     const connection = delToken(req)
     if (!connection)
       reply.code(401).send({
@@ -110,7 +110,7 @@ export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRuta
     if (!r.ok) return enviarError(reply, r)
     return reply
       .code(201)
-      .send({ device_id: r.dispositivoId, token: r.token, name: r.name, type: r.type })
+      .send({ device_id: r.deviceId, token: r.token, name: r.name, type: r.type })
   })
 
   // Entrar desde cualquier navegador de la red (ADR-013). Sin token, con el acierto el hub
@@ -125,7 +125,7 @@ export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRuta
     if (!r.ok) return enviarError(reply, r)
     return reply.code(201).send({
       device: r.device && {
-        device_id: r.device.dispositivoId,
+        device_id: r.device.deviceId,
         token: r.device.token,
         name: r.device.name,
         type: r.device.type,
@@ -176,12 +176,12 @@ export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRuta
       secret: c.secret,
       pin: c.pin,
       action: c.action,
-      agregadoId: c.aggregate_id,
+      aggregateId: c.aggregate_id,
       eventId: c.event_id,
       fingerprint: c.fingerprint,
     })
     if (!r.ok) return enviarError(reply, r)
-    return reply.code(201).send({ authorization_id: r.autorizacionId, supervisor: r.supervisor })
+    return reply.code(201).send({ authorization_id: r.authorizationId, supervisor: r.supervisor })
   })
 
   app.post<{ Params: { id: string } }>('/api/devices/:id/revoke', async (req, reply) => {
@@ -192,9 +192,9 @@ export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRuta
     const r = access.revocarDispositivo(connection, {
       sesionId: cuerpo.session_id,
       secret: cuerpo.secret,
-      dispositivoId: req.params.id,
+      deviceId: req.params.id,
     })
     if (!r.ok) return enviarError(reply, r)
-    return reply.send({ revoked_at: r.revocadoEn })
+    return reply.send({ revoked_at: r.revokedAt })
   })
 }

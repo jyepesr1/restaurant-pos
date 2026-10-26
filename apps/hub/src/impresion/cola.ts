@@ -1,4 +1,4 @@
-import type { BaseSqlite, Fila } from '@pos/db'
+import type { Row, SqliteDatabase } from '@pos/db'
 import {
   COLUMNS,
   type CodePage,
@@ -11,7 +11,7 @@ import {
   type ZReport,
   zReportLines,
 } from '@pos/printing'
-import type { EstadoImpresora } from '@pos/sync'
+import type { PrinterStatus } from '@pos/sync'
 import { type Enviar, enviarPorRed } from './transporte'
 
 // La cola de impresión del hub (ADR-015). Los trabajos viven en `print_jobs` y sobreviven
@@ -39,12 +39,12 @@ interface Estado {
 }
 
 export interface OpcionesCola {
-  db: BaseSqlite
-  restauranteId: string
+  db: SqliteDatabase
+  restaurantId: string
   send?: Enviar
   clock?: () => number
   /** Cambió cómo está alguna impresora (para avisar a los equipos). */
-  onChange?: (statuses: EstadoImpresora[]) => void
+  onChange?: (statuses: PrinterStatus[]) => void
   /** Una vuelta falló por algo del hub, no de la impresora (para el registro). */
   onFailure?: (error: unknown) => void
 }
@@ -88,7 +88,7 @@ export class ColaImpresion {
     while (this.corriendo) await this.corriendo
   }
 
-  detener(): void {
+  stop(): void {
     this.detenida = true
     if (this.temporizador) clearTimeout(this.temporizador)
   }
@@ -100,12 +100,12 @@ export class ColaImpresion {
    */
   comandaSinArmar(): void {
     this.sinArmarEn = this.o.clock()
-    this.avisar()
+    this.notify()
   }
 
   /** Cómo está cada impresora activa, con sus comandas en espera. */
-  status(): EstadoImpresora[] {
-    const sinArmar: EstadoImpresora[] =
+  status(): PrinterStatus[] {
+    const sinArmar: PrinterStatus[] =
       this.sinArmarEn !== null && this.o.clock() - this.sinArmarEn < 15 * 60_000
         ? [
             {
@@ -121,14 +121,14 @@ export class ColaImpresion {
     return [...this.estadoImpresoras(), ...sinArmar]
   }
 
-  private estadoImpresoras(): EstadoImpresora[] {
+  private estadoImpresoras(): PrinterStatus[] {
     const pendingList = new Map(
       this.o.db
         .prepare(
           `SELECT printer_id, count(*) AS n FROM print_jobs
            WHERE restaurant_id = ? AND status = 'pending' GROUP BY printer_id`,
         )
-        .all(this.o.restauranteId)
+        .all(this.o.restaurantId)
         .map((f) => [String(f.printer_id), Number(f.n)]),
     )
     return this.printers()
@@ -156,102 +156,102 @@ export class ColaImpresion {
         `SELECT * FROM print_jobs WHERE restaurant_id = ? AND status = 'pending'
          ORDER BY rowid`,
       )
-      .all(this.o.restauranteId)
+      .all(this.o.restaurantId)
 
     // Qué impresora imprime cada trabajo en esta vuelta: la suya, o su respaldo si la suya falla.
-    const porDestino = new Map<string, Fila[]>()
-    const ahora = this.o.clock()
+    const porDestino = new Map<string, Row[]>()
+    const now = this.o.clock()
     // Una impresora caída se vuelve a probar con un trabajo cuando vence su espera: si responde,
     // vuelve a imprimir lo suyo; si no, lo demás sigue por el respaldo.
     const probadas = new Set<string>()
     for (const t of trabajos) {
-      if (t.type === 'test' && ahora - Date.parse(String(t.created_at)) > VIGENCIA_PRUEBA_MS) {
+      if (t.type === 'test' && now - Date.parse(String(t.created_at)) > VIGENCIA_PRUEBA_MS) {
         this.terminar(t, 'discarded', String(t.printer_id), 'La prueba no salió en 5 minutos')
         continue
       }
-      const target = this.target(String(t.printer_id), printers, ahora, t.type === 'test', probadas)
+      const target = this.target(String(t.printer_id), printers, now, t.type === 'test', probadas)
       if (!target) continue
       porDestino.set(target, [...(porDestino.get(target) ?? []), t])
     }
 
     await Promise.all(
       [...porDestino].map(async ([targetId, list]) => {
-        const printer = printers.get(targetId) as Fila
+        const printer = printers.get(targetId) as Row
         for (const t of list) {
           const ok = await this.imprimir(t, printer)
           if (!ok) break
         }
       }),
     )
-    this.avisar()
+    this.notify()
   }
 
   // ── Internos ─────────────────────────────────────────────────────────
 
-  private printers(): Fila[] {
+  private printers(): Row[] {
     return this.o.db
       .prepare('SELECT * FROM printers WHERE restaurant_id = ? ORDER BY created_at, id')
-      .all(this.o.restauranteId)
+      .all(this.o.restaurantId)
   }
 
   /**
-   * La impresora que imprime ahora un trabajo de `impresoraId`, o nada si toca esperar. Una
+   * La impresora que imprime ahora un trabajo de `printerId`, o nada si toca esperar. Una
    * archivada, o con 3 fallos seguidos, pasa sus trabajos al respaldo si lo tiene y está activo.
    */
   private target(
-    impresoraId: string,
-    printers: Map<string, Fila>,
-    ahora: number,
+    printerId: string,
+    printers: Map<string, Row>,
+    now: number,
     esPrueba: boolean,
     probadas: Set<string>,
   ) {
-    const propia = printers.get(impresoraId)
+    const propia = printers.get(printerId)
     if (!propia) return null
-    const status = this.statuses.get(impresoraId)
+    const status = this.statuses.get(printerId)
     const caida = propia.active !== 1 || (status?.fallosSeguidos ?? 0) >= FALLOS_PARA_RESPALDO
     // La prueba es de esa impresora: nunca sale por otra.
     if (esPrueba)
-      return propia.active === 1 && this.puedeIntentar(impresoraId, ahora) ? impresoraId : null
-    if (caida && propia.active === 1 && this.puedeIntentar(impresoraId, ahora)) {
+      return propia.active === 1 && this.puedeIntentar(printerId, now) ? printerId : null
+    if (caida && propia.active === 1 && this.puedeIntentar(printerId, now)) {
       // Mientras se prueba, lo demás espera esta vuelta: si responde, sale por la suya.
-      if (probadas.has(impresoraId)) return null
-      probadas.add(impresoraId)
-      return impresoraId
+      if (probadas.has(printerId)) return null
+      probadas.add(printerId)
+      return printerId
     }
     if (caida && propia.fallback_id) {
-      const respaldo = printers.get(String(propia.fallback_id))
-      if (respaldo?.active === 1 && this.puedeIntentar(String(respaldo.id), ahora))
-        return String(respaldo.id)
+      const fallback = printers.get(String(propia.fallback_id))
+      if (fallback?.active === 1 && this.puedeIntentar(String(fallback.id), now))
+        return String(fallback.id)
     }
     if (propia.active !== 1) {
       const reason =
         'La impresora está archivada y no tiene respaldo: descarta la comanda o reimprímela en otra.'
-      this.fallo(impresoraId, reason, false)
+      this.fallo(printerId, reason, false)
       // Que la caja vea en lo pendiente por qué no sale.
       this.o.db
         .prepare(
           `UPDATE print_jobs SET last_error = ? WHERE restaurant_id = ? AND printer_id = ?
            AND status = 'pending' AND last_error IS NOT ?`,
         )
-        .run(reason, this.o.restauranteId, impresoraId, reason)
+        .run(reason, this.o.restaurantId, printerId, reason)
       return null
     }
     if (caida) return null
-    return this.puedeIntentar(impresoraId, ahora) ? impresoraId : null
+    return this.puedeIntentar(printerId, now) ? printerId : null
   }
 
-  private puedeIntentar(id: string, ahora: number) {
-    return (this.statuses.get(id)?.reintentoEn ?? 0) <= ahora
+  private puedeIntentar(id: string, now: number) {
+    return (this.statuses.get(id)?.reintentoEn ?? 0) <= now
   }
 
-  private async imprimir(trabajo: Fila, printer: Fila): Promise<boolean> {
+  private async imprimir(job: Row, printer: Row): Promise<boolean> {
     const id = String(printer.id)
     let bytes: Uint8Array
     try {
-      bytes = this.bytes(trabajo, printer)
+      bytes = this.bytes(job, printer)
     } catch {
       // Un contenido que no se entiende no debe frenar a los que vienen detrás.
-      this.terminar(trabajo, 'discarded', id, 'No se pudo armar la comanda')
+      this.terminar(job, 'discarded', id, 'No se pudo armar la comanda')
       return true
     }
     try {
@@ -269,19 +269,19 @@ export class ColaImpresion {
         .prepare(
           'UPDATE print_jobs SET attempts = attempts + 1, last_error = ? WHERE restaurant_id = ? AND id = ?',
         )
-        .run(message, this.o.restauranteId, String(trabajo.id))
+        .run(message, this.o.restaurantId, String(job.id))
       this.fallo(id, message)
       return false
     }
-    this.terminar(trabajo, 'printed', id, null)
+    this.terminar(job, 'printed', id, null)
     this.statuses.set(id, { fallosSeguidos: 0, error: null, reintentoEn: 0 })
     return true
   }
 
   private terminar(
-    trabajo: Fila,
+    job: Row,
     status: 'printed' | 'discarded',
-    impresoraId: string,
+    printerId: string,
     error: string | null,
   ) {
     if (status === 'printed')
@@ -290,51 +290,41 @@ export class ColaImpresion {
           `UPDATE print_jobs SET status = 'printed', attempts = attempts + 1, finished_at = ?,
              printed_on_id = ? WHERE restaurant_id = ? AND id = ? AND status = 'pending'`,
         )
-        .run(
-          new Date(this.o.clock()).toISOString(),
-          impresoraId,
-          this.o.restauranteId,
-          String(trabajo.id),
-        )
+        .run(new Date(this.o.clock()).toISOString(), printerId, this.o.restaurantId, String(job.id))
     else
       this.o.db
         .prepare(
           `UPDATE print_jobs SET status = 'discarded', finished_at = ?, last_error = ?
            WHERE restaurant_id = ? AND id = ? AND status = 'pending'`,
         )
-        .run(
-          new Date(this.o.clock()).toISOString(),
-          error,
-          this.o.restauranteId,
-          String(trabajo.id),
-        )
+        .run(new Date(this.o.clock()).toISOString(), error, this.o.restaurantId, String(job.id))
   }
 
-  private fallo(id: string, error: string, contar = true) {
+  private fallo(id: string, error: string, count = true) {
     const previous = this.statuses.get(id)
-    const fallos = (previous?.fallosSeguidos ?? 0) + (contar ? 1 : 0)
-    const delay = Math.min(ESPERA_MAXIMA_MS, 1000 * 2 ** Math.max(0, fallos - 1))
+    const failures = (previous?.fallosSeguidos ?? 0) + (count ? 1 : 0)
+    const delay = Math.min(ESPERA_MAXIMA_MS, 1000 * 2 ** Math.max(0, failures - 1))
     this.statuses.set(id, {
-      fallosSeguidos: Math.max(fallos, 1),
+      fallosSeguidos: Math.max(failures, 1),
       error,
       // Archivada sin respaldo: no hay a quién intentar; la vuelta no se repite seguido por ella.
-      reintentoEn: this.o.clock() + (contar ? delay : ESPERA_MAXIMA_MS),
+      reintentoEn: this.o.clock() + (count ? delay : ESPERA_MAXIMA_MS),
     })
   }
 
-  private bytes(trabajo: Fila, printer: Fila): Uint8Array {
+  private bytes(job: Row, printer: Row): Uint8Array {
     const width = Number(printer.width) === 58 ? 58 : 80
     const format = {
       columns: COLUMNS[width],
       page: String(printer.code_page) as CodePage,
     }
-    const content = JSON.parse(String(trabajo.content))
+    const content = JSON.parse(String(job.content))
     const lines =
-      trabajo.type === 'test'
+      job.type === 'test'
         ? testLines(content as PruebaImpresion, format)
-        : trabajo.type === 'preBill'
+        : job.type === 'preBill'
           ? preBillLines(content as PreBill, format)
-          : trabajo.type === 'report'
+          : job.type === 'report'
             ? zReportLines(content as ZReport, format)
             : ticketLines(content as Ticket, format)
     return escpos(lines, format)
@@ -348,30 +338,30 @@ export class ColaImpresion {
       .prepare(
         "SELECT DISTINCT printer_id FROM print_jobs WHERE restaurant_id = ? AND status = 'pending'",
       )
-      .all(this.o.restauranteId)
+      .all(this.o.restaurantId)
     if (pendingList.length === 0) return
-    const ahora = this.o.clock()
+    const now = this.o.clock()
     const printers = new Map(this.printers().map((i) => [String(i.id), i]))
     // Lo de una impresora caída con respaldo sale cuando el respaldo pueda, no cuando toque
     // volver a probar la caída.
-    const cuando = (id: string) => {
-      const propia = this.statuses.get(id)?.reintentoEn ?? ahora
+    const when = (id: string) => {
+      const propia = this.statuses.get(id)?.reintentoEn ?? now
       const row = printers.get(id)
       const caida =
         row?.active !== 1 || (this.statuses.get(id)?.fallosSeguidos ?? 0) >= FALLOS_PARA_RESPALDO
-      const respaldo = row?.fallback_id ? printers.get(String(row.fallback_id)) : undefined
-      if (!caida || respaldo?.active !== 1) return propia
-      return Math.min(propia, this.statuses.get(String(respaldo.id))?.reintentoEn ?? ahora)
+      const fallback = row?.fallback_id ? printers.get(String(row.fallback_id)) : undefined
+      if (!caida || fallback?.active !== 1) return propia
+      return Math.min(propia, this.statuses.get(String(fallback.id))?.reintentoEn ?? now)
     }
     const delay = Math.max(
       250,
-      Math.min(...pendingList.map((f) => cuando(String(f.printer_id)) - ahora), ESPERA_MAXIMA_MS),
+      Math.min(...pendingList.map((f) => when(String(f.printer_id)) - now), ESPERA_MAXIMA_MS),
     )
     this.temporizador = setTimeout(() => this.despertar(), delay)
     this.temporizador.unref?.()
   }
 
-  private avisar() {
+  private notify() {
     const statuses = this.status()
     const alert = JSON.stringify(statuses)
     if (alert === this.ultimoAviso) return

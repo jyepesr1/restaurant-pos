@@ -1,10 +1,10 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { authorizableFingerprint, type NewEvent, newId } from '@pos/core'
-import { aplicarMigraciones } from '@pos/db'
-import { abrirBase } from '@pos/db/node'
-import { type Conexion, type ControlAcceso, HubSync } from '@pos/sync'
-import { AlmacenSqlite } from '@pos/sync/sqlite'
+import { applyMigrations } from '@pos/db'
+import { openDatabase } from '@pos/db/node'
+import { type AccessControl, type Connection, HubSync } from '@pos/sync'
+import { SqliteStore } from '@pos/sync/sqlite'
 import { expect } from 'vitest'
 import { asegurarAdministrador, asegurarRestaurante, asegurarRoles } from './inicial'
 import { Intentos } from './intentos'
@@ -37,13 +37,13 @@ export const item = (
 export const ABRIR = { channel: 'dine_in', table_id: null, guests: 2 }
 
 /** El montaje de acceso con un `HubSync` sobre la misma base. */
-export function montarHub(envolver: (a: ControlAcceso) => ControlAcceso = (a) => a) {
+export function montarHub(envolver: (a: AccessControl) => AccessControl = (a) => a) {
   const m = montarAcceso()
-  const hub = new HubSync(new AlmacenSqlite(m.db, m.restauranteId), {
-    restauranteId: m.restauranteId,
+  const hub = new HubSync(new SqliteStore(m.db, m.restaurantId), {
+    restaurantId: m.restaurantId,
     timeZone: 'America/Bogota',
-    inicioDiaOperativo: '06:00',
-    instancia: 'hub-1',
+    businessDayStart: '06:00',
+    instance: 'hub-1',
     clock: m.clock,
     access: envolver(m.access),
   })
@@ -62,7 +62,7 @@ export function pedidoConItemEnviado(
   const it = item(modifiers)
   const comandaId = newId()
   const en = { aggregate_id: order }
-  const r = m.hub.recibirLote(connection, [
+  const r = m.hub.receiveBatch(connection, [
     m.event(connection, session, 'OrderOpened', ABRIR, en),
     m.event(connection, session, 'ItemAdded', it, { ...en, base_sequence: 1 }),
     m.event(
@@ -73,7 +73,7 @@ export function pedidoConItemEnviado(
       { ...en, base_sequence: 2 },
     ),
   ])
-  expect(r.resultados.map((x) => x.status)).toEqual(['confirmed', 'confirmed', 'confirmed'])
+  expect(r.results.map((x) => x.status)).toEqual(['confirmed', 'confirmed', 'confirmed'])
   return { connection, token, session, order, itemId: it.item_id, comandaId }
 }
 
@@ -95,7 +95,7 @@ export const firmar = firmado
  */
 export function autorizarEvento(
   m: Pick<MontajeAcceso, 'access'>,
-  connection: Conexion,
+  connection: Connection,
   session: Sesion & { secret: string; sesionId: string },
   pin: string,
   event: NewEvent,
@@ -106,14 +106,14 @@ export function autorizarEvento(
     secret: session.secret,
     pin,
     action,
-    agregadoId: event.aggregate_id,
+    aggregateId: event.aggregate_id,
     eventId: event.id,
     fingerprint: authorizableFingerprint(event),
   })
   if (!a.ok) throw new Error(a.message)
   return {
     comprobante: a,
-    event: firmar(session, { ...event, authorization_id: a.autorizacionId }),
+    event: firmar(session, { ...event, authorization_id: a.authorizationId }),
   }
 }
 
@@ -127,22 +127,22 @@ export const add = (iso: string, ms: number) => new Date(Date.parse(iso) + ms).t
 export function hubEnCarpeta(dirDatos: string) {
   let ms = INICIO
   const clock = () => new Date(ms).toISOString()
-  let abiertas: { close(): void }[] = []
+  let openHandles: { close(): void }[] = []
   // El reloj de la prueba es manual: la clave cuenta desde la hora (manual) en que se creó.
   let claveDesde = ''
 
   function spinUp() {
     mkdirSync(dirDatos, { recursive: true })
-    const db = abrirBase(join(dirDatos, 'pos.sqlite'))
-    abiertas.push(db as unknown as { close(): void })
-    aplicarMigraciones(db)
+    const db = openDatabase(join(dirDatos, 'pos.sqlite'))
+    openHandles.push(db as unknown as { close(): void })
+    applyMigrations(db)
     const { key, newOne } = cargarClave(dirDatos)
     if (newOne) claveDesde = clock()
-    const restauranteId = asegurarRestaurante(db, clock())
-    const roles = asegurarRoles(db, restauranteId, clock())
+    const restaurantId = asegurarRestaurante(db, clock())
+    const roles = asegurarRoles(db, restaurantId, clock())
     const access = new ServicioAcceso({
       db,
-      restauranteId,
+      restaurantId,
       key,
       clock,
       attempts: new Intentos(() => ms),
@@ -150,22 +150,22 @@ export function hubEnCarpeta(dirDatos: string) {
       costoContrasena: 1,
     })
     const admin = asegurarAdministrador(db, access, roles.admin, newOne)
-    const hub = new HubSync(new AlmacenSqlite(db, restauranteId), {
-      restauranteId,
+    const hub = new HubSync(new SqliteStore(db, restaurantId), {
+      restaurantId,
       timeZone: 'America/Bogota',
-      inicioDiaOperativo: '06:00',
-      instancia: 'hub-1',
+      businessDayStart: '06:00',
+      instance: 'hub-1',
       clock,
       access,
     })
-    return { db, access, hub, roles, restauranteId, admin, claveNueva: newOne }
+    return { db, access, hub, roles, restaurantId, admin, claveNueva: newOne }
   }
 
   return {
     spinUp,
     apagar() {
-      for (const b of abiertas) b.close()
-      abiertas = []
+      for (const b of openHandles) b.close()
+      openHandles = []
     },
     clock,
     advance: (n: number) => {

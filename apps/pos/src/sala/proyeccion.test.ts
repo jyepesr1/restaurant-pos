@@ -8,7 +8,7 @@ import {
 } from './proyeccion'
 import { datosItem, inOrder, local, opening } from './pruebas'
 
-const pedidosAbiertos = (locales: Parameters<typeof inOrder>[0]) => proyectar(inOrder(locales))
+const pedidosAbiertos = (locals: Parameters<typeof inOrder>[0]) => proyectar(inOrder(locals))
 
 const itemId = (l: ReturnType<typeof local>) => (l.event.data as { item_id: string }).item_id
 
@@ -43,13 +43,13 @@ describe('pedidosAbiertos', () => {
 
   it('un ItemsEnviados pendiente marca como por confirmar los ítems de sus comandas', () => {
     const p = newId()
-    const [one, two, tres] = [1, 2, 3].map(() => local('ItemAdded', p, datosItem()))
-    const ids = [one, two, tres].map((l) => itemId(l as never))
+    const [one, two, three] = [1, 2, 3].map(() => local('ItemAdded', p, datosItem()))
+    const ids = [one, two, three].map((l) => itemId(l as never))
     const [v] = pedidosAbiertos([
       local('OrderOpened', p, opening),
       one as never,
       two as never,
-      tres as never,
+      three as never,
       local(
         'ItemsSent',
         p,

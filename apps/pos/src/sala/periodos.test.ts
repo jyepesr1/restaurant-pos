@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Reporte } from './motor'
+import type { PeriodReport } from './motor'
 import {
   celda,
   csvDeReporte,
@@ -58,7 +58,7 @@ describe('CSV', () => {
     expect(celda('@usuario')).toBe("'@usuario")
   })
 
-  const empty: Reporte = {
+  const empty: PeriodReport = {
     today: '2026-10-24',
     usuarios: { ana: 'Ana' },
     printer: false,

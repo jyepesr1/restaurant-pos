@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { huellaSql, MIGRACIONES_NUBE, type MigracionNube, migrar } from './migraciones'
+import { MIGRACIONES_NUBE, type MigracionNube, migrar, sqlFingerprint } from './migraciones'
 import { baseDePrueba, baseVacia } from './pruebas/pglite'
 
 // Las migraciones de la nube (ADR-016): se aplican una vez, en orden; repetir no hace nada; una
@@ -34,7 +34,7 @@ describe('aplicar', () => {
         'SELECT version, name, fingerprint FROM migrations',
       )
     ).rows
-    expect(rows).toEqual([{ version: 1, name: 'initial', fingerprint: huellaSql(m1.sql) }])
+    expect(rows).toEqual([{ version: 1, name: 'initial', fingerprint: sqlFingerprint(m1.sql) }])
     expect(await sqlTables(db)).toEqual(
       expect.arrayContaining([
         'restaurants',
@@ -78,12 +78,12 @@ describe('aplicar', () => {
 
   it('dos procesos migrando a la vez aplican cada migración una sola vez', async () => {
     const { sql, db } = baseVacia()
-    const resultados = await Promise.all([
+    const results = await Promise.all([
       migrar(sql, [m1, m2]),
       migrar(sql, [m1, m2]),
       migrar(sql, [m1, m2]),
     ])
-    expect(resultados.flat().sort()).toEqual([1, 2])
+    expect(results.flat().sort()).toEqual([1, 2])
     expect((await db.query('SELECT version FROM migrations')).rows).toHaveLength(2)
     expect((await db.query('SELECT * FROM cosa')).rows).toHaveLength(1)
   })
@@ -170,11 +170,11 @@ describe('una migración ya aplicada no se edita', () => {
   })
 
   it('la huella cambia con cualquier carácter, incluidas las tildes', () => {
-    expect(huellaSql('a')).not.toBe(huellaSql('b'))
-    expect(huellaSql('é')).not.toBe(huellaSql('e'))
-    expect(huellaSql('a b')).not.toBe(huellaSql('a  b'))
-    expect(huellaSql('x')).toBe(huellaSql('x'))
-    expect(huellaSql('')).toMatch(/^[0-9a-f]{16}$/)
+    expect(sqlFingerprint('a')).not.toBe(sqlFingerprint('b'))
+    expect(sqlFingerprint('é')).not.toBe(sqlFingerprint('e'))
+    expect(sqlFingerprint('a b')).not.toBe(sqlFingerprint('a  b'))
+    expect(sqlFingerprint('x')).toBe(sqlFingerprint('x'))
+    expect(sqlFingerprint('')).toMatch(/^[0-9a-f]{16}$/)
   })
 })
 

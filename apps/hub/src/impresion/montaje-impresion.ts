@@ -1,11 +1,11 @@
 import { newId } from '@pos/core'
-import type { ValorSql } from '@pos/db'
+import type { SqlValue } from '@pos/db'
 import { readEscpos } from '@pos/printing'
 import { HubSync } from '@pos/sync'
-import { AlmacenSqlite } from '@pos/sync/sqlite'
+import { SqliteStore } from '@pos/sync/sqlite'
 import { montarAcceso } from '../acceso/montaje'
 import { ABRIR, item } from '../acceso/montaje-hub'
-import { insertarVersionado, SISTEMA } from '../acceso/registros'
+import { insertVersioned, SISTEMA } from '../acceso/registros'
 import { crearServidor } from '../servidor'
 import { ColaImpresion, type OpcionesCola } from './cola'
 import { trabajosDeEvento } from './comandas'
@@ -21,7 +21,7 @@ export interface Papel {
   address: string
   apagada: boolean
   /** Lo recibido, un trabajo por entrada. */
-  recibidos: Uint8Array[]
+  received: Uint8Array[]
   /** Cuántas veces se intentó (también las que fallaron). */
   attempts: number
   /** Lo recibido, ya leído como texto (una comanda por entrada). */
@@ -42,32 +42,32 @@ export interface OpcionesMontaje {
 export function montarImpresion(options: OpcionesMontaje = {}) {
   const m = montarAcceso()
   const timeZone = options.timeZone ?? 'America/Bogota'
-  const ahora = m.clock()
+  const now = m.clock()
   const station = (name: string, position: number) =>
-    insertarVersionado(m.db, 'stations', m.restauranteId, { name, position }, SISTEMA, ahora)
+    insertVersioned(m.db, 'stations', m.restaurantId, { name, position }, SISTEMA, now)
   const kitchen = station('Cocina', 1)
   const bar = station('Barra', 2)
   const postres = station('Postres', 3)
 
   const location = String(
-    m.db.prepare('SELECT id FROM locations WHERE restaurant_id = ?').get(m.restauranteId)?.id,
+    m.db.prepare('SELECT id FROM locations WHERE restaurant_id = ?').get(m.restaurantId)?.id,
   )
-  const zone = insertarVersionado(
+  const zone = insertVersioned(
     m.db,
     'zones',
-    m.restauranteId,
+    m.restaurantId,
     { location_id: location, name: 'Salón', position: 1, level: 1 },
     SISTEMA,
-    ahora,
+    now,
   )
   const table = (name: string) =>
-    insertarVersionado(
+    insertVersioned(
       m.db,
       'dining_tables',
-      m.restauranteId,
+      m.restaurantId,
       { zone_id: zone, name, shape: 'square', x: 0, y: 0, width: 1, height: 1, capacity: 4 },
       SISTEMA,
-      ahora,
+      now,
     )
 
   // ── La red de impresoras de mentira ────────────────────────────────
@@ -77,9 +77,9 @@ export function montarImpresion(options: OpcionesMontaje = {}) {
     const p: Papel = {
       address,
       apagada: false,
-      recibidos: [],
+      received: [],
       attempts: 0,
-      texts: () => p.recibidos.map((b) => readEscpos(b).text),
+      texts: () => p.received.map((b) => readEscpos(b).text),
     }
     network.set(address, p)
     return p
@@ -91,22 +91,22 @@ export function montarImpresion(options: OpcionesMontaje = {}) {
       throw new ErrorImpresora(
         'La impresora rechazó la conexión: revisa el puerto (casi siempre 9100).',
       )
-    p.recibidos.push(bytes)
+    p.received.push(bytes)
   }
   const enviarBytes = options.send ? options.send(base) : base
 
   const impresoraNueva = (
     name: string,
     stations: string[],
-    fields: Record<string, ValorSql> = {},
+    fields: Record<string, SqlValue> = {},
   ) => {
     counter += 1
     const address = `10.0.0.${counter}`
     const p = papel(address)
-    const id = insertarVersionado(
+    const id = insertVersioned(
       m.db,
       'printers',
-      m.restauranteId,
+      m.restaurantId,
       {
         name,
         connection: 'network',
@@ -130,23 +130,23 @@ export function montarImpresion(options: OpcionesMontaje = {}) {
   const crearCola = (extra: Partial<OpcionesCola> = {}) =>
     new ColaImpresion({
       db: m.db,
-      restauranteId: m.restauranteId,
+      restaurantId: m.restaurantId,
       send: enviarBytes,
       clock,
       onChange: (e) => estadosAvisados.push(e),
       onFailure: (e) => fallosCola.push(e),
       ...extra,
     })
-  const cola = crearCola()
+  const queue = crearCola()
 
-  const opcionesComandas = { db: m.db, restauranteId: m.restauranteId, timeZone }
+  const opcionesComandas = { db: m.db, restaurantId: m.restaurantId, timeZone }
   const fallosGuardar: { error: unknown; id: string }[] = []
   const crearHub = () =>
-    new HubSync(new AlmacenSqlite(m.db, m.restauranteId), {
-      restauranteId: m.restauranteId,
+    new HubSync(new SqliteStore(m.db, m.restaurantId), {
+      restaurantId: m.restaurantId,
       timeZone,
-      inicioDiaOperativo: '06:00',
-      instancia: 'hub-1',
+      businessDayStart: '06:00',
+      instance: 'hub-1',
       clock: m.clock,
       access: m.access,
       onSave: (event, changes) => {
@@ -162,16 +162,16 @@ export function montarImpresion(options: OpcionesMontaje = {}) {
     access: m.access,
     catalog: {
       db: m.db,
-      restauranteId: m.restauranteId,
+      restaurantId: m.restaurantId,
       access: m.access,
       clock: m.clock,
       onChange: (v) => cambiosCatalogo.push(v),
     },
     impresion: {
       db: m.db,
-      restauranteId: m.restauranteId,
+      restaurantId: m.restaurantId,
       access: m.access,
-      cola,
+      queue,
       timeZone,
       onChange: (v) => cambiosCatalogo.push(v),
       clock: m.clock,
@@ -191,41 +191,41 @@ export function montarImpresion(options: OpcionesMontaje = {}) {
   // ── Equipos ────────────────────────────────────────────────────────
   /** Un equipo emparejado con alguien dentro; sabe mandar eventos al hub. */
   function device(
-    quien: keyof typeof m.people = 'waiter',
+    who: keyof typeof m.people = 'waiter',
     type: 'waiter' | 'register' | 'kds' = 'waiter',
   ) {
     const { token, connection } = m.emparejar(type)
-    const session = m.entrar(connection, quien)
+    const session = m.entrar(connection, who)
     const cuerpoSesion = { session_id: session.sesionId, secret: session.secret }
-    const maxSecuencia = () =>
+    const maxSequence = () =>
       Number(
         m.db
           .prepare('SELECT coalesce(max(sequence), 0) AS s FROM events WHERE restaurant_id = ?')
-          .get(m.restauranteId)?.s,
+          .get(m.restaurantId)?.s,
       )
     /** Manda un evento y devuelve cómo le fue. */
-    const mandar = (
+    const submit = (
       order: string,
       type: string,
       data: unknown,
       extras: Record<string, unknown> = {},
       target: HubSync = hub,
     ) => {
-      const r = target.recibirLote(connection, [
+      const r = target.receiveBatch(connection, [
         m.event(connection, session, type, data, {
           aggregate_id: order,
-          base_sequence: maxSecuencia(),
+          base_sequence: maxSequence(),
           ...(type === 'ItemVoided' ? { reason: 'El cliente se arrepintió' } : {}),
           ...extras,
         } as never),
       ])
       return {
-        status: r.resultados[0]?.status,
-        result: r.resultados[0],
-        accepted: r.aceptados[0],
+        status: r.results[0]?.status,
+        result: r.results[0],
+        accepted: r.acceptedEvents[0],
       }
     }
-    return { token, connection, session, cuerpoSesion, mandar }
+    return { token, connection, session, cuerpoSesion, submit }
   }
 
   type Product = {
@@ -241,7 +241,7 @@ export function montarImpresion(options: OpcionesMontaje = {}) {
   /** Abre un pedido vacío. */
   function open(e: Equipo, tableId: string | null = null, channel = 'dine_in') {
     const order = newId()
-    const opened = e.mandar(order, 'OrderOpened', { ...ABRIR, channel, table_id: tableId })
+    const opened = e.submit(order, 'OrderOpened', { ...ABRIR, channel, table_id: tableId })
     if (opened.status !== 'confirmed') throw new Error(`No abrió: ${JSON.stringify(opened.result)}`)
     return order
   }
@@ -256,7 +256,7 @@ export function montarImpresion(options: OpcionesMontaje = {}) {
       guest: p.guest ?? null,
       quantity: p.quantity ?? 1,
     }
-    const r = e.mandar(order, 'ItemAdded', it)
+    const r = e.submit(order, 'ItemAdded', it)
     if (r.status !== 'confirmed') throw new Error(`No agregó: ${JSON.stringify(r.result)}`)
     return { id: it.item_id, station: p.station, name: p.name }
   }
@@ -281,17 +281,17 @@ export function montarImpresion(options: OpcionesMontaje = {}) {
       station_id,
       item_ids,
     }))
-    const r = e.mandar(order, 'ItemsSent', { tickets })
+    const r = e.submit(order, 'ItemsSent', { tickets })
     return { ...r, tickets }
   }
 
   const trabajos = (filtro = '') =>
     m.db.prepare(`SELECT * FROM print_jobs ${filtro} ORDER BY created_at, id`).all() as Record<
       string,
-      ValorSql
+      SqlValue
     >[]
   const pendingList = () => trabajos("WHERE status = 'pending'").length
-  const content = (row: Record<string, ValorSql> | undefined) =>
+  const content = (row: Record<string, SqlValue> | undefined) =>
     JSON.parse(String(row?.content ?? 'null'))
 
   return {
@@ -306,7 +306,7 @@ export function montarImpresion(options: OpcionesMontaje = {}) {
     network,
     papel,
     impresoraNueva,
-    cola,
+    queue,
     crearCola,
     estadosAvisados,
     fallosCola,

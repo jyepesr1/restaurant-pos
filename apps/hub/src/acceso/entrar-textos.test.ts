@@ -107,21 +107,21 @@ describe('contraseñas con Unicode', () => {
   it('el mínimo de 8 caracteres es el mismo para NFC y NFD', () => {
     const m = montarAcceso()
     const siete = 'ñññññññ'
-    const crear = (c: string, user: string) => () =>
+    const create = (c: string, user: string) => () =>
       m.access.crearUsuario({ name: 'Rosa', rolId: m.roles.cashier, user, password: c })
-    expect(crear(siete, 'rosa1')).toThrow(/al menos 8/)
-    expect(crear(siete.normalize('NFD'), 'rosa2')).toThrow(/al menos 8/)
+    expect(create(siete, 'rosa1')).toThrow(/al menos 8/)
+    expect(create(siete.normalize('NFD'), 'rosa2')).toThrow(/al menos 8/)
   })
 
   it('el mínimo y el máximo exactos: 7 no, 8 sí; 200 sí, 201 no', () => {
     const m = montarAcceso()
-    const crear = (c: string, user: string) => () =>
+    const create = (c: string, user: string) => () =>
       m.access.crearUsuario({ name: 'Rosa', rolId: m.roles.cashier, user, password: c })
-    expect(crear('1234567', 'uno')).toThrow(/al menos 8/)
-    expect(crear('12345678', 'dos')).not.toThrow()
-    expect(crear('x'.repeat(200), 'tres')).not.toThrow()
-    expect(crear('x'.repeat(201), 'cuatro')).toThrow(/al menos 8/)
-    expect(crear('', 'cinco')).toThrow(/al menos 8/)
+    expect(create('1234567', 'uno')).toThrow(/al menos 8/)
+    expect(create('12345678', 'dos')).not.toThrow()
+    expect(create('x'.repeat(200), 'tres')).not.toThrow()
+    expect(create('x'.repeat(201), 'cuatro')).toThrow(/al menos 8/)
+    expect(create('', 'cinco')).toThrow(/al menos 8/)
   })
 
   it('un fallo al fijar la contraseña no deja a la persona creada a medias', () => {

@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
 import { Grupo, Opcion } from '../ui/Opciones'
-import { sala } from './contexto'
-import { type Caja, FiguraElemento, Lienzo, posicion, useEscala } from './LienzoPlano'
+import { floor } from './contexto'
+import { type Caja, FiguraElemento, Lienzo, placement, useEscala } from './LienzoPlano'
 import { MarcoSala } from './MarcoSala'
 import type { CatalogoEdicion, FormaMesa, TipoElemento } from './motor'
 import {
@@ -49,7 +49,7 @@ const field =
   'min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 text-lg focus-visible:outline-3 focus-visible:outline-foco'
 
 export function PlanoEditor() {
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const [c, setC] = useState<CatalogoEdicion | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [b, setB] = useState<BorradorZona | null>(null)
@@ -73,25 +73,25 @@ export function PlanoEditor() {
     setHistorial([])
   }, [])
 
-  const cargar = useCallback(
-    (zonaId?: string) =>
-      sala
+  const load = useCallback(
+    (zoneId?: string) =>
+      floor
         .catalogoParaEditar()
         .then((x) => {
           setC(x)
           setError(null)
-          abrirZona(x, zonaId)
+          abrirZona(x, zoneId)
         })
         .catch((e) => setError(e instanceof Error ? e.message : 'No se pudo traer el plano')),
     [abrirZona],
   )
   useEffect(() => {
-    void cargar()
-  }, [cargar])
+    void load()
+  }, [load])
 
   // Deshacer: se guarda el borrador de antes de cada cambio. Un arrastre manda muchos cambios
   // seguidos; cuentan como uno si llegan a menos de medio segundo.
-  const [historial, setHistorial] = useState<BorradorZona[]>([])
+  const [history, setHistorial] = useState<BorradorZona[]>([])
   const ultimoCambio = useRef(0)
   // Un error del hub se limpia en cuanto se vuelve a editar.
   const editar = (fresh: BorradorZona) => {
@@ -101,7 +101,7 @@ export function PlanoEditor() {
     setB(fresh)
   }
   const undo = () => {
-    const previous = historial.at(-1)
+    const previous = history.at(-1)
     if (!previous) return
     setHistorial((h) => h.slice(0, -1))
     setB(previous)
@@ -120,9 +120,9 @@ export function PlanoEditor() {
   // Recargar o cerrar la pestaña con cambios: el navegador pregunta.
   useEffect(() => {
     if (!sucio) return
-    const avisar = (e: BeforeUnloadEvent) => e.preventDefault()
-    window.addEventListener('beforeunload', avisar)
-    return () => window.removeEventListener('beforeunload', avisar)
+    const notify = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', notify)
+    return () => window.removeEventListener('beforeunload', notify)
   }, [sucio])
 
   // Ctrl/⌘+Z deshace (fuera de los campos de texto, que tienen su propio deshacer).
@@ -142,13 +142,13 @@ export function PlanoEditor() {
   /** Antes de dejar la zona con cambios, pregunta. */
   const siSePuede = (action: () => void) => (sucio ? setSalir(() => action) : action())
 
-  const guardar = async (): Promise<boolean> => {
+  const save = async (): Promise<boolean> => {
     if (!b || !c) return false
     setGuardando(true)
     try {
-      await sala.editarCatalogo(changes)
-      avisar(b.active ? `Guardaste ${b.name.trim()}` : `Archivaste ${b.name.trim()}`)
-      await cargar(b.active ? b.id : undefined)
+      await floor.editarCatalogo(changes)
+      notify(b.active ? `Guardaste ${b.name.trim()}` : `Archivaste ${b.name.trim()}`)
+      await load(b.active ? b.id : undefined)
       return true
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar')
@@ -184,7 +184,7 @@ export function PlanoEditor() {
     const newOnes = variasMesas(b, varias.shape, varias.quantity, varias.porFila, nombresUsados)
     editar({ ...b, tables: [...b.tables, ...newOnes] })
     setVarias(null)
-    avisar(
+    notify(
       `Agregaste ${newOnes.length} mesas: de la ${newOnes[0]?.name} a la ${newOnes.at(-1)?.name}`,
     )
   }
@@ -225,7 +225,7 @@ export function PlanoEditor() {
           >
             Nueva zona
           </Boton>
-          <Boton icono="undo" disabled={historial.length === 0} onClick={undo}>
+          <Boton icono="undo" disabled={history.length === 0} onClick={undo}>
             Deshacer
           </Boton>
         </Grupo>
@@ -359,7 +359,7 @@ export function PlanoEditor() {
                   onClick={async () => {
                     const action = exit
                     setSalir(null)
-                    if (await guardar()) action()
+                    if (await save()) action()
                   }}
                 >
                   Guardar y seguir
@@ -382,7 +382,7 @@ export function PlanoEditor() {
                 variant="main"
                 large
                 disabled={!sucio || issues.length > 0 || guardando}
-                onClick={() => void guardar()}
+                onClick={() => void save()}
               >
                 {guardando ? 'Guardando…' : sucio ? 'Guardar' : 'Sin cambios'}
               </Boton>
@@ -508,7 +508,7 @@ function LienzoEditable({
     return (
       <div
         key={g.id}
-        style={{ ...posicion(g, register, escala), zIndex: elegida ? 10 : undefined }}
+        style={{ ...placement(g, register, escala), zIndex: elegida ? 10 : undefined }}
       >
         <button
           id={`shape-${g.id}`}

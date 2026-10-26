@@ -1,5 +1,5 @@
 import { type ApplicableEvent, newId, rebuild, validateNewEvent } from '@pos/core'
-import type { EventoLocal } from '@pos/sync'
+import type { LocalEvent } from '@pos/sync'
 import { describe, expect, it } from 'vitest'
 import { comandasDeCurso, comandasPorEstacion, datosItem, lineaIgual } from './pedido'
 import {
@@ -15,7 +15,7 @@ import { catalogoDePrueba, datosItem as item, local, opening } from './pruebas'
 // Bordes de la toma de pedido de la 1.3: agotados con su orden, lo más pedido, sumar a la línea
 // igual, marchar un curso, los datos del ítem y el pedido para llevar.
 
-const conSecuencia = (l: EventoLocal, sequence: number): EventoLocal => ({
+const conSecuencia = (l: LocalEvent, sequence: number): LocalEvent => ({
   ...l,
   event: { ...l.event, sequence } as ApplicableEvent,
 })
@@ -38,17 +38,17 @@ const simple = {
   groups: [],
 }
 const catalog = catalogoDePrueba({
-  categories: [{ id: newId(), name: 'Bebidas', estacionId: 'E-BARRA', products: [simple] }],
+  categories: [{ id: newId(), name: 'Bebidas', stationId: 'E-BARRA', products: [simple] }],
 })
 
-const orderWith = (...events: ((p: string) => EventoLocal)[]) => {
+const orderWith = (...events: ((p: string) => LocalEvent)[]) => {
   const p = newId()
-  const locales = [local('OrderOpened', p, opening), ...events.map((f) => f(p))]
+  const locals = [local('OrderOpened', p, opening), ...events.map((f) => f(p))]
   return {
     p,
-    locales,
+    locals,
     status: rebuild(
-      locales.map((l) => l.event),
+      locals.map((l) => l.event),
       p,
     ),
   }
@@ -145,8 +145,8 @@ describe('agotados(): orden de confirmados y pendientes', () => {
   })
 
   it('los eventos de pedido no cuentan, y sin eventos no hay nada agotado', () => {
-    const { locales } = orderWith(aggregate(item()))
-    expect(agotados(locales)).toEqual(new Set())
+    const { locals } = orderWith(aggregate(item()))
+    expect(agotados(locals)).toEqual(new Set())
     expect(agotados([])).toEqual(new Set())
   })
 })
@@ -156,7 +156,7 @@ describe('masPedidos con eventos rechazados y otros bordes', () => {
     const p = newId()
     const good = newId()
     const badCase = newId()
-    const locales = [
+    const locals = [
       local('OrderOpened', p, opening),
       local('ItemAdded', p, item({ product_id: good, quantity: 1 })),
       {
@@ -168,7 +168,7 @@ describe('masPedidos con eventos rechazados y otros bordes', () => {
         status: 'quarantine' as const,
       },
     ]
-    expect(masPedidos(locales)).toEqual([good])
+    expect(masPedidos(locals)).toEqual([good])
   })
 
   it('un pendiente propio sí cuenta; en un empate va primero lo confirmado, en el orden del hub', () => {
@@ -176,23 +176,23 @@ describe('masPedidos con eventos rechazados y otros bordes', () => {
     const a = newId()
     const b = newId()
     const c = newId()
-    const locales = [
+    const locals = [
       local('ItemAdded', p, item({ product_id: a, quantity: 2 })),
       local('ItemAdded', p, item({ product_id: b, quantity: 2 }), 'pending'),
       local('ItemAdded', p, item({ product_id: c, quantity: 2 })),
     ]
-    expect(masPedidos(locales)).toEqual([a, c, b])
-    expect(masPedidos(locales, 2)).toEqual([a, c])
-    expect(masPedidos(locales, 0)).toEqual([])
+    expect(masPedidos(locals)).toEqual([a, c, b])
+    expect(masPedidos(locals, 2)).toEqual([a, c])
+    expect(masPedidos(locals, 0)).toEqual([])
     expect(masPedidos([])).toEqual([])
   })
 
   it('el tope por defecto es 12 productos', () => {
     const p = newId()
-    const locales = Array.from({ length: 15 }, (_, i) =>
+    const locals = Array.from({ length: 15 }, (_, i) =>
       local('ItemAdded', p, item({ product_id: newId(), quantity: 15 - i })),
     )
-    expect(masPedidos(locales)).toHaveLength(12)
+    expect(masPedidos(locals)).toHaveLength(12)
   })
 
   // Lo encontró qa-pruebas en la 1.3 y ya está corregido: sumar el mismo producto otra vez se
@@ -202,13 +202,13 @@ describe('masPedidos con eventos rechazados y otros bordes', () => {
     const lemonade = newId()
     const beer = newId()
     const line = item({ product_id: lemonade, quantity: 1 })
-    const locales = [
+    const locals = [
       local('OrderOpened', p, opening),
       local('ItemAdded', p, line),
       local('ItemAdded', p, item({ product_id: beer, quantity: 3 })),
       local('ItemChanged', p, { item_id: line.item_id, quantity: 10 }),
     ]
-    expect(masPedidos(locales)).toEqual([lemonade, beer])
+    expect(masPedidos(locals)).toEqual([lemonade, beer])
   })
 
   it('lo quitado no cuenta y lo anulado se descuenta', () => {
@@ -216,7 +216,7 @@ describe('masPedidos con eventos rechazados y otros bordes', () => {
     const [lemonade, beer, agua] = [newId(), newId(), newId()]
     const quitada = item({ product_id: lemonade, quantity: 5 })
     const voidedItem = item({ product_id: beer, quantity: 4 })
-    const locales = [
+    const locals = [
       local('OrderOpened', p, opening),
       local('ItemAdded', p, quitada),
       local('ItemAdded', p, voidedItem),
@@ -229,7 +229,7 @@ describe('masPedidos con eventos rechazados y otros bordes', () => {
         ticket_id: null,
       }),
     ]
-    expect(masPedidos(locales)).toEqual([agua, beer])
+    expect(masPedidos(locals)).toEqual([agua, beer])
   })
 })
 
@@ -372,11 +372,11 @@ describe('lineaIgual: retenido, anulado y opciones en otro orden', () => {
 describe('comandasDeCurso con pendientes de otros cursos', () => {
   const catalogoDos = catalogoDePrueba({
     categories: [
-      { id: newId(), name: 'Bebidas', estacionId: 'E-BARRA', products: [simple] },
+      { id: newId(), name: 'Bebidas', stationId: 'E-BARRA', products: [simple] },
       {
         id: newId(),
         name: 'Platos',
-        estacionId: 'E-COCINA',
+        stationId: 'E-COCINA',
         products: [{ ...simple, id: 'P-PLATO', name: 'Pizza' }],
       },
     ],
@@ -398,8 +398,8 @@ describe('comandasDeCurso con pendientes de otros cursos', () => {
     if (!status) throw new Error('falta')
 
     const data = comandasDeCurso(catalogoDos, status, 'main')
-    const enviados = data?.tickets.flatMap((c) => c.item_ids).sort()
-    expect(enviados).toEqual([fuerteBarra.item_id, fuerteCocina.item_id].sort())
+    const sentList = data?.tickets.flatMap((c) => c.item_ids).sort()
+    expect(sentList).toEqual([fuerteBarra.item_id, fuerteCocina.item_id].sort())
     expect(data?.tickets.map((c) => c.station_id).sort()).toEqual(['E-BARRA', 'E-COCINA'])
     // El estado original no se modificó: los demás siguen por enviar.
     expect(Object.keys(status.items)).toHaveLength(5)
@@ -510,12 +510,12 @@ describe('datosItem con extras fuera de rango', () => {
 describe('proyección de un pedido para llevar (sin mesa, con número del día)', () => {
   it('lleva canal, número del día y ningún mesaId; los agotados no lo estorban', () => {
     const p = newId()
-    const locales = [
+    const locals = [
       local('OrderOpened', p, { channel: 'takeout', table_id: null, guests: 1 }),
       conSecuencia(brand('ProductSoldOut', newId()), 7),
       local('ItemAdded', p, item({ unit_price: 12_000 })),
     ]
-    const [v] = pedidosAbiertos(locales)
+    const [v] = pedidosAbiertos(locals)
     expect(v?.status.channel).toBe('takeout')
     expect(v?.status.tableId).toBeNull()
     expect(v?.status.dayNumber).toBe(1)

@@ -1,5 +1,5 @@
 import type { OrderItem } from '@pos/core'
-import type { Catalogo } from '@pos/sync'
+import type { Catalog } from '@pos/sync'
 import { useState } from 'react'
 import { Boton } from '../ui/Boton'
 import { Icono, type NombreIcono } from '../ui/iconos'
@@ -26,17 +26,17 @@ const message = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. 
 /** Lo que pide un PIN: el error del último intento y la espera que manda el hub (ADR-008). */
 interface EstadoPin {
   error: string | null
-  intento: number
-  esperaMs: number
+  attempt: number
+  waitMs: number
 }
 
-const sinError: EstadoPin = { error: null, intento: 0, esperaMs: 0 }
+const sinError: EstadoPin = { error: null, attempt: 0, waitMs: 0 }
 
 /** El error de un intento, con la espera que pida el hub tras varios PIN errados. */
 const fallo = (e: unknown, previous: EstadoPin): EstadoPin => ({
   error: message(e),
-  intento: previous.intento + 1,
-  esperaMs: e instanceof ErrorApi ? e.esperaMs : 0,
+  attempt: previous.attempt + 1,
+  waitMs: e instanceof ErrorApi ? e.waitMs : 0,
 })
 
 /**
@@ -46,7 +46,7 @@ const fallo = (e: unknown, previous: EstadoPin): EstadoPin => ({
 function AutorizarConPin({
   ready,
   missing,
-  enLinea,
+  online,
   status,
   ocupado,
   alPin,
@@ -54,12 +54,12 @@ function AutorizarConPin({
   ready: boolean
   /** Qué falta elegir antes del PIN. */
   missing: string
-  enLinea: boolean
+  online: boolean
   status: EstadoPin
   ocupado: boolean
   alPin: (pin: string) => void
 }) {
-  if (!enLinea)
+  if (!online)
     return <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">{SIN_CONEXION}</p>
   if (!ready) return <p className="text-texto-suave">{missing}</p>
   return (
@@ -68,8 +68,8 @@ function AutorizarConPin({
       <TecladoPin
         title={ocupado ? 'Comprobando el PIN…' : 'Que escriba su PIN para autorizar'}
         error={status.error}
-        intento={status.intento}
-        esperaMs={status.esperaMs}
+        attempt={status.attempt}
+        waitMs={status.waitMs}
         ocupado={ocupado}
         alCompletar={alPin}
       />
@@ -128,14 +128,14 @@ const motivoFinal = (reason: string | null, other: string) =>
 export function PanelAnular({
   item,
   conPermiso,
-  enLinea,
-  alCerrar,
+  online,
+  onClose,
   onVoid,
 }: {
   item: OrderItem
   conPermiso: boolean
-  enLinea: boolean
-  alCerrar: () => void
+  online: boolean
+  onClose: () => void
   onVoid: (d: {
     quantity: number
     reason: string
@@ -169,7 +169,7 @@ export function PanelAnular({
     <PanelLateral
       opened
       title={`Anular ${item.name}`}
-      alCerrar={alCerrar}
+      onClose={onClose}
       pie={
         conPermiso ? (
           <div className="flex flex-col gap-2">
@@ -230,7 +230,7 @@ export function PanelAnular({
           <AutorizarConPin
             ready={!!m}
             missing="Elige el motivo y después pásale el celular al cajero para su PIN."
-            enLinea={enLinea}
+            online={online}
             status={pin}
             ocupado={ocupado}
             alPin={(key) => voidItem(key)}
@@ -253,7 +253,7 @@ function ElegirMesa({
   soloLibres,
   alElegir,
 }: {
-  catalog: Catalogo
+  catalog: Catalog
   occupiedIds: Map<string, string>
   excluir: string[]
   elegidas: string[]
@@ -263,30 +263,30 @@ function ElegirMesa({
   return (
     <div className="flex flex-col gap-3">
       {catalog.zones.map((z) => {
-        const tables = catalog.tables.filter((m) => m.zonaId === z.id && !excluir.includes(m.id))
+        const tables = catalog.tables.filter((m) => m.zoneId === z.id && !excluir.includes(m.id))
         if (tables.length === 0) return null
         return (
           <Grupo key={z.id} etiqueta={z.name} className="flex flex-col gap-2">
             <span className="text-sm font-semibold text-texto-suave">{z.name}</span>
             <div className="flex flex-wrap gap-2">
               {tables.map((m) => {
-                const ocupada = occupiedIds.get(m.id)
-                const bloqueada = soloLibres && ocupada !== undefined && !elegidas.includes(m.id)
+                const takenPath = occupiedIds.get(m.id)
+                const bloqueada = soloLibres && takenPath !== undefined && !elegidas.includes(m.id)
                 return bloqueada ? (
                   <span
                     key={m.id}
                     className="inline-flex min-h-12 items-center rounded-full border-2 border-dashed border-borde px-4 text-texto-suave"
                   >
-                    {`${m.name} · ${ocupada}`}
+                    {`${m.name} · ${takenPath}`}
                   </span>
                 ) : (
                   <Opcion
                     key={m.id}
                     elegida={elegidas.includes(m.id)}
                     alElegir={() => alElegir(m.id)}
-                    etiqueta={`Mesa ${m.name}${ocupada ? `, ${ocupada}` : ', libre'}`}
+                    etiqueta={`Mesa ${m.name}${takenPath ? `, ${takenPath}` : ', libre'}`}
                   >
-                    {ocupada ? `${m.name} · ${ocupada}` : m.name}
+                    {takenPath ? `${m.name} · ${takenPath}` : m.name}
                   </Opcion>
                 )
               })}
@@ -300,18 +300,18 @@ function ElegirMesa({
 
 /** Pasar la cuenta entera a otra mesa libre (el grupo se cambió de lugar). */
 export function PanelCambiarMesa({
-  enLinea,
+  online,
   catalog,
   occupiedIds,
   current,
-  alCerrar,
+  onClose,
   onChange,
 }: {
-  enLinea: boolean
-  catalog: Catalogo
+  online: boolean
+  catalog: Catalog
   occupiedIds: Map<string, string>
   current: string[]
-  alCerrar: () => void
+  onClose: () => void
   onChange: (tableId: string) => Promise<void>
 }) {
   const [elegida, setElegida] = useState<string | null>(null)
@@ -321,7 +321,7 @@ export function PanelCambiarMesa({
     <PanelLateral
       opened
       title="Cambiar de mesa"
-      alCerrar={alCerrar}
+      onClose={onClose}
       pie={
         <div className="flex flex-col gap-2">
           {error && (
@@ -333,15 +333,15 @@ export function PanelCambiarMesa({
             variant="main"
             large
             className="w-full"
-            disabled={!elegida || !enLinea}
+            disabled={!elegida || !online}
             onClick={() => elegida && onChange(elegida).catch((e) => setError(message(e)))}
           >
-            {!enLinea ? 'Sin conexión' : name ? `Pasar a la mesa ${name}` : 'Elige la mesa nueva'}
+            {!online ? 'Sin conexión' : name ? `Pasar a la mesa ${name}` : 'Elige la mesa nueva'}
           </Boton>
         </div>
       }
     >
-      {!enLinea && (
+      {!online && (
         <p className="mb-4 rounded-xl bg-alerta-suave p-3 text-alerta-texto">{SIN_RED_MESAS}</p>
       )}
       <p className="mb-4 text-texto-suave">
@@ -361,20 +361,20 @@ export function PanelCambiarMesa({
 
 /** Juntar mesas libres a la de este pedido para un grupo grande, o soltarlas. */
 export function PanelUnirMesas({
-  enLinea,
+  online,
   catalog,
   occupiedIds,
   tableId,
   merged,
-  alCerrar,
+  onClose,
   onSave,
 }: {
-  enLinea: boolean
-  catalog: Catalogo
+  online: boolean
+  catalog: Catalog
   occupiedIds: Map<string, string>
   tableId: string
   merged: string[]
-  alCerrar: () => void
+  onClose: () => void
   onSave: (add: string[], remove: string[]) => Promise<void>
 }) {
   const [elegidas, setElegidas] = useState(merged)
@@ -386,7 +386,7 @@ export function PanelUnirMesas({
     <PanelLateral
       opened
       title={`Unir mesas con la mesa ${main ?? ''}`}
-      alCerrar={alCerrar}
+      onClose={onClose}
       pie={
         <div className="flex flex-col gap-2">
           {error && (
@@ -398,7 +398,7 @@ export function PanelUnirMesas({
             variant="main"
             large
             className="w-full"
-            disabled={(add.length === 0 && remove.length === 0) || !enLinea}
+            disabled={(add.length === 0 && remove.length === 0) || !online}
             onClick={() => onSave(add, remove).catch((e) => setError(message(e)))}
           >
             Guardar
@@ -406,7 +406,7 @@ export function PanelUnirMesas({
         </div>
       }
     >
-      {!enLinea && (
+      {!online && (
         <p className="mb-4 rounded-xl bg-alerta-suave p-3 text-alerta-texto">{SIN_RED_MESAS}</p>
       )}
       <p className="mb-4 text-texto-suave">
@@ -430,15 +430,15 @@ export function PanelMover({
   order,
   catalog,
   occupiedIds,
-  enLinea,
-  alCerrar,
+  online,
+  onClose,
   alMover,
 }: {
   order: PedidoVisible
-  catalog: Catalogo
+  catalog: Catalog
   occupiedIds: Map<string, string>
-  enLinea: boolean
-  alCerrar: () => void
+  online: boolean
+  onClose: () => void
   alMover: (itemIds: string[], tableId: string) => Promise<void>
 }) {
   const items = Object.values(order.status.items)
@@ -452,7 +452,7 @@ export function PanelMover({
   )
   const name = catalog.tables.find((m) => m.id === table)?.name
   const move = () => {
-    if (!enLinea) return setError('Mover productos pide conexión con la caja. Revisa el Wi-Fi.')
+    if (!online) return setError('Mover productos pide conexión con la caja. Revisa el Wi-Fi.')
     if (ids.length === 0 || !table) return
     alMover(ids, table).catch((e) => setError(message(e)))
   }
@@ -460,7 +460,7 @@ export function PanelMover({
     <PanelLateral
       opened
       title="Mover productos"
-      alCerrar={alCerrar}
+      onClose={onClose}
       pie={
         <div className="flex flex-col gap-2">
           {error && (
@@ -542,19 +542,19 @@ export function PanelMover({
 export function PanelCancelar({
   table,
   conPermiso,
-  enLinea,
+  online,
   enCocina,
   withPayments,
-  alCerrar,
+  onClose,
   alCancelar,
 }: {
   /** «Mesa 5», para que el botón diga a qué pedido. */
   table: string
   conPermiso: boolean
-  enLinea: boolean
+  online: boolean
   enCocina: number
   withPayments: boolean
-  alCerrar: () => void
+  onClose: () => void
   alCancelar: (d: { reason: string; pin: string | null }) => Promise<void>
 }) {
   const [reason, setMotivo] = useState<string | null>(null)
@@ -576,7 +576,7 @@ export function PanelCancelar({
     <PanelLateral
       opened
       title={`Cancelar el pedido de la ${table.toLowerCase()}`}
-      alCerrar={alCerrar}
+      onClose={onClose}
       pie={
         <div className="flex flex-col gap-2">
           {conPermiso && pin.error && (
@@ -585,7 +585,7 @@ export function PanelCancelar({
             </p>
           )}
           <div className="flex gap-2">
-            <Boton large className="flex-1" onClick={alCerrar}>
+            <Boton large className="flex-1" onClick={onClose}>
               Volver
             </Boton>
             {conPermiso && (
@@ -622,7 +622,7 @@ export function PanelCancelar({
           <AutorizarConPin
             ready={!!m}
             missing="Elige el motivo y después pásale el celular al cajero para su PIN."
-            enLinea={enLinea}
+            online={online}
             status={pin}
             ocupado={ocupado}
             alPin={(key) => cancel(key)}
@@ -637,12 +637,12 @@ export function PanelCancelar({
 export function PanelAccionesPedido({
   withTable,
   withOrder,
-  alCerrar,
+  onClose,
   alElegir,
 }: {
   withTable: boolean
   withOrder: boolean
-  alCerrar: () => void
+  onClose: () => void
   alElegir: (a: 'move' | 'table' | 'merge' | 'cancel') => void
 }) {
   const options: {
@@ -685,7 +685,7 @@ export function PanelAccionesPedido({
   const cssClass =
     'flex min-h-16 w-full items-center gap-3 rounded-xl border border-borde bg-superficie px-4 text-left focus-visible:outline-3 focus-visible:outline-foco'
   return (
-    <PanelLateral opened title="Mesa y pedido" alCerrar={alCerrar}>
+    <PanelLateral opened title="Mesa y pedido" onClose={onClose}>
       <ul className="flex flex-col gap-2">
         {options.map((o) => (
           <li key={o.action}>

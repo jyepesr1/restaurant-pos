@@ -6,7 +6,7 @@ import { Icono } from '../ui/iconos'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { PanelLateral } from '../ui/PanelLateral'
 import { navegar } from '../ui/ruta'
-import { sala, useSala } from './contexto'
+import { floor, useSala } from './contexto'
 import { claseCampo } from './Entrar'
 import { MarcoSala } from './MarcoSala'
 import type { ConfiguracionCocina, ImpresoraCocina } from './motor'
@@ -45,14 +45,14 @@ const NUEVA: ImpresoraCocina = {
 const message = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
 
 export function CocinaAjustes() {
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const { printers: statuses } = useSala()
   const [config, setConfig] = useState<ConfiguracionCocina | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editando, setEditando] = useState<ImpresoraCocina | null>(null)
 
-  const cargar = useCallback(() => {
-    sala
+  const load = useCallback(() => {
+    floor
       .kitchenConfig()
       .then((c) => {
         setConfig(c)
@@ -60,14 +60,14 @@ export function CocinaAjustes() {
       })
       .catch((e) => setError(message(e)))
   }, [])
-  useEffect(cargar, [cargar])
+  useEffect(load, [load])
 
   if (error && !config)
     return (
       <MarcoSala title="Cocina e impresoras">
         <div className="mx-auto flex max-w-3xl flex-col items-start gap-3 p-6">
           <p className="text-alerta-texto">{error}</p>
-          <Boton onClick={cargar}>Intentar de nuevo</Boton>
+          <Boton onClick={load}>Intentar de nuevo</Boton>
         </div>
       </MarcoSala>
     )
@@ -86,10 +86,10 @@ export function CocinaAjustes() {
 
   const probar = async (id: string, name: string) => {
     try {
-      await sala.testPrinter(id)
-      avisar(`Prueba enviada a ${name}: revisa que salga el papel`)
+      await floor.testPrinter(id)
+      notify(`Prueba enviada a ${name}: revisa que salga el papel`)
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     }
   }
 
@@ -110,7 +110,7 @@ export function CocinaAjustes() {
           <ul className="grid gap-3 sm:grid-cols-2">
             {config.stations.map((e) => {
               const imp = activas.filter((i) => i.station_ids.includes(e.id))
-              const pan = config.pantallas.filter((p) => p.station_ids.includes(e.id))
+              const pan = config.screens.filter((p) => p.station_ids.includes(e.id))
               const nothing = imp.length === 0 && pan.length === 0
               return (
                 <li
@@ -213,19 +213,19 @@ export function CocinaAjustes() {
           </ul>
         </section>
 
-        <Pantallas config={config} onChange={cargar} />
-        <Tiempos config={config} onChange={cargar} />
-        <Cursos config={config} onChange={cargar} />
+        <Pantallas config={config} onChange={load} />
+        <Tiempos config={config} onChange={load} />
+        <Cursos config={config} onChange={load} />
       </div>
 
       {editando && (
         <EditarImpresora
           initial={editando}
           config={config}
-          alCerrar={() => setEditando(null)}
+          onClose={() => setEditando(null)}
           onSave={() => {
             setEditando(null)
-            cargar()
+            load()
           }}
         />
       )}
@@ -264,15 +264,15 @@ function Estaciones({
 function EditarImpresora({
   initial,
   config,
-  alCerrar,
+  onClose,
   onSave,
 }: {
   initial: ImpresoraCocina
   config: ConfiguracionCocina
-  alCerrar: () => void
+  onClose: () => void
   onSave: () => void
 }) {
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const [b, setB] = useState(initial)
   const [error, setError] = useState<string | null>(null)
   const [ocupado, setOcupado] = useState(false)
@@ -280,19 +280,19 @@ function EditarImpresora({
   const patch = (partial: Partial<ImpresoraCocina>) => setB((x) => ({ ...x, ...partial }))
   const otras = config.printers.filter((i) => i.active && i.id !== b.id)
 
-  const guardar = async (changes: Partial<ImpresoraCocina> = {}) => {
+  const save = async (changes: Partial<ImpresoraCocina> = {}) => {
     const data = { ...b, ...changes }
     if (!data.name.trim()) return setError('Ponle un nombre, por ejemplo «Cocina»')
     if (data.connection === 'network' && !data.address.trim())
       return setError('Escribe la IP de la impresora (sale en su hoja de configuración)')
     setOcupado(true)
     try {
-      await sala.savePrinter({
+      await floor.savePrinter({
         ...data,
         name: data.name.trim(),
         address: data.address.trim(),
       })
-      avisar(data.active ? `Guardaste ${data.name.trim()}` : `Archivaste ${data.name.trim()}`)
+      notify(data.active ? `Guardaste ${data.name.trim()}` : `Archivaste ${data.name.trim()}`)
       onSave()
     } catch (e) {
       setError(message(e))
@@ -304,7 +304,7 @@ function EditarImpresora({
     <PanelLateral
       opened
       title={initial.id ? `Editar ${initial.name}` : 'Impresora nueva'}
-      alCerrar={alCerrar}
+      onClose={onClose}
       pie={
         <div className="flex flex-col gap-2">
           {error && (
@@ -321,7 +321,7 @@ function EditarImpresora({
               }
               yes="Archivar"
               ocupado={ocupado}
-              alConfirmar={() => guardar({ active: false })}
+              alConfirmar={() => save({ active: false })}
               alCancelar={() => setArchivando(false)}
             />
           ) : (
@@ -331,7 +331,7 @@ function EditarImpresora({
                 large
                 className="flex-1"
                 disabled={ocupado}
-                onClick={() => guardar()}
+                onClick={() => save()}
               >
                 Guardar
               </Boton>
@@ -341,7 +341,7 @@ function EditarImpresora({
                 </Boton>
               )}
               {initial.id && !initial.active && (
-                <Boton disabled={ocupado} onClick={() => guardar({ active: true })}>
+                <Boton disabled={ocupado} onClick={() => save({ active: true })}>
                   Volver a usar
                 </Boton>
               )}
@@ -492,7 +492,7 @@ function EditarImpresora({
 }
 
 function Pantallas({ config, onChange }: { config: ConfiguracionCocina; onChange: () => void }) {
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const { device } = useSala()
   const [name, setNombre] = useState('Pantalla cocina')
   const [stations, setEstaciones] = useState<string[]>([])
@@ -500,19 +500,19 @@ function Pantallas({ config, onChange }: { config: ConfiguracionCocina; onChange
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const cambiarEstaciones = async (dispositivoId: string, ids: string[]) => {
-    if (ids.length === 0) return avisar('Una pantalla muestra al menos una estación')
+  const cambiarEstaciones = async (deviceId: string, ids: string[]) => {
+    if (ids.length === 0) return notify('Una pantalla muestra al menos una estación')
     try {
-      await sala.screenStations(dispositivoId, ids)
+      await floor.screenStations(deviceId, ids)
       onChange()
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     }
   }
   const convertir = async () => {
     setOcupado(true)
     try {
-      await sala.convertirEnPantalla(name.trim(), stations)
+      await floor.convertirEnPantalla(name.trim(), stations)
       navegar('/')
     } catch (e) {
       setError(message(e))
@@ -530,9 +530,9 @@ function Pantallas({ config, onChange }: { config: ConfiguracionCocina; onChange
         Opcionales. Una tablet (o un televisor táctil) en la cocina o la barra muestra las comandas
         y el cocinero toca «Listo». Un televisor sin pantalla táctil solo sirve para mirar.
       </p>
-      {config.pantallas.length > 0 && (
+      {config.screens.length > 0 && (
         <ul className="flex flex-col gap-3">
-          {config.pantallas.map((p) => (
+          {config.screens.map((p) => (
             <li
               key={p.device_id}
               className="flex flex-col gap-2 rounded-2xl border border-linea bg-superficie p-4"
@@ -611,20 +611,20 @@ function Pantallas({ config, onChange }: { config: ConfiguracionCocina; onChange
 }
 
 function Tiempos({ config, onChange }: { config: ConfiguracionCocina; onChange: () => void }) {
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const [amarillo, setAmarillo] = useState(String(config.tiempos.amarillo))
   const [rojo, setRojo] = useState(String(config.tiempos.rojo))
   const a = Number(amarillo)
   const r = Number(rojo)
   const valid = Number.isInteger(a) && Number.isInteger(r) && a >= 1 && r > a && r <= 240
   const change = a !== config.tiempos.amarillo || r !== config.tiempos.rojo
-  const guardar = async () => {
+  const save = async () => {
     try {
-      await sala.kitchenTimers(a, r)
-      avisar('Guardaste los tiempos de cocina')
+      await floor.kitchenTimers(a, r)
+      notify('Guardaste los tiempos de cocina')
       onChange()
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     }
   }
   return (
@@ -657,7 +657,7 @@ function Tiempos({ config, onChange }: { config: ConfiguracionCocina; onChange: 
             min
           </span>
         </label>
-        <Boton variant="main" disabled={!valid || !change} onClick={guardar}>
+        <Boton variant="main" disabled={!valid || !change} onClick={save}>
           Guardar
         </Boton>
       </div>
@@ -675,15 +675,15 @@ function Tiempos({ config, onChange }: { config: ConfiguracionCocina; onChange: 
  * apagados. Prenderlos muestra «Curso» al tomar el pedido.
  */
 function Cursos({ config, onChange }: { config: ConfiguracionCocina; onChange: () => void }) {
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const active = config.courses_enabled ?? false
   const patch = async () => {
     try {
-      await sala.usarCursos(!active)
-      avisar(active ? 'Apagaste los cursos' : 'Prendiste los cursos')
+      await floor.coursesEnabled(!active)
+      notify(active ? 'Apagaste los cursos' : 'Prendiste los cursos')
       onChange()
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     }
   }
   return (

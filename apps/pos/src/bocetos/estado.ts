@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import type { EstadoConexion } from '../ui/IndicadorConexion'
+import type { ConnectionState } from '../ui/IndicadorConexion'
 import { useRuta } from '../ui/ruta'
 import { type Mesa, mesasIniciales } from './datos'
 
@@ -7,7 +7,7 @@ import { type Mesa, mesasIniciales } from './datos'
 // ve igual en el plano, en cocina y en la caja. Recargar la página lo reinicia.
 
 export interface Simulacion {
-  connection: EstadoConexion
+  connection: ConnectionState
   pendingList: number
   impresorasConFalla: number
 }
@@ -51,16 +51,16 @@ export const reiniciarBocetos = () => patch(initial())
 
 /** El número de mesa de la dirección (`?mesa=12`), o el valor por defecto. */
 export function useMesaDeLaRuta(porDefecto: number): number {
-  const n = Number(useRuta().parametros.get('table'))
+  const n = Number(useRuta().params.get('table'))
   return Number.isInteger(n) && n >= 1 && n <= 25 ? n : porDefecto
 }
 
 /** La hora, para los tiempos de mesas y comandas: una sola fuente para todas las pantallas. */
 export function useAhora(cadaMs = 15_000): number {
-  const [ahora, setAhora] = useState(Date.now)
+  const [now, setAhora] = useState(Date.now)
   useEffect(() => {
     const t = setInterval(() => setAhora(Date.now()), cadaMs)
     return () => clearInterval(t)
   }, [cadaMs])
-  return ahora
+  return now
 }

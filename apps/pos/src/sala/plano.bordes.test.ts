@@ -15,7 +15,7 @@ import {
 // Bordes del plano (tarea 1.2): varias mesas de una vez y qué hace el editor con un catálogo de
 // edición sin zonas. Semilla fija.
 
-const SEMILLA = 20_261_024
+const SEED = 20_261_024
 const vacia = (): CatalogoEdicion => ({
   version: 0,
   zones: [],
@@ -76,7 +76,7 @@ describe('variasMesas', () => {
               ).toBe(false)
         },
       ),
-      { seed: SEMILLA, numRuns: 200 },
+      { seed: SEED, numRuns: 200 },
     )
   })
 
@@ -172,14 +172,14 @@ describe('el editor ante un catálogo de edición sin zonas', () => {
 })
 
 describe('completarCatalogo', () => {
-  const buena = {
+  const goodOne = {
     version: 9,
-    restaurant: { name: 'X', sesionInactividadMin: 30 },
+    restaurant: { name: 'X', sessionIdleMin: 30 },
     zones: [{ id: 'Z', name: 'Salón', level: 2 }],
     tables: [
       {
         id: 'M',
-        zonaId: 'Z',
+        zoneId: 'Z',
         name: '1',
         x: 10,
         y: 20,
@@ -193,7 +193,7 @@ describe('completarCatalogo', () => {
     elements: [
       {
         id: 'E',
-        zonaId: 'Z',
+        zoneId: 'Z',
         type: 'wall',
         text: null,
         x: 0,
@@ -209,16 +209,16 @@ describe('completarCatalogo', () => {
   } as unknown as Parameters<typeof completarCatalogo>[0]
 
   it('una carta completa queda igual y no se modifica el original', () => {
-    const copy = structuredClone(buena)
-    expect(completarCatalogo(buena)).toEqual(buena)
-    expect(buena).toEqual(copy)
+    const copy = structuredClone(goodOne)
+    expect(completarCatalogo(goodOne)).toEqual(goodOne)
+    expect(goodOne).toEqual(copy)
   })
 
   it('es idempotente y respeta ceros (rotación 0, ancho 0 no se cambian por el valor por defecto)', () => {
     const vieja = {
-      ...buena,
-      tables: [{ ...(buena.tables[0] as object), width: 0, height: 0, rotation: 0 }],
-    } as unknown as typeof buena
+      ...goodOne,
+      tables: [{ ...(goodOne.tables[0] as object), width: 0, height: 0, rotation: 0 }],
+    } as unknown as typeof goodOne
     const makeOne = completarCatalogo(vieja)
     expect(makeOne.tables[0]).toMatchObject({ width: 0, height: 0, rotation: 0 })
     expect(completarCatalogo(makeOne)).toEqual(makeOne)
@@ -226,16 +226,16 @@ describe('completarCatalogo', () => {
 
   it('completa solo lo que falta, mesa por mesa', () => {
     const mixta = {
-      ...buena,
+      ...goodOne,
       zones: [
         { id: 'A', name: 'A' },
         { id: 'B', name: 'B', level: 3 },
       ],
       tables: [
-        { id: '1', zonaId: 'A', name: '1', x: 0, y: 0, shape: 'square', capacity: 4 },
+        { id: '1', zoneId: 'A', name: '1', x: 0, y: 0, shape: 'square', capacity: 4 },
         {
           id: '2',
-          zonaId: 'B',
+          zoneId: 'B',
           name: '2',
           x: 0,
           y: 0,
@@ -246,7 +246,7 @@ describe('completarCatalogo', () => {
           capacity: 1,
         },
       ],
-    } as unknown as typeof buena
+    } as unknown as typeof goodOne
     const c = completarCatalogo(mixta)
     expect(c.zones.map((z) => z.level)).toEqual([1, 3])
     expect(c.tables[0]).toMatchObject({ width: 80, height: 80, rotation: 0 })
@@ -255,12 +255,12 @@ describe('completarCatalogo', () => {
 
   it('valores null (de un guardado raro) también se completan', () => {
     const odd = {
-      ...buena,
+      ...goodOne,
       zones: null,
       tables: [
         {
           id: '1',
-          zonaId: 'A',
+          zoneId: 'A',
           name: '1',
           x: 0,
           y: 0,
@@ -273,7 +273,7 @@ describe('completarCatalogo', () => {
       ],
       elements: null,
       staff: null,
-    } as unknown as typeof buena
+    } as unknown as typeof goodOne
     const c = completarCatalogo(odd)
     expect(c.zones).toEqual([])
     expect(c.elements).toEqual([])

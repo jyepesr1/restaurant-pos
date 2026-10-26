@@ -10,7 +10,7 @@ import { huellaPin } from './secretos'
 // el hub atiende una tras otra; lo que se prueba es que el resultado sea coherente en cualquier
 // orden y que lo que falla a mitad no deje nada.
 
-const contar = (m: { db: ReturnType<typeof montarHub>['db'] }, sql: string, ...p: string[]) =>
+const count = (m: { db: ReturnType<typeof montarHub>['db'] }, sql: string, ...p: string[]) =>
   Number(m.db.prepare(sql).get(...p)?.n)
 
 /** Foto de lo que un cambio fallido no debe tocar. */
@@ -32,7 +32,7 @@ async function conDosAdmins() {
   const api = montarApi(m)
   const jefes = guardarRol(
     m.db,
-    m.restauranteId,
+    m.restaurantId,
     m.access,
     {
       name: 'Jefes',
@@ -57,17 +57,17 @@ async function conDosAdmins() {
     token: r.json().device.token as string,
     session: { session_id: r.json().session_id as string, secret: r.json().secret as string },
   }
-  const person = (quien: { token: string; session: object }, p: object) =>
-    api.post('/api/staff/people', { ...quien.session, person: p }, { token: quien.token })
-  const role = (quien: { token: string; session: object }, p: object) =>
-    api.post('/api/staff/roles', { ...quien.session, role: p }, { token: quien.token })
+  const person = (who: { token: string; session: object }, p: object) =>
+    api.post('/api/staff/people', { ...who.session, person: p }, { token: who.token })
+  const role = (who: { token: string; session: object }, p: object) =>
+    api.post('/api/staff/roles', { ...who.session, role: p }, { token: who.token })
   return { m, api, x, y, jefa, jefes, person, role }
 }
 
 describe('dos solicitudes a la vez', () => {
   it('dos equipos crean a la persona con el mismo usuario: una entra y la otra recibe «ya hay alguien»', async () => {
     const { m, x, y, person } = await conDosAdmins()
-    const before = contar(m, 'SELECT count(*) AS n FROM users')
+    const before = count(m, 'SELECT count(*) AS n FROM users')
     const newOne = (n: string) => ({
       name: `Carla ${n}`,
       role_id: m.roles.cashier,
@@ -75,13 +75,13 @@ describe('dos solicitudes a la vez', () => {
     })
     const [a, b] = await Promise.all([person(x, newOne('uno')), person(y, newOne('dos'))])
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 400])
-    const mala = a.statusCode === 400 ? a : b
-    expect(mala.json().message).toMatch(/Ya hay alguien con el usuario «carla»/)
-    expect(contar(m, 'SELECT count(*) AS n FROM users')).toBe(before + 1)
-    expect(contar(m, "SELECT count(*) AS n FROM user_credentials WHERE username = 'carla'")).toBe(1)
+    const bad = a.statusCode === 400 ? a : b
+    expect(bad.json().message).toMatch(/Ya hay alguien con el usuario «carla»/)
+    expect(count(m, 'SELECT count(*) AS n FROM users')).toBe(before + 1)
+    expect(count(m, "SELECT count(*) AS n FROM user_credentials WHERE username = 'carla'")).toBe(1)
     // Y sin huérfanos: cada usuario activo tiene su credencial.
     expect(
-      contar(
+      count(
         m,
         'SELECT count(*) AS n FROM users u WHERE NOT EXISTS (SELECT 1 FROM user_credentials c WHERE c.user_id = u.id)',
       ),
@@ -95,7 +95,7 @@ describe('dos solicitudes a la vez', () => {
     expect([a.statusCode, b.statusCode]).toEqual([200, 200])
     expect(a.json().id).not.toBe(b.json().id)
     expect(a.json().pin).not.toBe(b.json().pin)
-    expect(contar(m, "SELECT count(*) AS n FROM users WHERE name = 'Bruno'")).toBe(2)
+    expect(count(m, "SELECT count(*) AS n FROM users WHERE name = 'Bruno'")).toBe(2)
   })
 
   it('40 meseros creados a la vez desde dos equipos: todos con PIN de 4 dígitos, distintos y que entran', async () => {
@@ -132,7 +132,7 @@ describe('dos solicitudes a la vez', () => {
       role(x, { id: jefes, name: 'Jefes', permissions: without(jefes) }),
     ])
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 403])
-    expect(administradores(m.db, m.restauranteId)).toHaveLength(1)
+    expect(administradores(m.db, m.restaurantId)).toHaveLength(1)
   })
 
   it('el administrador y la jefa se archivan el uno al otro a la vez: queda exactamente uno activo', async () => {
@@ -156,7 +156,7 @@ describe('dos solicitudes a la vez', () => {
     // El primero archiva al otro (200); el segundo ya no tiene sesión (401), o le queda ella sola.
     expect(statuses[0]).toBe(200)
     expect([400, 401, 403]).toContain(statuses[1])
-    expect(administradores(m.db, m.restauranteId)).toHaveLength(1)
+    expect(administradores(m.db, m.restaurantId)).toHaveLength(1)
   })
 
   it('cada camino por separado para dejar a nadie administrando se rechaza y no deja nada a medias', async () => {
@@ -254,7 +254,7 @@ describe('fallos a mitad de una operación (transacciones anidadas)', () => {
     expect(() =>
       guardarRol(
         m.db,
-        m.restauranteId,
+        m.restaurantId,
         m.access,
         { id: m.roles.admin, name: 'Administrador', permissions: ['take_order', 'comp'] },
         SISTEMA,
@@ -274,7 +274,7 @@ describe('fallos a mitad de una operación (transacciones anidadas)', () => {
       /disco lleno/,
     )
     expect(photo(m)).toBe(before)
-    expect(contar(m, 'SELECT count(*) AS n FROM device_credentials')).toBe(0)
+    expect(count(m, 'SELECT count(*) AS n FROM device_credentials')).toBe(0)
     m.db.exec('DROP TRIGGER sesion_falla')
     // Ya sin la falla, entra normal: la base quedó utilizable.
     expect(m.access.entrar({ pin: m.people.waiter.pin }, null, '10.0.0.7')).toMatchObject({
@@ -296,9 +296,9 @@ describe('fallos a mitad de una operación (transacciones anidadas)', () => {
       m.access.entrar({ user: 'carlos', password: 'clave-de-carlos' }, connection, '10.0.0.9'),
     ).toThrow(/falla/)
     expect(photo(m)).toBe(before)
-    expect(
-      m.db.prepare('SELECT type FROM devices WHERE id = ?').get(connection.dispositivoId),
-    ).toEqual({ type: 'waiter' })
+    expect(m.db.prepare('SELECT type FROM devices WHERE id = ?').get(connection.deviceId)).toEqual({
+      type: 'waiter',
+    })
   })
 
   // Lo encontró qa-pruebas en la 1.3b y ya está corregido: sin un manejador de errores propio, Fastify devuelve en un 500 el mensaje de la excepción:
@@ -359,10 +359,10 @@ describe('equipo autorregistrado y revocación', () => {
       const r = m.access.revocarDispositivo(conexionCaja, {
         sesionId: register.sesionId,
         secret: register.secret,
-        dispositivoId: connection.dispositivoId,
+        deviceId: connection.deviceId,
       })
       if (!r.ok) throw new Error(r.message)
-      return r.revocadoEn
+      return r.revokedAt
     }
     return { m, e, connection, register, conexionCaja, open, revoke }
   }
@@ -370,9 +370,9 @@ describe('equipo autorregistrado y revocación', () => {
   it('revocarlo corta su token en todas las rutas de entrada y su sesión; avisa a la sala', () => {
     const c = phone()
     c.revoke()
-    expect(c.m.revocados).toContain(c.connection.dispositivoId)
+    expect(c.m.revocados).toContain(c.connection.deviceId)
     const revocada = c.m.access.authenticate(c.e.device?.token as string)
-    expect(revocada?.revocadoEn).not.toBeNull()
+    expect(revocada?.revokedAt).not.toBeNull()
     expect(c.m.access.entrar({ pin: c.m.people.waiter2.pin }, revocada, '10.0.5.3')).toMatchObject({
       ok: false,
       code: 'revoked_device',
@@ -388,12 +388,12 @@ describe('equipo autorregistrado y revocación', () => {
     const c = phone()
     const before = c.open(c.m.clock())
     c.m.advance(5000)
-    const revocadoEn = c.revoke()
-    const after = c.open(add(revocadoEn, 1000))
+    const revokedAt = c.revoke()
+    const after = c.open(add(revokedAt, 1000))
     // La conexión que arma la sala al llegar el lote ya trae la revocación.
     const connection = c.m.access.authenticate(c.e.device?.token as string) as never
-    const r = c.m.hub.recibirLote(connection, [before, after])
-    expect(r.resultados.map((x) => x.status)).toEqual(['quarantine', 'rejected'])
+    const r = c.m.hub.receiveBatch(connection, [before, after])
+    expect(r.results.map((x) => x.status)).toEqual(['quarantine', 'rejected'])
   })
 
   it('no se puede retirar el equipo desde el que se está entrando, ni uno ya retirado dos veces con fechas distintas', () => {
@@ -402,7 +402,7 @@ describe('equipo autorregistrado y revocación', () => {
       c.m.access.revocarDispositivo(c.conexionCaja, {
         sesionId: c.register.sesionId,
         secret: c.register.secret,
-        dispositivoId: c.conexionCaja.dispositivoId,
+        deviceId: c.conexionCaja.deviceId,
       }),
     ).toMatchObject({ ok: false, code: 'invalid_data' })
     const first = c.revoke()
@@ -419,7 +419,7 @@ describe('equipo autorregistrado y revocación', () => {
       c.m.access.revocarDispositivo(connection, {
         sesionId: other.sesionId,
         secret: other.secret,
-        dispositivoId: c.connection.dispositivoId,
+        deviceId: c.connection.deviceId,
       }),
     ).toMatchObject({ ok: false, code: 'no_permission' })
   })
@@ -429,7 +429,7 @@ describe('equipo autorregistrado y revocación', () => {
     c.revoke()
     const de_nuevo = c.m.access.entrar({ pin: c.m.people.waiter.pin }, null, '10.0.5.1')
     expect(de_nuevo).toMatchObject({ ok: true })
-    if (de_nuevo.ok) expect(de_nuevo.device?.dispositivoId).not.toBe(c.connection.dispositivoId)
+    if (de_nuevo.ok) expect(de_nuevo.device?.deviceId).not.toBe(c.connection.deviceId)
   })
 })
 
@@ -439,7 +439,7 @@ describe('sesión abierta mientras cambian los permisos de su rol', () => {
     expect((await api.post('/api/staff/read', y.session, { token: y.token })).statusCode).toBe(200)
     guardarRol(
       m.db,
-      m.restauranteId,
+      m.restaurantId,
       m.access,
       { id: jefes, name: 'Jefes', permissions: ['take_order'] },
       SISTEMA,
@@ -461,7 +461,7 @@ describe('sesión abierta mientras cambian los permisos de su rol', () => {
     m.advance(10 * 60_000)
     guardarRol(
       m.db,
-      m.restauranteId,
+      m.restaurantId,
       m.access,
       { id: m.roles.waiter, name: 'Mesero', permissions: ['view_own_reports'] },
       SISTEMA,
@@ -473,9 +473,9 @@ describe('sesión abierta mientras cambian los permisos de su rol', () => {
       device_time: add(change, 500),
       hub_estimated_time: add(change, 500),
     })
-    const r = m.hub.recibirLote(connection, [before, after])
-    expect(r.resultados.map((x) => x.status)).toEqual(['quarantine', 'rejected'])
-    expect(r.resultados[1]).toMatchObject({ reason: 'no_permission' })
+    const r = m.hub.receiveBatch(connection, [before, after])
+    expect(r.results.map((x) => x.status)).toEqual(['quarantine', 'rejected'])
+    expect(r.results[1]).toMatchObject({ reason: 'no_permission' })
   })
 
   it('al darle un permiso nuevo al rol, la sesión abierta lo usa sin volver a entrar', () => {
@@ -488,7 +488,7 @@ describe('sesión abierta mientras cambian los permisos de su rol', () => {
     expect(before).toMatchObject({ ok: false, code: 'no_permission' })
     guardarRol(
       m.db,
-      m.restauranteId,
+      m.restaurantId,
       m.access,
       {
         id: m.roles.waiter,
@@ -545,7 +545,7 @@ describe('un mesero que pasa a tener contraseña con su sesión abierta', () => 
     )
     expect(luego).toMatchObject({ ok: true, type: 'register', user: { name: 'Ana' } })
     // Lo que hizo antes de cambiar, con la sesión de entonces, el hub lo aprueba.
-    expect(m.hub.recibirLote(connection, [hechoAntes]).resultados[0]?.status).toBe('confirmed')
+    expect(m.hub.receiveBatch(connection, [hechoAntes]).results[0]?.status).toBe('confirmed')
   })
 
   it('un evento firmado con la sesión cerrada, creado después del cambio, se rechaza', async () => {
@@ -568,7 +568,7 @@ describe('un mesero que pasa a tener contraseña con su sesión abierta', () => 
     )
     m.advance(5 * 60_000)
     const after = m.event(connection, e, 'OrderOpened', ABRIR)
-    expect(m.hub.recibirLote(connection, [after]).resultados[0]).toMatchObject({
+    expect(m.hub.receiveBatch(connection, [after]).results[0]).toMatchObject({
       status: 'rejected',
       reason: 'session_closed',
     })
@@ -584,7 +584,7 @@ describe('un mesero que pasa a tener contraseña con su sesión abierta', () => 
       secret: e.secret,
       pin: m.people.cashier.pin,
       action: 'void_sent_item',
-      agregadoId: '0'.repeat(26),
+      aggregateId: '0'.repeat(26),
       eventId: '1'.repeat(26),
       fingerprint: 'a'.repeat(64),
     })
@@ -638,7 +638,7 @@ describe('reactivar a quien se archivó', () => {
     const cora = (await person(x, { name: 'Cora', role_id: m.roles.waiter })).json()
     m.db
       .prepare('UPDATE user_credentials SET pin_hash = ? WHERE user_id = ?')
-      .run(huellaPin(Buffer.alloc(32, 7), m.restauranteId, bea.pin), cora.id)
+      .run(huellaPin(Buffer.alloc(32, 7), m.restaurantId, bea.pin), cora.id)
     const r = await person(x, { id: bea.id, name: 'Bea', role_id: m.roles.waiter, active: true })
     expect(r.statusCode).toBe(200)
     expect(r.json().pin).toMatch(/^\d{4}$/)

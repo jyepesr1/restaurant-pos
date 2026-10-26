@@ -1,7 +1,7 @@
 import { newId } from '@pos/core'
 import { readEscpos } from '@pos/printing'
 import { describe, expect, it } from 'vitest'
-import { insertarVersionado, SISTEMA } from '../acceso/registros'
+import { insertVersioned, SISTEMA } from '../acceso/registros'
 import { trabajosDeEvento } from './comandas'
 import { type MontajeImpresion, montarImpresion } from './montaje-impresion'
 
@@ -32,8 +32,8 @@ describe('numeración de las comandas por día operativo', () => {
     ])
     const r = t.send(ana, order, items)
     expect(r.status).toBe('confirmed')
-    const numeros = r.accepted?.assignments.ticket_numbers as Record<string, number>
-    expect(r.tickets.map((c) => numeros[c.ticket_id])).toEqual([1, 2, 3])
+    const numbers = r.accepted?.assignments.ticket_numbers as Record<string, number>
+    expect(r.tickets.map((c) => numbers[c.ticket_id])).toEqual([1, 2, 3])
     const porEstacion = Object.fromEntries(
       t.trabajos().map((f) => [t.content(f).station, t.content(f).number]),
     )
@@ -44,17 +44,17 @@ describe('numeración de las comandas por día operativo', () => {
     const t = montarImpresion()
     conImpresoras(t)
     const ana = t.device('waiter')
-    const enviarUno = () => {
+    const sendOne = () => {
       const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
       t.send(ana, order, items)
     }
-    enviarUno() // 3:00 p. m. del 24
+    sendOne() // 3:00 p. m. del 24
     t.advance(14 * 3_600_000 + 59 * 60_000) // 5:59 a. m. del 25: sigue siendo el día 24
-    enviarUno()
+    sendOne()
     t.advance(60_000) // 6:00 a. m.
-    enviarUno()
+    sendOne()
     t.advance(60_000)
-    enviarUno()
+    sendOne()
     expect(t.trabajos().map((f) => t.content(f).number)).toEqual([1, 2, 1, 2])
   })
 
@@ -97,7 +97,7 @@ describe('ItemsEnviados con ítems ya enviados por otro equipo', () => {
   it('lo ya enviado no se imprime dos veces: la segunda comanda lleva solo lo que faltaba', () => {
     const { t, ana, luis, order, items, baseDeLuis } = dosEquipos()
     t.send(ana, order, [items[0] as (typeof items)[0]])
-    const r = luis.mandar(
+    const r = luis.submit(
       order,
       'ItemsSent',
       {
@@ -116,7 +116,7 @@ describe('ItemsEnviados con ítems ya enviados por otro equipo', () => {
     const { t, ana, luis, order, items, baseDeLuis } = dosEquipos()
     t.send(ana, order, items)
     expect(t.trabajos()).toHaveLength(1)
-    const r = luis.mandar(
+    const r = luis.submit(
       order,
       'ItemsSent',
       {
@@ -134,7 +134,7 @@ describe('ItemsEnviados con ítems ya enviados por otro equipo', () => {
     const r = t.send(ana, order, items)
     expect(t.trabajos()).toHaveLength(1)
     // El hub vuelve a recibir exactamente el mismo evento (reintento tras un corte).
-    const equal = ana.mandar(order, 'ItemsSent', { tickets: r.tickets })
+    const equal = ana.submit(order, 'ItemsSent', { tickets: r.tickets })
     expect(equal.status).toBe('rejected')
     expect(t.trabajos()).toHaveLength(1)
   })
@@ -155,7 +155,7 @@ describe('ItemsEnviados con ítems ya enviados por otro equipo', () => {
     // 3 sin que la 2 exista en papel.
     const { t, ana, luis, order, items, baseDeLuis } = dosEquipos()
     t.send(ana, order, items)
-    luis.mandar(
+    luis.submit(
       order,
       'ItemsSent',
       {
@@ -182,7 +182,7 @@ describe('un envío hecho sin conexión que llega tarde', () => {
     t.send(ana, before.order, before.items) // número 1 del día 24
     const horaDelEnvio = new Date(t.clock() + 8.5 * 3_600_000).toISOString() // 11:30 p. m. del 24
     t.advance(15 * 3_600_000 + 40 * 60_000) // 6:40 a. m. del 25
-    const r = luis.mandar(
+    const r = luis.submit(
       order,
       'ItemsSent',
       { tickets: [{ ticket_id: newId(), station_id: t.kitchen, item_ids: [items[0]?.id] }] },
@@ -207,9 +207,9 @@ describe('un envío hecho sin conexión que llega tarde', () => {
     const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
     t.advance(3 * 3_600_000)
     t.send(ana, order, items)
-    await t.cola.runOnce()
-    await t.cola.runOnce()
-    expect(kitchen.papel.recibidos).toHaveLength(1)
+    await t.queue.runOnce()
+    await t.queue.runOnce()
+    expect(kitchen.papel.received).toHaveLength(1)
   })
 })
 
@@ -236,40 +236,40 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
       table,
     )
     const sent = t.send(ana, order, items)
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     return { t, imp, ana, register, order, items, sent, table }
   }
 
   it('ComandaReimpresa saca otra vez la comanda con su número original, marcada como reimpresión', async () => {
     const { t, imp, ana, order, sent } = await conPedidoEnviado()
     const kitchen = sent.tickets.find((c) => c.station_id === t.kitchen)
-    ana.mandar(order, 'TicketReprinted', { ticket_id: kitchen?.ticket_id })
+    ana.submit(order, 'TicketReprinted', { ticket_id: kitchen?.ticket_id })
     expect(t.pendingList()).toBe(1)
-    await t.cola.runOnce()
-    expect(imp.kitchen.papel.recibidos).toHaveLength(2)
+    await t.queue.runOnce()
+    expect(imp.kitchen.papel.received).toHaveLength(2)
     const text = imp.kitchen.papel.texts()[1] as string
     expect(text).toContain('REIMPRESIÓN')
     expect(text).toMatch(/Mesa 12 +#1/)
     expect(text).toContain('3 x Tagliata')
     expect(text).toContain('Risotto')
     // La barra no imprime lo de la cocina.
-    expect(imp.bar.papel.recibidos).toHaveLength(1)
+    expect(imp.bar.papel.received).toHaveLength(1)
   })
 
   it('reimprimir dos veces saca dos comandas (cada evento es distinto)', async () => {
     const { t, imp, ana, order, sent } = await conPedidoEnviado()
     const bar = sent.tickets.find((c) => c.station_id === t.bar)
-    ana.mandar(order, 'TicketReprinted', { ticket_id: bar?.ticket_id })
-    ana.mandar(order, 'TicketReprinted', { ticket_id: bar?.ticket_id })
-    await t.cola.runOnce()
-    expect(imp.bar.papel.recibidos).toHaveLength(3)
+    ana.submit(order, 'TicketReprinted', { ticket_id: bar?.ticket_id })
+    ana.submit(order, 'TicketReprinted', { ticket_id: bar?.ticket_id })
+    await t.queue.runOnce()
+    expect(imp.bar.papel.received).toHaveLength(3)
   })
 
   it('reimprimir una comanda que no existe, o de otro pedido, no imprime nada y el evento se acepta', async () => {
     const { t, ana, order, sent } = await conPedidoEnviado()
     const other = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }])
-    const r1 = ana.mandar(order, 'TicketReprinted', { ticket_id: newId() })
-    const r2 = ana.mandar(other.order, 'TicketReprinted', {
+    const r1 = ana.submit(order, 'TicketReprinted', { ticket_id: newId() })
+    const r2 = ana.submit(other.order, 'TicketReprinted', {
       ticket_id: sent.tickets[0]?.ticket_id,
     })
     expect([r1.status, r2.status]).toEqual(['confirmed', 'confirmed'])
@@ -279,22 +279,22 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
 
   it('la reimpresión no incluye lo anulado y muestra las unidades que quedan', async () => {
     const { t, imp, register, ana, order, items, sent } = await conPedidoEnviado()
-    register.mandar(order, 'ItemVoided', {
+    register.submit(order, 'ItemVoided', {
       item_id: items[0]?.id,
       quantity: 1,
       already_prepared: false,
       ticket_id: null,
     })
-    register.mandar(order, 'ItemVoided', {
+    register.submit(order, 'ItemVoided', {
       item_id: items[1]?.id,
       quantity: 1,
       already_prepared: false,
       ticket_id: null,
     })
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const kitchen = sent.tickets.find((c) => c.station_id === t.kitchen)
-    ana.mandar(order, 'TicketReprinted', { ticket_id: kitchen?.ticket_id })
-    await t.cola.runOnce()
+    ana.submit(order, 'TicketReprinted', { ticket_id: kitchen?.ticket_id })
+    await t.queue.runOnce()
     const text = imp.kitchen.papel.texts().at(-1) as string
     expect(text).toContain('REIMPRESIÓN')
     expect(text).toContain('2 x Tagliata')
@@ -304,36 +304,36 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
   it('si se anuló todo, la reimpresión no saca una comanda vacía', async () => {
     const { t, register, ana, order, items, sent } = await conPedidoEnviado()
     for (const i of [items[0], items[1]])
-      register.mandar(order, 'ItemVoided', {
+      register.submit(order, 'ItemVoided', {
         item_id: i?.id,
         quantity: i?.name === 'Tagliata' ? 3 : 1,
         already_prepared: false,
         ticket_id: null,
       })
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const before = t.trabajos().length
     const kitchen = sent.tickets.find((c) => c.station_id === t.kitchen)
-    ana.mandar(order, 'TicketReprinted', { ticket_id: kitchen?.ticket_id })
+    ana.submit(order, 'TicketReprinted', { ticket_id: kitchen?.ticket_id })
     expect(t.trabajos()).toHaveLength(before)
   })
 
   it('ItemAnulado de lo que está en cocina saca la comanda de anulación con la cantidad anulada', async () => {
     const { t, imp, register, order, items } = await conPedidoEnviado()
-    const r = register.mandar(order, 'ItemVoided', {
+    const r = register.submit(order, 'ItemVoided', {
       item_id: items[0]?.id,
       quantity: 2,
       already_prepared: false,
       ticket_id: null,
     })
     expect(r.status).toBe('confirmed')
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const text = imp.kitchen.papel.texts().at(-1) as string
     expect(text).toContain('ANULAR')
     expect(text).toMatch(/Mesa 12 +#1/)
     expect(text).toContain('-2 x Tagliata')
     expect(text).toContain('> Término medio')
     expect(text).not.toContain('Risotto')
-    expect(imp.bar.papel.recibidos).toHaveLength(1)
+    expect(imp.bar.papel.received).toHaveLength(1)
   })
 
   it.each(['sent', 'in_preparation', 'ready'] as const)(
@@ -341,11 +341,11 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
     async (status) => {
       const { t, ana, register, order, items } = await conPedidoEnviado()
       const id = items[1]?.id
-      if (status === 'in_preparation') ana.mandar(order, 'ItemInPreparation', { item_ids: [id] })
-      if (status === 'ready') ana.mandar(order, 'ItemReady', { item_ids: [id] })
+      if (status === 'in_preparation') ana.submit(order, 'ItemInPreparation', { item_ids: [id] })
+      if (status === 'ready') ana.submit(order, 'ItemReady', { item_ids: [id] })
       expect(t.hub.order(order)?.items[id as string]?.status).toBe(status)
       const before = t.trabajos().length
-      register.mandar(order, 'ItemVoided', {
+      register.submit(order, 'ItemVoided', {
         item_id: id,
         quantity: 1,
         already_prepared: status === 'ready',
@@ -357,9 +357,9 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
 
   it('ItemAnulado de algo ya entregado no avisa a la cocina', async () => {
     const { t, ana, register, order, items } = await conPedidoEnviado()
-    ana.mandar(order, 'ItemServed', { item_ids: [items[1]?.id] })
+    ana.submit(order, 'ItemServed', { item_ids: [items[1]?.id] })
     const before = t.trabajos().length
-    const r = register.mandar(order, 'ItemVoided', {
+    const r = register.submit(order, 'ItemVoided', {
       item_id: items[1]?.id,
       quantity: 1,
       already_prepared: true,
@@ -373,7 +373,7 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
     const { t, ana, register } = await conPedidoEnviado()
     const fresh = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }])
     const before = t.trabajos().length
-    const r = register.mandar(fresh.order, 'ItemVoided', {
+    const r = register.submit(fresh.order, 'ItemVoided', {
       item_id: fresh.items[0]?.id,
       quantity: 1,
       already_prepared: false,
@@ -386,13 +386,13 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
   it('anular dos veces el mismo plato (cantidad parcial y luego el resto) saca dos anulaciones', async () => {
     const { t, imp, register, order, items } = await conPedidoEnviado()
     for (const quantity of [1, 2])
-      register.mandar(order, 'ItemVoided', {
+      register.submit(order, 'ItemVoided', {
         item_id: items[0]?.id,
         quantity,
         already_prepared: false,
         ticket_id: null,
       })
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const texts = imp.kitchen.papel.texts()
     expect(texts.at(-2)).toContain('-1 x Tagliata')
     expect(texts.at(-1)).toContain('-2 x Tagliata')
@@ -401,13 +401,13 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
   it('ItemModificadoTrasEnvio saca la comanda de cambio con las opciones y notas nuevas', async () => {
     const { t, imp, ana, order, items, sent } = await conPedidoEnviado()
     const kitchen = sent.tickets.find((c) => c.station_id === t.kitchen)
-    const r = ana.mandar(order, 'ItemModifiedAfterSend', {
+    const r = ana.submit(order, 'ItemModifiedAfterSend', {
       item_id: items[1]?.id,
       ticket_id: kitchen?.ticket_id,
       notes: 'sin queso y sin sal',
     })
     expect(r.status).toBe('confirmed')
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const text = imp.kitchen.papel.texts().at(-1) as string
     expect(text).toContain('CAMBIO')
     expect(text).toMatch(/Mesa 12 +#1/)
@@ -419,13 +419,13 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
   it('un cambio de opciones imprime las nuevas; quitar la nota la deja sin NOTA', async () => {
     const { t, imp, ana, order, items, sent } = await conPedidoEnviado()
     const kitchen = sent.tickets.find((c) => c.station_id === t.kitchen)
-    ana.mandar(order, 'ItemModifiedAfterSend', {
+    ana.submit(order, 'ItemModifiedAfterSend', {
       item_id: items[1]?.id,
       ticket_id: kitchen?.ticket_id,
       notes: null,
       modifiers: [{ modifier_id: newId(), name: 'Bien cocido', extra_price: 0 }],
     })
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const text = imp.kitchen.papel.texts().at(-1) as string
     expect(text).toContain('> Bien cocido')
     expect(text).not.toContain('NOTA')
@@ -435,7 +435,7 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
     const { t, ana } = await conPedidoEnviado()
     const fresh = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }])
     const before = t.trabajos().length
-    const r = ana.mandar(fresh.order, 'ItemModifiedAfterSend', {
+    const r = ana.submit(fresh.order, 'ItemModifiedAfterSend', {
       item_id: fresh.items[0]?.id,
       ticket_id: newId(),
       notes: 'x',
@@ -447,10 +447,10 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
   it('los eventos que no son de comandas (listo, entregado, descuentos…) no crean trabajos', async () => {
     const { t, ana, order, items } = await conPedidoEnviado()
     const before = t.trabajos().length
-    ana.mandar(order, 'ItemReady', { item_ids: [items[0]?.id] })
-    ana.mandar(order, 'ItemServed', { item_ids: [items[0]?.id] })
-    ana.mandar(order, 'ItemReturnedToQueue', { item_ids: [items[0]?.id] })
-    ana.mandar(order, 'GuestsChanged', { guests: 5 })
+    ana.submit(order, 'ItemReady', { item_ids: [items[0]?.id] })
+    ana.submit(order, 'ItemServed', { item_ids: [items[0]?.id] })
+    ana.submit(order, 'ItemReturnedToQueue', { item_ids: [items[0]?.id] })
+    ana.submit(order, 'GuestsChanged', { guests: 5 })
     expect(t.trabajos()).toHaveLength(before)
   })
 
@@ -458,10 +458,10 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
     // El plato sigue en cocina, pero su comanda quedó en los eventos del pedido de origen.
     const { t, ana, register, order, items } = await conPedidoEnviado()
     const target = newId()
-    ana.mandar(target, 'OrderOpened', { channel: 'dine_in', table_id: null, guests: 1 })
+    ana.submit(target, 'OrderOpened', { channel: 'dine_in', table_id: null, guests: 1 })
     const original = t.hub.order(order)?.items[items[1]?.id as string]
     if (!original) throw new Error('sin ítem')
-    const moved = ana.mandar(
+    const moved = ana.submit(
       order,
       'ItemsMoved',
       {
@@ -496,7 +496,7 @@ describe('reimpresión, anulación y cambio de lo ya enviado', () => {
     )
     expect(moved.result).toMatchObject({ status: 'confirmed' })
     const before = t.trabajos().length
-    const r = register.mandar(target, 'ItemVoided', {
+    const r = register.submit(target, 'ItemVoided', {
       item_id: original.id,
       quantity: 1,
       already_prepared: false,
@@ -588,8 +588,8 @@ describe('datos que lleva la comanda', () => {
     const table = t.table('\x1bp\x00T\x1dV1')
     const { order, items } = t.orderWith(ana, [{ name: 'Pizza\x1b@', station: t.kitchen }], table)
     t.send(ana, order, items)
-    await t.cola.runOnce()
-    const bytes = imp.kitchen.papel.recibidos[0] as Uint8Array
+    await t.queue.runOnce()
+    const bytes = imp.kitchen.papel.received[0] as Uint8Array
     expect(readEscpos(bytes).cuts).toBe(1)
     expect(readEscpos(bytes).text).toContain('Pizza')
   })
@@ -601,7 +601,7 @@ describe('cursos retenidos', () => {
     conImpresoras(t)
     const ana = t.device('waiter')
     const order = t.open(ana)
-    ana.mandar(order, 'CourseHeld', { course: 'dessert' })
+    ana.submit(order, 'CourseHeld', { course: 'dessert' })
     const main = t.add(ana, order, {
       name: 'Tagliata',
       station: t.kitchen,
@@ -616,7 +616,7 @@ describe('cursos retenidos', () => {
     t.send(ana, order, [main])
     expect(t.content(t.trabajos()[0]).heldCourses).toEqual(['dessert'])
     // Se marcha el postre: ahora sí se envía y ya no hay nada en espera.
-    ana.mandar(order, 'CourseFired', { course: 'dessert' })
+    ana.submit(order, 'CourseFired', { course: 'dessert' })
     t.send(ana, order, [dessert])
     expect(t.content(t.trabajos().at(-1)).heldCourses).toEqual([])
   })
@@ -626,8 +626,8 @@ describe('cursos retenidos', () => {
     conImpresoras(t)
     const ana = t.device('waiter')
     const order = t.open(ana)
-    ana.mandar(order, 'CourseHeld', { course: 'main' })
-    ana.mandar(order, 'CourseHeld', { course: 'dessert' })
+    ana.submit(order, 'CourseHeld', { course: 'main' })
+    ana.submit(order, 'CourseHeld', { course: 'dessert' })
     const entry = t.add(ana, order, {
       name: 'Burrata',
       station: t.kitchen,
@@ -643,7 +643,7 @@ describe('cursos retenidos', () => {
     conImpresoras(t)
     const ana = t.device('waiter')
     const order = t.open(ana)
-    ana.mandar(order, 'CourseHeld', { course: 'dessert' })
+    ana.submit(order, 'CourseHeld', { course: 'dessert' })
     const dish = t.add(ana, order, { name: 'Risotto', station: t.kitchen })
     t.send(ana, order, [dish])
     expect(t.content(t.trabajos().at(-1)).heldCourses).toEqual([])
@@ -660,10 +660,10 @@ describe('cursos retenidos', () => {
       course: 'main',
     })
     t.add(ana, order, { name: 'Tiramisú', station: t.postres, course: 'dessert' })
-    ana.mandar(order, 'CourseHeld', { course: 'dessert' })
+    ana.submit(order, 'CourseHeld', { course: 'dessert' })
     const r = t.send(ana, order, [dish])
     expect(t.content(t.trabajos()[0]).heldCourses).toEqual(['dessert'])
-    ana.mandar(order, 'TicketReprinted', { ticket_id: r.tickets[0]?.ticket_id })
+    ana.submit(order, 'TicketReprinted', { ticket_id: r.tickets[0]?.ticket_id })
     expect(t.content(t.trabajos().at(-1))).toMatchObject({ type: 'reprinting', heldCourses: [] })
   })
 })
@@ -699,9 +699,9 @@ describe('estaciones e impresoras', () => {
     const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
     t.send(ana, order, items)
     expect(t.trabajos()).toHaveLength(2)
-    await t.cola.runOnce()
-    expect(a.papel.recibidos).toHaveLength(1)
-    expect(b.papel.recibidos).toHaveLength(1)
+    await t.queue.runOnce()
+    expect(a.papel.received).toHaveLength(1)
+    expect(b.papel.received).toHaveLength(1)
   })
 
   it('una impresora de varias estaciones imprime las dos comandas, en orden', async () => {
@@ -713,7 +713,7 @@ describe('estaciones e impresoras', () => {
       { name: 'Aperol', station: t.bar },
     ])
     t.send(ana, order, items)
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     expect(unica.papel.texts().map((x) => (x.includes('COCINA') ? 'cocina' : 'barra'))).toEqual([
       'cocina',
       'barra',
@@ -736,7 +736,7 @@ describe('estaciones e impresoras', () => {
     const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
     t.send(ana, order, items)
     t.db.prepare('UPDATE stations SET active = 0 WHERE id = ?').run(t.kitchen)
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     expect(imp.papel.texts()[0]).toContain('COCINA')
   })
 
@@ -788,7 +788,7 @@ describe('un fallo al armar la comanda', () => {
     expect(t.trabajos()).toEqual([])
     void kitchen
     // El hub sigue aceptando eventos después.
-    expect(ana.mandar(order, 'ItemReady', { item_ids: [items[0]?.id] }).status).toBe('confirmed')
+    expect(ana.submit(order, 'ItemReady', { item_ids: [items[0]?.id] }).status).toBe('confirmed')
   })
 
   it('el error de armar una comanda viene con el id del evento para poder reimprimirla', () => {
@@ -806,15 +806,15 @@ describe('un fallo al armar la comanda', () => {
 describe('varios restaurantes en la misma base', () => {
   function conOtroRestaurante(t: MontajeImpresion) {
     const other = newId()
-    const ahora = t.clock
+    const now = t.clock
     t.db
       .prepare(
         `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
          VALUES (?, ?, ?, ?, 1, 'Otro', '{}')`,
       )
       .run(other, other, '2026-10-24T20:00:00.000Z', '2026-10-24T20:00:00.000Z')
-    void ahora
-    const station = insertarVersionado(
+    void now
+    const station = insertVersioned(
       t.db,
       'stations',
       other,
@@ -829,7 +829,7 @@ describe('varios restaurantes en la misma base', () => {
     const t = montarImpresion()
     const mia = t.impresoraNueva('Cocina', [t.kitchen])
     const { other } = conOtroRestaurante(t)
-    const ajena = insertarVersionado(
+    const ajena = insertVersioned(
       t.db,
       'printers',
       other,
@@ -857,16 +857,16 @@ describe('varios restaurantes en la misma base', () => {
     const t = montarImpresion()
     const mia = t.impresoraNueva('Cocina', [t.kitchen])
     const { other } = conOtroRestaurante(t)
-    const colaDelOtro = t.crearCola({ restauranteId: other })
+    const colaDelOtro = t.crearCola({ restaurantId: other })
     const ana = t.device('waiter')
     const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
     t.send(ana, order, items)
     await colaDelOtro.runOnce()
-    expect(mia.papel.recibidos).toHaveLength(0)
+    expect(mia.papel.received).toHaveLength(0)
     expect(colaDelOtro.status()).toEqual([])
-    expect(t.cola.status()).toMatchObject([{ id: mia.id, pendingList: 1 }])
-    await t.cola.runOnce()
-    expect(mia.papel.recibidos).toHaveLength(1)
+    expect(t.queue.status()).toMatchObject([{ id: mia.id, pendingList: 1 }])
+    await t.queue.runOnce()
+    expect(mia.papel.received).toHaveLength(1)
   })
 
   it('el mesero, la mesa y la estación se buscan en el restaurante del evento', () => {

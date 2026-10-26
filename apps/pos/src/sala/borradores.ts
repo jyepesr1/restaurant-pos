@@ -127,24 +127,24 @@ export function add(
  * después del anterior: abrir y guardar sin tocar nada no cambia nada. Si así no se puede
  * (alguien reordenó), se numera de nuevo desde 0.
  */
-export function ordenes(previos: readonly (number | undefined)[]): number[] {
+export function ordenes(priors: readonly (number | undefined)[]): number[] {
   const result: number[] = []
   let latest = -1
-  for (const [i, previous] of previos.entries()) {
+  for (const [i, previous] of priors.entries()) {
     if (previous !== undefined && previous > latest) {
       result.push(previous)
       latest = previous
       continue
     }
     if (previous === undefined) {
-      const next = previos.slice(i + 1).find((x) => x !== undefined)
+      const next = priors.slice(i + 1).find((x) => x !== undefined)
       if (next === undefined || latest + 1 < next) {
         latest += 1
         result.push(latest)
         continue
       }
     }
-    return previos.map((_, j) => j)
+    return priors.map((_, j) => j)
   }
   return result
 }
@@ -163,13 +163,13 @@ function cambiosDeEnlaces(
   const lugar = ordenes(
     groups.map((g) => deProducto.find((e) => e.group_id === g && e.active)?.position),
   )
-  groups.forEach((grupoId, i) => {
+  groups.forEach((groupId, i) => {
     const position = lugar[i] as number
-    const e = deProducto.find((x) => x.group_id === grupoId)
+    const e = deProducto.find((x) => x.group_id === groupId)
     if (!e)
       add(changes, 'product_modifier_groups', newId(), {
         product_id: productId,
-        group_id: grupoId,
+        group_id: groupId,
         position,
         active: true,
       })
@@ -335,11 +335,11 @@ export function cambiosDeGrupo(c: CatalogoEdicion, g: BorradorGrupo): CambioCata
 }
 
 /** Los productos activos que usan el grupo: para avisar antes de cambiarlo o archivarlo. */
-export const productosDeGrupo = (c: CatalogoEdicion, grupoId: string) =>
+export const productosDeGrupo = (c: CatalogoEdicion, groupId: string) =>
   c.products.filter(
     (p) =>
-      p.active && c.links.some((e) => e.group_id === grupoId && e.active && e.product_id === p.id),
+      p.active && c.links.some((e) => e.group_id === groupId && e.active && e.product_id === p.id),
   )
 
-export const productosConGrupo = (c: CatalogoEdicion, grupoId: string) =>
-  productosDeGrupo(c, grupoId).length
+export const productosConGrupo = (c: CatalogoEdicion, groupId: string) =>
+  productosDeGrupo(c, groupId).length

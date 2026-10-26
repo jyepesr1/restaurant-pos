@@ -124,7 +124,7 @@ export const mesaLibre = (number: number): Mesa => ({
 /** El salón de ejemplo: algunas mesas en cada estado, para ver cómo se distinguen. */
 export function mesasIniciales(): Mesa[] {
   const tables = Array.from({ length: 25 }, (_, i) => mesaLibre(i + 1))
-  const poner = (number: number, table: Partial<Mesa> & { abiertaHace?: number }) => {
+  const put = (number: number, table: Partial<Mesa> & { abiertaHace?: number }) => {
     const { abiertaHace, ...rest } = table
     tables[number - 1] = {
       ...(tables[number - 1] as Mesa),
@@ -132,14 +132,14 @@ export function mesasIniciales(): Mesa[] {
       ...rest,
     }
   }
-  poner(2, {
+  put(2, {
     status: 'taking',
     abiertaHace: 3,
     guests: 2,
     waiter: 'Mesero 1',
     items: [item('Aperol Spritz', { quantity: 2 })],
   })
-  poner(4, {
+  put(4, {
     status: 'in_kitchen',
     abiertaHace: 18,
     guests: 4,
@@ -151,7 +151,7 @@ export function mesasIniciales(): Mesa[] {
       item('Ramón Bilbao Crianza', { variant: 'Botella', enviadoHace: 12 }),
     ],
   })
-  poner(7, {
+  put(7, {
     status: 'in_kitchen',
     abiertaHace: 35,
     guests: 2,
@@ -165,7 +165,7 @@ export function mesasIniciales(): Mesa[] {
       item('Té Hatsu', { options: [{ name: 'Rojo', extraPrice: 0 }], enviadoHace: 27 }),
     ],
   })
-  poner(9, {
+  put(9, {
     status: 'ready',
     abiertaHace: 22,
     guests: 2,
@@ -175,7 +175,7 @@ export function mesasIniciales(): Mesa[] {
       item('Pinsa', { enviadoHace: 15, despachado: true }),
     ],
   })
-  poner(12, {
+  put(12, {
     status: 'preBill',
     abiertaHace: 64,
     guests: 3,
@@ -198,9 +198,9 @@ export function mesasIniciales(): Mesa[] {
       }),
     ],
   })
-  poner(15, { status: 'reserved' })
-  poner(18, { status: 'dirty' })
-  poner(21, {
+  put(15, { status: 'reserved' })
+  put(18, { status: 'dirty' })
+  put(21, {
     status: 'in_kitchen',
     abiertaHace: 9,
     guests: 5,

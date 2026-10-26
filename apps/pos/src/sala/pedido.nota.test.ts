@@ -9,13 +9,13 @@ import { datosItem as item, local, opening } from './pruebas'
 
 const estadoCon = (...fabricas: ((p: string) => ReturnType<typeof local>)[]) => {
   const p = newId()
-  const locales = [local('OrderOpened', p, opening), ...fabricas.map((f) => f(p))]
+  const locals = [local('OrderOpened', p, opening), ...fabricas.map((f) => f(p))]
   const status = rebuild(
-    locales.map((l) => l.event),
+    locals.map((l) => l.event),
     p,
   )
   if (!status) throw new Error('sin estado')
-  return { p, locales, status }
+  return { p, locals, status }
 }
 const adds =
   (data: ReturnType<typeof item>, e: 'confirmed' | 'pending' = 'confirmed') =>
@@ -85,7 +85,7 @@ describe('unidadesPorEnviar', () => {
     const target = newId()
     const source = newId()
     const a = item({ quantity: 5 })
-    const locales = [
+    const locals = [
       local('OrderOpened', target, opening),
       local(
         'ItemsMoved',
@@ -99,7 +99,7 @@ describe('unidadesPorEnviar', () => {
       ),
     ]
     const status = rebuild(
-      locales.map((l) => l.event),
+      locals.map((l) => l.event),
       target,
     )
     expect(status?.items[a.item_id]).toMatchObject({
@@ -196,20 +196,20 @@ describe('la proyección del pedido con notas', () => {
       local('OrderNoteChanged', p, { notes }, e)
 
   it('muestra la nota confirmada del hub', () => {
-    const { locales } = estadoCon(note('alérgico al maní'))
-    expect(pedidosAbiertos(locales)[0]?.status.notes).toBe('alérgico al maní')
+    const { locals } = estadoCon(note('alérgico al maní'))
+    expect(pedidosAbiertos(locals)[0]?.status.notes).toBe('alérgico al maní')
   })
 
   it('un pedido sin nota la trae en null (también el de antes de existir el evento)', () => {
-    const { locales } = estadoCon(adds(item()))
-    const visible = pedidosAbiertos(locales)[0]
+    const { locals } = estadoCon(adds(item()))
+    const visible = pedidosAbiertos(locals)[0]
     expect(visible?.status.notes).toBeNull()
     expect(visible?.status).toHaveProperty('notes', null)
   })
 
   it('la nota propia aún pendiente se ve encima de la confirmada, sin conexión', () => {
-    const { locales, p } = estadoCon(note('vieja'))
-    const all = [...locales, local('OrderNoteChanged', p, { notes: 'nueva' }, 'pending')]
+    const { locals, p } = estadoCon(note('vieja'))
+    const all = [...locals, local('OrderNoteChanged', p, { notes: 'nueva' }, 'pending')]
     const visible = pedidosAbiertos(all)[0]
     expect(visible?.status.notes).toBe('nueva')
     expect(visible?.porConfirmar).toBe(true)
@@ -217,32 +217,32 @@ describe('la proyección del pedido con notas', () => {
   })
 
   it('quitar la nota estando pendiente la deja en null', () => {
-    const { locales, p } = estadoCon(note('vieja'))
-    const all = [...locales, local('OrderNoteChanged', p, { notes: null }, 'pending')]
+    const { locals, p } = estadoCon(note('vieja'))
+    const all = [...locals, local('OrderNoteChanged', p, { notes: null }, 'pending')]
     expect(pedidosAbiertos(all)[0]?.status.notes).toBeNull()
   })
 
   it('una nota que el hub rechazó no cuenta', () => {
-    const { locales, p } = estadoCon(note('buena'))
+    const { locals, p } = estadoCon(note('buena'))
     const rechazada = {
       ...local('OrderNoteChanged', p, { notes: 'mala' }, 'pending'),
       status: 'rejected' as const,
     }
-    expect(pedidosAbiertos([...locales, rechazada])[0]?.status.notes).toBe('buena')
+    expect(pedidosAbiertos([...locals, rechazada])[0]?.status.notes).toBe('buena')
   })
 
   it('con dos notas confirmadas manda la de mayor secuencia, aunque lleguen desordenadas', () => {
-    const { locales, p } = estadoCon()
+    const { locals, p } = estadoCon()
     const a = local('OrderNoteChanged', p, { notes: 'primera' })
     const b = local('OrderNoteChanged', p, { notes: 'segunda' })
-    expect(pedidosAbiertos([locales[0] as never, b, a])[0]?.status.notes).toBe('segunda')
+    expect(pedidosAbiertos([locals[0] as never, b, a])[0]?.status.notes).toBe('segunda')
   })
 
   it('la nota no cambia el total, las líneas ni el estado de la mesa', () => {
     const base = estadoCon(adds(item({ quantity: 2 })))
     const withIt = estadoCon(adds(item({ quantity: 2 })), note('algo'))
-    const vb = pedidosAbiertos(base.locales)
-    const vc = pedidosAbiertos(withIt.locales)
+    const vb = pedidosAbiertos(base.locals)
+    const vc = pedidosAbiertos(withIt.locals)
     expect(vc[0]?.total).toBe(vb[0]?.total)
     expect(estadoMesa(vc)).toBe(estadoMesa(vb))
     expect(itemsVigentes(withIt.status)).toHaveLength(1)
@@ -250,19 +250,19 @@ describe('la proyección del pedido con notas', () => {
   })
 
   it('un pedido cancelado deja de verse aunque tenga nota', () => {
-    const { locales, p } = estadoCon(note('algo'))
+    const { locals, p } = estadoCon(note('algo'))
     const canceled = [
-      ...locales,
+      ...locals,
       local('OrderCanceled', p, {}, 'confirmed', { reason: 'Se fueron' }),
     ]
     expect(pedidosAbiertos(canceled)).toEqual([])
   })
 
   it('una nota que llega con el pedido cerrado no cambia el estado (el reductor la rechaza)', () => {
-    const { locales, p } = estadoCon(note('antes'))
+    const { locals, p } = estadoCon(note('antes'))
     const closed = rebuild(
       [
-        ...locales,
+        ...locals,
         local('OrderCanceled', p, {}, 'confirmed', { reason: 'Se fueron' }),
         local('OrderNoteChanged', p, { notes: 'tarde' }),
       ].map((l) => l.event as ApplicableEvent),

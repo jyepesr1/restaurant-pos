@@ -44,7 +44,7 @@ const Cuerpos = {
 
 export async function rutasPersonal(
   app: FastifyInstance,
-  { db, restauranteId, access, onChange, clock = () => new Date().toISOString() }: OpcionesCatalogo,
+  { db, restaurantId, access, onChange, clock = () => new Date().toISOString() }: OpcionesCatalogo,
 ) {
   /** Quién hace el cambio, o responde el error. */
   const administrador = <T extends z.ZodType<{ session_id: string; secret: string }>>(
@@ -66,35 +66,35 @@ export async function rutasPersonal(
       reply.code(400).send({ error: 'invalid_data', message: 'Datos con formato inesperado' })
       return null
     }
-    const quien = access.usuarioConPermiso(
+    const who = access.usuarioConPermiso(
       connection,
       { sesionId: cuerpo.data.session_id, secret: cuerpo.data.secret },
       'manage_users',
     )
-    if (!quien.ok) {
+    if (!who.ok) {
       reply
-        .code(quien.code === 'no_permission' ? 403 : 401)
-        .send({ error: quien.code, message: quien.message })
+        .code(who.code === 'no_permission' ? 403 : 401)
+        .send({ error: who.code, message: who.message })
       return null
     }
     return {
       data: cuerpo.data as z.infer<T>,
-      autor: { userId: quien.userId, dispositivoId: connection.dispositivoId },
+      autor: { userId: who.userId, deviceId: connection.deviceId },
     }
   }
 
   /** Los equipos traen la carta de nuevo: ahí va el nombre de cada persona. */
-  const avisar = () => {
+  const notify = () => {
     const f = db
       .prepare("SELECT value FROM counters WHERE restaurant_id = ? AND name = 'catalog'")
-      .get(restauranteId)
+      .get(restaurantId)
     onChange?.(Number(f?.value ?? 0))
   }
 
-  const conErrores = async (reply: FastifyReply, trabajo: () => unknown) => {
+  const conErrores = async (reply: FastifyReply, job: () => unknown) => {
     try {
-      const r = trabajo()
-      avisar()
+      const r = job()
+      notify()
       return reply.code(200).send(r)
     } catch (e) {
       if (e instanceof ErrorPersonal)
@@ -105,14 +105,14 @@ export async function rutasPersonal(
 
   app.post('/api/staff/read', async (req, reply) => {
     if (!administrador(Cuerpos.read, req, reply)) return reply
-    return leerPersonal(db, restauranteId, access)
+    return leerPersonal(db, restaurantId, access)
   })
 
   app.post('/api/staff/roles', async (req, reply) => {
     const a = administrador(Cuerpos.role, req, reply)
     if (!a) return reply
     return conErrores(reply, () => ({
-      id: guardarRol(db, restauranteId, access, a.data.role, a.autor, clock()),
+      id: guardarRol(db, restaurantId, access, a.data.role, a.autor, clock()),
     }))
   })
 
@@ -123,7 +123,7 @@ export async function rutasPersonal(
     return conErrores(reply, () => {
       const r = guardarPersona(
         db,
-        restauranteId,
+        restaurantId,
         access,
         {
           id: p.id,

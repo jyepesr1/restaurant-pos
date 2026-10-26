@@ -20,7 +20,7 @@ interface Visible {
   text: string
 }
 
-export const ESTADOS: Record<EstadoMesa, Visible> = {
+export const STATUSES: Record<EstadoMesa, Visible> = {
   free: { tono: 'free', icono: 'circle', text: 'Libre' },
   taking: { tono: 'progress', icono: 'pencil', text: 'Tomando pedido' },
   in_kitchen: { tono: 'progress', icono: 'fire', text: 'En preparación' },
@@ -31,10 +31,10 @@ export const ESTADOS: Record<EstadoMesa, Visible> = {
 }
 
 /** El estado que se muestra: una comanda que lleva 20 min o más en preparación es una demora. */
-export function estadoVisible(table: Mesa, ahora: number): Visible {
-  if (table.status === 'in_kitchen' && esperaMasLarga(table, ahora) >= MINUTOS_DEMORA)
+export function estadoVisible(table: Mesa, now: number): Visible {
+  if (table.status === 'in_kitchen' && esperaMasLarga(table, now) >= MINUTOS_DEMORA)
     return { tono: 'warning', icono: 'warning', text: 'Demora' }
-  return ESTADOS[table.status]
+  return STATUSES[table.status]
 }
 
 const ACTIVAS: readonly EstadoMesa[] = ['taking', 'in_kitchen', 'ready', 'preBill']
@@ -50,14 +50,14 @@ const claseMesa = (table: Mesa, v: Visible) =>
 
 export function Plano() {
   const tables = useMesas()
-  const ahora = useAhora()
-  const avisar = useAvisar()
+  const now = useAhora()
+  const notify = useAvisar()
   const [vista, setVista] = useState<'floorPlan' | 'list'>('floorPlan')
 
   const tocar = (table: Mesa) => {
     if (table.status === 'dirty') {
       cambiarMesa(table.number, () => mesaLibre(table.number))
-      avisar(`Mesa ${table.number} lista para usar`, () => cambiarMesa(table.number, () => table))
+      notify(`Mesa ${table.number} lista para usar`, () => cambiarMesa(table.number, () => table))
       return
     }
     navegar(
@@ -67,8 +67,8 @@ export function Plano() {
     )
   }
 
-  const abiertas = tables.filter(activa)
-  const contar = (...statuses: EstadoMesa[]) =>
+  const openHandles = tables.filter(activa)
+  const count = (...statuses: EstadoMesa[]) =>
     tables.filter((m) => statuses.includes(m.status)).length
 
   return (
@@ -87,18 +87,18 @@ export function Plano() {
       <div className="mx-auto flex max-w-6xl flex-col gap-4 p-3 md:flex-row">
         <section className="flex-1" aria-label="Mesas">
           <div className="mb-3 flex flex-wrap gap-2 text-sm">
-            <Etiqueta tono="free" icono="circle">{`${contar('free')} libres`}</Etiqueta>
+            <Etiqueta tono="free" icono="circle">{`${count('free')} libres`}</Etiqueta>
             <Etiqueta tono="progress" icono="fire">
-              {`${contar('taking', 'in_kitchen')} atendiendo`}
+              {`${count('taking', 'in_kitchen')} atendiendo`}
             </Etiqueta>
-            <Etiqueta tono="free" icono="serve">{`${contar('ready')} para servir`}</Etiqueta>
-            <Etiqueta tono="neutral" icono="receipt">{`${contar('preBill')} por cobrar`}</Etiqueta>
+            <Etiqueta tono="free" icono="serve">{`${count('ready')} para servir`}</Etiqueta>
+            <Etiqueta tono="neutral" icono="receipt">{`${count('preBill')} por cobrar`}</Etiqueta>
           </div>
           {vista === 'floorPlan' ? (
             <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
               {tables.map((table) => (
                 <li key={table.number}>
-                  <MesaEnPlano table={table} ahora={ahora} alTocar={() => tocar(table)} />
+                  <MesaEnPlano table={table} now={now} alTocar={() => tocar(table)} />
                 </li>
               ))}
             </ul>
@@ -106,7 +106,7 @@ export function Plano() {
             <ul className="flex flex-col gap-2">
               {tables.map((table) => (
                 <li key={table.number}>
-                  <MesaEnLista table={table} ahora={ahora} alTocar={() => tocar(table)} />
+                  <MesaEnLista table={table} now={now} alTocar={() => tocar(table)} />
                 </li>
               ))}
             </ul>
@@ -117,7 +117,7 @@ export function Plano() {
         <aside className="hidden w-72 shrink-0 md:block" aria-label="Cuentas abiertas">
           <h2 className="mb-2 text-lg font-semibold">Cuentas abiertas</h2>
           <ul className="flex flex-col gap-2">
-            {abiertas.map((table) => (
+            {openHandles.map((table) => (
               <li key={table.number}>
                 <button
                   type="button"
@@ -127,7 +127,7 @@ export function Plano() {
                   <span>
                     <span className="font-semibold">Mesa {table.number}</span>
                     <span className="block text-sm text-texto-suave">
-                      {estadoVisible(table, ahora).text}
+                      {estadoVisible(table, now).text}
                     </span>
                   </span>
                   <span className="cifras font-semibold">{pesos(saldoMesa(table))}</span>
@@ -141,32 +141,24 @@ export function Plano() {
   )
 }
 
-const detalle = (table: Mesa, ahora: number) =>
+const detalle = (table: Mesa, now: number) =>
   [
     table.waiter,
     `${table.guests} ${table.guests === 1 ? 'persona' : 'personas'}`,
-    minutos(minutosDesde(table.abiertaEn, ahora)),
+    minutos(minutosDesde(table.abiertaEn, now)),
   ]
     .filter(Boolean)
     .join(' · ')
 
-function MesaEnPlano({
-  table,
-  ahora,
-  alTocar,
-}: {
-  table: Mesa
-  ahora: number
-  alTocar: () => void
-}) {
-  const v = estadoVisible(table, ahora)
-  const ocupada = activa(table)
-  const tiempo = minutos(minutosDesde(table.abiertaEn, ahora))
+function MesaEnPlano({ table, now, alTocar }: { table: Mesa; now: number; alTocar: () => void }) {
+  const v = estadoVisible(table, now)
+  const takenPath = activa(table)
+  const tiempo = minutos(minutosDesde(table.abiertaEn, now))
   return (
     <button
       type="button"
       onClick={alTocar}
-      aria-label={`Mesa ${table.number}: ${v.text}${ocupada ? `, ${tiempo}, ${pesos(saldoMesa(table))}` : ''}`}
+      aria-label={`Mesa ${table.number}: ${v.text}${takenPath ? `, ${tiempo}, ${pesos(saldoMesa(table))}` : ''}`}
       className={`flex aspect-square w-full flex-col justify-between rounded-2xl border-2 p-2 text-left transition active:scale-95 focus-visible:outline-3 focus-visible:outline-foco ${claseMesa(table, v)}`}
     >
       <span className="flex items-start justify-between">
@@ -174,7 +166,7 @@ function MesaEnPlano({
         <Icono name={v.icono} />
       </span>
       <span className="text-sm leading-tight font-semibold">{v.text}</span>
-      {ocupada && (
+      {takenPath && (
         <span className="cifras text-sm leading-tight">
           {tiempo}
           <br />
@@ -185,16 +177,8 @@ function MesaEnPlano({
   )
 }
 
-function MesaEnLista({
-  table,
-  ahora,
-  alTocar,
-}: {
-  table: Mesa
-  ahora: number
-  alTocar: () => void
-}) {
-  const v = estadoVisible(table, ahora)
+function MesaEnLista({ table, now, alTocar }: { table: Mesa; now: number; alTocar: () => void }) {
+  const v = estadoVisible(table, now)
   return (
     <button
       type="button"
@@ -207,7 +191,7 @@ function MesaEnLista({
           {v.text}
         </Etiqueta>
         {activa(table) && (
-          <span className="mt-1 block text-sm text-texto-suave">{detalle(table, ahora)}</span>
+          <span className="mt-1 block text-sm text-texto-suave">{detalle(table, now)}</span>
         )}
       </span>
       {activa(table) && <span className="cifras font-semibold">{pesos(saldoMesa(table))}</span>}

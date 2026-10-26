@@ -1,7 +1,7 @@
 import { type NewEvent, newId, PERMISSIONS, signEvent } from '@pos/core'
-import { aplicarMigraciones } from '@pos/db'
-import { abrirBase } from '@pos/db/node'
-import type { Conexion } from '@pos/sync'
+import { applyMigrations } from '@pos/db'
+import { openDatabase } from '@pos/db/node'
+import type { Connection } from '@pos/sync'
 import { asegurarAdministrador, asegurarRestaurante, asegurarRoles } from './inicial'
 import { Intentos } from './intentos'
 import { guardarRol } from './personal'
@@ -23,21 +23,21 @@ export const firmado = <E extends NewEvent>(session: Sesion, event: E): E => {
 }
 
 export function montarAcceso() {
-  const db = abrirBase(':memory:')
-  aplicarMigraciones(db)
+  const db = openDatabase(':memory:')
+  applyMigrations(db)
   let ms = INICIO
   const clock = () => new Date(ms).toISOString()
-  const avisos: string[] = []
+  const alerts: string[] = []
   const revocados: string[] = []
   const attempts = new Intentos(
     () => ms,
-    (n) => avisos.push(n),
+    (n) => alerts.push(n),
   )
-  const restauranteId = asegurarRestaurante(db, clock())
-  const roles = asegurarRoles(db, restauranteId, clock())
+  const restaurantId = asegurarRestaurante(db, clock())
+  const roles = asegurarRoles(db, restaurantId, clock())
   const access = new ServicioAcceso({
     db,
-    restauranteId,
+    restaurantId,
     key: Buffer.alloc(32, 7),
     clock,
     attempts,
@@ -49,7 +49,7 @@ export function montarAcceso() {
   const ownOnes = {
     manager: guardarRol(
       db,
-      restauranteId,
+      restaurantId,
       access,
       {
         name: 'Gerente',
@@ -62,7 +62,7 @@ export function montarAcceso() {
     ),
     kitchen: guardarRol(
       db,
-      restauranteId,
+      restaurantId,
       access,
       { name: 'Cocina', permissions: ['mark_preparation', 'mark_product_sold_out'] },
       SISTEMA,
@@ -108,7 +108,7 @@ export function montarAcceso() {
     db.prepare("SELECT id FROM users WHERE name = 'Administrador'").get()?.id,
   )
 
-  let aprobador: Conexion | null = null
+  let aprobador: Connection | null = null
 
   /** Empareja un dispositivo de ese tipo (aprobado por el admin) y devuelve su conexión. */
   function emparejar(type: 'waiter' | 'register' | 'kds' = 'waiter', name = `Equipo ${type}`) {
@@ -117,7 +117,7 @@ export function montarAcceso() {
     if (!code.ok) throw new Error(code.message)
     const r = access.emparejar(code.code, '10.0.0.9')
     if (!r.ok) throw new Error(r.message)
-    const connection = access.authenticate(r.token) as Conexion
+    const connection = access.authenticate(r.token) as Connection
     aprobador ??= connection
     return { token: r.token, connection }
   }
@@ -126,8 +126,8 @@ export function montarAcceso() {
    * Abre sesión en ese dispositivo: con su PIN, o con usuario y contraseña si los tiene (el
    * administrador). Entrar con contraseña vuelve de caja el equipo (ADR-013).
    */
-  function entrar(connection: Conexion, quien: keyof typeof people) {
-    const p = people[quien]
+  function entrar(connection: Connection, who: keyof typeof people) {
+    const p = people[who]
     const r =
       p.user && p.password
         ? access.entrar({ user: p.user, password: p.password }, connection, '10.0.0.9')
@@ -138,7 +138,7 @@ export function montarAcceso() {
 
   /** Un evento como lo crearía la app en ese dispositivo, con esa sesión, ya firmado. */
   function event(
-    connection: Conexion,
+    connection: Connection,
     session: Sesion,
     type: string,
     data: unknown,
@@ -154,7 +154,7 @@ export function montarAcceso() {
       data,
       session_id: session.sesionId,
       user_id: session.user.id,
-      device_id: connection.dispositivoId,
+      device_id: connection.deviceId,
       authorization_id: null,
       reason: null,
       device_time: clock(),
@@ -169,9 +169,9 @@ export function montarAcceso() {
     db,
     access,
     roles: todosLosRoles,
-    restauranteId,
+    restaurantId,
     people,
-    avisos,
+    alerts,
     revocados,
     clock,
     advance: (n: number) => {

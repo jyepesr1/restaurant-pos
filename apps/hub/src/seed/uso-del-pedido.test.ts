@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { newId } from '@pos/core'
-import type { BaseSqlite } from '@pos/db'
+import type { SqliteDatabase } from '@pos/db'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ABRIR, hubEnCarpeta, montarHub } from '../acceso/montaje-hub'
 import { leerCarta } from './carta'
-import { sembrar } from './sembrar'
+import { seed } from './sembrar'
 
 // El pedido usa lo que sembró la tarea 0.8: cada ítem copia producto, precio, impuesto y
 // modificadores del catálogo y viaja por el hub de sincronización con su `catalog_version`.
@@ -16,19 +16,19 @@ const TEXTO_CARTA = readFileSync(
   fileURLToPath(new URL('../../../../docs/datos/carta-la-spritzzeria.yaml', import.meta.url)),
   'utf8',
 )
-const AHORA = '2026-10-24T20:00:00.000Z'
+const NOW = '2026-10-24T20:00:00.000Z'
 
-const makeOne = (db: BaseSqlite, sql: string, ...p: string[]) => {
+const makeOne = (db: SqliteDatabase, sql: string, ...p: string[]) => {
   const row = db.prepare(sql).get(...p)
   if (!row) throw new Error(`Sin resultado: ${sql}`)
   return row
 }
-const versionCatalogo = (db: BaseSqlite) =>
+const versionCatalogo = (db: SqliteDatabase) =>
   Number(makeOne(db, "SELECT value FROM counters WHERE name = 'catalog'").value)
 
 /** El ítem que armaría la app al tocar ese producto: todo copiado de la base sembrada. */
 function itemDelCatalogo(
-  db: BaseSqlite,
+  db: SqliteDatabase,
   product: string,
   options: { variant?: string; modifiers?: string[] } = {},
 ) {
@@ -81,11 +81,11 @@ function itemDelCatalogo(
 
 function hubSembrado() {
   const m = montarHub()
-  const r = sembrar(
+  const r = seed(
     m.db,
     m.access,
-    { restauranteId: m.restauranteId, roles: m.roles, menu: leerCarta(TEXTO_CARTA) },
-    AHORA,
+    { restaurantId: m.restaurantId, roles: m.roles, menu: leerCarta(TEXTO_CARTA) },
+    NOW,
   )
   const pinMesero = r.pins.find((p) => p.name === 'Mesero 1')?.pin as string
   const { connection } = m.emparejar('waiter')
@@ -108,13 +108,13 @@ describe('el pedido usa lo sembrado', () => {
     expect(te.modifiers).toHaveLength(1)
 
     const en = { aggregate_id: order }
-    const r = m.hub.recibirLote(connection, [
+    const r = m.hub.receiveBatch(connection, [
       m.event(connection, session, 'OrderOpened', ABRIR, en),
       ...[bottle, glass, pizza, te].map((it, i) =>
         m.event(connection, session, 'ItemAdded', it, { ...en, base_sequence: i + 1 }),
       ),
     ])
-    expect(r.resultados.map((x) => x.status)).toEqual(Array(5).fill('confirmed'))
+    expect(r.results.map((x) => x.status)).toEqual(Array(5).fill('confirmed'))
 
     const items = m.hub.order(order)?.items ?? {}
     expect(items[bottle.item_id]).toMatchObject({
@@ -136,14 +136,14 @@ describe('el pedido usa lo sembrado', () => {
     const { m, connection, session } = hubSembrado()
     const order = newId()
     const burger = itemDelCatalogo(m.db, 'Spritz Burguer', { modifiers: ['Tres cuartos'] })
-    const r = m.hub.recibirLote(connection, [
+    const r = m.hub.receiveBatch(connection, [
       m.event(connection, session, 'OrderOpened', ABRIR, { aggregate_id: order }),
       m.event(connection, session, 'ItemAdded', burger, {
         aggregate_id: order,
         base_sequence: 1,
       }),
     ])
-    expect(r.resultados.map((x) => x.status)).toEqual(['confirmed', 'confirmed'])
+    expect(r.results.map((x) => x.status)).toEqual(['confirmed', 'confirmed'])
     expect(m.hub.order(order)?.items[burger.item_id]?.modifiers[0]).toMatchObject({
       name: 'Tres cuartos',
       extraPrice: 0,
@@ -154,17 +154,17 @@ describe('el pedido usa lo sembrado', () => {
     const { m, connection, session } = hubSembrado()
     const order = newId()
     const before = itemDelCatalogo(m.db, 'Quattro Formaggi')
-    m.hub.recibirLote(connection, [
+    m.hub.receiveBatch(connection, [
       m.event(connection, session, 'OrderOpened', ABRIR, { aggregate_id: order }),
       m.event(connection, session, 'ItemAdded', before, { aggregate_id: order, base_sequence: 1 }),
     ])
 
     // El restaurante sube el precio: el seed corre otra vez y el contador avanza.
-    sembrar(
+    seed(
       m.db,
       m.access,
       {
-        restauranteId: m.restauranteId,
+        restaurantId: m.restaurantId,
         roles: m.roles,
         menu: leerCarta(TEXTO_CARTA.replace('precio: 44900', 'precio: 46900')),
       },
@@ -175,19 +175,19 @@ describe('el pedido usa lo sembrado', () => {
     expect(after.unit_price).toBe(46_900)
     expect(after.product_id).toBe(before.product_id)
 
-    const r = m.hub.recibirLote(connection, [
+    const r = m.hub.receiveBatch(connection, [
       m.event(connection, session, 'ItemAdded', after, {
         aggregate_id: order,
         base_sequence: 2,
       }),
     ])
-    expect(r.resultados[0]?.status).toBe('confirmed')
+    expect(r.results[0]?.status).toBe('confirmed')
 
-    const guardados = m.db
+    const savedList = m.db
       .prepare("SELECT data FROM events WHERE type = 'ItemAdded' ORDER BY sequence")
       .all()
       .map((f) => JSON.parse(String(f.data)))
-    expect(guardados.map((d) => [d.catalog_version, d.unit_price])).toEqual([
+    expect(savedList.map((d) => [d.catalog_version, d.unit_price])).toEqual([
       [before.catalog_version, 44_900],
       [after.catalog_version, 46_900],
     ])
@@ -206,18 +206,18 @@ describe('el pedido usa lo sembrado', () => {
 })
 
 describe('el hub arranca después del seed', () => {
-  let carpeta = ''
-  afterEach(() => rmSync(carpeta, { recursive: true, force: true }))
+  let folder = ''
+  afterEach(() => rmSync(folder, { recursive: true, force: true }))
 
   it('reabrir la carpeta de datos deja todo intacto: mismo restaurante, mismos PIN y un seed sin cambios', () => {
-    carpeta = mkdtempSync(join(tmpdir(), 'pos-seed-hub-'))
-    const hubs = hubEnCarpeta(join(carpeta, 'data'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-seed-hub-'))
+    const hubs = hubEnCarpeta(join(folder, 'data'))
     try {
       const a = hubs.spinUp()
-      const r = sembrar(
+      const r = seed(
         a.db,
         a.access,
-        { restauranteId: a.restauranteId, roles: a.roles, menu: leerCarta(TEXTO_CARTA) },
+        { restaurantId: a.restaurantId, roles: a.roles, menu: leerCarta(TEXTO_CARTA) },
         hubs.clock(),
       )
       const code = a.access.crearEmparejamiento(
@@ -234,8 +234,8 @@ describe('el hub arranca después del seed', () => {
       hubs.advance(60_000)
 
       const b = hubs.spinUp()
-      expect(b.restauranteId).toBe(a.restauranteId)
-      expect(b.admin).toEqual({ pin: null, user: null, password: null, avisos: [] })
+      expect(b.restaurantId).toBe(a.restaurantId)
+      expect(b.admin).toEqual({ pin: null, user: null, password: null, alerts: [] })
       expect(b.claveNueva).toBe(false)
       expect(makeOne(b.db, 'SELECT count(*) AS n FROM products').n).toBe(products)
       expect(makeOne(b.db, 'SELECT count(*) AS n FROM users WHERE active = 1').n).toBe(6)
@@ -253,10 +253,10 @@ describe('el hub arranca después del seed', () => {
       })
 
       // Y un seed nuevo no cambia nada.
-      const another = sembrar(
+      const another = seed(
         b.db,
         b.access,
-        { restauranteId: b.restauranteId, roles: b.roles, menu: leerCarta(TEXTO_CARTA) },
+        { restaurantId: b.restaurantId, roles: b.roles, menu: leerCarta(TEXTO_CARTA) },
         hubs.clock(),
       )
       for (const [tableName, changes] of Object.entries(another.sqlTables))

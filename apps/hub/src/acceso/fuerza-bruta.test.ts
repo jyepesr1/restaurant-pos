@@ -1,5 +1,5 @@
 import { newId } from '@pos/core'
-import type { Conexion } from '@pos/sync'
+import type { Connection } from '@pos/sync'
 import { describe, expect, it } from 'vitest'
 import { ESPERA_MAXIMA_MS, FALLOS_DE_UN_EQUIPO_PARA_AVISO, FALLOS_PARA_AVISO } from './intentos'
 import { montarAcceso } from './montaje'
@@ -9,8 +9,11 @@ import { montarAcceso } from './montaje'
 const BAD_VALUES = ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008']
 
 describe('emparejamiento: aprobar con el PIN del administrador', () => {
-  const request = (m: ReturnType<typeof montarAcceso>, connection: Conexion | null, pin: string) =>
-    m.access.crearEmparejamiento({ pin, name: 'Equipo', type: 'waiter' }, connection)
+  const request = (
+    m: ReturnType<typeof montarAcceso>,
+    connection: Connection | null,
+    pin: string,
+  ) => m.access.crearEmparejamiento({ pin, name: 'Equipo', type: 'waiter' }, connection)
 
   it('el primer equipo (hub sin ninguno) tiene una espera única para todo el hub, venga de donde venga', () => {
     const m = montarAcceso()
@@ -54,7 +57,7 @@ describe('emparejamiento: aprobar con el PIN del administrador', () => {
     const thirdOne = m.emparejar('register', 'Tercera').connection
     const admin = m.entrar(thirdOne, 'admin')
     for (const d of [register, phone.connection])
-      m.access.revocarDispositivo(thirdOne, { ...admin, dispositivoId: d.dispositivoId })
+      m.access.revocarDispositivo(thirdOne, { ...admin, deviceId: d.deviceId })
 
     expect(request(m, null, m.people.admin.pin)).toMatchObject({ code: 'unpaired_device' })
     expect(request(m, thirdOne, m.people.admin.pin)).toMatchObject({ ok: true })
@@ -84,12 +87,12 @@ describe('emparejamiento: canjear el código desde una IP', () => {
 
   it('el acierto de otra IP no reinicia la espera de quien viene fallando', () => {
     const m = montarAcceso()
-    const buena = nuevoCodigo(m)
+    const goodOne = nuevoCodigo(m)
     for (let i = 0; i < 3; i++) m.access.emparejar('AAAAAAAA', '10.0.0.66')
     const delay = () => m.access.emparejar('AAAAAAAA', '10.0.0.66')
     expect(delay()).toMatchObject({ code: 'wait' })
 
-    expect(m.access.emparejar(buena.code, '10.0.0.5')).toMatchObject({ ok: true })
+    expect(m.access.emparejar(goodOne.code, '10.0.0.5')).toMatchObject({ ok: true })
 
     expect(delay()).toMatchObject({ code: 'wait' })
   })
@@ -97,8 +100,8 @@ describe('emparejamiento: canjear el código desde una IP', () => {
   it('un acierto tampoco borra los fallos de la misma IP: no sirve para alternar y seguir adivinando', () => {
     const m = montarAcceso()
     const register = m.emparejar('register').connection
-    let esperas = 0
-    for (let ronda = 0; ronda < 30; ronda++) {
+    let delays = 0
+    for (let round = 0; round < 30; round++) {
       const c = m.access.crearEmparejamiento(
         { pin: m.people.admin.pin, name: 'X', type: 'kds' },
         register,
@@ -109,17 +112,17 @@ describe('emparejamiento: canjear el código desde una IP', () => {
       }
       for (const code of ['AAAAAAAA', 'BBBBBBBB', c.code]) {
         const r = m.access.emparejar(code, '10.0.0.66')
-        if (!r.ok && r.code === 'wait') esperas++
+        if (!r.ok && r.code === 'wait') delays++
       }
     }
-    expect(esperas).toBeGreaterThan(0)
+    expect(delays).toBeGreaterThan(0)
   })
 
   it('la X-Forwarded-For no sirve para cambiar de identidad: el hub mira la conexión', async () => {
     const { crearServidor } = await import('../servidor')
     const m = montarAcceso()
     const app = crearServidor({ access: m.access })
-    const intento = (ip: string) =>
+    const attempt = (ip: string) =>
       app.inject({
         method: 'POST',
         url: '/api/pair',
@@ -128,7 +131,7 @@ describe('emparejamiento: canjear el código desde una IP', () => {
       })
 
     const respuestas = []
-    for (let i = 0; i < 4; i++) respuestas.push(await intento(`203.0.113.${i}`))
+    for (let i = 0; i < 4; i++) respuestas.push(await attempt(`203.0.113.${i}`))
     expect(respuestas.map((r) => r.statusCode)).toEqual([400, 400, 400, 429])
   })
 
@@ -154,7 +157,7 @@ describe('emparejamiento: canjear el código desde una IP', () => {
       })
     expect(m.access.emparejar(c.code, '10.0.0.66')).toMatchObject({
       code: 'invalid_code',
-      esperaMs: 2000,
+      waitMs: 2000,
     })
     expect(m.access.emparejar(c.code, '10.0.0.66')).toMatchObject({ code: 'wait' })
   })
@@ -182,10 +185,10 @@ describe('emparejamiento: canjear el código desde una IP', () => {
   it('el aviso al administrador sale a los 20 fallos del hub entero, venga de donde venga', () => {
     const m = montarAcceso()
     for (let i = 0; i < FALLOS_PARA_AVISO - 1; i++) m.access.emparejar('AAAAAAAA', `10.0.1.${i}`)
-    expect(m.avisos).toEqual([])
+    expect(m.alerts).toEqual([])
     m.access.emparejar('AAAAAAAA', '10.0.2.1')
-    expect(m.avisos).toHaveLength(1)
-    expect(m.avisos[0]).toContain(String(FALLOS_PARA_AVISO))
+    expect(m.alerts).toHaveLength(1)
+    expect(m.alerts[0]).toContain(String(FALLOS_PARA_AVISO))
   })
 
   it('y otro aviso cuando un solo equipo acumula fallos despacio, respetando la espera', () => {
@@ -196,7 +199,7 @@ describe('emparejamiento: canjear el código desde una IP', () => {
       m.access.startSession(connection, BAD_VALUES[i % 8] as string)
     }
     expect(
-      m.avisos.filter((a) => a.includes(`${FALLOS_DE_UN_EQUIPO_PARA_AVISO} PIN`)),
+      m.alerts.filter((a) => a.includes(`${FALLOS_DE_UN_EQUIPO_PARA_AVISO} PIN`)),
     ).toHaveLength(1)
   })
 })
@@ -205,20 +208,20 @@ describe('PIN en un dispositivo', () => {
   it('la espera crece 2, 4, 8… s y se respeta justo en el borde', () => {
     const m = montarAcceso()
     const { connection } = m.emparejar()
-    const esperas: (number | undefined)[] = []
+    const delays: (number | undefined)[] = []
     for (let i = 0; i < 6; i++) {
       const r = m.access.startSession(connection, BAD_VALUES[i] as string)
-      esperas.push(r.ok ? undefined : r.esperaMs)
-      if (!r.ok && r.esperaMs) {
+      delays.push(r.ok ? undefined : r.waitMs)
+      if (!r.ok && r.waitMs) {
         // Un milisegundo antes de cumplirse sigue esperando; al cumplirse, deja intentar.
-        m.advance(r.esperaMs - 1)
+        m.advance(r.waitMs - 1)
         expect(m.access.startSession(connection, m.people.waiter.pin)).toMatchObject({
           code: 'wait',
         })
         m.advance(1)
       }
     }
-    expect(esperas).toEqual([0, 0, 2000, 4000, 8000, 16_000])
+    expect(delays).toEqual([0, 0, 2000, 4000, 8000, 16_000])
   })
 
   it('la espera nunca pasa de 60 s, ni tras cientos de fallos', () => {
@@ -227,10 +230,10 @@ describe('PIN en un dispositivo', () => {
     let last = 0
     for (let i = 0; i < 300; i++) {
       const r = m.access.startSession(connection, BAD_VALUES[i % BAD_VALUES.length] as string)
-      if (!r.ok && r.esperaMs !== undefined) {
-        last = r.esperaMs
-        expect(r.esperaMs).toBeLessThanOrEqual(ESPERA_MAXIMA_MS)
-        m.advance(r.esperaMs)
+      if (!r.ok && r.waitMs !== undefined) {
+        last = r.waitMs
+        expect(r.waitMs).toBeLessThanOrEqual(ESPERA_MAXIMA_MS)
+        m.advance(r.waitMs)
       }
     }
     expect(last).toBe(ESPERA_MAXIMA_MS)
@@ -278,7 +281,7 @@ describe('PIN en un dispositivo', () => {
         ...session,
         pin,
         action: 'void_sent_item',
-        agregadoId: newId(),
+        aggregateId: newId(),
         eventId: newId(),
         fingerprint: '0'.repeat(64),
       })
@@ -286,7 +289,7 @@ describe('PIN en un dispositivo', () => {
     adivinar(BAD_VALUES[1] as string)
     // El tercer fallo llega por otra puerta y activa la espera para las dos.
     expect(m.access.startSession(connection, BAD_VALUES[2] as string)).toMatchObject({
-      esperaMs: 2000,
+      waitMs: 2000,
     })
     expect(adivinar(m.people.manager.pin)).toMatchObject({ code: 'wait' })
   })
@@ -299,7 +302,7 @@ describe('PIN en un dispositivo', () => {
       ...session,
       // El cajero puede autorizar anulaciones (ADR-013), no cortesías.
       action: 'comp',
-      agregadoId: newId(),
+      aggregateId: newId(),
       eventId: newId(),
       fingerprint: '0'.repeat(64),
     })
@@ -310,7 +313,7 @@ describe('PIN en un dispositivo', () => {
     ]
 
     expect(r.map((x) => (x.ok ? 'ok' : x.code))).toEqual(['wrong_pin', 'wrong_pin', 'wrong_pin'])
-    expect((r[2] as { esperaMs: number }).esperaMs).toBe(2000)
+    expect((r[2] as { waitMs: number }).waitMs).toBe(2000)
     expect(m.access.autorizar(connection, { ...data(), pin: m.people.manager.pin })).toMatchObject({
       code: 'wait',
     })
@@ -323,41 +326,41 @@ describe('PIN en un dispositivo', () => {
     const data = () => ({
       ...session,
       action: 'void_sent_item',
-      agregadoId: newId(),
+      aggregateId: newId(),
       eventId: newId(),
       fingerprint: '0'.repeat(64),
     })
     // Ana adivina el PIN de la gerente: dos intentos, su propio PIN, dos intentos, su propio PIN…
     // Si el propio PIN reinicia el conteo, nunca llega a la espera y puede probar los 10 000 PIN.
-    let esperas = 0
-    for (let ronda = 0; ronda < 100; ronda++) {
+    let delays = 0
+    for (let round = 0; round < 100; round++) {
       for (const pin of [
-        BAD_VALUES[ronda % 8] as string,
-        BAD_VALUES[(ronda + 1) % 8] as string,
+        BAD_VALUES[round % 8] as string,
+        BAD_VALUES[(round + 1) % 8] as string,
         m.people.waiter.pin,
       ]) {
         const r = m.access.autorizar(connection, { ...data(), pin })
-        if (!r.ok && r.code === 'wait') esperas++
+        if (!r.ok && r.code === 'wait') delays++
       }
     }
-    expect(esperas).toBeGreaterThan(0)
+    expect(delays).toBeGreaterThan(0)
   })
 
   it('iniciar sesión con el propio PIN válido entre intentos errados tampoco borra el conteo', () => {
     const m = montarAcceso()
     const { connection } = m.emparejar()
-    let esperas = 0
-    for (let ronda = 0; ronda < 100; ronda++) {
+    let delays = 0
+    for (let round = 0; round < 100; round++) {
       for (const pin of [
-        BAD_VALUES[ronda % 8] as string,
-        BAD_VALUES[(ronda + 1) % 8] as string,
+        BAD_VALUES[round % 8] as string,
+        BAD_VALUES[(round + 1) % 8] as string,
         m.people.waiter.pin,
       ]) {
         const r = m.access.startSession(connection, pin)
-        if (!r.ok && r.code === 'wait') esperas++
+        if (!r.ok && r.code === 'wait') delays++
       }
     }
-    expect(esperas).toBeGreaterThan(0)
+    expect(delays).toBeGreaterThan(0)
   })
 
   it('pasada la ventana de 10 minutos sin fallos se empieza de cero', () => {
@@ -368,7 +371,7 @@ describe('PIN en un dispositivo', () => {
     m.advance(10 * 60_000)
 
     expect(m.access.startSession(connection, BAD_VALUES[2] as string)).toMatchObject({
-      esperaMs: 0,
+      waitMs: 0,
     })
   })
 
@@ -391,8 +394,8 @@ describe('PIN en un dispositivo', () => {
 
     const respuestas = raros.slice(0, 2).map((p) => m.access.startSession(connection, p))
     expect(respuestas).toEqual([
-      { ok: false, code: 'wrong_pin', message: 'PIN incorrecto', esperaMs: 0 },
-      { ok: false, code: 'wrong_pin', message: 'PIN incorrecto', esperaMs: 0 },
+      { ok: false, code: 'wrong_pin', message: 'PIN incorrecto', waitMs: 0 },
+      { ok: false, code: 'wrong_pin', message: 'PIN incorrecto', waitMs: 0 },
     ])
     m.access.startSession(connection, raros[2] as string)
     for (const p of raros.slice(3)) {

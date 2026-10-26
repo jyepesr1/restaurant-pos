@@ -8,13 +8,13 @@ import { ErrorImpresora, enviarPorRed } from './transporte'
 // El transporte por red contra la impresora de prueba (un servidor TCP de mentira que se apaga y
 // se prende), y la cola completa sobre sockets de verdad.
 
-const abiertas: ImpresoraDePrueba[] = []
+const openHandles: ImpresoraDePrueba[] = []
 afterEach(async () => {
-  for (const i of abiertas.splice(0)) await i.close()
+  for (const i of openHandles.splice(0)) await i.close()
 })
 const open = async () => {
   const i = await abrirImpresoraDePrueba()
-  abiertas.push(i)
+  openHandles.push(i)
   return i
 }
 const target = (port: number) => ({ connection: 'network' as const, address: '127.0.0.1', port })
@@ -32,9 +32,9 @@ describe('enviarPorRed', () => {
     const bytes = bytesDePrueba()
     await enviarPorRed(target(p.port), bytes)
     await p.esperar(1)
-    expect(p.recibidos).toHaveLength(1)
-    expect([...(p.recibidos[0] as Uint8Array)]).toEqual([...bytes])
-    expect(readEscpos(p.recibidos[0] as Uint8Array).cuts).toBe(1)
+    expect(p.received).toHaveLength(1)
+    expect([...(p.received[0] as Uint8Array)]).toEqual([...bytes])
+    expect(readEscpos(p.received[0] as Uint8Array).cuts).toBe(1)
   })
 
   it('entrega sin pérdida un documento grande (500 KB)', async () => {
@@ -42,9 +42,9 @@ describe('enviarPorRed', () => {
     const large = Uint8Array.from({ length: 500_000 }, (_, i) => 0x20 + (i % 90))
     await enviarPorRed(target(p.port), large)
     await p.esperar(1)
-    expect(p.recibidos[0]?.length).toBe(500_000)
-    expect([...(p.recibidos[0] as Uint8Array).slice(0, 5)]).toEqual([...large.slice(0, 5)])
-    expect(p.recibidos[0]?.at(-1)).toBe(large.at(-1))
+    expect(p.received[0]?.length).toBe(500_000)
+    expect([...(p.received[0] as Uint8Array).slice(0, 5)]).toEqual([...large.slice(0, 5)])
+    expect(p.received[0]?.at(-1)).toBe(large.at(-1))
   })
 
   it('varios envíos al tiempo llegan completos y separados', async () => {
@@ -52,15 +52,15 @@ describe('enviarPorRed', () => {
     const bytes = bytesDePrueba()
     await Promise.all(Array.from({ length: 6 }, () => enviarPorRed(target(p.port), bytes)))
     await p.esperar(6)
-    expect(p.recibidos).toHaveLength(6)
-    for (const r of p.recibidos) expect(r.length).toBe(bytes.length)
+    expect(p.received).toHaveLength(6)
+    for (const r of p.received) expect(r.length).toBe(bytes.length)
   })
 
   it('un envío vacío no revienta', async () => {
     const p = await open()
     await enviarPorRed(target(p.port), new Uint8Array())
     await p.esperar(1)
-    expect(p.recibidos[0]?.length).toBe(0)
+    expect(p.received[0]?.length).toBe(0)
   })
 
   it('con la impresora apagada falla con un mensaje para la caja, y al prenderla vuelve a servir', async () => {
@@ -74,7 +74,7 @@ describe('enviarPorRed', () => {
     await p.apagar(false)
     await enviarPorRed(target(p.port), bytesDePrueba())
     await p.esperar(1)
-    expect(p.recibidos).toHaveLength(1)
+    expect(p.received).toHaveLength(1)
   })
 
   it('las impresoras USB no se pueden usar todavía y lo dicen', async () => {
@@ -106,15 +106,15 @@ describe('la cola contra sockets de verdad', () => {
          VALUES ('01IMPRESORAREAL00000000AAA', ?, ?, ?, 9, 'Real', 'network', '127.0.0.1', ?, 80, 'pc850', ?)`,
       )
       .run(
-        t.restauranteId,
+        t.restaurantId,
         new Date(t.clock()).toISOString(),
         new Date(t.clock()).toISOString(),
         p.port,
         JSON.stringify([t.kitchen]),
       )
-    const cola = new ColaImpresion({
+    const queue = new ColaImpresion({
       db: t.db,
-      restauranteId: t.restauranteId,
+      restaurantId: t.restaurantId,
       clock: t.clock,
     })
     const ana = t.device('waiter')
@@ -123,20 +123,20 @@ describe('la cola contra sockets de verdad', () => {
       t.send(ana, order, items)
     }
     await p.apagar(true)
-    await cola.runOnce()
-    expect(p.recibidos).toHaveLength(0)
-    expect(cola.status()[0]).toMatchObject({ status: 'failed', pendingList: 3 })
+    await queue.runOnce()
+    expect(p.received).toHaveLength(0)
+    expect(queue.status()[0]).toMatchObject({ status: 'failed', pendingList: 3 })
     await p.apagar(false)
     t.advance(2000)
-    await cola.runOnce()
+    await queue.runOnce()
     await p.esperar(3)
-    expect(p.recibidos.map((b) => /Plato (\d)/.exec(readEscpos(b).text)?.[1])).toEqual([
+    expect(p.received.map((b) => /Plato (\d)/.exec(readEscpos(b).text)?.[1])).toEqual([
       '1',
       '2',
       '3',
     ])
     expect(t.pendingList()).toBe(0)
-    expect(cola.status()[0]).toMatchObject({ status: 'ready', error: null })
+    expect(queue.status()[0]).toMatchObject({ status: 'ready', error: null })
   })
 })
 
@@ -149,13 +149,13 @@ describe('la impresora de prueba', () => {
     await p.apagar(false)
     await enviarPorRed(target(p.port), bytesDePrueba())
     await p.esperar(2)
-    expect(p.recibidos).toHaveLength(2)
+    expect(p.received).toHaveLength(2)
   })
 
   it('avisa a quien escucha cada trabajo que llega', async () => {
     const seenSet: number[] = []
     const p = await abrirImpresoraDePrueba(0, (b) => seenSet.push(b.length))
-    abiertas.push(p)
+    openHandles.push(p)
     const bytes = bytesDePrueba()
     await enviarPorRed(target(p.port), bytes)
     await p.esperar(1)

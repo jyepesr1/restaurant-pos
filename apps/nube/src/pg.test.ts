@@ -11,13 +11,13 @@ import { sqlDePg } from './pg'
 
 function clienteDe(db: PGlite) {
   return {
-    async query(text: string, parametros?: unknown[]) {
-      if (parametros === undefined) {
+    async query(text: string, params?: unknown[]) {
+      if (params === undefined) {
         // Como pg: sin parámetros, el texto puede traer varias sentencias.
         const r = await db.exec(text)
         return { rows: r.at(-1)?.rows ?? [] }
       }
-      return db.query(text, parametros)
+      return db.query(text, params)
     },
   }
 }
@@ -38,7 +38,7 @@ describe('sqlDePg', () => {
       hub_id: hubId,
       location_id: newId(),
       name: 'Caja',
-      instancia: 'i',
+      instance: 'i',
     })
     if (!r.ok) throw new Error(r.reason)
     const hub = await nube.authenticate(r.credential)
@@ -48,8 +48,8 @@ describe('sqlDePg', () => {
       event(order, 'OrderOpened', { channel: 'dine_in', table_id: null, guests: 2 }),
       event(order, 'ItemAdded', itemCopy()),
     ]
-    const resultados = await nube.recibirEventos(hub, events)
-    expect(resultados.map((x) => x.status)).toEqual(['saved', 'saved'])
+    const results = await nube.recibirEventos(hub, events)
+    expect(results.map((x) => x.status)).toEqual(['saved', 'saved'])
     expect(await nube.lastSequence(hub)).toBe(Math.max(...events.map((e) => e.sequence)))
   })
 
@@ -59,7 +59,7 @@ describe('sqlDePg', () => {
     await migrar(sql)
     const id = newId()
     await expect(
-      sql.transaccion(async (tx) => {
+      sql.transaction(async (tx) => {
         await tx.query('INSERT INTO restaurants (id, name) VALUES ($1, $2)', [id, 'R'])
         throw new Error('se cayó')
       }),

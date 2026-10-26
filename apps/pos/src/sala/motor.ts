@@ -11,31 +11,31 @@ import {
   signEvent,
 } from '@pos/core'
 import {
-  type Catalogo,
+  type Catalog,
   type Channel,
-  ClienteSync,
-  type CodigoError,
-  type EstadoConexion,
-  type EstadoImpresora,
-  GestorConexion,
-  type Manejadores,
-  type MensajeHub,
-  type TipoDispositivo,
+  ConnectionManager,
+  type ConnectionState,
+  type DeviceType,
+  type ErrorCode,
+  type Handlers,
+  type HubMessage,
+  type PrinterStatus,
+  SyncClient,
 } from '@pos/sync'
 import { AlmacenIndexedDb, BaseDispositivo } from './almacen'
 import { ErrorApi, llamar, SIN_HUB } from './api'
 
 // El motor de la app en el dispositivo: las credenciales del equipo, la sesión (PIN o contraseña), el
-// catálogo guardado y la sincronización (ClienteSync sobre IndexedDB y un WebSocket que mantiene
-// GestorConexion). La pantalla lo lee con `useSala` y crea eventos con `registrar`.
+// catálogo guardado y la sincronización (SyncClient sobre IndexedDB y un WebSocket que mantiene
+// ConnectionManager). La pantalla lo lee con `useSala` y crea eventos con `registrar`.
 
 export const VERSION_APP = '0.10'
 
 export interface Equipo {
-  dispositivoId: string
+  deviceId: string
   token: string
   name: string
-  type: TipoDispositivo
+  type: DeviceType
 }
 
 export interface Sesion {
@@ -43,7 +43,7 @@ export interface Sesion {
   secret: string
   user: { id: string; name: string; role: string }
   permissions: string[]
-  /** Último uso en este dispositivo (ms): tras `sesionInactividadMin` sin uso se pide el PIN. */
+  /** Último uso en este dispositivo (ms): tras `sessionIdleMin` sin uso se pide el PIN. */
   ultimoUso: number
 }
 
@@ -70,9 +70,9 @@ export interface Personal {
   devices: {
     id: string
     name: string
-    type: TipoDispositivo
+    type: DeviceType
     registradoEn: string | null
-    revocadoEn: string | null
+    revokedAt: string | null
     ultimoUso: string | null
     ultimaPersona: string | null
   }[]
@@ -163,8 +163,8 @@ export interface ImpresoraCocina {
 export interface ConfiguracionCocina {
   stations: { id: string; name: string }[]
   printers: (ImpresoraCocina & { id: string })[]
-  statuses: EstadoImpresora[]
-  pantallas: {
+  statuses: PrinterStatus[]
+  screens: {
     device_id: string
     name: string
     station_ids: string[]
@@ -208,15 +208,15 @@ export interface CierreReporte {
   shiftId: string
   businessDay: string
   openedAt: string
-  abiertoPor: string
-  cerradoPor: string
+  openedBy: string
+  closedBy: string
   base: number
   byMethod: ChargedByMethod[]
   closed: NonNullable<ShiftReconciliation['closed']>
 }
 
 /** El reporte de un período de días operativos (docs/KPIS.md). */
-export interface Reporte {
+export interface PeriodReport {
   /** El día operativo de hoy según el hub. */
   today: string
   report: Report
@@ -251,8 +251,8 @@ export interface Instantanea {
   cargado: boolean
   device: Equipo | null
   session: Sesion | null
-  catalog: Catalogo | null
-  connection: EstadoConexion
+  catalog: Catalog | null
+  connection: ConnectionState
   /** El usuario apagó la conexión para la demo (docs/ROADMAP.md, 0.10). */
   simulandoSinConexion: boolean
   pendingList: number
@@ -261,9 +261,9 @@ export interface Instantanea {
   /** Por qué se cerró la última sesión, para explicarlo en la pantalla del PIN. */
   sessionClosedBy: 'inactivity' | null
   /** El hub rechazó al equipo (token inválido o revocado, app vieja). */
-  errorHub: { code: CodigoError; message: string } | null
+  errorHub: { code: ErrorCode; message: string } | null
   /** Cómo están las impresoras de comandas, según el último aviso del hub (ADR-015). */
-  printers: EstadoImpresora[]
+  printers: PrinterStatus[]
 }
 
 const MINUTOS_POR_DEFECTO = 30
@@ -293,9 +293,9 @@ export function completarEdicion(
  * (el plano de la 1.2): se completa con lo vacío hasta que llegue la del hub. Así una
  * actualización no deja la pantalla en blanco.
  */
-export function completarCatalogo(c: Catalogo): Catalogo {
-  const oldOne = c as Partial<Catalogo> &
-    Pick<Catalogo, 'version' | 'restaurant' | 'stations' | 'categories'>
+export function completarCatalogo(c: Catalog): Catalog {
+  const oldOne = c as Partial<Catalog> &
+    Pick<Catalog, 'version' | 'restaurant' | 'stations' | 'categories'>
   return {
     ...c,
     zones: (oldOne.zones ?? []).map((z) => ({ ...z, level: z.level ?? 1 })),
@@ -314,11 +314,11 @@ export function completarCatalogo(c: Catalogo): Catalogo {
 const avisarFallo = (error: unknown) => console.error('Equipo:', error)
 const CLAVES = { device: 'device', session: 'session', catalog: 'catalog' }
 
-function abrirWebSocket(m: Manejadores): Channel {
+function abrirWebSocket(m: Handlers): Channel {
   const esquema = location.protocol === 'https:' ? 'wss' : 'ws'
   const ws = new WebSocket(`${esquema}://${location.host}/api/sync/ws`)
-  ws.onopen = () => m.alAbrir()
-  ws.onclose = () => m.alCerrar()
+  ws.onopen = () => m.onOpen()
+  ws.onclose = () => m.onClose()
   ws.onmessage = (e) => {
     // El hub es propio y está en la red local: basta descartar lo que no es un mensaje. Validar
     // cada tipo con su esquema queda pendiente (docs/ROADMAP.md, 0.10).
@@ -329,7 +329,7 @@ function abrirWebSocket(m: Manejadores): Channel {
       return
     }
     if (typeof message === 'object' && message !== null && 'type' in message)
-      m.alMensaje(message as MensajeHub)
+      m.onMessage(message as HubMessage)
   }
   return {
     send: (message) => {
@@ -341,10 +341,10 @@ function abrirWebSocket(m: Manejadores): Channel {
 
 export class Sala {
   private readonly db: BaseDispositivo
-  private readonly almacen: AlmacenIndexedDb
-  private readonly open: (m: Manejadores) => Channel
-  private cliente: ClienteSync | null = null
-  private gestor: GestorConexion | null = null
+  private readonly store: AlmacenIndexedDb
+  private readonly open: (m: Handlers) => Channel
+  private client: SyncClient | null = null
+  private connectionManager: ConnectionManager | null = null
   private channel: Channel | null = null
   private status: Instantanea = {
     cargado: false,
@@ -362,9 +362,9 @@ export class Sala {
   private readonly oyentes = new Set<() => void>()
   private cargando: Promise<void> | null = null
 
-  constructor(options: { db?: BaseDispositivo; open?: (m: Manejadores) => Channel } = {}) {
+  constructor(options: { db?: BaseDispositivo; open?: (m: Handlers) => Channel } = {}) {
     this.db = options.db ?? new BaseDispositivo()
-    this.almacen = new AlmacenIndexedDb(this.db)
+    this.store = new AlmacenIndexedDb(this.db)
     this.open = options.open ?? abrirWebSocket
   }
 
@@ -385,7 +385,7 @@ export class Sala {
   // ── Arranque ─────────────────────────────────────────────────────────
 
   /** Abre lo guardado y empieza a sincronizar. Llamarla varias veces da la misma carga. */
-  cargar(): Promise<void> {
+  load(): Promise<void> {
     this.cargando ??= this.hacerCarga()
     return this.cargando
   }
@@ -394,7 +394,7 @@ export class Sala {
     const [device, session, catalog] = await Promise.all([
       this.db.leerAjuste<Equipo>(CLAVES.device),
       this.db.leerAjuste<Sesion>(CLAVES.session),
-      this.db.leerAjuste<Catalogo>(CLAVES.catalog),
+      this.db.leerAjuste<Catalog>(CLAVES.catalog),
     ])
     this.patch({
       cargado: true,
@@ -412,10 +412,10 @@ export class Sala {
       device_id: string
       token: string
       name: string
-      type: TipoDispositivo
+      type: DeviceType
     }>('POST', '/api/pair', { cuerpo: { code: code.trim().toUpperCase() } })
     const device: Equipo = {
-      dispositivoId: r.device_id,
+      deviceId: r.device_id,
       token: r.token,
       name: r.name,
       type: r.type,
@@ -429,7 +429,7 @@ export class Sala {
    * El primer equipo de un hub recién instalado se aprueba a sí mismo con el PIN del
    * administrador (los demás, desde la caja con `codigoParaOtroEquipo`).
    */
-  async emparejarPrimero(pin: string, name: string, type: TipoDispositivo) {
+  async emparejarPrimero(pin: string, name: string, type: DeviceType) {
     const { code } = await this.api<{ code: string }>('POST', '/api/pairings', {
       cuerpo: { pin, name, type },
     })
@@ -437,7 +437,7 @@ export class Sala {
   }
 
   /** Desde un equipo emparejado (la caja), un administrador aprueba otro equipo con su PIN. */
-  async codigoParaOtroEquipo(pin: string, name: string, type: TipoDispositivo) {
+  async codigoParaOtroEquipo(pin: string, name: string, type: DeviceType) {
     return this.api<{ code: string; expires_at: string }>('POST', '/api/pairings', {
       cuerpo: { pin, name, type },
       token: this.equipoActual().token,
@@ -456,9 +456,9 @@ export class Sala {
         device_id: string
         token: string
         name: string
-        type: TipoDispositivo
+        type: DeviceType
       } | null
-      type: TipoDispositivo
+      type: DeviceType
       session_id: string
       secret: string
       user: Sesion['user']
@@ -469,7 +469,7 @@ export class Sala {
     })
     const fresh: Equipo | null = r.device
       ? {
-          dispositivoId: r.device.device_id,
+          deviceId: r.device.device_id,
           token: r.device.token,
           name: r.device.name,
           type: r.device.type,
@@ -504,9 +504,9 @@ export class Sala {
    * el hub lo rechazará (`dispositivo_distinto`). La pantalla lo advierte antes.
    */
   async olvidarEquipo() {
-    this.gestor?.detener()
-    this.gestor = null
-    this.cliente = null
+    this.connectionManager?.stop()
+    this.connectionManager = null
+    this.client = null
     await Promise.all([this.db.borrarAjuste(CLAVES.device), this.db.borrarAjuste(CLAVES.session)])
     this.patch({ device: null, session: null, errorHub: null, connection: 'disconnected' })
   }
@@ -525,8 +525,8 @@ export class Sala {
   }
 
   /** Trae la carta del hub. Con `reemplazar`, aunque su versión sea menor que la guardada. */
-  async actualizarCatalogo(reemplazar = false) {
-    const catalog = await this.api<Catalogo | undefined>('GET', '/api/catalog', {
+  async actualizarCatalogo(replace = false) {
+    const catalog = await this.api<Catalog | undefined>('GET', '/api/catalog', {
       token: this.equipoActual().token,
     })
     // Una respuesta rara no reemplaza la carta buena que ya está guardada.
@@ -536,10 +536,10 @@ export class Sala {
         'La caja respondió algo que no es la carta: intenta de nuevo',
       )
     // Dos pedidos de la carta a la vez: la respuesta que llega tarde no pisa una más nueva.
-    if (!reemplazar && catalog.version < (this.status.catalog?.version ?? -1)) return
-    const completo = completarCatalogo(catalog)
-    await this.db.saveSetting(CLAVES.catalog, completo)
-    this.patch({ catalog: completo })
+    if (!replace && catalog.version < (this.status.catalog?.version ?? -1)) return
+    const completed = completarCatalogo(catalog)
+    await this.db.saveSetting(CLAVES.catalog, completed)
+    this.patch({ catalog: completed })
   }
 
   /** Todo el catálogo, también lo archivado, para el editor de la carta. */
@@ -637,8 +637,8 @@ export class Sala {
     return id
   }
 
-  async testPrinter(impresoraId: string): Promise<void> {
-    await this.conSesion('/api/printers/test', { printer_id: impresoraId })
+  async testPrinter(printerId: string): Promise<void> {
+    await this.conSesion('/api/printers/test', { printer_id: printerId })
   }
 
   pendingPrints(): Promise<TrabajoPendiente[]> {
@@ -649,14 +649,14 @@ export class Sala {
     await this.conSesion('/api/printing/discard', { trabajo_id: trabajoId })
   }
 
-  async screenStations(dispositivoId: string, estacionIds: string[]): Promise<void> {
+  async screenStations(deviceId: string, stationIds: string[]): Promise<void> {
     await this.conSesion('/api/screens/stations', {
-      device_id: dispositivoId,
-      station_ids: estacionIds,
+      device_id: deviceId,
+      station_ids: stationIds,
     })
   }
 
-  async usarCursos(usar: boolean): Promise<void> {
+  async coursesEnabled(usar: boolean): Promise<void> {
     await this.conSesion('/api/kitchen/courses', { usar })
   }
 
@@ -667,7 +667,7 @@ export class Sala {
   // ── Reportes (tarea 1.9) ─────────────────────────────────────────────
 
   /** El reporte de un período; sin fechas, el día operativo de hoy. */
-  report(period: { from: string; until: string } | null = null): Promise<Reporte> {
+  report(period: { from: string; until: string } | null = null): Promise<PeriodReport> {
     return this.conSesion('/api/reports', period ?? {})
   }
 
@@ -681,8 +681,8 @@ export class Sala {
     return this.conSesion('/api/register/config', {})
   }
 
-  async savePaymentMethods(medios: PaymentMethod[]): Promise<void> {
-    await this.conSesion('/api/register/payment-methods', { medios })
+  async savePaymentMethods(methods: PaymentMethod[]): Promise<void> {
+    await this.conSesion('/api/register/payment-methods', { methods })
   }
 
   async guardarDatafono(cardTerminal: Datafono): Promise<ConfiguracionCaja['cardTerminals']> {
@@ -703,7 +703,7 @@ export class Sala {
     return r.custom_methods
   }
 
-  async umbralDiferencia(pesos: number): Promise<void> {
+  async varianceThreshold(pesos: number): Promise<void> {
     await this.conSesion('/api/register/threshold', { pesos })
   }
 
@@ -711,18 +711,18 @@ export class Sala {
     await this.conSesion('/api/register/tip', { puntos })
   }
 
-  async preBillPrinter(impresoraId: string | null): Promise<void> {
-    await this.conSesion('/api/register/pre-bill', { printer_id: impresoraId })
+  async preBillPrinter(printerId: string | null): Promise<void> {
+    await this.conSesion('/api/register/pre-bill', { printer_id: printerId })
   }
 
   /**
    * Abre la caja de este equipo con la base en efectivo (`ShiftOpened`). La pantalla lo deja
    * solo con conexión, como cobrar: el hub rechaza un segundo turno de la misma caja.
    */
-  async abrirTurno(base: number): Promise<string> {
+  async openShift(base: number): Promise<string> {
     const device = this.equipoActual()
     const shiftId = newId()
-    await this.record('ShiftOpened', shiftId, { register_id: device.dispositivoId, base })
+    await this.record('ShiftOpened', shiftId, { register_id: device.deviceId, base })
     return shiftId
   }
 
@@ -730,13 +730,13 @@ export class Sala {
    * Este equipo pasa a ser pantalla de cocina de esas estaciones: la sesión del administrador se
    * cierra y queda la de la pantalla, que no vence por inactividad.
    */
-  async convertirEnPantalla(name: string, estacionIds: string[]): Promise<void> {
+  async convertirEnPantalla(name: string, stationIds: string[]): Promise<void> {
     const r = await this.conSesion<{
       session_id: string
       secret: string
       user: Sesion['user']
       permissions: string[]
-    }>('/api/screens', { name, station_ids: estacionIds })
+    }>('/api/screens', { name, station_ids: stationIds })
     const device: Equipo = { ...this.equipoActual(), type: 'kds', name }
     await this.db.saveSetting(CLAVES.device, device)
     const session: Sesion = {
@@ -752,17 +752,17 @@ export class Sala {
   }
 
   /** Retira un equipo (perdido, robado): deja de sincronizar y nadie puede entrar en él. */
-  async retirarEquipo(dispositivoId: string): Promise<void> {
-    await this.conSesion(`/api/devices/${encodeURIComponent(dispositivoId)}/revoke`, {})
+  async retirarEquipo(deviceId: string): Promise<void> {
+    await this.conSesion(`/api/devices/${encodeURIComponent(deviceId)}/revoke`, {})
   }
 
   /** Una llamada con la sesión abierta. Si el hub dice que ya no vale, se pide entrar de nuevo. */
-  private async conSesion<T>(ruta: string, cuerpo: object): Promise<T> {
+  private async conSesion<T>(route: string, cuerpo: object): Promise<T> {
     this.usar()
     const session = this.status.session
     if (!session) throw new Error('Sin sesión: vuelve a entrar')
     try {
-      return await this.api<T>('POST', ruta, {
+      return await this.api<T>('POST', route, {
         cuerpo: { session_id: session.sesionId, secret: session.secret, ...cuerpo },
         token: this.equipoActual().token,
       })
@@ -778,22 +778,22 @@ export class Sala {
   }
 
   /** Si pasó el tiempo sin uso, se cierra la sesión: el siguiente toque pide el PIN. */
-  vencerSesionSiToca(ahora = Date.now()) {
+  vencerSesionSiToca(now = Date.now()) {
     const { session, catalog, device } = this.status
     // Una pantalla de cocina queda abierta siempre: nadie la usa con las manos sucias para entrar.
     if (!session || device?.type === 'kds') return
-    const minutos = catalog?.restaurant.sesionInactividadMin ?? MINUTOS_POR_DEFECTO
-    if (ahora - session.ultimoUso >= minutos * 60_000) this.exit('inactivity').catch(avisarFallo)
+    const minutos = catalog?.restaurant.sessionIdleMin ?? MINUTOS_POR_DEFECTO
+    if (now - session.ultimoUso >= minutos * 60_000) this.exit('inactivity').catch(avisarFallo)
   }
 
   /** Marca uso (cada toque que hace algo): aplaza el cierre por inactividad. */
-  usar(ahora = Date.now()) {
+  usar(now = Date.now()) {
     const { session } = this.status
     if (!session) return
-    this.vencerSesionSiToca(ahora)
+    this.vencerSesionSiToca(now)
     // Cada toque cuenta, pero no hace falta escribir en IndexedDB con cada uno.
-    if (!this.status.session || ahora - session.ultimoUso < 15_000) return
-    const newOne = { ...session, ultimoUso: ahora }
+    if (!this.status.session || now - session.ultimoUso < 15_000) return
+    const newOne = { ...session, ultimoUso: now }
     this.status = { ...this.status, session: newOne }
     this.db.saveSetting(CLAVES.session, newOne).catch(avisarFallo)
   }
@@ -801,63 +801,63 @@ export class Sala {
   // ── Sincronización ───────────────────────────────────────────────────
 
   private async connect(device: Equipo) {
-    this.gestor?.detener()
+    this.connectionManager?.stop()
     // Cliente y gestor quedan asignados antes del primer `await`: otra llamada que llegue mientras
     // tanto detiene este gestor en vez de dejar un segundo WebSocket huérfano.
-    const cliente = new ClienteSync({
-      almacen: this.almacen,
+    const client = new SyncClient({
+      store: this.store,
       token: device.token,
       versionApp: VERSION_APP,
       send: (m) => this.channel?.send(m),
       onChange: () => void this.alCambiarDatos().catch(avisarFallo),
       onHubError: (code, message) => {
-        if (code === 'invalid_token' || code === 'outdated_app') gestor.detener()
+        if (code === 'invalid_token' || code === 'outdated_app') connectionManager.stop()
         this.patch({ errorHub: { code, message } })
       },
       onFailure: (error) => console.error('Sincronización:', error),
     })
-    const gestor = new GestorConexion({
+    const connectionManager = new ConnectionManager({
       open: this.open,
-      alConectar: (channel) => {
+      onConnect: (channel) => {
         this.channel = channel
-        void cliente.alConectar()
+        void client.onConnect()
         // Pudo cambiar mientras no había conexión.
         this.traerCatalogoSiHaySesion()
       },
-      alDesconectar: () => {
+      onDisconnect: () => {
         this.channel = null
-        cliente.alDesconectar()
+        client.onDisconnect()
       },
-      alMensaje: (m) => {
+      onMessage: (m) => {
         if (m.type === 'catalog' && m.version !== this.status.catalog?.version)
           this.traerCatalogoSiHaySesion()
         if (m.type === 'printers') this.patch({ printers: m.printers })
-        void cliente.recibir(m)
+        void client.receive(m)
       },
-      alCambiarEstado: (connection) => this.patch({ connection }),
+      onStateChange: (connection) => this.patch({ connection }),
     })
-    this.cliente = cliente
-    this.gestor = gestor
-    await cliente.begin()
-    if (this.gestor !== gestor) return
-    if (!this.status.simulandoSinConexion) gestor.begin()
+    this.client = client
+    this.connectionManager = connectionManager
+    await client.begin()
+    if (this.connectionManager !== connectionManager) return
+    if (!this.status.simulandoSinConexion) connectionManager.begin()
     await this.alCambiarDatos()
   }
 
   private async alCambiarDatos() {
-    const pendingList = (await this.cliente?.pendingList()) ?? 0
+    const pendingList = (await this.client?.pendingList()) ?? 0
     this.patch({ pendingList, changes: this.status.changes + 1 })
   }
 
   /** Para la demo: corta la conexión con el hub como si se cayera el Wi-Fi, y la devuelve. */
   simularSinConexion(without: boolean) {
     this.patch({ simulandoSinConexion: without })
-    if (without) this.gestor?.detener()
-    else this.gestor?.begin()
+    if (without) this.connectionManager?.stop()
+    else this.connectionManager?.begin()
   }
 
-  cambiarVisibilidad(visible: boolean) {
-    this.gestor?.cambiarVisibilidad(visible)
+  changeVisibility(visible: boolean) {
+    this.connectionManager?.changeVisibility(visible)
     if (visible) this.vencerSesionSiToca()
   }
 
@@ -865,13 +865,13 @@ export class Sala {
    * La hora del hub según este equipo (ms): los tiempos de cocina se miden contra la hora en que
    * el hub recibió la comanda, y una tablet con el reloj adelantado no debe verlo todo en ámbar.
    */
-  ahoraHub(ahora = Date.now()): number {
-    return this.cliente ? Date.parse(this.cliente.horaEstimadaHub(ahora)) : ahora
+  ahoraHub(now = Date.now()): number {
+    return this.client ? Date.parse(this.client.hubEstimatedTime(now)) : now
   }
 
   /** El cliente de sincronización (para leer pedidos y eventos locales). */
-  get sync(): ClienteSync | null {
-    return this.cliente
+  get sync(): SyncClient | null {
+    return this.client
   }
 
   /**
@@ -884,12 +884,12 @@ export class Sala {
     data: Extract<NewEvent, { type: T }>['data'],
     options: OpcionesEvento = {},
   ): Promise<NewEvent> {
-    const ahora = Date.now()
+    const now = Date.now()
     // Primero el uso: si la sesión acaba de vencer, no se firma nada con ella.
-    this.usar(ahora)
-    const cliente = this.cliente
+    this.usar(now)
+    const client = this.client
     const { session, device } = this.status
-    if (!cliente || !session || !device) throw new Error('Sin sesión: escribe tu PIN')
+    if (!client || !session || !device) throw new Error('Sin sesión: escribe tu PIN')
     const event = {
       id: newId(),
       type,
@@ -900,12 +900,12 @@ export class Sala {
       data,
       session_id: session.sesionId,
       user_id: session.user.id,
-      device_id: device.dispositivoId,
+      device_id: device.deviceId,
       authorization_id: null,
       reason: options.reason ?? null,
-      device_time: new Date(ahora).toISOString(),
-      hub_estimated_time: cliente.horaEstimadaHub(ahora),
-      base_sequence: await cliente.conocido(),
+      device_time: new Date(now).toISOString(),
+      hub_estimated_time: client.hubEstimatedTime(now),
+      base_sequence: await client.known(),
     } as NewEvent
     // Con el PIN de un supervisor (ADR-008): el hub da un comprobante de un solo uso para este
     // evento exacto (su huella), y el evento lo lleva. Pide conexión: sin ella, falla aquí.
@@ -923,7 +923,7 @@ export class Sala {
       event.authorization_id = authorization_id
     }
     const firmado = { ...event, signature: signEvent(event, session.secret) } as NewEvent
-    const r = await cliente.record(firmado)
+    const r = await client.record(firmado)
     if (!r.ok) throw new Error(`Evento inválido: ${r.errors.join('; ')}`)
     // Que el contador de pendientes ya lo cuente al volver.
     await this.alCambiarDatos()
@@ -938,18 +938,18 @@ export class Sala {
    */
   async registrarConfirmado<T extends OrderEventType>(
     type: T,
-    agregadoId: string,
+    aggregateId: string,
     data: Extract<NewEvent, { type: T }>['data'],
     options: OpcionesEvento = {},
-    esperaMs = 10_000,
+    waitMs = 10_000,
   ): Promise<NewEvent> {
-    const event = await this.record(type, agregadoId, data as never, options)
-    const limite = Date.now() + esperaMs
+    const event = await this.record(type, aggregateId, data as never, options)
+    const limit = Date.now() + waitMs
     for (;;) {
-      const local = (await this.cliente?.locales())?.find((l) => l.event.id === event.id)
+      const local = (await this.client?.locals())?.find((l) => l.event.id === event.id)
       if (local?.status === 'confirmed') return event
       if (local?.status === 'rejected') throw new Error(motivoEnPalabras(local.reason))
-      if (Date.now() > limite)
+      if (Date.now() > limit)
         throw new Error(
           'La caja no confirmó a tiempo. Quedó pendiente: revisa la cuenta en un momento antes de cobrar otra vez.',
         )

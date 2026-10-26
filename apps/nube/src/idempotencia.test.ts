@@ -2,12 +2,12 @@ import fc from 'fast-check'
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
   batch,
-  contar,
+  count,
   crearMundo,
   eventoPlano,
   eventosGuardados,
   type Mundo,
-  SEMILLA,
+  SEED,
   statuses,
 } from './pruebas/mundo'
 
@@ -16,7 +16,7 @@ import {
 // eventos. Una sola base para todo el archivo; cada corrida usa un restaurante nuevo, así que no
 // se estorban.
 
-const CORRIDAS = { seed: SEMILLA, numRuns: 25 }
+const RUNS = { seed: SEED, numRuns: 25 }
 
 let m: Mundo
 beforeAll(async () => {
@@ -29,23 +29,23 @@ describe('reenviar un lote', () => {
       fc.asyncProperty(
         fc.integer({ min: 1, max: 40 }),
         fc.integer({ min: 2, max: 5 }),
-        async (n, veces) => {
-          const { hub, restauranteId } = await m.nuevoHub()
+        async (n, times) => {
+          const { hub, restaurantId } = await m.newHub()
           const events = batch(1, n)
           const firstOne = await m.nube.recibirEventos(hub, events)
           expect(statuses(firstOne).every((e) => e === 'saved')).toBe(true)
-          const before = await eventosGuardados(m.db, restauranteId)
-          for (let i = 1; i < veces; i++) {
+          const before = await eventosGuardados(m.db, restaurantId)
+          for (let i = 1; i < times; i++) {
             const another = await m.nube.recibirEventos(hub, events)
             expect(another.map((r) => r.id)).toEqual(events.map((e) => e.id))
             expect(statuses(another).every((e) => e === 'already_stored')).toBe(true)
           }
-          expect(await eventosGuardados(m.db, restauranteId)).toEqual(before)
-          expect(await contar(m.db, 'divergent_events', restauranteId)).toBe(0)
+          expect(await eventosGuardados(m.db, restaurantId)).toEqual(before)
+          expect(await count(m.db, 'divergent_events', restaurantId)).toBe(0)
           expect(await m.nube.lastSequence(hub)).toBe(n)
         },
       ),
-      CORRIDAS,
+      RUNS,
     )
   })
 
@@ -53,10 +53,10 @@ describe('reenviar un lote', () => {
     await fc.assert(
       fc.asyncProperty(
         fc.uniqueArray(fc.integer({ min: 1, max: 300 }), { minLength: 1, maxLength: 40 }),
-        async (numeros) => {
-          const revuelto = await m.nuevoHub()
-          const ordenado = await m.nuevoHub()
-          const events = numeros.map((n) => eventoPlano(n))
+        async (numbers) => {
+          const revuelto = await m.newHub()
+          const ordenado = await m.newHub()
+          const events = numbers.map((n) => eventoPlano(n))
           const inOrder = [...events].sort((a, b) => a.sequence - b.sequence)
           const r1 = await m.nube.recibirEventos(revuelto.hub, events)
           const r2 = await m.nube.recibirEventos(ordenado.hub, inOrder)
@@ -66,15 +66,15 @@ describe('reenviar un lote', () => {
           expect(statuses(r2)).toEqual(inOrder.map(() => 'saved'))
           const quitarHub = (rows: Awaited<ReturnType<typeof eventosGuardados>>) =>
             rows.map(({ hub_id: _h, ...rest }) => rest)
-          expect(quitarHub(await eventosGuardados(m.db, revuelto.restauranteId))).toEqual(
-            quitarHub(await eventosGuardados(m.db, ordenado.restauranteId)),
+          expect(quitarHub(await eventosGuardados(m.db, revuelto.restaurantId))).toEqual(
+            quitarHub(await eventosGuardados(m.db, ordenado.restaurantId)),
           )
           expect(await m.nube.lastSequence(revuelto.hub)).toBe(
             await m.nube.lastSequence(ordenado.hub),
           )
         },
       ),
-      CORRIDAS,
+      RUNS,
     )
   })
 
@@ -84,10 +84,10 @@ describe('reenviar un lote', () => {
         fc.uniqueArray(fc.integer({ min: 1, max: 300 }), { minLength: 1, maxLength: 40 }),
         fc.array(fc.integer({ min: 1, max: 8 }), { minLength: 1, maxLength: 10 }),
         fc.boolean(),
-        async (numeros, sizes, solape) => {
-          const entero = await m.nuevoHub()
-          const partido = await m.nuevoHub()
-          const events = numeros.map((n) => eventoPlano(n))
+        async (numbers, sizes, solape) => {
+          const entero = await m.newHub()
+          const partido = await m.newHub()
+          const events = numbers.map((n) => eventoPlano(n))
           await m.nube.recibirEventos(entero.hub, events)
           let from = 0
           let i = 0
@@ -108,17 +108,17 @@ describe('reenviar un lote', () => {
           expect(guardadosEnTotal.size).toBe(events.length)
           const quitarHub = (rows: Awaited<ReturnType<typeof eventosGuardados>>) =>
             rows.map(({ hub_id: _h, ...rest }) => rest)
-          expect(quitarHub(await eventosGuardados(m.db, partido.restauranteId))).toEqual(
-            quitarHub(await eventosGuardados(m.db, entero.restauranteId)),
+          expect(quitarHub(await eventosGuardados(m.db, partido.restaurantId))).toEqual(
+            quitarHub(await eventosGuardados(m.db, entero.restaurantId)),
           )
         },
       ),
-      CORRIDAS,
+      RUNS,
     )
   })
 
   it('un lote con una parte ya guardada responde cada evento en su posición', async () => {
-    const { hub } = await m.nuevoHub()
+    const { hub } = await m.newHub()
     const events = batch(1, 6)
     await m.nube.recibirEventos(hub, [events[1], events[4]] as never)
     const r = await m.nube.recibirEventos(hub, events)
@@ -133,57 +133,57 @@ describe('el mismo id dentro del mismo lote', () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(fc.integer({ min: 1, max: 15 }), { minLength: 1, maxLength: 40 }),
-        async (numeros) => {
-          const { hub, restauranteId } = await m.nuevoHub()
-          const events = numeros.map((n) => eventoPlano(n))
+        async (numbers) => {
+          const { hub, restaurantId } = await m.newHub()
+          const events = numbers.map((n) => eventoPlano(n))
           const r = await m.nube.recibirEventos(hub, events)
           const seen = new Set<number>()
-          const expected = numeros.map((n) => {
+          const expected = numbers.map((n) => {
             const firstOne = !seen.has(n)
             seen.add(n)
             return firstOne ? 'saved' : 'already_stored'
           })
           expect(statuses(r)).toEqual(expected)
-          expect(await contar(m.db, 'events', restauranteId)).toBe(new Set(numeros).size)
-          expect(await contar(m.db, 'divergent_events', restauranteId)).toBe(0)
+          expect(await count(m.db, 'events', restaurantId)).toBe(new Set(numbers).size)
+          expect(await count(m.db, 'divergent_events', restaurantId)).toBe(0)
         },
       ),
-      CORRIDAS,
+      RUNS,
     )
   })
 
   it('con otro contenido: el primero se guarda y el segundo es distinto, sin pisar al primero', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const a = eventoPlano(1, { data: { quantity: 1 } })
     const b = eventoPlano(1, { data: { quantity: 99 } })
     const r = await m.nube.recibirEventos(hub, [a, b])
     expect(r.map((x) => x.status)).toEqual(['saved', 'divergent'])
-    const [saved] = await eventosGuardados(m.db, restauranteId)
+    const [saved] = await eventosGuardados(m.db, restaurantId)
     expect(saved?.content).toMatchObject({ data: { quantity: 1 } })
   })
 
   it('con otro contenido: lo distinto queda registrado para revisión (no se descarta, ADR-007)', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const a = eventoPlano(1, { data: { quantity: 1 } })
     const b = eventoPlano(1, { data: { quantity: 99 } })
     await m.nube.recibirEventos(hub, [a, b])
     // La respuesta dijo «distinto» (queda para revisión): tiene que estar en divergent_events.
-    expect(await contar(m.db, 'divergent_events', restauranteId)).toBe(1)
+    expect(await count(m.db, 'divergent_events', restaurantId)).toBe(1)
   })
 
   it('el orden decide cuál se guarda: el primero que llega', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const a = eventoPlano(1, { data: { quantity: 1 } })
     const b = eventoPlano(1, { data: { quantity: 99 } })
     await m.nube.recibirEventos(hub, [b, a])
-    const [saved] = await eventosGuardados(m.db, restauranteId)
+    const [saved] = await eventosGuardados(m.db, restaurantId)
     expect(saved?.content).toMatchObject({ data: { quantity: 99 } })
   })
 })
 
 describe('lotes concurrentes con los mismos eventos', () => {
   it('el mismo lote enviado a la vez varias veces: cada evento se guarda una sola vez', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const events = batch(1, 30)
     const respuestas = await Promise.all(
       Array.from({ length: 6 }, () => m.nube.recibirEventos(hub, events)),
@@ -193,24 +193,24 @@ describe('lotes concurrentes con los mismos eventos', () => {
       expect(veredictos.filter((v) => v === 'saved')).toHaveLength(1)
       expect(veredictos.filter((v) => v === 'already_stored')).toHaveLength(5)
     }
-    expect(await contar(m.db, 'events', restauranteId)).toBe(30)
-    expect(await contar(m.db, 'divergent_events', restauranteId)).toBe(0)
+    expect(await count(m.db, 'events', restaurantId)).toBe(30)
+    expect(await count(m.db, 'divergent_events', restaurantId)).toBe(0)
   })
 
   it('lotes que se solapan, a la vez y en distinto orden: la unión exacta, sin duplicados', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const all = batch(1, 40)
     const lotes = [all.slice(0, 20), all.slice(10, 30).reverse(), all.slice(25), [...all].reverse()]
     const respuestas = await Promise.all(lotes.map((l) => m.nube.recibirEventos(hub, l)))
-    const guardados = respuestas.flat().filter((r) => r.status === 'saved')
-    expect(new Set(guardados.map((g) => g.id)).size).toBe(40)
-    expect(guardados).toHaveLength(40)
-    expect(await contar(m.db, 'events', restauranteId)).toBe(40)
+    const savedList = respuestas.flat().filter((r) => r.status === 'saved')
+    expect(new Set(savedList.map((g) => g.id)).size).toBe(40)
+    expect(savedList).toHaveLength(40)
+    expect(await count(m.db, 'events', restaurantId)).toBe(40)
     expect(await m.nube.lastSequence(hub)).toBe(40)
   })
 
   it('una variante con otro contenido enviada a la vez que el original: el guardado es uno de los dos y nada se pierde', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const a = eventoPlano(1, { data: { quantity: 1 } })
     const b = eventoPlano(1, { data: { quantity: 99 } })
     const [ra, rb] = await Promise.all([
@@ -218,13 +218,13 @@ describe('lotes concurrentes con los mismos eventos', () => {
       m.nube.recibirEventos(hub, [b]),
     ])
     expect([ra[0]?.status, rb[0]?.status].sort()).toEqual(['divergent', 'saved'])
-    expect(await contar(m.db, 'events', restauranteId)).toBe(1)
-    expect(await contar(m.db, 'divergent_events', restauranteId)).toBe(1)
+    expect(await count(m.db, 'events', restaurantId)).toBe(1)
+    expect(await count(m.db, 'divergent_events', restaurantId)).toBe(1)
   })
 
   it('el mismo lote subido a la vez por dos restaurantes: cada uno guarda el suyo', async () => {
-    const a = await m.nuevoHub()
-    const b = await m.nuevoHub()
+    const a = await m.newHub()
+    const b = await m.newHub()
     const events = batch(1, 10)
     const [ra, rb] = await Promise.all([
       m.nube.recibirEventos(a.hub, events),
@@ -242,11 +242,11 @@ describe('evento_distinto', () => {
         fc.integer({ min: 1, max: 12 }),
         fc.integer({ min: 1, max: 4 }),
         fc.integer({ min: 2, max: 5 }),
-        async (n, variants, veces) => {
-          const { hub, restauranteId } = await m.nuevoHub()
+        async (n, variants, times) => {
+          const { hub, restaurantId } = await m.newHub()
           const originales = batch(1, n)
           await m.nube.recibirEventos(hub, originales)
-          const before = await eventosGuardados(m.db, restauranteId)
+          const before = await eventosGuardados(m.db, restaurantId)
           // `variantes` contenidos distintos por cada evento; cada uno se envía `veces` veces.
           const distintos = originales.flatMap((e) =>
             Array.from({ length: variants }, (_, v) => ({
@@ -254,7 +254,7 @@ describe('evento_distinto', () => {
               data: { ...e.data, variant: v + 1 },
             })),
           )
-          for (let i = 0; i < veces; i++) {
+          for (let i = 0; i < times; i++) {
             const r = await m.nube.recibirEventos(
               hub,
               i % 2 === 0 ? distintos : [...distintos].reverse().map((x) => x),
@@ -263,15 +263,15 @@ describe('evento_distinto', () => {
             // responden todos «distinto»; ninguno es «guardado».
             expect(statuses(r).every((e) => e === 'divergent')).toBe(true)
           }
-          expect(await eventosGuardados(m.db, restauranteId)).toEqual(before)
+          expect(await eventosGuardados(m.db, restaurantId)).toEqual(before)
         },
       ),
-      CORRIDAS,
+      RUNS,
     )
   })
 
   it('cada contenido distinto queda una sola vez, aunque llegue en lotes y veces distintas', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const original = eventoPlano(1)
     await m.nube.recibirEventos(hub, [original])
     const v1 = { ...original, data: { quantity: 77 } }
@@ -280,13 +280,13 @@ describe('evento_distinto', () => {
       const [r] = await m.nube.recibirEventos(hub, envio)
       expect(r?.status).toBe(envio[0] === original ? 'already_stored' : 'divergent')
     }
-    expect(await contar(m.db, 'divergent_events', restauranteId)).toBe(2)
-    const [saved] = await eventosGuardados(m.db, restauranteId)
+    expect(await count(m.db, 'divergent_events', restaurantId)).toBe(2)
+    const [saved] = await eventosGuardados(m.db, restaurantId)
     expect(saved?.content).toEqual(original)
   })
 
   it('el mismo contenido distinto, enviado a la vez varias veces, queda una sola vez', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const original = eventoPlano(1)
     await m.nube.recibirEventos(hub, [original])
     const variant = { ...original, data: { quantity: 42 } }
@@ -294,11 +294,11 @@ describe('evento_distinto', () => {
       Array.from({ length: 5 }, () => m.nube.recibirEventos(hub, [variant])),
     )
     expect(r.every((x) => x[0]?.status === 'divergent')).toBe(true)
-    expect(await contar(m.db, 'divergent_events', restauranteId)).toBe(1)
+    expect(await count(m.db, 'divergent_events', restaurantId)).toBe(1)
   })
 
   it('guarda quién lo mandó y el contenido recibido', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const original = eventoPlano(1)
     await m.nube.recibirEventos(hub, [original])
     const variant = { ...original, data: { quantity: 42 } }
@@ -306,14 +306,14 @@ describe('evento_distinto', () => {
     const rows = (
       await m.db.query<{ event_id: string; hub_id: string; content: unknown }>(
         'SELECT event_id, hub_id, content FROM divergent_events WHERE restaurant_id = $1',
-        [restauranteId],
+        [restaurantId],
       )
     ).rows
     expect(rows).toEqual([{ event_id: original.id, hub_id: hub.id, content: variant }])
   })
 
   it('lo que no es parte de lo que pasó (secuencia_base, firma, orden de las claves) no cuenta como distinto', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const original = eventoPlano(1, { base_sequence: 5, signature: 'a'.repeat(64) })
     await m.nube.recibirEventos(hub, [original])
     const reordenado = Object.fromEntries(
@@ -321,11 +321,11 @@ describe('evento_distinto', () => {
     )
     const [r] = await m.nube.recibirEventos(hub, [reordenado])
     expect(r?.status).toBe('already_stored')
-    expect(await contar(m.db, 'divergent_events', restauranteId)).toBe(0)
+    expect(await count(m.db, 'divergent_events', restaurantId)).toBe(0)
   })
 
   it('cambiar cualquier campo con sentido sí lo hace distinto', async () => {
-    const { hub, restauranteId } = await m.nuevoHub()
+    const { hub, restaurantId } = await m.newHub()
     const base = eventoPlano(1)
     await m.nube.recibirEventos(hub, [base])
     const changes: Record<string, unknown>[] = [
@@ -341,19 +341,19 @@ describe('evento_distinto', () => {
       const [r] = await m.nube.recibirEventos(hub, [{ ...base, ...change }])
       expect(r?.status, JSON.stringify(change)).toBe('divergent')
     }
-    expect(await contar(m.db, 'divergent_events', restauranteId)).toBe(changes.length)
+    expect(await count(m.db, 'divergent_events', restaurantId)).toBe(changes.length)
   })
 
   it('un hub de la misma sede que manda otro contenido para un id existente también queda para revisión', async () => {
-    const a = await m.nuevoHub()
-    const secondOne = await m.nube.crearCodigo(a.restauranteId)
+    const a = await m.newHub()
+    const secondOne = await m.nube.crearCodigo(a.restaurantId)
     if (!secondOne) throw new Error('sin código')
     const reg = await m.nube.registrarHub({
       code: secondOne.code,
       hub_id: eventoPlano(500).id,
       location_id: a.hub.sedeId,
       name: 'Caja 2',
-      instancia: 'i2',
+      instance: 'i2',
     })
     if (!reg.ok) throw new Error(reg.reason)
     const hub2 = await m.nube.authenticate(reg.credential)

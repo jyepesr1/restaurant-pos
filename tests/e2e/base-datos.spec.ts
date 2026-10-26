@@ -16,11 +16,11 @@ test('el hub de pruebas deja su base migrada y la toma en exclusiva', async ({
   // Última migración: 0002 (comprobante de supervisor atado al evento, tarea 0.7).
   expect(await salud.json()).toMatchObject({ version_base: 2 })
 
-  const ruta = join(DATA_DIR_E2E, 'pos.sqlite')
-  expect(existsSync(ruta), `falta ${ruta}`).toBe(true)
+  const route = join(DATA_DIR_E2E, 'pos.sqlite')
+  expect(existsSync(route), `falta ${route}`).toBe(true)
 
   // Otro proceso no puede leerla mientras el hub la tenga abierta.
-  const db = new DatabaseSync(ruta, { readOnly: true })
+  const db = new DatabaseSync(route, { readOnly: true })
   try {
     expect(() => db.prepare('SELECT max(version) AS version FROM migrations').get()).toThrow(
       /locked/,

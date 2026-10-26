@@ -217,9 +217,9 @@ describe('carta guardada por una versión anterior de la app', () => {
   it('se completa con lo que le falta en vez de romper la pantalla', () => {
     const vieja = {
       version: 3,
-      restaurant: { name: 'X', sesionInactividadMin: 30 },
+      restaurant: { name: 'X', sessionIdleMin: 30 },
       zones: [{ id: 'Z', name: 'Salón' }],
-      tables: [{ id: 'M', zonaId: 'Z', name: '1', x: 0, y: 0, shape: 'square', capacity: 4 }],
+      tables: [{ id: 'M', zoneId: 'Z', name: '1', x: 0, y: 0, shape: 'square', capacity: 4 }],
       stations: [],
       categories: [],
     } as unknown as Parameters<typeof completarCatalogo>[0]

@@ -25,7 +25,7 @@ type Modo = 'single' | 'even' | 'items'
 export function PreBill() {
   const number = useMesaDeLaRuta(12)
   const table = useMesas().find((m) => m.number === number)
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const [mode, setModo] = useState<Modo>('single')
   const [people, setPersonas] = useState(2)
   const [checks, setCuentas] = useState(2)
@@ -70,7 +70,7 @@ export function PreBill() {
       : 0
   const tips = propinasDeCuentas(amounts)
 
-  const cobrar = (amount: number, propinaCuenta: number) =>
+  const charge = (amount: number, propinaCuenta: number) =>
     navegar(`/mockups/checkout?table=${number}&amount=${amount}&tip=${propinaCuenta}`)
 
   const actions = (
@@ -82,7 +82,7 @@ export function PreBill() {
         className="flex-1"
         onClick={() => {
           cambiarMesa(number, (m) => ({ ...m, status: 'preBill' }))
-          avisar('Precuenta enviada a la impresora')
+          notify('Precuenta enviada a la impresora')
         }}
       >
         Imprimir
@@ -94,7 +94,7 @@ export function PreBill() {
           icono="bill"
           className="flex-1"
           disabled={balance === 0}
-          onClick={() => cobrar(balance, tip)}
+          onClick={() => charge(balance, tip)}
         >
           {`Cobrar ${pesos(balance)}`}
         </Boton>
@@ -221,7 +221,7 @@ export function PreBill() {
                   <Boton
                     variant="main"
                     disabled={amount === 0}
-                    onClick={() => cobrar(amount, tips[c] ?? 0)}
+                    onClick={() => charge(amount, tips[c] ?? 0)}
                   >
                     {`Cobrar ${pesos(amount)}`}
                   </Boton>

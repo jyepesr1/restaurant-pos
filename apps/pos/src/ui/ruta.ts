@@ -13,10 +13,10 @@ export function navegar(target: string) {
 }
 
 /** La ruta (sin `/` final) y sus parámetros; cambia también si solo cambian los parámetros. */
-export function useRuta(): { ruta: string; parametros: URLSearchParams } {
-  const [current, setActual] = useState(() => ({ ruta: rutaActual(), busqueda: location.search }))
+export function useRuta(): { route: string; params: URLSearchParams } {
+  const [current, setActual] = useState(() => ({ route: rutaActual(), busqueda: location.search }))
   useEffect(() => {
-    const actualizar = () => setActual({ ruta: rutaActual(), busqueda: location.search })
+    const actualizar = () => setActual({ route: rutaActual(), busqueda: location.search })
     window.addEventListener('popstate', actualizar)
     window.addEventListener(EVENTO, actualizar)
     return () => {
@@ -24,5 +24,5 @@ export function useRuta(): { ruta: string; parametros: URLSearchParams } {
       window.removeEventListener(EVENTO, actualizar)
     }
   }, [])
-  return { ruta: current.ruta, parametros: new URLSearchParams(current.busqueda) }
+  return { route: current.route, params: new URLSearchParams(current.busqueda) }
 }

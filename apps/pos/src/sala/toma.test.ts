@@ -14,9 +14,9 @@ const simple = {
   variants: [],
   groups: [],
 }
-const conPlatos = () =>
+const withDishes = () =>
   catalogoDePrueba({
-    categories: [{ id: newId(), name: 'Bebidas', estacionId: 'E-BARRA', products: [simple] }],
+    categories: [{ id: newId(), name: 'Bebidas', stationId: 'E-BARRA', products: [simple] }],
   })
 
 // Toma de pedido de la 1.3: agotados, lo más pedido, la línea que suma, marchar un curso y los
@@ -66,14 +66,14 @@ describe('lo más pedido', () => {
     const order = newId()
     const a = newId()
     const b = newId()
-    const locales = [
+    const locals = [
       local('OrderOpened', order, opening),
       local('ItemAdded', order, item({ product_id: a, quantity: 1 })),
       local('ItemAdded', order, item({ product_id: b, quantity: 3 })),
       local('ItemAdded', order, item({ product_id: a, quantity: 1 })),
     ]
-    expect(masPedidos(locales)).toEqual([b, a])
-    expect(masPedidos(locales, 1)).toEqual([b])
+    expect(masPedidos(locals)).toEqual([b, a])
+    expect(masPedidos(locals, 1)).toEqual([b])
   })
 })
 
@@ -116,7 +116,7 @@ describe('el mismo producto otra vez', () => {
 
 describe('marchar un curso', () => {
   it('manda solo lo del curso, por estación', () => {
-    const catalog = conPlatos()
+    const catalog = withDishes()
     const order = newId()
     const entry = item({ product_id: simple.id, course: 'entry' })
     const main = item({ product_id: simple.id, course: 'main' })
@@ -139,7 +139,7 @@ describe('marchar un curso', () => {
 
 describe('datos del ítem', () => {
   it('llevan persona, curso, cantidad y la nota recortada (vacía es null)', () => {
-    const catalog = conPlatos()
+    const catalog = withDishes()
     const p = simple
     expect(
       datosItem(

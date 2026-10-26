@@ -13,10 +13,10 @@ import { montarApi } from './montaje-api'
 const ip = (n: number) => `10.1.${Math.floor(n / 250)}.${(n % 250) + 1}`
 
 /** Un PIN con formato válido que no es de nadie del montaje. */
-function pinsAjenos(m: { people: Record<string, { pin: string }> }, cuantos: number) {
+function pinsAjenos(m: { people: Record<string, { pin: string }> }, howMany: number) {
   const ownOnes = new Set(Object.values(m.people).map((p) => p.pin))
   const r: string[] = []
-  for (let n = 0; r.length < cuantos; n++) {
+  for (let n = 0; r.length < howMany; n++) {
     const pin = String(n).padStart(4, '0')
     if (!ownOnes.has(pin)) r.push(pin)
   }
@@ -40,14 +40,14 @@ describe('PIN sin token, rotando IP', () => {
     const pins = pinsAjenos(api, FALLOS_PARA_AVISO + 5)
     for (const [i, pin] of pins.slice(0, FALLOS_PARA_AVISO - 1).entries())
       await api.post('/api/sign-in', { pin }, { ip: ip(i) })
-    expect(api.avisos).toEqual([])
+    expect(api.alerts).toEqual([])
     await api.post('/api/sign-in', { pin: pins[FALLOS_PARA_AVISO - 1] }, { ip: ip(99) })
-    expect(api.avisos).toHaveLength(1)
-    expect(api.avisos[0]).toMatch(/20 PIN/)
+    expect(api.alerts).toHaveLength(1)
+    expect(api.alerts[0]).toMatch(/20 PIN/)
     // Seguir probando no inunda al administrador con un aviso por intento.
     for (const [i, pin] of pins.slice(FALLOS_PARA_AVISO).entries())
       await api.post('/api/sign-in', { pin }, { ip: ip(100 + i) })
-    expect(api.avisos).toHaveLength(1)
+    expect(api.alerts).toHaveLength(1)
   })
 
   it('quien prueba despacio desde un mismo navegador registrado dispara el aviso del equipo', async () => {
@@ -55,14 +55,14 @@ describe('PIN sin token, rotando IP', () => {
     const phone = (await api.post('/api/sign-in', { pin: api.people.waiter.pin })).json()
     const token = phone.device.token as string
     const [pin] = pinsAjenos(api, 1) as [string]
-    let fallos = 0
-    while (fallos < FALLOS_DE_UN_EQUIPO_PARA_AVISO) {
-      const r = await api.post('/api/sign-in', { pin }, { token, ip: ip(fallos) })
+    let failures = 0
+    while (failures < FALLOS_DE_UN_EQUIPO_PARA_AVISO) {
+      const r = await api.post('/api/sign-in', { pin }, { token, ip: ip(failures) })
       // Respeta la espera: cada intento llega cuando ya se puede.
       if (r.statusCode === 429) api.advance(Number(r.json().espera_ms) + 1)
-      else fallos++
+      else failures++
     }
-    expect(api.avisos.some((a) => /seguidos desde device:/.test(a))).toBe(true)
+    expect(api.alerts.some((a) => /seguidos desde device:/.test(a))).toBe(true)
   })
 
   it('con el mismo token, cambiar de IP no reinicia la espera: se cuenta por equipo', async () => {
@@ -175,10 +175,10 @@ describe('contraseña sin token', () => {
     // Cuentas distintas desde IP distintas: así ninguna espera y los 20 fallos caben en 10 minutos.
     for (let i = 0; i < 19; i++)
       await api.post('/api/sign-in', credencialesMalas(`persona${i}`, i), { ip: ip(i) })
-    expect(api.avisos).toEqual([])
+    expect(api.alerts).toEqual([])
     await api.post('/api/sign-in', credencialesMalas('persona19', 19), { ip: ip(19) })
-    expect(api.avisos).toHaveLength(1)
-    expect(api.avisos[0]).toMatch(/^20 PIN o códigos errados/)
+    expect(api.alerts).toHaveLength(1)
+    expect(api.alerts[0]).toMatch(/^20 PIN o códigos errados/)
   })
 
   it('probar muchas cuentas distintas desde una IP: la IP espera aunque ninguna cuenta se repita', async () => {

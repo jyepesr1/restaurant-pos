@@ -5,11 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { newId, signEvent } from '@pos/core'
-import type { BaseSqlite } from '@pos/db'
+import type { SqliteDatabase } from '@pos/db'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { abrirDatos, prepararAcceso } from './arranque'
 import { leerCarta } from './seed/carta'
-import { sembrar } from './seed/sembrar'
+import { seed } from './seed/sembrar'
 
 // La regla «una mesa con un pedido abierto no se archiva» por la ruta real: el proceso del hub
 // (`src/main.ts`, que es quien conecta la sala con la edición del catálogo), un pedido abierto de
@@ -23,12 +23,12 @@ const CARTA = readFileSync(
 )
 
 function puertoLibre(): Promise<number> {
-  return new Promise((resolver, reject) => {
+  return new Promise((resolve, reject) => {
     const servidor = createServer()
     servidor.once('error', reject)
     servidor.listen(0, '127.0.0.1', () => {
       const { port } = servidor.address() as { port: number }
-      servidor.close(() => resolver(port))
+      servidor.close(() => resolve(port))
     })
   })
 }
@@ -36,7 +36,7 @@ function puertoLibre(): Promise<number> {
 interface Arrancado {
   child: ChildProcess
   output: () => string
-  detener: () => Promise<void>
+  stop: () => Promise<void>
 }
 
 function arrancar(env: Record<string, string>): Promise<Arrancado> {
@@ -51,21 +51,21 @@ function arrancar(env: Record<string, string>): Promise<Arrancado> {
   }
   child.stdout?.on('data', acumular)
   child.stderr?.on('data', acumular)
-  const terminado = new Promise<void>((resolver) => child.once('exit', () => resolver()))
-  return new Promise((resolver, reject) => {
-    const revisar = () => {
+  const terminado = new Promise<void>((resolve) => child.once('exit', () => resolve()))
+  return new Promise((resolve, reject) => {
+    const review = () => {
       if (!text.includes('Hub en marcha')) return
-      child.stdout?.off('data', revisar)
-      resolver({
+      child.stdout?.off('data', review)
+      resolve({
         child,
         output: () => text,
-        detener: async () => {
+        stop: async () => {
           child.kill('SIGKILL')
           await terminado
         },
       })
     }
-    child.stdout?.on('data', revisar)
+    child.stdout?.on('data', review)
     child.once('exit', (code) =>
       reject(new Error(`El hub terminó con código ${code} antes de arrancar:\n${text}`)),
     )
@@ -78,38 +78,38 @@ type Json = Record<string, any>
 /** Un equipo conectado por WebSocket: junta lo que llega y deja esperar un mensaje sin sleeps. */
 function conectarWs(url: string, token: string) {
   const ws = new WebSocket(url)
-  const recibidos: Json[] = []
-  const esperando: { cumple: (m: Json) => boolean; resolver: (m: Json) => void }[] = []
+  const received: Json[] = []
+  const esperando: { cumple: (m: Json) => boolean; resolve: (m: Json) => void }[] = []
   ws.addEventListener('message', (e) => {
     const message = JSON.parse(String(e.data)) as Json
-    recibidos.push(message)
+    received.push(message)
     for (const [i, w] of esperando.entries())
       if (w.cumple(message)) {
         esperando.splice(i, 1)
-        w.resolver(message)
+        w.resolve(message)
         break
       }
   })
-  const opened = new Promise<void>((resolver, reject) => {
-    ws.addEventListener('open', () => resolver())
+  const opened = new Promise<void>((resolve, reject) => {
+    ws.addEventListener('open', () => resolve())
     ws.addEventListener('error', () => reject(new Error('No abrió el WebSocket')))
   })
   const esperar = (type: string, cumple: (m: Json) => boolean = () => true) => {
-    const already = recibidos.find((m) => m.type === type && cumple(m))
+    const already = received.find((m) => m.type === type && cumple(m))
     if (already) return Promise.resolve(already)
-    return new Promise<Json>((resolver) =>
-      esperando.push({ cumple: (m) => m.type === type && cumple(m), resolver }),
+    return new Promise<Json>((resolve) =>
+      esperando.push({ cumple: (m) => m.type === type && cumple(m), resolve }),
     )
   }
   const send = (m: object) => ws.send(JSON.stringify(m))
   return {
     ws,
-    recibidos,
+    received,
     esperar,
     send,
     async saludar() {
       await opened
-      send({ type: 'hello', token, hub_instancia: null, until: 0, version_app: 'prueba' })
+      send({ type: 'hello', token, hub_instance: null, until: 0, version_app: 'prueba' })
       return esperar('welcome')
     },
     close: () => ws.close(),
@@ -117,32 +117,32 @@ function conectarWs(url: string, token: string) {
 }
 
 describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
-  let carpeta = ''
+  let folder = ''
   let hub: Arrancado | undefined
-  const abiertos: { close: () => void }[] = []
+  const openOnes: { close: () => void }[] = []
 
   beforeEach(() => {
-    carpeta = mkdtempSync(join(tmpdir(), 'pos-ocupada-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-ocupada-'))
   })
   afterEach(async () => {
-    for (const c of abiertos.splice(0)) c.close()
-    await hub?.detener()
+    for (const c of openOnes.splice(0)) c.close()
+    await hub?.stop()
     hub = undefined
-    rmSync(carpeta, { recursive: true, force: true })
+    rmSync(folder, { recursive: true, force: true })
   })
 
   /** Siembra el salón (con personal) y deja la carpeta lista para que arranque el hub. */
   function prepararCarpeta() {
-    const dirDatos = join(carpeta, 'data')
+    const dirDatos = join(folder, 'data')
     const { db } = abrirDatos(dirDatos)
     const access = prepararAcceso(db, dirDatos)
-    const { pins } = sembrar(
+    const { pins } = seed(
       db,
       access.access,
-      { restauranteId: access.restauranteId, roles: access.roles, menu: leerCarta(CARTA) },
+      { restaurantId: access.restaurantId, roles: access.roles, menu: leerCarta(CARTA) },
       new Date().toISOString(),
     )
-    ;(db as BaseSqlite & { close(): void }).close()
+    ;(db as SqliteDatabase & { close(): void }).close()
     /** Con qué entra cada quien: usuario y contraseña si los tiene (ADR-013), si no su PIN. */
     const credencialesDe = (name: string) => {
       if (name === 'Administrador')
@@ -159,7 +159,7 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
   async function spinUp(dirDatos: string, port: number) {
     hub = await arrancar({
       DATA_DIR: dirDatos,
-      DIR_APP: join(carpeta, 'sin-app'),
+      DIR_APP: join(folder, 'sin-app'),
       PORT: String(port),
     })
   }
@@ -169,8 +169,8 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
     const port = await puertoLibre()
     await spinUp(dirDatos, port)
     const url = `http://127.0.0.1:${port}`
-    const post = async (ruta: string, cuerpo: object, token?: string) => {
-      const r = await fetch(url + ruta, {
+    const post = async (route: string, cuerpo: object, token?: string) => {
+      const r = await fetch(url + route, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -180,9 +180,9 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
       })
       return { code: r.status, cuerpo: (await r.json()) as Json }
     }
-    const get = async (ruta: string, token: string) =>
+    const get = async (route: string, token: string) =>
       (await (
-        await fetch(url + ruta, { headers: { authorization: `Bearer ${token}` } })
+        await fetch(url + route, { headers: { authorization: `Bearer ${token}` } })
       ).json()) as Json
 
     // Entran sin emparejar (ADR-013): el hub registra cada equipo.
@@ -203,20 +203,20 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
     const wsUrl = `${url.replace('http', 'ws')}/api/sync/ws`
     const enCelular = conectarWs(wsUrl, phone.token)
     const enCaja = conectarWs(wsUrl, register.token)
-    abiertos.push(enCelular, enCaja)
+    openOnes.push(enCelular, enCaja)
     await enCelular.saludar()
     await enCaja.saludar()
 
     /** Evento firmado de un equipo; `base` es lo último que ese equipo conoce del hub. */
     const event = (
-      quien: { device_id: string },
+      who: { device_id: string },
       s: Json,
       order: string,
       type: string,
       data: object,
       base: number,
     ) => {
-      const ahora = new Date().toISOString()
+      const now = new Date().toISOString()
       const e = {
         id: newId(),
         type,
@@ -227,20 +227,20 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
         data,
         session_id: s.session_id,
         user_id: s.user.id,
-        device_id: quien.device_id,
+        device_id: who.device_id,
         authorization_id: null,
         reason: type === 'OrderCanceled' || type === 'OrderReopened' ? 'Prueba' : null,
-        device_time: ahora,
-        hub_estimated_time: ahora,
+        device_time: now,
+        hub_estimated_time: now,
         base_sequence: base,
       }
       return { ...e, signature: signEvent(e as never, s.secret) }
     }
     const push = async (ws: ReturnType<typeof conectarWs>, e: Json): Promise<Json> => {
       const batch = newId()
-      ws.send({ type: 'push', lote_id: batch, events: [e] })
-      const r = await ws.esperar('result', (m) => m.lote_id === batch)
-      return r.resultados[0]
+      ws.send({ type: 'push', batch_id: batch, events: [e] })
+      const r = await ws.esperar('result', (m) => m.batch_id === batch)
+      return r.results[0]
     }
     const editar = (changes: object[]) =>
       post(
@@ -308,7 +308,7 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
     // La caja cierra el pedido (vacío: saldo 0) y entonces la mesa queda libre.
     const closed = await e.push(
       e.enCaja,
-      e.event(e.register, e.manager, order, 'OrderClosed', {}, opened.aceptacion.sequence),
+      e.event(e.register, e.manager, order, 'OrderClosed', {}, opened.acceptance.sequence),
     )
     expect(closed.status).toBe('confirmed')
     const free = await e.editar(archive(table))
@@ -334,7 +334,7 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
     expect((await e.editar(archive(table))).code).toBe(400)
     const canceled = await e.push(
       e.enCaja,
-      e.event(e.register, e.manager, order, 'OrderCanceled', {}, opened.aceptacion.sequence),
+      e.event(e.register, e.manager, order, 'OrderCanceled', {}, opened.acceptance.sequence),
     )
     expect(canceled.status).toBe('confirmed')
     expect((await e.editar(archive(table))).code).toBe(200)
@@ -364,7 +364,7 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
         order,
         'OrderMovedTable',
         { target_table_id: target },
-        opened.aceptacion.sequence,
+        opened.acceptance.sequence,
       ),
     )
     expect(moved.status).toBe('confirmed')
@@ -380,7 +380,7 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
     const alert = await e.enCelular.esperar('catalog', (m) => m.version === r.cuerpo.version)
     expect(alert.version).toBe(r.cuerpo.version)
     // Una edición rechazada no avisa: el siguiente aviso que llega es el de la edición buena.
-    const ocupada = await e.mesaPorNombre('11')
+    const takenPath = await e.mesaPorNombre('11')
     const order = newId()
     await e.push(
       e.enCelular,
@@ -389,13 +389,13 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
         e.waiter,
         order,
         'OrderOpened',
-        { channel: 'dine_in', table_id: ocupada, guests: 1 },
+        { channel: 'dine_in', table_id: takenPath, guests: 1 },
         0,
       ),
     )
-    const before = e.enCelular.recibidos.filter((m) => m.type === 'catalog').length
-    expect((await e.editar(archive(ocupada))).code).toBe(400)
-    expect(e.enCelular.recibidos.filter((m) => m.type === 'catalog')).toHaveLength(before)
+    const before = e.enCelular.received.filter((m) => m.type === 'catalog').length
+    expect((await e.editar(archive(takenPath))).code).toBe(400)
+    expect(e.enCelular.received.filter((m) => m.type === 'catalog')).toHaveLength(before)
   })
 
   it('si el hub se apaga y vuelve con el pedido abierto, la mesa sigue protegida', async () => {
@@ -417,8 +417,8 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
     expect(e.port).toBeGreaterThan(0)
 
     // Corte: el proceso muere sin avisar y vuelve a arrancar con la misma carpeta de datos.
-    for (const c of abiertos.splice(0)) c.close()
-    await hub?.detener()
+    for (const c of openOnes.splice(0)) c.close()
+    await hub?.stop()
     hub = undefined
     await spinUp(e.dirDatos, e.port)
 

@@ -24,7 +24,7 @@ import {
   productosConGrupo,
   productosDeGrupo,
 } from './borradores'
-import { sala, useSala } from './contexto'
+import { floor, useSala } from './contexto'
 import { MarcoSala } from './MarcoSala'
 import type { CambioCatalogo, CatalogoEdicion } from './motor'
 
@@ -43,7 +43,7 @@ const field =
 
 export function Menu() {
   const { session } = useSala()
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const [c, setC] = useState<CatalogoEdicion | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pestana, setPestana] = useState<Pestana>('products')
@@ -51,9 +51,9 @@ export function Menu() {
   const [group, setGrupo] = useState<BorradorGrupo | null>(null)
   const puedeTodo = session?.permissions.includes('edit_catalog') ?? false
 
-  const cargar = useCallback(
+  const load = useCallback(
     () =>
-      sala
+      floor
         .catalogoParaEditar()
         .then((x) => {
           setC(x)
@@ -63,15 +63,15 @@ export function Menu() {
     [],
   )
   useEffect(() => {
-    void cargar()
-  }, [cargar])
+    void load()
+  }, [load])
 
   /** Guarda en el hub; devuelve el mensaje de error, o `null` si quedó guardado. */
-  const guardar = async (changes: CambioCatalogo[], hecho: string) => {
+  const save = async (changes: CambioCatalogo[], hecho: string) => {
     try {
-      await sala.editarCatalogo(changes)
-      await cargar()
-      avisar(hecho)
+      await floor.editarCatalogo(changes)
+      await load()
+      notify(hecho)
       return null
     } catch (e) {
       return e instanceof Error ? e.message : 'No se pudo guardar'
@@ -100,7 +100,7 @@ export function Menu() {
         {error && (
           <div className="mb-3 flex flex-wrap items-center gap-3" role="alert">
             <span className="text-alerta-texto">{error}</span>
-            <Boton onClick={() => void cargar()}>Intentar de nuevo</Boton>
+            <Boton onClick={() => void load()}>Intentar de nuevo</Boton>
           </div>
         )}
         {!c ? (
@@ -109,18 +109,18 @@ export function Menu() {
           <ListaProductos
             c={c}
             puedeTodo={puedeTodo}
-            alAbrir={(id) => setProducto(borradorDeProducto(c, id))}
+            onOpen={(id) => setProducto(borradorDeProducto(c, id))}
             alCrear={(categoriaId) => setProducto(productoNuevo(c, categoriaId))}
           />
         ) : pestana === 'options' ? (
           <ListaGrupos
             c={c}
             puedeTodo={puedeTodo}
-            alAbrir={(id) => setGrupo(borradorDeGrupo(c, id))}
+            onOpen={(id) => setGrupo(borradorDeGrupo(c, id))}
             alCrear={() => setGrupo(grupoNuevo())}
           />
         ) : (
-          <Categorias c={c} puedeTodo={puedeTodo} guardar={guardar} />
+          <Categorias c={c} puedeTodo={puedeTodo} save={save} />
         )}
       </div>
       {c && product && (
@@ -128,10 +128,10 @@ export function Menu() {
           c={c}
           initial={product}
           puedeTodo={puedeTodo}
-          alCambiarFoto={() => void cargar()}
-          alCerrar={() => setProducto(null)}
+          alCambiarFoto={() => void load()}
+          onClose={() => setProducto(null)}
           onSave={async (b) => {
-            const r = await guardar(cambiosDeProducto(c, b), `Guardaste ${b.name.trim()}`)
+            const r = await save(cambiosDeProducto(c, b), `Guardaste ${b.name.trim()}`)
             if (!r) setProducto(null)
             return r
           }}
@@ -142,9 +142,9 @@ export function Menu() {
           c={c}
           initial={group}
           puedeTodo={puedeTodo}
-          alCerrar={() => setGrupo(null)}
+          onClose={() => setGrupo(null)}
           onSave={async (g) => {
-            const r = await guardar(cambiosDeGrupo(c, g), `Guardaste ${g.name.trim()}`)
+            const r = await save(cambiosDeGrupo(c, g), `Guardaste ${g.name.trim()}`)
             if (!r) setGrupo(null)
             return r
           }}
@@ -156,7 +156,7 @@ export function Menu() {
 
 // ── Listas ─────────────────────────────────────────────────────────────
 
-function Fila({
+function Row({
   title,
   detalle,
   extremo,
@@ -190,12 +190,12 @@ function Fila({
 function ListaProductos({
   c,
   puedeTodo,
-  alAbrir,
+  onOpen,
   alCrear,
 }: {
   c: CatalogoEdicion
   puedeTodo: boolean
-  alAbrir: (id: string) => void
+  onOpen: (id: string) => void
   alCrear: (categoriaId: string) => void
 }) {
   const categories = c.categories.filter((x) => x.active)
@@ -252,7 +252,7 @@ function ListaProductos({
         {list.map((p) => {
           const variants = variantesDe(p.id)
           return (
-            <Fila
+            <Row
               key={p.id}
               title={p.name}
               detalle={
@@ -267,7 +267,7 @@ function ListaProductos({
               }
               extremo={variants.length > 0 ? `desde ${pesos(p.price)}` : pesos(p.price)}
               archived={!p.active}
-              alTocar={() => alAbrir(p.id)}
+              alTocar={() => onOpen(p.id)}
             />
           )
         })}
@@ -279,15 +279,15 @@ function ListaProductos({
 function ListaGrupos({
   c,
   puedeTodo,
-  alAbrir,
+  onOpen,
   alCrear,
 }: {
   c: CatalogoEdicion
   puedeTodo: boolean
-  alAbrir: (id: string) => void
+  onOpen: (id: string) => void
   alCrear: () => void
 }) {
-  const reglas = (minimum: number, maximum: number) =>
+  const rules = (minimum: number, maximum: number) =>
     minimum === 0
       ? `Opcional, hasta ${maximum}`
       : minimum === maximum
@@ -319,12 +319,12 @@ function ListaGrupos({
                 ? usan.join(' y ')
                 : `${usan.slice(0, 2).join(', ')} y ${usan.length - 2} más`
           return (
-            <Fila
+            <Row
               key={g.id}
               title={g.name}
-              detalle={`${reglas(g.minimum, g.maximum)} · ${quienes}`}
+              detalle={`${rules(g.minimum, g.maximum)} · ${quienes}`}
               archived={!g.active}
-              alTocar={() => alAbrir(g.id)}
+              alTocar={() => onOpen(g.id)}
             />
           )
         })}
@@ -461,8 +461,8 @@ function PieGuardar({
 }
 
 /** Lo común de los paneles: precios mal escritos y la confirmación al cerrar con cambios. */
-function usePanel(sinCambios: boolean, alCerrar: () => void) {
-  const [malos, setMalos] = useState<ReadonlySet<string>>(new Set())
+function usePanel(sinCambios: boolean, onClose: () => void) {
+  const [badOnes, setMalos] = useState<ReadonlySet<string>>(new Set())
   const [confirmando, setConfirmando] = useState(false)
   const validar = (key: string) => (valid: boolean) =>
     setMalos((m) => {
@@ -472,10 +472,10 @@ function usePanel(sinCambios: boolean, alCerrar: () => void) {
       return fresh
     })
   return {
-    precioMalo: malos.size > 0 ? ['Hay un precio mal escrito'] : [],
+    precioMalo: badOnes.size > 0 ? ['Hay un precio mal escrito'] : [],
     validar,
     confirmando,
-    close: () => (sinCambios ? alCerrar() : setConfirmando(true)),
+    close: () => (sinCambios ? onClose() : setConfirmando(true)),
     seguir: () => setConfirmando(false),
   }
 }
@@ -487,7 +487,7 @@ function PanelProducto({
   initial,
   puedeTodo,
   alCambiarFoto,
-  alCerrar,
+  onClose,
   onSave,
 }: {
   c: CatalogoEdicion
@@ -495,7 +495,7 @@ function PanelProducto({
   puedeTodo: boolean
   /** La foto se guarda aparte: la carta del editor se vuelve a leer para que no quede vieja. */
   alCambiarFoto: () => void
-  alCerrar: () => void
+  onClose: () => void
   onSave: (b: BorradorProducto) => Promise<string | null>
 }) {
   const [b, setB] = useState(initial)
@@ -506,13 +506,13 @@ function PanelProducto({
     patch({ variants: b.variants.map((v) => (v.id === id ? { ...v, ...partial } : v)) })
   const groups = c.groups.filter((g) => g.active || b.groups.includes(g.id))
   const sinCambios = cambiosDeProducto(c, b).length === 0
-  const panel = usePanel(sinCambios, alCerrar)
+  const panel = usePanel(sinCambios, onClose)
 
   return (
     <PanelLateral
       opened
       title={initial.fresh ? 'Nuevo producto' : initial.name}
-      alCerrar={panel.close}
+      onClose={panel.close}
       pie={
         <PieGuardar
           issues={[...panel.precioMalo, ...problemasDeProducto(b)]}
@@ -521,7 +521,7 @@ function PanelProducto({
           onSave={async () => setError(await onSave(b))}
           confirmandoCierre={panel.confirmando}
           alSeguir={panel.seguir}
-          alDescartar={alCerrar}
+          alDescartar={onClose}
         />
       }
     >
@@ -664,14 +664,16 @@ function PanelProducto({
         ) : (
           <div className="flex flex-wrap gap-2">
             {groups.map((g) => {
-              const elegido = b.groups.includes(g.id)
+              const selectedProduct = b.groups.includes(g.id)
               return (
                 <Opcion
                   key={g.id}
-                  elegida={elegido}
+                  elegida={selectedProduct}
                   alElegir={() =>
                     patch({
-                      groups: elegido ? b.groups.filter((x) => x !== g.id) : [...b.groups, g.id],
+                      groups: selectedProduct
+                        ? b.groups.filter((x) => x !== g.id)
+                        : [...b.groups, g.id],
                     })
                   }
                 >
@@ -758,13 +760,13 @@ function PanelGrupo({
   c,
   initial,
   puedeTodo,
-  alCerrar,
+  onClose,
   onSave,
 }: {
   c: CatalogoEdicion
   initial: BorradorGrupo
   puedeTodo: boolean
-  alCerrar: () => void
+  onClose: () => void
   onSave: (g: BorradorGrupo) => Promise<string | null>
 }) {
   const [g, setG] = useState(initial)
@@ -775,13 +777,13 @@ function PanelGrupo({
     patch({ options: g.options.map((o) => (o.id === id ? { ...o, ...partial } : o)) })
   const usan = productosConGrupo(c, g.id)
   const sinCambios = cambiosDeGrupo(c, g).length === 0
-  const panel = usePanel(sinCambios, alCerrar)
+  const panel = usePanel(sinCambios, onClose)
 
   return (
     <PanelLateral
       opened
       title={initial.fresh ? 'Nuevo grupo de opciones' : initial.name}
-      alCerrar={panel.close}
+      onClose={panel.close}
       pie={
         <PieGuardar
           issues={[...panel.precioMalo, ...problemasDeGrupo(g)]}
@@ -790,7 +792,7 @@ function PanelGrupo({
           onSave={async () => setError(await onSave(g))}
           confirmandoCierre={panel.confirmando}
           alSeguir={panel.seguir}
-          alDescartar={alCerrar}
+          alDescartar={onClose}
         />
       }
     >
@@ -896,7 +898,7 @@ function PanelGrupo({
 /** Una fila editable con nombre y, si es categoría, su estación. Guarda sola al tocar Guardar. */
 function FilaEditable({
   name,
-  estacionId,
+  stationId,
   stations,
   active,
   fresh,
@@ -904,23 +906,19 @@ function FilaEditable({
   onSave,
 }: {
   name: string
-  estacionId?: string | null
+  stationId?: string | null
   stations?: CatalogoEdicion['stations']
   active: boolean
   fresh?: boolean
   puedeTodo: boolean
-  onSave: (d: {
-    name: string
-    estacionId: string | null
-    active: boolean
-  }) => Promise<string | null>
+  onSave: (d: { name: string; stationId: string | null; active: boolean }) => Promise<string | null>
 }) {
   const [n, setN] = useState(name)
-  const [e, setE] = useState(estacionId ?? null)
+  const [e, setE] = useState(stationId ?? null)
   const [error, setError] = useState<string | null>(null)
-  const change = n.trim() !== name || e !== (estacionId ?? null)
-  const guardar = async (a: boolean) => {
-    const r = await onSave({ name: n.trim(), estacionId: e, active: a })
+  const change = n.trim() !== name || e !== (stationId ?? null)
+  const save = async (a: boolean) => {
+    const r = await onSave({ name: n.trim(), stationId: e, active: a })
     setError(r)
     if (!r && fresh) setN('')
   }
@@ -958,12 +956,12 @@ function FilaEditable({
           <Boton
             variant="main"
             disabled={!n.trim() || (!change && !fresh)}
-            onClick={() => void guardar(active)}
+            onClick={() => void save(active)}
           >
             {fresh ? 'Agregar' : 'Guardar'}
           </Boton>
           {!fresh && (
-            <Boton variant={active ? 'ghost' : 'secondary'} onClick={() => void guardar(!active)}>
+            <Boton variant={active ? 'ghost' : 'secondary'} onClick={() => void save(!active)}>
               {active ? 'Archivar' : 'Volver a usar'}
             </Boton>
           )}
@@ -981,11 +979,11 @@ function FilaEditable({
 function Categorias({
   c,
   puedeTodo,
-  guardar,
+  save,
 }: {
   c: CatalogoEdicion
   puedeTodo: boolean
-  guardar: (changes: CambioCatalogo[], hecho: string) => Promise<string | null>
+  save: (changes: CambioCatalogo[], hecho: string) => Promise<string | null>
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -1001,17 +999,17 @@ function Categorias({
             <FilaEditable
               key={`${x.id}-${x.version}`}
               name={x.name}
-              estacionId={x.station_id}
+              stationId={x.station_id}
               stations={c.stations}
               active={x.active}
               puedeTodo={puedeTodo}
               onSave={(d) =>
-                guardar(
+                save(
                   [
                     {
                       entity: 'categories',
                       id: x.id,
-                      data: { name: d.name, station_id: d.estacionId, active: d.active },
+                      data: { name: d.name, station_id: d.stationId, active: d.active },
                     },
                   ],
                   `Guardaste ${d.name}`,
@@ -1023,13 +1021,13 @@ function Categorias({
             <FilaEditable
               key={`new-${c.version}`}
               name=""
-              estacionId={c.stations.find((x) => x.active)?.id ?? null}
+              stationId={c.stations.find((x) => x.active)?.id ?? null}
               stations={c.stations}
               active
               fresh
               puedeTodo
               onSave={(d) =>
-                guardar(
+                save(
                   [
                     {
                       entity: 'categories',
@@ -1037,7 +1035,7 @@ function Categorias({
                       data: {
                         name: d.name,
                         position: c.categories.length,
-                        station_id: d.estacionId,
+                        station_id: d.stationId,
                         active: true,
                       },
                     },
@@ -1061,7 +1059,7 @@ function Categorias({
               active={x.active}
               puedeTodo={puedeTodo}
               onSave={(d) =>
-                guardar(
+                save(
                   [
                     {
                       entity: 'stations',
@@ -1082,7 +1080,7 @@ function Categorias({
               fresh
               puedeTodo
               onSave={(d) =>
-                guardar(
+                save(
                   [
                     {
                       entity: 'stations',
@@ -1122,7 +1120,7 @@ function FotoProducto({
     setOcupado(true)
     setError(null)
     try {
-      setActual(await sala.subirFoto(productId, imagen))
+      setActual(await floor.subirFoto(productId, imagen))
       onChange()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar la foto')

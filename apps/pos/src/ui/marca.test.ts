@@ -11,8 +11,8 @@ const CLAVE = 'pos-brand'
 
 function simularNavegador(options: { saved?: string | null; sinAlmacen?: boolean } = {}) {
   const dataset: Record<string, string | undefined> = {}
-  const almacen = new Map<string, string>()
-  if (options.saved != null) almacen.set(CLAVE, options.saved)
+  const store = new Map<string, string>()
+  if (options.saved != null) store.set(CLAVE, options.saved)
   const localStorage = options.sinAlmacen
     ? {
         getItem: () => {
@@ -23,12 +23,12 @@ function simularNavegador(options: { saved?: string | null; sinAlmacen?: boolean
         },
       }
     : {
-        getItem: (k: string) => almacen.get(k) ?? null,
-        setItem: (k: string, v: string) => void almacen.set(k, String(v)),
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => void store.set(k, String(v)),
       }
   vi.stubGlobal('document', { documentElement: { dataset } })
   vi.stubGlobal('localStorage', localStorage)
-  return { dataset, almacen }
+  return { dataset, store }
 }
 
 afterEach(() => vi.unstubAllGlobals())
@@ -104,25 +104,25 @@ describe('aplicarMarca', () => {
   beforeEach(() => vi.spyOn(console, 'error').mockImplementation(() => {}))
 
   it('con una marca de restaurante la pone en <html> y la recuerda', () => {
-    const { dataset, almacen } = simularNavegador()
+    const { dataset, store } = simularNavegador()
     aplicarMarca('la-spritzzeria')
     expect(dataset.marca).toBe('la-spritzzeria')
-    expect(almacen.get(CLAVE)).toBe('la-spritzzeria')
+    expect(store.get(CLAVE)).toBe('la-spritzzeria')
   })
 
   it('con Faro quita el atributo (Faro es el diseño sin marca) y lo recuerda', () => {
-    const { dataset, almacen } = simularNavegador()
+    const { dataset, store } = simularNavegador()
     dataset.marca = 'la-spritzzeria'
     aplicarMarca('faro')
     expect('marca' in dataset).toBe(false)
-    expect(almacen.get(CLAVE)).toBe('faro')
+    expect(store.get(CLAVE)).toBe('faro')
   })
 
   it('cambiar de marca varias veces deja siempre la última', () => {
-    const { dataset, almacen } = simularNavegador()
+    const { dataset, store } = simularNavegador()
     for (const m of ['la-spritzzeria', 'faro', 'faro', 'la-spritzzeria', 'faro'] as const) {
       aplicarMarca(m)
-      expect(almacen.get(CLAVE)).toBe(m)
+      expect(store.get(CLAVE)).toBe(m)
       expect(dataset.marca).toBe(m === 'faro' ? undefined : m)
     }
   })
@@ -134,10 +134,10 @@ describe('aplicarMarca', () => {
   })
 
   it('sin argumento y sin nada guardado se ve como Faro', () => {
-    const { dataset, almacen } = simularNavegador()
+    const { dataset, store } = simularNavegador()
     aplicarMarca()
     expect('marca' in dataset).toBe(false)
-    expect(almacen.get(CLAVE)).toBe('faro')
+    expect(store.get(CLAVE)).toBe('faro')
   })
 
   it('si lo guardado es una marca vieja o inventada (de una versión anterior), vuelve a Faro y lo corrige', () => {
@@ -151,10 +151,10 @@ describe('aplicarMarca', () => {
       'null',
       '{"x":1}',
     ]) {
-      const { dataset, almacen } = simularNavegador({ saved: oldOne })
+      const { dataset, store } = simularNavegador({ saved: oldOne })
       aplicarMarca()
       expect('marca' in dataset, oldOne).toBe(false)
-      expect(almacen.get(CLAVE), oldOne).toBe('faro')
+      expect(store.get(CLAVE), oldOne).toBe('faro')
     }
   })
 
@@ -169,10 +169,10 @@ describe('aplicarMarca', () => {
   it('después de recargar (otra "página" con el mismo almacén) la marca sigue', () => {
     const first = simularNavegador()
     aplicarMarca('la-spritzzeria')
-    const saved = first.almacen.get(CLAVE)
-    const segunda = simularNavegador({ saved })
+    const saved = first.store.get(CLAVE)
+    const second = simularNavegador({ saved })
     aplicarMarca()
-    expect(segunda.dataset.marca).toBe('la-spritzzeria')
+    expect(second.dataset.marca).toBe('la-spritzzeria')
   })
 })
 
@@ -183,21 +183,21 @@ describe('el script de index.html que pinta antes de cargar', () => {
 
   function correrScript(saved: string | null | 'failed') {
     const navegador = simularNavegador({ sinAlmacen: saved === 'failed' })
-    if (saved !== null && saved !== 'failed') navegador.almacen.set(CLAVE, saved)
+    if (saved !== null && saved !== 'failed') navegador.store.set(CLAVE, saved)
     const clases = new Set<string>()
     const documentElement = {
       dataset: navegador.dataset,
       classList: { add: (c: string) => clases.add(c) },
     }
-    const entorno = {
+    const environment = {
       localStorage: (globalThis as unknown as { localStorage: object }).localStorage,
       document: { documentElement },
       matchMedia: () => ({ matches: false }),
     }
     new Function('localStorage', 'document', 'matchMedia', script)(
-      entorno.localStorage,
-      entorno.document,
-      entorno.matchMedia,
+      environment.localStorage,
+      environment.document,
+      environment.matchMedia,
     )
     return navegador
   }
@@ -226,6 +226,6 @@ describe('el script de index.html que pinta antes de cargar', () => {
     // …y `aplicarMarca()` de main.tsx la devuelve a Faro y limpia lo guardado.
     aplicarMarca()
     expect('marca' in navegador.dataset).toBe(false)
-    expect(navegador.almacen.get(CLAVE)).toBe('faro')
+    expect(navegador.store.get(CLAVE)).toBe('faro')
   })
 })

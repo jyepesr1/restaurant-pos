@@ -6,7 +6,7 @@ import { Etiqueta } from '../ui/Etiqueta'
 import { pesos } from '../ui/formato'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { PanelLateral } from '../ui/PanelLateral'
-import { sala } from './contexto'
+import { floor } from './contexto'
 import { claseCampo } from './Entrar'
 import { MarcoSala } from './MarcoSala'
 import type {
@@ -40,15 +40,15 @@ const PROVEEDORES: { value: ProveedorDatafono; name: string }[] = [
 const message = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
 
 export function CajaAjustes() {
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const [register, setCaja] = useState<ConfiguracionCaja | null>(null)
   const [kitchen, setCocina] = useState<ConfiguracionCocina | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editando, setEditando] = useState<Datafono | null>(null)
   const [editandoMedio, setEditandoMedio] = useState<MedioPropio | null>(null)
 
-  const cargar = useCallback(() => {
-    Promise.all([sala.registerConfig(), sala.kitchenConfig()])
+  const load = useCallback(() => {
+    Promise.all([floor.registerConfig(), floor.kitchenConfig()])
       .then(([c, k]) => {
         setCaja(c)
         setCocina(k)
@@ -56,14 +56,14 @@ export function CajaAjustes() {
       })
       .catch((e) => setError(message(e)))
   }, [])
-  useEffect(cargar, [cargar])
+  useEffect(load, [load])
 
   if (error && !register)
     return (
       <MarcoSala title="Caja y pagos">
         <div className="mx-auto flex max-w-3xl flex-col items-start gap-3 p-6">
           <p className="text-alerta-texto">{error}</p>
-          <Boton onClick={cargar}>Intentar de nuevo</Boton>
+          <Boton onClick={load}>Intentar de nuevo</Boton>
         </div>
       </MarcoSala>
     )
@@ -75,34 +75,34 @@ export function CajaAjustes() {
     )
 
   const cambiarMedio = async (m: PaymentMethod) => {
-    const medios = register.payment_methods.includes(m)
+    const methods = register.payment_methods.includes(m)
       ? register.payment_methods.filter((x) => x !== m)
       : MEDIOS.filter((x) => x === m || register.payment_methods.includes(x))
     try {
-      await sala.savePaymentMethods(medios)
-      cargar()
+      await floor.savePaymentMethods(methods)
+      load()
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     }
   }
 
   const cambiarUmbral = async (v: number) => {
     try {
-      await sala.umbralDiferencia(v)
-      avisar(v === 0 ? 'Toda diferencia se justifica' : `Se justifica desde ${pesos(v)}`)
-      cargar()
+      await floor.varianceThreshold(v)
+      notify(v === 0 ? 'Toda diferencia se justifica' : `Se justifica desde ${pesos(v)}`)
+      load()
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     }
   }
 
   const cambiarPropina = async (puntos: number) => {
     try {
-      await sala.suggestedTip(puntos)
-      avisar(puntos === 0 ? 'Sin propina sugerida' : `Propina sugerida: ${puntos / 100} %`)
-      cargar()
+      await floor.suggestedTip(puntos)
+      notify(puntos === 0 ? 'Sin propina sugerida' : `Propina sugerida: ${puntos / 100} %`)
+      load()
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     }
   }
 
@@ -110,33 +110,33 @@ export function CajaAjustes() {
   const elegida = kitchen.pre_bill_printer_id ?? null
   const elegirImpresora = async (id: string | null) => {
     try {
-      await sala.preBillPrinter(id)
-      avisar(id ? 'La precuenta saldrá impresa' : 'La precuenta solo se verá en pantalla')
-      cargar()
+      await floor.preBillPrinter(id)
+      notify(id ? 'La precuenta saldrá impresa' : 'La precuenta solo se verá en pantalla')
+      load()
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     }
   }
 
   const guardarMedio = async (m: MedioPropio) => {
     try {
-      const custom_methods = await sala.guardarMedioPropio(m)
+      const custom_methods = await floor.guardarMedioPropio(m)
       setCaja({ ...register, custom_methods })
       setEditandoMedio(null)
-      avisar(m.active ? `Guardaste ${m.name}` : `Archivaste ${m.name}`)
+      notify(m.active ? `Guardaste ${m.name}` : `Archivaste ${m.name}`)
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     }
   }
 
   const guardarDatafono = async (d: Datafono) => {
     try {
-      const cardTerminals = await sala.guardarDatafono(d)
+      const cardTerminals = await floor.guardarDatafono(d)
       setCaja({ ...register, cardTerminals })
       setEditando(null)
-      avisar(d.active ? `Guardaste ${d.name}` : `Archivaste ${d.name}`)
+      notify(d.active ? `Guardaste ${d.name}` : `Archivaste ${d.name}`)
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     }
   }
 
@@ -306,13 +306,13 @@ export function CajaAjustes() {
       <EditarMedio
         key={editandoMedio?.id ?? (editandoMedio ? 'new' : 'closed')}
         method={editandoMedio}
-        alCerrar={() => setEditandoMedio(null)}
+        onClose={() => setEditandoMedio(null)}
         onSave={guardarMedio}
       />
       <EditarDatafono
         key={editando?.id ?? (editando ? 'new' : 'closed')}
         cardTerminal={editando}
-        alCerrar={() => setEditando(null)}
+        onClose={() => setEditando(null)}
         onSave={guardarDatafono}
       />
     </MarcoSala>
@@ -321,30 +321,30 @@ export function CajaAjustes() {
 
 function EditarDatafono({
   cardTerminal,
-  alCerrar,
+  onClose,
   onSave,
 }: {
   cardTerminal: Datafono | null
-  alCerrar: () => void
+  onClose: () => void
   onSave: (d: Datafono) => void
 }) {
   const [name, setNombre] = useState(cardTerminal?.name ?? '')
   const [provider, setProveedor] = useState<ProveedorDatafono>(cardTerminal?.provider ?? 'bold')
   const valid = name.trim().length > 0
-  const guardar = (active: boolean) =>
+  const save = (active: boolean) =>
     cardTerminal && onSave({ ...cardTerminal, name: name.trim(), provider, active })
   return (
     <PanelLateral
       opened={cardTerminal !== null}
       title={cardTerminal?.id ? 'Datáfono' : 'Datáfono nuevo'}
-      alCerrar={alCerrar}
+      onClose={onClose}
       pie={
         <div className="flex flex-col gap-2">
-          <Boton variant="main" large disabled={!valid} onClick={() => guardar(true)}>
+          <Boton variant="main" large disabled={!valid} onClick={() => save(true)}>
             {cardTerminal?.id && !cardTerminal.active ? 'Volver a usarlo' : 'Guardar'}
           </Boton>
           {cardTerminal?.id && cardTerminal.active && (
-            <Boton variant="ghost" onClick={() => guardar(false)}>
+            <Boton variant="ghost" onClick={() => save(false)}>
               Archivar
             </Boton>
           )}
@@ -380,28 +380,28 @@ function EditarDatafono({
 
 function EditarMedio({
   method,
-  alCerrar,
+  onClose,
   onSave,
 }: {
   method: MedioPropio | null
-  alCerrar: () => void
+  onClose: () => void
   onSave: (m: MedioPropio) => void
 }) {
   const [name, setNombre] = useState(method?.name ?? '')
   const valid = name.trim().length > 0
-  const guardar = (active: boolean) => method && onSave({ ...method, name: name.trim(), active })
+  const save = (active: boolean) => method && onSave({ ...method, name: name.trim(), active })
   return (
     <PanelLateral
       opened={method !== null}
       title={method?.id ? 'Medio de pago' : 'Medio de pago nuevo'}
-      alCerrar={alCerrar}
+      onClose={onClose}
       pie={
         <div className="flex flex-col gap-2">
-          <Boton variant="main" large disabled={!valid} onClick={() => guardar(true)}>
+          <Boton variant="main" large disabled={!valid} onClick={() => save(true)}>
             {method?.id && !method.active ? 'Volver a usarlo' : 'Guardar'}
           </Boton>
           {method?.id && method.active && (
-            <Boton variant="ghost" onClick={() => guardar(false)}>
+            <Boton variant="ghost" onClick={() => save(false)}>
               Archivar
             </Boton>
           )}

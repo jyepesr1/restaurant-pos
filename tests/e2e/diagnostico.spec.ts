@@ -36,7 +36,7 @@ async function relojSinEmpates(page: Page) {
 }
 
 /** Simula que el celular bloquea o desbloquea la pantalla (visibilitychange). */
-async function cambiarVisibilidad(page: Page, isHidden: boolean) {
+async function changeVisibility(page: Page, isHidden: boolean) {
   // Se evalúa como texto porque este proyecto de pruebas no incluye los tipos del DOM.
   await page.evaluate(`(() => {
     const oculta = ${isHidden}
@@ -54,9 +54,9 @@ async function cambiarVisibilidad(page: Page, isHidden: boolean) {
  * `conexiones` solo las que llegaron al hub real, así su longitud cuenta las conexiones del hub.
  */
 async function hubControlable(page: Page) {
-  const hub = { caido: false, conexiones: [] as WebSocketRoute[] }
+  const hub = { down: false, conexiones: [] as WebSocketRoute[] }
   await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
-    if (hub.caido) {
+    if (hub.down) {
       ws.close({ code: 1011 })
       return
     }
@@ -201,8 +201,8 @@ test.describe('pantalla de diagnóstico', () => {
     const bloqueo = row(page, BLOQUEO)
     await expect(bloqueo).toContainText('Aún no ha pasado')
 
-    await cambiarVisibilidad(page, true)
-    await cambiarVisibilidad(page, false)
+    await changeVisibility(page, true)
+    await changeVisibility(page, false)
 
     // Al volver espera hasta 3 s una respuesta del hub antes de dar la conexión por viva.
     await expect(bloqueo).toContainText('sin cortes', { timeout: 10_000 })
@@ -219,10 +219,10 @@ test.describe('pantalla de diagnóstico', () => {
     await page.goto('/diagnostics')
     await wsConectado(page)
 
-    await cambiarVisibilidad(page, true)
+    await changeVisibility(page, true)
     await conexiones[0]?.close({ code: 1006 })
     await wsDesconectado(page)
-    await cambiarVisibilidad(page, false)
+    await changeVisibility(page, false)
 
     const bloqueo = row(page, BLOQUEO)
     await expect(bloqueo).toContainText('se perdió la conexión', { timeout: 10_000 })
@@ -274,7 +274,7 @@ test.describe('pantalla de diagnóstico', () => {
     await wsConectado(page)
 
     // Con la pantalla bloqueada se corta y los reintentos fallan: la espera entre ellos crece.
-    await cambiarVisibilidad(page, true)
+    await changeVisibility(page, true)
     hubCaido = true
     await conexiones[0]?.close({ code: 1006 })
     await page.waitForTimeout(7000)
@@ -282,7 +282,7 @@ test.describe('pantalla de diagnóstico', () => {
     // El hub vuelve justo cuando el usuario desbloquea: debe reconectar en menos de 1,5 s,
     // aunque el reintento programado estuviera a varios segundos.
     hubCaido = false
-    await cambiarVisibilidad(page, false)
+    await changeVisibility(page, false)
     await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 1500 })
     await expect(row(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
   })
@@ -295,13 +295,13 @@ test.describe('pantalla de diagnóstico', () => {
     await wsConectado(page)
 
     // Se corta con la pantalla bloqueada y los reintentos fallan: queda un reintento programado.
-    await cambiarVisibilidad(page, true)
-    hub.caido = true
+    await changeVisibility(page, true)
+    hub.down = true
     await hub.conexiones[0]?.close({ code: 1006 })
     await wsDesconectado(page)
 
-    hub.caido = false
-    await cambiarVisibilidad(page, false)
+    hub.down = false
+    await changeVisibility(page, false)
     await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
 
     // El reintento viejo habría saltado como mucho a los 5 s (espera máxima entre intentos): si
@@ -323,14 +323,14 @@ test.describe('pantalla de diagnóstico', () => {
     await wsConectado(page)
 
     // Pantalla bloqueada: se corta y el reintento (al segundo) queda colgado en CONNECTING.
-    await cambiarVisibilidad(page, true)
+    await changeVisibility(page, true)
     await colgarSocketsNuevos(page, true)
     await hub.conexiones[0]?.close({ code: 1006 })
     await expect.poll(async () => (await leerSockets(page)).statuses).toEqual([3, 0])
 
     // El hub está bien: el usuario vuelve cuando el intento lleva poco tiempo colgado.
     await colgarSocketsNuevos(page, false)
-    await cambiarVisibilidad(page, false)
+    await changeVisibility(page, false)
 
     // Debe reconectar antes de que el límite de 4 s abandone el intento por su cuenta.
     await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
@@ -349,12 +349,12 @@ test.describe('pantalla de diagnóstico', () => {
     await page.goto('/diagnostics')
     await wsConectado(page)
 
-    await cambiarVisibilidad(page, true)
-    hub.caido = true
+    await changeVisibility(page, true)
+    hub.down = true
     await hub.conexiones[0]?.close({ code: 1006 })
     await wsDesconectado(page)
-    hub.caido = false
-    await cambiarVisibilidad(page, false)
+    hub.down = false
+    await changeVisibility(page, false)
     await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
 
     // La fila solo cambia tras la comprobación de 3 s al volver, que es cuando podría descartarla.
@@ -374,16 +374,16 @@ test.describe('pantalla de diagnóstico', () => {
     await page.goto('/diagnostics')
     await wsConectado(page)
 
-    await cambiarVisibilidad(page, true)
-    hub.caido = true
+    await changeVisibility(page, true)
+    hub.down = true
     await hub.conexiones[0]?.close({ code: 1006 })
     // Tres vueltas rápidas con el hub todavía caído, y la última con el hub ya disponible.
-    await cambiarVisibilidad(page, false)
-    await cambiarVisibilidad(page, true)
-    await cambiarVisibilidad(page, false)
-    await cambiarVisibilidad(page, true)
-    hub.caido = false
-    await cambiarVisibilidad(page, false)
+    await changeVisibility(page, false)
+    await changeVisibility(page, true)
+    await changeVisibility(page, false)
+    await changeVisibility(page, true)
+    hub.down = false
+    await changeVisibility(page, false)
 
     await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 5000 })
     // Un intento por vuelta como mucho, y los reintentos programados no deben sumar otro socket.
@@ -410,10 +410,10 @@ test.describe('pantalla de diagnóstico', () => {
     await page.goto('/diagnostics')
     await wsConectado(page)
 
-    await cambiarVisibilidad(page, true)
-    hub.caido = true
+    await changeVisibility(page, true)
+    hub.down = true
     await hub.conexiones[0]?.close({ code: 1006 })
-    await cambiarVisibilidad(page, false)
+    await changeVisibility(page, false)
 
     // La comprobación al volver dura 3 s y el resumen se refresca cada 3 s.
     const bloqueo = row(page, BLOQUEO)
@@ -422,7 +422,7 @@ test.describe('pantalla de diagnóstico', () => {
     await expect(bloqueo).not.toContainText('volvió en')
     await expect(row(page, CANAL)).toContainText('✕ Desconectado, reintentando')
 
-    hub.caido = false
+    hub.down = false
     await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 10_000 })
     await expect(bloqueo).toContainText(/\(volvió en \d+ s\)/, { timeout: 10_000 })
     await expect(bloqueo).not.toContainText('aún reconectando')
@@ -434,15 +434,15 @@ test.describe('pantalla de diagnóstico', () => {
     await page.goto('/diagnostics')
     await wsConectado(page)
 
-    await cambiarVisibilidad(page, true)
-    hub.caido = true
+    await changeVisibility(page, true)
+    hub.down = true
     await hub.conexiones[0]?.close({ code: 1006 })
-    await cambiarVisibilidad(page, false)
+    await changeVisibility(page, false)
 
     // "aún reconectando" solo aparece pasados los 3 s de la comprobación: el hub vuelve después.
     const bloqueo = row(page, BLOQUEO)
     await expect(bloqueo).toContainText('(aún reconectando)', { timeout: 10_000 })
-    hub.caido = false
+    hub.down = false
     await wsConectado(page)
 
     // 3 s o más (el texto redondea al segundo): nunca "menos de 1 s".
@@ -468,9 +468,9 @@ test.describe('pantalla de diagnóstico', () => {
     await page.goto('/diagnostics')
     await wsConectado(page)
 
-    await cambiarVisibilidad(page, true)
+    await changeVisibility(page, true)
     silenciar = true
-    await cambiarVisibilidad(page, false)
+    await changeVisibility(page, false)
     // La comprobación espera 3 s; el vigilante habría tardado 15 s. La reconexión es inmediata,
     // así que "Sin respuesta" dura milisegundos: se comprueba por la segunda conexión en el hub.
     await expect.poll(() => conexiones.length, { timeout: 6000 }).toBe(2)
@@ -518,10 +518,10 @@ test.describe('pantalla de diagnóstico', () => {
   }) => {
     // El envío se atiende en la prueba para no escribir en la carpeta de datos del hub.
     let cuerpo: Record<string, unknown> | undefined
-    await page.route('**/api/diagnostics', async (ruta) => {
-      if (ruta.request().method() !== 'POST') return ruta.fallback()
-      cuerpo = ruta.request().postDataJSON()
-      return ruta.fulfill({ json: { saved: true } })
+    await page.route('**/api/diagnostics', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      cuerpo = route.request().postDataJSON()
+      return route.fulfill({ json: { saved: true } })
     })
 
     await page.goto('/diagnostics')
@@ -541,10 +541,10 @@ test.describe('pantalla de diagnóstico', () => {
   })
 
   test('si el hub rechaza el envío (500) muestra el mensaje de error', async ({ page }) => {
-    await page.route('**/api/diagnostics', (ruta) =>
-      ruta.request().method() === 'POST'
-        ? ruta.fulfill({ status: 500, json: { error: 'falló' } })
-        : ruta.fallback(),
+    await page.route('**/api/diagnostics', (route) =>
+      route.request().method() === 'POST'
+        ? route.fulfill({ status: 500, json: { error: 'falló' } })
+        : route.fallback(),
     )
     await page.goto('/diagnostics')
     await ponerNombre(page)
@@ -557,8 +557,8 @@ test.describe('pantalla de diagnóstico', () => {
   test('si el envío falla por red muestra el error y permite reintentar con éxito', async ({
     page,
   }) => {
-    await page.route('**/api/diagnostics', (ruta) =>
-      ruta.request().method() === 'POST' ? ruta.abort('connectionrefused') : ruta.fallback(),
+    await page.route('**/api/diagnostics', (route) =>
+      route.request().method() === 'POST' ? route.abort('connectionrefused') : route.fallback(),
     )
     await page.goto('/diagnostics')
     await ponerNombre(page)
@@ -568,20 +568,20 @@ test.describe('pantalla de diagnóstico', () => {
     await expect(envio(page)).toBeEnabled()
 
     await page.unroute('**/api/diagnostics')
-    await page.route('**/api/diagnostics', (ruta) =>
-      ruta.request().method() === 'POST'
-        ? ruta.fulfill({ json: { saved: true } })
-        : ruta.fallback(),
+    await page.route('**/api/diagnostics', (route) =>
+      route.request().method() === 'POST'
+        ? route.fulfill({ json: { saved: true } })
+        : route.fallback(),
     )
     await envio(page).click()
     await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
   })
 
   test('sin nombre no envía y pide escribirlo', async ({ page }) => {
-    let enviados = 0
-    await page.route('**/api/diagnostics', (ruta) => {
-      if (ruta.request().method() === 'POST') enviados += 1
-      return ruta.fallback()
+    let sentList = 0
+    await page.route('**/api/diagnostics', (route) => {
+      if (route.request().method() === 'POST') sentList += 1
+      return route.fallback()
     })
     await page.goto('/diagnostics')
     await envio(page).click()
@@ -590,14 +590,14 @@ test.describe('pantalla de diagnóstico', () => {
       'Escribe un nombre para identificar este equipo.',
     )
     await expect(page.getByLabel('Nombre de este equipo')).toBeFocused()
-    expect(enviados).toBe(0)
+    expect(sentList).toBe(0)
   })
 
   test('"Borrar registro" pide confirmación y luego limpia el resumen', async ({ page }) => {
-    await page.route('**/api/diagnostics', (ruta) =>
-      ruta.request().method() === 'POST'
-        ? ruta.fulfill({ json: { saved: true } })
-        : ruta.fallback(),
+    await page.route('**/api/diagnostics', (route) =>
+      route.request().method() === 'POST'
+        ? route.fulfill({ json: { saved: true } })
+        : route.fallback(),
     )
     await page.goto('/diagnostics')
     await ponerNombre(page)
@@ -636,6 +636,6 @@ test('el hub guarda el informe enviado desde la pantalla en diagnosticos.jsonl',
   const mio = lines.map((line) => JSON.parse(line)).find((r) => r.data?.name === name)
   expect(mio).toBeDefined()
   expect(mio.data.indexedDb).toBe(true)
-  expect(new Date(mio.recibidoEn).getTime()).not.toBeNaN()
+  expect(new Date(mio.receivedAt).getTime()).not.toBeNaN()
   expect(mio.data.events.length).toBeGreaterThan(0)
 })

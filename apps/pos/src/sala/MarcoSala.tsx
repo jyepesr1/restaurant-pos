@@ -1,12 +1,12 @@
-import type { EstadoConexion } from '@pos/sync'
+import type { ConnectionState } from '@pos/sync'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Boton, claseBoton } from '../ui/Boton'
-import { type EstadoConexion as EstadoVisible, IndicadorConexion } from '../ui/IndicadorConexion'
+import { type ConnectionState as EstadoVisible, IndicadorConexion } from '../ui/IndicadorConexion'
 import { Icono, type NombreIcono } from '../ui/iconos'
 import { Logo } from '../ui/Logo'
 import { navegar, useRuta } from '../ui/ruta'
 import { useTema } from '../ui/tema'
-import { sala, useSala } from './contexto'
+import { floor, useSala } from './contexto'
 
 // El marco de las pantallas de operación (tarea 1.3c): barra lateral con las secciones que el rol
 // puede usar, y arriba el título, la conexión y el modo oscuro. En la caja y la tablet la barra
@@ -14,7 +14,7 @@ import { sala, useSala } from './contexto'
 // dejarle la pantalla al pedido.
 
 // En la Fase 0 no hay nube: conectado al hub es "Solo red local", lo normal (brief §5, regla 7).
-const ESTADO: Record<EstadoConexion, EstadoVisible> = {
+const ESTADO: Record<ConnectionState, EstadoVisible> = {
   connected: 'local_only',
   connecting: 'connecting',
   no_response: 'offline',
@@ -37,7 +37,7 @@ function modoDemo(): boolean {
 }
 
 interface Section {
-  ruta: string
+  route: string
   name: string
   icono: NombreIcono
   /** Alguno de estos permisos la muestra; sin lista, la ve todo el que entra. */
@@ -50,10 +50,10 @@ const SECCIONES: readonly { group: string; sections: readonly Section[] }[] = [
   {
     group: 'Servicio',
     sections: [
-      { ruta: '/', name: 'Salón', icono: 'table', tambien: ['/order', '/check'] },
-      { ruta: '/kitchen', name: 'Pedidos en cocina', icono: 'fire' },
+      { route: '/', name: 'Salón', icono: 'table', tambien: ['/order', '/check'] },
+      { route: '/kitchen', name: 'Pedidos en cocina', icono: 'fire' },
       {
-        ruta: '/register',
+        route: '/register',
         name: 'Caja',
         icono: 'bill',
         permissions: ['open_register_shift', 'record_payment'],
@@ -63,39 +63,39 @@ const SECCIONES: readonly { group: string; sections: readonly Section[] }[] = [
   {
     group: 'Administración',
     sections: [
-      { ruta: '/reports', name: 'Reportes', icono: 'chart', permissions: ['view_reports'] },
+      { route: '/reports', name: 'Reportes', icono: 'chart', permissions: ['view_reports'] },
       {
-        ruta: '/menu',
+        route: '/menu',
         name: 'Carta',
         icono: 'menu',
         permissions: ['edit_catalog', 'edit_prices'],
       },
       {
-        ruta: '/floor-plan',
+        route: '/floor-plan',
         name: 'Plano del salón',
         icono: 'floorPlan',
         permissions: ['edit_catalog'],
       },
       {
-        ruta: '/staff',
+        route: '/staff',
         name: 'Personal y roles',
         icono: 'people',
         permissions: ['manage_users'],
       },
       {
-        ruta: '/kitchen/settings',
+        route: '/kitchen/settings',
         name: 'Cocina e impresoras',
         icono: 'printer',
         permissions: ['manage_devices'],
       },
       {
-        ruta: '/register/settings',
+        route: '/register/settings',
         name: 'Caja y pagos',
         icono: 'card',
         permissions: ['manage_devices'],
       },
       {
-        ruta: '/brand',
+        route: '/brand',
         name: 'Marca del restaurante',
         icono: 'brand',
         permissions: ['manage_users'],
@@ -133,7 +133,7 @@ export function MarcoSala({
   const { dark, select } = useTema()
   const { connection, pendingList, session, simulandoSinConexion, catalog, printers } = useSala()
   const caidas = printers.filter((i) => i.status === 'failed')
-  const { ruta } = useRuta()
+  const { route } = useRuta()
   const [menuAbierto, setMenuAbierto] = useState(false)
   const heading = useRef<HTMLHeadingElement>(null)
   const salirCon = (action: () => void) => (protegerSalida ? protegerSalida(action) : action())
@@ -194,15 +194,15 @@ export function MarcoSala({
             {g.group}
           </p>
           {g.sections.map((s) => {
-            const current = s.ruta === ruta || (s.tambien?.includes(ruta) ?? false)
+            const current = s.route === route || (s.tambien?.includes(route) ?? false)
             return (
               <button
-                key={s.ruta}
+                key={s.route}
                 type="button"
                 aria-current={current ? 'page' : undefined}
                 aria-label={compacta ? s.name : undefined}
                 title={compacta ? s.name : undefined}
-                onClick={() => ir(s.ruta)}
+                onClick={() => ir(s.route)}
                 className={`flex min-h-12 items-center gap-3 rounded-xl px-3 text-left font-medium transition-colors focus-visible:outline-3 focus-visible:outline-foco ${
                   current ? 'bg-accion-suave text-accion-texto' : 'text-texto hover:bg-superficie-2'
                 } ${compacta ? 'justify-center lg:justify-start' : ''}`}
@@ -217,7 +217,7 @@ export function MarcoSala({
     </nav>
   )
 
-  const quien = session && (
+  const who = session && (
     <div className="flex items-center gap-3">
       <span
         aria-hidden="true"
@@ -237,7 +237,7 @@ export function MarcoSala({
       variant="ghost"
       icono="exit"
       className="w-full justify-start"
-      onClick={() => salirCon(() => void sala.exit())}
+      onClick={() => salirCon(() => void floor.exit())}
     >
       Salir
     </Boton>
@@ -257,7 +257,7 @@ export function MarcoSala({
                 <Logo brand={catalog?.restaurant.brand} soloMarca />
               </span>
             </div>
-            <div className="hidden rounded-2xl bg-superficie-2 p-3 lg:block">{quien}</div>
+            <div className="hidden rounded-2xl bg-superficie-2 p-3 lg:block">{who}</div>
             <div className="-mx-1 flex-1 overflow-y-auto px-1 py-1">{navegacion(true)}</div>
             <div className="hidden lg:block">{exit}</div>
             <Boton
@@ -265,7 +265,7 @@ export function MarcoSala({
               icono="exit"
               aria-label="Salir"
               className="lg:hidden"
-              onClick={() => salirCon(() => void sala.exit())}
+              onClick={() => salirCon(() => void floor.exit())}
             />
           </aside>
         )}
@@ -322,7 +322,7 @@ export function MarcoSala({
                     type="button"
                     role="switch"
                     aria-checked={simulandoSinConexion}
-                    onClick={() => sala.simularSinConexion(!simulandoSinConexion)}
+                    onClick={() => floor.simularSinConexion(!simulandoSinConexion)}
                     className={`${claseBoton(simulandoSinConexion ? 'danger' : 'secondary')} whitespace-nowrap`}
                   >
                     {simulandoSinConexion && <Icono name="check" />}
@@ -370,7 +370,7 @@ export function MarcoSala({
                 onClick={() => setMenuAbierto(false)}
               />
             </div>
-            <div className="rounded-2xl bg-superficie-2 p-3">{quien}</div>
+            <div className="rounded-2xl bg-superficie-2 p-3">{who}</div>
             <div className="-mx-1 flex-1 overflow-y-auto px-1 py-1">{navegacion(false)}</div>
             <Boton
               variant="ghost"

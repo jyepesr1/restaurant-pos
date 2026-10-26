@@ -21,8 +21,8 @@ import type { CambioCatalogo, CatalogoEdicion } from './motor'
 // sigue las reglas de `apps/hub/src/edicion-catalogo.ts` (campos completos al crear, el padre no
 // cambia, un enlace por par, nada activo apunta a algo archivado). Semilla fija: determinista.
 
-const SEMILLA = 20_261_024
-const CORRIDAS = 300
+const SEED = 20_261_024
+const RUNS = 300
 
 // ── Hub de referencia ────────────────────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ const TABLA: Record<Entidad, keyof Omit<CatalogoEdicion, 'version'>> = {
   modifiers: 'modifiers',
 }
 
-const CAMPOS: Record<Entidad, string[]> = {
+const FIELDS: Record<Entidad, string[]> = {
   zones: ['name', 'position', 'level', 'active'],
   dining_tables: [
     'zone_id',
@@ -131,7 +131,7 @@ function apply(source: CatalogoEdicion, changes: CambioCatalogo[]): CatalogoEdic
     const keys = Object.keys(change.data)
     if (keys.length === 0) throw new Error(`${donde}: no cambia nada`)
     for (const k of keys)
-      if (!CAMPOS[change.entity].includes(k)) throw new Error(`${donde}: campo ${k} no existe`)
+      if (!FIELDS[change.entity].includes(k)) throw new Error(`${donde}: campo ${k} no existe`)
     for (const [field, target] of Object.entries(REFERENCIAS)) {
       const value = change.data[field]
       if (typeof value === 'string' && !(c[target] as { id: string }[]).some((x) => x.id === value))
@@ -140,7 +140,7 @@ function apply(source: CatalogoEdicion, changes: CambioCatalogo[]): CatalogoEdic
     const rows = tableName(change.entity)
     const current = rows.find((f) => f.id === change.id)
     if (!current) {
-      for (const k of CAMPOS[change.entity])
+      for (const k of FIELDS[change.entity])
         if (!(k in change.data)) throw new Error(`${donde}: falta ${k} al crear`)
       const newOne = { id: change.id, version: ++version, ...change.data } as Registro & {
         id: string
@@ -404,7 +404,7 @@ const ordenar = <T>(list: T[], keys: number[]): T[] =>
 // ── Producto ─────────────────────────────────────────────────────────────────────────────────
 
 interface EdicionProducto {
-  indice: number
+  index: number
   name: string | null
   description: string | null
   price: number | null
@@ -419,7 +419,7 @@ interface EdicionProducto {
 }
 
 const arbEdicionProducto: fc.Arbitrary<EdicionProducto> = fc.record({
-  indice: fc.integer({ min: 0, max: 3 }),
+  index: fc.integer({ min: 0, max: 3 }),
   name: fc.option(arbNombre, { nil: null }),
   description: fc.option(arbDescripcion, { nil: null }),
   price: fc.option(arbPrecio, { nil: null }),
@@ -444,7 +444,7 @@ const arbEdicionProducto: fc.Arbitrary<EdicionProducto> = fc.record({
 
 /** Edita el borrador de un producto existente como lo haría la persona en pantalla. */
 function editarProducto(c: CatalogoEdicion, e: EdicionProducto): BorradorProducto {
-  const b = borradorDeProducto(c, `PRO${e.indice}`)
+  const b = borradorDeProducto(c, `PRO${e.index}`)
   const taxes = c.taxes.filter((x) => x.active)
   const categories = c.categories.filter((x) => x.active)
   if (e.name !== null) b.name = e.name
@@ -498,7 +498,7 @@ describe('producto: lo que se guarda es lo que se editó', () => {
 
         expect(borradorDeProducto(after, b.id)).toEqual(comoQuedaProducto(b))
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -508,7 +508,7 @@ describe('producto: lo que se guarda es lo que se editó', () => {
         const c = edicionDe(seedValue)
         expect(cambiosDeProducto(c, borradorDeProducto(c, `PRO${i}`))).toEqual([])
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -537,7 +537,7 @@ describe('producto: lo que se guarda es lo que se editó', () => {
         for (const p of c.products.filter((x) => x.id !== b.id))
           expect(borradorDeProducto(after, p.id).name).toBe(borradorDeProducto(c, p.id).name)
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -578,7 +578,7 @@ describe('producto: lo que se guarda es lo que se editó', () => {
           expect(changes.some((x) => quitadas.includes(x.id))).toBe(false)
         },
       ),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -597,7 +597,7 @@ describe('producto: lo que se guarda es lo que se editó', () => {
         expect(borradorDeProducto(c3, id).groups).toEqual(before.groups)
         expect(c3.links.length).toBe(c.links.length)
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 })
@@ -605,7 +605,7 @@ describe('producto: lo que se guarda es lo que se editó', () => {
 // ── Grupo de opciones ────────────────────────────────────────────────────────────────────────
 
 interface EdicionGrupo {
-  indice: number
+  index: number
   name: string | null
   minimum: number | null
   maximum: number | null
@@ -616,7 +616,7 @@ interface EdicionGrupo {
 }
 
 const arbEdicionGrupo: fc.Arbitrary<EdicionGrupo> = fc.record({
-  indice: fc.integer({ min: 0, max: 2 }),
+  index: fc.integer({ min: 0, max: 2 }),
   name: fc.option(arbNombre, { nil: null }),
   minimum: fc.option(fc.integer({ min: 0, max: 3 }), { nil: null }),
   maximum: fc.option(fc.integer({ min: 1, max: 8 }), { nil: null }),
@@ -634,7 +634,7 @@ const arbEdicionGrupo: fc.Arbitrary<EdicionGrupo> = fc.record({
 })
 
 function editarGrupo(c: CatalogoEdicion, e: EdicionGrupo): BorradorGrupo {
-  const g = borradorDeGrupo(c, `GRP${e.indice}`)
+  const g = borradorDeGrupo(c, `GRP${e.index}`)
   if (e.name !== null) g.name = e.name
   if (e.minimum !== null) g.minimum = e.minimum
   if (e.maximum !== null) g.maximum = e.maximum
@@ -672,7 +672,7 @@ describe('grupo de opciones: lo que se guarda es lo que se editó', () => {
 
         expect(borradorDeGrupo(after, g.id)).toEqual(comoQuedaGrupo(g))
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -682,7 +682,7 @@ describe('grupo de opciones: lo que se guarda es lo que se editó', () => {
         const c = edicionDe(seedValue)
         expect(cambiosDeGrupo(c, borradorDeGrupo(c, `GRP${i}`))).toEqual([])
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -721,7 +721,7 @@ describe('grupo de opciones: lo que se guarda es lo que se editó', () => {
           expect(changes.some((x) => quitadas.includes(x.id))).toBe(false)
         },
       ),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -740,7 +740,7 @@ describe('grupo de opciones: lo que se guarda es lo que se editó', () => {
           )
         },
       ),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 })
@@ -752,7 +752,7 @@ describe('orden de tamaños y opciones cuando hay archivados en medio', () => {
   /** Un producto con tres tamaños; el del medio fue archivado antes (orden 0, 1 archivado, 2). */
   function conTamanoArchivado(): CatalogoEdicion {
     const c = edicionDe(
-      fc.sample(arbSemilla, { seed: SEMILLA, numRuns: 1 })[0] as SemillaEdicion,
+      fc.sample(arbSemilla, { seed: SEED, numRuns: 1 })[0] as SemillaEdicion,
       false,
     )
     c.variants = c.variants.filter((v) => v.product_id !== 'PRO0')
@@ -784,7 +784,7 @@ describe('orden de tamaños y opciones cuando hay archivados en medio', () => {
   })
 
   it('archivar un producto y cambiar el precio de un tamaño a la vez no manda lo que el hub rechaza', () => {
-    const c = edicionDe(fc.sample(arbSemilla, { seed: SEMILLA, numRuns: 1 })[0] as SemillaEdicion)
+    const c = edicionDe(fc.sample(arbSemilla, { seed: SEED, numRuns: 1 })[0] as SemillaEdicion)
     c.variants = c.variants.filter((v) => v.product_id !== 'PRO0')
     c.variants.push({
       ...reg('V0', true),
@@ -807,7 +807,7 @@ describe('orden de tamaños y opciones cuando hay archivados en medio', () => {
   })
 
   it('archivar un grupo y cambiar el precio de una opción a la vez no manda lo que el hub rechaza', () => {
-    const c = edicionDe(fc.sample(arbSemilla, { seed: SEMILLA, numRuns: 1 })[0] as SemillaEdicion)
+    const c = edicionDe(fc.sample(arbSemilla, { seed: SEED, numRuns: 1 })[0] as SemillaEdicion)
     const g = borradorDeGrupo(c, 'GRP0')
     g.active = false
     const option = g.options[0]
@@ -826,7 +826,7 @@ describe('orden de tamaños y opciones cuando hay archivados en medio', () => {
 
         expect(cambiosDeProducto(after, borradorDeProducto(after, b.id))).toEqual([])
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -840,7 +840,7 @@ describe('orden de tamaños y opciones cuando hay archivados en medio', () => {
 
         expect(cambiosDeGrupo(after, borradorDeGrupo(after, g.id))).toEqual([])
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 })
@@ -857,7 +857,7 @@ describe('leerPesos', () => {
         expect(leerPesos(`  $${base}  `)).toBe(n)
         expect(leerPesos(String(n))).toBe(n)
       }),
-      { seed: SEMILLA, numRuns: CORRIDAS },
+      { seed: SEED, numRuns: RUNS },
     )
   })
 
@@ -870,7 +870,7 @@ describe('leerPesos', () => {
         expect(v).toBeGreaterThanOrEqual(0)
         expect(v).toBeLessThanOrEqual(PRICE_LIMIT)
       }),
-      { seed: SEMILLA, numRuns: 1_000 },
+      { seed: SEED, numRuns: 1_000 },
     )
   })
 
@@ -895,7 +895,7 @@ describe('leerPesos', () => {
 
 describe('el generador y el hub de referencia', () => {
   it('rechaza lo que el hub rechazaría: crear sin todos los campos y cambiar el padre', () => {
-    const c = edicionDe(fc.sample(arbSemilla, { seed: SEMILLA, numRuns: 1 })[0] as SemillaEdicion)
+    const c = edicionDe(fc.sample(arbSemilla, { seed: SEED, numRuns: 1 })[0] as SemillaEdicion)
     expect(() => apply(c, [{ entity: 'variants', id: 'X', data: { product_id: 'PRO0' } }])).toThrow(
       /falta/,
     )

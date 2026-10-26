@@ -33,8 +33,8 @@ export const esPinConFormato = (pin: unknown): pin is string =>
   typeof pin === 'string' && new RegExp(`^\\d{${DIGITOS_PIN}}$`).test(pin)
 
 /** Huella del PIN: HMAC-SHA256 con la clave del hub. Sin la clave, la huella no sirve de nada. */
-export const huellaPin = (key: Buffer, restauranteId: string, pin: string) =>
-  createHmac('sha256', key).update(`${restauranteId}:${pin}`).digest('hex')
+export const huellaPin = (key: Buffer, restaurantId: string, pin: string) =>
+  createHmac('sha256', key).update(`${restaurantId}:${pin}`).digest('hex')
 
 /** Token del dispositivo: 256 bits al azar. */
 export const nuevoSecreto = () => randomBytes(32).toString('base64url')
@@ -43,8 +43,8 @@ export const nuevoSecreto = () => randomBytes(32).toString('base64url')
  * Secreto de una sesión: se deriva de la clave del hub, así el hub puede comprobar la firma de
  * los eventos sin guardar el secreto. Quien no tiene la clave no puede calcularlo.
  */
-export const secretoDeSesion = (key: Buffer, restauranteId: string, sesionId: string) =>
-  createHmac('sha256', key).update(`sesion:${restauranteId}:${sesionId}`).digest('base64url')
+export const secretoDeSesion = (key: Buffer, restaurantId: string, sesionId: string) =>
+  createHmac('sha256', key).update(`sesion:${restaurantId}:${sesionId}`).digest('base64url')
 
 /** Basta SHA-256: un secreto de 256 bits al azar no se puede adivinar por fuerza bruta. */
 export const huellaSecreto = (secret: string) => createHash('sha256').update(secret).digest('hex')
@@ -152,13 +152,13 @@ export function cargarClave(dirDatos: string): {
   /** Desde cuándo existe esta clave: las sesiones anteriores se firmaron con otra. */
   creadaEn: string
 } {
-  const ruta = join(dirDatos, ARCHIVO_CLAVE)
-  if (existsSync(ruta)) {
-    const key = readFileSync(ruta)
-    if (key.length !== 32) throw new Error(`La clave de los PIN (${ruta}) está dañada.`)
-    return { key, newOne: false, creadaEn: statSync(ruta).mtime.toISOString() }
+  const route = join(dirDatos, ARCHIVO_CLAVE)
+  if (existsSync(route)) {
+    const key = readFileSync(route)
+    if (key.length !== 32) throw new Error(`La clave de los PIN (${route}) está dañada.`)
+    return { key, newOne: false, creadaEn: statSync(route).mtime.toISOString() }
   }
   const key = randomBytes(32)
-  writeFileSync(ruta, key, { mode: 0o600, flag: 'wx' })
-  return { key, newOne: true, creadaEn: statSync(ruta).mtime.toISOString() }
+  writeFileSync(route, key, { mode: 0o600, flag: 'wx' })
+  return { key, newOne: true, creadaEn: statSync(route).mtime.toISOString() }
 }

@@ -7,8 +7,8 @@ import { ADMIN, batch, crearMundo, type Mundo } from './pruebas/mundo'
 
 const status = vi.hoisted(() => ({
   db: null as unknown,
-  creados: [] as { connectionString: string }[],
-  conectados: 0,
+  createdList: [] as { connectionString: string }[],
+  connectedCount: 0,
   terminados: 0,
   oyentes: [] as string[],
   failing: null as Error | null,
@@ -19,23 +19,23 @@ const status = vi.hoisted(() => ({
 vi.mock('pg', () => ({
   Client: class {
     constructor(options: { connectionString: string }) {
-      status.creados.push(options)
+      status.createdList.push(options)
     }
     on(event: string) {
       status.oyentes.push(event)
     }
     async connect() {
       if (status.failing) throw status.failing
-      status.conectados++
+      status.connectedCount++
     }
-    async query(text: string, parametros?: unknown[]) {
+    async query(text: string, params?: unknown[]) {
       if (status.fallaConsulta) throw new Error('connection terminated')
       const db = status.db as PGlite
-      if (parametros === undefined) {
+      if (params === undefined) {
         const r = await db.exec(text)
         return { rows: r.at(-1)?.rows ?? [] }
       }
-      return db.query(text, parametros)
+      return db.query(text, params)
     }
     async end() {
       status.terminados++
@@ -53,20 +53,20 @@ let credential: string
 beforeEach(async () => {
   m = await crearMundo()
   status.db = m.db
-  status.creados.length = 0
-  status.conectados = 0
+  status.createdList.length = 0
+  status.connectedCount = 0
   status.terminados = 0
   status.oyentes.length = 0
   status.failing = null
   status.fallaAlTerminar = false
   status.fallaConsulta = false
-  credential = (await m.nuevoHub()).credential
+  credential = (await m.newHub()).credential
 })
 
-function llamar(ruta: string, options: RequestInit = {}) {
+function llamar(route: string, options: RequestInit = {}) {
   const pendingList: Promise<unknown>[] = []
   const respuesta = worker.fetch(
-    new Request(`https://cloud.faro.test${ruta}`, options),
+    new Request(`https://cloud.faro.test${route}`, options),
     { HYPERDRIVE: { connectionString: CADENA }, TOKEN_ADMIN: ADMIN },
     { waitUntil: (p) => void pendingList.push(p) },
   )
@@ -75,13 +75,13 @@ function llamar(ruta: string, options: RequestInit = {}) {
 
 describe('Worker', () => {
   it('la salud y las rutas que no existen no abren conexión con la base', async () => {
-    for (const ruta of ['/v1/health', '/v1/nothing']) {
-      const { respuesta, pendingList } = llamar(ruta)
+    for (const route of ['/v1/health', '/v1/nothing']) {
+      const { respuesta, pendingList } = llamar(route)
       await respuesta
       await Promise.all(pendingList)
     }
-    expect(status.creados).toEqual([])
-    expect(status.conectados).toBe(0)
+    expect(status.createdList).toEqual([])
+    expect(status.connectedCount).toBe(0)
     expect(status.terminados).toBe(0)
   })
 
@@ -94,8 +94,8 @@ describe('Worker', () => {
     const r = await respuesta
     expect(r.status).toBe(200)
     await Promise.all(pendingList)
-    expect(status.creados).toEqual([{ connectionString: CADENA }])
-    expect(status.conectados).toBe(1)
+    expect(status.createdList).toEqual([{ connectionString: CADENA }])
+    expect(status.connectedCount).toBe(1)
     expect(status.terminados).toBe(1)
   })
 
@@ -107,7 +107,7 @@ describe('Worker', () => {
       expect((await respuesta).status).toBe(200)
       await Promise.all(pendingList)
     }
-    expect(status.conectados).toBe(3)
+    expect(status.connectedCount).toBe(3)
     expect(status.terminados).toBe(3)
   })
 
@@ -154,7 +154,7 @@ describe('Worker', () => {
     const r = await respuesta
     await Promise.all(pendingList)
     expect(r.status).toBe(500)
-    expect(status.conectados).toBe(1)
+    expect(status.connectedCount).toBe(1)
     expect(status.terminados).toBe(1)
   })
 

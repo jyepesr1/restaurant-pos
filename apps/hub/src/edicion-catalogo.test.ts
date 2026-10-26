@@ -3,11 +3,11 @@ import { fileURLToPath } from 'node:url'
 import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { montarAcceso } from './acceso/montaje'
-import { insertarVersionado } from './acceso/registros'
+import { insertVersioned } from './acceso/registros'
 import { leerCatalogo } from './catalogo'
 import { HistorialCatalogo } from './precios'
 import { leerCarta } from './seed/carta'
-import { sembrar } from './seed/sembrar'
+import { seed } from './seed/sembrar'
 import { crearServidor } from './servidor'
 
 // Edición del catálogo desde la caja: permisos, todo o nada, historial y aviso a los equipos.
@@ -19,29 +19,29 @@ const CARTA = leerCarta(
   ),
 )
 
-async function montar() {
+async function setup() {
   const m = montarAcceso()
-  sembrar(
+  seed(
     m.db,
     m.access,
-    { restauranteId: m.restauranteId, roles: m.roles, menu: CARTA, sinPersonal: true },
+    { restaurantId: m.restaurantId, roles: m.roles, menu: CARTA, sinPersonal: true },
     m.clock(),
   )
-  const avisos: number[] = []
+  const alerts: number[] = []
   const app = crearServidor({
     access: m.access,
     catalog: {
       db: m.db,
-      restauranteId: m.restauranteId,
+      restaurantId: m.restaurantId,
       access: m.access,
-      onChange: (v) => avisos.push(v),
+      onChange: (v) => alerts.push(v),
       clock: m.clock,
     },
   })
   await app.ready()
   const register = m.emparejar('register')
-  const sesionDe = (quien: keyof typeof m.people) => {
-    const s = m.entrar(register.connection, quien)
+  const sesionDe = (who: keyof typeof m.people) => {
+    const s = m.entrar(register.connection, who)
     return { session_id: s.sesionId, secret: s.secret }
   }
   const editar = async (session: { session_id: string; secret: string }, changes: unknown[]) => {
@@ -53,14 +53,14 @@ async function montar() {
     })
     return { code: r.statusCode, cuerpo: r.json() }
   }
-  const catalog = () => leerCatalogo(m.db, m.restauranteId)
+  const catalog = () => leerCatalogo(m.db, m.restaurantId)
   const products = () => catalog().categories.flatMap((c) => c.products)
   const impuestoId = String(m.db.prepare('SELECT id FROM taxes LIMIT 1').get()?.id)
   const categoriaId = catalog().categories[0]?.id as string
   return {
     ...m,
     app,
-    avisos,
+    alerts,
     register,
     sesionDe,
     editar,
@@ -73,7 +73,7 @@ async function montar() {
 
 describe('POST /api/catalogo/cambios', () => {
   it('el gerente crea un producto con copa y botella y un grupo de opciones, en un solo paso', async () => {
-    const m = await montar()
+    const m = await setup()
     const before = m.catalog().version
     const product = newId()
     const group = newId()
@@ -119,7 +119,7 @@ describe('POST /api/catalogo/cambios', () => {
     ])
     expect(r.code).toBe(200)
     expect(r.cuerpo.version).toBeGreaterThan(before)
-    expect(m.avisos).toEqual([r.cuerpo.version])
+    expect(m.alerts).toEqual([r.cuerpo.version])
     const fresh = m.products().find((p) => p.id === product)
     expect(fresh?.variants.map((v) => [v.name, v.price])).toEqual([
       ['Copa', 18_000],
@@ -134,7 +134,7 @@ describe('POST /api/catalogo/cambios', () => {
   })
 
   it('cambiar un precio sube la versión y el historial guarda el de antes', async () => {
-    const m = await montar()
+    const m = await setup()
     const burrata = m.products().find((p) => p.name === 'Burrata Spritz')
     if (!burrata) throw new Error('falta')
     const before = m.catalog().version
@@ -142,15 +142,15 @@ describe('POST /api/catalogo/cambios', () => {
       { entity: 'products', id: burrata.id, data: { price: burrata.price + 1_000 } },
     ])
     expect(r.code).toBe(200)
-    const historial = new HistorialCatalogo(m.db, m.restauranteId)
-    expect(historial.estadoEn('products', burrata.id, before)?.price).toBe(burrata.price)
-    expect(historial.estadoEn('products', burrata.id, r.cuerpo.version)?.price).toBe(
+    const history = new HistorialCatalogo(m.db, m.restaurantId)
+    expect(history.stateIn('products', burrata.id, before)?.price).toBe(burrata.price)
+    expect(history.stateIn('products', burrata.id, r.cuerpo.version)?.price).toBe(
       burrata.price + 1_000,
     )
   })
 
   it('archivar saca de la carta de los equipos, pero el editor lo sigue viendo', async () => {
-    const m = await montar()
+    const m = await setup()
     const burrata = m.products().find((p) => p.name === 'Burrata Spritz')
     if (!burrata) throw new Error('falta')
     expect(
@@ -171,7 +171,7 @@ describe('POST /api/catalogo/cambios', () => {
   })
 
   it('todo o nada: un cambio inválido no deja aplicado ninguno', async () => {
-    const m = await montar()
+    const m = await setup()
     const burrata = m.products().find((p) => p.name === 'Burrata Spritz')
     if (!burrata) throw new Error('falta')
     const before = m.catalog().version
@@ -187,7 +187,7 @@ describe('POST /api/catalogo/cambios', () => {
     expect(r.cuerpo.message).toMatch(/Cambio 2/)
     expect(m.catalog().version).toBe(before)
     expect(m.products().find((p) => p.id === burrata.id)?.price).toBe(burrata.price)
-    expect(m.avisos).toEqual([])
+    expect(m.alerts).toEqual([])
   })
 
   it.each([
@@ -197,14 +197,14 @@ describe('POST /api/catalogo/cambios', () => {
     ['categoría que no existe', { category_id: newId() }],
     ['nada que cambiar', {}],
   ])('rechaza %s', async (_case, data) => {
-    const m = await montar()
+    const m = await setup()
     const burrata = m.products().find((p) => p.name === 'Burrata Spritz')
     const r = await m.editar(m.sesionDe('manager'), [{ entity: 'products', id: burrata?.id, data }])
     expect(r.code).toBe(400)
   })
 
   it('un producto nuevo pide todos sus campos; un exento no lleva tarifa', async () => {
-    const m = await montar()
+    const m = await setup()
     expect(
       (
         await m.editar(m.sesionDe('manager'), [
@@ -226,7 +226,7 @@ describe('POST /api/catalogo/cambios', () => {
   })
 
   it('el mesero y el cajero no editan; sin sesión válida, 401', async () => {
-    const m = await montar()
+    const m = await setup()
     const burrata = m.products().find((p) => p.name === 'Burrata Spritz')
     const change = [{ entity: 'products', id: burrata?.id, data: { price: 1_000 } }]
     expect((await m.editar(m.sesionDe('waiter'), change)).code).toBe(403)
@@ -242,13 +242,13 @@ describe('POST /api/catalogo/cambios', () => {
   })
 
   it('con solo `editar_precios` se cambian precios, nada más', async () => {
-    const m = await montar()
-    insertarVersionado(
+    const m = await setup()
+    insertVersioned(
       m.db,
       'role_permissions',
-      m.restauranteId,
+      m.restaurantId,
       { role_id: m.roles.cashier, permission: 'edit_prices' },
-      { userId: null, dispositivoId: null },
+      { userId: null, deviceId: null },
       m.clock(),
     )
     const burrata = m.products().find((p) => p.name === 'Burrata Spritz')
@@ -269,23 +269,23 @@ describe('POST /api/catalogo/cambios', () => {
   })
 
   it('el seed no pisa lo que editó una persona', async () => {
-    const m = await montar()
+    const m = await setup()
     const burrata = m.products().find((p) => p.name === 'Burrata Spritz')
     if (!burrata) throw new Error('falta')
     await m.editar(m.sesionDe('manager'), [
       { entity: 'products', id: burrata.id, data: { price: 77_000 } },
     ])
-    sembrar(
+    seed(
       m.db,
       m.access,
-      { restauranteId: m.restauranteId, roles: m.roles, menu: CARTA, sinPersonal: true },
+      { restaurantId: m.restaurantId, roles: m.roles, menu: CARTA, sinPersonal: true },
       m.clock(),
     )
     expect(m.products().find((p) => p.id === burrata.id)?.price).toBe(77_000)
   })
 
   it('no deja apuntar a algo archivado ni archivar lo que está en uso', async () => {
-    const m = await montar()
+    const m = await setup()
     const g = m.sesionDe('manager')
     const category = m.catalog().categories[0]
     if (!category) throw new Error('falta')
@@ -329,7 +329,7 @@ describe('POST /api/catalogo/cambios', () => {
   })
 
   it('archivar un grupo lo quita de sus productos', async () => {
-    const m = await montar()
+    const m = await setup()
     const tagliata = m.products().find((p) => p.name === 'Tagliata di Manzo')
     const group = tagliata?.groups[0]
     if (!group) throw new Error('falta')
@@ -341,7 +341,7 @@ describe('POST /api/catalogo/cambios', () => {
   })
 
   it('repetir lo mismo no sube la versión ni avisa; un padre no se cambia; un id no cambia de tipo', async () => {
-    const m = await montar()
+    const m = await setup()
     const g = m.sesionDe('manager')
     const vino = m.products().find((p) => p.name === 'Ramón Bilbao Crianza')
     const glass = vino?.variants[0]
@@ -352,7 +352,7 @@ describe('POST /api/catalogo/cambios', () => {
       { entity: 'products', id: vino.id, data: { price: vino.price } },
     ])
     expect(equal.cuerpo).toEqual({ version: before, cambiados: 0 })
-    expect(m.avisos).toEqual([])
+    expect(m.alerts).toEqual([])
     const move = await m.editar(g, [
       { entity: 'variants', id: glass.id, data: { product_id: burrata.id } },
     ])
@@ -365,7 +365,7 @@ describe('POST /api/catalogo/cambios', () => {
   })
 
   it('las reglas de la base se dicen en palabras, sin el texto de SQLite', async () => {
-    const m = await montar()
+    const m = await setup()
     const tagliata = m.products().find((p) => p.name === 'Tagliata di Manzo')
     const group = tagliata?.groups[0]
     if (!group) throw new Error('falta')

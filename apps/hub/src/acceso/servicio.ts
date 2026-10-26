@@ -13,10 +13,10 @@ import {
   SCREEN_PERMISSIONS,
   signEvent,
 } from '@pos/core'
-import { type BaseSqlite, enTransaccion, type Fila, type ValorSql } from '@pos/db'
-import type { Conexion, ControlAcceso, TipoDispositivo, VeredictoAcceso } from '@pos/sync'
+import { inTransaction, type Row, type SqliteDatabase, type SqlValue } from '@pos/db'
+import type { AccessControl, AccessVerdict, Connection, DeviceType } from '@pos/sync'
 import { Intentos } from './intentos'
-import { type Autor, actualizarVersionado, insertarVersionado, SISTEMA } from './registros'
+import { type Autor, actualizarVersionado, insertVersioned, SISTEMA } from './registros'
 import {
   COSTO_CONTRASENA,
   contrasenaCoincide,
@@ -65,7 +65,7 @@ export interface ErrorAcceso {
   code: CodigoAcceso
   message: string
   /** Con `espera` y `wrong_pin`: cuánto esperar antes de volver a intentar. */
-  esperaMs?: number
+  waitMs?: number
 }
 
 export interface UsuarioSesion {
@@ -75,14 +75,14 @@ export interface UsuarioSesion {
 }
 
 export interface OpcionesAcceso {
-  db: BaseSqlite
-  restauranteId: string
+  db: SqliteDatabase
+  restaurantId: string
   /** Clave HMAC de los PIN y de los secretos de sesión (`cargarClave`). */
   key: Buffer
   clock?: () => string
   attempts?: Intentos
-  /** Se revocó un dispositivo: la sala corta lo que recibe (`SalaSync.revocar`). */
-  onRevoke?: (dispositivoId: string, revocadoEn: string) => void
+  /** Se revocó un dispositivo: la sala corta lo que recibe (`FloorSync.revocar`). */
+  onRevoke?: (deviceId: string, revokedAt: string) => void
   /**
    * Desde cuándo existe la clave (`cargarClave`). Si se perdió y se creó otra, lo pendiente de
    * sesiones anteriores no se puede comprobar: va a cuarentena en vez de perderse.
@@ -94,10 +94,10 @@ export interface OpcionesAcceso {
 
 /** El equipo que el hub registró al entrar desde un navegador sin token. */
 export interface EquipoNuevo {
-  dispositivoId: string
+  deviceId: string
   token: string
   name: string
-  type: TipoDispositivo
+  type: DeviceType
 }
 
 export type DatosEntrada = { pin: string } | { user: string; password: string }
@@ -107,18 +107,18 @@ export type Entrada = {
   /** Solo si el hub registró este navegador ahora: el token se ve esta única vez. */
   device: EquipoNuevo | null
   /** El tipo del equipo tras entrar: con contraseña pasa a ser de caja. */
-  type: TipoDispositivo
+  type: DeviceType
   sesionId: string
   secret: string
   user: UsuarioSesion
   permissions: Permission[]
 }
 
-const error = (code: CodigoAcceso, message: string, esperaMs?: number): ErrorAcceso => ({
+const error = (code: CodigoAcceso, message: string, waitMs?: number): ErrorAcceso => ({
   ok: false,
   code,
   message,
-  ...(esperaMs === undefined ? {} : { esperaMs }),
+  ...(waitMs === undefined ? {} : { waitMs }),
 })
 
 const PIN_INCORRECTO = 'PIN incorrecto'
@@ -130,14 +130,14 @@ const PIN_SIN_PERMISO = 'PIN incorrecto o sin permiso para esto'
 const esperar = (ms: number) =>
   error('wait', `Demasiados intentos. Espera ${Math.ceil(ms / 1000)} s.`, ms)
 
-const TIPOS_DISPOSITIVO: readonly TipoDispositivo[] = ['waiter', 'register', 'kds']
+const TIPOS_DISPOSITIVO: readonly DeviceType[] = ['waiter', 'register', 'kds']
 
 /** Mientras el hub no tiene ningún equipo, cualquiera de la red puede intentar emparejar la caja. */
 const PRIMER_EMPAREJAMIENTO = 'global:first_pairing'
 
 interface Emparejamiento {
   name: string
-  type: TipoDispositivo
+  type: DeviceType
   venceEn: number
   aprobadoPor: string
 }
@@ -154,12 +154,12 @@ export interface DatosUsuario {
   password?: string
 }
 
-export class ServicioAcceso implements ControlAcceso {
-  private readonly db: BaseSqlite
-  private readonly restauranteId: string
+export class ServicioAcceso implements AccessControl {
+  private readonly db: SqliteDatabase
+  private readonly restaurantId: string
   /** El restaurante de este hub. */
   get restaurant(): string {
-    return this.restauranteId
+    return this.restaurantId
   }
   private readonly key: Buffer
   private readonly clock: () => string
@@ -177,7 +177,7 @@ export class ServicioAcceso implements ControlAcceso {
 
   constructor(o: OpcionesAcceso) {
     this.db = o.db
-    this.restauranteId = o.restauranteId
+    this.restaurantId = o.restaurantId
     this.key = o.key
     this.clock = o.clock ?? (() => new Date().toISOString())
     this.attempts = o.attempts ?? new Intentos(() => Date.parse(this.clock()))
@@ -189,19 +189,19 @@ export class ServicioAcceso implements ControlAcceso {
   // ── Dispositivos ─────────────────────────────────────────────────────
 
   /** Token → dispositivo (el `Autenticador` de la sala). `null` si no existe o se archivó. */
-  authenticate = (token: string): Conexion | null => {
+  authenticate = (token: string): Connection | null => {
     const row = this.db
       .prepare(
         `SELECT d.id, d.type, d.revoked_at FROM device_credentials c
          JOIN devices d ON d.id = c.device_id
          WHERE c.restaurant_id = ? AND c.token_hash = ? AND d.active = 1`,
       )
-      .get(this.restauranteId, huellaSecreto(token))
+      .get(this.restaurantId, huellaSecreto(token))
     if (!row) return null
     return {
-      dispositivoId: String(row.id),
-      type: String(row.type) as TipoDispositivo,
-      revocadoEn: row.revoked_at === null ? null : String(row.revoked_at),
+      deviceId: String(row.id),
+      type: String(row.type) as DeviceType,
+      revokedAt: row.revoked_at === null ? null : String(row.revoked_at),
     }
   }
 
@@ -213,33 +213,33 @@ export class ServicioAcceso implements ControlAcceso {
    */
   crearEmparejamiento(
     data: { pin: string; name: string; type: string },
-    connection: Conexion | null,
+    connection: Connection | null,
   ): { ok: true; code: string; venceEn: string } | ErrorAcceso {
     const name = data.name.trim()
     if (name.length === 0 || name.length > 60)
       return error('invalid_data', 'El nombre del equipo debe tener entre 1 y 60 letras')
-    if (!TIPOS_DISPOSITIVO.includes(data.type as TipoDispositivo))
+    if (!TIPOS_DISPOSITIVO.includes(data.type as DeviceType))
       return error('invalid_data', 'Tipo de equipo desconocido')
-    if (connection?.revocadoEn) return error('revoked_device', 'Este equipo fue retirado')
+    if (connection?.revokedAt) return error('revoked_device', 'Este equipo fue retirado')
     if (!connection && this.hayDispositivos())
       return error('unpaired_device', 'Aprueba el emparejamiento desde la caja')
 
     const admin = this.conPin(
-      connection ? `device:${connection.dispositivoId}` : PRIMER_EMPAREJAMIENTO,
+      connection ? `device:${connection.deviceId}` : PRIMER_EMPAREJAMIENTO,
       data.pin,
       (u) => this.tienePermiso(u.id, 'manage_devices'),
       PIN_SIN_PERMISO,
     )
     if (!admin.ok) return admin
 
-    const ahora = Date.parse(this.clock())
+    const now = Date.parse(this.clock())
     for (const [code, e] of this.emparejamientos)
-      if (e.venceEn <= ahora) this.emparejamientos.delete(code)
+      if (e.venceEn <= now) this.emparejamientos.delete(code)
     const code = nuevoCodigoEmparejamiento()
-    const venceEn = ahora + VIGENCIA_CODIGO_MS
+    const venceEn = now + VIGENCIA_CODIGO_MS
     this.emparejamientos.set(code, {
       name,
-      type: data.type as TipoDispositivo,
+      type: data.type as DeviceType,
       venceEn,
       aprobadoPor: admin.user.id,
     })
@@ -254,29 +254,27 @@ export class ServicioAcceso implements ControlAcceso {
   emparejar(
     code: string,
     source: string,
-  ):
-    | { ok: true; dispositivoId: string; token: string; name: string; type: TipoDispositivo }
-    | ErrorAcceso {
-    const quien = `ip:${source}`
-    const delay = this.attempts.esperaMs(quien)
+  ): { ok: true; deviceId: string; token: string; name: string; type: DeviceType } | ErrorAcceso {
+    const who = `ip:${source}`
+    const delay = this.attempts.waitMs(who)
     if (delay > 0) return esperar(delay)
     const normalizado = code.trim().toUpperCase()
     const e = this.emparejamientos.get(normalizado)
-    const ahora = this.clock()
-    if (!e || e.venceEn <= Date.parse(ahora)) {
+    const now = this.clock()
+    if (!e || e.venceEn <= Date.parse(now)) {
       if (e) this.emparejamientos.delete(normalizado)
       return error(
         'invalid_code',
         'Código vencido o inválido: pide uno nuevo en la caja',
-        this.attempts.fallo(quien),
+        this.attempts.fallo(who),
       )
     }
     this.emparejamientos.delete(normalizado)
 
-    const { dispositivoId, token } = enTransaccion(this.db, () =>
-      this.registrarDispositivo(e.name, e.type, e.aprobadoPor, ahora),
+    const { deviceId, token } = inTransaction(this.db, () =>
+      this.registrarDispositivo(e.name, e.type, e.aprobadoPor, now),
     )
-    return { ok: true, dispositivoId, token, name: e.name, type: e.type }
+    return { ok: true, deviceId, token, name: e.name, type: e.type }
   }
 
   /**
@@ -284,52 +282,52 @@ export class ServicioAcceso implements ControlAcceso {
    * salón; lo que tenía pendiente de antes va a cuarentena.
    */
   revocarDispositivo(
-    connection: Conexion,
-    data: { sesionId: string; secret: string; dispositivoId: string },
-  ): { ok: true; revocadoEn: string } | ErrorAcceso {
+    connection: Connection,
+    data: { sesionId: string; secret: string; deviceId: string },
+  ): { ok: true; revokedAt: string } | ErrorAcceso {
     const session = this.sesionAbierta(connection, data.sesionId, data.secret)
     if (!session.ok) return session
     if (!this.tienePermiso(session.userId, 'manage_devices'))
       return error('no_permission', 'Solo un administrador puede retirar equipos')
-    if (data.dispositivoId === connection.dispositivoId)
+    if (data.deviceId === connection.deviceId)
       return error('invalid_data', 'No puedes retirar el equipo desde el que estás')
 
     const row = this.db
       .prepare('SELECT revoked_at FROM devices WHERE restaurant_id = ? AND id = ?')
-      .get(this.restauranteId, data.dispositivoId)
+      .get(this.restaurantId, data.deviceId)
     if (!row) return error('invalid_data', 'Ese equipo no existe')
-    if (row.revoked_at !== null) return { ok: true, revocadoEn: String(row.revoked_at) }
+    if (row.revoked_at !== null) return { ok: true, revokedAt: String(row.revoked_at) }
 
-    const ahora = this.clock()
-    enTransaccion(this.db, () => {
+    const now = this.clock()
+    inTransaction(this.db, () => {
       const max = this.db
         .prepare('SELECT coalesce(max(sequence), 0) AS m FROM events WHERE restaurant_id = ?')
-        .get(this.restauranteId)
+        .get(this.restaurantId)
       actualizarVersionado(
         this.db,
         'devices',
-        this.restauranteId,
-        data.dispositivoId,
-        { revoked_at: ahora, revocation_sequence: Number(max?.m ?? 0) },
-        { userId: session.userId, dispositivoId: connection.dispositivoId },
-        ahora,
+        this.restaurantId,
+        data.deviceId,
+        { revoked_at: now, revocation_sequence: Number(max?.m ?? 0) },
+        { userId: session.userId, deviceId: connection.deviceId },
+        now,
       )
-      this.cerrarSesiones('device_id = ?', data.dispositivoId, ahora)
+      this.cerrarSesiones('device_id = ?', data.deviceId, now)
       // Una pantalla retirada se lleva su usuario técnico: ya no marca nada.
-      const screen = this.usuarioDePantalla(data.dispositivoId)
+      const screen = this.usuarioDePantalla(data.deviceId)
       if (screen)
         actualizarVersionado(
           this.db,
           'users',
-          this.restauranteId,
+          this.restaurantId,
           screen,
           { active: 0 },
-          { userId: session.userId, dispositivoId: connection.dispositivoId },
-          ahora,
+          { userId: session.userId, deviceId: connection.deviceId },
+          now,
         )
     })
-    this.onRevoke?.(data.dispositivoId, ahora)
-    return { ok: true, revocadoEn: ahora }
+    this.onRevoke?.(data.deviceId, now)
+    return { ok: true, revokedAt: now }
   }
 
   /**
@@ -337,7 +335,7 @@ export class ServicioAcceso implements ControlAcceso {
    * estar abierta y su usuario tener el permiso. Devuelve quién actúa.
    */
   usuarioConPermiso(
-    connection: Conexion,
+    connection: Connection,
     data: { sesionId: string; secret: string },
     permission: Permission,
   ): { ok: true; userId: string } | ErrorAcceso {
@@ -357,8 +355,8 @@ export class ServicioAcceso implements ControlAcceso {
    * cambia el nombre y las estaciones de la misma pantalla.
    */
   convertirEnPantalla(
-    connection: Conexion,
-    data: { sesionId: string; secret: string; name: string; estacionIds: string[] },
+    connection: Connection,
+    data: { sesionId: string; secret: string; name: string; stationIds: string[] },
   ):
     | { ok: true; sesionId: string; secret: string; user: UsuarioSesion; permissions: Permission[] }
     | ErrorAcceso {
@@ -368,49 +366,49 @@ export class ServicioAcceso implements ControlAcceso {
       return error('no_permission', 'Solo un administrador puede convertir un equipo en pantalla')
     const name = data.name.trim().slice(0, 60)
     if (!name) return error('invalid_data', 'Ponle un nombre a la pantalla')
-    const stations = [...new Set(data.estacionIds)]
+    const stations = [...new Set(data.stationIds)]
     if (stations.length === 0) return error('invalid_data', 'Elige al menos una estación')
     for (const id of stations) {
-      const existe = this.db
+      const exists = this.db
         .prepare('SELECT 1 FROM stations WHERE restaurant_id = ? AND id = ? AND active = 1')
-        .get(this.restauranteId, id)
-      if (!existe) return error('invalid_data', 'Esa estación no existe')
+        .get(this.restaurantId, id)
+      if (!exists) return error('invalid_data', 'Esa estación no existe')
     }
 
-    const ahora = this.clock()
-    const autor = { userId: session.userId, dispositivoId: connection.dispositivoId }
-    return enTransaccion(this.db, () => {
+    const now = this.clock()
+    const autor = { userId: session.userId, deviceId: connection.deviceId }
+    return inTransaction(this.db, () => {
       actualizarVersionado(
         this.db,
         'devices',
-        this.restauranteId,
-        connection.dispositivoId,
+        this.restaurantId,
+        connection.deviceId,
         { type: 'kds', name, station_ids: JSON.stringify(stations) },
         autor,
-        ahora,
+        now,
       )
-      const rolId = this.rolPantalla(autor, ahora)
-      let userId = this.usuarioDePantalla(connection.dispositivoId)
+      const rolId = this.rolPantalla(autor, now)
+      let userId = this.usuarioDePantalla(connection.deviceId)
       if (userId)
         actualizarVersionado(
           this.db,
           'users',
-          this.restauranteId,
+          this.restaurantId,
           userId,
           { name, active: 1 },
           autor,
-          ahora,
+          now,
         )
       else
-        userId = insertarVersionado(
+        userId = insertVersioned(
           this.db,
           'users',
-          this.restauranteId,
+          this.restaurantId,
           { name, role_id: rolId, screen: 1 },
           autor,
-          ahora,
+          now,
         )
-      const abierta = this.abrirSesion(connection.dispositivoId, userId, ahora)
+      const abierta = this.abrirSesion(connection.deviceId, userId, now)
       return {
         ok: true as const,
         ...abierta,
@@ -421,41 +419,41 @@ export class ServicioAcceso implements ControlAcceso {
   }
 
   /** El usuario técnico de una pantalla: el de alguna sesión suya. */
-  usuarioDePantalla(dispositivoId: string): string | null {
+  usuarioDePantalla(deviceId: string): string | null {
     const f = this.db
       .prepare(
         `SELECT u.id FROM sessions s JOIN users u ON u.id = s.user_id
          WHERE s.restaurant_id = ? AND s.device_id = ? AND u.screen = 1
          ORDER BY s.start DESC LIMIT 1`,
       )
-      .get(this.restauranteId, dispositivoId)
+      .get(this.restaurantId, deviceId)
     return f ? String(f.id) : null
   }
 
   /** El rol oculto de las pantallas (se crea la primera vez), con `SCREEN_PERMISSIONS`. */
-  private rolPantalla(autor: Autor, ahora: string): string {
+  private rolPantalla(autor: Autor, now: string): string {
     const f = this.db
       .prepare(
         'SELECT id FROM roles WHERE restaurant_id = ? AND hidden = 1 ORDER BY created_at LIMIT 1',
       )
-      .get(this.restauranteId)
+      .get(this.restaurantId)
     if (f) return String(f.id)
-    const rolId = insertarVersionado(
+    const rolId = insertVersioned(
       this.db,
       'roles',
-      this.restauranteId,
+      this.restaurantId,
       { name: 'Pantalla de cocina', system: 1, hidden: 1 },
       autor,
-      ahora,
+      now,
     )
     for (const permission of SCREEN_PERMISSIONS)
-      insertarVersionado(
+      insertVersioned(
         this.db,
         'role_permissions',
-        this.restauranteId,
+        this.restaurantId,
         { role_id: rolId, permission },
         autor,
-        ahora,
+        now,
       )
     return rolId
   }
@@ -469,46 +467,46 @@ export class ServicioAcceso implements ControlAcceso {
    * su token; la espera por intentos va entonces por la IP (`origen`). Con contraseña el equipo
    * pasa a ser de caja: desde él se puede cobrar si el rol lo permite.
    */
-  entrar(data: DatosEntrada, connection: Conexion | null, source: string): Entrada | ErrorAcceso {
-    if (connection?.revocadoEn) return error('revoked_device', 'Este equipo fue retirado')
-    const quien = connection ? `device:${connection.dispositivoId}` : `ip:${source}`
+  entrar(data: DatosEntrada, connection: Connection | null, source: string): Entrada | ErrorAcceso {
+    if (connection?.revokedAt) return error('revoked_device', 'Este equipo fue retirado')
+    const who = connection ? `device:${connection.deviceId}` : `ip:${source}`
     const r =
       'pin' in data
-        ? this.conPin(quien, data.pin, (u) => this.entraConPin(u.id), PIN_INCORRECTO)
-        : this.conContrasena(quien, data.user, data.password)
+        ? this.conPin(who, data.pin, (u) => this.entraConPin(u.id), PIN_INCORRECTO)
+        : this.conContrasena(who, data.user, data.password)
     if (!r.ok) return r
 
     // Solo quien puede cobrar vuelve de caja el equipo: pagos y cierres salen de ahí.
     const permissions = this.permisosDe(r.user.id)
     const cobra = !('pin' in data) && permissions.some((p) => CHECKOUT_PERMISSIONS.has(p))
-    const ahora = this.clock()
-    return enTransaccion(this.db, () => {
+    const now = this.clock()
+    return inTransaction(this.db, () => {
       let device: EquipoNuevo | null = null
-      let dispositivoId: string
-      let type: TipoDispositivo
+      let deviceId: string
+      let type: DeviceType
       if (connection) {
-        dispositivoId = connection.dispositivoId
+        deviceId = connection.deviceId
         type = connection.type
         if (cobra && type === 'waiter') {
           type = 'register'
           actualizarVersionado(
             this.db,
             'devices',
-            this.restauranteId,
-            dispositivoId,
+            this.restaurantId,
+            deviceId,
             { type },
-            { userId: r.user.id, dispositivoId },
-            ahora,
+            { userId: r.user.id, deviceId },
+            now,
           )
         }
       } else {
         type = cobra ? 'register' : 'waiter'
         const name = `Equipo de ${r.user.name}`.slice(0, 60)
-        const fresh = this.registrarDispositivo(name, type, r.user.id, ahora)
-        dispositivoId = fresh.dispositivoId
+        const fresh = this.registrarDispositivo(name, type, r.user.id, now)
+        deviceId = fresh.deviceId
         device = { ...fresh, name, type }
       }
-      const session = this.abrirSesion(dispositivoId, r.user.id, ahora)
+      const session = this.abrirSesion(deviceId, r.user.id, now)
       return {
         ok: true,
         device,
@@ -539,42 +537,42 @@ export class ServicioAcceso implements ControlAcceso {
    * firma los eventos de la sesión, y lo olvida al cerrarla.
    */
   startSession(
-    connection: Conexion,
+    connection: Connection,
     pin: string,
   ):
     | { ok: true; sesionId: string; secret: string; user: UsuarioSesion; permissions: Permission[] }
     | ErrorAcceso {
-    if (connection.revocadoEn) return error('revoked_device', 'Este equipo fue retirado')
+    if (connection.revokedAt) return error('revoked_device', 'Este equipo fue retirado')
     // Quien tiene usuario entra con su contraseña: su PIN solo autoriza (ADR-013).
     const r = this.conPin(
-      `device:${connection.dispositivoId}`,
+      `device:${connection.deviceId}`,
       pin,
       (u) => this.entraConPin(u.id),
       PIN_INCORRECTO,
     )
     if (!r.ok) return r
-    const session = enTransaccion(this.db, () =>
-      this.abrirSesion(connection.dispositivoId, r.user.id, this.clock()),
+    const session = inTransaction(this.db, () =>
+      this.abrirSesion(connection.deviceId, r.user.id, this.clock()),
     )
     return { ok: true, ...session, user: r.user, permissions: this.permisosDe(r.user.id) }
   }
 
   /** Cierra la sesión que hubiera en el equipo y abre otra (dentro de una transacción). */
-  private abrirSesion(dispositivoId: string, userId: string, ahora: string) {
+  private abrirSesion(deviceId: string, userId: string, now: string) {
     const sesionId = newId()
     const secret = this.secretoDe(sesionId)
-    this.cerrarSesiones('device_id = ?', dispositivoId, ahora)
+    this.cerrarSesiones('device_id = ?', deviceId, now)
     this.db
       .prepare(
         `INSERT INTO sessions (id, restaurant_id, user_id, device_id, secret_hash, start, last_used)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(sesionId, this.restauranteId, userId, dispositivoId, huellaSecreto(secret), ahora, ahora)
+      .run(sesionId, this.restaurantId, userId, deviceId, huellaSecreto(secret), now, now)
     return { sesionId, secret }
   }
 
   cerrarSesion(
-    connection: Conexion,
+    connection: Connection,
     data: { sesionId: string; secret: string },
   ): { ok: true } | ErrorAcceso {
     const session = this.sesionAbierta(connection, data.sesionId, data.secret)
@@ -592,17 +590,17 @@ export class ServicioAcceso implements ControlAcceso {
    * esa sesión.
    */
   autorizar(
-    connection: Conexion,
+    connection: Connection,
     data: {
       sesionId: string
       secret: string
       pin: string
       action: string
-      agregadoId: string
+      aggregateId: string
       eventId: string
       fingerprint: string
     },
-  ): { ok: true; autorizacionId: string; supervisor: { id: string; name: string } } | ErrorAcceso {
+  ): { ok: true; authorizationId: string; supervisor: { id: string; name: string } } | ErrorAcceso {
     const session = this.sesionAbierta(connection, data.sesionId, data.secret)
     if (!session.ok) return session
     const action = data.action
@@ -613,7 +611,7 @@ export class ServicioAcceso implements ControlAcceso {
     // Escribir el propio PIN no autoriza, y cuenta como un intento más: si no, alternar el PIN
     // propio con PIN ajenos evitaría la espera.
     const r = this.conPin(
-      `device:${connection.dispositivoId}`,
+      `device:${connection.deviceId}`,
       data.pin,
       (u) => u.id !== session.userId && this.tienePermiso(u.id, action),
       PIN_SIN_PERMISO,
@@ -627,10 +625,10 @@ export class ServicioAcceso implements ControlAcceso {
 
     const already = this.db
       .prepare('SELECT 1 FROM authorizations WHERE restaurant_id = ? AND event_id = ?')
-      .get(this.restauranteId, data.eventId)
+      .get(this.restaurantId, data.eventId)
     if (already) return error('already_authorized', 'Esa acción ya tiene una autorización')
 
-    const autorizacionId = newId()
+    const authorizationId = newId()
     this.db
       .prepare(
         `INSERT INTO authorizations (id, restaurant_id, supervisor_id, action, aggregate_id, event_id,
@@ -638,39 +636,39 @@ export class ServicioAcceso implements ControlAcceso {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        autorizacionId,
-        this.restauranteId,
+        authorizationId,
+        this.restaurantId,
         r.user.id,
         action,
-        data.agregadoId,
+        data.aggregateId,
         data.eventId,
         this.clock(),
         data.fingerprint,
         data.sesionId,
       )
-    return { ok: true, autorizacionId, supervisor: { id: r.user.id, name: r.user.name } }
+    return { ok: true, authorizationId, supervisor: { id: r.user.id, name: r.user.name } }
   }
 
-  // ── Control de acceso de los eventos (ControlAcceso) ─────────────────
+  // ── Control de acceso de los eventos (AccessControl) ─────────────────
 
-  verify(connection: Conexion, event: NewEvent, order: OrderState | null): VeredictoAcceso {
-    const no = (reason: string): VeredictoAcceso => ({ ok: false, reason })
+  verify(connection: Connection, event: NewEvent, order: OrderState | null): AccessVerdict {
+    const no = (reason: string): AccessVerdict => ({ ok: false, reason })
     // Algo que el evento hizo antes de un cambio del administrador (archivar al usuario, quitarle
     // un permiso) no se pierde: lo revisa el gerente.
-    const revisar = (reason: string): VeredictoAcceso => ({ ok: false, reason, quarantine: true })
+    const review = (reason: string): AccessVerdict => ({ ok: false, reason, quarantine: true })
 
     if (!event.session_id) return no('no_session')
     const session = this.db
       .prepare('SELECT * FROM sessions WHERE restaurant_id = ? AND id = ?')
-      .get(this.restauranteId, event.session_id)
-    if (!session) return revisar('unknown_session')
-    if (session.device_id !== connection.dispositivoId) return no('foreign_session')
+      .get(this.restaurantId, event.session_id)
+    if (!session) return review('unknown_session')
+    if (session.device_id !== connection.deviceId) return no('foreign_session')
     if (session.user_id !== event.user_id) return no('user_mismatch')
     // La firma prueba que lo creó quien tenía la sesión abierta, no otro que usa su `session_id`.
     const signature = signEvent(event, this.secretoDe(event.session_id))
     if (!event.signature || !constantTimeEqual(event.signature, signature))
       return Date.parse(String(session.start)) < this.claveDesde
-        ? revisar('password_changed')
+        ? review('password_changed')
         : no('invalid_signature')
 
     // La sesión se juzga a la hora del evento: lo hecho sin conexión mientras estaba abierta vale.
@@ -683,7 +681,7 @@ export class ServicioAcceso implements ControlAcceso {
       return no('session_closed')
     const change = this.ultimoCambioDe(event.user_id)
     if (!this.usuarioActivo(event.user_id))
-      return time < change ? revisar('user_archived') : no('user_inactive')
+      return time < change ? review('user_archived') : no('user_inactive')
 
     const permission = permissionFor(event, order)
     if (!permission) return no('hub_only')
@@ -692,41 +690,41 @@ export class ServicioAcceso implements ControlAcceso {
     if (ONLY_FROM_REGISTER.has(event.type) && this.tipoDe(connection) !== 'register')
       return no('register_only')
     if (this.tienePermiso(event.user_id, permission))
-      return { ok: true, authorizedById: null, autorizacionId: null }
+      return { ok: true, authorizedById: null, authorizationId: null }
 
     if (!event.authorization_id)
-      return time < change ? revisar('permissions_changed') : no('no_permission')
+      return time < change ? review('permissions_changed') : no('no_permission')
     const a = this.db
       .prepare('SELECT * FROM authorizations WHERE restaurant_id = ? AND id = ?')
-      .get(this.restauranteId, event.authorization_id)
+      .get(this.restaurantId, event.authorization_id)
     if (!a || !this.comprobanteVale(a, event, permission, time)) return no('invalid_authorization')
-    return { ok: true, authorizedById: String(a.supervisor_id), autorizacionId: String(a.id) }
+    return { ok: true, authorizedById: String(a.supervisor_id), authorizationId: String(a.id) }
   }
 
-  registrarUso(event: NewEvent, veredicto: Extract<VeredictoAcceso, { ok: true }>) {
-    const ahora = this.clock()
+  recordUse(event: NewEvent, verdict: Extract<AccessVerdict, { ok: true }>) {
+    const now = this.clock()
     // Lo recibido también cuenta como uso de la sesión (sin pasar de la hora del hub).
     const time = new Date(
-      Math.min(Date.parse(event.hub_estimated_time), Date.parse(ahora)),
+      Math.min(Date.parse(event.hub_estimated_time), Date.parse(now)),
     ).toISOString()
     this.db
       .prepare(
         'UPDATE sessions SET last_used = max(last_used, ?) WHERE restaurant_id = ? AND id = ?',
       )
-      .run(time, this.restauranteId, event.session_id)
-    if (veredicto.autorizacionId)
+      .run(time, this.restaurantId, event.session_id)
+    if (verdict.authorizationId)
       this.db
         .prepare(
           'UPDATE authorizations SET used_at = ? WHERE restaurant_id = ? AND id = ? AND used_at IS NULL',
         )
-        .run(ahora, this.restauranteId, veredicto.autorizacionId)
+        .run(now, this.restaurantId, verdict.authorizationId)
   }
 
   // ── Usuarios ─────────────────────────────────────────────────────────
 
   /** Crea un usuario con un PIN nuevo. El PIN se devuelve solo esta vez: no se guarda en claro. */
   crearUsuario(data: DatosUsuario, autor: Autor = SISTEMA): { userId: string; pin: string } {
-    return enTransaccion(this.db, () => this.insertUser(data, autor))
+    return inTransaction(this.db, () => this.insertUser(data, autor))
   }
 
   /** Como `crearUsuario`, dentro de una transacción que ya abrió quien llama. */
@@ -736,17 +734,17 @@ export class ServicioAcceso implements ControlAcceso {
       throw new ErrorDatos('El nombre debe tener entre 1 y 60 letras')
     const role = this.db
       .prepare('SELECT 1 FROM roles WHERE restaurant_id = ? AND id = ? AND active = 1')
-      .get(this.restauranteId, data.rolId)
+      .get(this.restaurantId, data.rolId)
     if (!role) throw new ErrorDatos('Ese rol no existe o está archivado')
 
-    const ahora = this.clock()
-    const userId = insertarVersionado(
+    const now = this.clock()
+    const userId = insertVersioned(
       this.db,
       'users',
-      this.restauranteId,
+      this.restaurantId,
       { name, role_id: data.rolId },
       autor,
-      ahora,
+      now,
       data.id,
     )
     const pin = this.pinLibre()
@@ -755,7 +753,7 @@ export class ServicioAcceso implements ControlAcceso {
         `INSERT INTO user_credentials (user_id, restaurant_id, pin_hash, pin_generated_at)
          VALUES (?, ?, ?, ?)`,
       )
-      .run(userId, this.restauranteId, huellaPin(this.key, this.restauranteId, pin), ahora)
+      .run(userId, this.restaurantId, huellaPin(this.key, this.restaurantId, pin), now)
     if (data.user !== undefined && data.password !== undefined)
       this.fijarContrasena(userId, data.user, data.password)
     return { userId, pin }
@@ -767,7 +765,7 @@ export class ServicioAcceso implements ControlAcceso {
    * con un mensaje para la pantalla si el usuario no sirve, está tomado o la contraseña es corta.
    */
   ponerContrasena(userId: string, user: string, password: string) {
-    enTransaccion(this.db, () => this.fijarContrasena(userId, user, password))
+    inTransaction(this.db, () => this.fijarContrasena(userId, user, password))
   }
 
   /** Como `ponerContrasena`, dentro de una transacción que ya abrió quien llama. */
@@ -784,36 +782,30 @@ export class ServicioAcceso implements ControlAcceso {
         `SELECT 1 FROM user_credentials WHERE restaurant_id = ? AND username = ?
            AND current = 1 AND user_id <> ?`,
       )
-      .get(this.restauranteId, name, userId)
+      .get(this.restaurantId, name, userId)
     if (taken) throw new ErrorDatos(`Ya hay alguien con el usuario «${name}»`)
-    const ahora = this.clock()
+    const now = this.clock()
     const change = this.db
       .prepare(
         `UPDATE user_credentials SET username = ?, password_hash = ?,
            password_changed_at = ? WHERE restaurant_id = ? AND user_id = ?`,
       )
-      .run(
-        name,
-        huellaContrasena(password, this.costoContrasena),
-        ahora,
-        this.restauranteId,
-        userId,
-      )
+      .run(name, huellaContrasena(password, this.costoContrasena), now, this.restaurantId, userId)
     if (Number(change.changes) === 0) throw new Error('Ese usuario no tiene credencial')
-    this.cerrarSesiones('user_id = ?', userId, ahora)
+    this.cerrarSesiones('user_id = ?', userId, now)
   }
 
   /** Le quita usuario y contraseña: desde entonces entra con su PIN. Cierra sus sesiones. */
   quitarContrasena(userId: string) {
-    const ahora = this.clock()
-    enTransaccion(this.db, () => {
+    const now = this.clock()
+    inTransaction(this.db, () => {
       this.db
         .prepare(
           `UPDATE user_credentials SET username = NULL, password_hash = NULL,
              password_changed_at = ? WHERE restaurant_id = ? AND user_id = ?`,
         )
-        .run(ahora, this.restauranteId, userId)
-      this.cerrarSesiones('user_id = ?', userId, ahora)
+        .run(now, this.restaurantId, userId)
+      this.cerrarSesiones('user_id = ?', userId, now)
     })
   }
 
@@ -821,7 +813,7 @@ export class ServicioAcceso implements ControlAcceso {
   usuarioDe(userId: string): string | null {
     const f = this.db
       .prepare('SELECT username FROM user_credentials WHERE restaurant_id = ? AND user_id = ?')
-      .get(this.restauranteId, userId)
+      .get(this.restaurantId, userId)
     return f?.username == null ? null : String(f.username)
   }
 
@@ -834,35 +826,27 @@ export class ServicioAcceso implements ControlAcceso {
    * quien conocía el PIN viejo no debe seguir adentro.
    */
   regenerarPin(userId: string): string {
-    const ahora = this.clock()
-    return enTransaccion(this.db, () => {
+    const now = this.clock()
+    return inTransaction(this.db, () => {
       const pin = this.pinLibre()
       const change = this.db
         .prepare(
           `UPDATE user_credentials SET pin_hash = ?, pin_generated_at = ?
            WHERE restaurant_id = ? AND user_id = ?`,
         )
-        .run(huellaPin(this.key, this.restauranteId, pin), ahora, this.restauranteId, userId)
+        .run(huellaPin(this.key, this.restaurantId, pin), now, this.restaurantId, userId)
       if (Number(change.changes) === 0) throw new Error('Ese usuario no tiene credencial')
-      this.cerrarSesiones('user_id = ?', userId, ahora)
+      this.cerrarSesiones('user_id = ?', userId, now)
       return pin
     })
   }
 
   /** Archiva al usuario: su PIN queda libre y sus sesiones se cierran. */
   archivarUsuario(userId: string, autor: Autor = SISTEMA) {
-    const ahora = this.clock()
-    enTransaccion(this.db, () => {
-      actualizarVersionado(
-        this.db,
-        'users',
-        this.restauranteId,
-        userId,
-        { active: 0 },
-        autor,
-        ahora,
-      )
-      this.cerrarSesiones('user_id = ?', userId, ahora)
+    const now = this.clock()
+    inTransaction(this.db, () => {
+      actualizarVersionado(this.db, 'users', this.restaurantId, userId, { active: 0 }, autor, now)
+      this.cerrarSesiones('user_id = ?', userId, now)
     })
   }
 
@@ -875,7 +859,7 @@ export class ServicioAcceso implements ControlAcceso {
          WHERE u.restaurant_id = ? AND u.id = ? AND u.active = 1
          ORDER BY rp.permission`,
       )
-      .all(this.restauranteId, userId)
+      .all(this.restaurantId, userId)
       .map((f) => String(f.permission))
       .filter(isPermission)
   }
@@ -889,15 +873,15 @@ export class ServicioAcceso implements ControlAcceso {
    * espera. Los fallos se olvidan solos tras un rato sin errores.
    */
   private conPin(
-    quien: string,
+    who: string,
     pin: string,
     vale: (user: UsuarioSesion) => boolean,
     message: string,
   ): { ok: true; user: UsuarioSesion } | ErrorAcceso {
-    const delay = this.attempts.esperaMs(quien)
+    const delay = this.attempts.waitMs(who)
     if (delay > 0) return esperar(delay)
     const user = esPinConFormato(pin) ? this.usuarioPorPin(pin) : undefined
-    if (!user || !vale(user)) return error('wrong_pin', message, this.attempts.fallo(quien))
+    if (!user || !vale(user)) return error('wrong_pin', message, this.attempts.fallo(who))
     return { ok: true, user }
   }
 
@@ -907,14 +891,14 @@ export class ServicioAcceso implements ControlAcceso {
    * no existe y una contraseña errada dan la misma respuesta y tardan lo mismo.
    */
   private conContrasena(
-    quien: string,
+    who: string,
     user: string,
     password: string,
   ): { ok: true; user: UsuarioSesion } | ErrorAcceso {
     const name = normalizarUsuario(user)
     // Lo escrito no se guarda en la cuenta de intentos: pudo ser la contraseña en el campo errado.
     const check = `user:${name ?? 'invalid'}`
-    const delay = Math.max(this.attempts.esperaMs(quien), this.attempts.esperaMs(check))
+    const delay = Math.max(this.attempts.waitMs(who), this.attempts.waitMs(check))
     if (delay > 0) return esperar(delay)
     const f = name
       ? this.db
@@ -925,25 +909,25 @@ export class ServicioAcceso implements ControlAcceso {
              JOIN roles r ON r.id = u.role_id
              WHERE c.restaurant_id = ? AND c.username = ? AND c.current = 1`,
           )
-          .get(this.restauranteId, name)
+          .get(this.restaurantId, name)
       : undefined
     // Siempre se compara, con el mismo costo: no delata si el usuario existe ni si está activo.
-    const guardada = f ? String(f.password_hash) : this.relleno()
+    const guardada = f ? String(f.password_hash) : this.padding()
     // Una contraseña más larga que lo permitido nunca es la buena (no se corta para compararla).
     const coincide =
       contrasenaCoincide(password.slice(0, LARGO_MAXIMO_CONTRASENA), guardada) &&
       password.length <= LARGO_MAXIMO_CONTRASENA
     if (f?.active !== 1 || !coincide) {
       const ms = Math.max(
-        this.attempts.fallo(quien),
-        this.attempts.fallo(check, { contar: false, tope: ESPERA_MAXIMA_CUENTA_MS }),
+        this.attempts.fallo(who),
+        this.attempts.fallo(check, { count: false, tope: ESPERA_MAXIMA_CUENTA_MS }),
       )
       return error('invalid_credentials', CREDENCIALES_INCORRECTAS, ms)
     }
     return { ok: true, user: { id: String(f.id), name: String(f.name), role: String(f.role) } }
   }
 
-  private relleno(): string {
+  private padding(): string {
     this.huellaDeRelleno ??= huellaContrasena('relleno', this.costoContrasena)
     return this.huellaDeRelleno
   }
@@ -956,27 +940,27 @@ export class ServicioAcceso implements ControlAcceso {
          JOIN roles r ON r.id = u.role_id
          WHERE c.restaurant_id = ? AND c.pin_hash = ? AND c.current = 1`,
       )
-      .get(this.restauranteId, huellaPin(this.key, this.restauranteId, pin))
+      .get(this.restaurantId, huellaPin(this.key, this.restaurantId, pin))
     return f ? { id: String(f.id), name: String(f.name), role: String(f.role) } : undefined
   }
 
   /** El secreto de una sesión sale de la clave del hub: así puede comprobar firmas sin guardarlo. */
   private secretoDe(sesionId: string): string {
-    return secretoDeSesion(this.key, this.restauranteId, sesionId)
+    return secretoDeSesion(this.key, this.restaurantId, sesionId)
   }
 
   private sesionAbierta(
-    connection: Conexion,
+    connection: Connection,
     sesionId: string,
     secret: string,
   ): { ok: true; userId: string } | ErrorAcceso {
-    if (connection.revocadoEn) return error('revoked_device', 'Este equipo fue retirado')
+    if (connection.revokedAt) return error('revoked_device', 'Este equipo fue retirado')
     const s = this.db
       .prepare('SELECT * FROM sessions WHERE restaurant_id = ? AND id = ?')
-      .get(this.restauranteId, sesionId)
+      .get(this.restaurantId, sesionId)
     const vale =
       s !== undefined &&
-      s.device_id === connection.dispositivoId &&
+      s.device_id === connection.deviceId &&
       s.closed_at === null &&
       mismaHuella(String(s.secret_hash), huellaSecreto(secret)) &&
       this.usuarioActivo(String(s.user_id))
@@ -984,15 +968,15 @@ export class ServicioAcceso implements ControlAcceso {
     return { ok: true, userId: String(s.user_id) }
   }
 
-  private cerrarSesiones(filtro: string, value: ValorSql, ahora: string) {
+  private cerrarSesiones(filtro: string, value: SqlValue, now: string) {
     this.db
       .prepare(
         `UPDATE sessions SET closed_at = ? WHERE restaurant_id = ? AND ${filtro} AND closed_at IS NULL`,
       )
-      .run(ahora, this.restauranteId, value)
+      .run(now, this.restaurantId, value)
   }
 
-  private comprobanteVale(a: Fila, event: NewEvent, permission: Permission, time: number): boolean {
+  private comprobanteVale(a: Row, event: NewEvent, permission: Permission, time: number): boolean {
     const emitida = Date.parse(String(a.issued_at))
     return (
       a.event_id === event.id &&
@@ -1017,7 +1001,7 @@ export class ServicioAcceso implements ControlAcceso {
   private usuarioActivo(userId: string): boolean {
     const f = this.db
       .prepare('SELECT active FROM users WHERE restaurant_id = ? AND id = ?')
-      .get(this.restauranteId, userId)
+      .get(this.restaurantId, userId)
     return f?.active === 1
   }
 
@@ -1030,47 +1014,47 @@ export class ServicioAcceso implements ControlAcceso {
          FROM users u JOIN roles r ON r.id = u.role_id
          WHERE u.restaurant_id = ? AND u.id = ?`,
       )
-      .get(this.restauranteId, userId)
+      .get(this.restaurantId, userId)
     return f?.m ? Date.parse(String(f.m)) : 0
   }
 
   /** Crea el equipo y su token (dentro de una transacción). El token se ve solo esta vez. */
   private registrarDispositivo(
     name: string,
-    type: TipoDispositivo,
+    type: DeviceType,
     aprobadoPor: string,
-    ahora: string,
-  ): { dispositivoId: string; token: string } {
+    now: string,
+  ): { deviceId: string; token: string } {
     const token = nuevoSecreto()
-    const dispositivoId = insertarVersionado(
+    const deviceId = insertVersioned(
       this.db,
       'devices',
-      this.restauranteId,
+      this.restaurantId,
       {
         location_id: this.sedePrincipal(),
         name,
         type,
-        paired_at: ahora,
+        paired_at: now,
         revoked_at: null,
         revocation_sequence: null,
       },
-      { userId: aprobadoPor, dispositivoId: null },
-      ahora,
+      { userId: aprobadoPor, deviceId: null },
+      now,
     )
     this.db
       .prepare(
         `INSERT INTO device_credentials (device_id, restaurant_id, token_hash, created_at)
          VALUES (?, ?, ?, ?)`,
       )
-      .run(dispositivoId, this.restauranteId, huellaSecreto(token), ahora)
-    return { dispositivoId, token }
+      .run(deviceId, this.restaurantId, huellaSecreto(token), now)
+    return { deviceId, token }
   }
 
-  private tipoDe(connection: Conexion): TipoDispositivo {
+  private tipoDe(connection: Connection): DeviceType {
     const f = this.db
       .prepare('SELECT type FROM devices WHERE restaurant_id = ? AND id = ?')
-      .get(this.restauranteId, connection.dispositivoId)
-    return f ? (String(f.type) as TipoDispositivo) : connection.type
+      .get(this.restaurantId, connection.deviceId)
+    return f ? (String(f.type) as DeviceType) : connection.type
   }
 
   private hayDispositivos(): boolean {
@@ -1079,7 +1063,7 @@ export class ServicioAcceso implements ControlAcceso {
         .prepare(
           'SELECT 1 FROM devices WHERE restaurant_id = ? AND active = 1 AND revoked_at IS NULL LIMIT 1',
         )
-        .get(this.restauranteId) !== undefined
+        .get(this.restaurantId) !== undefined
     )
   }
 
@@ -1088,7 +1072,7 @@ export class ServicioAcceso implements ControlAcceso {
       .prepare(
         'SELECT id FROM locations WHERE restaurant_id = ? AND active = 1 ORDER BY created_at, id LIMIT 1',
       )
-      .get(this.restauranteId)
+      .get(this.restaurantId)
     if (!f) throw new Error('El restaurante no tiene sede')
     return String(f.id)
   }
@@ -1101,7 +1085,7 @@ export class ServicioAcceso implements ControlAcceso {
         .prepare(
           'SELECT 1 FROM user_credentials WHERE restaurant_id = ? AND pin_hash = ? AND current = 1',
         )
-        .get(this.restauranteId, huellaPin(this.key, this.restauranteId, pin))
+        .get(this.restaurantId, huellaPin(this.key, this.restaurantId, pin))
       if (!ocupado) return pin
     }
     throw new ErrorDatos('No quedan PIN libres: archiva usuarios que ya no trabajen')

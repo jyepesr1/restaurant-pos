@@ -14,20 +14,20 @@ describe('agotados en el hub', () => {
 
     const phone = m.emparejar('waiter')
     const waiter = m.entrar(phone.connection, 'waiter')
-    const r1 = m.hub.recibirLote(phone.connection, [
+    const r1 = m.hub.receiveBatch(phone.connection, [
       m.event(phone.connection, waiter, 'ProductSoldOut', data, extras),
     ])
-    expect(r1.resultados).toEqual([
+    expect(r1.results).toEqual([
       expect.objectContaining({ status: 'rejected', reason: 'no_permission' }),
     ])
 
     const register = m.emparejar('register')
     const cashier = m.entrar(register.connection, 'cashier')
-    const r2 = m.hub.recibirLote(register.connection, [
+    const r2 = m.hub.receiveBatch(register.connection, [
       m.event(register.connection, cashier, 'ProductSoldOut', data, extras),
       m.event(register.connection, cashier, 'ProductAvailable', data, extras),
     ])
-    expect(r2.resultados.map((r) => r.status)).toEqual(['confirmed', 'confirmed'])
+    expect(r2.results.map((r) => r.status)).toEqual(['confirmed', 'confirmed'])
     expect(m.hub.order(product)).toBeNull()
   })
 
@@ -36,7 +36,7 @@ describe('agotados en el hub', () => {
     const product = newId()
     const register = m.emparejar('register')
     const cashier = m.entrar(register.connection, 'cashier')
-    const r = m.hub.recibirLote(register.connection, [
+    const r = m.hub.receiveBatch(register.connection, [
       m.event(
         register.connection,
         cashier,
@@ -47,7 +47,7 @@ describe('agotados en el hub', () => {
         },
       ),
     ])
-    expect(r.resultados[0]).toMatchObject({ status: 'rejected' })
-    expect((r.resultados[0] as { reason: string }).reason).toMatch(/esquema/)
+    expect(r.results[0]).toMatchObject({ status: 'rejected' })
+    expect((r.results[0] as { reason: string }).reason).toMatch(/schema/)
   })
 })

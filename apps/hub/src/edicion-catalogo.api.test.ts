@@ -23,7 +23,7 @@ describe('un lote grande', () => {
   it('un producto con variantes y grupos, con 200 cambios en un pedido, se aplica entero', async () => {
     const m = await montarServidor()
     const before = m.catalog().version
-    const filasAntes = m.historial().length
+    const rowsBefore = m.history().length
     const p = newId()
     const g = newId()
     const changes: unknown[] = [
@@ -63,19 +63,19 @@ describe('un lote grande', () => {
     expect(r.code).toBe(200)
     // Cada registro tomó una versión propia y todas quedaron en el historial.
     expect(r.cuerpo.version).toBe(before + 200)
-    expect(m.historial()).toHaveLength(filasAntes + 200)
-    expect(m.avisos).toEqual([before + 200])
+    expect(m.history()).toHaveLength(rowsBefore + 200)
+    expect(m.alerts).toEqual([before + 200])
     const fresh = m.products().find((x) => x.id === p)
     expect(fresh?.variants).toHaveLength(2)
     expect(fresh?.groups[0]?.options).toHaveLength(195)
     // Un solo aviso por pedido, no uno por cambio.
-    expect(m.avisos).toHaveLength(1)
+    expect(m.alerts).toHaveLength(1)
   })
 
   it('201 cambios se rechazan sin aplicar nada', async () => {
     const m = await montarServidor()
     const before = m.catalog().version
-    const rows = m.historial().length
+    const rows = m.history().length
     const changes = Array.from({ length: 201 }, (_, i) => ({
       entity: 'stations',
       id: newId(),
@@ -84,14 +84,14 @@ describe('un lote grande', () => {
     const r = await m.editar(m.sesionDe('manager'), changes)
     expect(r.code).toBe(400)
     expect(m.catalog().version).toBe(before)
-    expect(m.historial()).toHaveLength(rows)
-    expect(m.avisos).toEqual([])
+    expect(m.history()).toHaveLength(rows)
+    expect(m.alerts).toEqual([])
   })
 
   it('si falla el cambio 200 de 200, no queda ninguno de los 199 anteriores', async () => {
     const m = await montarServidor()
     const before = m.catalog().version
-    const rows = m.historial().length
+    const rows = m.history().length
     const changes: unknown[] = Array.from({ length: 199 }, (_, i) => ({
       entity: 'stations',
       id: newId(),
@@ -103,7 +103,7 @@ describe('un lote grande', () => {
     expect(r.cuerpo.message).toMatch(/Cambio 200/)
     expect(m.catalog().version).toBe(before)
     // Ni siquiera el contador de versiones avanzó: la transacción se deshizo completa.
-    expect(m.historial()).toHaveLength(rows)
+    expect(m.history()).toHaveLength(rows)
     expect(m.db.prepare("SELECT 1 FROM stations WHERE name = 'E0'").get()).toBeUndefined()
   })
 })
@@ -118,7 +118,7 @@ describe('el mismo enlace producto-grupo', () => {
   it('dos veces con ids distintos en el mismo pedido: se rechaza todo', async () => {
     const m = await montarServidor()
     const before = m.catalog().version
-    const rows = m.historial().length
+    const rows = m.history().length
     const p = newId()
     const g = newId()
     const r = await m.editar(m.sesionDe('manager'), [
@@ -132,56 +132,56 @@ describe('el mismo enlace producto-grupo', () => {
     // Ni el producto ni el grupo quedaron a medias.
     expect(m.products().some((x) => x.id === p)).toBe(false)
     expect(m.catalog().version).toBe(before)
-    expect(m.historial()).toHaveLength(rows)
+    expect(m.history()).toHaveLength(rows)
   })
 
   it('dos veces con el mismo id: la segunda actualiza a la primera y queda un solo enlace', async () => {
     const m = await montarServidor()
     const p = newId()
     const g = newId()
-    const enlace = newId()
+    const link = newId()
     const r = await m.editar(m.sesionDe('manager'), [
       { entity: 'products', id: p, data: product(m) },
       { entity: 'modifier_groups', id: g, data: group() },
-      nuevoEnlace(p, g, enlace),
-      { entity: 'product_modifier_groups', id: enlace, data: { position: 3 } },
+      nuevoEnlace(p, g, link),
+      { entity: 'product_modifier_groups', id: link, data: { position: 3 } },
     ])
     expect(r.code).toBe(200)
     const rows = m.db
       .prepare('SELECT position FROM product_modifier_groups WHERE product_id = ?')
       .all(p)
     expect(rows).toEqual([{ position: 3 }])
-    const historial = m.db
+    const history = m.db
       .prepare('SELECT count(*) AS n FROM catalog_changes WHERE record_id = ?')
-      .get(enlace)
-    expect(historial?.n).toBe(2)
+      .get(link)
+    expect(history?.n).toBe(2)
   })
 
   it('un enlace ya existente con un id nuevo se rechaza, también si el viejo está archivado', async () => {
     const m = await montarServidor()
     const tagliata = m.product('Tagliata di Manzo')
-    const grupoId = tagliata.groups[0]?.id as string
+    const groupId = tagliata.groups[0]?.id as string
     const session = m.sesionDe('manager')
-    expect((await m.editar(session, [nuevoEnlace(tagliata.id, grupoId)])).code).toBe(400)
+    expect((await m.editar(session, [nuevoEnlace(tagliata.id, groupId)])).code).toBe(400)
 
-    const enlace = String(
+    const link = String(
       m.db
         .prepare('SELECT id FROM product_modifier_groups WHERE product_id = ? AND group_id = ?')
-        .get(tagliata.id, grupoId)?.id,
+        .get(tagliata.id, groupId)?.id,
     )
     expect(
       (
         await m.editar(session, [
-          { entity: 'product_modifier_groups', id: enlace, data: { active: false } },
+          { entity: 'product_modifier_groups', id: link, data: { active: false } },
         ])
       ).code,
     ).toBe(200)
     // Hay que reactivar el enlace archivado, no crear otro.
-    expect((await m.editar(session, [nuevoEnlace(tagliata.id, grupoId)])).code).toBe(400)
+    expect((await m.editar(session, [nuevoEnlace(tagliata.id, groupId)])).code).toBe(400)
     expect(
       (
         await m.editar(session, [
-          { entity: 'product_modifier_groups', id: enlace, data: { active: true } },
+          { entity: 'product_modifier_groups', id: link, data: { active: true } },
         ])
       ).code,
     ).toBe(200)
@@ -235,9 +235,9 @@ describe('archivar y reactivar', () => {
       .prepare('SELECT version, after FROM catalog_changes WHERE record_id = ? ORDER BY version')
       .all(burrata.id)
     expect(rows.map((f) => JSON.parse(String(f.after)).active)).toEqual([1, 0, 1])
-    const historial = new HistorialCatalogo(m.db, m.restauranteId)
-    expect(historial.estadoEn('products', burrata.id, archive.cuerpo.version)?.active).toBe(0)
-    expect(historial.estadoEn('products', burrata.id, reactivar.cuerpo.version)?.active).toBe(1)
+    const history = new HistorialCatalogo(m.db, m.restaurantId)
+    expect(history.stateIn('products', burrata.id, archive.cuerpo.version)?.active).toBe(0)
+    expect(history.stateIn('products', burrata.id, reactivar.cuerpo.version)?.active).toBe(1)
   })
 
   it('el editor ve lo archivado con activo=false y lo vigente con activo=true', async () => {
@@ -306,7 +306,7 @@ describe('permisos y sesiones', () => {
   ]
   const sinCambios = (m: Awaited<ReturnType<typeof montarServidor>>, before: number) => {
     expect(m.catalog().version).toBe(before)
-    expect(m.avisos).toEqual([])
+    expect(m.alerts).toEqual([])
   }
 
   it('la sesión abierta en otro equipo no vale en este, aunque sea de un gerente', async () => {
@@ -369,7 +369,7 @@ describe('permisos y sesiones', () => {
     const withdrawal = m.access.revocarDispositivo(m.register.connection, {
       sesionId: admin.session_id,
       secret: admin.secret,
-      dispositivoId: other.connection.dispositivoId,
+      deviceId: other.connection.deviceId,
     })
     expect(withdrawal.ok).toBe(true)
     const before = m.catalog().version
@@ -396,46 +396,46 @@ describe('permisos y sesiones', () => {
   it('el mesero, el cajero y el mesero 2 reciben 403 y no queda rastro', async () => {
     const m = await montarServidor()
     const before = m.catalog().version
-    const rows = m.historial().length
-    for (const quien of ['waiter', 'waiter2', 'cashier'] as const) {
-      const r = await m.editar(m.sesionDe(quien), change(m))
-      expect(r.code, quien).toBe(403)
+    const rows = m.history().length
+    for (const who of ['waiter', 'waiter2', 'cashier'] as const) {
+      const r = await m.editar(m.sesionDe(who), change(m))
+      expect(r.code, who).toBe(403)
       expect(r.cuerpo.error).toBe('no_permission')
     }
     sinCambios(m, before)
-    expect(m.historial()).toHaveLength(rows)
+    expect(m.history()).toHaveLength(rows)
   })
 
   it('el gerente y el administrador sí editan, y el historial dice quién fue', async () => {
     const m = await montarServidor()
     const burrata = burrataDe(m)
-    for (const [quien, price] of [
+    for (const [who, price] of [
       ['manager', 20_000],
       ['admin', 21_000],
     ] as const) {
-      const r = await m.editar(m.sesionDe(quien), [
+      const r = await m.editar(m.sesionDe(who), [
         { entity: 'products', id: burrata.id, data: { price } },
       ])
-      expect(r.code, quien).toBe(200)
+      expect(r.code, who).toBe(200)
       const latest = m.db
         .prepare('SELECT user_id, device_id FROM catalog_changes ORDER BY version DESC LIMIT 1')
         .get()
       expect(latest).toEqual({
-        user_id: m.people[quien].userId,
-        device_id: m.register.connection.dispositivoId,
+        user_id: m.people[who].userId,
+        device_id: m.register.connection.deviceId,
       })
     }
   })
 
   it('quien tiene solo editar_precios no puede mezclar precio con archivar', async () => {
     const m = await montarServidor()
-    const { insertarVersionado } = await import('./acceso/registros')
-    insertarVersionado(
+    const { insertVersioned } = await import('./acceso/registros')
+    insertVersioned(
       m.db,
       'role_permissions',
-      m.restauranteId,
+      m.restaurantId,
       { role_id: m.roles.cashier, permission: 'edit_prices' },
-      { userId: null, dispositivoId: null },
+      { userId: null, deviceId: null },
       m.clock(),
     )
     const burrata = burrataDe(m)
@@ -465,12 +465,12 @@ describe('permisos y sesiones', () => {
 describe('ids y datos inválidos', () => {
   const rejected = async (m: Awaited<ReturnType<typeof montarServidor>>, changes: unknown) => {
     const before = m.catalog().version
-    const rows = m.historial().length
+    const rows = m.history().length
     const r = await m.send(m.sesionDe('manager'), changes)
     expect(r.code).toBe(400)
     expect(m.catalog().version).toBe(before)
-    expect(m.historial()).toHaveLength(rows)
-    expect(m.avisos).toEqual([])
+    expect(m.history()).toHaveLength(rows)
+    expect(m.alerts).toEqual([])
     return r
   }
   const station = (id: unknown) => ({
@@ -539,11 +539,11 @@ describe('ids y datos inválidos', () => {
         data: { name: 'Nueva', position: 0, station_id: e, active },
       },
     ]
-    const avisos = m.avisos.length
+    const alerts = m.alerts.length
     const r = await m.editar(session, newOne(true))
     expect(r.code).toBe(400)
     expect(r.cuerpo.message).toMatch(/archivado/)
-    expect(m.avisos).toHaveLength(avisos)
+    expect(m.alerts).toHaveLength(alerts)
     expect((await m.editar(session, newOne(false))).code).toBe(200)
   })
 
@@ -642,13 +642,13 @@ describe('ids y datos inválidos', () => {
     expect((await m.send(session, [{ ...station(newId()), restaurant_id: newId() }])).code).toBe(
       400,
     )
-    const crudo = await m.app.inject({
+    const raw = await m.app.inject({
       method: 'POST',
       url: '/api/catalog/changes',
       headers: { authorization: `Bearer ${m.register.token}`, 'content-type': 'application/json' },
       payload: `{"session_id":"${session.session_id}","secret":"${session.secret}","changes":[{"entity":"stations","id":"${newId()}","data":{"name":"X","position":0,"active":true,"__proto__":{"version":1}}}]}`,
     })
-    expect(crudo.statusCode).toBe(400)
+    expect(raw.statusCode).toBe(400)
     expect(m.catalog().version).toBe(before)
   })
 
@@ -783,12 +783,12 @@ describe('cambios que no cambian nada', () => {
     const order = [{ entity: 'products', id: burrata.id, data: { price: burrata.price + 700 } }]
     const firstOne = await m.editar(session, order)
     expect(firstOne.cuerpo.cambiados).toBe(1)
-    const rows = m.historial().length
+    const rows = m.history().length
     const secondOne = await m.editar(session, order)
     expect(secondOne.code).toBe(200)
     expect(secondOne.cuerpo).toEqual({ version: firstOne.cuerpo.version, cambiados: 0 })
-    expect(m.historial()).toHaveLength(rows)
-    expect(m.avisos).toEqual([firstOne.cuerpo.version])
+    expect(m.history()).toHaveLength(rows)
+    expect(m.alerts).toEqual([firstOne.cuerpo.version])
   })
 
   it('con un campo igual y otro distinto solo cuenta el distinto', async () => {
@@ -849,9 +849,9 @@ describe('el padre de un registro no cambia', () => {
       expect(r2.code).toBe(400)
       expect(r2.cuerpo.message).toMatch(/otro group/)
     }
-    const enlace = String(m.db.prepare('SELECT id FROM product_modifier_groups LIMIT 1').get()?.id)
+    const link = String(m.db.prepare('SELECT id FROM product_modifier_groups LIMIT 1').get()?.id)
     const r3 = await m.editar(session, [
-      { entity: 'product_modifier_groups', id: enlace, data: { product_id: other.id } },
+      { entity: 'product_modifier_groups', id: link, data: { product_id: other.id } },
     ])
     expect(r3.code).toBe(400)
     expect(m.catalog().version).toBe(before)
@@ -892,14 +892,14 @@ describe('archivar lo que otros usan', () => {
 
   it('una estación con categorías activas no se archiva', async () => {
     const m = await montarServidor()
-    const estacionId = String(
+    const stationId = String(
       m.db
         .prepare(
           'SELECT station_id AS id FROM categories WHERE station_id IS NOT NULL AND active = 1 LIMIT 1',
         )
         .get()?.id,
     )
-    const r = await m.editar(m.sesionDe('manager'), archive('stations', estacionId))
+    const r = await m.editar(m.sesionDe('manager'), archive('stations', stationId))
     expect(r.code).toBe(400)
     expect(r.cuerpo.message).toMatch(/categorías/)
   })
@@ -949,18 +949,18 @@ describe('archivar lo que otros usan', () => {
     const tagliata = m.product('Tagliata di Manzo')
     const group = tagliata.groups[0]
     if (!group) throw new Error('falta')
-    const enlace = String(
+    const link = String(
       m.db.prepare('SELECT id FROM product_modifier_groups WHERE group_id = ?').get(group.id)?.id,
     )
     const r = await m.editar(m.sesionDe('manager'), archive('modifier_groups', group.id))
     expect(r.code).toBe(200)
     expect(
-      m.db.prepare('SELECT active FROM product_modifier_groups WHERE id = ?').get(enlace),
+      m.db.prepare('SELECT active FROM product_modifier_groups WHERE id = ?').get(link),
     ).toEqual({ active: 0 })
     expect(m.product('Tagliata di Manzo').groups).toHaveLength(0)
     // El enlace archivado se anotó, con una versión propia.
     expect(
-      m.db.prepare('SELECT count(*) AS n FROM catalog_changes WHERE record_id = ?').get(enlace)?.n,
+      m.db.prepare('SELECT count(*) AS n FROM catalog_changes WHERE record_id = ?').get(link)?.n,
     ).toBe(2)
     expect(r.cuerpo.version).toBe(m.catalog().version)
   })
@@ -970,7 +970,7 @@ describe('archivar lo que otros usan', () => {
     const group = m.product('Tagliata di Manzo').groups[0]
     if (!group) throw new Error('falta')
     const r = await m.editar(m.sesionDe('manager'), archive('modifier_groups', group.id))
-    expect(m.avisos).toEqual([r.cuerpo.version])
+    expect(m.alerts).toEqual([r.cuerpo.version])
   })
 
   it('archivar un producto y tocar en el mismo pedido uno de sus tamaños activos se rechaza', async () => {

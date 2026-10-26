@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newId } from '@pos/core'
-import type { MensajeHub } from '@pos/sync'
+import type { HubMessage } from '@pos/sync'
 import { afterEach, describe, expect, it } from 'vitest'
 import { montarAcceso } from './acceso/montaje'
 import { prepararSincronizacion } from './arranque'
@@ -20,54 +20,54 @@ function mundo() {
   const m = montarAcceso()
   const dir = mkdtempSync(join(tmpdir(), 'hub-closeout-'))
   carpetas.push(dir)
-  const sala = prepararSincronizacion(m.db, dir, m.restauranteId, m.access)
+  const floor = prepararSincronizacion(m.db, dir, m.restaurantId, m.access)
   const register = m.emparejar('register')
   const session = m.entrar(register.connection, 'cashier')
-  const recibidos: MensajeHub[] = []
-  const enlace = sala.connect((message) => recibidos.push(message))
-  enlace.recibir({
+  const received: HubMessage[] = []
+  const link = floor.connect((message) => received.push(message))
+  link.receive({
     type: 'hello',
     token: register.token,
-    hub_instancia: null,
+    hub_instance: null,
     until: 0,
     version_app: 'pruebas',
   })
   let batch = 0
-  const maxSecuencia = () =>
+  const maxSequence = () =>
     Number(
       m.db
         .prepare('SELECT coalesce(max(sequence), 0) AS s FROM events WHERE restaurant_id = ?')
-        .get(m.restauranteId)?.s,
+        .get(m.restaurantId)?.s,
     )
-  const mandar = (type: string, aggregate: string, data: unknown): string => {
+  const submit = (type: string, aggregate: string, data: unknown): string => {
     batch += 1
-    enlace.recibir({
+    link.receive({
       type: 'push',
-      lote_id: `lote-${batch}`,
+      batch_id: `lote-${batch}`,
       events: [
         m.event(register.connection, session, type, data, {
           aggregate_id: aggregate,
           aggregate_type: 'register_shift',
-          base_sequence: maxSecuencia(),
+          base_sequence: maxSequence(),
         } as never),
       ],
     })
-    const latest = recibidos.filter((x) => x.type === 'result').at(-1)
+    const latest = received.filter((x) => x.type === 'result').at(-1)
     if (latest?.type !== 'result') throw new Error('Sin resultado')
-    const r = latest.resultados[0]
+    const r = latest.results[0]
     return r?.status === 'rejected' ? r.reason : (r?.status ?? 'sin resultado')
   }
   const ponerConfig = (config: object) =>
     m.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify(config), m.restauranteId)
+      .run(JSON.stringify(config), m.restaurantId)
 
   /** Abre un turno de base 100.000 y cuenta `contado` pesos (en billetes de $1.000 y monedas de $1). */
   const turnoContado = (counted: number) => {
     const shift = newId()
     expect(
-      mandar('ShiftOpened', shift, {
-        register_id: register.connection.dispositivoId,
+      submit('ShiftOpened', shift, {
+        register_id: register.connection.deviceId,
         base: 100_000,
       }),
     ).toBe('confirmed')
@@ -77,14 +77,14 @@ function mundo() {
       { value: 1, quantity: counted % 1_000 },
     ].filter((c) => c.quantity > 0)
     expect(
-      mandar('CashCountRecorded', shift, {
+      submit('CashCountRecorded', shift, {
         cash_count_id: cashCount,
         tally,
         counted_cash: counted,
       }),
     ).toBe('confirmed')
     const close = (justification: string | null = null) =>
-      mandar('ShiftClosed', shift, {
+      submit('ShiftClosed', shift, {
         cash_count_id: cashCount,
         expected_cash: 100_000,
         counted_cash: counted,
@@ -93,7 +93,7 @@ function mundo() {
       })
     return { shift, cashCount, close }
   }
-  return { m, ponerConfig, turnoContado, mandar }
+  return { m, ponerConfig, turnoContado, submit }
 }
 
 describe('el umbral de diferencia se lee de la configuración en cada cierre', () => {

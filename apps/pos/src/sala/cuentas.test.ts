@@ -8,12 +8,12 @@ import {
   suggestedTip,
   validateNewEvent,
 } from '@pos/core'
-import type { Catalogo, EstadoLocal, EventoLocal } from '@pos/sync'
+import type { Catalog, LocalEvent, LocalState } from '@pos/sync'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import {
   enPartesIguales,
-  lineasDe,
+  linesOf,
   methodName,
   opcionesDeCobro,
   pagoEnEfectivo,
@@ -36,17 +36,17 @@ import { catalogoDePrueba, datosItem, inOrder, local, opening, TIME } from './pr
 // Precuenta, división, pagos y propina de la caja (tarea 1.6): cada monto sale de `@pos/core` con
 // las reglas del restaurante (docs/DINERO.md). Aquí se prueba lo que arma `cuentas.ts`.
 
-const REGLAS: ReglasCobro = {
-  mediosPago: ['cash', 'card', 'nequi', 'daviplata', 'breb', 'transfer'],
+const RULES: ReglasCobro = {
+  paymentMethods: ['cash', 'card', 'nequi', 'daviplata', 'breb', 'transfer'],
   suggestedTip: 1000,
-  redondeoModo: 'half_up',
-  redondeoEfectivo: 100,
+  roundingMode: 'half_up',
+  cashRounding: 100,
   cashRoundingMode: 'nearest_half_down',
-  imprimePrecuenta: false,
+  printsPreBill: false,
 }
 
 const SHIFT = newId()
-const pagoIdDe = (l: EventoLocal) => (l.event.data as { payment_id: string }).payment_id
+const pagoIdDe = (l: LocalEvent) => (l.event.data as { payment_id: string }).payment_id
 const add = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0)
 
 /** Un contador de ids para que las pruebas de división sean legibles. */
@@ -58,7 +58,7 @@ const ids = () => {
 /** Un pedido abierto con esos productos (precio × cantidad, al 8 %). */
 function orderWith(
   products: { price: number; quantity?: number; name?: string; rate?: number }[],
-  extra: EventoLocal[] = [],
+  extra: LocalEvent[] = [],
 ): { id: string; status: OrderState; items: string[] } {
   const id = newId()
   const items = products.map((p) =>
@@ -73,14 +73,14 @@ function orderWith(
     local('OrderOpened', id, opening),
     ...items.map((i) => local('ItemAdded', id, i)),
     ...extra.map((e) => ({ ...e, event: { ...e.event, aggregate_id: id } })),
-  ] as EventoLocal[]
+  ] as LocalEvent[]
   const visible = pedidosAbiertos(inOrder(events)).find((p) => p.status.id === id)
   if (!visible) throw new Error('sin pedido')
   return { id, status: visible.status, items: items.map((i) => i.item_id) }
 }
 
 /** El mismo pedido tras aplicar más eventos propios. */
-function conEventos(id: string, base: EventoLocal[], more: EventoLocal[]): OrderState {
+function conEventos(id: string, base: LocalEvent[], more: LocalEvent[]): OrderState {
   const v = pedidosAbiertos(inOrder([...base, ...more])).find((p) => p.status.id === id)
   if (!v) throw new Error('sin pedido')
   return v.status
@@ -103,10 +103,10 @@ const pagoDatos = (fields: Record<string, unknown> = {}) => ({
 })
 
 /** Un pedido de un plato con eventos propios (para pagos y divisiones). */
-function pedidoDeUnPlato(price: number, more: (id: string) => EventoLocal[] = () => []) {
+function pedidoDeUnPlato(price: number, more: (id: string) => LocalEvent[] = () => []) {
   const id = newId()
   const dish = datosItem({ unit_price: price })
-  const base = [local('OrderOpened', id, opening), local('ItemAdded', id, dish)] as EventoLocal[]
+  const base = [local('OrderOpened', id, opening), local('ItemAdded', id, dish)] as LocalEvent[]
   const events = [...base, ...more(id)]
   const v = pedidosAbiertos(inOrder(events)).find((p) => p.status.id === id)
   if (!v) throw new Error('sin pedido')
@@ -120,9 +120,9 @@ describe('reglasDe, nombres y formato', () => {
   })
 
   it('con cobro devuelve las reglas tal cual', () => {
-    const catalog: Catalogo = catalogoDePrueba()
-    catalog.restaurant.checkout = REGLAS
-    expect(reglasDe(catalog)).toBe(REGLAS)
+    const catalog: Catalog = catalogoDePrueba()
+    catalog.restaurant.checkout = RULES
+    expect(reglasDe(catalog)).toBe(RULES)
   })
 
   it('cada medio de pago tiene su nombre en español', () => {
@@ -144,15 +144,15 @@ describe('reglasDe, nombres y formato', () => {
 describe('propinaSugeridaDe y propinaParaEfectivo', () => {
   it('es la propina del pedido: 100.000 al 8 % → 9.259; un monto de 0 o menos, 0', () => {
     const { status } = orderWith([{ price: 100_000 }])
-    expect(propinaSugeridaDe(status, 100_000, REGLAS)).toBe(9_259)
-    expect(propinaSugeridaDe(status, 0, REGLAS)).toBe(0)
-    expect(propinaSugeridaDe(status, -5, REGLAS)).toBe(0)
+    expect(propinaSugeridaDe(status, 100_000, RULES)).toBe(9_259)
+    expect(propinaSugeridaDe(status, 0, RULES)).toBe(0)
+    expect(propinaSugeridaDe(status, -5, RULES)).toBe(0)
   })
 
   it('sigue la tasa del restaurante: 0 % no sugiere nada', () => {
     const { status } = orderWith([{ price: 100_000 }])
-    expect(propinaSugeridaDe(status, 100_000, { ...REGLAS, suggestedTip: 0 })).toBe(0)
-    expect(propinaSugeridaDe(status, 100_000, { ...REGLAS, suggestedTip: 500 })).toBe(4_630)
+    expect(propinaSugeridaDe(status, 100_000, { ...RULES, suggestedTip: 0 })).toBe(0)
+    expect(propinaSugeridaDe(status, 100_000, { ...RULES, suggestedTip: 500 })).toBe(4_630)
   })
 
   it.each([
@@ -167,45 +167,45 @@ describe('propinaSugeridaDe y propinaParaEfectivo', () => {
   ])(
     'en efectivo la propina %i se sugiere redondeada a %i (múltiplo 100, mitad hacia el cliente)',
     (tip, expected) => {
-      expect(propinaParaEfectivo(tip, REGLAS)).toBe(expected)
+      expect(propinaParaEfectivo(tip, RULES)).toBe(expected)
     },
   )
 
   it('con otro múltiplo o modo del restaurante', () => {
-    expect(propinaParaEfectivo(23_843, { ...REGLAS, redondeoEfectivo: 50 })).toBe(23_850)
-    expect(propinaParaEfectivo(23_843, { ...REGLAS, redondeoEfectivo: 1 })).toBe(23_843)
-    expect(propinaParaEfectivo(23_843, { ...REGLAS, cashRoundingMode: 'up' })).toBe(23_900)
-    expect(propinaParaEfectivo(23_843, { ...REGLAS, cashRoundingMode: 'down' })).toBe(23_800)
+    expect(propinaParaEfectivo(23_843, { ...RULES, cashRounding: 50 })).toBe(23_850)
+    expect(propinaParaEfectivo(23_843, { ...RULES, cashRounding: 1 })).toBe(23_843)
+    expect(propinaParaEfectivo(23_843, { ...RULES, cashRoundingMode: 'up' })).toBe(23_900)
+    expect(propinaParaEfectivo(23_843, { ...RULES, cashRoundingMode: 'down' })).toBe(23_800)
   })
 })
 
 describe('propinaDePago: los pagos parciales suman la propina entera', () => {
   it('100.000: 30.000 + 70.000 dan 2.778 + 6.481 = 9.259', () => {
     const { status } = orderWith([{ price: 100_000 }])
-    const a = propinaDePago(status, null, 100_000, 30_000, REGLAS)
-    const b = propinaDePago(status, null, 70_000, 70_000, REGLAS)
+    const a = propinaDePago(status, null, 100_000, 30_000, RULES)
+    const b = propinaDePago(status, null, 70_000, 70_000, RULES)
     expect([a, b]).toEqual([2_778, 6_481])
-    expect(a + b).toBe(propinaSugeridaDe(status, 100_000, REGLAS))
+    expect(a + b).toBe(propinaSugeridaDe(status, 100_000, RULES))
   })
 
   it('valor 0, negativo o mayor que lo disponible: 0', () => {
     const { status } = orderWith([{ price: 100_000 }])
-    expect(propinaDePago(status, null, 100_000, 0, REGLAS)).toBe(0)
-    expect(propinaDePago(status, null, 100_000, -1, REGLAS)).toBe(0)
-    expect(propinaDePago(status, null, 100_000, 100_001, REGLAS)).toBe(0)
+    expect(propinaDePago(status, null, 100_000, 0, RULES)).toBe(0)
+    expect(propinaDePago(status, null, 100_000, -1, RULES)).toBe(0)
+    expect(propinaDePago(status, null, 100_000, 100_001, RULES)).toBe(0)
   })
 
   it('pagar todo lo disponible lleva la propina de todo lo disponible', () => {
     const { status } = orderWith([{ price: 100_000 }])
-    expect(propinaDePago(status, null, 60_000, 60_000, REGLAS)).toBe(5_556)
+    expect(propinaDePago(status, null, 60_000, 60_000, RULES)).toBe(5_556)
   })
 
   it('en una cuenta dividida usa la propina fijada al dividir (4.630 de 50.000)', () => {
     const { status } = orderWith([{ price: 100_000 }])
     const check = { amount: 50_000, suggestedTip: 4_630 }
-    expect(propinaDePago(status, check, 50_000, 50_000, REGLAS)).toBe(4_630)
-    const a = propinaDePago(status, check, 50_000, 20_000, REGLAS)
-    const b = propinaDePago(status, check, 30_000, 30_000, REGLAS)
+    expect(propinaDePago(status, check, 50_000, 50_000, RULES)).toBe(4_630)
+    const a = propinaDePago(status, check, 50_000, 20_000, RULES)
+    const b = propinaDePago(status, check, 30_000, 30_000, RULES)
     expect(a + b).toBe(4_630)
   })
 
@@ -224,10 +224,10 @@ describe('propinaDePago: los pagos parciales suman la propina entera', () => {
           let sum = 0
           for (const share of parts) {
             if (share <= 0) continue
-            sum += propinaDePago(status, null, available, share, REGLAS)
+            sum += propinaDePago(status, null, available, share, RULES)
             available -= share
           }
-          expect(sum).toBe(propinaSugeridaDe(status, balance, REGLAS))
+          expect(sum).toBe(propinaSugeridaDe(status, balance, RULES))
         },
       ),
       { seed: 16, numRuns: 200 },
@@ -241,21 +241,21 @@ describe('lineasDe: lo que sigue en pie', () => {
       { price: 40_900, name: 'Margarita', quantity: 2 },
       { price: 58_900, name: 'Tagliata' },
     ])
-    expect(lineasDe(status).map((l) => [l.name, l.quantity, l.net])).toEqual([
+    expect(linesOf(status).map((l) => [l.name, l.quantity, l.net])).toEqual([
       ['Margarita', 2, 81_800],
       ['Tagliata', 1, 58_900],
     ])
   })
 
   it('un pedido sin productos no tiene líneas', () => {
-    expect(lineasDe(orderWith([]).status)).toEqual([])
+    expect(linesOf(orderWith([]).status)).toEqual([])
   })
 })
 
 describe('enPartesIguales', () => {
   it('100.000 en 3: 33.334 + 33.333 + 33.333, con sus nombres y sin productos fijos', () => {
     const { status } = orderWith([{ price: 100_000 }])
-    const checks = enPartesIguales(status, 3, REGLAS, ids())
+    const checks = enPartesIguales(status, 3, RULES, ids())
     expect(checks.map((c) => c.amount)).toEqual([33_334, 33_333, 33_333])
     expect(checks.map((c) => c.name)).toEqual(['Persona 1', 'Persona 2', 'Persona 3'])
     expect(checks.map((c) => c.check_id)).toEqual(['check-1', 'check-2', 'check-3'])
@@ -264,7 +264,7 @@ describe('enPartesIguales', () => {
 
   it('las propinas suman la del saldo repartida por mayor residuo (9.259 en 3)', () => {
     const { status } = orderWith([{ price: 100_000 }])
-    const checks = enPartesIguales(status, 3, REGLAS, ids())
+    const checks = enPartesIguales(status, 3, RULES, ids())
     expect(add(checks.map((c) => c.suggested_tip))).toBe(9_259)
     expect(checks.map((c) => c.suggested_tip)).toEqual([3_087, 3_086, 3_086])
   })
@@ -273,14 +273,14 @@ describe('enPartesIguales', () => {
     const p = pedidoDeUnPlato(100_000, (id) => [
       local('PaymentRecorded', id, pagoDatos({ amount: 40_000 })),
     ])
-    const checks = enPartesIguales(p.status, 2, REGLAS, ids())
+    const checks = enPartesIguales(p.status, 2, RULES, ids())
     expect(checks.map((c) => c.amount)).toEqual([30_000, 30_000])
     expect(checks.map((c) => c.suggested_tip)).toEqual([2_778, 2_778])
   })
 
   it('más personas que pesos: 2 pesos en 3 → 1 + 1 + 0, sin montos negativos', () => {
     const { status } = orderWith([{ price: 2 }])
-    const checks = enPartesIguales(status, 3, REGLAS, ids())
+    const checks = enPartesIguales(status, 3, RULES, ids())
     expect(checks.map((c) => c.amount)).toEqual([1, 1, 0])
   })
 
@@ -288,7 +288,7 @@ describe('enPartesIguales', () => {
     const p = pedidoDeUnPlato(40_000, (id) => [
       local('PaymentRecorded', id, pagoDatos({ amount: 40_000 })),
     ])
-    const checks = enPartesIguales(p.status, 2, REGLAS, ids())
+    const checks = enPartesIguales(p.status, 2, RULES, ids())
     expect(checks.map((c) => [c.amount, c.suggested_tip])).toEqual([
       [0, 0],
       [0, 0],
@@ -297,13 +297,13 @@ describe('enPartesIguales', () => {
 
   it('sin propina sugerida en el restaurante, las cuentas llevan 0', () => {
     const { status } = orderWith([{ price: 100_000 }])
-    const checks = enPartesIguales(status, 4, { ...REGLAS, suggestedTip: 0 }, ids())
+    const checks = enPartesIguales(status, 4, { ...RULES, suggestedTip: 0 }, ids())
     expect(checks.map((c) => c.suggested_tip)).toEqual([0, 0, 0, 0])
   })
 
   it('la división pasa el esquema de CuentaDividida y el reductor la acepta, y las cuentas suman el saldo', () => {
     const { id, status, base } = pedidoDeUnPlato(100_000)
-    const checks = enPartesIguales(status, 3, REGLAS, newId)
+    const checks = enPartesIguales(status, 3, RULES, newId)
     const event = local('CheckSplit', id, { checks })
     expect(validateNewEvent(sinHub(event)).ok).toBe(true)
     const after = conEventos(id, base, [event])
@@ -326,12 +326,12 @@ describe('enPartesIguales', () => {
         fc.integer({ min: 0, max: 1000 }),
         (products, people, tipRate) => {
           const { status } = orderWith(products)
-          const reglas = { ...REGLAS, suggestedTip: tipRate }
+          const rules = { ...RULES, suggestedTip: tipRate }
           const balance = orderTotals(status).balance
-          const checks = enPartesIguales(status, people, reglas, newId)
+          const checks = enPartesIguales(status, people, rules, newId)
           expect(add(checks.map((c) => c.amount))).toBe(balance)
           expect(add(checks.map((c) => c.suggested_tip))).toBe(
-            propinaSugeridaDe(status, balance, reglas),
+            propinaSugeridaDe(status, balance, rules),
           )
           for (const c of checks) {
             expect(c.amount).toBeGreaterThanOrEqual(0)
@@ -348,7 +348,7 @@ describe('enPartesIguales', () => {
 })
 
 /** El evento como lo crea el dispositivo (sin lo que agrega el hub), para el esquema. */
-function sinHub(l: EventoLocal) {
+function sinHub(l: LocalEvent) {
   const {
     sequence: _s,
     received_at: _r,
@@ -393,7 +393,7 @@ describe('porProductos', () => {
         [items[1] as string, [1]],
       ]),
       2,
-      REGLAS,
+      RULES,
       ids(),
     )
     expect(r.unassigned).toBe(0)
@@ -401,13 +401,13 @@ describe('porProductos', () => {
     expect(r.checks.map((c) => c.name)).toEqual(['Cuenta 1', 'Cuenta 2'])
     expect(r.checks[0]?.items).toEqual([{ item_id: items[0], fraction: { n: 1, d: 1 } }])
     expect(add(r.checks.map((c) => c.suggested_tip))).toBe(
-      propinaSugeridaDe(status, 100_000, REGLAS),
+      propinaSugeridaDe(status, 100_000, RULES),
     )
   })
 
   it('un producto compartido entre 3 se reparte por mayor residuo con fracción 1/3 en cada cuenta', () => {
     const { status, items } = orderWith([{ price: 100_000, name: 'Botella' }])
-    const r = porProductos(status, new Map([[items[0] as string, [0, 1, 2]]]), 3, REGLAS, ids())
+    const r = porProductos(status, new Map([[items[0] as string, [0, 1, 2]]]), 3, RULES, ids())
     expect(r.checks.map((c) => c.amount)).toEqual([33_334, 33_333, 33_333])
     for (const c of r.checks) expect(c.items[0]?.fraction).toEqual({ n: 1, d: 3 })
     expect(r.unassigned).toBe(0)
@@ -422,7 +422,7 @@ describe('porProductos', () => {
         [items[1] as string, [1]],
       ]),
       2,
-      REGLAS,
+      RULES,
       ids(),
     )
     expect(r.checks.map((c) => c.amount)).toEqual([25_001, 45_000])
@@ -434,7 +434,7 @@ describe('porProductos', () => {
 
   it('nada asignado: todo queda sin asignar, las cuentas en 0 y sin propina', () => {
     const { status } = orderWith([{ price: 40_000 }, { price: 60_000 }])
-    const r = porProductos(status, new Map(), 3, REGLAS, ids())
+    const r = porProductos(status, new Map(), 3, RULES, ids())
     expect(r.unassigned).toBe(100_000)
     expect(r.checks.map((c) => [c.amount, c.suggested_tip, c.items])).toEqual([
       [0, 0, []],
@@ -445,12 +445,10 @@ describe('porProductos', () => {
 
   it('lo que nadie toma queda sin asignar y sus montos no entran en la propina de las cuentas', () => {
     const { status, items } = orderWith([{ price: 40_000 }, { price: 60_000 }])
-    const r = porProductos(status, new Map([[items[0] as string, [0]]]), 2, REGLAS, ids())
+    const r = porProductos(status, new Map([[items[0] as string, [0]]]), 2, RULES, ids())
     expect(r.unassigned).toBe(60_000)
     expect(r.checks.map((c) => c.amount)).toEqual([40_000, 0])
-    expect(add(r.checks.map((c) => c.suggested_tip))).toBe(
-      propinaSugeridaDe(status, 40_000, REGLAS),
-    )
+    expect(add(r.checks.map((c) => c.suggested_tip))).toBe(propinaSugeridaDe(status, 40_000, RULES))
   })
 
   it('cuentas recortadas: lo asignado a una cuenta que ya no existe se ignora', () => {
@@ -462,7 +460,7 @@ describe('porProductos', () => {
         [items[1] as string, [4]],
       ]),
       2,
-      REGLAS,
+      RULES,
       ids(),
     )
     // El primero queda solo en la cuenta 0 (fracción 1/1); el segundo, sin dueño.
@@ -475,14 +473,14 @@ describe('porProductos', () => {
     const p = pedidoDeUnPlato(40_000)
     const other = datosItem({ unit_price: 10_000 })
     const status = estadoConAnulado(p, other)
-    const r = porProductos(status, new Map([[p.dish.item_id, [0]]]), 2, REGLAS, ids())
+    const r = porProductos(status, new Map([[p.dish.item_id, [0]]]), 2, RULES, ids())
     expect(r.checks.map((c) => c.amount)).toEqual([40_000, 0])
     expect(r.unassigned).toBe(0)
   })
 
   // BUG: si un producto se anula (otro equipo) después de que el cajero lo asignó a una cuenta, la
   // asignación sigue en el mapa y `splitByItems` lanza «El ítem … no está en el pedido».
-  // apps/pos/src/sala/cuentas.ts, porProductos: las asignaciones no se filtran por `lineasDe`.
+  // apps/pos/src/sala/cuentas.ts, porProductos: las asignaciones no se filtran por `linesOf`.
   it('un producto asignado que luego se anula no rompe la división', () => {
     const p = pedidoDeUnPlato(40_000)
     const other = datosItem({ unit_price: 10_000 })
@@ -494,7 +492,7 @@ describe('porProductos', () => {
         [other.item_id, [1]],
       ]),
       2,
-      REGLAS,
+      RULES,
       ids(),
     )
     expect(r.checks.map((c) => c.amount)).toEqual([40_000, 0])
@@ -512,7 +510,7 @@ describe('porProductos', () => {
         [other.item_id, [2]],
       ]),
       3,
-      REGLAS,
+      RULES,
       newId,
     )
     const event = local('CheckSplit', p.id, { checks: r.checks })
@@ -535,7 +533,7 @@ describe('porProductos', () => {
           const asignadas = new Map(
             items.map((id, i) => [id, [...new Set(reparto[i] ?? [])]] as const),
           )
-          const r = porProductos(status, asignadas, checks, REGLAS, newId)
+          const r = porProductos(status, asignadas, checks, RULES, newId)
           expect(add(r.checks.map((c) => c.amount)) + r.unassigned).toBe(add(prices))
           for (const c of r.checks) expect(c.amount).toBeGreaterThanOrEqual(0)
           const byItem = new Map<string, number>()
@@ -583,9 +581,9 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
   ) =>
     pagoEnEfectivo(
       { balance, amount: extra.amount ?? balance, tip: extra.tip ?? 0, tendered },
-      REGLAS,
+      RULES,
     )
-  const REDONDEO = { multiple: 100, mode: 'nearest_half_down' }
+  const ROUNDING = { multiple: 100, mode: 'nearest_half_down' }
 
   it.each([
     // saldo, recibido, cobrado, ajuste, cambio
@@ -599,7 +597,7 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
     (balance, tendered, charged, adjustment, change) => {
       const c = cobra(balance, tendered)
       expect(c).toMatchObject({ charged, adjustment, change, missing: 0, aEntregar: charged })
-      expect(c.rounding).toEqual(adjustment === 0 ? null : REDONDEO)
+      expect(c.rounding).toEqual(adjustment === 0 ? null : ROUNDING)
     },
   )
 
@@ -609,7 +607,7 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
   })
 
   it('pago parcial: se cobra el monto exacto, sin redondeo ni regla en el evento', () => {
-    const c = pagoEnEfectivo({ balance: 100_000, amount: 36_851, tip: 0, tendered: 40_000 }, REGLAS)
+    const c = pagoEnEfectivo({ balance: 100_000, amount: 36_851, tip: 0, tendered: 40_000 }, RULES)
     expect(c).toMatchObject({
       charged: 36_851,
       adjustment: 0,
@@ -620,7 +618,7 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
   })
 
   it('un monto un peso menos que el saldo ya es parcial: sin redondeo', () => {
-    const c = pagoEnEfectivo({ balance: 36_851, amount: 36_850, tip: 0, tendered: 36_850 }, REGLAS)
+    const c = pagoEnEfectivo({ balance: 36_851, amount: 36_850, tip: 0, tendered: 36_850 }, RULES)
     expect(c).toMatchObject({ charged: 36_850, adjustment: 0, rounding: null })
   })
 
@@ -632,7 +630,7 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
       change: 0,
       missing: 0,
     })
-    expect(cobra(50, 0)).toMatchObject({ charged: 0, adjustment: -50, rounding: REDONDEO })
+    expect(cobra(50, 0)).toMatchObject({ charged: 0, adjustment: -50, rounding: ROUNDING })
     expect(cobra(51, 100)).toMatchObject({ charged: 100, adjustment: 49 })
   })
 
@@ -659,12 +657,12 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
 
   it('rechaza monto 0, monto mayor que el saldo, decimales y negativos', () => {
     const base = { balance: 36_810, amount: 36_810, tip: 0, tendered: 40_000 }
-    expect(() => pagoEnEfectivo({ ...base, amount: 0 }, REGLAS)).toThrow(RangeError)
-    expect(() => pagoEnEfectivo({ ...base, amount: 36_811 }, REGLAS)).toThrow(RangeError)
-    expect(() => pagoEnEfectivo({ ...base, amount: 1.5 }, REGLAS)).toThrow()
-    expect(() => pagoEnEfectivo({ ...base, tip: -1 }, REGLAS)).toThrow()
-    expect(() => pagoEnEfectivo({ ...base, tendered: Number.NaN }, REGLAS)).toThrow()
-    expect(() => pagoEnEfectivo({ ...base, balance: -5 }, REGLAS)).toThrow()
+    expect(() => pagoEnEfectivo({ ...base, amount: 0 }, RULES)).toThrow(RangeError)
+    expect(() => pagoEnEfectivo({ ...base, amount: 36_811 }, RULES)).toThrow(RangeError)
+    expect(() => pagoEnEfectivo({ ...base, amount: 1.5 }, RULES)).toThrow()
+    expect(() => pagoEnEfectivo({ ...base, tip: -1 }, RULES)).toThrow()
+    expect(() => pagoEnEfectivo({ ...base, tendered: Number.NaN }, RULES)).toThrow()
+    expect(() => pagoEnEfectivo({ ...base, balance: -5 }, RULES)).toThrow()
   })
 
   it.each([
@@ -676,7 +674,7 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
     (mode, multiple, balance, charged, adjustment) => {
       const c = pagoEnEfectivo(
         { balance, amount: balance, tip: 0, tendered: 1_000_000 },
-        { ...REGLAS, redondeoEfectivo: multiple, cashRoundingMode: mode },
+        { ...RULES, cashRounding: multiple, cashRoundingMode: mode },
       )
       expect(c).toMatchObject({ charged, adjustment, rounding: { multiple, mode } })
     },
@@ -685,7 +683,7 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
   it('con múltiplo 1 nunca hay ajuste ni regla en el evento', () => {
     const c = pagoEnEfectivo(
       { balance: 36_851, amount: 36_851, tip: 0, tendered: 36_851 },
-      { ...REGLAS, redondeoEfectivo: 1 },
+      { ...RULES, cashRounding: 1 },
     )
     expect(c).toMatchObject({ charged: 36_851, adjustment: 0, rounding: null })
   })
@@ -701,10 +699,10 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
         fc.constantFrom('nearest_half_down', 'nearest_half_up', 'down', 'up'),
         (balance, fraction, tip, extra, multiple, mode) => {
           const amount = Math.max(1, Math.floor(balance * fraction))
-          const reglas = { ...REGLAS, redondeoEfectivo: multiple, cashRoundingMode: mode }
-          const base = pagoEnEfectivo({ balance, amount, tip, tendered: 0 }, reglas)
+          const rules = { ...RULES, cashRounding: multiple, cashRoundingMode: mode }
+          const base = pagoEnEfectivo({ balance, amount, tip, tendered: 0 }, rules)
           const tendered = base.aEntregar + extra
-          const c = pagoEnEfectivo({ balance, amount, tip, tendered }, reglas)
+          const c = pagoEnEfectivo({ balance, amount, tip, tendered }, rules)
           expect(c.missing).toBe(0)
           expect(tendered).toBe(amount + c.adjustment + tip + c.change)
           expect(Math.abs(c.adjustment)).toBeLessThan(multiple)
@@ -823,11 +821,11 @@ describe('porCobrar', () => {
 
 // ── Turno y resumen ──────────────────────────────────────────────────────────
 
-const CAJA = newId()
+const REGISTER = newId()
 const turnoEvento = (
   registerId: string,
   base: number,
-  status: EstadoLocal = 'confirmed',
+  status: LocalState = 'confirmed',
   extras: object = {},
 ) =>
   local('ShiftOpened', newId(), { register_id: registerId, base }, status, {
@@ -837,13 +835,13 @@ const turnoEvento = (
 
 describe('turnoDeCaja', () => {
   it('sin turnos, o con turnos de otra caja, no hay turno', () => {
-    expect(turnoDeCaja([], CAJA)).toBeNull()
-    expect(turnoDeCaja([turnoEvento(newId(), 50_000)], CAJA)).toBeNull()
+    expect(turnoDeCaja([], REGISTER)).toBeNull()
+    expect(turnoDeCaja([turnoEvento(newId(), 50_000)], REGISTER)).toBeNull()
   })
 
   it('un turno confirmado: su base y su id, sin «por confirmar»', () => {
-    const t = turnoEvento(CAJA, 200_000)
-    expect(turnoDeCaja([t], CAJA)).toEqual({
+    const t = turnoEvento(REGISTER, 200_000)
+    expect(turnoDeCaja([t], REGISTER)).toEqual({
       id: t.event.aggregate_id,
       base: 200_000,
       openedAt: TIME,
@@ -852,41 +850,41 @@ describe('turnoDeCaja', () => {
   })
 
   it('un turno pendiente ya cuenta (se guardó aquí) y se marca por confirmar', () => {
-    const t = turnoEvento(CAJA, 0, 'pending')
-    expect(turnoDeCaja([t], CAJA)).toMatchObject({ base: 0, porConfirmar: true })
+    const t = turnoEvento(REGISTER, 0, 'pending')
+    expect(turnoDeCaja([t], REGISTER)).toMatchObject({ base: 0, porConfirmar: true })
   })
 
   it('un turno rechazado por el hub no cuenta; el anterior sigue', () => {
-    const good = turnoEvento(CAJA, 100)
-    const rejected = turnoEvento(CAJA, 999, 'rejected', {
+    const good = turnoEvento(REGISTER, 100)
+    const rejected = turnoEvento(REGISTER, 999, 'rejected', {
       hub_estimated_time: '2026-10-24T18:00:00.000Z',
     })
-    expect(turnoDeCaja([good, rejected], CAJA)?.base).toBe(100)
-    expect(turnoDeCaja([rejected], CAJA)).toBeNull()
+    expect(turnoDeCaja([good, rejected], REGISTER)?.base).toBe(100)
+    expect(turnoDeCaja([rejected], REGISTER)).toBeNull()
   })
 
   it('con dos turnos de la misma caja gana el más reciente, sin importar el orden de la lista', () => {
-    const oldOne = turnoEvento(CAJA, 100, 'pending', {
+    const oldOne = turnoEvento(REGISTER, 100, 'pending', {
       hub_estimated_time: '2026-10-24T10:00:00.000Z',
     })
-    const fresh = turnoEvento(CAJA, 200, 'pending', {
+    const fresh = turnoEvento(REGISTER, 200, 'pending', {
       hub_estimated_time: '2026-10-24T22:00:00.000Z',
     })
-    expect(turnoDeCaja([oldOne, fresh], CAJA)?.base).toBe(200)
-    expect(turnoDeCaja([fresh, oldOne], CAJA)?.base).toBe(200)
+    expect(turnoDeCaja([oldOne, fresh], REGISTER)?.base).toBe(200)
+    expect(turnoDeCaja([fresh, oldOne], REGISTER)?.base).toBe(200)
   })
 
   it('con cajas distintas, cada una ve el suyo', () => {
     const another = newId()
-    const a = turnoEvento(CAJA, 111)
+    const a = turnoEvento(REGISTER, 111)
     const b = turnoEvento(another, 222)
-    expect(turnoDeCaja([a, b], CAJA)?.base).toBe(111)
+    expect(turnoDeCaja([a, b], REGISTER)?.base).toBe(111)
     expect(turnoDeCaja([a, b], another)?.base).toBe(222)
   })
 
   it('ignora los eventos que no son de turno', () => {
     const p = pedidoDeUnPlato(1_000)
-    expect(turnoDeCaja(p.events, CAJA)).toBeNull()
+    expect(turnoDeCaja(p.events, REGISTER)).toBeNull()
   })
 })
 
@@ -896,7 +894,7 @@ describe('resumenTurno', () => {
   const pagoEv = (
     order: string,
     fields: Record<string, unknown>,
-    status: EstadoLocal = 'confirmed',
+    status: LocalState = 'confirmed',
   ) => local('PaymentRecorded', order, pagoDatos(fields), status)
   const pid = newId()
 
@@ -1055,8 +1053,8 @@ describe('resumenTurno', () => {
           { maxLength: 8 },
         ),
         (payments) => {
-          const events: EventoLocal[] = []
-          const quedan: EventoLocal[] = []
+          const events: LocalEvent[] = []
+          const quedan: LocalEvent[] = []
           for (const p of payments) {
             const e = pagoEv(pid, { register_shift_id: T1, ...p })
             events.push(e)
@@ -1095,12 +1093,12 @@ describe('los datos del panel de cobro pasan el esquema y el reductor', () => {
   }) {
     const calculo = pagoEnEfectivo(
       { balance: p.balance, amount: p.amount, tip: p.tip, tendered: p.tendered ?? 0 },
-      REGLAS,
+      RULES,
     )
     const served = p.tendered ?? calculo.aEntregar
     const final = pagoEnEfectivo(
       { balance: p.balance, amount: p.amount, tip: p.tip, tendered: served },
-      REGLAS,
+      RULES,
     )
     return {
       payment_id: newId(),
@@ -1178,7 +1176,7 @@ describe('los datos del panel de cobro pasan el esquema y el reductor', () => {
     // Saldo 36.810, entrega 40.000 y deja los 3.200 de cambio como propina.
     const calculo = pagoEnEfectivo(
       { balance: 36_810, amount: 36_810, tip: 0, tendered: 40_000 },
-      REGLAS,
+      RULES,
     )
     const payment = armarPago({
       method: 'cash',
@@ -1269,7 +1267,7 @@ describe('los datos del panel de cobro pasan el esquema y el reductor', () => {
         fc.constantFrom<Medio>('cash', 'card', 'nequi'),
         (price, fraction, tip, sobra, method) => {
           const amount = Math.max(1, Math.floor(price * fraction))
-          const base = pagoEnEfectivo({ balance: price, amount, tip, tendered: 0 }, REGLAS)
+          const base = pagoEnEfectivo({ balance: price, amount, tip, tendered: 0 }, RULES)
           const payment = armarPago({
             method,
             balance: price,
@@ -1299,7 +1297,7 @@ describe('propinaSugerida del núcleo frente a la de la pantalla', () => {
       net: i.quantity * i.unitPrice,
       rate: i.rate,
     }))
-    expect(propinaSugeridaDe(status, orderTotals(status).balance, REGLAS)).toBe(
+    expect(propinaSugeridaDe(status, orderTotals(status).balance, RULES)).toBe(
       suggestedTip(lines, 1000),
     )
   })
@@ -1308,8 +1306,8 @@ describe('propinaSugerida del núcleo frente a la de la pantalla', () => {
 const SODEXO = newId()
 const QR = newId()
 const CON_PROPIOS: ReglasCobro = {
-  ...REGLAS,
-  mediosPropios: [
+  ...RULES,
+  customMethods: [
     { id: SODEXO, name: 'Sodexo' },
     { id: QR, name: 'QR Bancolombia' },
   ],
@@ -1317,7 +1315,7 @@ const CON_PROPIOS: ReglasCobro = {
 
 describe('opcionesDeCobro y nombreDeMedio (medios propios)', () => {
   it('los de fábrica en orden, con la tarjeta partida en crédito y débito', () => {
-    const o = opcionesDeCobro(REGLAS)
+    const o = opcionesDeCobro(RULES)
     expect(o.map((x) => x.key)).toEqual([
       'cash',
       'credit',
@@ -1338,7 +1336,7 @@ describe('opcionesDeCobro y nombreDeMedio (medios propios)', () => {
   })
 
   it('sin tarjeta habilitada no salen crédito ni débito', () => {
-    const o = opcionesDeCobro({ ...REGLAS, mediosPago: ['cash', 'nequi'] })
+    const o = opcionesDeCobro({ ...RULES, paymentMethods: ['cash', 'nequi'] })
     expect(o.map((x) => x.key)).toEqual(['cash', 'nequi'])
   })
 
@@ -1352,14 +1350,14 @@ describe('opcionesDeCobro y nombreDeMedio (medios propios)', () => {
   })
 
   it('un hub sin medios propios (undefined o lista vacía) no agrega nada', () => {
-    expect(opcionesDeCobro({ ...REGLAS, mediosPropios: [] })).toEqual(opcionesDeCobro(REGLAS))
+    expect(opcionesDeCobro({ ...RULES, customMethods: [] })).toEqual(opcionesDeCobro(RULES))
   })
 
   it('nombreDeMedio: el normal por su nombre, el propio por el suyo y uno archivado o ajeno, «Otro»', () => {
-    expect(methodName('nequi', null, REGLAS)).toBe('Nequi')
+    expect(methodName('nequi', null, RULES)).toBe('Nequi')
     expect(methodName('other', SODEXO, CON_PROPIOS)).toBe('Sodexo')
     expect(methodName('other', newId(), CON_PROPIOS)).toBe('Otro')
-    expect(methodName('other', SODEXO, REGLAS)).toBe('Otro')
+    expect(methodName('other', SODEXO, RULES)).toBe('Otro')
     expect(methodName('other', null, null)).toBe('Otro')
     expect(methodName('cash', undefined, null)).toBe('Efectivo')
   })
@@ -1368,25 +1366,25 @@ describe('opcionesDeCobro y nombreDeMedio (medios propios)', () => {
 describe('propinaConPorcentaje', () => {
   it('5 % de $100.000 al 8 %: 4.630; 15 %: 13.889; 0 %: 0', () => {
     const { status } = orderWith([{ price: 100_000 }])
-    expect(propinaConPorcentaje(status, 100_000, 100_000, 500, REGLAS)).toBe(4_630)
-    expect(propinaConPorcentaje(status, 100_000, 100_000, 1500, REGLAS)).toBe(13_889)
-    expect(propinaConPorcentaje(status, 100_000, 100_000, 0, REGLAS)).toBe(0)
+    expect(propinaConPorcentaje(status, 100_000, 100_000, 500, RULES)).toBe(4_630)
+    expect(propinaConPorcentaje(status, 100_000, 100_000, 1500, RULES)).toBe(13_889)
+    expect(propinaConPorcentaje(status, 100_000, 100_000, 0, RULES)).toBe(0)
   })
 
   it('el 10 % coincide con la sugerida, y los pagos parciales suman la del total', () => {
     const { status } = orderWith([{ price: 100_000 }])
-    expect(propinaConPorcentaje(status, 100_000, 100_000, 1000, REGLAS)).toBe(
-      propinaSugeridaDe(status, 100_000, REGLAS),
+    expect(propinaConPorcentaje(status, 100_000, 100_000, 1000, RULES)).toBe(
+      propinaSugeridaDe(status, 100_000, RULES),
     )
-    const a = propinaConPorcentaje(status, 100_000, 30_000, 500, REGLAS)
-    const b = propinaConPorcentaje(status, 70_000, 70_000, 500, REGLAS)
+    const a = propinaConPorcentaje(status, 100_000, 30_000, 500, RULES)
+    const b = propinaConPorcentaje(status, 70_000, 70_000, 500, RULES)
     expect(a + b).toBe(4_630)
   })
 
   it('un valor mayor que lo disponible o 0, propina 0', () => {
     const { status } = orderWith([{ price: 100_000 }])
-    expect(propinaConPorcentaje(status, 50_000, 60_000, 500, REGLAS)).toBe(0)
-    expect(propinaConPorcentaje(status, 50_000, 0, 500, REGLAS)).toBe(0)
+    expect(propinaConPorcentaje(status, 50_000, 60_000, 500, RULES)).toBe(0)
+    expect(propinaConPorcentaje(status, 50_000, 0, 500, RULES)).toBe(0)
   })
 })
 

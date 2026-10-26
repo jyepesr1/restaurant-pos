@@ -11,7 +11,7 @@ import { readEscpos } from '@pos/printing'
 export interface ImpresoraDePrueba {
   port: number
   /** Lo recibido en cada conexión (una por trabajo). */
-  recibidos: Uint8Array[]
+  received: Uint8Array[]
   /** Apagada deja de escuchar: el hub recibe «conexión rechazada», como con una real apagada. */
   apagar(yes: boolean): Promise<void>
   /** Espera a tener al menos `n` trabajos recibidos (lo recibido llega un instante después). */
@@ -23,7 +23,7 @@ export function abrirImpresoraDePrueba(
   port = 0,
   alRecibir?: (bytes: Uint8Array) => void,
 ): Promise<ImpresoraDePrueba> {
-  const recibidos: Uint8Array[] = []
+  const received: Uint8Array[] = []
   const conexiones = new Set<Socket>()
   const servidor = createServer((socket) => {
     conexiones.add(socket)
@@ -31,29 +31,29 @@ export function abrirImpresoraDePrueba(
     socket.on('data', (d) => parts.push(d))
     socket.on('end', () => {
       const bytes = new Uint8Array(Buffer.concat(parts))
-      recibidos.push(bytes)
+      received.push(bytes)
       alRecibir?.(bytes)
       socket.end()
     })
     socket.on('error', () => {})
     socket.on('close', () => conexiones.delete(socket))
   })
-  return new Promise((resolver, reject) => {
+  return new Promise((resolve, reject) => {
     servidor.once('error', reject)
     servidor.listen(port, '127.0.0.1', () => {
       const address = servidor.address()
       const real = typeof address === 'object' && address ? address.port : port
-      resolver({
+      resolve({
         port: real,
-        recibidos,
+        received,
         apagar: (yes) =>
           new Promise((fin) => {
             if (yes) servidor.close(() => fin())
             else servidor.listen(real, '127.0.0.1', () => fin())
           }),
         esperar: async (n) => {
-          const limite = Date.now() + 3000
-          while (recibidos.length < n && Date.now() < limite)
+          const limit = Date.now() + 3000
+          while (received.length < n && Date.now() < limit)
             await new Promise((r) => setTimeout(r, 10))
         },
         close: () =>

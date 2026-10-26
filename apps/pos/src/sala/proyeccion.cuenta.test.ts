@@ -1,5 +1,5 @@
 import { newId } from '@pos/core'
-import type { EventoLocal } from '@pos/sync'
+import type { LocalEvent } from '@pos/sync'
 import { describe, expect, it } from 'vitest'
 import { estadoMesa, pedidosAbiertos as proyectar } from './proyeccion'
 import { datosItem, inOrder, local, opening } from './pruebas'
@@ -27,11 +27,11 @@ const payment = (amount: number) => ({
 /** Un pedido con un plato; `enviado` lo manda a cocina; `estadoItem` lo lleva al estado pedido. */
 function table(
   options: { sent?: boolean; ready?: boolean; served?: boolean } = {},
-  more: (id: string) => EventoLocal[] = () => [],
+  more: (id: string) => LocalEvent[] = () => [],
 ) {
   const id = newId()
   const dish = datosItem({ unit_price: 20_000 })
-  const events: EventoLocal[] = [
+  const events: LocalEvent[] = [
     local('OrderOpened', id, { ...opening, table_id: newId() }),
     local('ItemAdded', id, dish),
   ]
@@ -107,7 +107,7 @@ describe('estadoMesa: cuenta', () => {
     const tableId = newId()
     const pa = datosItem()
     const pb = datosItem()
-    const base: EventoLocal[] = [
+    const base: LocalEvent[] = [
       local('OrderOpened', a, { ...opening, table_id: tableId }),
       local('ItemAdded', a, pa),
       local('OrderOpened', b, { ...opening, table_id: tableId }),

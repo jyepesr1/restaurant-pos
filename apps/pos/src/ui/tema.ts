@@ -17,12 +17,12 @@ function read(): Tema {
   }
 }
 
-const resolver = (tema: Tema, sistemaOscuro: boolean) =>
+const resolve = (tema: Tema, sistemaOscuro: boolean) =>
   tema === 'dark' || (tema === 'system' && sistemaOscuro)
 
 /** Pone o quita la clase `oscuro` en <html>. */
 export function aplicarTema(tema: Tema = read()) {
-  document.documentElement.classList.toggle('oscuro', resolver(tema, consulta().matches))
+  document.documentElement.classList.toggle('oscuro', resolve(tema, consulta().matches))
 }
 
 /** El tema elegido, si la pantalla está en oscuro ahora mismo y cómo cambiarlo. */
@@ -37,7 +37,7 @@ export function useTema(): { tema: Tema; dark: boolean; select: (tema: Tema) => 
     return () => media.removeEventListener('change', change)
   }, [])
 
-  const dark = resolver(tema, sistemaOscuro)
+  const dark = resolve(tema, sistemaOscuro)
   useEffect(() => {
     document.documentElement.classList.toggle('oscuro', dark)
   }, [dark])

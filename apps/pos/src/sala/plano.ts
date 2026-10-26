@@ -223,7 +223,7 @@ export function variasMesas(
     const name = siguienteNombre(usados)
     usados.push(name)
     const row = Math.floor(i / columns)
-    const columna = i % columns
+    const column = i % columns
     return {
       id: newId(),
       fresh: true,
@@ -234,7 +234,7 @@ export function variasMesas(
       width: f.width,
       height: f.height,
       rotation: 0,
-      x: ajustar(start.x + columna * (f.width + separacion)),
+      x: ajustar(start.x + column * (f.width + separacion)),
       y: ajustar(start.y + row * (f.height + separacion)),
     }
   })
@@ -290,8 +290,8 @@ export function problemasDeZona(c: CatalogoEdicion, b: BorradorZona): string[] {
   const names = [...deOtras, ...tables.map((m) => m.name)].map((n) =>
     n.trim().normalize('NFC').toLocaleLowerCase('es'),
   )
-  const repetido = names.find((n, i) => n && names.indexOf(n) !== i)
-  if (repetido) issues.push(`Hay dos mesas que se llaman «${repetido}»`)
+  const duplicate = names.find((n, i) => n && names.indexOf(n) !== i)
+  if (duplicate) issues.push(`Hay dos mesas que se llaman «${duplicate}»`)
   if (tables.some((m) => m.capacity < 1)) issues.push('Cada mesa es para al menos una persona')
   return issues
 }

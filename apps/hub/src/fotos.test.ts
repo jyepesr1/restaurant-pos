@@ -13,7 +13,7 @@ const carpetas: string[] = []
 afterEach(() => {
   for (const c of carpetas.splice(0)) rmSync(c, { recursive: true, force: true })
 })
-const carpeta = () => {
+const folder = () => {
   const c = mkdtempSync(join(tmpdir(), 'pos-fotos-'))
   carpetas.push(c)
   return c
@@ -32,7 +32,7 @@ const comoDato = (type: string, b: Buffer) => `data:image/${type};base64,${b.toS
 
 describe('guardar fotos', () => {
   it('guarda WebP, JPEG y PNG con la huella del contenido como nombre; la misma foto, el mismo nombre', () => {
-    const dir = carpeta()
+    const dir = folder()
     const webp = guardarFoto(dir, comoDato('webp', WEBP))
     expect(webp).toMatch(/^[a-f0-9]{24}\.webp$/)
     expect(guardarFoto(dir, comoDato('webp', WEBP))).toBe(webp)
@@ -43,7 +43,7 @@ describe('guardar fotos', () => {
   })
 
   it('se juzga por sus bytes: un archivo que dice ser imagen y no lo es no se guarda', () => {
-    const dir = carpeta()
+    const dir = folder()
     expect(() =>
       guardarFoto(dir, comoDato('png', Buffer.from('<script>alert(1)</script>'))),
     ).toThrow(ErrorFoto)
@@ -56,7 +56,7 @@ describe('guardar fotos', () => {
   })
 
   it('solo lee nombres que el hub pudo crear, nunca una ruta', () => {
-    const dir = carpeta()
+    const dir = folder()
     for (const name of ['../clave-pin', 'pin-key', 'a'.repeat(24), `${'a'.repeat(24)}.svg`])
       expect(leerFoto(dir, name), name).toBeNull()
     expect(urlFoto('../x')).toBeNull()
@@ -65,25 +65,25 @@ describe('guardar fotos', () => {
 })
 
 describe('API de fotos y marca', () => {
-  async function montar() {
+  async function setup() {
     const m = montarCarta()
-    const dirFotos = carpeta()
-    const avisos: number[] = []
+    const dirFotos = folder()
+    const alerts: number[] = []
     const app = crearServidor({
       access: m.access,
       catalog: {
         db: m.db,
-        restauranteId: m.restauranteId,
+        restaurantId: m.restaurantId,
         access: m.access,
-        onChange: (v) => avisos.push(v),
+        onChange: (v) => alerts.push(v),
         clock: m.clock,
         dirFotos,
       },
     })
     await app.ready()
     const register = m.emparejar('register')
-    const session = (quien: 'admin' | 'waiter') => {
-      const s = m.entrar(register.connection, quien)
+    const session = (who: 'admin' | 'waiter') => {
+      const s = m.entrar(register.connection, who)
       return { session_id: s.sesionId, secret: s.secret }
     }
     const post = (url: string, payload: object) =>
@@ -93,11 +93,11 @@ describe('API de fotos y marca', () => {
         payload,
         headers: { authorization: `Bearer ${register.token}` },
       })
-    return { ...m, app, dirFotos, avisos, session, post }
+    return { ...m, app, dirFotos, alerts, session, post }
   }
 
   it('el administrador sube la foto de un producto: la carta la trae y el hub la sirve sin token', async () => {
-    const m = await montar()
+    const m = await setup()
     const burrata = m.product('Burrata Spritz')
     const r = await m.post('/api/catalog/photos', {
       ...m.session('admin'),
@@ -108,7 +108,7 @@ describe('API de fotos y marca', () => {
     const url = r.json().photo as string
     expect(url).toMatch(/^\/photos\/[a-f0-9]{24}\.webp$/)
     expect(m.product('Burrata Spritz').photo).toBe(url)
-    expect(m.avisos).toHaveLength(1)
+    expect(m.alerts).toHaveLength(1)
 
     const photo = await m.app.inject({ method: 'GET', url })
     expect(photo.statusCode).toBe(200)
@@ -129,7 +129,7 @@ describe('API de fotos y marca', () => {
   })
 
   it('sin el permiso de editar la carta, 403; un archivo que no es imagen, 400', async () => {
-    const m = await montar()
+    const m = await setup()
     const burrata = m.product('Burrata Spritz')
     const waiter = await m.post('/api/catalog/photos', {
       ...m.session('waiter'),
@@ -147,12 +147,12 @@ describe('API de fotos y marca', () => {
   })
 
   it('el administrador cambia la marca del restaurante y los equipos la reciben en la carta', async () => {
-    const m = await montar()
-    expect(leerCatalogo(m.db, m.restauranteId).restaurant.brand).toBe('la-spritzzeria')
+    const m = await setup()
+    expect(leerCatalogo(m.db, m.restaurantId).restaurant.brand).toBe('la-spritzzeria')
     const r = await m.post('/api/restaurant/brand', { ...m.session('admin'), brand: 'faro' })
     expect(r.statusCode).toBe(200)
-    expect(leerCatalogo(m.db, m.restauranteId).restaurant.brand).toBe('faro')
-    expect(m.avisos).toHaveLength(1)
+    expect(leerCatalogo(m.db, m.restaurantId).restaurant.brand).toBe('faro')
+    expect(m.alerts).toHaveLength(1)
     const another = await m.post('/api/restaurant/brand', {
       ...m.session('admin'),
       brand: 'inventada',

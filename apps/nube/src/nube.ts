@@ -1,4 +1,4 @@
-import { huellaEvento } from '@pos/sync'
+import { eventFingerprint } from '@pos/sync'
 import { z } from 'zod'
 import type { Sql } from './sql'
 
@@ -46,7 +46,7 @@ export const Registro = z.strictObject({
   hub_id: Ulid,
   location_id: Ulid,
   name: z.string().trim().min(1).max(60),
-  instancia: z.string().min(1).max(100),
+  instance: z.string().min(1).max(100),
 })
 export type Registro = z.infer<typeof Registro>
 
@@ -56,7 +56,7 @@ export const NuevoRestaurante = z.strictObject({
 })
 
 /** Lo que pasó con cada evento de un lote. */
-export type ResultadoEvento =
+export type EventResult =
   | { id: string; status: 'saved' | 'already_stored' }
   /** El id ya estaba con otro contenido: el guardado no cambia y el nuevo queda para revisión. */
   | { id: string; status: 'divergent' }
@@ -64,7 +64,7 @@ export type ResultadoEvento =
 
 export interface HubAutenticado {
   id: string
-  restauranteId: string
+  restaurantId: string
   sedeId: string
 }
 
@@ -140,11 +140,11 @@ export class Nube {
    * Corre el trabajo dentro de una transacción de un solo restaurante: la seguridad por fila de
    * la base solo deja ver y escribir sus eventos, aunque una consulta olvide filtrar.
    */
-  private enRestaurante<T>(restauranteId: string, trabajo: (tx: Sql) => Promise<T>): Promise<T> {
-    return this.sql.transaccion(async (tx) => {
-      await tx.query("SELECT set_config('faro.restaurant_id', $1, true)", [restauranteId])
+  private enRestaurante<T>(restaurantId: string, job: (tx: Sql) => Promise<T>): Promise<T> {
+    return this.sql.transaction(async (tx) => {
+      await tx.query("SELECT set_config('faro.restaurant_id', $1, true)", [restaurantId])
       await tx.query('SET LOCAL ROLE faro_data')
-      return trabajo(tx)
+      return job(tx)
     })
   }
 
@@ -160,16 +160,14 @@ export class Nube {
   }
 
   /** Un código para registrar un hub del restaurante; null si el restaurante no existe. */
-  async crearCodigo(restauranteId: string): Promise<{ code: string; venceEn: string } | null> {
-    const [existe] = await this.sql.query('SELECT 1 FROM restaurants WHERE id = $1', [
-      restauranteId,
-    ])
-    if (!existe) return null
+  async crearCodigo(restaurantId: string): Promise<{ code: string; venceEn: string } | null> {
+    const [exists] = await this.sql.query('SELECT 1 FROM restaurants WHERE id = $1', [restaurantId])
+    if (!exists) return null
     const code = nuevoCodigo()
     const venceEn = new Date(this.clock().getTime() + VIGENCIA_CODIGO_MS).toISOString()
     await this.sql.query(
       'INSERT INTO registration_codes (fingerprint, restaurant_id, created_at, expires_at) VALUES ($1, $2, $3, $4)',
-      [await sha256(normalizarCodigo(code)), restauranteId, this.clock().toISOString(), venceEn],
+      [await sha256(normalizarCodigo(code)), restaurantId, this.clock().toISOString(), venceEn],
     )
     return { code, venceEn }
   }
@@ -183,32 +181,32 @@ export class Nube {
   async registrarHub(
     data: Registro,
   ): Promise<
-    | { ok: true; credential: string; restauranteId: string }
+    | { ok: true; credential: string; restaurantId: string }
     | { ok: false; reason: 'invalid_code' | 'hub_already_registered' }
   > {
     const fingerprint = await sha256(normalizarCodigo(data.code))
     const credential = nuevaCredencial()
     const huellaCredencial = await sha256(credential)
-    const ahora = this.clock().toISOString()
+    const now = this.clock().toISOString()
     try {
-      return await this.sql.transaccion(async (tx) => {
+      return await this.sql.transaction(async (tx) => {
         // FOR UPDATE: dos registros a la vez con el mismo código no lo usan los dos.
         const [code] = await tx.query<{ restaurant_id: string; hub_id: string | null }>(
           `SELECT restaurant_id, hub_id FROM registration_codes
            WHERE fingerprint = $1 AND expires_at > $2 FOR UPDATE`,
-          [fingerprint, ahora],
+          [fingerprint, now],
         )
         if (!code) return { ok: false, reason: 'invalid_code' } as const
         if (code.hub_id !== null) {
           // Ya usado: solo lo repite el mismo hub, y solo si no fue revocado.
           if (code.hub_id !== data.hub_id) return { ok: false, reason: 'invalid_code' } as const
-          const repetido = await tx.query(
+          const duplicate = await tx.query(
             `UPDATE hubs SET credential_hash = $2
              WHERE id = $1 AND revoked_at IS NULL RETURNING id`,
             [data.hub_id, huellaCredencial],
           )
-          if (repetido.length === 0) return { ok: false, reason: 'invalid_code' } as const
-          return { ok: true, credential, restauranteId: code.restaurant_id } as const
+          if (duplicate.length === 0) return { ok: false, reason: 'invalid_code' } as const
+          return { ok: true, credential, restaurantId: code.restaurant_id } as const
         }
         const [already] = await tx.query('SELECT 1 FROM hubs WHERE id = $1', [data.hub_id])
         if (already) return { ok: false, reason: 'hub_already_registered' } as const
@@ -220,16 +218,16 @@ export class Nube {
             code.restaurant_id,
             data.location_id,
             data.name,
-            data.instancia,
+            data.instance,
             huellaCredencial,
-            ahora,
+            now,
           ],
         )
         await tx.query(
           'UPDATE registration_codes SET used_at = $2, hub_id = $3 WHERE fingerprint = $1',
-          [fingerprint, ahora, data.hub_id],
+          [fingerprint, now, data.hub_id],
         )
-        return { ok: true, credential, restauranteId: code.restaurant_id } as const
+        return { ok: true, credential, restaurantId: code.restaurant_id } as const
       })
     } catch (e) {
       // Dos registros del mismo hub a la vez con códigos distintos: el segundo choca con la clave.
@@ -246,7 +244,7 @@ export class Nube {
       'SELECT id, restaurant_id, location_id FROM hubs WHERE credential_hash = $1 AND revoked_at IS NULL',
       [await sha256(credential)],
     )
-    return hub ? { id: hub.id, restauranteId: hub.restaurant_id, sedeId: hub.location_id } : null
+    return hub ? { id: hub.id, restaurantId: hub.restaurant_id, sedeId: hub.location_id } : null
   }
 
   /** Revoca un hub: su credencial deja de servir. */
@@ -263,44 +261,41 @@ export class Nube {
    * contenido) no se duplica; uno que ya estaba con otro contenido no pisa el guardado y queda en
    * `divergent_events`. Devuelve el resultado de cada uno, en el orden en que llegaron.
    */
-  async recibirEventos(
-    hub: HubAutenticado,
-    crudos: readonly unknown[],
-  ): Promise<ResultadoEvento[]> {
-    const resultados: ResultadoEvento[] = []
-    type Valido = { indice: number; id: string; fingerprint: string; row: Record<string, unknown> }
+  async recibirEventos(hub: HubAutenticado, crudos: readonly unknown[]): Promise<EventResult[]> {
+    const results: EventResult[] = []
+    type Valido = { index: number; id: string; fingerprint: string; row: Record<string, unknown> }
     const validEntries: Valido[] = []
     /** El mismo id otra vez en el lote: se compara con lo que quede guardado. */
     const repetidosEnLote: Valido[] = []
     const seenSet = new Set<string>()
-    crudos.forEach((crudo, indice) => {
-      const r = EventoSubido.safeParse(crudo)
+    crudos.forEach((raw, index) => {
+      const r = EventoSubido.safeParse(raw)
       // El id solo se devuelve si parece un id (no se le devuelve al hub cualquier texto).
-      const crudoId = (crudo as { id?: unknown } | null)?.id
+      const crudoId = (raw as { id?: unknown } | null)?.id
       const id = typeof crudoId === 'string' && crudoId.length <= 26 ? crudoId : null
       if (!r.success) {
-        resultados[indice] = { id, status: 'invalid', reason: 'format' }
+        results[index] = { id, status: 'invalid', reason: 'format' }
         return
       }
       // La huella también limita el anidamiento: así lo que sigue no recorre datos sin fondo.
       let fingerprint: string
       try {
-        fingerprint = huellaEvento(r.data)
+        fingerprint = eventFingerprint(r.data)
       } catch {
-        resultados[indice] = { id: r.data.id, status: 'invalid', reason: 'too_deeply_nested' }
+        results[index] = { id: r.data.id, status: 'invalid', reason: 'too_deeply_nested' }
         return
       }
       if (!textoValido(r.data)) {
-        resultados[indice] = { id: r.data.id, status: 'invalid', reason: 'invalid_character' }
+        results[index] = { id: r.data.id, status: 'invalid', reason: 'invalid_character' }
         return
       }
       const content = JSON.stringify(r.data)
       if (new TextEncoder().encode(content).length > MAX_BYTES_EVENTO) {
-        resultados[indice] = { id: r.data.id, status: 'invalid', reason: 'too_large' }
+        results[index] = { id: r.data.id, status: 'invalid', reason: 'too_large' }
         return
       }
       const valid: Valido = {
-        indice,
+        index,
         id: r.data.id,
         fingerprint,
         row: {
@@ -321,10 +316,10 @@ export class Nube {
         validEntries.push(valid)
       }
     })
-    if (validEntries.length === 0) return resultados
+    if (validEntries.length === 0) return results
 
-    return this.enRestaurante(hub.restauranteId, async (tx) => {
-      const insertar = (rows: Valido[]) =>
+    return this.enRestaurante(hub.restaurantId, async (tx) => {
+      const insert = (rows: Valido[]) =>
         tx.query<{ id: string }>(
           `INSERT INTO events (restaurant_id, id, hub_id, type, aggregate_type, aggregate_id,
                                hub_sequence, business_day, received_at, content, fingerprint)
@@ -335,40 +330,40 @@ export class Nube {
              business_day date, received_at timestamptz, content jsonb, fingerprint text)
            ON CONFLICT (restaurant_id, id) DO NOTHING
            RETURNING id`,
-          [hub.restauranteId, hub.id, JSON.stringify(rows.map((v) => v.row))],
+          [hub.restaurantId, hub.id, JSON.stringify(rows.map((v) => v.row))],
         )
       // Una sola sentencia para todo el lote. Si la base rechaza un dato (una fecha que Postgres
       // no acepta, por ejemplo), se prueba uno por uno: el malo queda inválido y el resto entra.
       // Si no, el hub reintentaría para siempre un lote que nunca pasa.
       let aGuardar = validEntries
-      let guardados: { id: string }[]
+      let savedList: { id: string }[]
       await tx.query('SAVEPOINT lote')
       try {
-        guardados = await insertar(validEntries)
+        savedList = await insert(validEntries)
         await tx.query('RELEASE SAVEPOINT lote')
       } catch (e) {
         if (!esErrorDeDato(e)) throw e
         await tx.query('ROLLBACK TO SAVEPOINT lote')
-        guardados = []
+        savedList = []
         aGuardar = []
         for (const v of validEntries) {
           await tx.query('SAVEPOINT uno')
           try {
-            guardados.push(...(await insertar([v])))
+            savedList.push(...(await insert([v])))
             await tx.query('RELEASE SAVEPOINT uno')
             aGuardar.push(v)
           } catch (e2) {
             if (!esErrorDeDato(e2)) throw e2
             await tx.query('ROLLBACK TO SAVEPOINT uno')
-            resultados[v.indice] = { id: v.id, status: 'invalid', reason: 'rejected_by_database' }
+            results[v.index] = { id: v.id, status: 'invalid', reason: 'rejected_by_database' }
           }
         }
       }
 
-      const nuevos = new Set(guardados.map((g) => g.id))
+      const newer = new Set(savedList.map((g) => g.id))
       // Lo que quedó guardado de cada id: lo nuevo de este lote o lo de antes.
       const guardada = new Map<string, string>()
-      for (const v of aGuardar) if (nuevos.has(v.id)) guardada.set(v.id, v.fingerprint)
+      for (const v of aGuardar) if (newer.has(v.id)) guardada.set(v.id, v.fingerprint)
       const consultar = [
         ...new Set(
           [...aGuardar, ...repetidosEnLote].map((v) => v.id).filter((id) => !guardada.has(id)),
@@ -377,12 +372,12 @@ export class Nube {
       if (consultar.length > 0) {
         const rows = await tx.query<{ id: string; fingerprint: string }>(
           'SELECT id, fingerprint FROM events WHERE restaurant_id = $1 AND id = ANY($2::text[])',
-          [hub.restauranteId, consultar],
+          [hub.restaurantId, consultar],
         )
         for (const f of rows) guardada.set(f.id, f.fingerprint)
       }
       const enLote = repetidosEnLote.filter((v) => guardada.has(v.id))
-      const distintos = [...aGuardar.filter((v) => !nuevos.has(v.id)), ...enLote].filter(
+      const distintos = [...aGuardar.filter((v) => !newer.has(v.id)), ...enLote].filter(
         (v) => guardada.get(v.id) !== v.fingerprint,
       )
       if (distintos.length > 0)
@@ -391,7 +386,7 @@ export class Nube {
            SELECT $1, x.id, $2, x.content, x.fingerprint
            FROM jsonb_to_recordset($3::jsonb) AS x(id text, content jsonb, fingerprint text)
            ON CONFLICT (restaurant_id, event_id, fingerprint) DO NOTHING`,
-          [hub.restauranteId, hub.id, JSON.stringify(distintos.map((d) => d.row))],
+          [hub.restaurantId, hub.id, JSON.stringify(distintos.map((d) => d.row))],
         )
       // Lo guardado sin huecos desde la secuencia 1: desde ahí sigue el hub (`lastSequence`).
       await tx.query(
@@ -403,16 +398,16 @@ export class Nube {
                      AND hub_sequence > hubs.contiguous_sequence) d
            ) s WHERE s.hub_sequence = hubs.contiguous_sequence + s.n)
          WHERE id = $2`,
-        [hub.restauranteId, hub.id],
+        [hub.restaurantId, hub.id],
       )
       for (const v of [...aGuardar, ...repetidosEnLote]) {
         if (!guardada.has(v.id)) {
           // Repetido en el lote de uno que la base rechazó: corre la misma suerte.
-          resultados[v.indice] = { id: v.id, status: 'invalid', reason: 'rejected_by_database' }
+          results[v.index] = { id: v.id, status: 'invalid', reason: 'rejected_by_database' }
           continue
         }
-        const esNuevo = nuevos.has(v.id) && !repetidosEnLote.includes(v)
-        resultados[v.indice] = {
+        const esNuevo = newer.has(v.id) && !repetidosEnLote.includes(v)
+        results[v.index] = {
           id: v.id,
           status: esNuevo
             ? 'saved'
@@ -421,7 +416,7 @@ export class Nube {
               : 'divergent',
         }
       }
-      return resultados
+      return results
     })
   }
 

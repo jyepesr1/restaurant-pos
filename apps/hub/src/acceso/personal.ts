@@ -5,8 +5,8 @@ import {
   PERMISSIONS,
   type Permission,
 } from '@pos/core'
-import { type BaseSqlite, enTransaccion } from '@pos/db'
-import { type Autor, actualizarVersionado, insertarVersionado } from './registros'
+import { inTransaction, type SqliteDatabase } from '@pos/db'
+import { type Autor, actualizarVersionado, insertVersioned } from './registros'
 import { ErrorDatos, type ServicioAcceso } from './servicio'
 
 // Personal y roles (tarea 1.3b, ADR-013): el administrador crea roles, decide qué permisos tiene
@@ -43,7 +43,7 @@ export interface EquipoPersonal {
   name: string
   type: string
   registradoEn: string | null
-  revocadoEn: string | null
+  revokedAt: string | null
   /** Último uso de una sesión en ese equipo, y de quién. */
   ultimoUso: string | null
   ultimaPersona: string | null
@@ -60,8 +60,8 @@ function nombreValido(name: string, que: string): string {
 
 /** Lo que ve la pantalla de personal: todos los roles y personas, también los archivados. */
 export function leerPersonal(
-  db: BaseSqlite,
-  restauranteId: string,
+  db: SqliteDatabase,
+  restaurantId: string,
   access: ServicioAcceso,
 ): { roles: RolPersonal[]; people: PersonaPersonal[]; devices: EquipoPersonal[] } {
   const roles = db
@@ -71,7 +71,7 @@ export function leerPersonal(
        FROM roles r WHERE r.restaurant_id = ? AND r.hidden = 0
        ORDER BY r.system DESC, r.created_at, r.id`,
     )
-    .all(restauranteId)
+    .all(restaurantId)
     .map((f) => ({
       id: String(f.id),
       name: String(f.name),
@@ -85,7 +85,7 @@ export function leerPersonal(
       // Los usuarios técnicos de las pantallas de cocina no son personas (ADR-015).
       'SELECT id, name, role_id, active FROM users WHERE restaurant_id = ? AND screen = 0 ORDER BY active DESC, name, id',
     )
-    .all(restauranteId)
+    .all(restaurantId)
     .map((f) => ({
       id: String(f.id),
       name: String(f.name),
@@ -104,20 +104,20 @@ export function leerPersonal(
        WHERE d.restaurant_id = ? AND d.active = 1
        ORDER BY d.revoked_at IS NOT NULL, coalesce(s.last_used, d.paired_at) DESC`,
     )
-    .all(restauranteId)
+    .all(restaurantId)
     .map((f) => ({
       id: String(f.id),
       name: String(f.name),
       type: String(f.type),
       registradoEn: f.paired_at === null ? null : String(f.paired_at),
-      revocadoEn: f.revoked_at === null ? null : String(f.revoked_at),
+      revokedAt: f.revoked_at === null ? null : String(f.revoked_at),
       ultimoUso: f.last_used === null ? null : String(f.last_used),
       ultimaPersona: f.person === null ? null : String(f.person),
     }))
   return { roles, people, devices }
 }
 
-function permisosDelRol(db: BaseSqlite, rolId: string): Permission[] {
+function permisosDelRol(db: SqliteDatabase, rolId: string): Permission[] {
   return db
     .prepare(
       'SELECT permission FROM role_permissions WHERE role_id = ? AND active = 1 ORDER BY permission',
@@ -129,23 +129,23 @@ function permisosDelRol(db: BaseSqlite, rolId: string): Permission[] {
 
 /** Crea un rol o cambia su nombre, sus permisos o si está activo. Devuelve su id. */
 export function guardarRol(
-  db: BaseSqlite,
-  restauranteId: string,
+  db: SqliteDatabase,
+  restaurantId: string,
   access: ServicioAcceso,
   data: { id?: string; name: string; permissions: readonly string[]; active?: boolean },
   autor: Autor,
-  ahora: string,
+  now: string,
 ): string {
   const name = nombreValido(data.name, 'del rol')
   const permissions = [...new Set(data.permissions)]
   const unknown = permissions.find((p) => !isPermission(p))
   if (unknown) throw new ErrorPersonal(`Permiso desconocido: ${unknown}`)
 
-  return enTransaccion(db, () => {
+  return inTransaction(db, () => {
     const current = data.id
       ? db
           .prepare('SELECT * FROM roles WHERE restaurant_id = ? AND id = ?')
-          .get(restauranteId, data.id)
+          .get(restaurantId, data.id)
       : undefined
     if (data.id && !current) throw new ErrorPersonal('Ese rol no existe')
     if (current?.hidden === 1) throw new ErrorPersonal('Ese rol no existe')
@@ -156,15 +156,15 @@ export function guardarRol(
       if (!active) throw new ErrorPersonal('Los roles de fábrica no se archivan')
     }
     if (active) {
-      const repetido = db
+      const duplicate = db
         .prepare('SELECT id, name FROM roles WHERE restaurant_id = ? AND active = 1 AND hidden = 0')
-        .all(restauranteId)
+        .all(restaurantId)
         .find(
           (f) =>
             f.id !== data.id &&
             String(f.name).toLocaleLowerCase('es') === name.toLocaleLowerCase('es'),
         )
-      if (repetido) throw new ErrorPersonal(`Ya hay un rol que se llama «${repetido.name}»`)
+      if (duplicate) throw new ErrorPersonal(`Ya hay un rol que se llama «${duplicate.name}»`)
     }
 
     let rolId: string
@@ -181,14 +181,14 @@ export function guardarRol(
         actualizarVersionado(
           db,
           'roles',
-          restauranteId,
+          restaurantId,
           rolId,
           { name, active: active ? 1 : 0 },
           autor,
-          ahora,
+          now,
         )
     } else {
-      rolId = insertarVersionado(db, 'roles', restauranteId, { name, system: 0 }, autor, ahora)
+      rolId = insertVersioned(db, 'roles', restaurantId, { name, system: 0 }, autor, now)
     }
 
     // Un permiso que se quita queda archivado; si se vuelve a dar, se reactiva la misma fila.
@@ -200,23 +200,23 @@ export function guardarRol(
       const quiere = permissions.includes(permission)
       if (!row) {
         if (quiere)
-          insertarVersionado(
+          insertVersioned(
             db,
             'role_permissions',
-            restauranteId,
+            restaurantId,
             { role_id: rolId, permission },
             autor,
-            ahora,
+            now,
           )
       } else if (quiere !== (row.active === 1)) {
         actualizarVersionado(
           db,
           'role_permissions',
-          restauranteId,
+          restaurantId,
           String(row.id),
           { active: quiere ? 1 : 0 },
           autor,
-          ahora,
+          now,
         )
       }
     }
@@ -224,8 +224,8 @@ export function guardarRol(
       .prepare('SELECT id FROM users WHERE role_id = ? AND active = 1')
       .all(rolId)
       .map((f) => String(f.id))
-    exigirContrasena(db, restauranteId, access, delRol)
-    exigirAdministrador(db, restauranteId)
+    exigirContrasena(db, restaurantId, access, delRol)
+    exigirAdministrador(db, restaurantId)
     return rolId
   })
 }
@@ -239,8 +239,8 @@ export type AccesoPersona = { type: 'pin' } | { type: 'password'; user: string; 
  * sus sesiones, para que su equipo vuelva a pedirle que entre con lo nuevo.
  */
 export function guardarPersona(
-  db: BaseSqlite,
-  restauranteId: string,
+  db: SqliteDatabase,
+  restaurantId: string,
   access: ServicioAcceso,
   data: {
     id?: string
@@ -251,19 +251,19 @@ export function guardarPersona(
     regenerarPin?: boolean
   },
   autor: Autor,
-  ahora: string,
+  now: string,
 ): { userId: string; pin: string | null } {
   const name = nombreValido(data.name, 'de la persona')
-  return enTransaccion(db, () => {
+  return inTransaction(db, () => {
     const role = db
       .prepare('SELECT active FROM roles WHERE restaurant_id = ? AND id = ? AND hidden = 0')
-      .get(restauranteId, data.rolId)
+      .get(restaurantId, data.rolId)
     if (!role) throw new ErrorPersonal('Ese rol no existe')
 
     const current = data.id
       ? db
           .prepare('SELECT * FROM users WHERE restaurant_id = ? AND id = ?')
-          .get(restauranteId, data.id)
+          .get(restaurantId, data.id)
       : undefined
     if (data.id && (!current || current.screen === 1))
       throw new ErrorPersonal('Esa persona no existe')
@@ -271,9 +271,9 @@ export function guardarPersona(
     if (active && role.active !== 1) throw new ErrorPersonal('Ese rol está archivado')
 
     // Solo los errores de datos (usuario tomado, contraseña corta) se muestran tal cual.
-    const conError = <T>(trabajo: () => T): T => {
+    const conError = <T>(job: () => T): T => {
       try {
-        return trabajo()
+        return job()
       } catch (e) {
         throw e instanceof ErrorDatos ? new ErrorPersonal(e.message) : e
       }
@@ -293,8 +293,8 @@ export function guardarPersona(
           autor,
         ),
       )
-      exigirContrasena(db, restauranteId, access, [userId])
-      exigirAdministrador(db, restauranteId)
+      exigirContrasena(db, restaurantId, access, [userId])
+      exigirAdministrador(db, restaurantId)
       return { userId, pin }
     }
 
@@ -318,11 +318,11 @@ export function guardarPersona(
     // cambia por uno libre; el usuario lo tiene que cambiar quien la activa.
     let pinNuevo: string | null = null
     if (active && current.active !== 1) {
-      const choca = (columna: 'pin_hash' | 'username') =>
+      const choca = (column: 'pin_hash' | 'username') =>
         db
           .prepare(
             `SELECT 1 FROM user_credentials esta JOIN user_credentials otra
-               ON otra.restaurant_id = esta.restaurant_id AND otra.${columna} = esta.${columna}
+               ON otra.restaurant_id = esta.restaurant_id AND otra.${column} = esta.${column}
              WHERE esta.user_id = ? AND otra.current = 1 AND otra.user_id <> esta.user_id`,
           )
           .get(userId) !== undefined
@@ -337,25 +337,25 @@ export function guardarPersona(
       actualizarVersionado(
         db,
         'users',
-        restauranteId,
+        restaurantId,
         userId,
         { name, role_id: data.rolId, active: active ? 1 : 0 },
         autor,
-        ahora,
+        now,
       )
-    if (cambiaRol || !active) cerrarSesionesDe(db, restauranteId, userId, ahora)
+    if (cambiaRol || !active) cerrarSesionesDe(db, restaurantId, userId, now)
 
     const pin = data.regenerarPin ? access.regenerarPin(userId) : pinNuevo
-    exigirContrasena(db, restauranteId, access, [userId])
-    exigirAdministrador(db, restauranteId)
+    exigirContrasena(db, restaurantId, access, [userId])
+    exigirAdministrador(db, restaurantId)
     return { userId, pin }
   })
 }
 
-function cerrarSesionesDe(db: BaseSqlite, restauranteId: string, userId: string, ahora: string) {
+function cerrarSesionesDe(db: SqliteDatabase, restaurantId: string, userId: string, now: string) {
   db.prepare(
     'UPDATE sessions SET closed_at = ? WHERE restaurant_id = ? AND user_id = ? AND closed_at IS NULL',
-  ).run(ahora, restauranteId, userId)
+  ).run(now, restaurantId, userId)
 }
 
 const NOMBRE_PERMISO = new Map(
@@ -367,15 +367,15 @@ const NOMBRE_PERMISO = new Map(
  * PIN de 4 dígitos se adivina más fácil. Se revisa al final del cambio, dentro de la transacción.
  */
 function exigirContrasena(
-  db: BaseSqlite,
-  restauranteId: string,
+  db: SqliteDatabase,
+  restaurantId: string,
   access: ServicioAcceso,
   usuarioIds: readonly string[],
 ) {
   for (const id of usuarioIds) {
     const f = db
       .prepare('SELECT name, active FROM users WHERE restaurant_id = ? AND id = ?')
-      .get(restauranteId, id)
+      .get(restaurantId, id)
     if (f?.active !== 1 || access.tieneContrasena(id)) continue
     const delicado = access.permisosDe(id).find((p) => PASSWORD_PERMISSIONS.has(p))
     if (delicado)
@@ -390,7 +390,7 @@ function exigirContrasena(
  * restaurante, de la más antigua a la más nueva. La usan el arranque, `restablecer-admin` y la
  * regla de no quedarse sin administrador: así los tres cuentan a las mismas personas.
  */
-export function administradores(db: BaseSqlite, restauranteId: string): string[] {
+export function administradores(db: SqliteDatabase, restaurantId: string): string[] {
   return db
     .prepare(
       `SELECT u.id FROM users u
@@ -399,13 +399,13 @@ export function administradores(db: BaseSqlite, restauranteId: string): string[]
        JOIN user_credentials c ON c.user_id = u.id AND c.username IS NOT NULL
        WHERE u.restaurant_id = ? AND u.active = 1 ORDER BY u.created_at, u.id`,
     )
-    .all(restauranteId)
+    .all(restaurantId)
     .map((f) => String(f.id))
 }
 
 /** Que quede alguien que pueda administrar el personal (si no, se deshace todo el cambio). */
-function exigirAdministrador(db: BaseSqlite, restauranteId: string) {
-  if (administradores(db, restauranteId).length === 0)
+function exigirAdministrador(db: SqliteDatabase, restaurantId: string) {
+  if (administradores(db, restaurantId).length === 0)
     throw new ErrorPersonal(
       'Tiene que quedar al menos una persona que pueda administrar el personal con usuario y contraseña',
     )

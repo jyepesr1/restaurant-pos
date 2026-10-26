@@ -36,7 +36,7 @@ export const enviarPorRed: Enviar = (target, bytes) => {
         'Las impresoras USB llegan con el programa de instalación para Windows: por ahora, conéctala con cable de red.',
       ),
     )
-  return new Promise((resolver, reject) => {
+  return new Promise((resolve, reject) => {
     const socket = new Socket()
     let terminado = false
     const fin = (error?: Error) => {
@@ -44,7 +44,7 @@ export const enviarPorRed: Enviar = (target, bytes) => {
       terminado = true
       socket.destroy()
       if (error) reject(error)
-      else resolver()
+      else resolve()
     }
     socket.setTimeout(ESPERA_MS, () => fin(new ErrorImpresora(MENSAJES.ETIMEDOUT)))
     socket.once('error', (e: NodeJS.ErrnoException) =>

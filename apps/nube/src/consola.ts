@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline'
 // administración): así no queda en el historial de la terminal ni en la pantalla.
 
 export function pedirSecreto(pregunta: string): Promise<string> {
-  return new Promise((resolver) => {
+  return new Promise((resolve) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true })
     const escribir = (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput
     ;(rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => {
@@ -14,7 +14,7 @@ export function pedirSecreto(pregunta: string): Promise<string> {
     rl.question(pregunta, (respuesta) => {
       rl.close()
       process.stdout.write('\n')
-      resolver(respuesta.trim())
+      resolve(respuesta.trim())
     })
   })
 }

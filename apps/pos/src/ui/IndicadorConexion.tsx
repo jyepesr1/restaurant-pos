@@ -4,9 +4,9 @@ import type { NombreIcono } from './iconos'
 // Indicador permanente de conexión y de impresoras (brief §5, regla 7). "Solo red local" es lo
 // normal sin internet: el salón sigue operando con el hub (ADR-001).
 
-export type EstadoConexion = 'online' | 'local_only' | 'connecting' | 'offline'
+export type ConnectionState = 'online' | 'local_only' | 'connecting' | 'offline'
 
-const ESTADOS: Record<EstadoConexion, { tono: Tono; icono: NombreIcono; text: string }> = {
+const STATUSES: Record<ConnectionState, { tono: Tono; icono: NombreIcono; text: string }> = {
   online: { tono: 'free', icono: 'wifi', text: 'En línea' },
   // Lo normal sin internet: neutro, no ámbar (ámbar es "en espera").
   local_only: { tono: 'neutral', icono: 'local', text: 'Solo red local' },
@@ -20,7 +20,7 @@ export function IndicadorConexion({
   impresorasConFalla = 0,
   compacto = false,
 }: {
-  status: EstadoConexion
+  status: ConnectionState
   /** Eventos guardados aquí que el hub aún no confirma. */
   pendingList?: number
   impresorasConFalla?: number
@@ -30,7 +30,7 @@ export function IndicadorConexion({
    */
   compacto?: boolean
 }) {
-  const e = ESTADOS[status]
+  const e = STATUSES[status]
   return (
     <div className="flex flex-wrap items-center gap-2" role="status">
       <Etiqueta tono={e.tono} icono={e.icono}>

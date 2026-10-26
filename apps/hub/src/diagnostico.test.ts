@@ -7,7 +7,7 @@ import { ARCHIVO_DIAGNOSTICOS } from './diagnostico'
 import { crearServidor } from './servidor'
 
 function siguienteMensaje(socket: WebSocket): Promise<string> {
-  return new Promise((resolver) => socket.once('message', (data) => resolver(data.toString())))
+  return new Promise((resolve) => socket.once('message', (data) => resolve(data.toString())))
 }
 
 describe('diagnóstico del dispositivo', () => {
@@ -17,14 +17,14 @@ describe('diagnóstico del dispositivo', () => {
     await app?.close()
   })
 
-  function crear(intervaloLatidoMs = 60_000) {
+  function create(intervaloLatidoMs = 60_000) {
     const dirDatos = mkdtempSync(join(tmpdir(), 'pos-datos-'))
     app = crearServidor({ diagnostico: { dirDatos, intervaloLatidoMs } })
     return { app, dirDatos }
   }
 
   it('responde el ping por WebSocket con la misma marca', async () => {
-    const { app } = crear()
+    const { app } = create()
     await app.ready()
     const socket = await app.injectWS('/api/diagnostics/ws')
 
@@ -36,7 +36,7 @@ describe('diagnóstico del dispositivo', () => {
   })
 
   it('envía latidos numerados mientras el socket está abierto', async () => {
-    const { app } = crear(10)
+    const { app } = create(10)
     await app.ready()
     const socket = await app.injectWS('/api/diagnostics/ws')
 
@@ -46,7 +46,7 @@ describe('diagnóstico del dispositivo', () => {
   })
 
   it('guarda cada resultado como una línea JSON con la hora de recepción', async () => {
-    const { app, dirDatos } = crear()
+    const { app, dirDatos } = create()
 
     const res = await app.inject({
       method: 'POST',
@@ -57,13 +57,13 @@ describe('diagnóstico del dispositivo', () => {
     expect(res.statusCode).toBe(200)
     const lines = readFileSync(join(dirDatos, ARCHIVO_DIAGNOSTICOS), 'utf8').trim().split('\n')
     expect(lines).toHaveLength(1)
-    const registro = JSON.parse(lines[0] ?? '')
-    expect(registro.data).toEqual({ device: 'Pixel 7', contextoSeguro: false })
-    expect(typeof registro.recibidoEn).toBe('string')
+    const entry = JSON.parse(lines[0] ?? '')
+    expect(entry.data).toEqual({ device: 'Pixel 7', contextoSeguro: false })
+    expect(typeof entry.receivedAt).toBe('string')
   })
 
   it('rechaza un cuerpo que no es un objeto JSON', async () => {
-    const { app } = crear()
+    const { app } = create()
 
     const res = await app.inject({ method: 'POST', url: '/api/diagnostics', payload: [1, 2] })
 
@@ -74,7 +74,7 @@ describe('diagnóstico del dispositivo', () => {
     const dirDatos = mkdtempSync(join(tmpdir(), 'pos-datos-'))
     app = crearServidor({ diagnostico: { dirDatos, limiteBytes: 50 } })
     const send = () =>
-      app?.inject({ method: 'POST', url: '/api/diagnostics', payload: { relleno: 'x'.repeat(60) } })
+      app?.inject({ method: 'POST', url: '/api/diagnostics', payload: { padding: 'x'.repeat(60) } })
 
     expect((await send())?.statusCode).toBe(200)
     expect((await send())?.statusCode).toBe(507)

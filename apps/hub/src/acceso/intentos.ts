@@ -11,11 +11,11 @@ export const FALLOS_PARA_AVISO = 20
 export const FALLOS_DE_UN_EQUIPO_PARA_AVISO = 15
 
 /** Dos errores sin espera (un dedo que se resbala); luego 2, 4, 8… s, hasta 60 s. */
-export const esperaTras = (fallos: number) =>
-  fallos < 3 ? 0 : Math.min(ESPERA_MAXIMA_MS, 1000 * 2 ** (fallos - 2))
+export const esperaTras = (failures: number) =>
+  failures < 3 ? 0 : Math.min(ESPERA_MAXIMA_MS, 1000 * 2 ** (failures - 2))
 
 interface Registro {
-  fallos: number
+  failures: number
   until: number
   latest: number
 }
@@ -30,18 +30,18 @@ interface Registro {
 export class Intentos {
   private readonly registros = new Map<string, Registro>()
   private recientes: number[] = []
-  private readonly ahora: () => number
+  private readonly now: () => number
   private readonly alAvisar: (alert: string) => void
 
-  constructor(ahora: () => number = Date.now, alAvisar: (alert: string) => void = () => {}) {
-    this.ahora = ahora
+  constructor(now: () => number = Date.now, alAvisar: (alert: string) => void = () => {}) {
+    this.now = now
     this.alAvisar = alAvisar
   }
 
   /** Cuánto falta para poder intentar de nuevo (0 si ya se puede). */
-  esperaMs(quien: string): number {
-    const r = this.registros.get(quien)
-    return r ? Math.max(0, r.until - this.ahora()) : 0
+  waitMs(who: string): number {
+    const r = this.registros.get(who)
+    return r ? Math.max(0, r.until - this.now()) : 0
   }
 
   /**
@@ -50,30 +50,31 @@ export class Intentos {
    * acorta la espera de ese registro (la de una cuenta, para que nadie deje afuera a otro).
    */
   fallo(
-    quien: string,
-    { contar = true, tope = ESPERA_MAXIMA_MS }: { contar?: boolean; tope?: number } = {},
+    who: string,
+    { count = true, tope = ESPERA_MAXIMA_MS }: { count?: boolean; tope?: number } = {},
   ): number {
-    const ahora = this.ahora()
-    const previous = this.registros.get(quien)
+    const now = this.now()
+    const previous = this.registros.get(who)
     // Tras una ventana sin fallos, se empieza de cero.
-    const fallos = previous && ahora - previous.latest < VENTANA_AVISO_MS ? previous.fallos + 1 : 1
-    const delay = Math.min(tope, esperaTras(fallos))
-    this.registros.set(quien, { fallos, until: ahora + delay, latest: ahora })
-    this.clear(ahora)
+    const failures =
+      previous && now - previous.latest < VENTANA_AVISO_MS ? previous.failures + 1 : 1
+    const delay = Math.min(tope, esperaTras(failures))
+    this.registros.set(who, { failures, until: now + delay, latest: now })
+    this.clear(now)
 
-    if (contar) this.recientes.push(ahora)
-    this.recientes = this.recientes.filter((t) => ahora - t < VENTANA_AVISO_MS)
-    if (contar && this.recientes.length === FALLOS_PARA_AVISO)
+    if (count) this.recientes.push(now)
+    this.recientes = this.recientes.filter((t) => now - t < VENTANA_AVISO_MS)
+    if (count && this.recientes.length === FALLOS_PARA_AVISO)
       this.alAvisar(`${FALLOS_PARA_AVISO} PIN o códigos errados en 10 minutos en el restaurante`)
-    if (fallos === FALLOS_DE_UN_EQUIPO_PARA_AVISO)
-      this.alAvisar(`${fallos} PIN o códigos errados seguidos desde ${quien}`)
+    if (failures === FALLOS_DE_UN_EQUIPO_PARA_AVISO)
+      this.alAvisar(`${failures} PIN o códigos errados seguidos desde ${who}`)
     return delay
   }
 
   /** Que una IP que prueba sin parar no haga crecer la memoria sin límite. */
-  private clear(ahora: number) {
+  private clear(now: number) {
     if (this.registros.size < 1000) return
-    for (const [quien, r] of this.registros)
-      if (ahora - r.latest >= VENTANA_AVISO_MS) this.registros.delete(quien)
+    for (const [who, r] of this.registros)
+      if (now - r.latest >= VENTANA_AVISO_MS) this.registros.delete(who)
   }
 }

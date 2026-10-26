@@ -1,6 +1,6 @@
 import { businessDay, report } from '@pos/core'
-import { datosDeInforme } from '@pos/sync'
-import { AlmacenSqlite } from '@pos/sync/sqlite'
+import { reportData } from '@pos/sync'
+import { SqliteStore } from '@pos/sync/sqlite'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { guardasDeEquipo, type OpcionesImpresion } from '../impresion/rutas'
@@ -32,10 +32,10 @@ const diasEntre = (from: string, until: string) =>
   Math.round((Date.parse(`${until}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1
 
 export async function rutasReportes(app: FastifyInstance, o: OpcionesImpresion) {
-  const { db, restauranteId, access, cola, timeZone } = o
+  const { db, restaurantId, access, queue, timeZone } = o
   const clock = o.clock ?? (() => new Date().toISOString())
-  const { conEquipo, datosInvalidos, quien } = guardasDeEquipo(access)
-  const options = { db, restauranteId, timeZone }
+  const { conEquipo, datosInvalidos, who } = guardasDeEquipo(access)
+  const options = { db, restaurantId, timeZone }
 
   // El informe de un período. Sin fechas, el día operativo de hoy.
   app.post('/api/reports', conEquipo, async (req, reply) => {
@@ -43,7 +43,7 @@ export async function rutasReportes(app: FastifyInstance, o: OpcionesImpresion) 
       req.body,
     )
     if (!cuerpo.success) return datosInvalidos(reply)
-    if (!quien(req, reply, cuerpo.data, ['view_reports'])) return reply
+    if (!who(req, reply, cuerpo.data, ['view_reports'])) return reply
     const cfg = configDe(options)
     const today = businessDay(clock(), timeZone, cfg.business_day_start)
     const from = cuerpo.data.from ?? today
@@ -52,7 +52,7 @@ export async function rutasReportes(app: FastifyInstance, o: OpcionesImpresion) 
     if (diasEntre(from, until) > MAX_DIAS_REPORTE)
       return datosInvalidos(reply, `Elige un período de ${MAX_DIAS_REPORTE} días o menos`)
 
-    const data = datosDeInforme(new AlmacenSqlite(db, restauranteId), from, until)
+    const data = reportData(new SqliteStore(db, restaurantId), from, until)
     const result = report({
       ...data,
       config: { sales_by_waiter: cfg.sales_by_waiter, rounding_mode: cfg.rounding_mode },
@@ -61,17 +61,17 @@ export async function rutasReportes(app: FastifyInstance, o: OpcionesImpresion) 
       ...result.byWaiter.map((m) => m.userId),
       ...result.voids.flatMap((a) => [a.userId, a.authorizedById ?? a.userId]),
       ...result.cancellations.flatMap((c) => [c.userId, c.authorizedById ?? c.userId]),
-      ...data.cierresDeCaja.flatMap((c) => [c.abiertoPor, c.cerradoPor]),
+      ...data.registerClosings.flatMap((c) => [c.openedBy, c.closedBy]),
     ])
     return {
       today,
       report: result,
-      closings: data.cierresDeCaja.map((c) => ({
+      closings: data.registerClosings.map((c) => ({
         shiftId: c.reconciliation.shiftId,
         businessDay: c.businessDay,
         openedAt: c.reconciliation.openedAt,
-        abiertoPor: c.abiertoPor,
-        cerradoPor: c.cerradoPor,
+        openedBy: c.openedBy,
+        closedBy: c.closedBy,
         base: c.reconciliation.base,
         byMethod: c.reconciliation.byMethod,
         closed: c.reconciliation.closed,
@@ -85,7 +85,7 @@ export async function rutasReportes(app: FastifyInstance, o: OpcionesImpresion) 
   app.post('/api/reports/z-report', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.extend({ turno_id: z.string().length(26) }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply)
-    if (!quien(req, reply, cuerpo.data, ['view_reports'])) return reply
+    if (!who(req, reply, cuerpo.data, ['view_reports'])) return reply
     const r = encolarCierreZ(options, cuerpo.data.turno_id, { reprintedAt: clock() })
     if (r === 'no_printer')
       return reply.code(409).send({
@@ -96,7 +96,7 @@ export async function rutasReportes(app: FastifyInstance, o: OpcionesImpresion) 
       return reply
         .code(404)
         .send({ error: 'no_closeout', message: 'Ese turno no existe o sigue abierto' })
-    cola.despertar()
+    queue.despertar()
     return reply.code(204).send()
   })
 }

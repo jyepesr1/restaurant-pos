@@ -1,24 +1,24 @@
 import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
-import { type Autor, actualizarVersionado, insertarVersionado } from './acceso/registros'
+import { type Autor, actualizarVersionado, insertVersioned } from './acceso/registros'
 import { HistorialCatalogo, revisorPrecios } from './precios'
 import { montarCarta } from './pruebas-catalogo'
 
 // El historial del catálogo y la revisión del precio copiado cuando el catálogo cambió entre la
 // versión que vio el equipo y la que tiene el hub (docs/DINERO.md#precio-copiado).
 
-const AUTOR: Autor = { userId: null, dispositivoId: null }
+const AUTOR: Autor = { userId: null, deviceId: null }
 
-function montar() {
+function setup() {
   const m = montarCarta()
-  const historial = new HistorialCatalogo(m.db, m.restauranteId)
+  const history = new HistorialCatalogo(m.db, m.restaurantId)
   const patch = (tableName: string, id: string, fields: Record<string, string | number | null>) => {
-    actualizarVersionado(m.db, tableName, m.restauranteId, id, fields, AUTOR, m.clock())
-    return historial.versionActual()
+    actualizarVersionado(m.db, tableName, m.restaurantId, id, fields, AUTOR, m.clock())
+    return history.currentVersion()
   }
-  const crear = (tableName: string, fields: Record<string, string | number | null>) => {
-    const id = insertarVersionado(m.db, tableName, m.restauranteId, fields, AUTOR, m.clock())
-    return { id, version: historial.versionActual() }
+  const create = (tableName: string, fields: Record<string, string | number | null>) => {
+    const id = insertVersioned(m.db, tableName, m.restaurantId, fields, AUTOR, m.clock())
+    return { id, version: history.currentVersion() }
   }
   const data = (p: ReturnType<typeof m.product>, fields: Record<string, unknown> = {}) => ({
     item_id: newId(),
@@ -33,43 +33,39 @@ function montar() {
     course: null,
     modifiers: [] as { modifier_id: string; name: string; extra_price: number }[],
     notes: null,
-    catalog_version: historial.versionActual(),
+    catalog_version: history.currentVersion(),
     price_channel_id: null,
     ...fields,
   })
   const variance = (d: ReturnType<typeof data>) =>
-    historial.variance({ type: 'ItemAdded', data: d } as Parameters<
-      HistorialCatalogo['variance']
-    >[0])
-  return { ...m, historial, patch, crear, data, variance }
+    history.variance({ type: 'ItemAdded', data: d } as Parameters<HistorialCatalogo['variance']>[0])
+  return { ...m, history, patch, create, data, variance }
 }
 
 describe('historial con muchos cambios del mismo registro', () => {
   it('cada versión devuelve el precio que tenía, y entre versiones el último anterior', () => {
-    const m = montar()
+    const m = setup()
     const burrata = m.product('Burrata Spritz')
     const versiones: { version: number; price: number }[] = [
-      { version: m.historial.versionActual(), price: burrata.price },
+      { version: m.history.currentVersion(), price: burrata.price },
     ]
     for (let i = 1; i <= 300; i++) {
       const price = burrata.price + i * 100
       versiones.push({ version: m.patch('products', burrata.id, { price }), price })
       // Un cambio de otro registro en medio: la versión avanza sin tocar la burrata.
-      if (i % 7 === 0) m.crear('stations', { name: `Estación ${i}`, position: i })
+      if (i % 7 === 0) m.create('stations', { name: `Estación ${i}`, position: i })
     }
     for (const { version, price } of versiones)
-      expect(m.historial.estadoEn('products', burrata.id, version)?.price, `v${version}`).toBe(
-        price,
-      )
+      expect(m.history.stateIn('products', burrata.id, version)?.price, `v${version}`).toBe(price)
     // Una versión entre dos cambios del producto vale lo del cambio anterior.
     const [a, b] = [versiones[7], versiones[8]]
     if (!a || !b) throw new Error('falta')
     for (let v = a.version; v < b.version; v++)
-      expect(m.historial.estadoEn('products', burrata.id, v)?.price).toBe(a.price)
+      expect(m.history.stateIn('products', burrata.id, v)?.price).toBe(a.price)
   })
 
   it('cada fila guarda como "antes" el "después" de la anterior y las versiones solo suben', () => {
-    const m = montar()
+    const m = setup()
     const burrata = m.product('Burrata Spritz')
     for (let i = 1; i <= 120; i++) m.patch('products', burrata.id, { price: 1_000 + i })
     const rows = m.db
@@ -86,42 +82,42 @@ describe('historial con muchos cambios del mismo registro', () => {
   })
 
   it('antes de que el registro existiera no hay estado', () => {
-    const m = montar()
-    const { id, version } = m.crear('stations', { name: 'Nueva', position: 9 })
-    expect(m.historial.estadoEn('stations', id, version - 1)).toBeUndefined()
-    expect(m.historial.estadoEn('stations', id, 0)).toBeUndefined()
-    expect(m.historial.estadoEn('stations', id, version)?.name).toBe('Nueva')
-    expect(m.historial.estadoEn('stations', newId(), version)).toBeUndefined()
+    const m = setup()
+    const { id, version } = m.create('stations', { name: 'Nueva', position: 9 })
+    expect(m.history.stateIn('stations', id, version - 1)).toBeUndefined()
+    expect(m.history.stateIn('stations', id, 0)).toBeUndefined()
+    expect(m.history.stateIn('stations', id, version)?.name).toBe('Nueva')
+    expect(m.history.stateIn('stations', newId(), version)).toBeUndefined()
     // Con la entidad equivocada, el mismo id no existe.
-    expect(m.historial.estadoEn('products', id, version)).toBeUndefined()
+    expect(m.history.stateIn('products', id, version)).toBeUndefined()
   })
 
   it('los registros de otro restaurante no se mezclan', () => {
-    const m = montar()
+    const m = setup()
     const other = new HistorialCatalogo(m.db, newId())
     const burrata = m.product('Burrata Spritz')
-    expect(other.estadoEn('products', burrata.id, m.historial.versionActual())).toBeUndefined()
-    expect(other.versionActual()).toBe(0)
+    expect(other.stateIn('products', burrata.id, m.history.currentVersion())).toBeUndefined()
+    expect(other.currentVersion()).toBe(0)
   })
 
   it('el historial con el catálogo migrado coincide con lo que tiene cada tabla hoy', () => {
-    const m = montar()
+    const m = setup()
     for (const p of m.catalog().categories.flatMap((c) => c.products)) {
       const row = m.db.prepare('SELECT * FROM products WHERE id = ?').get(p.id)
-      expect(m.historial.estadoEn('products', p.id, m.historial.versionActual())).toEqual(row)
+      expect(m.history.stateIn('products', p.id, m.history.currentVersion())).toEqual(row)
     }
   })
 })
 
 describe('precio_distinto con el catálogo cambiado después', () => {
   it('una variante archivada después: el ítem viejo cuadra, el nuevo ya no', () => {
-    const m = montar()
+    const m = setup()
     const vino = m.product('Ramón Bilbao Crianza')
     const [glass, bottle] = vino.variants
     if (!glass || !bottle) throw new Error('falta')
     const oldOne = (extra = {}) =>
       m.data(vino, { variant_id: bottle.id, unit_price: bottle.price, ...extra })
-    const versionVieja = m.historial.versionActual()
+    const versionVieja = m.history.currentVersion()
     expect(m.variance(oldOne())).toBeNull()
 
     const v = m.patch('variants', bottle.id, { active: 0 })
@@ -138,7 +134,7 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('archivar todas las variantes: el producto vuelve a venderse sin opción', () => {
-    const m = montar()
+    const m = setup()
     const vino = m.product('Ramón Bilbao Crianza')
     let v = 0
     for (const variant of vino.variants) v = m.patch('variants', variant.id, { active: 0 })
@@ -149,11 +145,11 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('una variante que cambió de precio entre versiones', () => {
-    const m = montar()
+    const m = setup()
     const vino = m.product('Ramón Bilbao Crianza')
     const bottle = vino.variants[1]
     if (!bottle) throw new Error('falta')
-    const before = m.historial.versionActual()
+    const before = m.history.currentVersion()
     const after = m.patch('variants', bottle.id, { price: bottle.price + 10_000 })
     const item = (price: number, catalog_version: number) =>
       m.data(vino, { variant_id: bottle.id, unit_price: price, catalog_version })
@@ -164,10 +160,10 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('una variante creada después: con la versión vieja el producto no pedía opción', () => {
-    const m = montar()
+    const m = setup()
     const pizza = m.product('Burrata Spritz')
-    const before = m.historial.versionActual()
-    const newOne = m.crear('variants', {
+    const before = m.history.currentVersion()
+    const newOne = m.create('variants', {
       product_id: pizza.id,
       name: 'Familiar',
       price: 90_000,
@@ -195,11 +191,11 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('un modificador que cambió de precio entre versiones', () => {
-    const m = montar()
+    const m = setup()
     const tagliata = m.product('Tagliata di Manzo')
     const option = tagliata.groups[0]?.options[0]
     if (!option) throw new Error('falta')
-    const before = m.historial.versionActual()
+    const before = m.history.currentVersion()
     const after = m.patch('modifiers', option.id, {
       extra_price: option.extraPrice + 2_500,
     })
@@ -215,11 +211,11 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('un modificador archivado después ya no estaba en la carta; antes sí', () => {
-    const m = montar()
+    const m = setup()
     const tagliata = m.product('Tagliata di Manzo')
     const option = tagliata.groups[0]?.options[0]
     if (!option) throw new Error('falta')
-    const before = m.historial.versionActual()
+    const before = m.history.currentVersion()
     const after = m.patch('modifiers', option.id, { active: 0 })
     const item = (catalog_version: number) =>
       m.data(tagliata, {
@@ -231,12 +227,12 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('un impuesto cambiado: la tarifa vieja vale con la versión vieja', () => {
-    const m = montar()
+    const m = setup()
     const pizza = m.product('Burrata Spritz')
     const impuestoId = String(
       m.db.prepare('SELECT tax_id FROM products WHERE id = ?').get(pizza.id)?.tax_id,
     )
-    const before = m.historial.versionActual()
+    const before = m.history.currentVersion()
     const after = m.patch('taxes', impuestoId, { rate: pizza.tax.rate + 100 })
     expect(m.variance(m.data(pizza, { catalog_version: before }))).toBeNull()
     expect(m.variance(m.data(pizza, { catalog_version: after }))).toMatch(/impuesto/)
@@ -246,10 +242,10 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('un producto que cambió de impuesto (otro registro) también se detecta', () => {
-    const m = montar()
+    const m = setup()
     const pizza = m.product('Burrata Spritz')
-    const exempt = m.crear('taxes', { name: 'Exento', type: 'exempt', rate: 0 })
-    const before = m.historial.versionActual()
+    const exempt = m.create('taxes', { name: 'Exento', type: 'exempt', rate: 0 })
+    const before = m.history.currentVersion()
     const after = m.patch('products', pizza.id, { tax_id: exempt.id })
     expect(m.variance(m.data(pizza, { catalog_version: before }))).toBeNull()
     expect(m.variance(m.data(pizza, { catalog_version: after }))).toMatch(/impuesto/)
@@ -259,14 +255,14 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('el tipo de impuesto distinto con la misma tarifa tampoco cuadra', () => {
-    const m = montar()
+    const m = setup()
     const pizza = m.product('Burrata Spritz')
     const otroTipo = pizza.tax.type === 'inc' ? 'iva' : 'inc'
     expect(m.variance(m.data(pizza, { tax_type: otroTipo }))).toMatch(/impuesto/)
   })
 
   it('un producto creado después de la versión del ítem no estaba en la carta', () => {
-    const m = montar()
+    const m = setup()
     const base = m.product('Burrata Spritz')
     const tax = String(
       m.db.prepare('SELECT tax_id FROM products WHERE id = ?').get(base.id)?.tax_id,
@@ -274,8 +270,8 @@ describe('precio_distinto con el catálogo cambiado después', () => {
     const category = String(
       m.db.prepare('SELECT category_id FROM products WHERE id = ?').get(base.id)?.category_id,
     )
-    const before = m.historial.versionActual()
-    const fresh = m.crear('products', {
+    const before = m.history.currentVersion()
+    const fresh = m.create('products', {
       category_id: category,
       name: 'Postre nuevo',
       price: 15_000,
@@ -293,9 +289,9 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('archivado y reactivado: cuadra antes y después, no en el hueco', () => {
-    const m = montar()
+    const m = setup()
     const pizza = m.product('Burrata Spritz')
-    const before = m.historial.versionActual()
+    const before = m.history.currentVersion()
     const archived = m.patch('products', pizza.id, { active: 0 })
     const reactivado = m.patch('products', pizza.id, { active: 1 })
     expect(m.variance(m.data(pizza, { catalog_version: before }))).toBeNull()
@@ -306,9 +302,9 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('una versión del futuro que el hub no tiene se marca, sea cual sea el producto', () => {
-    const m = montar()
+    const m = setup()
     const pizza = m.product('Burrata Spritz')
-    const futura = m.historial.versionActual() + 1
+    const futura = m.history.currentVersion() + 1
     expect(m.variance(m.data(pizza, { catalog_version: futura }))).toMatch(/versión del catálogo/)
     expect(m.variance(m.data(pizza, { catalog_version: Number.MAX_SAFE_INTEGER }))).toMatch(
       /versión del catálogo/,
@@ -316,7 +312,7 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('un producto_id que en realidad es otra cosa del catálogo se marca', () => {
-    const m = montar()
+    const m = setup()
     const pizza = m.product('Burrata Spritz')
     const vino = m.product('Ramón Bilbao Crianza')
     const variant = vino.variants[0]
@@ -327,7 +323,7 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('con un modificador repetido', () => {
-    const m = montar()
+    const m = setup()
     const tagliata = m.product('Tagliata di Manzo')
     const option = tagliata.groups[0]?.options[0]
     if (!option) throw new Error('falta')
@@ -341,43 +337,43 @@ describe('precio_distinto con el catálogo cambiado después', () => {
   })
 
   it('revisorPrecios solo mira los ItemAgregado', () => {
-    const m = montar()
-    const revisor = revisorPrecios(m.db, m.restauranteId)
+    const m = setup()
+    const revisor = revisorPrecios(m.db, m.restaurantId)
     const pizza = m.product('Burrata Spritz')
     const badCase = m.data(pizza, { unit_price: 1 })
-    expect(revisor.revisar({ type: 'ItemAdded', data: badCase } as never)).toMatch(/la carta decía/)
-    expect(revisor.revisar({ type: 'OrderOpened', data: {} } as never)).toBeNull()
+    expect(revisor.review({ type: 'ItemAdded', data: badCase } as never)).toMatch(/la carta decía/)
+    expect(revisor.review({ type: 'OrderOpened', data: {} } as never)).toBeNull()
   })
 
   it('un ítem con 200 cambios de precio después sigue comparando contra su versión', () => {
-    const m = montar()
+    const m = setup()
     const pizza = m.product('Burrata Spritz')
-    const vistaPorElEquipo = m.historial.versionActual()
+    const vistaPorElEquipo = m.history.currentVersion()
     for (let i = 1; i <= 200; i++) m.patch('products', pizza.id, { price: pizza.price + i })
     expect(m.variance(m.data(pizza, { catalog_version: vistaPorElEquipo }))).toBeNull()
     expect(m.variance(m.data(pizza))).toMatch(/la carta decía/)
   })
 
   it('un precio especial (precio_canal_id) se marca: todavía no existen', () => {
-    const m = montar()
+    const m = setup()
     const pizza = m.product('Burrata Spritz')
     expect(m.variance(m.data(pizza, { price_channel_id: newId() }))).toMatch(/precio especial/)
   })
 
   it('un impuesto archivado después no cuadra con la versión nueva, sí con la vieja', () => {
-    const m = montar()
+    const m = setup()
     const pizza = m.product('Burrata Spritz')
     const impuestoId = String(
       m.db.prepare('SELECT tax_id FROM products WHERE id = ?').get(pizza.id)?.tax_id,
     )
-    const before = m.historial.versionActual()
+    const before = m.history.currentVersion()
     const after = m.patch('taxes', impuestoId, { active: 0 })
     expect(m.variance(m.data(pizza, { catalog_version: before }))).toBeNull()
     expect(m.variance(m.data(pizza, { catalog_version: after }))).toMatch(/impuesto/)
   })
 
   it('una opción de un grupo archivado, o de un producto que no tiene ese grupo, se marca', () => {
-    const m = montar()
+    const m = setup()
     const tagliata = m.product('Tagliata di Manzo')
     const group = tagliata.groups[0]
     const option = group?.options[0]
@@ -390,23 +386,23 @@ describe('precio_distinto con el catálogo cambiado después', () => {
     // De otro producto.
     expect(m.variance(conOpcion(m.product('Burrata Spritz')))).toMatch(/no es de/)
     // Del grupo archivado después: antes valía.
-    const before = m.historial.versionActual()
+    const before = m.history.currentVersion()
     const after = m.patch('modifier_groups', group.id, { active: 0 })
     expect(m.variance(conOpcion(tagliata, before))).toBeNull()
     expect(m.variance(conOpcion(tagliata, after))).toMatch(/no es de/)
   })
 
   it('una opción cuyo enlace con el producto se archivó después valía con la versión anterior', () => {
-    const m = montar()
+    const m = setup()
     const tagliata = m.product('Tagliata di Manzo')
     const option = tagliata.groups[0]?.options[0]
     if (!option) throw new Error('falta')
-    const enlace = String(
+    const link = String(
       m.db.prepare('SELECT id FROM product_modifier_groups WHERE product_id = ?').get(tagliata.id)
         ?.id,
     )
-    const before = m.historial.versionActual()
-    const after = m.patch('product_modifier_groups', enlace, { active: 0 })
+    const before = m.history.currentVersion()
+    const after = m.patch('product_modifier_groups', link, { active: 0 })
     const item = (catalog_version: number) =>
       m.data(tagliata, {
         catalog_version,
@@ -419,7 +415,7 @@ describe('precio_distinto con el catálogo cambiado después', () => {
 
 describe('historial_desde: lo anterior a la migración', () => {
   it('antes de esa versión se usa el estado más viejo conocido, no "no existía"', () => {
-    const m = montar()
+    const m = setup()
     const burrata = m.product('Burrata Spritz')
     const creada = Number(
       m.db
@@ -428,17 +424,17 @@ describe('historial_desde: lo anterior a la migración', () => {
     )
     const v = m.patch('products', burrata.id, { price: burrata.price + 500 })
     // Sin `historial_desde`, una versión anterior a su alta no lo conoce.
-    expect(m.historial.estadoEn('products', burrata.id, creada - 1)).toBeUndefined()
+    expect(m.history.stateIn('products', burrata.id, creada - 1)).toBeUndefined()
     // La migración de una base vieja deja ese contador: lo anterior toma el estado más viejo.
     m.db
       .prepare("INSERT INTO counters (restaurant_id, name, value) VALUES (?, 'history_since', ?)")
-      .run(m.restauranteId, v)
-    expect(m.historial.estadoEn('products', burrata.id, creada - 1)?.price).toBe(burrata.price)
-    expect(m.historial.estadoEn('products', burrata.id, v - 1)?.price).toBe(burrata.price)
+      .run(m.restaurantId, v)
+    expect(m.history.stateIn('products', burrata.id, creada - 1)?.price).toBe(burrata.price)
+    expect(m.history.stateIn('products', burrata.id, v - 1)?.price).toBe(burrata.price)
     // Desde esa versión ya hay historial completo.
-    expect(m.historial.estadoEn('products', burrata.id, v)?.price).toBe(burrata.price + 500)
+    expect(m.history.stateIn('products', burrata.id, v)?.price).toBe(burrata.price + 500)
     // Lo que no existe en ninguna versión sigue sin existir.
-    expect(m.historial.estadoEn('products', newId(), creada - 1)).toBeUndefined()
+    expect(m.history.stateIn('products', newId(), creada - 1)).toBeUndefined()
     // Un ítem de la versión vieja cuadra con el precio viejo.
     expect(m.variance(m.data(burrata, { catalog_version: creada - 1 }))).toBeNull()
   })

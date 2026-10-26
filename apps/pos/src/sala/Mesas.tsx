@@ -1,4 +1,4 @@
-import type { Catalogo } from '@pos/sync'
+import type { Catalog } from '@pos/sync'
 import { useMemo, useState } from 'react'
 import { useAhora } from '../ui/ahora'
 import { Etiqueta, TONOS_SUAVES, type Tono } from '../ui/Etiqueta'
@@ -7,7 +7,7 @@ import { Icono, type NombreIcono } from '../ui/iconos'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { navegar } from '../ui/ruta'
 import { usePedidos, useSala } from './contexto'
-import { FiguraElemento, Lienzo, posicion, Sillas, useEscala } from './LienzoPlano'
+import { FiguraElemento, Lienzo, placement, Sillas, useEscala } from './LienzoPlano'
 import { MarcoSala } from './MarcoSala'
 import { CANALES } from './pedido'
 import { limites } from './plano'
@@ -19,7 +19,7 @@ import { type EstadoMesaDemo, estadoMesa, itemsVigentes, type PedidoVisible } fr
 // la caja) o arriba (en el celular), los pedidos abiertos en tarjetas del color de su estado, y
 // los botones para los pedidos sin mesa. Un toque en la mesa o la tarjeta lleva a su pedido.
 
-const ESTADOS: Record<EstadoMesaDemo, { tono: Tono; icono: NombreIcono; text: string }> = {
+const STATUSES: Record<EstadoMesaDemo, { tono: Tono; icono: NombreIcono; text: string }> = {
   free: { tono: 'free', icono: 'circle', text: 'Libre' },
   taking: { tono: 'progress', icono: 'pencil', text: 'Tomando pedido' },
   ready: { tono: 'free', icono: 'serve', text: 'Listo para llevar' },
@@ -59,7 +59,7 @@ const PUNTO: Record<Tono, string> = {
   neutral: 'bg-neutro-fuerte',
 }
 
-type Mesa = Catalogo['tables'][number]
+type Mesa = Catalog['tables'][number]
 type Vista = 'floorPlan' | 'list'
 const CLAVE_VISTA = 'pos-tables-view'
 const CLAVE_ZONA = 'pos-tables-zone'
@@ -92,13 +92,13 @@ interface Resumen {
   unidaA: string | null
 }
 
-function resumir(orders: PedidoVisible[], staff: Catalogo['staff'], ahora: number): Resumen {
+function resumir(orders: PedidoVisible[], staff: Catalog['staff'], now: number): Resumen {
   const firstOne = orders[0]
   return {
     status: estadoMesa(orders),
     orders,
     total: orders.reduce((s, p) => s + p.total, 0),
-    minutos: firstOne ? Math.max(0, (ahora - Date.parse(firstOne.status.openedAt)) / 60_000) : null,
+    minutos: firstOne ? Math.max(0, (now - Date.parse(firstOne.status.openedAt)) / 60_000) : null,
     waiter: firstOne
       ? (staff.find((u) => u.id === firstOne.status.assignedWaiterId)?.name ?? null)
       : null,
@@ -111,7 +111,7 @@ function resumir(orders: PedidoVisible[], staff: Catalogo['staff'], ahora: numbe
 const describir = (table: Mesa, r: Resumen) =>
   [
     `Mesa ${table.name}`,
-    ESTADOS[r.status].text,
+    STATUSES[r.status].text,
     r.status !== 'free' && !r.unidaA && r.minutos !== null ? minutos(r.minutos) : '',
     r.status !== 'free' && !r.unidaA ? pesos(r.total) : '',
     r.unidaA ? '' : (r.waiter ?? ''),
@@ -127,7 +127,7 @@ export function Mesas() {
   const { catalog, device } = useSala()
   const esCaja = device?.type === 'register'
   const orders = usePedidos()
-  const ahora = useAhora()
+  const now = useAhora()
   const [vista, setVista] = useState<Vista>(
     () =>
       (['floorPlan', 'list'] as const).find((v) => v === recordado(CLAVE_VISTA)) ??
@@ -145,13 +145,13 @@ export function Mesas() {
     const nombreDesde = (from: Mesa) => (id: string) => {
       const table = catalog?.tables.find((m) => m.id === id)
       if (!table) return '?'
-      const zone = catalog?.zones.find((z) => z.id === table.zonaId)
-      return table.zonaId === from.zonaId || !zone ? table.name : `${table.name} (${zone.name})`
+      const zone = catalog?.zones.find((z) => z.id === table.zoneId)
+      return table.zoneId === from.zoneId || !zone ? table.name : `${table.name} (${zone.name})`
     }
     return new Map(
       (catalog?.tables ?? []).map((m) => {
         const name = nombreDesde(m)
-        const r = resumir(deMesa.get(m.id) ?? [], catalog?.staff ?? [], ahora)
+        const r = resumir(deMesa.get(m.id) ?? [], catalog?.staff ?? [], now)
         const group = r.orders.find((p) => p.status.mergedTables.length > 0)?.status
         const main = group?.tableId === m.id
         return [
@@ -164,7 +164,7 @@ export function Mesas() {
         ]
       }),
     )
-  }, [catalog, orders, ahora])
+  }, [catalog, orders, now])
 
   if (!catalog) return null
   const zones = catalog.zones
@@ -194,13 +194,13 @@ export function Mesas() {
   const zonaActual = vista === 'floorPlan' ? zone : undefined
   const enZona = (status: EstadoMesaDemo) =>
     catalog.tables.filter(
-      (m) => (!zonaActual || m.zonaId === zonaActual.id) && resumenes.get(m.id)?.status === status,
+      (m) => (!zonaActual || m.zoneId === zonaActual.id) && resumenes.get(m.id)?.status === status,
     ).length
 
   return (
     <MarcoSala title="Salón">
       <div className="mx-auto flex max-w-[96rem] flex-col gap-5 p-3 md:p-5 lg:flex-row lg:items-start">
-        <PedidosAbiertos catalog={catalog} orders={orders ?? []} ahora={ahora} />
+        <PedidosAbiertos catalog={catalog} orders={orders ?? []} now={now} />
 
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -245,9 +245,9 @@ export function Mesas() {
               <li key={status} className="flex items-center gap-2">
                 <span
                   aria-hidden="true"
-                  className={`size-3 rounded-full ${PUNTO[ESTADOS[status].tono]}`}
+                  className={`size-3 rounded-full ${PUNTO[STATUSES[status].tono]}`}
                 />
-                <span className="font-medium">{ESTADOS[status].text}</span>
+                <span className="font-medium">{STATUSES[status].text}</span>
                 <span className="cifras text-texto-suave">{enZona(status)}</span>
               </li>
             ))}
@@ -270,7 +270,7 @@ export function Mesas() {
                   {zones.length > 1 && <h2 className="text-lg font-semibold">{z.name}</h2>}
                   <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                     {catalog.tables
-                      .filter((m) => m.zonaId === z.id)
+                      .filter((m) => m.zoneId === z.id)
                       .map((m) => (
                         <li key={m.id}>
                           <MesaEnLista
@@ -286,7 +286,7 @@ export function Mesas() {
             : zone && (
                 <PlanoZona
                   catalog={catalog}
-                  zonaId={zone.id}
+                  zoneId={zone.id}
                   name={zone.name}
                   resumenes={resumenes}
                   alTocar={tocar}
@@ -305,7 +305,7 @@ const ICONO_CANAL: Record<keyof typeof CANALES, NombreIcono> = {
 }
 
 /** Título de un pedido: su mesa o su canal, con el número del día. */
-function nombrePedido(catalog: Catalogo, p: PedidoVisible): string {
+function nombrePedido(catalog: Catalog, p: PedidoVisible): string {
   if (p.status.tableId) {
     const names = [p.status.tableId, ...p.status.mergedTables].map(
       (id) => catalog.tables.find((m) => m.id === id)?.name ?? '?',
@@ -324,13 +324,13 @@ function nombrePedido(catalog: Catalogo, p: PedidoVisible): string {
 function PedidosAbiertos({
   catalog,
   orders,
-  ahora,
+  now,
 }: {
-  catalog: Catalogo
+  catalog: Catalog
   orders: PedidoVisible[]
-  ahora: number
+  now: number
 }) {
-  const abiertos = orders
+  const openOnes = orders
     .filter((p) => itemsVigentes(p.status).length > 0 || p.status.tableId === null)
     .sort((a, b) => Date.parse(b.status.openedAt) - Date.parse(a.status.openedAt))
   return (
@@ -342,7 +342,7 @@ function PedidosAbiertos({
         <h2 id="title-orders" className="text-lg font-semibold">
           Pedidos abiertos
         </h2>
-        <span className="cifras text-texto-suave">{abiertos.length}</span>
+        <span className="cifras text-texto-suave">{openOnes.length}</span>
       </div>
       <div className="grid grid-cols-3 gap-2">
         {(Object.keys(CANALES) as (keyof typeof CANALES)[]).map((c) => (
@@ -357,21 +357,21 @@ function PedidosAbiertos({
           </button>
         ))}
       </div>
-      {abiertos.length === 0 ? (
+      {openOnes.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-borde p-5 text-center text-sm text-texto-suave">
           Sin pedidos por ahora. Toca una mesa para empezar uno.
         </p>
       ) : (
         <ul className="-mx-3 flex gap-3 overflow-x-auto px-3 pb-1 lg:mx-0 lg:max-h-[calc(100dvh-18rem)] lg:flex-col lg:overflow-y-auto lg:px-0">
-          {abiertos.map((p) => {
+          {openOnes.map((p) => {
             const status = estadoMesa([p])
-            const v = ESTADOS[status]
+            const v = STATUSES[status]
             const items = itemsVigentes(p.status).reduce(
               (s, i) => s + i.quantity - i.voidedQuantity,
               0,
             )
             const waiter = catalog.staff.find((u) => u.id === p.status.assignedWaiterId)
-            const from = Math.max(0, (ahora - Date.parse(p.status.openedAt)) / 60_000)
+            const from = Math.max(0, (now - Date.parse(p.status.openedAt)) / 60_000)
             return (
               <li key={p.status.id} className="w-64 shrink-0 lg:w-auto">
                 <button
@@ -417,7 +417,7 @@ function PedidosAbiertos({
  * Pedidos abiertos cuya mesa ya no está en el plano (la archivaron mientras un mesero sin
  * conexión la usaba): no se pierden de vista. Se pasan a otra con «Mesa y pedido → Cambiar de mesa».
  */
-function PedidosFueraDelPlano({ catalog, orders }: { catalog: Catalogo; orders: PedidoVisible[] }) {
+function PedidosFueraDelPlano({ catalog, orders }: { catalog: Catalog; orders: PedidoVisible[] }) {
   const tables = new Set(catalog.tables.map((m) => m.id))
   const outside = orders.filter((p) => p.status.tableId !== null && !tables.has(p.status.tableId))
   if (outside.length === 0) return null
@@ -447,23 +447,23 @@ function PedidosFueraDelPlano({ catalog, orders }: { catalog: Catalogo; orders: 
 
 function PlanoZona({
   catalog,
-  zonaId,
+  zoneId,
   name,
   resumenes,
   alTocar,
 }: {
-  catalog: Catalogo
-  zonaId: string
+  catalog: Catalog
+  zoneId: string
   name: string
   resumenes: Map<string, Resumen>
   alTocar: (m: Mesa) => void
 }) {
-  const tables = catalog.tables.filter((m) => m.zonaId === zonaId)
-  const elements = catalog.elements.filter((e) => e.zonaId === zonaId)
+  const tables = catalog.tables.filter((m) => m.zoneId === zoneId)
+  const elements = catalog.elements.filter((e) => e.zoneId === zoneId)
   const register = limites([...tables, ...elements])
   const { ref, escala } = useEscala(register)
   const center = (m: Mesa) => {
-    const e = posicion(m, register, escala)
+    const e = placement(m, register, escala)
     return { x: Number(e.left) + Number(e.width) / 2, y: Number(e.top) + Number(e.height) / 2 }
   }
   // Las mesas de un grupo llevan un halo de su color por debajo, y cada unida una franja hasta su
@@ -479,12 +479,12 @@ function PlanoZona({
     if (!main || main.id === m.id) return []
     const [de, a] = [center(main), center(m)]
     const cruza = tables.some(
-      (x) => x.id !== m.id && x.id !== main.id && cruzaCaja(de, a, posicion(x, register, escala)),
+      (x) => x.id !== m.id && x.id !== main.id && cruzaCaja(de, a, placement(x, register, escala)),
     )
     return cruza ? [] : [{ id: m.id, de, a }]
   })
   const grueso = Math.max(8, 20 * escala)
-  const tono = (m: Mesa) => UNION[ESTADOS[(resumenes.get(m.id) as Resumen).status].tono]
+  const tono = (m: Mesa) => UNION[STATUSES[(resumenes.get(m.id) as Resumen).status].tono]
   return (
     <Lienzo register={register} escala={escala} refContenedor={ref} etiqueta={`Plano de ${name}`}>
       {enGrupo.length > 0 && (
@@ -506,7 +506,7 @@ function PlanoZona({
             )
           })}
           {enGrupo.map((m) => {
-            const e = posicion(m, register, escala)
+            const e = placement(m, register, escala)
             const [x, y, w, h] = [e.left, e.top, e.width, e.height].map(Number) as [
               number,
               number,
@@ -533,7 +533,7 @@ function PlanoZona({
         </svg>
       )}
       {elements.map((e) => (
-        <div key={e.id} style={posicion(e, register, escala)} aria-hidden="true">
+        <div key={e.id} style={placement(e, register, escala)} aria-hidden="true">
           <FiguraElemento type={e.type} text={e.text} escala={escala} />
         </div>
       ))}
@@ -542,7 +542,7 @@ function PlanoZona({
           key={m.id}
           table={m}
           r={resumenes.get(m.id) as Resumen}
-          style={posicion(m, register, escala)}
+          style={placement(m, register, escala)}
           escala={escala}
           alTocar={() => alTocar(m)}
         />
@@ -581,9 +581,9 @@ function cruzaCaja(
 }
 
 const claseMesa = (r: Resumen) =>
-  `${BORDE[ESTADOS[r.status].tono]} ${TONOS_SUAVES[ESTADOS[r.status].tono]}`
+  `${BORDE[STATUSES[r.status].tono]} ${TONOS_SUAVES[STATUSES[r.status].tono]}`
 
-const claseSilla = (r: Resumen) => SILLA[ESTADOS[r.status].tono]
+const claseSilla = (r: Resumen) => SILLA[STATUSES[r.status].tono]
 
 function MesaEnPlano({
   table,
@@ -598,24 +598,24 @@ function MesaEnPlano({
   escala: number
   alTocar: () => void
 }) {
-  const v = ESTADOS[r.status]
+  const v = STATUSES[r.status]
   // En una mesa chica en pantalla solo cabe el número y el ícono; el resto lo dice la lista.
   const lado = Math.min(table.width, table.height) * escala
   const detalle = lado >= 80
   const conMesero = lado >= 110
   // Que se pueda tocar con el dedo: al menos 48 px, creciendo alrededor de su centro.
-  const crecer = (medida: number, start: number) => {
-    const extra = Math.max(0, 48 - medida)
-    return { start: start - extra / 2, medida: medida + extra }
+  const crecer = (size: number, start: number) => {
+    const extra = Math.max(0, 48 - size)
+    return { start: start - extra / 2, size: size + extra }
   }
   const width = crecer(Number(style.width), Number(style.left))
   const height = crecer(Number(style.height), Number(style.top))
   const tocable = {
     ...style,
     left: width.start,
-    width: width.medida,
+    width: width.size,
     top: height.start,
-    height: height.medida,
+    height: height.size,
   }
   return (
     <>
@@ -669,8 +669,8 @@ function MesaEnPlano({
 }
 
 function MesaEnLista({ table, r, alTocar }: { table: Mesa; r: Resumen; alTocar: () => void }) {
-  const v = ESTADOS[r.status]
-  const ocupada = r.status !== 'free'
+  const v = STATUSES[r.status]
+  const takenPath = r.status !== 'free'
   return (
     <button
       type="button"
@@ -687,7 +687,7 @@ function MesaEnLista({ table, r, alTocar }: { table: Mesa; r: Resumen; alTocar: 
         <Etiqueta tono={v.tono} icono={r.porConfirmar ? 'clock' : v.icono}>
           {r.porConfirmar ? `${v.text} · sin confirmar` : v.text}
         </Etiqueta>
-        {ocupada && (
+        {takenPath && (
           <span className="mt-1 block text-sm text-texto-suave">
             {[
               r.unidaA ? null : r.waiter,
@@ -701,7 +701,7 @@ function MesaEnLista({ table, r, alTocar }: { table: Mesa; r: Resumen; alTocar: 
           </span>
         )}
       </span>
-      {ocupada && !r.unidaA && <span className="cifras font-semibold">{pesos(r.total)}</span>}
+      {takenPath && !r.unidaA && <span className="cifras font-semibold">{pesos(r.total)}</span>}
     </button>
   )
 }

@@ -61,9 +61,9 @@ describe('API de acceso', () => {
   it('sin token, o con uno falso, responde 401', async () => {
     const api = montarApi()
     expect((await api.post('/api/sessions', { pin: '4821' })).statusCode).toBe(401)
-    const falso = await api.post('/api/sessions', { pin: '4821' }, 'inventado')
-    expect(falso.statusCode).toBe(401)
-    expect(falso.json()).toMatchObject({ error: 'invalid_token' })
+    const fake = await api.post('/api/sessions', { pin: '4821' }, 'inventado')
+    expect(fake.statusCode).toBe(401)
+    expect(fake.json()).toMatchObject({ error: 'invalid_token' })
   })
 
   it('PIN errado: 401; tras tres, 429 con Retry-After', async () => {

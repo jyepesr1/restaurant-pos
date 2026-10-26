@@ -52,8 +52,8 @@ export async function borrarEventos(): Promise<void> {
 /** Borra eventos de más de una semana para que el registro no crezca sin límite. */
 export async function purgarEventosAntiguos(): Promise<void> {
   try {
-    const limite = Date.now() - DIAS_RETENCION * 24 * 60 * 60 * 1000
-    await db.events.where('time').below(limite).delete()
+    const limit = Date.now() - DIAS_RETENCION * 24 * 60 * 60 * 1000
+    await db.events.where('time').below(limit).delete()
   } catch {
     // Igual que arriba: la purga es opcional.
   }

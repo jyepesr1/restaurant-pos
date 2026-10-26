@@ -1,4 +1,4 @@
-import { type AlmacenDispositivo, type Cursor, type EventoLocal, pedidosDe } from '@pos/sync'
+import { type Cursor, type DeviceStore, type LocalEvent, ordersOf } from '@pos/sync'
 import Dexie, { type EntityTable } from 'dexie'
 
 // Almacén del dispositivo en IndexedDB (docs/SYNC.md): los eventos con su estado local, el cursor
@@ -12,7 +12,7 @@ interface FilaEvento {
   pending: 0 | 1
   /** Pedidos que toca (agregado, relacionados y afecta): índice de varias entradas. */
   orders: string[]
-  local: EventoLocal
+  local: LocalEvent
 }
 
 interface FilaAjuste {
@@ -47,26 +47,26 @@ export class BaseDispositivo extends Dexie {
 
 const CURSOR = 'cursor'
 
-const row = (local: EventoLocal): FilaEvento => ({
+const row = (local: LocalEvent): FilaEvento => ({
   id: local.event.id,
   position: local.position,
   pending: local.own && local.status === 'pending' ? 1 : 0,
-  orders: pedidosDe(local.event),
+  orders: ordersOf(local.event),
   local,
 })
 
-export class AlmacenIndexedDb implements AlmacenDispositivo {
+export class AlmacenIndexedDb implements DeviceStore {
   private readonly db: BaseDispositivo
 
   constructor(db: BaseDispositivo) {
     this.db = db
   }
 
-  async guardar(locales: readonly EventoLocal[]) {
-    if (locales.length > 0) await this.db.events.bulkPut(locales.map(row))
+  async save(locals: readonly LocalEvent[]) {
+    if (locals.length > 0) await this.db.events.bulkPut(locals.map(row))
   }
 
-  async obtener(id: string) {
+  async get(id: string) {
     return (await this.db.events.get(id))?.local
   }
 
@@ -74,15 +74,15 @@ export class AlmacenIndexedDb implements AlmacenDispositivo {
     return (await this.db.events.orderBy('position').toArray()).map((f) => f.local)
   }
 
-  async ownPending(limite = Number.POSITIVE_INFINITY) {
+  async ownPending(limit = Number.POSITIVE_INFINITY) {
     const consulta = this.db.events
       .where('[pending+position]')
       .between([1, Dexie.minKey], [1, Dexie.maxKey])
-    const rows = await (Number.isFinite(limite) ? consulta.limit(limite) : consulta).toArray()
+    const rows = await (Number.isFinite(limit) ? consulta.limit(limit) : consulta).toArray()
     return rows.map((f) => f.local)
   }
 
-  async dePedido(orderId: string) {
+  async ofOrder(orderId: string) {
     const rows = await this.db.events.where('orders').equals(orderId).toArray()
     return rows.sort((a, b) => a.position - b.position).map((f) => f.local)
   }
@@ -92,10 +92,10 @@ export class AlmacenIndexedDb implements AlmacenDispositivo {
   }
 
   async cursor(): Promise<Cursor> {
-    return (await this.db.leerAjuste<Cursor>(CURSOR)) ?? { instancia: null, until: 0 }
+    return (await this.db.leerAjuste<Cursor>(CURSOR)) ?? { instance: null, until: 0 }
   }
 
-  async guardarCursor(cursor: Cursor) {
+  async saveCursor(cursor: Cursor) {
     await this.db.saveSetting(CURSOR, cursor)
   }
 }

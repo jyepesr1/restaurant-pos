@@ -52,11 +52,11 @@ const ocupar = (m: Mesa): Mesa =>
 export function Order() {
   const number = useMesaDeLaRuta(2)
   const table = useMesas().find((m) => m.number === number)
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const [busqueda, setBusqueda] = useState('')
   const [category, setCategoria] = useState(menu[0]?.key ?? '')
   const [guest, setComensal] = useState<number | null>(null)
-  const [elegido, setElegido] = useState<MenuProduct | null>(null)
+  const [selectedProduct, setElegido] = useState<MenuProduct | null>(null)
   const [editando, setEditando] = useState<string | null>(null)
   const [verPedido, setVerPedido] = useState(false)
   const campoBusqueda = useRef<HTMLInputElement>(null)
@@ -101,7 +101,7 @@ export function Order() {
           i.id === equal.id ? { ...i, quantity: i.quantity + fresh.quantity } : i,
         ),
       }))
-      avisar(`${nombreItem(fresh)}: ${equal.quantity + fresh.quantity}`, () =>
+      notify(`${nombreItem(fresh)}: ${equal.quantity + fresh.quantity}`, () =>
         cambiarMesa(number, (m) => ({
           ...m,
           items: m.items.map((i) =>
@@ -113,7 +113,7 @@ export function Order() {
     }
     const before = table
     cambiarMesa(number, (m) => ({ ...ocupar(m), items: [...m.items, fresh] }))
-    avisar(`Agregaste ${nombreItem(fresh)}`, () =>
+    notify(`Agregaste ${nombreItem(fresh)}`, () =>
       cambiarMesa(number, (m) =>
         m.items.length === 1 && before.items.length === 0
           ? before
@@ -128,12 +128,12 @@ export function Order() {
   }
 
   const remove = (item: OrderItem) => {
-    const posicion = items.findIndex((i) => i.id === item.id)
+    const placement = items.findIndex((i) => i.id === item.id)
     cambiarMesa(number, (m) => ({ ...m, items: m.items.filter((i) => i.id !== item.id) }))
-    avisar(`Quitaste ${nombreItem(item)}`, () =>
+    notify(`Quitaste ${nombreItem(item)}`, () =>
       cambiarMesa(number, (m) => {
         const copy = [...m.items]
-        copy.splice(posicion, 0, item)
+        copy.splice(placement, 0, item)
         return { ...m, items: copy }
       }),
     )
@@ -141,14 +141,14 @@ export function Order() {
 
   const send = () => {
     if (porEnviar.length === 0) return
-    const ahora = Date.now()
+    const now = Date.now()
     cambiarMesa(number, (m) => ({
       ...m,
       status: 'in_kitchen',
-      items: m.items.map((i) => (i.enviadoEn === null ? { ...i, enviadoEn: ahora } : i)),
+      items: m.items.map((i) => (i.enviadoEn === null ? { ...i, enviadoEn: now } : i)),
     }))
     navigator.vibrate?.(60)
-    avisar(`Enviado a cocina y barra (${porEnviar.length})`)
+    notify(`Enviado a cocina y barra (${porEnviar.length})`)
     setVerPedido(false)
     navegar('/mockups/floor-plan')
   }
@@ -297,7 +297,7 @@ export function Order() {
       <PanelLateral
         opened={verPedido}
         title={`Pedido · Mesa ${number}`}
-        alCerrar={() => setVerPedido(false)}
+        onClose={() => setVerPedido(false)}
         pie={
           <div className="flex gap-2">
             {botonCuenta}
@@ -309,9 +309,9 @@ export function Order() {
       </PanelLateral>
 
       <PanelProducto
-        product={elegido}
+        product={selectedProduct}
         guest={guest}
-        alCerrar={() => setElegido(null)}
+        onClose={() => setElegido(null)}
         alAgregar={(item) => {
           add(item)
           setElegido(null)
@@ -321,7 +321,7 @@ export function Order() {
       <PanelItem
         item={itemEditado}
         guests={table.guests}
-        alCerrar={() => setEditando(null)}
+        onClose={() => setEditando(null)}
         onSave={(item) => {
           cambiarMesa(number, (m) => ({
             ...m,
@@ -340,7 +340,7 @@ export function Order() {
               i.id === item.id ? { ...i, voided: { reason, alreadyPrepared } } : i,
             ),
           }))
-          avisar(`Anulaste ${nombreItem(item)} (${reason.toLowerCase()})`)
+          notify(`Anulaste ${nombreItem(item)} (${reason.toLowerCase()})`)
           setEditando(null)
         }}
       />
@@ -471,12 +471,12 @@ function Ticket({
 function PanelProducto({
   product,
   guest,
-  alCerrar,
+  onClose,
   alAgregar,
 }: {
   product: MenuProduct | null
   guest: number | null
-  alCerrar: () => void
+  onClose: () => void
   alAgregar: (item: OrderItem) => void
 }) {
   const [variant, setVariante] = useState<string | null>(null)
@@ -517,7 +517,7 @@ function PanelProducto({
 
   const close = () => {
     setAbiertoPara(null)
-    alCerrar()
+    onClose()
   }
   const agregarCon = (v: string | null, o: Record<string, string>) => {
     setAbiertoPara(null)
@@ -528,7 +528,7 @@ function PanelProducto({
     <PanelLateral
       opened
       title={product.name}
-      alCerrar={close}
+      onClose={close}
       pie={
         <Boton
           variant="main"
@@ -637,14 +637,14 @@ function Quantity({ value, onChange }: { value: number; onChange: (n: number) =>
 function PanelItem({
   item,
   guests,
-  alCerrar,
+  onClose,
   onSave,
   alQuitar,
   onVoid,
 }: {
   item: OrderItem | null
   guests: number
-  alCerrar: () => void
+  onClose: () => void
   onSave: (item: OrderItem) => void
   alQuitar: (item: OrderItem) => void
   onVoid: (item: OrderItem, reason: string, alreadyPrepared: boolean) => void
@@ -662,7 +662,7 @@ function PanelItem({
   if (!item || !borrador) return null
   const close = () => {
     setBorrador(null)
-    alCerrar()
+    onClose()
   }
 
   if (item.enviadoEn !== null) {
@@ -670,7 +670,7 @@ function PanelItem({
       <PanelLateral
         opened
         title={`Anular ${nombreItem(item)}`}
-        alCerrar={close}
+        onClose={close}
         pie={
           confirmando ? (
             <div className="flex flex-col gap-2">
@@ -733,7 +733,7 @@ function PanelItem({
     <PanelLateral
       opened
       title={nombreItem(item)}
-      alCerrar={close}
+      onClose={close}
       pie={
         <div className="flex gap-2">
           <Boton

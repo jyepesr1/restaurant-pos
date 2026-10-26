@@ -2,12 +2,12 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { MensajeHub } from '@pos/sync'
+import type { HubMessage } from '@pos/sync'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type WebSocket from 'ws'
 import { abrirDatos, prepararAcceso, prepararSincronizacion } from './arranque'
 import { leerCarta } from './seed/carta'
-import { sembrar } from './seed/sembrar'
+import { seed } from './seed/sembrar'
 import { crearServidor } from './servidor'
 
 // Al editar la carta, el hub avisa por WebSocket a los equipos conectados (no a los retirados)
@@ -18,35 +18,35 @@ const CARTA = readFileSync(
   'utf8',
 )
 
-let carpeta = ''
-afterEach(() => rmSync(carpeta, { recursive: true, force: true }))
+let folder = ''
+afterEach(() => rmSync(folder, { recursive: true, force: true }))
 
-async function montar() {
-  carpeta = mkdtempSync(join(tmpdir(), 'pos-aviso-'))
-  const { db } = abrirDatos(carpeta)
-  let sala: ReturnType<typeof prepararSincronizacion> | null = null
+async function setup() {
+  folder = mkdtempSync(join(tmpdir(), 'pos-aviso-'))
+  const { db } = abrirDatos(folder)
+  let floor: ReturnType<typeof prepararSincronizacion> | null = null
   const access = prepararAcceso(
     db,
-    carpeta,
+    folder,
     () => {},
-    (id, en) => sala?.revoke(id, en),
+    (id, en) => floor?.revoke(id, en),
   )
-  const { pins } = sembrar(
+  const { pins } = seed(
     db,
     access.access,
-    { restauranteId: access.restauranteId, roles: access.roles, menu: leerCarta(CARTA) },
+    { restaurantId: access.restaurantId, roles: access.roles, menu: leerCarta(CARTA) },
     new Date().toISOString(),
   )
-  sala = prepararSincronizacion(db, carpeta, access.restauranteId, access.access)
-  const salaFija = sala
+  floor = prepararSincronizacion(db, folder, access.restaurantId, access.access)
+  const salaFija = floor
   const app = crearServidor({
     access: access.access,
-    sincronizacion: { sala, intervaloLatidoMs: 600_000 },
+    sincronizacion: { floor, intervaloLatidoMs: 600_000 },
     catalog: {
       db,
-      restauranteId: access.restauranteId,
+      restaurantId: access.restaurantId,
       access: access.access,
-      onChange: (version) => salaFija.avisarCatalogo(version),
+      onChange: (version) => salaFija.notifyCatalog(version),
     },
   })
   await app.ready()
@@ -81,21 +81,21 @@ async function montar() {
   }
 
   async function connect(token: string | null) {
-    const recibidos: MensajeHub[] = []
+    const received: HubMessage[] = []
     const ws: WebSocket = await app.injectWS('/api/sync/ws')
-    ws.on('message', (d) => recibidos.push(JSON.parse(d.toString())))
+    ws.on('message', (d) => received.push(JSON.parse(d.toString())))
     const send = (m: object) => ws.send(JSON.stringify(m))
-    if (token) send({ type: 'hello', token, hub_instancia: null, until: 0, version_app: 'prueba' })
+    if (token) send({ type: 'hello', token, hub_instance: null, until: 0, version_app: 'prueba' })
     const esperar = (type: string) =>
-      esperarA(() => recibidos.find((m) => m.type === type) as MensajeHub)
+      esperarA(() => received.find((m) => m.type === type) as HubMessage)
     /** Un ping a modo de barrera: cuando vuelve el pong, todo lo anterior ya llegó. */
     const barrera = async () => {
-      const brand = `b${recibidos.length}`
+      const brand = `b${received.length}`
       send({ type: 'ping', brand })
-      await esperarA(() => recibidos.find((m) => m.type === 'pong' && m.brand === brand))
+      await esperarA(() => received.find((m) => m.type === 'pong' && m.brand === brand))
     }
-    const catalogos = () => recibidos.filter((m) => m.type === 'catalog')
-    return { ws, recibidos, send, esperar, barrera, catalogos }
+    const catalogos = () => received.filter((m) => m.type === 'catalog')
+    return { ws, received, send, esperar, barrera, catalogos }
   }
 
   const admin = async (register: { token: string }) => {
@@ -133,7 +133,7 @@ const esperarA = <T>(fn: () => T | undefined) =>
 
 describe('aviso de catálogo por WebSocket', () => {
   it('al editar, todos los conectados reciben la versión nueva, también quien editó', async () => {
-    const m = await montar()
+    const m = await setup()
     const register = await m.device('register', 'Caja')
     const phone = await m.device('waiter', 'Celular')
     const kitchen = await m.device('kds', 'Cocina')
@@ -168,7 +168,7 @@ describe('aviso de catálogo por WebSocket', () => {
   })
 
   it('cada edición manda su propio aviso, en orden y sin repetir versiones', async () => {
-    const m = await montar()
+    const m = await setup()
     const register = await m.device('register', 'Caja')
     const c = await m.connect(register.token)
     await c.esperar('welcome')
@@ -189,7 +189,7 @@ describe('aviso de catálogo por WebSocket', () => {
   })
 
   it('un equipo retirado estando conectado no recibe el aviso, y los demás sí', async () => {
-    const m = await montar()
+    const m = await setup()
     const register = await m.device('register', 'Caja')
     const phone = await m.device('waiter', 'Celular')
     const enCaja = await m.connect(register.token)
@@ -205,7 +205,7 @@ describe('aviso de catálogo por WebSocket', () => {
       headers: { authorization: `Bearer ${register.token}` },
     })
     expect(withdrawal.statusCode).toBe(200)
-    await esperarA(() => enCelular.recibidos.find((x) => x.type === 'error'))
+    await esperarA(() => enCelular.received.find((x) => x.type === 'error'))
 
     const p = m.product()
     const r = await m.patch(register, session, [
@@ -223,7 +223,7 @@ describe('aviso de catálogo por WebSocket', () => {
   })
 
   it('quien se conecta con un token ya retirado tampoco recibe avisos', async () => {
-    const m = await montar()
+    const m = await setup()
     const register = await m.device('register', 'Caja')
     const phone = await m.device('waiter', 'Celular')
     const session = await m.admin(register)
@@ -246,11 +246,11 @@ describe('aviso de catálogo por WebSocket', () => {
   })
 
   it('una conexión que no saludó, o con un token inventado, no recibe nada', async () => {
-    const m = await montar()
+    const m = await setup()
     const register = await m.device('register', 'Caja')
     const sinSaludar = await m.connect(null)
     const inventado = await m.connect('token-que-no-existe')
-    await esperarA(() => inventado.recibidos.find((x) => x.type === 'error'))
+    await esperarA(() => inventado.received.find((x) => x.type === 'error'))
     const session = await m.admin(register)
     const p = m.product()
     await m.patch(register, session, [
@@ -266,7 +266,7 @@ describe('aviso de catálogo por WebSocket', () => {
   })
 
   it('una edición rechazada, sin permiso o que no cambia nada no avisa a nadie', async () => {
-    const m = await montar()
+    const m = await setup()
     const register = await m.device('register', 'Caja')
     const c = await m.connect(register.token)
     await c.esperar('welcome')
@@ -300,7 +300,7 @@ describe('aviso de catálogo por WebSocket', () => {
   })
 
   it('una conexión rota en medio no impide que las demás reciban el aviso', async () => {
-    const m = await montar()
+    const m = await setup()
     const register = await m.device('register', 'Caja')
     const phone = await m.device('waiter', 'Celular')
     const enCaja = await m.connect(register.token)

@@ -126,7 +126,7 @@ export const MIGRACIONES_NUBE: readonly MigracionNube[] = [
 ]
 
 /** Huella FNV-1a de 64 bits del SQL (la misma idea que en `@pos/db`). */
-export function huellaSql(sql: string): string {
+export function sqlFingerprint(sql: string): string {
   let hash = 0xcbf29ce484222325n
   for (const byte of new TextEncoder().encode(sql)) {
     hash ^= BigInt(byte)
@@ -135,7 +135,7 @@ export function huellaSql(sql: string): string {
   return hash.toString(16).padStart(16, '0')
 }
 
-const CREAR_REGISTRO = `
+const CREATE_REGISTRY = `
   CREATE TABLE IF NOT EXISTS migrations (
     version integer PRIMARY KEY,
     name text NOT NULL,
@@ -150,26 +150,26 @@ const CREAR_REGISTRO = `
  */
 export async function migrar(
   sql: Sql,
-  migraciones: readonly MigracionNube[] = MIGRACIONES_NUBE,
+  migrations: readonly MigracionNube[] = MIGRACIONES_NUBE,
 ): Promise<number[]> {
-  migraciones.forEach((m, i) => {
+  migrations.forEach((m, i) => {
     if (m.version !== i + 1)
       throw new Error(`Las migraciones van numeradas 1, 2, 3…: falla en «${m.name}»`)
   })
-  await sql.query(CREAR_REGISTRO)
-  const aplicadas = await sql.query<{ version: number; name: string; fingerprint: string }>(
+  await sql.query(CREATE_REGISTRY)
+  const appliedMigrations = await sql.query<{ version: number; name: string; fingerprint: string }>(
     'SELECT version, name, fingerprint FROM migrations ORDER BY version',
   )
-  for (const row of aplicadas) {
-    const m = migraciones[row.version - 1]
-    if (m && huellaSql(m.sql) !== row.fingerprint)
+  for (const row of appliedMigrations) {
+    const m = migrations[row.version - 1]
+    if (m && sqlFingerprint(m.sql) !== row.fingerprint)
       throw new Error(
         `La migración ${row.version} («${row.name}») cambió después de aplicarse. Las migraciones publicadas no se editan: crea una nueva.`,
       )
   }
   const hechas: number[] = []
-  for (const m of migraciones) {
-    const aplicada = await sql.transaccion(async (tx) => {
+  for (const m of migrations) {
+    const aplicada = await sql.transaction(async (tx) => {
       // Se bloquea el registro: dos procesos a la vez no aplican la misma migración.
       await tx.query('LOCK TABLE migrations IN EXCLUSIVE MODE')
       const [row] = await tx.query<{ v: number | null }>('SELECT max(version) AS v FROM migrations')
@@ -178,7 +178,7 @@ export async function migrar(
       await tx.query('INSERT INTO migrations (version, name, fingerprint) VALUES ($1, $2, $3)', [
         m.version,
         m.name,
-        huellaSql(m.sql),
+        sqlFingerprint(m.sql),
       ])
       return true
     })

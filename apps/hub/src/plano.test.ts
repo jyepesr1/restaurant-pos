@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { montarAcceso } from './acceso/montaje'
 import { leerCatalogo } from './catalogo'
 import { leerCarta } from './seed/carta'
-import { sembrar } from './seed/sembrar'
+import { seed } from './seed/sembrar'
 import { crearServidor } from './servidor'
 
 // Edición del plano del salón (tarea 1.2): zonas, mesas y elementos, con sus reglas.
@@ -17,22 +17,22 @@ const CARTA = leerCarta(
   ),
 )
 
-async function montar(occupiedIds: string[] = []) {
+async function setup(occupiedIds: string[] = []) {
   const m = montarAcceso()
-  sembrar(
+  seed(
     m.db,
     m.access,
-    { restauranteId: m.restauranteId, roles: m.roles, menu: CARTA, sinPersonal: true },
+    { restaurantId: m.restaurantId, roles: m.roles, menu: CARTA, sinPersonal: true },
     m.clock(),
   )
   const app = crearServidor({
     access: m.access,
     catalog: {
       db: m.db,
-      restauranteId: m.restauranteId,
+      restaurantId: m.restaurantId,
       access: m.access,
       clock: m.clock,
-      mesaOcupada: (id) => occupiedIds.includes(id),
+      occupiedTable: (id) => occupiedIds.includes(id),
     },
   })
   await app.ready()
@@ -47,15 +47,15 @@ async function montar(occupiedIds: string[] = []) {
     })
     return { code: r.statusCode, cuerpo: r.json() }
   }
-  const catalog = () => leerCatalogo(m.db, m.restauranteId)
+  const catalog = () => leerCatalogo(m.db, m.restaurantId)
   return { ...m, editar, catalog }
 }
 
-const table = (zonaId: string, name: string, fields: Record<string, unknown> = {}) => ({
+const table = (zoneId: string, name: string, fields: Record<string, unknown> = {}) => ({
   entity: 'dining_tables',
   id: newId(),
   data: {
-    zone_id: zonaId,
+    zone_id: zoneId,
     name,
     shape: 'round',
     x: 0,
@@ -71,7 +71,7 @@ const table = (zonaId: string, name: string, fields: Record<string, unknown> = {
 
 describe('plano', () => {
   it('crea una zona con sus mesas y una pared en un solo guardado; la sede la pone el hub', async () => {
-    const m = await montar()
+    const m = await setup()
     const zone = newId()
     const r = await m.editar([
       { entity: 'zones', id: zone, data: { name: 'Terraza', position: 1, level: 1, active: true } },
@@ -98,7 +98,7 @@ describe('plano', () => {
     expect(c.zones.map((z) => z.name)).toEqual(['Salón', 'Terraza'])
     expect(
       c.tables
-        .filter((x) => x.zonaId === zone)
+        .filter((x) => x.zoneId === zone)
         .map((x) => [x.name, x.rotation])
         .sort(),
     ).toEqual([
@@ -106,12 +106,12 @@ describe('plano', () => {
       ['T2', 0],
     ])
     expect(c.elements).toEqual([
-      expect.objectContaining({ zonaId: zone, type: 'wall', width: 500 }),
+      expect.objectContaining({ zoneId: zone, type: 'wall', width: 500 }),
     ])
   })
 
   it('dos mesas activas no se llaman igual, aunque estén en zonas distintas', async () => {
-    const m = await montar()
+    const m = await setup()
     const diningRoom = m.catalog().zones[0]?.id as string
     const r = await m.editar([table(diningRoom, '1')])
     expect(r.code).toBe(400)
@@ -127,10 +127,10 @@ describe('plano', () => {
 
   it('no se archiva una mesa con un pedido abierto, ni una zona con mesas activas', async () => {
     const occupiedIds: string[] = []
-    const m = await montar(occupiedIds)
-    const ocupada = m.catalog().tables[0]?.id as string
-    occupiedIds.push(ocupada)
-    const r = await m.editar([{ entity: 'dining_tables', id: ocupada, data: { active: false } }])
+    const m = await setup(occupiedIds)
+    const takenPath = m.catalog().tables[0]?.id as string
+    occupiedIds.push(takenPath)
+    const r = await m.editar([{ entity: 'dining_tables', id: takenPath, data: { active: false } }])
     expect(r.code).toBe(400)
     expect(r.cuerpo.message).toMatch(/tiene un pedido abierto/)
     const diningRoom = m.catalog().zones[0]?.id as string
@@ -139,7 +139,7 @@ describe('plano', () => {
   })
 
   it('archivar la zona junto con sus mesas la saca, con sus mesas y elementos, de la carta de los equipos', async () => {
-    const m = await montar()
+    const m = await setup()
     const c = m.catalog()
     const diningRoom = c.zones[0]?.id as string
     const r = await m.editar([
@@ -151,7 +151,7 @@ describe('plano', () => {
   })
 
   it('rechaza geometría fuera de rango o con decimales, y formas o tipos desconocidos', async () => {
-    const m = await montar()
+    const m = await setup()
     const diningRoom = m.catalog().zones[0]?.id as string
     for (const fields of [
       { x: 0.5 },
@@ -164,7 +164,7 @@ describe('plano', () => {
   })
 
   it('el catálogo entrega el personal activo con nombre y nada más', async () => {
-    const m = await montar()
+    const m = await setup()
     const staff = m.catalog().staff
     expect(staff.length).toBeGreaterThan(0)
     for (const p of staff) expect(Object.keys(p).sort()).toEqual(['id', 'name'])

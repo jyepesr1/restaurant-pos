@@ -18,12 +18,12 @@ function mundo() {
   const llamar = (e: Equipo, url: string, extra: Json = {}) =>
     t.post(url, { ...e.cuerpoSesion, ...extra }, e.token)
   const cursos = (usar: unknown, e: Equipo = admin) => llamar(e, '/api/kitchen/courses', { usar })
-  const catalog = () => leerCatalogo(t.db, t.restauranteId)
+  const catalog = () => leerCatalogo(t.db, t.restaurantId)
   const config = async () => (await llamar(admin, '/api/kitchen/config')).json()
   const configGuardada = () =>
     JSON.parse(
       String(
-        t.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(t.restauranteId)?.config,
+        t.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(t.restaurantId)?.config,
       ),
     ) as Record<string, unknown>
   return { t, admin, cashier, manager, waiter, llamar, cursos, catalog, config, configGuardada }
@@ -59,7 +59,7 @@ describe('POST /api/cocina/cursos: quién puede', () => {
       expect(r.statusCode).toBe(401)
       expect(r.json()).toMatchObject({ error: 'invalid_session' })
     }
-    expect(m.catalog().restaurant.usarCursos).toBe(false)
+    expect(m.catalog().restaurant.coursesEnabled).toBe(false)
   })
 
   it('sin los datos de la sesión responde 400', async () => {
@@ -80,13 +80,13 @@ describe('POST /api/cocina/cursos: quién puede', () => {
 
   it.each(['cashier', 'manager', 'waiter'] as const)(
     '%s no tiene administrar_dispositivos: 403 y no cambia nada',
-    async (quien) => {
+    async (who) => {
       const m = mundo()
       const before = m.catalog().version
-      const r = await m.cursos(true, m[quien])
+      const r = await m.cursos(true, m[who])
       expect(r.statusCode).toBe(403)
       expect(r.json()).toMatchObject({ error: 'no_permission' })
-      expect(m.catalog().restaurant.usarCursos).toBe(false)
+      expect(m.catalog().restaurant.coursesEnabled).toBe(false)
       expect(m.catalog().version).toBe(before)
       expect(m.t.cambiosCatalogo).toEqual([])
     },
@@ -95,7 +95,7 @@ describe('POST /api/cocina/cursos: quién puede', () => {
   it('un equipo retirado pierde el acceso', async () => {
     const m = mundo()
     await m.t.post(
-      `/api/devices/${m.waiter.connection.dispositivoId}/revoke`,
+      `/api/devices/${m.waiter.connection.deviceId}/revoke`,
       m.admin.cuerpoSesion,
       m.admin.token,
     )
@@ -129,7 +129,7 @@ describe('POST /api/cocina/cursos: datos inválidos', () => {
     const r = await m.cursos(value)
     expect(r.statusCode).toBe(400)
     expect(r.json()).toMatchObject({ error: 'invalid_data' })
-    expect(m.catalog().restaurant.usarCursos).toBe(false)
+    expect(m.catalog().restaurant.coursesEnabled).toBe(false)
     expect(m.catalog().version).toBe(before)
   })
 
@@ -139,14 +139,14 @@ describe('POST /api/cocina/cursos: datos inválidos', () => {
     expect(
       (await m.llamar(m.admin, '/api/kitchen/courses', { usar: true, other: 1 })).statusCode,
     ).toBe(400)
-    expect(m.catalog().restaurant.usarCursos).toBe(false)
+    expect(m.catalog().restaurant.coursesEnabled).toBe(false)
   })
 })
 
 describe('POST /api/cocina/cursos: efecto', () => {
   it('por defecto el restaurante no usa cursos, en la carta y en la configuración', async () => {
     const m = mundo()
-    expect(m.catalog().restaurant.usarCursos).toBe(false)
+    expect(m.catalog().restaurant.coursesEnabled).toBe(false)
     expect((await m.config()).courses_enabled).toBe(false)
   })
 
@@ -156,7 +156,7 @@ describe('POST /api/cocina/cursos: efecto', () => {
     const r = await m.cursos(true)
     expect(r.statusCode).toBe(204)
     expect(r.body).toBe('')
-    expect(m.catalog().restaurant.usarCursos).toBe(true)
+    expect(m.catalog().restaurant.coursesEnabled).toBe(true)
     expect((await m.config()).courses_enabled).toBe(true)
     expect(m.catalog().version).toBeGreaterThan(before)
     expect(m.t.cambiosCatalogo).toEqual([m.catalog().version])
@@ -169,7 +169,7 @@ describe('POST /api/cocina/cursos: efecto', () => {
     await m.cursos(false)
     const v2 = m.catalog().version
     expect(v2).toBeGreaterThan(v1)
-    expect(m.catalog().restaurant.usarCursos).toBe(false)
+    expect(m.catalog().restaurant.coursesEnabled).toBe(false)
     expect(m.t.cambiosCatalogo).toHaveLength(2)
   })
 
@@ -177,10 +177,10 @@ describe('POST /api/cocina/cursos: efecto', () => {
     const m = mundo()
     await m.cursos(true)
     const v = m.catalog().version
-    const avisos = m.t.cambiosCatalogo.length
+    const alerts = m.t.cambiosCatalogo.length
     for (let i = 0; i < 3; i++) expect((await m.cursos(true)).statusCode).toBe(204)
     expect(m.catalog().version).toBe(v)
-    expect(m.t.cambiosCatalogo).toHaveLength(avisos)
+    expect(m.t.cambiosCatalogo).toHaveLength(alerts)
   })
 
   it('apagar cuando ya está apagado (el de fábrica) no sube la versión', async () => {
@@ -196,19 +196,19 @@ describe('POST /api/cocina/cursos: efecto', () => {
     const { courses_enabled: _, ...vieja } = fullConfig({})
     m.t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify(vieja), m.t.restauranteId)
-    expect(m.catalog().restaurant.usarCursos).toBe(false)
+      .run(JSON.stringify(vieja), m.t.restaurantId)
+    expect(m.catalog().restaurant.coursesEnabled).toBe(false)
     const before = m.catalog().version
     await m.cursos(false)
     expect(m.catalog().version).toBe(before)
     await m.cursos(true)
     expect(m.catalog().version).toBeGreaterThan(before)
-    expect(m.catalog().restaurant.usarCursos).toBe(true)
+    expect(m.catalog().restaurant.coursesEnabled).toBe(true)
   })
 
   it('con la configuración vacía ({}) la deja completa con los valores de fábrica', async () => {
     const m = mundo()
-    m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restauranteId)
+    m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restaurantId)
     await m.cursos(true)
     expect(m.configGuardada()).toMatchObject({
       courses_enabled: true,
@@ -225,7 +225,7 @@ describe('POST /api/cocina/cursos: efecto', () => {
         session_idle_min: 45,
         brand: 'la-spritzzeria',
       }),
-      m.t.restauranteId,
+      m.t.restaurantId,
     )
     await m.cursos(true)
     expect(m.configGuardada()).toMatchObject({
@@ -235,7 +235,7 @@ describe('POST /api/cocina/cursos: efecto', () => {
     })
     const row = m.t.db
       .prepare('SELECT user_id, device_id FROM restaurants WHERE id = ?')
-      .get(m.t.restauranteId)
+      .get(m.t.restaurantId)
     expect(row?.user_id).toBe(m.admin.session.user.id)
   })
 
@@ -244,15 +244,15 @@ describe('POST /api/cocina/cursos: efecto', () => {
     await m.cursos(true)
     await m.llamar(m.admin, '/api/kitchen/timers', { amarillo: 7, rojo: 15 })
     expect(m.catalog().restaurant).toMatchObject({
-      usarCursos: true,
-      cocinaAmarilloMin: 7,
-      cocinaRojoMin: 15,
+      coursesEnabled: true,
+      kitchenYellowMin: 7,
+      kitchenRedMin: 15,
     })
     await m.cursos(false)
     expect(m.catalog().restaurant).toMatchObject({
-      usarCursos: false,
-      cocinaAmarilloMin: 7,
-      cocinaRojoMin: 15,
+      coursesEnabled: false,
+      kitchenYellowMin: 7,
+      kitchenRedMin: 15,
     })
   })
 
@@ -260,8 +260,8 @@ describe('POST /api/cocina/cursos: efecto', () => {
     const m = mundo()
     const [a, b] = await Promise.all([m.cursos(true), m.cursos(false)])
     expect([a.statusCode, b.statusCode]).toEqual([204, 204])
-    expect(typeof m.catalog().restaurant.usarCursos).toBe('boolean')
-    expect(m.configGuardada().courses_enabled).toBe(m.catalog().restaurant.usarCursos)
+    expect(typeof m.catalog().restaurant.coursesEnabled).toBe('boolean')
+    expect(m.configGuardada().courses_enabled).toBe(m.catalog().restaurant.coursesEnabled)
   })
 })
 
@@ -270,11 +270,11 @@ describe('POST /api/cocina/tiempos: sin cambios no sube la versión', () => {
     const m = mundo()
     await m.llamar(m.admin, '/api/kitchen/timers', { amarillo: 7, rojo: 15 })
     const v = m.catalog().version
-    const avisos = m.t.cambiosCatalogo.length
+    const alerts = m.t.cambiosCatalogo.length
     const r = await m.llamar(m.admin, '/api/kitchen/timers', { amarillo: 7, rojo: 15 })
     expect(r.statusCode).toBe(204)
     expect(m.catalog().version).toBe(v)
-    expect(m.t.cambiosCatalogo).toHaveLength(avisos)
+    expect(m.t.cambiosCatalogo).toHaveLength(alerts)
   })
 
   it('mandar los valores de fábrica (10 y 20) a un restaurante nuevo no sube la versión', async () => {

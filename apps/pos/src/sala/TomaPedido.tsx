@@ -16,7 +16,7 @@ import {
   PanelMover,
   PanelUnirMesas,
 } from './AccionesPedido'
-import { sala, useSala, useVistaLocal } from './contexto'
+import { floor, useSala, useVistaLocal } from './contexto'
 import { MarcoSala } from './MarcoSala'
 import {
   CANALES,
@@ -70,19 +70,19 @@ const MAS_PEDIDOS = '__more'
 const RESULTADOS = 40
 
 export function TomaPedido() {
-  const { parametros } = useRuta()
+  const { params } = useRuta()
   const { catalog, session, connection } = useSala()
-  const enLinea = connection === 'connected'
+  const online = connection === 'connected'
   const vista = useVistaLocal()
   const orders = vista?.orders ?? null
   const agotados = vista?.agotados ?? new Set<string>()
-  const avisar = useAvisar()
-  const tableId = parametros.get('table')
-  const canalNuevo = (parametros.get('channel') as Channel | null) ?? (tableId ? 'dine_in' : null)
+  const notify = useAvisar()
+  const tableId = params.get('table')
+  const canalNuevo = (params.get('channel') as Channel | null) ?? (tableId ? 'dine_in' : null)
   const table = tableId ? catalog?.tables.find((m) => m.id === tableId) : undefined
   const [busqueda, setBusqueda] = useState('')
   const [category, setCategoria] = useState<string | null>(null)
-  const [elegido, setElegido] = useState<ProductoCatalogo | null>(null)
+  const [selectedProduct, setElegido] = useState<ProductoCatalogo | null>(null)
   const [editando, setEditando] = useState<string | null>(null)
   const [verPedido, setVerPedido] = useState(false)
   const [guest, setComensal] = useState<number | null>(null)
@@ -94,11 +94,11 @@ export function TomaPedido() {
   // El pedido que se abrió aquí: los toques seguidos van al mismo aunque aún no se haya releído.
   const opened = useRef<string | null>(null)
   // Los toques se guardan uno tras otro, en el orden en que se hicieron.
-  const cola = useRef<Promise<void>>(Promise.resolve())
+  const queue = useRef<Promise<void>>(Promise.resolve())
   const puedeAgotar = session?.permissions.includes('mark_product_sold_out') ?? false
   const puedeEntregar = session?.permissions.includes('mark_preparation') ?? false
   // Los cursos se usan poco en Colombia: solo se ven si el restaurante los prende.
-  const usarCursos = catalog?.restaurant.usarCursos ?? false
+  const coursesEnabled = catalog?.restaurant.coursesEnabled ?? false
   const [editandoNota, setEditandoNota] = useState(false)
   // Mesa y pedido (tarea 1.5): qué panel está abierto, y qué ítem se anula.
   const [action, setAccion] = useState<'menu' | 'move' | 'table' | 'merge' | 'cancel' | null>(null)
@@ -116,7 +116,7 @@ export function TomaPedido() {
     return () => window.removeEventListener('keydown', alTeclear)
   }, [])
 
-  if (!catalog || (tableId && !table) || (!tableId && !canalNuevo && !parametros.get('order'))) {
+  if (!catalog || (tableId && !table) || (!tableId && !canalNuevo && !params.get('order'))) {
     return (
       <MarcoSala title="Pedido" back="/">
         <p className="p-6 text-texto-suave">Esta mesa o este pedido no existe.</p>
@@ -128,10 +128,10 @@ export function TomaPedido() {
   const candidatos = (orders ?? []).filter((p) =>
     tableId
       ? p.status.tableId === tableId || p.status.mergedTables.includes(tableId)
-      : p.status.id === parametros.get('order'),
+      : p.status.id === params.get('order'),
   )
   const elegidoId =
-    parametros.get('order') ?? opened.current ?? (tableId ? candidatos[0]?.status.id : null) ?? null
+    params.get('order') ?? opened.current ?? (tableId ? candidatos[0]?.status.id : null) ?? null
   const order = (orders ?? []).find((p) => p.status.id === elegidoId) ?? null
   const channel: Channel = order?.status.channel ?? canalNuevo ?? 'dine_in'
   const guests = order?.status.guests ?? comensalesIniciales
@@ -145,48 +145,45 @@ export function TomaPedido() {
   // Por dónde sale cada producto (cocina o barra): da su ícono cuando no tiene foto.
   const estacionDe = new Map(
     catalog.categories.flatMap((c) =>
-      c.products.map((p) => [
-        p.id,
-        catalog.stations.find((e) => e.id === c.estacionId)?.name ?? '',
-      ]),
+      c.products.map((p) => [p.id, catalog.stations.find((e) => e.id === c.stationId)?.name ?? '']),
     ),
   )
   const soldOut = (p: ProductoCatalogo) => agotados.has(claveAgotado(p.id))
 
-  const inOrder = (trabajo: () => Promise<void>) => {
-    cola.current = cola.current.then(trabajo).catch((e) => {
+  const inOrder = (job: () => Promise<void>) => {
+    queue.current = queue.current.then(job).catch((e) => {
       console.error(e)
-      avisar(e instanceof Error ? e.message : 'No se pudo guardar')
+      notify(e instanceof Error ? e.message : 'No se pudo guardar')
     })
   }
   /**
    * Como `inOrder`, pero el fallo vuelve a quien lo pidió (un panel que lo muestra junto al
    * botón: un PIN errado, sin conexión) en vez de un aviso.
    */
-  const enOrdenConError = (trabajo: () => Promise<void>): Promise<void> => {
-    const hecho = cola.current.then(trabajo)
-    cola.current = hecho.catch(() => {})
+  const enOrdenConError = (job: () => Promise<void>): Promise<void> => {
+    const hecho = queue.current.then(job)
+    queue.current = hecho.catch(() => {})
     return hecho
   }
   /**
    * Para lo que espera al hub (el PIN del supervisor, hasta 8 s): va después de lo que ya está en
    * la cola, pero sin frenar los productos que se agreguen mientras tanto.
    */
-  const sinFrenarLaCola = async (trabajo: () => Promise<void>): Promise<void> => {
-    await cola.current
-    await trabajo()
+  const sinFrenarLaCola = async (job: () => Promise<void>): Promise<void> => {
+    await queue.current
+    await job()
   }
   /** El pedido guardado (no el de la última pantalla): un toque anterior pudo cambiarlo. */
   const pedidoGuardado = async () => {
     const id = elegidoId ?? opened.current
-    return id ? ((await sala.sync?.order(id)) ?? null) : null
+    return id ? ((await floor.sync?.order(id)) ?? null) : null
   }
   /** El pedido al que va lo que se agregue; si aún no existe, se abre. */
   const asegurarPedido = async () => {
     const id = elegidoId ?? opened.current
     if (id) return id
     const fresh = newId()
-    await sala.record('OrderOpened', fresh, {
+    await floor.record('OrderOpened', fresh, {
       channel,
       table_id: tableId ?? null,
       guests: comensalesIniciales,
@@ -210,7 +207,7 @@ export function TomaPedido() {
    * catálogo con que se agregó: el precio era el de esa carta.
    */
   const copiaActual = async (item: OrderItem) => {
-    const original = (await sala.sync?.locales())?.find(
+    const original = (await floor.sync?.locals())?.find(
       (l) => l.event.type === 'ItemAdded' && l.event.data.item_id === item.id,
     )?.event
     return original?.type === 'ItemAdded'
@@ -234,7 +231,7 @@ export function TomaPedido() {
     inOrder(async () => {
       const line = await lineaGuardada(itemId)
       if (!line) {
-        avisar('Esa línea ya se envió o ya no está')
+        notify('Esa línea ya se envió o ya no está')
         return
       }
       const quantity = line.item.quantity + delta
@@ -243,10 +240,10 @@ export function TomaPedido() {
         return
       }
       if (quantity > MAXIMO_LINEA) {
-        avisar(`Una línea lleva hasta ${MAXIMO_LINEA}`)
+        notify(`Una línea lleva hasta ${MAXIMO_LINEA}`)
         return
       }
-      await sala.record('ItemChanged', line.status.id, { item_id: itemId, quantity })
+      await floor.record('ItemChanged', line.status.id, { item_id: itemId, quantity })
     })
 
   const add = (
@@ -260,7 +257,7 @@ export function TomaPedido() {
       const data = datosItem(catalog, p, variantId, elegidas, {
         ...extras,
         guest,
-        course: usarCursos ? course : null,
+        course: coursesEnabled ? course : null,
       })
       const id = await asegurarPedido()
       const equal = lineaIgual(await pedidoGuardado(), data)
@@ -268,21 +265,21 @@ export function TomaPedido() {
         const quantity = Math.min(MAXIMO_LINEA, equal.quantity + data.quantity)
         const sumado = quantity - equal.quantity
         if (sumado === 0) {
-          avisar(`Una línea lleva hasta ${MAXIMO_LINEA}`)
+          notify(`Una línea lleva hasta ${MAXIMO_LINEA}`)
           return
         }
-        await sala.record('ItemChanged', id, { item_id: equal.id, quantity })
+        await floor.record('ItemChanged', id, { item_id: equal.id, quantity })
         return
       }
-      await sala.record('ItemAdded', id, data)
+      await floor.record('ItemAdded', id, data)
     })
 
   /** Quita la línea (ya dentro de la cola) y deja Deshacer, que la vuelve a agregar como estaba. */
   const quitarYa = async (status: OrderState, item: OrderItem) => {
     const copy = await copiaActual(item)
-    await sala.record('ItemRemoved', status.id, { item_id: item.id })
-    avisar(`Quitaste ${item.name}`, () =>
-      inOrder(() => sala.record('ItemAdded', status.id, copy).then(() => {})),
+    await floor.record('ItemRemoved', status.id, { item_id: item.id })
+    notify(`Quitaste ${item.name}`, () =>
+      inOrder(() => floor.record('ItemAdded', status.id, copy).then(() => {})),
     )
   }
   const remove = (itemId: string) =>
@@ -299,10 +296,10 @@ export function TomaPedido() {
     inOrder(async () => {
       const line = await lineaGuardada(itemId)
       if (!line) {
-        avisar('Esa línea ya se envió o ya no está')
+        notify('Esa línea ya se envió o ya no está')
         return
       }
-      await sala.record('ItemChanged', line.status.id, { item_id: itemId, ...change })
+      await floor.record('ItemChanged', line.status.id, { item_id: itemId, ...change })
     })
 
   /** La nota de todo el pedido («alérgico al maní»): va en cada comanda y en la cocina. */
@@ -312,11 +309,11 @@ export function TomaPedido() {
       // Sin cambio no se escribe nada, ni se abre un pedido vacío en una mesa libre.
       if ((before?.notes ?? null) === notes) return
       if (before && before.status !== 'open') {
-        avisar('Este pedido ya se cerró: la nota no se guardó')
+        notify('Este pedido ya se cerró: la nota no se guardó')
         return
       }
       const id = await asegurarPedido()
-      await sala.record('OrderNoteChanged', id, { notes })
+      await floor.record('OrderNoteChanged', id, { notes })
     })
 
   // ── Mesa y pedido (tarea 1.5) ────────────────────────────────────────
@@ -342,7 +339,7 @@ export function TomaPedido() {
       const status = await pedidoGuardado()
       const item = status?.items[itemId]
       if (!status || !item) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
-      await sala.record(
+      await floor.record(
         'ItemVoided',
         status.id,
         {
@@ -358,8 +355,8 @@ export function TomaPedido() {
       )
       setAnulando(null)
       setEditando(null)
-      avisar(
-        enLinea
+      notify(
+        online
           ? `Anulaste ${d.quantity} ${item.name}`
           : `Anulado aquí: llega a cocina cuando vuelva la conexión`,
       )
@@ -372,7 +369,7 @@ export function TomaPedido() {
       if (!status) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
       if (Object.values(status.payments).some((p) => !p.voided))
         throw new Error('Este pedido ya tiene pagos: primero hay que anularlos en caja')
-      await sala.record(
+      await floor.record(
         'OrderCanceled',
         status.id,
         {},
@@ -382,7 +379,7 @@ export function TomaPedido() {
         },
       )
       setAccion(null)
-      avisar('Cancelaste el pedido')
+      notify('Cancelaste el pedido')
       navegar('/')
     })
 
@@ -392,13 +389,13 @@ export function TomaPedido() {
       const status = await pedidoGuardado()
       const item = status?.items[itemId]
       if (!status || !item || item.notes === notes) return
-      await sala.record('ItemModifiedAfterSend', status.id, {
+      await floor.record('ItemModifiedAfterSend', status.id, {
         item_id: item.id,
         ticket_id: newId(),
         notes,
       })
-      avisar(
-        enLinea
+      notify(
+        online
           ? `La cocina recibe el cambio de ${item.name}`
           : 'Guardado: el cambio llega a cocina cuando vuelva la conexión',
       )
@@ -426,13 +423,13 @@ export function TomaPedido() {
       )?.status.id
       if (!target) {
         target = newId()
-        await sala.record('OrderOpened', target, {
+        await floor.record('OrderOpened', target, {
           channel: 'dine_in',
           table_id: mesaDestino,
           guests: 0,
         })
       }
-      await sala.record(
+      await floor.record(
         'ItemsMoved',
         status.id,
         { target_order_id: target, items: items.map(movidoDe) },
@@ -440,7 +437,7 @@ export function TomaPedido() {
       )
       setAccion(null)
       const name = catalog?.tables.find((m) => m.id === mesaDestino)?.name
-      avisar(`Pasaste ${unidadesDe(items)} a la mesa ${name ?? ''}`)
+      notify(`Pasaste ${unidadesDe(items)} a la mesa ${name ?? ''}`)
     })
 
   /** El pedido entero se cambia a otra mesa libre. */
@@ -448,7 +445,7 @@ export function TomaPedido() {
     enOrdenConError(async () => {
       const status = await pedidoGuardado()
       if (!status) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
-      await sala.record('OrderMovedTable', status.id, { target_table_id: mesaDestino })
+      await floor.record('OrderMovedTable', status.id, { target_table_id: mesaDestino })
       setAccion(null)
       navegar(`/order?table=${mesaDestino}&order=${status.id}`)
     })
@@ -457,8 +454,8 @@ export function TomaPedido() {
   const unirMesas = (add: string[], remove: string[]) =>
     enOrdenConError(async () => {
       const id = await asegurarPedido()
-      if (add.length > 0) await sala.record('TablesMerged', id, { table_ids: add })
-      if (remove.length > 0) await sala.record('TablesSeparated', id, { table_ids: remove })
+      if (add.length > 0) await floor.record('TablesMerged', id, { table_ids: add })
+      if (remove.length > 0) await floor.record('TablesSeparated', id, { table_ids: remove })
       setAccion(null)
     })
 
@@ -467,7 +464,7 @@ export function TomaPedido() {
       const status = await pedidoGuardado()
       const item = status?.items[itemId]
       if (!status || !item) return
-      await sala.record('ItemAdded', status.id, await copiaActual(item))
+      await floor.record('ItemAdded', status.id, await copiaActual(item))
     })
 
   /** Una persona más o menos, sobre lo guardado; no baja de la mayor persona que tiene algo. */
@@ -482,21 +479,21 @@ export function TomaPedido() {
       const enUso = Math.max(0, ...itemsVigentes(status).map((i) => i.guest ?? 0))
       const n = status.guests + delta
       if (n < enUso) {
-        avisar(`La persona ${enUso} tiene cosas: pásalas a otra antes de quitarla`)
+        notify(`La persona ${enUso} tiene cosas: pásalas a otra antes de quitarla`)
         return
       }
       if (n < 0 || n > 200) return
       if (guest !== null && guest > n) setComensal(null)
-      await sala.record('GuestsChanged', status.id, { guests: n })
+      await floor.record('GuestsChanged', status.id, { guests: n })
     })
   }
 
   // Sin conexión queda guardado aquí, pero cocina todavía no lo tiene: no decir "Enviado".
-  const avisarEnvio = (cuantos: number, que = 'a cocina y barra') =>
-    avisar(
-      sala.instantanea().connection === 'connected'
-        ? `Enviado ${que} (${cuantos})`
-        : `Guardado (${cuantos}): llega a cocina cuando vuelva la conexión`,
+  const avisarEnvio = (howMany: number, que = 'a cocina y barra') =>
+    notify(
+      floor.instantanea().connection === 'connected'
+        ? `Enviado ${que} (${howMany})`
+        : `Guardado (${howMany}): llega a cocina cuando vuelva la conexión`,
     )
 
   /** Enviar lo pendiente (lo retenido espera a que se marche su curso). */
@@ -504,16 +501,16 @@ export function TomaPedido() {
     inOrder(async () => {
       const status = await pedidoGuardado()
       if (!status) return
-      const cuantos = unidadesPorEnviar(status)
-      if (cuantos === 0) return
+      const howMany = unidadesPorEnviar(status)
+      if (howMany === 0) return
       const data = comandasPorEstacion(catalog, status)
       if (!data) {
-        avisar('No hay a dónde enviar: la carta no tiene cocina ni barra')
+        notify('No hay a dónde enviar: la carta no tiene cocina ni barra')
         return
       }
-      await sala.record('ItemsSent', status.id, data)
+      await floor.record('ItemsSent', status.id, data)
       navigator.vibrate?.(60)
-      avisarEnvio(cuantos)
+      avisarEnvio(howMany)
       setVerPedido(false)
       navegar('/')
     })
@@ -522,20 +519,20 @@ export function TomaPedido() {
     inOrder(async () => {
       const status = await pedidoGuardado()
       if (!status) return
-      await sala.record('CourseHeld', status.id, { course: c })
+      await floor.record('CourseHeld', status.id, { course: c })
       const text = elCurso(c)
-      avisar(`${text[0]?.toUpperCase()}${text.slice(1)} espera: márchalo cuando lo pidan`)
+      notify(`${text[0]?.toUpperCase()}${text.slice(1)} espera: márchalo cuando lo pidan`)
     })
   /** Marchar: el curso deja de esperar y sale a cocina de una vez. */
   const marchar = (c: Course) =>
     inOrder(async () => {
       const status = await pedidoGuardado()
       if (!status) return
-      await sala.record('CourseFired', status.id, { course: c })
-      const ahora = await pedidoGuardado()
-      const data = ahora ? comandasDeCurso(catalog, ahora, c) : null
-      if (ahora && data) {
-        await sala.record('ItemsSent', ahora.id, data)
+      await floor.record('CourseFired', status.id, { course: c })
+      const now = await pedidoGuardado()
+      const data = now ? comandasDeCurso(catalog, now, c) : null
+      if (now && data) {
+        await floor.record('ItemsSent', now.id, data)
         avisarEnvio(
           data.tickets.reduce((s, x) => s + x.item_ids.length, 0),
           elCurso(c),
@@ -551,10 +548,10 @@ export function TomaPedido() {
     inOrder(async () => {
       const status = await pedidoGuardado()
       if (!status || ids.length === 0) return
-      await sala.record('ItemServed', status.id, { item_ids: ids })
-      avisar(`Entregado: ${que}`, () =>
+      await floor.record('ItemServed', status.id, { item_ids: ids })
+      notify(`Entregado: ${que}`, () =>
         inOrder(async () => {
-          await sala.record('ItemReturnedToQueue', status.id, { item_ids: ids })
+          await floor.record('ItemReturnedToQueue', status.id, { item_ids: ids })
         }),
       )
     })
@@ -567,22 +564,22 @@ export function TomaPedido() {
     deshacible = true,
   ): void =>
     inOrder(async () => {
-      await sala.record(markSoldOut ? 'ProductSoldOut' : 'ProductAvailable', p.id, {
+      await floor.record(markSoldOut ? 'ProductSoldOut' : 'ProductAvailable', p.id, {
         product_id: p.id,
         variant_id: variantId,
       })
       const variant = p.variants.find((v) => v.id === variantId)
       const name = variant ? `${p.name} (${variant.name})` : p.name
       const text = markSoldOut ? `${name}: agotado` : `${name} vuelve a estar disponible`
-      if (deshacible) avisar(text, () => alternarAgotado(p, variantId, !markSoldOut, false))
-      else avisar(text)
+      if (deshacible) notify(text, () => alternarAgotado(p, variantId, !markSoldOut, false))
+      else notify(text)
     })
 
   const tocarProducto = (p: ProductoCatalogo) => {
     if (marcandoAgotados) {
       if (p.variants.length > 0) setAgotando(p)
       else alternarAgotado(p, null, !soldOut(p))
-    } else if (soldOut(p)) avisar(`${p.name} está agotado`)
+    } else if (soldOut(p)) notify(`${p.name} está agotado`)
     else if (pideOpciones(p)) setElegido(p)
     else add(p, null, {})
   }
@@ -763,7 +760,7 @@ export function TomaPedido() {
             preguntarPersonas={channel === 'dine_in' && guests === 0}
             guest={guest}
             course={course}
-            usarCursos={usarCursos}
+            coursesEnabled={coursesEnabled}
             alElegirComensal={setComensal}
             alElegirCurso={setCurso}
             alContarPersonas={(n) => cambiarComensales(n - guests)}
@@ -923,18 +920,18 @@ export function TomaPedido() {
       <PanelLateral
         opened={verPedido}
         title={`Pedido · ${title}`}
-        alCerrar={() => setVerPedido(false)}
+        onClose={() => setVerPedido(false)}
         pie={pieTicket}
       >
         {ticket}
       </PanelLateral>
 
       <PanelProducto
-        product={elegido}
+        product={selectedProduct}
         agotados={agotados}
-        alCerrar={() => setElegido(null)}
+        onClose={() => setElegido(null)}
         alAgregar={(variantId, elegidas, extras) => {
-          if (elegido) add(elegido, variantId, elegidas, extras)
+          if (selectedProduct) add(selectedProduct, variantId, elegidas, extras)
           setElegido(null)
         }}
       />
@@ -942,7 +939,7 @@ export function TomaPedido() {
       <PanelAgotar
         product={agotando}
         agotados={agotados}
-        alCerrar={() => setAgotando(null)}
+        onClose={() => setAgotando(null)}
         onChange={(variantId, markSoldOut) =>
           agotando && alternarAgotado(agotando, variantId, markSoldOut)
         }
@@ -951,7 +948,7 @@ export function TomaPedido() {
       {editandoNota && (
         <PanelNotaPedido
           note={order?.status.notes ?? null}
-          alCerrar={() => setEditandoNota(false)}
+          onClose={() => setEditandoNota(false)}
           onSave={(note) => {
             cambiarNotaPedido(note)
             setEditandoNota(false)
@@ -963,7 +960,7 @@ export function TomaPedido() {
         <PanelAccionesPedido
           withTable={order ? order.status.tableId !== null : !!tableId}
           withOrder={!!order}
-          alCerrar={() => setAccion(null)}
+          onClose={() => setAccion(null)}
           alElegir={setAccion}
         />
       )}
@@ -972,29 +969,29 @@ export function TomaPedido() {
           order={order}
           catalog={catalog}
           occupiedIds={occupiedIds}
-          enLinea={enLinea}
-          alCerrar={() => setAccion(null)}
+          online={online}
+          onClose={() => setAccion(null)}
           alMover={moverA}
         />
       )}
       {order?.status.tableId && action === 'table' && (
         <PanelCambiarMesa
-          enLinea={enLinea}
+          online={online}
           catalog={catalog}
           occupiedIds={occupiedIds}
           current={[order.status.tableId, ...order.status.mergedTables]}
-          alCerrar={() => setAccion(null)}
+          onClose={() => setAccion(null)}
           onChange={cambiarDeMesa}
         />
       )}
       {(order?.status.tableId ?? tableId) && action === 'merge' && (
         <PanelUnirMesas
-          enLinea={enLinea}
+          online={online}
           catalog={catalog}
           occupiedIds={occupiedIds}
           tableId={(order?.status.tableId ?? tableId) as string}
           merged={order?.status.mergedTables ?? []}
-          alCerrar={() => setAccion(null)}
+          onClose={() => setAccion(null)}
           onSave={unirMesas}
         />
       )}
@@ -1003,9 +1000,9 @@ export function TomaPedido() {
           table={title}
           withPayments={Object.values(order.status.payments).some((p) => !p.voided)}
           conPermiso={permissions.includes('cancel_order')}
-          enLinea={enLinea}
+          online={online}
           enCocina={itemsVigentes(order.status).filter((i) => EN_COCINA.has(i.status)).length}
-          alCerrar={() => setAccion(null)}
+          onClose={() => setAccion(null)}
           alCancelar={cancelarPedido}
         />
       )}
@@ -1013,8 +1010,8 @@ export function TomaPedido() {
         <PanelAnular
           item={order.status.items[anulando] as OrderItem}
           conPermiso={permissions.includes('void_sent_item')}
-          enLinea={enLinea}
-          alCerrar={() => setAnulando(null)}
+          online={online}
+          onClose={() => setAnulando(null)}
           onVoid={(d) => voidItem(anulando, d)}
         />
       )}
@@ -1024,11 +1021,11 @@ export function TomaPedido() {
           key={itemEditado.id}
           item={itemEditado}
           guests={guests}
-          alCerrar={() => setEditando(null)}
+          onClose={() => setEditando(null)}
           enSalon={channel === 'dine_in'}
           onChange={(change) => cambiarItem(itemEditado.id, change)}
           alSumar={(delta) => increment(itemEditado.id, delta)}
-          usarCursos={usarCursos}
+          coursesEnabled={coursesEnabled}
           onVoid={() => setAnulando(itemEditado.id)}
           alCambiarNotaEnviada={(notes) => cambiarNotaEnviada(itemEditado.id, notes)}
           alDuplicar={() => {
@@ -1091,7 +1088,7 @@ function ElegirPara({
   preguntarPersonas,
   guest,
   course,
-  usarCursos,
+  coursesEnabled,
   alElegirComensal,
   alElegirCurso,
   alContarPersonas,
@@ -1100,7 +1097,7 @@ function ElegirPara({
   preguntarPersonas: boolean
   guest: number | null
   course: Course | null
-  usarCursos: boolean
+  coursesEnabled: boolean
   alElegirComensal: (c: number | null) => void
   alElegirCurso: (c: Course | null) => void
   alContarPersonas: (n: number) => void
@@ -1134,7 +1131,7 @@ function ElegirPara({
           ))}
         </Grupo>
       )}
-      {usarCursos && (
+      {coursesEnabled && (
         <Grupo etiqueta="En qué curso va lo que agregues" className={row}>
           <span className="shrink-0 font-semibold text-texto-suave">Curso</span>
           {COURSES.map((c) => (
@@ -1459,12 +1456,12 @@ const claseNota =
 function PanelProducto({
   product,
   agotados,
-  alCerrar,
+  onClose,
   alAgregar,
 }: {
   product: ProductoCatalogo | null
   agotados: Set<string>
-  alCerrar: () => void
+  onClose: () => void
   alAgregar: (
     variantId: string | null,
     elegidas: Record<string, string[]>,
@@ -1500,14 +1497,14 @@ function PanelProducto({
 
   const close = () => {
     setAbiertoPara(null)
-    alCerrar()
+    onClose()
   }
   const agregarCon = (v: string | null, e: Record<string, string[]>) => {
     setAbiertoPara(null)
     alAgregar(v, e, { quantity, notes })
   }
-  const tocarOpcion = (grupoId: string, maximum: number, opcionId: string) => {
-    const actuales = elegidas[grupoId] ?? []
+  const tocarOpcion = (groupId: string, maximum: number, opcionId: string) => {
+    const actuales = elegidas[groupId] ?? []
     const newOnes = actuales.includes(opcionId)
       ? actuales.filter((o) => o !== opcionId)
       : maximum === 1
@@ -1515,7 +1512,7 @@ function PanelProducto({
         : actuales.length < maximum
           ? [...actuales, opcionId]
           : actuales
-    const allRows = { ...elegidas, [grupoId]: newOnes }
+    const allRows = { ...elegidas, [groupId]: newOnes }
     if (unaSola) agregarCon(null, allRows)
     else setElegidas(allRows)
   }
@@ -1524,7 +1521,7 @@ function PanelProducto({
     <PanelLateral
       opened
       title={product.name}
-      alCerrar={close}
+      onClose={close}
       pie={
         <Boton
           variant="main"
@@ -1615,10 +1612,10 @@ function PanelItem({
   item,
   guests,
   enSalon,
-  alCerrar,
+  onClose,
   onChange,
   alSumar,
-  usarCursos,
+  coursesEnabled,
   onVoid,
   alCambiarNotaEnviada,
   alDuplicar,
@@ -1627,8 +1624,8 @@ function PanelItem({
   item: OrderItem
   guests: number
   enSalon: boolean
-  usarCursos: boolean
-  alCerrar: () => void
+  coursesEnabled: boolean
+  onClose: () => void
   onChange: (change: {
     guest?: number | null
     course?: Course | null
@@ -1657,19 +1654,19 @@ function PanelItem({
   }
   const close = () => {
     guardarNota()
-    alCerrar()
+    onClose()
   }
   // Para quién y curso son una sola elección: al tocarla, el panel se cierra.
   const select = (change: { guest?: number | null; course?: Course | null }) => {
     guardarNota()
     onChange(change)
-    alCerrar()
+    onClose()
   }
   return (
     <PanelLateral
       opened
       title={item.name}
-      alCerrar={close}
+      onClose={close}
       pie={
         <div className="flex gap-2">
           <Boton
@@ -1740,7 +1737,7 @@ function PanelItem({
               ))}
             </Grupo>
           )}
-          {usarCursos && (
+          {coursesEnabled && (
             <Grupo etiqueta="Curso" className="mb-4 flex flex-wrap items-center gap-2">
               <p className="w-full font-semibold">Curso</p>
               {COURSES.map((c) => (
@@ -1778,11 +1775,11 @@ function PanelItem({
 /** La nota de todo el pedido: alergias, celebraciones, «todo junto». Va en cada comanda. */
 function PanelNotaPedido({
   note,
-  alCerrar,
+  onClose,
   onSave,
 }: {
   note: string | null
-  alCerrar: () => void
+  onClose: () => void
   onSave: (note: string | null) => void
 }) {
   const [text, setTexto] = useState(note ?? '')
@@ -1791,7 +1788,7 @@ function PanelNotaPedido({
     <PanelLateral
       opened
       title="Nota del pedido"
-      alCerrar={alCerrar}
+      onClose={onClose}
       pie={
         <Boton variant="main" large className="w-full" onClick={() => onSave(newOne)}>
           {newOne === null && note !== null ? 'Quitar la nota' : 'Guardar'}
@@ -1823,12 +1820,12 @@ function PanelNotaPedido({
 function PanelAgotar({
   product,
   agotados,
-  alCerrar,
+  onClose,
   onChange,
 }: {
   product: ProductoCatalogo | null
   agotados: Set<string>
-  alCerrar: () => void
+  onClose: () => void
   onChange: (variantId: string | null, markSoldOut: boolean) => void
 }) {
   if (!product) return null
@@ -1839,7 +1836,7 @@ function PanelAgotar({
     ...(everything ? [] : product.variants.map((v) => ({ id: v.id, name: v.name }))),
   ]
   return (
-    <PanelLateral opened title={`Agotar ${product.name}`} alCerrar={alCerrar}>
+    <PanelLateral opened title={`Agotar ${product.name}`} onClose={onClose}>
       <p className="mb-4 text-texto-suave">
         Toca lo que se acabó; tócalo otra vez cuando vuelva a haber.
       </p>

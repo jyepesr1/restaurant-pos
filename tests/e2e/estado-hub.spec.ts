@@ -9,12 +9,12 @@ const SALUD = '**/api/health'
 
 test('al arrancar muestra "Buscando el hub" hasta que el hub responde', async ({ page }) => {
   let release: () => void = () => {}
-  const retenida = new Promise<void>((resolver) => {
-    release = resolver
+  const retenida = new Promise<void>((resolve) => {
+    release = resolve
   })
-  await page.route(SALUD, async (ruta) => {
+  await page.route(SALUD, async (route) => {
     await retenida
-    await ruta.continue()
+    await route.continue()
   })
 
   await page.goto('/')
@@ -52,7 +52,7 @@ test('si el hub se cuelga estando conectado, avisa y se recupera cuando vuelve a
 })
 
 test('si el hub responde con error del servidor, muestra "Sin conexión"', async ({ page }) => {
-  await page.route(SALUD, (ruta) => ruta.fulfill({ status: 500, body: 'error' }))
+  await page.route(SALUD, (route) => route.fulfill({ status: 500, body: 'error' }))
 
   await page.goto('/')
   await expect(page.getByText('Sin conexión con el hub')).toBeVisible()
@@ -62,25 +62,25 @@ test('el hub sirve los assets de la app con su tipo de contenido', async ({ page
   await page.goto('/')
   const js = await page.locator('script[src]').first().getAttribute('src')
   const css = await page.locator('link[rel="stylesheet"]').first().getAttribute('href')
-  const rutas = [js, css].map((ruta) => new URL(ruta ?? '', page.url()).pathname)
+  const rutas = [js, css].map((route) => new URL(route ?? '', page.url()).pathname)
 
   expect(rutas.some((r) => r.endsWith('.js'))).toBe(true)
   expect(rutas.some((r) => r.endsWith('.css'))).toBe(true)
-  for (const ruta of rutas) {
-    const res = await request.get(ruta)
+  for (const route of rutas) {
+    const res = await request.get(route)
     expect(res.status()).toBe(200)
     const type = res.headers()['content-type'] ?? ''
-    expect(type).toMatch(ruta.endsWith('.js') ? /javascript/ : /text\/css/)
+    expect(type).toMatch(route.endsWith('.js') ? /javascript/ : /text\/css/)
   }
 })
 
 test('el hub no entrega archivos fuera de la carpeta de la app', async ({ request }) => {
-  for (const ruta of [
+  for (const route of [
     '/../package.json',
     '/%2e%2e/package.json',
     '/assets/..%2f..%2f..%2f..%2fpackage.json',
   ]) {
-    const res = await request.get(ruta)
+    const res = await request.get(route)
     expect(await res.text()).not.toContain('"restaurant-pos"')
     expect(await res.text()).not.toContain('"@pos/app"')
   }

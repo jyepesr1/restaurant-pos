@@ -78,34 +78,34 @@ async function esAdmin(req: Request, tokenAdmin: string | undefined) {
 
 const Lote = z.strictObject({ events: z.array(z.unknown()).min(1).max(MAX_EVENTOS_POR_LOTE) })
 
-export async function atender(req: Request, entorno: EntornoApi): Promise<Response> {
-  const nube = new Nube(entorno.sql, entorno.clock)
+export async function atender(req: Request, environment: EntornoApi): Promise<Response> {
+  const nube = new Nube(environment.sql, environment.clock)
   const { pathname } = new URL(req.url)
-  const ruta = `${req.method} ${pathname}`
+  const route = `${req.method} ${pathname}`
 
   try {
-    if (ruta === 'GET /v1/health') return json(200, { ok: true })
+    if (route === 'GET /v1/health') return json(200, { ok: true })
 
     // ── Administración de Faro ──
     if (pathname.startsWith('/v1/admin/')) {
-      if (!(await esAdmin(req, entorno.tokenAdmin)))
+      if (!(await esAdmin(req, environment.tokenAdmin)))
         return error(401, 'no_permission', 'Falta el token de administración')
       const cuerpo = await cuerpoJson(req)
       if (cuerpo === MUY_GRANDE) return muyGrande()
-      if (ruta === 'POST /v1/admin/restaurants') {
+      if (route === 'POST /v1/admin/restaurants') {
         const data = NuevoRestaurante.safeParse(cuerpo)
         if (!data.success) return error(400, 'invalid_data', 'Falta el id o el nombre')
         const r = await nube.crearRestaurante(data.data)
         return json(r === 'created' ? 201 : 200, { status: r })
       }
-      if (ruta === 'POST /v1/admin/codes') {
+      if (route === 'POST /v1/admin/codes') {
         const data = z.strictObject({ restaurant_id: z.string().length(26) }).safeParse(cuerpo)
         if (!data.success) return error(400, 'invalid_data', 'Falta el restaurante')
         const r = await nube.crearCodigo(data.data.restaurant_id)
         if (!r) return error(404, 'no_restaurant', 'Ese restaurante no existe')
         return json(201, { code: r.code, expires_at: r.venceEn })
       }
-      if (ruta === 'POST /v1/admin/hubs/revoke') {
+      if (route === 'POST /v1/admin/hubs/revoke') {
         const data = z.strictObject({ hub_id: z.string().length(26) }).safeParse(cuerpo)
         if (!data.success) return error(400, 'invalid_data', 'Falta el hub')
         return (await nube.revocarHub(data.data.hub_id))
@@ -116,7 +116,7 @@ export async function atender(req: Request, entorno: EntornoApi): Promise<Respon
     }
 
     // ── Registro de un hub (con el código, sin credencial todavía) ──
-    if (ruta === 'POST /v1/hubs/register') {
+    if (route === 'POST /v1/hubs/register') {
       const cuerpo = await cuerpoJson(req)
       if (cuerpo === MUY_GRANDE) return muyGrande()
       const data = Registro.safeParse(cuerpo)
@@ -126,24 +126,24 @@ export async function atender(req: Request, entorno: EntornoApi): Promise<Respon
         return r.reason === 'invalid_code'
           ? error(403, 'invalid_code', 'El código no existe, ya se usó o venció. Pide uno nuevo.')
           : error(409, 'hub_already_registered', 'Este PC de caja ya está registrado')
-      return json(201, { credential: r.credential, restaurant_id: r.restauranteId })
+      return json(201, { credential: r.credential, restaurant_id: r.restaurantId })
     }
 
     // ── Lo que hace un hub registrado ──
     const credential = bearer(req)
     const hub = credential ? await nube.authenticate(credential) : null
-    if (ruta === 'POST /v1/events' || ruta === 'GET /v1/events/last') {
+    if (route === 'POST /v1/events' || route === 'GET /v1/events/last') {
       if (!hub)
         return error(401, 'invalid_credential', 'Este PC de caja no está registrado o fue revocado')
-      if (ruta === 'GET /v1/events/last')
+      if (route === 'GET /v1/events/last')
         return json(200, { last_sequence: await nube.lastSequence(hub) })
       const cuerpo = await cuerpoJson(req)
       if (cuerpo === MUY_GRANDE) return muyGrande()
       const batch = Lote.safeParse(cuerpo)
       if (!batch.success)
         return error(400, 'invalid_data', `Un lote trae de 1 a ${MAX_EVENTOS_POR_LOTE} eventos`)
-      const resultados = await nube.recibirEventos(hub, batch.data.events)
-      return json(200, { resultados, last_sequence: await nube.lastSequence(hub) })
+      const results = await nube.recibirEventos(hub, batch.data.events)
+      return json(200, { results, last_sequence: await nube.lastSequence(hub) })
     }
 
     return error(404, 'not_found', 'Esa ruta no existe')
@@ -151,7 +151,7 @@ export async function atender(req: Request, entorno: EntornoApi): Promise<Respon
     // Un error interno no se muestra al hub, y al registro solo va lo justo: el detalle de un
     // error de Postgres puede traer valores de la fila (datos del restaurante).
     const { code, constraint, message } = (e ?? {}) as Record<string, unknown>
-    console.error('Error en la API de la nube:', { ruta, code, constraint, message })
+    console.error('Error en la API de la nube:', { route, code, constraint, message })
     return error(500, 'internal_error', 'La nube tuvo un problema. Se reintentará.')
   }
 }

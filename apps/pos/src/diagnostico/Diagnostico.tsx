@@ -80,7 +80,7 @@ const estilosNivel: Record<Nivel, { icono: string; cssClass: string }> = {
   info: { icono: '', cssClass: 'text-slate-700 dark:text-slate-300' },
 }
 
-function Fila({ title, severity, text }: { title: string; severity: Nivel; text: string }) {
+function Row({ title, severity, text }: { title: string; severity: Nivel; text: string }) {
   const { icono, cssClass } = estilosNivel[severity]
   return (
     <li className="flex items-start justify-between gap-4 border-b border-slate-200 py-3 dark:border-slate-800">
@@ -113,18 +113,18 @@ function calcularVeredicto(
   resumen: ResumenDiagnostico,
 ): Veredicto {
   const errors: string[] = []
-  const avisos: string[] = []
+  const alerts: string[] = []
   if (channel !== 'connected') errors.push('No hay conexión en tiempo real con el hub.')
   if (indexedDb === false) errors.push('Este navegador no puede guardar datos locales.')
-  if (resumen.descartes > 0) avisos.push('El navegador recargó la página solo al volver.')
+  if (resumen.descartes > 0) alerts.push('El navegador recargó la página solo al volver.')
   if (resumen.ocultamientos.some((o) => o.conexionPerdida)) {
-    avisos.push('En segundo plano se pierde la conexión (se recupera al volver).')
+    alerts.push('En segundo plano se pierde la conexión (se recupera al volver).')
   }
   if (resumen.ocultamientos.some((o) => (o.recuperacionMs ?? 0) > RECUPERACION_IDEAL_MS)) {
-    avisos.push(`Al volver tardó más de ${RECUPERACION_IDEAL_MS / 1000} s en reconectar.`)
+    alerts.push(`Al volver tardó más de ${RECUPERACION_IDEAL_MS / 1000} s en reconectar.`)
   }
   if (medianaMs !== null && medianaMs >= LATENCIA_IDEAL_MS) {
-    avisos.push('El tiempo de respuesta es alto: revisa la señal del Wi-Fi.')
+    alerts.push('El tiempo de respuesta es alto: revisa la señal del Wi-Fi.')
   }
 
   if (errors.length > 0) {
@@ -135,10 +135,10 @@ function calcularVeredicto(
     }
   }
   if (indexedDb === null || medianaMs === null || resumen.ocultamientos.length === 0) {
-    return { severity: 'alert', title: 'Prueba en curso: sigue los pasos', puntos: avisos }
+    return { severity: 'alert', title: 'Prueba en curso: sigue los pasos', puntos: alerts }
   }
-  if (avisos.length > 0) {
-    return { severity: 'alert', title: 'Funciona, con avisos', puntos: avisos }
+  if (alerts.length > 0) {
+    return { severity: 'alert', title: 'Funciona, con avisos', puntos: alerts }
   }
   return { severity: 'ok', title: 'Listo para operar', puntos: [] }
 }
@@ -222,7 +222,7 @@ export function Diagnostico() {
     setConfirmarBorrado(false)
   }
 
-  const veredicto = calcularVeredicto(channel, indexedDb, latencia?.medianaMs ?? null, resumen)
+  const verdict = calcularVeredicto(channel, indexedDb, latencia?.medianaMs ?? null, resumen)
   const latest = resumen.ocultamientos.at(-1)
 
   return (
@@ -239,16 +239,16 @@ export function Diagnostico() {
         </header>
 
         <section
-          className={`mb-4 rounded-lg p-4 ${claseVeredicto[veredicto.severity]}`}
+          className={`mb-4 rounded-lg p-4 ${claseVeredicto[verdict.severity]}`}
           aria-live="polite"
         >
           <p className="text-lg font-semibold">
-            <span aria-hidden="true">{iconoVeredicto[veredicto.severity]} </span>
-            {veredicto.title}
+            <span aria-hidden="true">{iconoVeredicto[verdict.severity]} </span>
+            {verdict.title}
           </p>
-          {veredicto.puntos.length > 0 && (
+          {verdict.puntos.length > 0 && (
             <ul className="mt-2 list-disc pl-5">
-              {veredicto.puntos.map((punto) => (
+              {verdict.puntos.map((punto) => (
                 <li key={punto}>{punto}</li>
               ))}
             </ul>
@@ -278,8 +278,8 @@ export function Diagnostico() {
           Conexión con el hub
         </h2>
         <ul>
-          <Fila title="Canal en tiempo real" {...textoCanal[channel]} />
-          <Fila
+          <Row title="Canal en tiempo real" {...textoCanal[channel]} />
+          <Row
             title="Tiempo de respuesta"
             severity={
               latencia === null
@@ -294,12 +294,8 @@ export function Diagnostico() {
                 : `${latencia.medianaMs} ms (ideal: menos de ${LATENCIA_IDEAL_MS} ms)`
             }
           />
-          <Fila
-            title="Veces que se reconectó"
-            severity="info"
-            text={String(resumen.reconexiones)}
-          />
-          <Fila
+          <Row title="Veces que se reconectó" severity="info" text={String(resumen.reconexiones)} />
+          <Row
             title="Última vez en segundo plano"
             severity={latest ? (latest.conexionPerdida ? 'alert' : 'ok') : 'info'}
             text={
@@ -320,7 +316,7 @@ export function Diagnostico() {
                 : 'Aún no ha pasado'
             }
           />
-          <Fila
+          <Row
             title="El navegador recargó la página solo"
             severity={resumen.descartes === 0 ? 'ok' : 'alert'}
             text={`${plural(resumen.descartes, 'vez', 'veces')} en ${plural(resumen.cargas, 'carga', 'cargas')}`}
@@ -331,12 +327,12 @@ export function Diagnostico() {
           Capacidades del navegador
         </h2>
         <ul>
-          <Fila
+          <Row
             title="Datos locales (IndexedDB)"
             severity={indexedDb === null ? 'measuring' : indexedDb ? 'ok' : 'error'}
             text={indexedDb === null ? 'Probando' : indexedDb ? 'Funciona' : 'No funciona'}
           />
-          <Fila
+          <Row
             title="Dirección segura (HTTPS)"
             severity={capacidades.contextoSeguro ? 'ok' : 'info'}
             text={
@@ -345,17 +341,17 @@ export function Diagnostico() {
                 : 'No: normal al abrir por IP; algunas funciones no estarán'
             }
           />
-          <Fila
+          <Row
             title="Vibración"
             severity={capacidades.vibracion ? 'ok' : 'info'}
             text={capacidades.vibracion ? 'Disponible' : 'No disponible en este equipo'}
           />
-          <Fila
+          <Row
             title="Mantener pantalla encendida"
             severity={capacidades.pantallaEncendida ? 'ok' : 'info'}
             text={capacidades.pantallaEncendida ? 'Disponible' : 'Se configura en el equipo'}
           />
-          <Fila
+          <Row
             title="Notificaciones del sistema"
             severity={capacidades.notificaciones ? 'ok' : 'info'}
             text={capacidades.notificaciones ? 'Disponible' : 'No disponible (requiere HTTPS)'}

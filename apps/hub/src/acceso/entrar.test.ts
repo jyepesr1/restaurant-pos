@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { crearServidor } from '../servidor'
 import { asegurarAdministrador, asegurarRoles } from './inicial'
 import { montarAcceso } from './montaje'
-import { insertarVersionado, SISTEMA } from './registros'
+import { insertVersioned, SISTEMA } from './registros'
 
 // Entrar sin emparejar (tarea 1.3b, ADR-013): meseros con PIN desde cualquier navegador; quien
 // tiene usuario, con usuario y contraseña. Los roles de antes se convierten al arrancar.
@@ -12,7 +12,7 @@ function montarApi() {
   const m = montarAcceso()
   const app = crearServidor({
     access: m.access,
-    catalog: { db: m.db, restauranteId: m.restauranteId, access: m.access, clock: m.clock },
+    catalog: { db: m.db, restaurantId: m.restaurantId, access: m.access, clock: m.clock },
   })
   const post = (url: string, cuerpo: unknown, token?: string, ip = '10.0.0.20') =>
     app.inject({
@@ -83,12 +83,12 @@ describe('entrar sin emparejar', () => {
 
   it('contraseña errada y usuario inexistente dan la misma respuesta, sin registrar equipos', async () => {
     const api = montarApi()
-    const mala = await api.post('/api/sign-in', {
+    const bad = await api.post('/api/sign-in', {
       user: api.admin.user,
       password: 'no-es-esta',
     })
     const nadie = await api.post('/api/sign-in', { user: 'nadie', password: 'no-es-esta' })
-    for (const r of [mala, nadie]) {
+    for (const r of [bad, nadie]) {
       expect(r.statusCode).toBe(401)
       expect(r.json()).toMatchObject({
         error: 'invalid_credentials',
@@ -140,9 +140,9 @@ describe('entrar sin emparejar', () => {
 
   it('con un token falso responde 401 y no registra otro equipo; con uno retirado, 403', async () => {
     const api = montarApi()
-    const falso = await api.post('/api/sign-in', { pin: api.people.waiter.pin }, 'inventado')
-    expect(falso.statusCode).toBe(401)
-    expect(falso.json()).toMatchObject({ error: 'invalid_token' })
+    const fake = await api.post('/api/sign-in', { pin: api.people.waiter.pin }, 'inventado')
+    expect(fake.statusCode).toBe(401)
+    expect(fake.json()).toMatchObject({ error: 'invalid_token' })
 
     const register = (await api.post('/api/sign-in', api.admin)).json()
     const phone = (
@@ -175,14 +175,14 @@ describe('arranque de un hub de antes de ADR-013', () => {
   it('Contador pasa a ser Reportes; Gerente y Cocina quedan como roles propios, con su gente', () => {
     const m = montarAcceso()
     const oldOne = (name: string) =>
-      insertarVersionado(m.db, 'roles', m.restauranteId, { name, system: 1 }, SISTEMA, m.clock())
+      insertVersioned(m.db, 'roles', m.restaurantId, { name, system: 1 }, SISTEMA, m.clock())
     // Una base vieja: sin Reportes y con los tres de antes.
     m.db.prepare("UPDATE roles SET name = 'Contador' WHERE id = ?").run(m.roles.reports)
     const manager = oldOne('Gerente')
     const kitchen = oldOne('Cocina')
     const gloria = m.access.crearUsuario({ name: 'Gloria V', rolId: manager })
 
-    const roles = asegurarRoles(m.db, m.restauranteId, m.clock())
+    const roles = asegurarRoles(m.db, m.restaurantId, m.clock())
     expect(roles.reports).toBe(m.roles.reports)
     const row = (id: string) =>
       m.db.prepare('SELECT name, system, active FROM roles WHERE id = ?').get(id)
@@ -191,7 +191,7 @@ describe('arranque de un hub de antes de ADR-013', () => {
     expect(row(kitchen)).toEqual({ name: 'Cocina', system: 0, active: 1 })
     expect(m.access.permisosDe(gloria.userId)).toEqual([])
     // Correrlo otra vez no cambia nada.
-    expect(asegurarRoles(m.db, m.restauranteId, m.clock())).toEqual(roles)
+    expect(asegurarRoles(m.db, m.restaurantId, m.clock())).toEqual(roles)
   })
 
   it('un administrador que entraba con PIN recibe usuario y contraseña al arrancar', () => {
@@ -201,7 +201,7 @@ describe('arranque de un hub de antes de ADR-013', () => {
     expect(r.user).toBe('admin')
     expect(r.password).toMatch(/^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/)
     expect(r.pin).toBeNull()
-    expect(r.avisos.join(' ')).toMatch(/usuario y contraseña/)
+    expect(r.alerts.join(' ')).toMatch(/usuario y contraseña/)
     const register = m.access.entrar({ user: 'admin', password: r.password as string }, null, 'ip')
     expect(register).toMatchObject({ ok: true, user: { name: 'Administrador' } })
   })

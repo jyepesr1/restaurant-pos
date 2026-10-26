@@ -1,6 +1,6 @@
 import { fullConfig, newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
-import { insertarVersionado, SISTEMA } from '../acceso/registros'
+import { insertVersioned, SISTEMA } from '../acceso/registros'
 import { leerCatalogo } from '../catalogo'
 import { type Equipo, montarImpresion } from './montaje-impresion'
 
@@ -18,19 +18,19 @@ function mundo() {
   const waiter = t.device('waiter')
   const llamar = (e: Equipo, url: string, extra: Json = {}) =>
     t.post(url, { ...e.cuerpoSesion, ...extra }, e.token)
-  const catalog = () => leerCatalogo(t.db, t.restauranteId)
+  const catalog = () => leerCatalogo(t.db, t.restaurantId)
   const configGuardada = () =>
     fullConfig(
       JSON.parse(
         String(
-          t.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(t.restauranteId)?.config,
+          t.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(t.restaurantId)?.config,
         ),
       ),
     )
   const preBill = (printer_id: unknown, e: Equipo = admin) =>
     llamar(e, '/api/register/pre-bill', { printer_id })
-  const medios = (m: unknown, e: Equipo = admin) =>
-    llamar(e, '/api/register/payment-methods', { medios: m })
+  const methods = (m: unknown, e: Equipo = admin) =>
+    llamar(e, '/api/register/payment-methods', { methods: m })
   const tip = (puntos: unknown, e: Equipo = admin) => llamar(e, '/api/register/tip', { puntos })
   const cardTerminal = (d: Json, e: Equipo = admin) =>
     llamar(e, '/api/card-terminals', { cardTerminal: d })
@@ -41,7 +41,7 @@ function mundo() {
       cardTerminals: { id: string; name: string; provider: string; active: boolean }[]
     }
   /** Un restaurante ajeno en la misma base, con una impresora y un datáfono suyos. */
-  const ajeno = () => {
+  const outsider = () => {
     const other = newId()
     t.db
       .prepare(
@@ -52,7 +52,7 @@ function mundo() {
     t.db
       .prepare("INSERT INTO counters (restaurant_id, name, value) VALUES (?, 'catalog', 1)")
       .run(other)
-    const printer = insertarVersionado(
+    const printer = insertVersioned(
       t.db,
       'printers',
       other,
@@ -60,7 +60,7 @@ function mundo() {
       SISTEMA,
       new Date(t.clock()).toISOString(),
     )
-    const datafonoId = insertarVersionado(
+    const datafonoId = insertVersioned(
       t.db,
       'card_terminals',
       other,
@@ -80,11 +80,11 @@ function mundo() {
     catalog,
     configGuardada,
     preBill,
-    medios,
+    methods,
     tip,
     cardTerminal,
     settings,
-    ajeno,
+    outsider,
   }
 }
 
@@ -94,7 +94,7 @@ describe('permisos: las cinco rutas piden administrar_dispositivos', () => {
   const rutas: [string, (m: Mundo, e: Equipo) => Promise<{ statusCode: number }>][] = [
     ['/api/register/pre-bill', (m, e) => m.preBill(null, e)],
     ['/api/register/config', (m, e) => m.llamar(e, '/api/register/config')],
-    ['/api/register/payment-methods', (m, e) => m.medios(['cash', 'nequi'], e)],
+    ['/api/register/payment-methods', (m, e) => m.methods(['cash', 'nequi'], e)],
     ['/api/register/tip', (m, e) => m.tip(500, e)],
     [
       '/api/card-terminals',
@@ -105,7 +105,7 @@ describe('permisos: las cinco rutas piden administrar_dispositivos', () => {
   const CUERPO: Record<string, Json> = {
     '/api/register/pre-bill': { printer_id: null },
     '/api/register/config': {},
-    '/api/register/payment-methods': { medios: ['cash'] },
+    '/api/register/payment-methods': { methods: ['cash'] },
     '/api/register/tip': { puntos: 500 },
     '/api/register/custom-methods': { method: { name: 'Sodexo', active: true } },
     '/api/card-terminals': { cardTerminal: { name: 'Nuevo', provider: 'other', active: true } },
@@ -113,7 +113,7 @@ describe('permisos: las cinco rutas piden administrar_dispositivos', () => {
 
   it.each(rutas)('%s: sin token responde 401, aunque el cuerpo sea basura', async (url) => {
     const m = mundo()
-    for (const cuerpo of [{}, 'text', [1], { medios: 1 }]) {
+    for (const cuerpo of [{}, 'text', [1], { methods: 1 }]) {
       const r = await m.t.post(url, cuerpo)
       expect(r.statusCode).toBe(401)
       expect(r.json()).toMatchObject({ error: 'invalid_token' })
@@ -155,11 +155,11 @@ describe('permisos: las cinco rutas piden administrar_dispositivos', () => {
   it.each(rutas)(
     '%s: cajero, gerente y mesero responden 403 y no cambian nada',
     async (url, llamar) => {
-      for (const quien of ['cashier', 'manager', 'waiter'] as const) {
+      for (const who of ['cashier', 'manager', 'waiter'] as const) {
         const m = mundo()
         const before = m.catalog().version
-        const r = await llamar(m, m[quien])
-        expect(r.statusCode, `${url} · ${quien}`).toBe(403)
+        const r = await llamar(m, m[who])
+        expect(r.statusCode, `${url} · ${who}`).toBe(403)
         expect(m.catalog().version).toBe(before)
         expect(m.t.cambiosCatalogo).toEqual([])
         expect(m.configGuardada().payment_methods).toEqual(fullConfig().payment_methods)
@@ -176,11 +176,11 @@ describe('permisos: las cinco rutas piden administrar_dispositivos', () => {
   it('un equipo retirado pierde el acceso a las rutas de caja', async () => {
     const m = mundo()
     await m.t.post(
-      `/api/devices/${m.waiter.connection.dispositivoId}/revoke`,
+      `/api/devices/${m.waiter.connection.deviceId}/revoke`,
       m.admin.cuerpoSesion,
       m.admin.token,
     )
-    expect((await m.medios(['cash'], m.waiter)).statusCode).toBe(401)
+    expect((await m.methods(['cash'], m.waiter)).statusCode).toBe(401)
   })
 })
 
@@ -191,7 +191,7 @@ describe('POST /api/caja/precuenta', () => {
   it('de fábrica no hay impresora de precuentas y la carta dice que no se imprime', () => {
     const m = mundo()
     expect(m.configGuardada().pre_bill_printer_id).toBeNull()
-    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
+    expect(m.catalog().restaurant.checkout?.printsPreBill).toBe(false)
   })
 
   it('elegir una impresora activa: 204, la guarda, avisa y la carta dice que se imprime', async () => {
@@ -202,7 +202,7 @@ describe('POST /api/caja/precuenta', () => {
     expect(r.statusCode).toBe(204)
     expect(r.body).toBe('')
     expect(m.configGuardada().pre_bill_printer_id).toBe(id)
-    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(true)
+    expect(m.catalog().restaurant.checkout?.printsPreBill).toBe(true)
     expect(m.catalog().version).toBeGreaterThan(before)
     expect(m.t.cambiosCatalogo).toEqual([m.catalog().version])
   })
@@ -212,10 +212,10 @@ describe('POST /api/caja/precuenta', () => {
     await m.preBill(nuevaImpresora(m).id)
     const row = m.t.db
       .prepare('SELECT user_id, device_id FROM restaurants WHERE id = ?')
-      .get(m.t.restauranteId)
+      .get(m.t.restaurantId)
     expect(row).toEqual({
       user_id: m.t.people.admin.userId,
-      device_id: m.admin.connection.dispositivoId,
+      device_id: m.admin.connection.deviceId,
     })
   })
 
@@ -224,7 +224,7 @@ describe('POST /api/caja/precuenta', () => {
     await m.preBill(nuevaImpresora(m).id)
     expect((await m.preBill(null)).statusCode).toBe(204)
     expect(m.configGuardada().pre_bill_printer_id).toBeNull()
-    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
+    expect(m.catalog().restaurant.checkout?.printsPreBill).toBe(false)
     const v = m.catalog().version
     expect((await m.preBill(null)).statusCode).toBe(204)
     expect(m.catalog().version).toBe(v)
@@ -235,10 +235,10 @@ describe('POST /api/caja/precuenta', () => {
     const { id } = nuevaImpresora(m)
     await m.preBill(id)
     const v = m.catalog().version
-    const avisos = m.t.cambiosCatalogo.length
+    const alerts = m.t.cambiosCatalogo.length
     await m.preBill(id)
     expect(m.catalog().version).toBe(v)
-    expect(m.t.cambiosCatalogo).toHaveLength(avisos)
+    expect(m.t.cambiosCatalogo).toHaveLength(alerts)
   })
 
   it('una impresora archivada se rechaza con 400', async () => {
@@ -261,7 +261,7 @@ describe('POST /api/caja/precuenta', () => {
 
   it('la impresora de OTRO restaurante se rechaza con 400', async () => {
     const m = mundo()
-    const { printer } = m.ajeno()
+    const { printer } = m.outsider()
     const r = await m.preBill(printer)
     expect(r.statusCode).toBe(400)
     expect(m.configGuardada().pre_bill_printer_id).toBeNull()
@@ -292,13 +292,13 @@ describe('POST /api/caja/precuenta', () => {
     const m = mundo()
     const { id } = nuevaImpresora(m)
     await m.preBill(id)
-    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(true)
+    expect(m.catalog().restaurant.checkout?.printsPreBill).toBe(true)
     m.t.db.prepare('UPDATE printers SET active = 0 WHERE id = ?').run(id)
-    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
+    expect(m.catalog().restaurant.checkout?.printsPreBill).toBe(false)
     // La elección no se pierde: sigue guardada en la configuración.
     expect(m.configGuardada().pre_bill_printer_id).toBe(id)
     m.t.db.prepare('UPDATE printers SET active = 1 WHERE id = ?').run(id)
-    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(true)
+    expect(m.catalog().restaurant.checkout?.printsPreBill).toBe(true)
   })
 
   it('la pantalla «Cocina e impresoras» devuelve la impresora de precuentas elegida', async () => {
@@ -314,17 +314,17 @@ describe('catálogo: restaurante.cobro y datafonos', () => {
   it('trae los valores de fábrica del cobro', () => {
     const { catalog } = mundo()
     expect(catalog().restaurant.checkout).toEqual({
-      mediosPago: ['cash', 'card', 'nequi', 'daviplata', 'breb', 'transfer'],
-      mediosPropios: [],
-      mediosPropiosArchivados: [],
+      paymentMethods: ['cash', 'card', 'nequi', 'daviplata', 'breb', 'transfer'],
+      customMethods: [],
+      archivedCustomMethods: [],
       suggestedTip: 1000,
-      redondeoModo: 'half_up',
-      redondeoEfectivo: 100,
+      roundingMode: 'half_up',
+      cashRounding: 100,
       cashRoundingMode: 'nearest_half_down',
-      umbralDiferencia: 1000,
+      varianceThreshold: 1000,
       timeZone: 'America/Bogota',
-      inicioDiaOperativo: '06:00',
-      imprimePrecuenta: false,
+      businessDayStart: '06:00',
+      printsPreBill: false,
     })
     expect(catalog().cardTerminals).toEqual([])
   })
@@ -339,44 +339,44 @@ describe('catálogo: restaurante.cobro y datafonos', () => {
         cash_rounding: 50,
         cash_rounding_mode: 'up',
       }),
-      m.t.restauranteId,
+      m.t.restaurantId,
     )
     expect(m.catalog().restaurant.checkout).toMatchObject({
-      mediosPago: ['nequi', 'cash'],
+      paymentMethods: ['nequi', 'cash'],
       suggestedTip: 700,
-      redondeoModo: 'half_even',
-      redondeoEfectivo: 50,
+      roundingMode: 'half_even',
+      cashRounding: 50,
       cashRoundingMode: 'up',
     })
   })
 
   it('una configuración vieja, sin los campos nuevos, toma los valores de fábrica', () => {
     const m = mundo()
-    m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restauranteId)
-    expect(m.catalog().restaurant.checkout?.mediosPago).toEqual(fullConfig().payment_methods)
-    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
+    m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restaurantId)
+    expect(m.catalog().restaurant.checkout?.paymentMethods).toEqual(fullConfig().payment_methods)
+    expect(m.catalog().restaurant.checkout?.printsPreBill).toBe(false)
   })
 
   it('imprimePrecuenta es falso si la impresora elegida es de otro restaurante', () => {
     const m = mundo()
-    const { printer } = m.ajeno()
+    const { printer } = m.outsider()
     m.t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ pre_bill_printer_id: printer }), m.t.restauranteId)
-    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
+      .run(JSON.stringify({ pre_bill_printer_id: printer }), m.t.restaurantId)
+    expect(m.catalog().restaurant.checkout?.printsPreBill).toBe(false)
   })
 
   it('imprimePrecuenta es falso si la impresora elegida ya no existe', () => {
     const m = mundo()
     m.t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ pre_bill_printer_id: newId() }), m.t.restauranteId)
-    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
+      .run(JSON.stringify({ pre_bill_printer_id: newId() }), m.t.restaurantId)
+    expect(m.catalog().restaurant.checkout?.printsPreBill).toBe(false)
   })
 
   it('los datáfonos: solo los activos de este restaurante, por nombre', async () => {
     const m = mundo()
-    const ajeno = m.ajeno()
+    const outsider = m.outsider()
     await m.cardTerminal({ name: 'Bold 2', provider: 'bold', active: true })
     await m.cardTerminal({ name: 'Bold 1', provider: 'bold', active: true })
     const archived = (
@@ -384,7 +384,7 @@ describe('catálogo: restaurante.cobro y datafonos', () => {
     ).json() as { id: string }
     await m.cardTerminal({ id: archived.id, name: 'Viejo', provider: 'redeban', active: false })
     expect(m.catalog().cardTerminals?.map((d) => d.name)).toEqual(['Bold 1', 'Bold 2'])
-    expect(m.catalog().cardTerminals?.map((d) => d.id)).not.toContain(ajeno.datafonoId)
+    expect(m.catalog().cardTerminals?.map((d) => d.id)).not.toContain(outsider.datafonoId)
     // El catálogo dice id, nombre y proveedor: los de un mismo proveedor tienen un solo cierre, así
     // que al cobrar solo se elige el proveedor si hay varios.
     for (const d of m.catalog().cardTerminals ?? [])
@@ -408,31 +408,31 @@ describe('POST /api/caja/medios', () => {
   it('guarda los medios en el orden elegido, avisa y la carta los trae', async () => {
     const m = mundo()
     const before = m.catalog().version
-    const r = await m.medios(['nequi', 'cash', 'card'])
+    const r = await m.methods(['nequi', 'cash', 'card'])
     expect(r.statusCode).toBe(204)
     expect((await m.settings()).payment_methods).toEqual(['nequi', 'cash', 'card'])
-    expect(m.catalog().restaurant.checkout?.mediosPago).toEqual(['nequi', 'cash', 'card'])
+    expect(m.catalog().restaurant.checkout?.paymentMethods).toEqual(['nequi', 'cash', 'card'])
     expect(m.catalog().version).toBeGreaterThan(before)
     expect(m.t.cambiosCatalogo).toEqual([m.catalog().version])
   })
 
   it('solo efectivo es válido; el bono se puede agregar', async () => {
     const m = mundo()
-    expect((await m.medios(['cash'])).statusCode).toBe(204)
-    expect((await m.medios(['cash', 'voucher'])).statusCode).toBe(204)
+    expect((await m.methods(['cash'])).statusCode).toBe(204)
+    expect((await m.methods(['cash', 'voucher'])).statusCode).toBe(204)
     expect(m.configGuardada().payment_methods).toEqual(['cash', 'voucher'])
   })
 
   it('los repetidos se quitan y se queda el primero', async () => {
     const m = mundo()
-    expect((await m.medios(['card', 'cash', 'card', 'cash'])).statusCode).toBe(204)
+    expect((await m.methods(['card', 'cash', 'card', 'cash'])).statusCode).toBe(204)
     expect(m.configGuardada().payment_methods).toEqual(['card', 'cash'])
   })
 
   it('sin efectivo se rechaza con 400 y el mensaje lo explica', async () => {
     const m = mundo()
     const before = m.catalog().version
-    const r = await m.medios(['card', 'nequi'])
+    const r = await m.methods(['card', 'nequi'])
     expect(r.statusCode).toBe(400)
     expect(r.json()).toMatchObject({ message: 'El efectivo siempre se recibe' })
     expect(m.configGuardada().payment_methods).toEqual(fullConfig().payment_methods)
@@ -449,7 +449,7 @@ describe('POST /api/caja/medios', () => {
     ['más de diez', Array(11).fill('cash')],
   ])('rechaza medios = %s con 400', async (_, value) => {
     const m = mundo()
-    expect((await m.medios(value)).statusCode).toBe(400)
+    expect((await m.methods(value)).statusCode).toBe(400)
     expect(m.configGuardada().payment_methods).toEqual(fullConfig().payment_methods)
   })
 
@@ -457,33 +457,33 @@ describe('POST /api/caja/medios', () => {
     const m = mundo()
     expect((await m.llamar(m.admin, '/api/register/payment-methods', {})).statusCode).toBe(400)
     expect(
-      (await m.llamar(m.admin, '/api/register/payment-methods', { medios: ['cash'], x: 1 }))
+      (await m.llamar(m.admin, '/api/register/payment-methods', { methods: ['cash'], x: 1 }))
         .statusCode,
     ).toBe(400)
   })
 
   it('repetir la misma lista no sube la versión ni avisa', async () => {
     const m = mundo()
-    await m.medios(['cash', 'card'])
+    await m.methods(['cash', 'card'])
     const v = m.catalog().version
-    const avisos = m.t.cambiosCatalogo.length
-    expect((await m.medios(['cash', 'card'])).statusCode).toBe(204)
+    const alerts = m.t.cambiosCatalogo.length
+    expect((await m.methods(['cash', 'card'])).statusCode).toBe(204)
     expect(m.catalog().version).toBe(v)
-    expect(m.t.cambiosCatalogo).toHaveLength(avisos)
+    expect(m.t.cambiosCatalogo).toHaveLength(alerts)
   })
 
   it('cambiar solo el orden sí es un cambio', async () => {
     const m = mundo()
-    await m.medios(['cash', 'card'])
+    await m.methods(['cash', 'card'])
     const v = m.catalog().version
-    await m.medios(['card', 'cash'])
+    await m.methods(['card', 'cash'])
     expect(m.catalog().version).toBeGreaterThan(v)
   })
 
   it('no toca el resto de la configuración del restaurante', async () => {
     const m = mundo()
     const before = { ...m.configGuardada(), payment_methods: undefined }
-    await m.medios(['cash', 'nequi'])
+    await m.methods(['cash', 'nequi'])
     expect({ ...m.configGuardada(), payment_methods: undefined }).toEqual(before)
   })
 })
@@ -539,7 +539,7 @@ describe('POST /api/caja/configuracion', () => {
 
   it('no muestra los datáfonos de otro restaurante', async () => {
     const m = mundo()
-    m.ajeno()
+    m.outsider()
     expect((await m.settings()).cardTerminals).toEqual([])
   })
 
@@ -565,7 +565,7 @@ describe('POST /api/datafonos', () => {
       m.t.db.prepare('SELECT * FROM card_terminals WHERE id = ?').get(cuerpo.id),
     ).toMatchObject({
       user_id: m.t.people.admin.userId,
-      device_id: m.admin.connection.dispositivoId,
+      device_id: m.admin.connection.deviceId,
       active: 1,
     })
     expect(m.catalog().version).toBeGreaterThan(before)
@@ -629,7 +629,7 @@ describe('POST /api/datafonos', () => {
 
   it('dos nombres distintos conviven, y el mismo nombre en otro restaurante no cuenta', async () => {
     const m = mundo()
-    m.ajeno()
+    m.outsider()
     expect((await m.cardTerminal({ ...bold, name: 'Bold bar' })).statusCode).toBe(200)
     expect((await m.cardTerminal({ ...bold, name: 'Bold ajeno' })).statusCode).toBe(200)
     expect((await m.settings()).cardTerminals).toHaveLength(2)
@@ -728,12 +728,14 @@ describe('POST /api/datafonos', () => {
 
   it('el id de un datáfono de OTRO restaurante, 400, y el ajeno queda intacto', async () => {
     const m = mundo()
-    const ajeno = m.ajeno()
-    const before = m.t.db.prepare('SELECT * FROM card_terminals WHERE id = ?').get(ajeno.datafonoId)
-    const r = await m.cardTerminal({ ...bold, id: ajeno.datafonoId, name: 'Robado' })
+    const outsider = m.outsider()
+    const before = m.t.db
+      .prepare('SELECT * FROM card_terminals WHERE id = ?')
+      .get(outsider.datafonoId)
+    const r = await m.cardTerminal({ ...bold, id: outsider.datafonoId, name: 'Robado' })
     expect(r.statusCode).toBe(400)
     expect(
-      m.t.db.prepare('SELECT * FROM card_terminals WHERE id = ?').get(ajeno.datafonoId),
+      m.t.db.prepare('SELECT * FROM card_terminals WHERE id = ?').get(outsider.datafonoId),
     ).toEqual(before)
     expect((await m.settings()).cardTerminals).toEqual([])
   })
@@ -742,11 +744,11 @@ describe('POST /api/datafonos', () => {
     const m = mundo()
     await m.cardTerminal(bold)
     const v = m.catalog().version
-    const avisos = m.t.cambiosCatalogo.length
+    const alerts = m.t.cambiosCatalogo.length
     await m.cardTerminal(bold)
     await m.cardTerminal({ ...bold, id: newId() })
     expect(m.catalog().version).toBe(v)
-    expect(m.t.cambiosCatalogo).toHaveLength(avisos)
+    expect(m.t.cambiosCatalogo).toHaveLength(alerts)
   })
 
   it('dos peticiones iguales a la vez no dejan dos datáfonos con el mismo nombre', async () => {
@@ -759,18 +761,18 @@ describe('POST /api/datafonos', () => {
 
 describe('POST /api/caja/medios-propios', () => {
   type Respuesta = { id: string; custom_methods: { id: string; name: string; active: boolean }[] }
-  const guardar = (m: Mundo, method: Json, e: Equipo = m.admin) =>
+  const save = (m: Mundo, method: Json, e: Equipo = m.admin) =>
     m.llamar(e, '/api/register/custom-methods', { method })
 
   it('crea un medio: devuelve su id y la lista, queda en la configuración y en la carta', async () => {
     const m = mundo()
     const before = m.catalog().version
-    const r = await guardar(m, { name: 'Sodexo', active: true })
+    const r = await save(m, { name: 'Sodexo', active: true })
     expect(r.statusCode).toBe(200)
     const cuerpo = r.json() as Respuesta
     expect(cuerpo.custom_methods).toEqual([{ id: cuerpo.id, name: 'Sodexo', active: true }])
     expect(m.configGuardada().custom_methods).toEqual(cuerpo.custom_methods)
-    expect(m.catalog().restaurant.checkout?.mediosPropios).toEqual([
+    expect(m.catalog().restaurant.checkout?.customMethods).toEqual([
       { id: cuerpo.id, name: 'Sodexo' },
     ])
     expect(m.catalog().version).toBeGreaterThan(before)
@@ -779,55 +781,55 @@ describe('POST /api/caja/medios-propios', () => {
 
   it('el nombre se recorta; vacío, de espacios o de más de 30 letras, 400', async () => {
     const m = mundo()
-    const r = (await guardar(m, { name: '  QR  ', active: true })).json() as Respuesta
+    const r = (await save(m, { name: '  QR  ', active: true })).json() as Respuesta
     expect(r.custom_methods[0]?.name).toBe('QR')
     for (const name of ['', '    ', 'x'.repeat(31), 5])
-      expect((await guardar(m, { name, active: true })).statusCode, String(name)).toBe(400)
-    expect((await guardar(m, { name: 'x'.repeat(30), active: true })).statusCode).toBe(200)
+      expect((await save(m, { name, active: true })).statusCode, String(name)).toBe(400)
+    expect((await save(m, { name: 'x'.repeat(30), active: true })).statusCode).toBe(200)
   })
 
   it('campos de más, sin activo o con un id que no es ULID, 400', async () => {
     const m = mundo()
-    expect((await guardar(m, { name: 'A', active: true, color: 'r' })).statusCode).toBe(400)
-    expect((await guardar(m, { name: 'A' })).statusCode).toBe(400)
-    expect((await guardar(m, { id: 'abc', name: 'A', active: true })).statusCode).toBe(400)
+    expect((await save(m, { name: 'A', active: true, color: 'r' })).statusCode).toBe(400)
+    expect((await save(m, { name: 'A' })).statusCode).toBe(400)
+    expect((await save(m, { id: 'abc', name: 'A', active: true })).statusCode).toBe(400)
     expect((await m.llamar(m.admin, '/api/register/custom-methods', {})).statusCode).toBe(400)
   })
 
   it('nombre repetido entre activos (sin importar mayúsculas), 400; un archivado no estorba', async () => {
     const m = mundo()
-    const a = (await guardar(m, { name: 'Sodexo', active: true })).json() as Respuesta
-    const r = await guardar(m, { name: 'SODEXO', active: true })
+    const a = (await save(m, { name: 'Sodexo', active: true })).json() as Respuesta
+    const r = await save(m, { name: 'SODEXO', active: true })
     expect(r.statusCode).toBe(400)
     expect(r.json()).toMatchObject({ message: 'Ya hay un medio con ese nombre' })
-    await guardar(m, { id: a.id, name: 'Sodexo', active: false })
-    expect((await guardar(m, { name: 'Sodexo', active: true })).statusCode).toBe(200)
+    await save(m, { id: a.id, name: 'Sodexo', active: false })
+    expect((await save(m, { name: 'Sodexo', active: true })).statusCode).toBe(200)
     // Reactivar el archivado cuando ya hay uno activo con ese nombre.
-    expect((await guardar(m, { id: a.id, name: 'Sodexo', active: true })).statusCode).toBe(400)
+    expect((await save(m, { id: a.id, name: 'Sodexo', active: true })).statusCode).toBe(400)
   })
 
   it('renombrar, archivar y volver a usar; el archivado sale de la carta pero queda en la configuración', async () => {
     const m = mundo()
-    const a = (await guardar(m, { name: 'Sodexo', active: true })).json() as Respuesta
-    await guardar(m, { id: a.id, name: 'Sodexo Pass', active: true })
-    expect(m.catalog().restaurant.checkout?.mediosPropios?.[0]?.name).toBe('Sodexo Pass')
-    await guardar(m, { id: a.id, name: 'Sodexo Pass', active: false })
-    expect(m.catalog().restaurant.checkout?.mediosPropios).toEqual([])
+    const a = (await save(m, { name: 'Sodexo', active: true })).json() as Respuesta
+    await save(m, { id: a.id, name: 'Sodexo Pass', active: true })
+    expect(m.catalog().restaurant.checkout?.customMethods?.[0]?.name).toBe('Sodexo Pass')
+    await save(m, { id: a.id, name: 'Sodexo Pass', active: false })
+    expect(m.catalog().restaurant.checkout?.customMethods).toEqual([])
     // El archivado ya no sale al cobrar, pero la carta lo manda para nombrar sus pagos (1.8).
-    expect(m.catalog().restaurant.checkout?.mediosPropiosArchivados).toEqual([
+    expect(m.catalog().restaurant.checkout?.archivedCustomMethods).toEqual([
       { id: a.id, name: 'Sodexo Pass' },
     ])
     expect(m.configGuardada().custom_methods).toEqual([
       { id: a.id, name: 'Sodexo Pass', active: false },
     ])
-    await guardar(m, { id: a.id, name: 'Sodexo Pass', active: true })
-    expect(m.catalog().restaurant.checkout?.mediosPropios).toHaveLength(1)
-    expect(m.catalog().restaurant.checkout?.mediosPropiosArchivados).toEqual([])
+    await save(m, { id: a.id, name: 'Sodexo Pass', active: true })
+    expect(m.catalog().restaurant.checkout?.customMethods).toHaveLength(1)
+    expect(m.catalog().restaurant.checkout?.archivedCustomMethods).toEqual([])
   })
 
   it('un id que no existe, 400', async () => {
     const m = mundo()
-    const r = await guardar(m, { id: newId(), name: 'A', active: true })
+    const r = await save(m, { id: newId(), name: 'A', active: true })
     expect(r.statusCode).toBe(400)
     expect(r.json()).toMatchObject({ message: 'Ese medio no existe' })
   })
@@ -835,33 +837,33 @@ describe('POST /api/caja/medios-propios', () => {
   it('máximo 20 medios propios: el 21 se rechaza', async () => {
     const m = mundo()
     for (let i = 0; i < 20; i++)
-      expect((await guardar(m, { name: `Medio ${i}`, active: true })).statusCode).toBe(200)
-    const r = await guardar(m, { name: 'Uno más', active: true })
+      expect((await save(m, { name: `Medio ${i}`, active: true })).statusCode).toBe(200)
+    const r = await save(m, { name: 'Uno más', active: true })
     expect(r.statusCode).toBe(400)
     expect(m.configGuardada().custom_methods).toHaveLength(20)
   })
 
   it('guardar los mismos datos de un medio existente no sube la versión', async () => {
     const m = mundo()
-    const a = (await guardar(m, { name: 'Sodexo', active: true })).json() as Respuesta
+    const a = (await save(m, { name: 'Sodexo', active: true })).json() as Respuesta
     const v = m.catalog().version
-    await guardar(m, { id: a.id, name: 'Sodexo', active: true })
+    await save(m, { id: a.id, name: 'Sodexo', active: true })
     expect(m.catalog().version).toBe(v)
   })
 
   it('cajero, gerente y mesero, 403 y no crean nada', async () => {
     const m = mundo()
-    for (const quien of ['cashier', 'manager', 'waiter'] as const)
-      expect((await guardar(m, { name: 'A', active: true }, m[quien])).statusCode).toBe(403)
+    for (const who of ['cashier', 'manager', 'waiter'] as const)
+      expect((await save(m, { name: 'A', active: true }, m[who])).statusCode).toBe(403)
     expect(m.configGuardada().custom_methods).toEqual([])
   })
 
   it('los medios propios y los de fábrica conviven: cambiar uno no toca el otro', async () => {
     const m = mundo()
-    await guardar(m, { name: 'Sodexo', active: true })
-    await m.medios(['cash', 'nequi'])
+    await save(m, { name: 'Sodexo', active: true })
+    await m.methods(['cash', 'nequi'])
     expect(m.configGuardada().custom_methods).toHaveLength(1)
-    await guardar(m, { name: 'QR', active: true })
+    await save(m, { name: 'QR', active: true })
     expect(m.configGuardada().payment_methods).toEqual(['cash', 'nequi'])
   })
 
@@ -870,7 +872,7 @@ describe('POST /api/caja/medios-propios', () => {
   // apps/hub/src/impresion/rutas.ts:561 (esquema de `medios` / `actualizarConfig`).
   it('/api/caja/medios rechaza «otro» con 400 (no con un error del servidor)', async () => {
     const m = mundo()
-    const r = await m.medios(['cash', 'other'])
+    const r = await m.methods(['cash', 'other'])
     expect(r.statusCode).toBe(400)
     expect(m.configGuardada().payment_methods).not.toContain('other')
   })

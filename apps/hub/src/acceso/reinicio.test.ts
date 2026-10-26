@@ -2,8 +2,8 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newId } from '@pos/core'
-import { type ControlAcceso, HubSync } from '@pos/sync'
-import { AlmacenSqlite } from '@pos/sync/sqlite'
+import { type AccessControl, HubSync } from '@pos/sync'
+import { SqliteStore } from '@pos/sync/sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ABRIR, autorizarEvento, datosAnular, firmar, hubEnCarpeta, item } from './montaje-hub'
 import { ARCHIVO_CLAVE } from './secretos'
@@ -15,18 +15,18 @@ import type { ServicioAcceso } from './servicio'
 type Levantado = ReturnType<ReturnType<typeof hubEnCarpeta>['spinUp']>
 
 /** Lo que devuelve `asegurarAdministrador` cuando no hay nada nuevo que mostrar. */
-const SIN_NOVEDAD = { pin: null, user: null, password: null, avisos: [] }
+const SIN_NOVEDAD = { pin: null, user: null, password: null, alerts: [] }
 
 describe('reinicio y caídas del hub', () => {
-  let carpeta = ''
+  let folder = ''
   let hubs: ReturnType<typeof hubEnCarpeta>
   beforeEach(() => {
-    carpeta = mkdtempSync(join(tmpdir(), 'pos-reinicio-'))
-    hubs = hubEnCarpeta(join(carpeta, 'data'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-reinicio-'))
+    hubs = hubEnCarpeta(join(folder, 'data'))
   })
   afterEach(() => {
     hubs.apagar()
-    rmSync(carpeta, { recursive: true, force: true })
+    rmSync(folder, { recursive: true, force: true })
   })
 
   /** Primer arranque: administrador, un dispositivo de caja emparejado y su sesión de admin. */
@@ -79,7 +79,7 @@ describe('reinicio y caídas del hub', () => {
 
   function event(
     _h: Levantado,
-    connection: { dispositivoId: string },
+    connection: { deviceId: string },
     s: { sesionId: string; secret: string; user: { id: string } },
     type: string,
     data: unknown,
@@ -95,7 +95,7 @@ describe('reinicio y caídas del hub', () => {
       data,
       session_id: s.sesionId,
       user_id: s.user.id,
-      device_id: connection.dispositivoId,
+      device_id: connection.deviceId,
       authorization_id: null,
       reason: null,
       device_time: hubs.clock(),
@@ -116,12 +116,12 @@ describe('reinicio y caídas del hub', () => {
       const after = hubs.spinUp()
       expect(after.claveNueva).toBe(false)
       expect(after.admin).toEqual(SIN_NOVEDAD)
-      expect(after.restauranteId).toBe(h.restauranteId)
+      expect(after.restaurantId).toBe(h.restaurantId)
       // El token del dispositivo, el PIN del mesero y el del administrador valen igual.
       const connection = after.access.authenticate(phone.token)
       expect(connection).toMatchObject({
-        dispositivoId: phone.connection.dispositivoId,
-        revocadoEn: null,
+        deviceId: phone.connection.deviceId,
+        revokedAt: null,
       })
       expect(session(after, connection as never, waiter.pin).user.name).toBe('Ana')
       const c = after.access.crearEmparejamiento(
@@ -142,8 +142,8 @@ describe('reinicio y caídas del hub', () => {
 
       const after = hubs.spinUp()
       const newOne = after.access.authenticate(token) as NonNullable<typeof connection>
-      const r = after.hub.recibirLote(newOne, [opened])
-      expect(r.resultados[0]?.status).toBe('confirmed')
+      const r = after.hub.receiveBatch(newOne, [opened])
+      expect(r.results[0]?.status).toBe('confirmed')
       expect(after.access.cerrarSesion(newOne, s)).toEqual({ ok: true })
       expect(after.access.cerrarSesion(newOne, { ...s, secret: 'other' })).toMatchObject({
         ok: false,
@@ -157,13 +157,13 @@ describe('reinicio y caídas del hub', () => {
       const admin = sesionAdmin(h, register.connection, credenciales)
       const r = h.access.revocarDispositivo(register.connection, {
         ...admin,
-        dispositivoId: phone.connection.dispositivoId,
+        deviceId: phone.connection.deviceId,
       })
       if (!r.ok) throw new Error(r.message)
       hubs.apagar()
 
       const after = hubs.spinUp()
-      expect(after.access.authenticate(phone.token)?.revocadoEn).toBe(r.revocadoEn)
+      expect(after.access.authenticate(phone.token)?.revokedAt).toBe(r.revokedAt)
       expect(
         after.access.startSession(after.access.authenticate(phone.token) as never, adminPin),
       ).toMatchObject({ code: 'revoked_device' })
@@ -227,17 +227,17 @@ describe('reinicio y caídas del hub', () => {
       const phone = fresh('waiter', 'Celular')
       const abierta = session(h, phone.connection, ana.pin)
       hubs.apagar()
-      rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
+      rmSync(join(folder, 'data', ARCHIVO_CLAVE))
 
       const after = hubs.spinUp()
       expect(after.claveNueva).toBe(true)
-      expect(existsSync(join(carpeta, 'data', ARCHIVO_CLAVE))).toBe(true)
+      expect(existsSync(join(folder, 'data', ARCHIVO_CLAVE))).toBe(true)
       expect(after.admin.pin).toMatch(/^\d{4}$/)
-      expect(after.admin.avisos.join(' ')).toMatch(/clave de los PIN/)
+      expect(after.admin.alerts.join(' ')).toMatch(/clave de los PIN/)
       const connection = after.access.authenticate(phone.token) as NonNullable<
         typeof phone.connection
       >
-      expect(connection.dispositivoId).toBe(phone.connection.dispositivoId)
+      expect(connection.deviceId).toBe(phone.connection.deviceId)
 
       // Los PIN de antes no entran; el nuevo del administrador sí.
       hubs.advance(60_000)
@@ -269,15 +269,15 @@ describe('reinicio y caídas del hub', () => {
       const s = session(h, phone.connection, ana.pin)
       const pending = event(h, phone.connection, s, 'OrderOpened', ABRIR)
       hubs.apagar()
-      rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
+      rmSync(join(folder, 'data', ARCHIVO_CLAVE))
       hubs.advance(60_000)
 
       // El secreto de cada sesión sale de la clave: con otra clave, la firma ya no cuadra. Como la
       // sesión es de antes de la clave nueva, el gerente decide.
       const after = hubs.spinUp()
       const connection = after.access.authenticate(phone.token) as never
-      const r = after.hub.recibirLote(connection, [pending])
-      expect(r.resultados[0]?.status).toBe('quarantine')
+      const r = after.hub.receiveBatch(connection, [pending])
+      expect(r.results[0]?.status).toBe('quarantine')
       expect(Number(after.db.prepare('SELECT count(*) AS n FROM events').get()?.n)).toBe(0)
     })
 
@@ -286,7 +286,7 @@ describe('reinicio y caídas del hub', () => {
       const ana = h.access.crearUsuario({ name: 'Ana', rolId: h.roles.waiter })
       const register = fresh('register', 'Caja')
       hubs.apagar()
-      rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
+      rmSync(join(folder, 'data', ARCHIVO_CLAVE))
 
       const after = hubs.spinUp()
       const nuevoPin = after.access.regenerarPin(ana.userId)
@@ -308,7 +308,7 @@ describe('reinicio y caídas del hub', () => {
       const { fresh } = primerArranque()
       const register = fresh('register', 'Caja')
       hubs.apagar()
-      rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
+      rmSync(join(folder, 'data', ARCHIVO_CLAVE))
       const regenerado = hubs.spinUp()
       const pin = regenerado.admin.pin as string
       hubs.apagar()
@@ -330,17 +330,17 @@ describe('reinicio y caídas del hub', () => {
       const h = hubs.spinUp()
       expect(h.claveNueva).toBe(true)
       expect(h.admin.pin).toMatch(/^\d{4}$/)
-      expect(h.admin.avisos).toEqual([])
+      expect(h.admin.alerts).toEqual([])
     })
 
     it('si la clave se borra y la base también, es un hub nuevo y arranca limpio', () => {
       primerArranque()
       hubs.apagar()
-      rmSync(join(carpeta, 'data'), { recursive: true })
+      rmSync(join(folder, 'data'), { recursive: true })
 
       const h = hubs.spinUp()
       expect(h.claveNueva).toBe(true)
-      expect(h.admin.avisos).toEqual([])
+      expect(h.admin.alerts).toEqual([])
       expect(Number(h.db.prepare('SELECT count(*) AS n FROM users').get()?.n)).toBe(1)
     })
   })
@@ -369,7 +369,7 @@ describe('reinicio y caídas del hub', () => {
           { ...en, base_sequence: 2 },
         ),
       ]
-      expect(h.hub.recibirLote(connection, batch).resultados.map((x) => x.status)).toEqual([
+      expect(h.hub.receiveBatch(connection, batch).results.map((x) => x.status)).toEqual([
         'confirmed',
         'confirmed',
         'confirmed',
@@ -393,7 +393,7 @@ describe('reinicio y caídas del hub', () => {
         manager,
         order,
         itemId: it.item_id,
-        autorizacionId: comprobante.autorizacionId,
+        authorizationId: comprobante.authorizationId,
       }
     }
 
@@ -408,10 +408,10 @@ describe('reinicio y caídas del hub', () => {
         used_at: null,
       })
       const connection = after.access.authenticate(c.token) as never
-      const r = after.hub.recibirLote(connection, [c.voidItem])
-      expect(r.resultados[0]).toMatchObject({
+      const r = after.hub.receiveBatch(connection, [c.voidItem])
+      expect(r.results[0]).toMatchObject({
         status: 'confirmed',
-        aceptacion: { authorized_by_id: c.manager.userId },
+        acceptance: { authorized_by_id: c.manager.userId },
       })
       expect(after.db.prepare('SELECT used_at FROM authorizations').get()?.used_at).toBe(
         hubs.clock(),
@@ -425,22 +425,20 @@ describe('reinicio y caídas del hub', () => {
 
       const after = hubs.spinUp()
       const connection = after.access.authenticate(c.token) as never
-      expect(after.hub.recibirLote(connection, [c.voidItem]).resultados[0]?.status).toBe(
-        'confirmed',
-      )
+      expect(after.hub.receiveBatch(connection, [c.voidItem]).results[0]?.status).toBe('confirmed')
     })
 
     it('el comprobante se gasta una sola vez aunque el hub se reinicie y el celular reenvíe', () => {
       const c = conAutorizacion()
       const connection = c.h.access.authenticate(c.token) as never
-      const first = c.h.hub.recibirLote(connection, [c.voidItem])
+      const first = c.h.hub.receiveBatch(connection, [c.voidItem])
       hubs.apagar()
 
       const after = hubs.spinUp()
       const conexion2 = after.access.authenticate(c.token) as never
-      const segunda = after.hub.recibirLote(conexion2, [c.voidItem])
+      const second = after.hub.receiveBatch(conexion2, [c.voidItem])
 
-      expect(segunda.resultados).toEqual(first.resultados)
+      expect(second.results).toEqual(first.results)
       expect(
         Number(
           after.db.prepare("SELECT count(*) AS n FROM events WHERE type = 'ItemVoided'").get()?.n,
@@ -452,41 +450,41 @@ describe('reinicio y caídas del hub', () => {
       const c = conAutorizacion()
       // Un almacén que "muere" al guardar el evento, como un corte de luz en plena escritura:
       // desde ahí ni siquiera puede anotar un rechazo, y el proceso del hub termina.
-      class AlmacenQueSeApaga extends AlmacenSqlite {
-        caido = false
-        override saveEvent(..._a: Parameters<AlmacenSqlite['saveEvent']>): void {
-          this.caido = true
+      class AlmacenQueSeApaga extends SqliteStore {
+        down = false
+        override saveEvent(..._a: Parameters<SqliteStore['saveEvent']>): void {
+          this.down = true
           throw new Error('se fue la luz')
         }
-        override transaccion<T>(trabajo: () => T): T {
-          if (this.caido) throw new Error('el hub está apagado')
-          return super.transaccion(trabajo)
+        override transaction<T>(job: () => T): T {
+          if (this.down) throw new Error('el hub está apagado')
+          return super.transaction(job)
         }
       }
       const configDe = (h: Levantado) => ({
-        restauranteId: h.restauranteId,
+        restaurantId: h.restaurantId,
         timeZone: 'America/Bogota',
-        inicioDiaOperativo: '06:00',
-        instancia: 'hub-1',
+        businessDayStart: '06:00',
+        instance: 'hub-1',
         clock: hubs.clock,
         access: h.access,
       })
       const check = (h: Levantado) =>
         Number(h.db.prepare("SELECT count(*) AS n FROM events WHERE type = 'ItemVoided'").get()?.n)
       const connection = c.h.access.authenticate(c.token) as never
-      const muriendo = new HubSync(new AlmacenQueSeApaga(c.h.db, c.h.restauranteId), configDe(c.h))
+      const muriendo = new HubSync(new AlmacenQueSeApaga(c.h.db, c.h.restaurantId), configDe(c.h))
 
-      expect(() => muriendo.recibirLote(connection, [c.voidItem])).toThrow(/apagado/)
+      expect(() => muriendo.receiveBatch(connection, [c.voidItem])).toThrow(/apagado/)
       expect(check(c.h)).toBe(0)
       expect(c.h.db.prepare('SELECT used_at FROM authorizations').get()?.used_at).toBeNull()
 
       hubs.apagar()
       hubs.advance(20_000)
       const after = hubs.spinUp()
-      const r = after.hub.recibirLote(after.access.authenticate(c.token) as never, [c.voidItem])
-      expect(r.resultados[0]).toMatchObject({
+      const r = after.hub.receiveBatch(after.access.authenticate(c.token) as never, [c.voidItem])
+      expect(r.results[0]).toMatchObject({
         status: 'confirmed',
-        aceptacion: { authorized_by_id: c.manager.userId },
+        acceptance: { authorized_by_id: c.manager.userId },
       })
       expect(check(after)).toBe(1)
     })
@@ -494,27 +492,27 @@ describe('reinicio y caídas del hub', () => {
     it('si falla justo al usar el comprobante, el evento y el comprobante quedan igual que antes', () => {
       const c = conAutorizacion()
       let failing = true
-      const cae = (a: ServicioAcceso): ControlAcceso => ({
+      const crashes = (a: ServicioAcceso): AccessControl => ({
         verify: (connection, ev, order) => a.verify(connection, ev, order),
-        registrarUso: (ev, v) => {
+        recordUse: (ev, v) => {
           // El comprobante se gasta antes de que la transacción termine...
-          a.registrarUso(ev, v)
+          a.recordUse(ev, v)
           if (failing) throw new Error('se fue la luz')
         },
       })
-      const hub = new HubSync(new AlmacenSqlite(c.h.db, c.h.restauranteId), {
-        restauranteId: c.h.restauranteId,
+      const hub = new HubSync(new SqliteStore(c.h.db, c.h.restaurantId), {
+        restaurantId: c.h.restaurantId,
         timeZone: 'America/Bogota',
-        inicioDiaOperativo: '06:00',
-        instancia: 'hub-1',
+        businessDayStart: '06:00',
+        instance: 'hub-1',
         clock: hubs.clock,
-        access: cae(c.h.access),
+        access: crashes(c.h.access),
       })
       const connection = c.h.access.authenticate(c.token) as never
-      const r = hub.recibirLote(connection, [c.voidItem])
+      const r = hub.receiveBatch(connection, [c.voidItem])
 
       // ...pero la transacción se deshace: ni evento ni comprobante gastado.
-      expect(r.resultados[0]).toMatchObject({ status: 'rejected', reason: 'internal_error' })
+      expect(r.results[0]).toMatchObject({ status: 'rejected', reason: 'internal_error' })
       expect(
         Number(
           c.h.db.prepare("SELECT count(*) AS n FROM events WHERE type = 'ItemVoided'").get()?.n,

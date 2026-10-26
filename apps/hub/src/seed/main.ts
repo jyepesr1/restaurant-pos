@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { BaseSqlite } from '@pos/db'
-import { BaseOcupadaError } from '@pos/db/node'
+import type { SqliteDatabase } from '@pos/db'
+import { DatabaseBusyError } from '@pos/db/node'
 import {
   abrirDatos,
   dirDatosDe,
@@ -10,7 +10,7 @@ import {
   prepararAcceso,
 } from '../arranque'
 import { leerCarta, rulesWithoutDish } from './carta'
-import { sembrar } from './sembrar'
+import { seed } from './sembrar'
 
 // `pnpm seed`: carga en la base del hub los datos de La Spritzzería. Es para instalar el piloto:
 // se puede correr las veces que se quiera (lo que ya está igual no se toca, lo que editó una
@@ -31,15 +31,15 @@ function anunciar(quienes: string, lines: readonly string[]) {
   // Un archivo por corrida: así una corrida nueva no pisa PIN que nadie ha leído.
   const archivo = `pines-${new Date().toISOString().replace(/[:.]/g, '-')}-${quienes}.txt`
   mostrarPines(dirDatos, {
-    ventana: [
+    consoleLines: [
       '\nPIN y contraseñas nuevos:',
       ...lines,
       'Anótalos en un lugar seguro: no se vuelven a mostrar.',
     ],
     archivo,
     content: `${lines.join('\n')}\n`,
-    alert: (ruta) =>
-      `\nLos PIN y contraseñas nuevos quedaron en ${ruta}: anótalos y borra ese archivo.`,
+    alert: (route) =>
+      `\nLos PIN y contraseñas nuevos quedaron en ${route}: anótalos y borra ese archivo.`,
   })
 }
 
@@ -64,12 +64,12 @@ function correr(): number {
   for (const name of rulesWithoutDish(menu))
     console.warn(`⚠ La carta ya no tiene «${name}»: revisa las reglas del seed (término o sabor).`)
 
-  let db: BaseSqlite
+  let db: SqliteDatabase
   try {
     db = abrirDatos(dirDatos).db
   } catch (error) {
     console.error(
-      error instanceof BaseOcupadaError
+      error instanceof DatabaseBusyError
         ? 'No se cargaron los datos: el hub está abierto. Ciérralo y vuelve a correr esto.'
         : `No se cargaron los datos: ${message(error)}`,
     )
@@ -77,14 +77,14 @@ function correr(): number {
   }
 
   try {
-    const { access, restauranteId, roles, admin, avisos } = prepararAcceso(db, dirDatos)
-    for (const alert of avisos) console.warn(`⚠ ${alert}`)
+    const { access, restaurantId, roles, admin, alerts } = prepararAcceso(db, dirDatos)
+    for (const alert of alerts) console.warn(`⚠ ${alert}`)
     anunciar('administrador', lineasAdministrador(admin))
 
-    const { sqlTables, pins } = sembrar(
+    const { sqlTables, pins } = seed(
       db,
       access,
-      { restauranteId, roles, menu, sinPersonal },
+      { restaurantId, roles, menu, sinPersonal },
       new Date().toISOString(),
     )
     console.log(`Datos de La Spritzzería cargados en ${dirDatos}`)

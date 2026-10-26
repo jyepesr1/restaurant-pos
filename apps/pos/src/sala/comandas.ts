@@ -1,5 +1,5 @@
 import type { OrderItem } from '@pos/core'
-import type { EventoLocal } from '@pos/sync'
+import type { LocalEvent } from '@pos/sync'
 import type { PedidoVisible } from './proyeccion'
 
 // Lo que está en cocina (ADR-015), calculado de los eventos guardados en el equipo: cada comanda
@@ -11,7 +11,7 @@ export interface ComandaEnCocina {
   key: string
   comandaId: string
   order: PedidoVisible
-  estacionId: string
+  stationId: string
   /** Número del día que dio el hub; mientras no lo confirma, nada. */
   number: number | null
   /** Desde cuándo está en cocina: cuando la recibió el hub (o se envió, si aún no llega). */
@@ -23,10 +23,10 @@ export interface ComandaEnCocina {
 }
 
 const EN_COCINA = new Set(['sent', 'in_preparation', 'ready'])
-const current = (l: EventoLocal) => l.status === 'confirmed' || l.status === 'pending'
+const current = (l: LocalEvent) => l.status === 'confirmed' || l.status === 'pending'
 
 export function comandasEnCocina(
-  locales: readonly EventoLocal[],
+  locals: readonly LocalEvent[],
   orders: readonly PedidoVisible[],
 ): ComandaEnCocina[] {
   // Cada plato está en el pedido que lo tiene ahora: si se pasó a otra mesa, la comanda sigue
@@ -34,9 +34,9 @@ export function comandasEnCocina(
   const dondeEsta = new Map<string, PedidoVisible>()
   for (const p of orders) for (const id of Object.keys(p.status.items)) dondeEsta.set(id, p)
   const tickets: ComandaEnCocina[] = []
-  for (const l of locales) {
+  for (const l of locals) {
     if (!current(l) || l.event.type !== 'ItemsSent') continue
-    const numeros = l.event.assignments?.ticket_numbers
+    const numbers = l.event.assignments?.ticket_numbers
     for (const c of l.event.data.tickets) {
       const porPedido = new Map<PedidoVisible, OrderItem[]>()
       for (const id of c.item_ids) {
@@ -50,8 +50,8 @@ export function comandasEnCocina(
           key: `${c.ticket_id}:${order.status.id}`,
           comandaId: c.ticket_id,
           order,
-          estacionId: c.station_id,
-          number: numeros?.[c.ticket_id] ?? null,
+          stationId: c.station_id,
+          number: numbers?.[c.ticket_id] ?? null,
           enviadaEn: l.event.received_at ?? l.event.hub_estimated_time,
           items: items.sort((a, b) => a.position - b.position),
           list: items.every((i) => i.status === 'ready'),
@@ -66,17 +66,17 @@ export type Demora = 'on_time' | 'late' | 'very_late'
 /** Cómo va de tiempo: ámbar desde `amarillo` minutos y rojo desde `rojo` (config del local). */
 export function demora(
   enviadaEn: string,
-  ahora: number,
+  now: number,
   { amarillo, rojo }: { amarillo: number; rojo: number },
 ): Demora {
-  const minutos = (ahora - Date.parse(enviadaEn)) / 60_000
+  const minutos = (now - Date.parse(enviadaEn)) / 60_000
   if (minutos >= rojo) return 'very_late'
   if (minutos >= amarillo) return 'late'
   return 'on_time'
 }
 
 /** Tiempos del local, o los de fábrica si el hub es de antes de la 1.4. */
-export const tiemposDe = (restaurant: { cocinaAmarilloMin?: number; cocinaRojoMin?: number }) => ({
-  amarillo: restaurant.cocinaAmarilloMin ?? 10,
-  rojo: restaurant.cocinaRojoMin ?? 20,
+export const tiemposDe = (restaurant: { kitchenYellowMin?: number; kitchenRedMin?: number }) => ({
+  amarillo: restaurant.kitchenYellowMin ?? 10,
+  rojo: restaurant.kitchenRedMin ?? 20,
 })

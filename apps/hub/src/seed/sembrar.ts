@@ -1,5 +1,5 @@
 import { canonicalJson, fullConfig, type RoleKey } from '@pos/core'
-import { type BaseSqlite, enTransaccion, type ValorSql } from '@pos/db'
+import { inTransaction, type SqliteDatabase, type SqlValue } from '@pos/db'
 import {
   actualizarVersionado,
   type Cambio,
@@ -82,64 +82,64 @@ export interface Resumen {
   }[]
 }
 
-export function sembrar(
-  db: BaseSqlite,
+export function seed(
+  db: SqliteDatabase,
   access: ServicioAcceso,
   data: {
-    restauranteId: string
+    restaurantId: string
     roles: Record<RoleKey, string>
     menu: MenuCategory[]
     /** Sin el personal de ejemplo (para un restaurante que crea sus propios usuarios). */
     sinPersonal?: boolean
   },
-  ahora: string,
+  now: string,
 ): Resumen {
-  const { restauranteId, roles, menu } = data
+  const { restaurantId, roles, menu } = data
   const sqlTables: Resumen['sqlTables'] = {}
-  const contar = (tableName: string, change: Cambio) => {
+  const count = (tableName: string, change: Cambio) => {
     sqlTables[tableName] ??= { created: 0, updated: 0, equal: 0, respected: 0, archived: 0 }
     sqlTables[tableName][change] += 1
   }
-  const id = (key: string) => idEstable(restauranteId, key)
+  const id = (key: string) => idEstable(restaurantId, key)
   const currentOnes = new Map<string, Set<string>>()
-  const guardar = (
+  const save = (
     tableName: string,
     idRegistro: string,
-    fields: Record<string, ValorSql>,
+    fields: Record<string, SqlValue>,
     options: { soloCrear?: boolean } = {},
   ) => {
     currentOnes.set(tableName, (currentOnes.get(tableName) ?? new Set()).add(idRegistro))
-    contar(
+    count(
       tableName,
-      guardarVersionado(db, tableName, restauranteId, idRegistro, fields, SISTEMA, ahora, options),
+      guardarVersionado(db, tableName, restaurantId, idRegistro, fields, SISTEMA, now, options),
     )
   }
   const pins: Resumen['pins'] = []
 
-  enTransaccion(db, () => {
-    const restaurant = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)
+  inTransaction(db, () => {
+    const restaurant = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restaurantId)
     // Lo que el restaurante ya configuró se respeta; lo que falte toma el valor del piloto. Se
     // compara como objeto: el mismo contenido con las claves en otro orden no es un cambio.
     const current = String(restaurant?.config ?? '{}')
     // El piloto se ve con su marca, salvo que el restaurante haya elegido otra (tarea 1.3c).
     const config = canonicalJson(fullConfig({ brand: 'la-spritzzeria', ...JSON.parse(current) }))
-    guardar('restaurants', restauranteId, {
+    save('restaurants', restaurantId, {
       name: NOMBRE_RESTAURANTE,
       config: canonicalJson(JSON.parse(current)) === config ? current : config,
     })
     const location = db
       .prepare('SELECT id FROM locations WHERE restaurant_id = ? ORDER BY created_at, id LIMIT 1')
-      .get(restauranteId)
+      .get(restaurantId)
     if (!location) throw new Error('El restaurante no tiene sede: arranca el hub una vez primero')
     const sedeId = String(location.id)
-    guardar('locations', sedeId, { name: NOMBRE_SEDE, time_zone: 'America/Bogota' })
+    save('locations', sedeId, { name: NOMBRE_SEDE, time_zone: 'America/Bogota' })
 
     // Salón.
-    const zonaId = id('zona:salon')
-    guardar('zones', zonaId, { location_id: sedeId, name: 'Salón', position: 0, level: 1 })
+    const zoneId = id('zona:salon')
+    save('zones', zoneId, { location_id: sedeId, name: 'Salón', position: 0, level: 1 })
     for (let n = 1; n <= TABLES; n++) {
-      guardar('dining_tables', id(`mesa:${n}`), {
-        zone_id: zonaId,
+      save('dining_tables', id(`mesa:${n}`), {
+        zone_id: zoneId,
         name: String(n),
         shape: 'square',
         x: ((n - 1) % COLUMNS) * PASO,
@@ -153,13 +153,13 @@ export function sembrar(
 
     // Estaciones e impuesto.
     for (const [key, e] of Object.entries(ESTACIONES))
-      guardar('stations', id(`estacion:${key}`), { name: e.name, position: e.position })
+      save('stations', id(`estacion:${key}`), { name: e.name, position: e.position })
     const impuestoId = id('impuesto:inc')
-    guardar('taxes', impuestoId, { ...IMPUESTO }, { soloCrear: true })
+    save('taxes', impuestoId, { ...IMPUESTO }, { soloCrear: true })
     // Datáfonos Bold del piloto (tarea 1.6). Solo se crean: el administrador los renombra, agrega
     // o archiva en «Caja y pagos», y el seed lo respeta.
     for (const n of [1, 2])
-      guardar(
+      save(
         'card_terminals',
         id(`datafono:bold-${n}`),
         { name: `Bold ${n}`, provider: 'bold' },
@@ -170,13 +170,13 @@ export function sembrar(
     const groups = new Map<string, MenuGroup>()
     for (const p of menu.flatMap((c) => c.products)) for (const g of p.groups) groups.set(g.key, g)
     for (const g of groups.values()) {
-      guardar('modifier_groups', id(`grupo:${g.key}`), {
+      save('modifier_groups', id(`grupo:${g.key}`), {
         name: g.name,
         minimum: g.minimum,
         maximum: g.maximum,
       })
       for (const [position, o] of g.options.entries())
-        guardar('modifiers', id(`modificador:${g.key}:${o.name}`), {
+        save('modifiers', id(`modificador:${g.key}:${o.name}`), {
           group_id: id(`grupo:${g.key}`),
           name: o.name,
           extra_price: o.extraPrice,
@@ -185,7 +185,7 @@ export function sembrar(
     }
     for (const category of menu) {
       const categoriaId = id(`categoria:${category.key}`)
-      guardar('categories', categoriaId, {
+      save('categories', categoriaId, {
         name: category.name,
         position: category.position,
         station_id: id(`estacion:${category.station}`),
@@ -193,7 +193,7 @@ export function sembrar(
       })
       for (const p of category.products) {
         const productId = id(`producto:${p.key}`)
-        guardar('products', productId, {
+        save('products', productId, {
           category_id: categoriaId,
           name: p.name,
           description: p.description,
@@ -203,14 +203,14 @@ export function sembrar(
           favorite: 0,
         })
         for (const [position, v] of p.variants.entries())
-          guardar('variants', id(`variante:${p.key}:${v.name}`), {
+          save('variants', id(`variante:${p.key}:${v.name}`), {
             product_id: productId,
             name: v.name,
             price: v.price,
             position,
           })
         for (const [position, g] of p.groups.entries()) {
-          guardar('product_modifier_groups', id(`producto-grupo:${p.key}:${g.key}`), {
+          save('product_modifier_groups', id(`producto-grupo:${p.key}:${g.key}`), {
             product_id: productId,
             group_id: id(`grupo:${g.key}`),
             position,
@@ -227,12 +227,12 @@ export function sembrar(
         .prepare(
           `SELECT id FROM ${tableName} WHERE restaurant_id = ? AND active = 1 AND user_id IS NULL`,
         )
-        .all(restauranteId)
+        .all(restaurantId)
         .map((f) => String(f.id))
         .filter((x) => !quedan.has(x))
       for (const x of sobran) {
-        actualizarVersionado(db, tableName, restauranteId, x, { active: 0 }, SISTEMA, ahora)
-        contar(tableName, 'archived')
+        actualizarVersionado(db, tableName, restaurantId, x, { active: 0 }, SISTEMA, now)
+        count(tableName, 'archived')
       }
     }
 
@@ -240,18 +240,18 @@ export function sembrar(
     if (data.sinPersonal) return
     for (const person of PERSONAL) {
       const userId = id(`usuario:${person.key}`)
-      const existe = db
+      const exists = db
         .prepare('SELECT active FROM users WHERE restaurant_id = ? AND id = ?')
-        .get(restauranteId, userId)
+        .get(restaurantId, userId)
       const password = person.user ? generarContrasena() : undefined
-      if (existe) {
+      if (exists) {
         // Quien se archivó no vuelve, ni recibe una contraseña que no le serviría.
-        if (existe.active !== 1 || !person.user || access.tieneContrasena(userId) || !password) {
-          contar('users', 'equal')
+        if (exists.active !== 1 || !person.user || access.tieneContrasena(userId) || !password) {
+          count('users', 'equal')
           continue
         }
         access.fijarContrasena(userId, person.user, password)
-        contar('users', 'updated')
+        count('users', 'updated')
         pins.push({
           name: person.name,
           role: person.role,
@@ -267,7 +267,7 @@ export function sembrar(
         rolId: roles[person.role],
         ...(person.user && password ? { user: person.user, password } : {}),
       })
-      contar('users', 'created')
+      count('users', 'created')
       pins.push({
         name: person.name,
         role: person.role,

@@ -6,12 +6,12 @@ const ESPERA_MS = 8000
 export class ErrorApi extends Error {
   readonly code: string
   /** Cuánto esperar antes de otro intento (tras varios PIN errados, ADR-008). */
-  readonly esperaMs: number
+  readonly waitMs: number
 
-  constructor(code: string, message: string, esperaMs = 0) {
+  constructor(code: string, message: string, waitMs = 0) {
     super(message)
     this.code = code
-    this.esperaMs = esperaMs
+    this.waitMs = waitMs
   }
 }
 
@@ -20,12 +20,12 @@ export const SIN_HUB =
 
 export async function llamar<T>(
   metodo: 'GET' | 'POST',
-  ruta: string,
+  route: string,
   { cuerpo, token }: { cuerpo?: object; token?: string } = {},
 ): Promise<T> {
   let r: Response
   try {
-    r = await fetch(ruta, {
+    r = await fetch(route, {
       method: metodo,
       headers: {
         ...(cuerpo ? { 'content-type': 'application/json' } : {}),

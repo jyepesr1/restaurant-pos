@@ -7,8 +7,8 @@ import { Plano } from './Plano'
 import { PreBill } from './Precuenta'
 
 /** Las pantallas de los bocetos por ruta (`/bocetos/...`). Se cargan aparte: no pesan en la app. */
-export default function Bocetos({ ruta }: { ruta: string }) {
-  switch (ruta) {
+export default function Bocetos({ route }: { route: string }) {
+  switch (route) {
     case '/mockups/floor-plan':
       return <Plano />
     case '/mockups/order':

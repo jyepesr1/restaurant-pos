@@ -4,7 +4,7 @@ import { crearServidor } from '../servidor'
 import { asegurarAdministrador, asegurarRoles } from './inicial'
 import { montarAcceso } from './montaje'
 import { ErrorPersonal, guardarPersona, guardarRol, leerPersonal } from './personal'
-import { insertarVersionado, SISTEMA } from './registros'
+import { insertVersioned, SISTEMA } from './registros'
 import { huellaPin } from './secretos'
 import { ServicioAcceso } from './servicio'
 
@@ -14,28 +14,28 @@ import { ServicioAcceso } from './servicio'
 
 const CLAVE = Buffer.alloc(32, 7)
 
-function dosRestaurantes() {
+function twoRestaurants() {
   const a = montarAcceso()
   const { db } = a
-  const ahora = a.clock()
+  const now = a.clock()
   const idB = newId()
   db.prepare(
     `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
      VALUES (?, ?, ?, ?, 1, 'Otro restaurante', '{}')`,
-  ).run(idB, idB, ahora, ahora)
+  ).run(idB, idB, now, now)
   db.prepare("INSERT INTO counters (restaurant_id, name, value) VALUES (?, 'catalog', 1)").run(idB)
-  insertarVersionado(
+  insertVersioned(
     db,
     'locations',
     idB,
     { name: 'Principal', address: null, time_zone: 'America/Bogota' },
     SISTEMA,
-    ahora,
+    now,
   )
-  const rolesB = asegurarRoles(db, idB, ahora)
+  const rolesB = asegurarRoles(db, idB, now)
   const accesoB = new ServicioAcceso({
     db,
-    restauranteId: idB,
+    restaurantId: idB,
     key: CLAVE,
     clock: a.clock,
     costoContrasena: 1,
@@ -48,11 +48,11 @@ function dosRestaurantes() {
   })
   const appA = crearServidor({
     access: a.access,
-    catalog: { db, restauranteId: a.restauranteId, access: a.access, clock: a.clock },
+    catalog: { db, restaurantId: a.restaurantId, access: a.access, clock: a.clock },
   })
   const appB = crearServidor({
     access: accesoB,
-    catalog: { db, restauranteId: idB, access: accesoB, clock: a.clock },
+    catalog: { db, restaurantId: idB, access: accesoB, clock: a.clock },
   })
   const llamar = (app: typeof appA) => (url: string, cuerpo: unknown, token?: string) =>
     app.inject({
@@ -64,7 +64,7 @@ function dosRestaurantes() {
   return {
     a,
     db,
-    idA: a.restauranteId,
+    idA: a.restaurantId,
     idB,
     rolesB,
     accesoA: a.access,
@@ -76,7 +76,7 @@ function dosRestaurantes() {
 }
 
 const conCajaEnAmbos = () => {
-  const m = dosRestaurantes()
+  const m = twoRestaurants()
   const cajaA = m.accesoA.crearUsuario({
     name: 'Caja A',
     rolId: m.a.roles.cashier,
@@ -96,9 +96,9 @@ describe('el mismo usuario en dos restaurantes', () => {
   it('cada contraseña sirve solo en su restaurante, y entra la persona de ese restaurante', () => {
     const m = conCajaEnAmbos()
     const enA = m.accesoA.entrar({ user: 'caja', password: 'clave-de-la-caja-a' }, null, '10.0.0.1')
-    const enB = m.accesoB.entrar({ user: 'caja', password: 'clave-de-la-caja-b' }, null, '10.0.0.1')
+    const inB = m.accesoB.entrar({ user: 'caja', password: 'clave-de-la-caja-b' }, null, '10.0.0.1')
     expect(enA).toMatchObject({ ok: true, user: { id: m.cajaA.userId, name: 'Caja A' } })
-    expect(enB).toMatchObject({ ok: true, user: { id: m.cajaB.userId, name: 'Caja B' } })
+    expect(inB).toMatchObject({ ok: true, user: { id: m.cajaB.userId, name: 'Caja B' } })
     // Cruzadas, no entran.
     expect(
       m.accesoA.entrar({ user: 'caja', password: 'clave-de-la-caja-b' }, null, '10.0.0.2'),
@@ -201,15 +201,15 @@ describe('el mismo usuario en dos restaurantes', () => {
 describe('el mismo PIN en dos restaurantes', () => {
   /** Fuerza que dos personas de restaurantes distintos tengan los mismos 4 dígitos. */
   function mismoPin() {
-    const m = dosRestaurantes()
+    const m = twoRestaurants()
     const meseroA = m.accesoA.crearUsuario({ name: 'Mesera A', rolId: m.a.roles.waiter })
     const meseroB = m.accesoB.crearUsuario({ name: 'Mesera B', rolId: m.rolesB.waiter })
-    const fijar = (restaurant: string, userId: string) =>
+    const setFor = (restaurant: string, userId: string) =>
       m.db
         .prepare('UPDATE user_credentials SET pin_hash = ? WHERE user_id = ?')
         .run(huellaPin(CLAVE, restaurant, '4821'), userId)
-    fijar(m.idA, meseroA.userId)
-    fijar(m.idB, meseroB.userId)
+    setFor(m.idA, meseroA.userId)
+    setFor(m.idB, meseroB.userId)
     return { ...m, meseroA, meseroB }
   }
 
@@ -269,7 +269,7 @@ describe('el mismo PIN en dos restaurantes', () => {
       secret: entry.secret,
       pin: m.adminB.pin,
       action: 'void_sent_item',
-      agregadoId: '0'.repeat(26),
+      aggregateId: '0'.repeat(26),
       eventId: '1'.repeat(26),
       fingerprint: 'a'.repeat(64),
     })
@@ -318,11 +318,11 @@ describe('sesiones, equipos y permisos no cruzan', () => {
       null,
       '10.0.2.3',
     )
-    const enB = m.accesoB.entrar({ user: 'admin', password: 'clave-del-admin-b' }, null, '10.0.2.4')
-    if (!enA.ok || !enA.device || !enB.ok) throw new Error('no entraron')
+    const inB = m.accesoB.entrar({ user: 'admin', password: 'clave-del-admin-b' }, null, '10.0.2.4')
+    if (!enA.ok || !enA.device || !inB.ok) throw new Error('no entraron')
     const r = await m.postA(
       '/api/staff/read',
-      { session_id: enB.sesionId, secret: enB.secret },
+      { session_id: inB.sesionId, secret: inB.secret },
       enA.device.token,
     )
     expect(r.statusCode).toBe(401)
@@ -348,7 +348,7 @@ describe('sesiones, equipos y permisos no cruzan', () => {
   })
 
   it('un rol de A tiene nombre repetido en B sin chocar: cada restaurante tiene su «Mesero» y su «Cajero»', () => {
-    const m = dosRestaurantes()
+    const m = twoRestaurants()
     const names = (id: string) =>
       m.db
         .prepare('SELECT name FROM roles WHERE restaurant_id = ? AND system = 1 ORDER BY name')
@@ -359,7 +359,7 @@ describe('sesiones, equipos y permisos no cruzan', () => {
   })
 
   it('dos restaurantes tienen su propio administrador y cada rol Administrador conserva todos los permisos', () => {
-    const m = dosRestaurantes()
+    const m = twoRestaurants()
     const esperados = PERMISSIONS.filter((p) => p !== 'view_own_reports').sort()
     expect(m.accesoA.permisosDe(m.a.people.admin.userId)).toEqual(esperados)
     expect(m.accesoB.permisosDe(m.adminB.userId)).toEqual(esperados)
@@ -388,15 +388,15 @@ describe('sesiones, equipos y permisos no cruzan', () => {
     const r = m.accesoA.revocarDispositivo(conexionA, {
       sesionId: a.sesionId,
       secret: a.secret,
-      dispositivoId: cajaB.device.dispositivoId,
+      deviceId: cajaB.device.deviceId,
     })
     expect(r).toMatchObject({ ok: false, code: 'invalid_data' })
-    expect(m.accesoB.authenticate(cajaB.device.token)).toMatchObject({ revocadoEn: null })
+    expect(m.accesoB.authenticate(cajaB.device.token)).toMatchObject({ revokedAt: null })
   })
 })
 
 describe('la API de personal de un restaurante no toca al otro', () => {
-  const staff = (m: ReturnType<typeof dosRestaurantes>, id: string, access: ServicioAcceso) =>
+  const staff = (m: ReturnType<typeof twoRestaurants>, id: string, access: ServicioAcceso) =>
     leerPersonal(m.db, id, access)
 
   it('leer personal lista solo a la gente y los roles de su restaurante', () => {
@@ -487,7 +487,7 @@ describe('la API de personal de un restaurante no toca al otro', () => {
   })
 
   it('no se puede quitar al último administrador de A aunque B tenga el suyo', () => {
-    const m = dosRestaurantes()
+    const m = twoRestaurants()
     expect(() =>
       guardarPersona(
         m.db,
@@ -516,7 +516,7 @@ describe('la API de personal de un restaurante no toca al otro', () => {
   })
 
   it('quitarle el permiso de administrar a B no depende de A: el de A sigue en pie y viceversa', () => {
-    const m = dosRestaurantes()
+    const m = twoRestaurants()
     expect(() =>
       guardarRol(
         m.db,
@@ -556,30 +556,30 @@ describe('la API de personal de un restaurante no toca al otro', () => {
 describe('arranque con un segundo restaurante en la base', () => {
   // Antes fallaba: `asegurarAdministrador` y `usuarioLibre` no filtraban por restaurante.
   it('un restaurante nuevo recibe su propio administrador aunque otro ya tenga el suyo', () => {
-    const m = dosRestaurantes()
-    const ahora = m.a.clock()
+    const m = twoRestaurants()
+    const now = m.a.clock()
     const idC = newId()
     m.db
       .prepare(
         `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
          VALUES (?, ?, ?, ?, 1, 'Tercero', '{}')`,
       )
-      .run(idC, idC, ahora, ahora)
+      .run(idC, idC, now, now)
     m.db
       .prepare("INSERT INTO counters (restaurant_id, name, value) VALUES (?, 'catalog', 1)")
       .run(idC)
-    insertarVersionado(
+    insertVersioned(
       m.db,
       'locations',
       idC,
       { name: 'Principal', address: null, time_zone: 'America/Bogota' },
       SISTEMA,
-      ahora,
+      now,
     )
-    const rolesC = asegurarRoles(m.db, idC, ahora)
+    const rolesC = asegurarRoles(m.db, idC, now)
     const accesoC = new ServicioAcceso({
       db: m.db,
-      restauranteId: idC,
+      restaurantId: idC,
       key: CLAVE,
       clock: m.a.clock,
       costoContrasena: 1,

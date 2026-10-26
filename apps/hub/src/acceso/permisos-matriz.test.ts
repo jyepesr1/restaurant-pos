@@ -96,7 +96,7 @@ const SOLO_CAJA_DOC = [
   'OrderClosed',
 ]
 
-function montar() {
+function setup() {
   const m = montarAcceso()
   const kitchen = m.access.crearUsuario({ name: 'Coco', rolId: m.roles.kitchen })
   // Ver reportes pide contraseña (ADR-013).
@@ -147,7 +147,7 @@ describe('la matriz de permisos del documento, por rol', () => {
   })
 
   it('cada rol sembrado en la base tiene exactamente los permisos de su columna', () => {
-    const m = montar()
+    const m = setup()
     for (const role of ROLES) {
       const esperados = PERMISSIONS.filter((p) => DOC[p].includes(role)).sort()
       expect(m.access.permisosDe(m.usuarios[role]), role).toEqual(esperados)
@@ -155,7 +155,7 @@ describe('la matriz de permisos del documento, por rol', () => {
   })
 
   it('la sesión entrega al dispositivo los permisos de su rol', () => {
-    const m = montar()
+    const m = setup()
     for (const role of ROLES) {
       const { session } = m.sesionDe(role, 'register')
       expect([...session.permissions].sort(), role).toEqual(
@@ -166,9 +166,9 @@ describe('la matriz de permisos del documento, por rol', () => {
 
   for (const role of ROLES) {
     it(`${role}: cada evento se acepta o se niega según la matriz (desde una caja)`, () => {
-      const m = montar()
+      const m = setup()
       const { connection, session } = m.sesionDe(role, 'register')
-      const fallos: string[] = []
+      const failures: string[] = []
       for (const type of ORDER_EVENT_TYPES) {
         const permission = EVENTO_DOC[type] as Permission | null
         const v = m.access.verify(connection, m.event(connection, session, type, {}), null)
@@ -176,17 +176,17 @@ describe('la matriz de permisos del documento, por rol', () => {
           permission === null
             ? { ok: false, reason: 'hub_only' }
             : DOC[permission].includes(role)
-              ? { ok: true, authorizedById: null, autorizacionId: null }
+              ? { ok: true, authorizedById: null, authorizationId: null }
               : { ok: false, reason: 'no_permission' }
         if (JSON.stringify(v) !== JSON.stringify(expected))
-          fallos.push(`${type}: ${JSON.stringify(v)} (esperaba ${JSON.stringify(expected)})`)
+          failures.push(`${type}: ${JSON.stringify(v)} (esperaba ${JSON.stringify(expected)})`)
       }
-      expect(fallos).toEqual([])
+      expect(failures).toEqual([])
     })
   }
 
   it('la cortesía pide su propio permiso, no el de descontar', () => {
-    const m = montar()
+    const m = setup()
     for (const role of ROLES) {
       const { connection, session } = m.sesionDe(role, 'register')
       const comp = m.event(connection, session, 'DiscountApplied', { rule: 'comp' })
@@ -201,7 +201,7 @@ describe('la matriz de permisos del documento, por rol', () => {
   })
 
   it('si a un rol se le quita solo «cortesia», sigue pudiendo descontar (y al revés)', () => {
-    const m = montar()
+    const m = setup()
     const { connection, session } = m.sesionDe('manager', 'register')
     const comp = m.event(connection, session, 'DiscountApplied', { rule: 'comp' })
     const percent = m.event(connection, session, 'DiscountApplied', { rule: 'percent' })
@@ -217,7 +217,7 @@ describe('la matriz de permisos del documento, por rol', () => {
   })
 
   it('pagos, reembolsos y cierres solo salen de una caja: ni el administrador desde un KDS', () => {
-    const m = montar()
+    const m = setup()
     for (const tipoDispositivo of ['waiter', 'kds'] as const)
       for (const role of ROLES) {
         // Entrar con contraseña quien puede cobrar vuelve de caja un celular (ADR-013): se prueba
@@ -233,10 +233,10 @@ describe('la matriz de permisos del documento, por rol', () => {
   })
 
   it('quien entra con contraseña en un celular lo vuelve de caja y desde ahí puede cobrar', () => {
-    const m = montar()
+    const m = setup()
     const { connection, session } = m.sesionDe('admin', 'waiter')
     expect(
-      m.db.prepare('SELECT type FROM devices WHERE id = ?').get(connection.dispositivoId)?.type,
+      m.db.prepare('SELECT type FROM devices WHERE id = ?').get(connection.deviceId)?.type,
     ).toBe('register')
     // La conexión abierta antes de entrar todavía dice «mesero»: el hub mira el equipo guardado.
     expect(connection.type).toBe('waiter')
@@ -248,7 +248,7 @@ describe('la matriz de permisos del documento, por rol', () => {
   })
 
   it('el resto de eventos no distingue el tipo de dispositivo', () => {
-    const m = montar()
+    const m = setup()
     const types = ORDER_EVENT_TYPES.filter(
       (t) => !SOLO_CAJA_DOC.includes(t) && EVENTO_DOC[t] !== null,
     )
@@ -262,7 +262,7 @@ describe('la matriz de permisos del documento, por rol', () => {
   })
 
   it('PedidoRescateCreado lo emite solo el hub: ni el administrador lo crea', () => {
-    const m = montar()
+    const m = setup()
     const { connection, session } = m.sesionDe('admin', 'register')
     expect(
       m.access.verify(connection, m.event(connection, session, 'RescueOrderCreated', {}), null),
@@ -272,7 +272,7 @@ describe('la matriz de permisos del documento, por rol', () => {
 
 describe('comprobante de supervisor para cada evento sin permiso', () => {
   it('quien no tiene el permiso lo consigue con un supervisor que sí lo tiene, para todo evento posible', () => {
-    const m = montar()
+    const m = setup()
     // El mesero escribe en una caja: así se prueban también pagos y cierres.
     const { connection, session } = m.sesionDe('waiter', 'register')
     const sinPermiso = ORDER_EVENT_TYPES.filter((t) => {
@@ -297,13 +297,13 @@ describe('comprobante de supervisor para cada evento sin permiso', () => {
       expect(m.access.verify(connection, event, null), type).toEqual({
         ok: true,
         authorizedById: m.usuarios.admin,
-        autorizacionId: comprobante.autorizacionId,
+        authorizationId: comprobante.authorizationId,
       })
     }
   })
 
   it('un supervisor sin ese permiso no puede emitir el comprobante, rol por rol y permiso por permiso', () => {
-    const m = montar()
+    const m = setup()
     // El administrador (con todos los permisos) está en el celular; los demás intentan autorizar.
     const { connection, session } = m.sesionDe('waiter', 'waiter')
     // Un intento tras otro sería esperar: cada PIN válido (de alguien sin el permiso) cuenta como fallo.
@@ -315,7 +315,7 @@ describe('comprobante de supervisor para cada evento sin permiso', () => {
           ...session,
           pin: m.pin[role],
           action: permission,
-          agregadoId: m.restauranteId,
+          aggregateId: m.restaurantId,
           eventId: `${permission}-${role}`.padEnd(26, 'X').slice(0, 26),
           fingerprint: '0'.repeat(64),
         })
@@ -330,7 +330,7 @@ describe('comprobante de supervisor para cada evento sin permiso', () => {
   })
 
   it('el comprobante de «descontar» no sirve para una cortesía, ni al revés', () => {
-    const m = montar()
+    const m = setup()
     const { connection, session } = m.sesionDe('waiter', 'register')
     const tryAction = (emitidoPara: Permission, rule: string) => {
       const ev = m.event(connection, session, 'DiscountApplied', { rule })
@@ -351,7 +351,7 @@ describe('comprobante de supervisor para cada evento sin permiso', () => {
   })
 
   it('el comprobante no salta la regla «solo desde la caja»', () => {
-    const m = montar()
+    const m = setup()
     const { connection, session } = m.sesionDe('waiter', 'waiter')
     const ev = m.event(connection, session, 'PaymentRecorded', {})
     const r = autorizarEvento(m, connection, session, m.pin.admin, ev, 'record_payment')
@@ -363,7 +363,7 @@ describe('comprobante de supervisor para cada evento sin permiso', () => {
   })
 
   it('una acción que no es permiso (ni inventada) no se autoriza', () => {
-    const m = montar()
+    const m = setup()
     const { connection, session } = m.sesionDe('waiter', 'waiter')
     for (const action of ['delete_all', '', 'constructor', '__proto__', 'TAKE_ORDER'])
       expect(
@@ -371,7 +371,7 @@ describe('comprobante de supervisor para cada evento sin permiso', () => {
           ...session,
           pin: m.pin.admin,
           action,
-          agregadoId: m.restauranteId,
+          aggregateId: m.restaurantId,
           eventId: `E-${action}`.padEnd(26, 'X').slice(0, 26),
           fingerprint: '0'.repeat(64),
         }),

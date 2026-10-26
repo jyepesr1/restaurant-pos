@@ -28,15 +28,15 @@ async function abrirCon(catalog: unknown, extra: { device?: Equipo } = {}) {
   if (catalog !== undefined) await db.saveSetting('catalog', catalog)
   if (extra.device) await db.saveSetting('device', extra.device)
   // Un canal que nunca abre: no hay conexión ni mensajes.
-  const sala = new Sala({ db, open: () => ({ send: () => {}, close: () => {} }) })
-  salas.push(sala)
-  await sala.cargar()
-  return { sala, db }
+  const floor = new Sala({ db, open: () => ({ send: () => {}, close: () => {} }) })
+  salas.push(floor)
+  await floor.load()
+  return { floor, db }
 }
 
 const base = {
   version: 3,
-  restaurant: { name: 'La Spritzzería', sesionInactividadMin: 30 },
+  restaurant: { name: 'La Spritzzería', sessionIdleMin: 30 },
   stations: [{ id: 'E', name: 'Cocina' }],
   categories: [],
 }
@@ -48,7 +48,7 @@ describe('Sala.cargar() con una carta guardada por una versión anterior', () =>
       {
         ...base,
         zones: [{ id: 'Z', name: 'Salón' }],
-        tables: [{ id: 'M', zonaId: 'Z', name: '1', x: 0, y: 0, shape: 'square', capacity: 4 }],
+        tables: [{ id: 'M', zoneId: 'Z', name: '1', x: 0, y: 0, shape: 'square', capacity: 4 }],
       },
     ],
     ['sin zonas ni mesas', { ...base, zones: [], tables: [] }],
@@ -57,7 +57,7 @@ describe('Sala.cargar() con una carta guardada por una versión anterior', () =>
       'con mesas pero sin zonas (dato a medias)',
       {
         ...base,
-        tables: [{ id: 'M', zonaId: 'Z', name: '1', x: 0, y: 0, shape: 'square', capacity: 4 }],
+        tables: [{ id: 'M', zoneId: 'Z', name: '1', x: 0, y: 0, shape: 'square', capacity: 4 }],
       },
     ],
     [
@@ -65,7 +65,7 @@ describe('Sala.cargar() con una carta guardada por una versión anterior', () =>
       {
         ...base,
         zones: [{ id: 'Z', name: 'Salón' }],
-        tables: [{ id: 'M', zonaId: 'Z', name: '1', x: 0, y: 0, shape: 'hexagonal', capacity: 4 }],
+        tables: [{ id: 'M', zoneId: 'Z', name: '1', x: 0, y: 0, shape: 'hexagonal', capacity: 4 }],
       },
     ],
     [
@@ -78,9 +78,9 @@ describe('Sala.cargar() con una carta guardada por una versión anterior', () =>
       },
     ],
   ])('%s: carga sin fallar y queda con todo lo que la pantalla lee', async (_case, vieja) => {
-    const { sala } = await abrirCon(vieja)
-    const c = sala.instantanea().catalog
-    expect(sala.instantanea().cargado).toBe(true)
+    const { floor } = await abrirCon(vieja)
+    const c = floor.instantanea().catalog
+    expect(floor.instantanea().cargado).toBe(true)
     expect(c).not.toBeNull()
     // Lo que lee Mesas.tsx sin protegerse.
     expect(Array.isArray(c?.zones)).toBe(true)
@@ -99,25 +99,25 @@ describe('Sala.cargar() con una carta guardada por una versión anterior', () =>
   })
 
   it('conserva las mesas de siempre con medidas por defecto de 80 × 80 y sin giro', async () => {
-    const { sala } = await abrirCon({
+    const { floor } = await abrirCon({
       ...base,
       zones: [{ id: 'Z', name: 'Salón' }],
       tables: [
-        { id: 'M1', zonaId: 'Z', name: '1', x: 120, y: 240, shape: 'square', capacity: 4 },
-        { id: 'M2', zonaId: 'Z', name: '2', x: 0, y: 0, shape: 'square', capacity: 2 },
+        { id: 'M1', zoneId: 'Z', name: '1', x: 120, y: 240, shape: 'square', capacity: 4 },
+        { id: 'M2', zoneId: 'Z', name: '2', x: 0, y: 0, shape: 'square', capacity: 2 },
       ],
     })
-    expect(sala.instantanea().catalog?.tables).toEqual([
+    expect(floor.instantanea().catalog?.tables).toEqual([
       expect.objectContaining({ id: 'M1', x: 120, y: 240, width: 80, height: 80, rotation: 0 }),
       expect.objectContaining({ id: 'M2', width: 80, height: 80, rotation: 0 }),
     ])
-    expect(sala.instantanea().catalog?.zones[0]).toMatchObject({ id: 'Z', level: 1 })
+    expect(floor.instantanea().catalog?.zones[0]).toMatchObject({ id: 'Z', level: 1 })
   })
 
   it('sin carta guardada, la carta es nula (no inventa una)', async () => {
-    const { sala } = await abrirCon(undefined)
-    expect(sala.instantanea().cargado).toBe(true)
-    expect(sala.instantanea().catalog).toBeNull()
+    const { floor } = await abrirCon(undefined)
+    expect(floor.instantanea().cargado).toBe(true)
+    expect(floor.instantanea().catalog).toBeNull()
   })
 
   it('abrir dos veces la misma base da la misma carta completa (no se rompe al repetir)', async () => {
@@ -130,17 +130,17 @@ describe('Sala.cargar() con una carta guardada por una versión anterior', () =>
     })
     const open = () => new Sala({ db, open: () => ({ send: () => {}, close: () => {} }) })
     const a = open()
-    await a.cargar()
+    await a.load()
     const b = open()
-    await b.cargar()
+    await b.load()
     expect(b.instantanea().catalog).toEqual(a.instantanea().catalog)
     // Llamar cargar() de nuevo en la misma sala devuelve la misma carga.
-    await a.cargar()
+    await a.load()
   })
 })
 
 describe('Sala.actualizarCatalogo() con la respuesta de un hub anterior', () => {
-  const device: Equipo = { dispositivoId: newId(), token: 'token', name: 'Caja', type: 'register' }
+  const device: Equipo = { deviceId: newId(), token: 'token', name: 'Caja', type: 'register' }
   const responder = (cuerpo: unknown, status = 200) =>
     vi.stubGlobal(
       'fetch',
@@ -148,15 +148,15 @@ describe('Sala.actualizarCatalogo() con la respuesta de un hub anterior', () => 
     )
 
   it('completa lo que falta, lo guarda ya completo y lo muestra', async () => {
-    const { sala, db } = await abrirCon(undefined, { device })
+    const { floor, db } = await abrirCon(undefined, { device })
     responder({
       ...base,
       version: 5,
       zones: [{ id: 'Z', name: 'Salón' }],
-      tables: [{ id: 'M', zonaId: 'Z', name: '1', x: 0, y: 0, shape: 'square', capacity: 4 }],
+      tables: [{ id: 'M', zoneId: 'Z', name: '1', x: 0, y: 0, shape: 'square', capacity: 4 }],
     })
-    await sala.actualizarCatalogo()
-    const mostrada = sala.instantanea().catalog
+    await floor.actualizarCatalogo()
+    const mostrada = floor.instantanea().catalog
     expect(mostrada?.version).toBe(5)
     expect(mostrada?.elements).toEqual([])
     expect(mostrada?.tables[0]).toMatchObject({ width: 80, height: 80, rotation: 0 })
@@ -165,22 +165,22 @@ describe('Sala.actualizarCatalogo() con la respuesta de un hub anterior', () => 
   })
 
   it('una respuesta sin mesas (no es la carta) no reemplaza la buena', async () => {
-    const { sala } = await abrirCon(
+    const { floor } = await abrirCon(
       { ...base, version: 7, zones: [], tables: [], elements: [], staff: [] },
       { device },
     )
     responder({ error: 'algo' })
-    await expect(sala.actualizarCatalogo()).rejects.toMatchObject({ code: 'invalid_response' })
-    expect(sala.instantanea().catalog?.version).toBe(7)
+    await expect(floor.actualizarCatalogo()).rejects.toMatchObject({ code: 'invalid_response' })
+    expect(floor.instantanea().catalog?.version).toBe(7)
   })
 
   it('una respuesta de versión anterior a la guardada no la pisa', async () => {
-    const { sala } = await abrirCon(
+    const { floor } = await abrirCon(
       { ...base, version: 7, zones: [], tables: [], elements: [], staff: [] },
       { device },
     )
     responder({ ...base, version: 4, zones: [], tables: [] })
-    await sala.actualizarCatalogo()
-    expect(sala.instantanea().catalog?.version).toBe(7)
+    await floor.actualizarCatalogo()
+    expect(floor.instantanea().catalog?.version).toBe(7)
   })
 })

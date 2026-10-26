@@ -192,18 +192,18 @@ describe('producto', () => {
   it('quitar un grupo archiva su enlace y volver a ponerlo lo reactiva, sin duplicarlo', () => {
     const c = edicion()
     const tagliata = idDe(c, 'Tagliata')
-    const enlace = c.links[0]
-    if (!enlace) throw new Error('falta')
+    const link = c.links[0]
+    if (!link) throw new Error('falta')
     const b = borradorDeProducto(c, tagliata)
     b.groups = []
     expect(cambiosDeProducto(c, b)).toEqual([
-      { entity: 'product_modifier_groups', id: enlace.id, data: { active: false } },
+      { entity: 'product_modifier_groups', id: link.id, data: { active: false } },
     ])
-    enlace.active = false
+    link.active = false
     const another = borradorDeProducto(c, tagliata)
-    another.groups = [enlace.group_id]
+    another.groups = [link.group_id]
     expect(cambiosDeProducto(c, another)).toEqual([
-      { entity: 'product_modifier_groups', id: enlace.id, data: { active: true } },
+      { entity: 'product_modifier_groups', id: link.id, data: { active: true } },
     ])
   })
 

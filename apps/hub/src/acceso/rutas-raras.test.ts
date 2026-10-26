@@ -28,9 +28,9 @@ function montarApi() {
       },
     })
   /** Lo mismo con el JSON ya escrito a mano (para cuerpos que JSON.stringify no produciría). */
-  const crudo = (url: string, cuerpo: string, token?: string) =>
+  const raw = (url: string, cuerpo: string, token?: string) =>
     send(url, { payload: cuerpo, type: 'application/json', token })
-  return { ...m, app, send, crudo }
+  return { ...m, app, send, raw }
 }
 
 /** Un celular de mesero como en el restaurante: entra con su PIN y el hub lo registra (ADR-013). */
@@ -54,7 +54,7 @@ describe('API de acceso con cuerpos raros', () => {
   it('campos de más, de menos o de otro tipo: 400 con el mismo cuerpo de error, sin eco de lo enviado', async () => {
     const api = await conDispositivo()
     const secret = 'SECRETO-QUE-NO-DEBE-VOLVER'
-    const malos: [string, unknown][] = [
+    const badOnes: [string, unknown][] = [
       ['/api/pairings', { pin: '1234', name: 'X', type: 'register', extra: secret }],
       ['/api/pairings', { pin: 1234, name: 'X', type: 'register' }],
       ['/api/pairings', { pin: '1234', name: ['X'], type: 'register' }],
@@ -105,7 +105,7 @@ describe('API de acceso con cuerpos raros', () => {
         },
       ],
     ]
-    for (const [url, cuerpo] of malos) {
+    for (const [url, cuerpo] of badOnes) {
       const r = await api.send(url, { payload: cuerpo as object, token: api.token })
       expect(r.statusCode, `${url} ${JSON.stringify(cuerpo)}`).toBe(400)
       expect(r.json()).toEqual({
@@ -121,7 +121,7 @@ describe('API de acceso con cuerpos raros', () => {
     const api = await conDispositivo()
     for (const cuerpo of ['null', '123', '"texto"', '[]', '[{"pin":"1234"}]', 'true']) {
       for (const url of [...RUTAS_CON_TOKEN, ...RUTAS_SIN_TOKEN]) {
-        const r = await api.crudo(url, cuerpo, api.token)
+        const r = await api.raw(url, cuerpo, api.token)
         expect(r.statusCode, `${url} ${cuerpo}`).toBe(400)
       }
     }
@@ -144,7 +144,7 @@ describe('API de acceso con cuerpos raros', () => {
       '',
     ]
     for (const cuerpo of rotos) {
-      const r = await api.crudo('/api/sessions', cuerpo, api.token)
+      const r = await api.raw('/api/sessions', cuerpo, api.token)
       expect(r.statusCode, JSON.stringify(cuerpo)).toBeGreaterThanOrEqual(400)
       expect(r.statusCode, JSON.stringify(cuerpo)).toBeLessThan(500)
     }
@@ -163,19 +163,19 @@ describe('API de acceso con cuerpos raros', () => {
 
   it('cuerpos enormes se cortan con 413 sin leerlos enteros, y el hub sigue sirviendo', async () => {
     const api = await conDispositivo()
-    const enorme = JSON.stringify({ pin: '1234', relleno: 'x'.repeat(5 * 1024 * 1024) })
+    const enorme = JSON.stringify({ pin: '1234', padding: 'x'.repeat(5 * 1024 * 1024) })
     for (const url of [...RUTAS_CON_TOKEN, ...RUTAS_SIN_TOKEN]) {
-      const r = await api.crudo(url, enorme, api.token)
+      const r = await api.raw(url, enorme, api.token)
       expect(r.statusCode, url).toBe(413)
     }
     // Y uno dentro del límite de Fastify pero con un campo gigante: lo para el esquema.
-    const length = await api.crudo(
+    const length = await api.raw(
       '/api/sessions',
       JSON.stringify({ pin: '9'.repeat(500_000) }),
       api.token,
     )
     expect(length.statusCode).toBe(400)
-    const name = await api.crudo(
+    const name = await api.raw(
       '/api/pairings',
       JSON.stringify({ pin: api.people.admin.pin, name: 'N'.repeat(500_000), type: 'register' }),
     )
@@ -192,16 +192,16 @@ describe('API de acceso con cuerpos raros', () => {
   it('JSON profundamente anidado o con claves peligrosas no tumba nada ni contamina objetos', async () => {
     const api = await conDispositivo()
     const profundo = `${'['.repeat(50_000)}${']'.repeat(50_000)}`
-    const anidado = await api.crudo('/api/sessions', profundo, api.token)
-    expect(anidado.statusCode).toBeGreaterThanOrEqual(400)
-    expect(anidado.statusCode).toBeLessThan(500)
+    const nested = await api.raw('/api/sessions', profundo, api.token)
+    expect(nested.statusCode).toBeGreaterThanOrEqual(400)
+    expect(nested.statusCode).toBeLessThan(500)
 
     for (const cuerpo of [
       '{"__proto__":{"admin":true},"pin":"1234"}',
       '{"constructor":{"prototype":{"x":1}},"pin":"1234"}',
       '{"pin":"1234","__proto__":null}',
     ]) {
-      const r = await api.crudo('/api/sessions', cuerpo, api.token)
+      const r = await api.raw('/api/sessions', cuerpo, api.token)
       expect(r.statusCode, cuerpo).toBeGreaterThanOrEqual(400)
       expect(r.statusCode, cuerpo).toBeLessThan(500)
     }
@@ -336,12 +336,12 @@ describe('API de acceso con cuerpos raros', () => {
       api.db.prepare('SELECT count(*) AS n FROM devices WHERE revoked_at IS NOT NULL').get()?.n,
     ).toBe(0)
     // Sin cuerpo tampoco se revoca nada.
-    const dispositivoId = (
+    const deviceId = (
       api.db.prepare("SELECT id FROM devices WHERE name = 'Equipo de Ana'").get() as {
         id: string
       }
     ).id
-    const sinCuerpo = await api.send(`/api/devices/${dispositivoId}/revoke`, { token })
+    const sinCuerpo = await api.send(`/api/devices/${deviceId}/revoke`, { token })
     expect(sinCuerpo.statusCode).toBe(400)
   })
 
@@ -391,7 +391,7 @@ describe('API de acceso con cuerpos raros', () => {
     const api = await conDispositivo()
     const malas = []
     for (let i = 0; i < 200; i++)
-      malas.push(api.crudo(i % 2 ? '/api/sessions' : '/api/pair', i % 3 ? '{' : '[]', api.token))
+      malas.push(api.raw(i % 2 ? '/api/sessions' : '/api/pair', i % 3 ? '{' : '[]', api.token))
     const respuestas = await Promise.all(malas)
 
     expect(respuestas.every((r) => r.statusCode >= 400 && r.statusCode < 500)).toBe(true)

@@ -1,13 +1,13 @@
 import 'fake-indexeddb/auto'
 import { newId, otherMethodsReconciliation, signEvent } from '@pos/core'
 import {
-  AlmacenMemoria,
+  type AccessControl,
   type Channel,
-  type ControlAcceso,
+  type DeviceMessage,
+  FloorSync,
+  type Handlers,
   HubSync,
-  type Manejadores,
-  type MensajeDispositivo,
-  SalaSync,
+  MemoryStore,
 } from '@pos/sync'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
@@ -24,26 +24,26 @@ import { catalogoDePrueba, datosItem } from './pruebas'
 
 const T0 = new Date('2026-10-26T15:00:00.000Z')
 const SODEXO = newId()
-const REGLAS: ReglasCobro = {
-  mediosPago: ['cash', 'card', 'nequi'],
-  mediosPropios: [{ id: SODEXO, name: 'Sodexo' }],
+const RULES: ReglasCobro = {
+  paymentMethods: ['cash', 'card', 'nequi'],
+  customMethods: [{ id: SODEXO, name: 'Sodexo' }],
   suggestedTip: 1000,
-  redondeoModo: 'half_up',
-  redondeoEfectivo: 100,
+  roundingMode: 'half_up',
+  cashRounding: 100,
   cashRoundingMode: 'nearest_half_down',
-  imprimePrecuenta: false,
+  printsPreBill: false,
 }
-const DATAFONO = newId()
+const CARD_TERMINAL = newId()
 const CATALOGO = catalogoDePrueba({
-  cardTerminals: [{ id: DATAFONO, name: 'Datáfono 1', provider: 'bold' }],
+  cardTerminals: [{ id: CARD_TERMINAL, name: 'Datáfono 1', provider: 'bold' }],
 })
 
-const accesoConFirma: ControlAcceso = {
+const accesoConFirma: AccessControl = {
   verify: (_c, event) =>
     event.session_id && event.signature === signEvent(event, `secreto-${event.session_id}`)
-      ? { ok: true, authorizedById: null, autorizacionId: null }
+      ? { ok: true, authorizedById: null, authorizationId: null }
       : { ok: false, reason: 'invalid_signature' },
-  registrarUso: () => {},
+  recordUse: () => {},
 }
 
 beforeEach(() => {
@@ -74,7 +74,7 @@ async function until(condicion: () => Promise<boolean> | boolean, maxMs = 20_000
   throw new Error('No se cumplió en el tiempo simulado')
 }
 /** Deja correr el reloj simulado hasta que la promesa termine (bien o mal). */
-async function resolver<T>(
+async function resolve<T>(
   promesa: Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; error: Error }> {
   let r: { ok: true; value: T } | { ok: false; error: Error } | null = null
@@ -92,54 +92,54 @@ async function resolver<T>(
 
 function montarHub() {
   const tokens = new Map<string, Equipo>()
-  const hub = new HubSync(new AlmacenMemoria(), {
-    restauranteId: newId(),
+  const hub = new HubSync(new MemoryStore(), {
+    restaurantId: newId(),
     timeZone: 'America/Bogota',
-    inicioDiaOperativo: '06:00',
-    instancia: 'hub-test',
+    businessDayStart: '06:00',
+    instance: 'hub-test',
     clock: () => new Date(Date.now()).toISOString(),
     access: accesoConFirma,
-    reglasCobro: () => ({
+    checkoutRules: () => ({
       multiple: 100,
       mode: 'nearest_half_down',
-      medios: REGLAS.mediosPago,
-      mediosPropios: [SODEXO],
-      cardTerminals: [DATAFONO],
-      umbralDiferencia: 1000,
+      methods: RULES.paymentMethods,
+      customMethods: [SODEXO],
+      cardTerminals: [CARD_TERMINAL],
+      varianceThreshold: 1000,
     }),
   })
-  const salaHub = new SalaSync(hub, (token) => {
+  const salaHub = new FloorSync(hub, (token) => {
     const e = tokens.get(token)
-    return e ? { dispositivoId: e.dispositivoId, type: e.type, revocadoEn: null } : null
+    return e ? { deviceId: e.deviceId, type: e.type, revokedAt: null } : null
   })
   const h = {
     hub,
     tokens,
-    recibidos: [] as MensajeDispositivo[],
-    open(m: Manejadores): Channel {
-      let enlace: ReturnType<SalaSync['connect']> | null = null
+    received: [] as DeviceMessage[],
+    open(m: Handlers): Channel {
+      let link: ReturnType<FloorSync['connect']> | null = null
       let closed = false
       setTimeout(() => {
         if (closed) return
-        enlace = salaHub.connect((msg) => {
+        link = salaHub.connect((msg) => {
           const copy = JSON.parse(JSON.stringify(msg))
           setTimeout(() => {
-            if (!closed) m.alMensaje(copy)
+            if (!closed) m.onMessage(copy)
           })
         })
-        m.alAbrir()
+        m.onOpen()
       })
       return {
         send: (msg) => {
-          if (!enlace || closed) return
-          const copy = JSON.parse(JSON.stringify(msg)) as MensajeDispositivo
-          h.recibidos.push(copy)
-          enlace.recibir(copy)
+          if (!link || closed) return
+          const copy = JSON.parse(JSON.stringify(msg)) as DeviceMessage
+          h.received.push(copy)
+          link.receive(copy)
         },
         close: () => {
           closed = true
-          enlace?.close()
-          enlace = null
+          link?.close()
+          link = null
         },
       }
     },
@@ -162,7 +162,7 @@ afterEach(async () => {
 async function register(h: Hub, name = 'Caja 1') {
   const db = new BaseDispositivo(`closeout-${newId()}`)
   bases.push(db)
-  const e: Equipo = { dispositivoId: newId(), token: newId(), name, type: 'register' }
+  const e: Equipo = { deviceId: newId(), token: newId(), name, type: 'register' }
   h.tokens.set(e.token, e)
   const sesionId = newId()
   const session: Sesion = {
@@ -183,27 +183,27 @@ async function register(h: Hub, name = 'Caja 1') {
   await db.saveSetting('device', e)
   await db.saveSetting('session', session)
   await db.saveSetting('catalog', CATALOGO)
-  const sala = new Sala({ db, open: (m) => h.open(m) })
-  salas.push(sala)
-  await sala.cargar()
-  await until(() => sala.instantanea().connection === 'connected')
-  return { sala, e }
+  const floor = new Sala({ db, open: (m) => h.open(m) })
+  salas.push(floor)
+  await floor.load()
+  await until(() => floor.instantanea().connection === 'connected')
+  return { floor, e }
 }
 
-const locales = async (s: Sala) => (await s.sync?.locales()) ?? []
+const locals = async (s: Sala) => (await s.sync?.locals()) ?? []
 const sinPendientes = (s: Sala) => s.instantanea().pendingList === 0
 
 /** Un pedido de dos productos que suma $100.050, ya en el hub. */
-async function pedidoDeCien(sala: Sala) {
+async function pedidoDeCien(floor: Sala) {
   const order = newId()
-  await sala.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
-  await sala.record('ItemAdded', order, datosItem({ unit_price: 60_050, name: 'Tagliata' }))
-  await sala.record('ItemAdded', order, datosItem({ unit_price: 40_000, name: 'Pizza' }))
-  await until(() => sinPendientes(sala))
+  await floor.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
+  await floor.record('ItemAdded', order, datosItem({ unit_price: 60_050, name: 'Tagliata' }))
+  await floor.record('ItemAdded', order, datosItem({ unit_price: 40_000, name: 'Pizza' }))
+  await until(() => sinPendientes(floor))
   return order
 }
 
-const conteoDe = (counted: number) =>
+const tallyOf = (counted: number) =>
   [
     { value: 100_000, quantity: Math.floor(counted / 100_000) },
     { value: 50, quantity: (counted % 100_000) / 50 },
@@ -227,7 +227,7 @@ const payment = (shift: string, method: 'card' | 'nequi' | 'own', amount: number
   cardTerminal:
     method === 'card'
       ? {
-          card_terminal_id: DATAFONO,
+          card_terminal_id: CARD_TERMINAL,
           franchise: null,
           last4: null,
           approval_code: null,
@@ -239,26 +239,26 @@ const payment = (shift: string, method: 'card' | 'nequi' | 'own', amount: number
 })
 
 /** Un turno con $50.000 de base y un pedido de $100.050 cobrado con tarjeta (60.050 + 6.000) y Nequi. */
-async function turnoCobrado(h: Hub) {
-  const { sala, e } = await register(h)
-  const shift = await sala.abrirTurno(50_000)
-  const order = await pedidoDeCien(sala)
+async function shiftCharged(h: Hub) {
+  const { floor, e } = await register(h)
+  const shift = await floor.openShift(50_000)
+  const order = await pedidoDeCien(floor)
   expect(
     (
-      await resolver(
-        sala.registrarConfirmado('PaymentRecorded', order, payment(shift, 'card', 60_050, 6_000)),
+      await resolve(
+        floor.registrarConfirmado('PaymentRecorded', order, payment(shift, 'card', 60_050, 6_000)),
       )
     ).ok,
   ).toBe(true)
   expect(
     (
-      await resolver(
-        sala.registrarConfirmado('PaymentRecorded', order, payment(shift, 'nequi', 40_000)),
+      await resolve(
+        floor.registrarConfirmado('PaymentRecorded', order, payment(shift, 'nequi', 40_000)),
       )
     ).ok,
   ).toBe(true)
-  await until(() => sinPendientes(sala))
-  return { sala, e, shift, order }
+  await until(() => sinPendientes(floor))
+  return { floor, e, shift, order }
 }
 
 /**
@@ -266,26 +266,26 @@ async function turnoCobrado(h: Hub) {
  * con las líneas que salen del conteo. Devuelve el resultado de cada paso.
  */
 async function cerrarComoCaja(
-  sala: Sala,
+  floor: Sala,
   shift: string,
   counted: number,
   escrito: Record<string, string>,
   justification: string | null = null,
 ) {
-  const guardados = await locales(sala)
-  const reconciliation = cuadreDeCaja(guardados, shift)
+  const savedList = await locals(floor)
+  const reconciliation = cuadreDeCaja(savedList, shift)
   if (!reconciliation) throw new Error('Sin cuadre')
-  const medios = mediosDelCierre(REGLAS, reconciliation, CATALOGO)
-  const reportados = medios.map((m) => ({
+  const methods = mediosDelCierre(RULES, reconciliation, CATALOGO)
+  const reportados = methods.map((m) => ({
     method: m.method,
     custom_method_id: m.customMethodId,
     reported: withSign(escrito[m.key] ?? ''),
   }))
   const cashCount = newId()
-  const tally = await resolver(
-    sala.registrarConfirmado('CashCountRecorded', shift, {
+  const tally = await resolve(
+    floor.registrarConfirmado('CashCountRecorded', shift, {
       cash_count_id: cashCount,
-      tally: conteoDe(counted),
+      tally: tallyOf(counted),
       counted_cash: counted,
       others: reportados,
     }),
@@ -301,8 +301,8 @@ async function cerrarComoCaja(
     })),
     time: '',
   })
-  const closeout = await resolver(
-    sala.registrarConfirmado('ShiftClosed', shift, {
+  const closeout = await resolve(
+    floor.registrarConfirmado('ShiftClosed', shift, {
       cash_count_id: cashCount,
       expected_cash: reconciliation.cash.expected,
       counted_cash: counted,
@@ -317,46 +317,46 @@ async function cerrarComoCaja(
       })),
     }),
   )
-  return { tally, closeout, others, cashCount, medios, reconciliation }
+  return { tally, closeout, others, cashCount, methods, reconciliation }
 }
 
 describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → conteo con los cierres → cierre', () => {
   it('con los cierres que coinciden: se confirma, queda guardado y el turno se cierra', async () => {
     const h = montarHub()
-    const { sala, e, shift } = await turnoCobrado(h)
+    const { floor, e, shift } = await shiftCharged(h)
 
     // La caja y el hub ven lo mismo antes de cerrar.
-    const before = cuadreDeCaja(await locales(sala), shift)
+    const before = cuadreDeCaja(await locals(floor), shift)
     expect(before?.byMethod).toEqual([
       { method: 'card', customMethodId: null, sale: 60_050, tip: 6_000, payments: 1 },
       { method: 'nequi', customMethodId: null, sale: 40_000, tip: 0, payments: 1 },
     ])
     expect(h.hub.reconciliation(shift)).toEqual(before)
 
-    const r = await cerrarComoCaja(sala, shift, 50_000, {
+    const r = await cerrarComoCaja(floor, shift, 50_000, {
       'card:': '66.050',
       'nequi:': '40.000',
     })
-    expect(r.medios.map((m) => m.key)).toEqual(['card:', 'nequi:', `other:${SODEXO}`])
+    expect(r.methods.map((m) => m.key)).toEqual(['card:', 'nequi:', `other:${SODEXO}`])
     expect(r.tally.ok).toBe(true)
     expect(r.closeout.ok).toBe(true)
     expect(r.others).toEqual([
       { method: 'card', customMethodId: null, expected: 66_050, reported: 66_050, variance: 0 },
       { method: 'nequi', customMethodId: null, expected: 40_000, reported: 40_000, variance: 0 },
     ])
-    await until(() => sinPendientes(sala))
+    await until(() => sinPendientes(floor))
 
-    expect(h.hub.turnoAbierto(e.dispositivoId)).toBeNull()
-    const guardados = await locales(sala)
-    expect(guardados.every((l) => l.status === 'confirmed')).toBe(true)
-    expect(turnoDeCaja(guardados, e.dispositivoId)).toBeNull()
-    expect(cuadreDeCaja(guardados, shift)?.closed).toMatchObject({
+    expect(h.hub.openShift(e.deviceId)).toBeNull()
+    const savedList = await locals(floor)
+    expect(savedList.every((l) => l.status === 'confirmed')).toBe(true)
+    expect(turnoDeCaja(savedList, e.deviceId)).toBeNull()
+    expect(cuadreDeCaja(savedList, shift)?.closed).toMatchObject({
       expected: 50_000,
       counted: 50_000,
       variance: 0,
       otherMethods: r.others,
     })
-    expect(resumenTurno(guardados, shift).byMethod.map((m) => [m.method, m.sale + m.tip])).toEqual([
+    expect(resumenTurno(savedList, shift).byMethod.map((m) => [m.method, m.sale + m.tip])).toEqual([
       ['card', 66_050],
       ['nequi', 40_000],
     ])
@@ -364,8 +364,8 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
 
   it('el Sodexo sin cobros y sin escribir no cuenta: el cierre lo omite', async () => {
     const h = montarHub()
-    const { sala, shift } = await turnoCobrado(h)
-    const r = await cerrarComoCaja(sala, shift, 50_000, {
+    const { floor, shift } = await shiftCharged(h)
+    const r = await cerrarComoCaja(floor, shift, 50_000, {
       'card:': '66.050',
       'nequi:': '40.000',
     })
@@ -375,8 +375,8 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
 
   it('con un reporte distinto: el hub pide justificación y con ella cierra', async () => {
     const h = montarHub()
-    const { sala, e, shift } = await turnoCobrado(h)
-    const without = await cerrarComoCaja(sala, shift, 50_000, {
+    const { floor, e, shift } = await shiftCharged(h)
+    const without = await cerrarComoCaja(floor, shift, 50_000, {
       'card:': '66.050',
       'nequi:': '35.000',
     })
@@ -388,17 +388,17 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
     expect(without.closeout.ok).toBe(false)
     expect(message(without.closeout)).toBe('Escribe por qué no cuadra la caja.')
     // El turno sigue abierto aquí y en el hub; el cierre rechazado queda a la vista.
-    expect(h.hub.turnoAbierto(e.dispositivoId)).not.toBeNull()
-    let guardados = await locales(sala)
-    expect(turnoDeCaja(guardados, e.dispositivoId)?.id).toBe(shift)
-    expect(guardados.filter((l) => l.status === 'rejected').map((l) => l.reason)).toEqual([
+    expect(h.hub.openShift(e.deviceId)).not.toBeNull()
+    let savedList = await locals(floor)
+    expect(turnoDeCaja(savedList, e.deviceId)?.id).toBe(shift)
+    expect(savedList.filter((l) => l.status === 'rejected').map((l) => l.reason)).toEqual([
       'missing_justification',
     ])
 
     // Con el mismo conteo y una justificación.
     const cashCount = without.cashCount
-    const withIt = await resolver(
-      sala.registrarConfirmado('ShiftClosed', shift, {
+    const withIt = await resolve(
+      floor.registrarConfirmado('ShiftClosed', shift, {
         cash_count_id: cashCount,
         expected_cash: 50_000,
         counted_cash: 50_000,
@@ -414,10 +414,10 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
       }),
     )
     expect(withIt.ok).toBe(true)
-    await until(() => sinPendientes(sala))
-    guardados = await locales(sala)
-    expect(turnoDeCaja(guardados, e.dispositivoId)).toBeNull()
-    expect(cuadreDeCaja(guardados, shift)?.closed).toMatchObject({
+    await until(() => sinPendientes(floor))
+    savedList = await locals(floor)
+    expect(turnoDeCaja(savedList, e.deviceId)).toBeNull()
+    expect(cuadreDeCaja(savedList, shift)?.closed).toMatchObject({
       justification: 'Nequi no mostró un pago de $5.000',
       otherMethods: [
         { method: 'card', variance: 0 },
@@ -428,39 +428,39 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
 
   it('por debajo del umbral ($999 de diferencia en la tarjeta) se cierra sin justificación', async () => {
     const h = montarHub()
-    const { sala, e, shift } = await turnoCobrado(h)
-    const r = await cerrarComoCaja(sala, shift, 50_000, {
+    const { floor, e, shift } = await shiftCharged(h)
+    const r = await cerrarComoCaja(floor, shift, 50_000, {
       'card:': '65.051',
       'nequi:': '40.000',
     })
     expect(r.closeout.ok).toBe(true)
-    expect(h.hub.turnoAbierto(e.dispositivoId)).toBeNull()
+    expect(h.hub.openShift(e.deviceId)).toBeNull()
   })
 
   it('un medio propio (Sodexo) con cobro y con lo escrito distinto', async () => {
     const h = montarHub()
-    const { sala, e } = await register(h)
-    const shift = await sala.abrirTurno(0)
-    const order = await pedidoDeCien(sala)
+    const { floor, e } = await register(h)
+    const shift = await floor.openShift(0)
+    const order = await pedidoDeCien(floor)
     expect(
       (
-        await resolver(
-          sala.registrarConfirmado('PaymentRecorded', order, payment(shift, 'own', 30_000)),
+        await resolve(
+          floor.registrarConfirmado('PaymentRecorded', order, payment(shift, 'own', 30_000)),
         )
       ).ok,
     ).toBe(true)
-    const r = await cerrarComoCaja(sala, shift, 0, { [`other:${SODEXO}`]: '30.000' })
+    const r = await cerrarComoCaja(floor, shift, 0, { [`other:${SODEXO}`]: '30.000' })
     expect(r.closeout.ok).toBe(true)
     expect(r.others).toEqual([
       { method: 'other', customMethodId: SODEXO, expected: 30_000, reported: 30_000, variance: 0 },
     ])
-    expect(h.hub.turnoAbierto(e.dispositivoId)).toBeNull()
+    expect(h.hub.openShift(e.deviceId)).toBeNull()
   })
 
   it('un reporte escrito para un medio sin cobros (un cobro que no se registró): sobrante que pide justificación', async () => {
     const h = montarHub()
-    const { sala, shift } = await turnoCobrado(h)
-    const r = await cerrarComoCaja(sala, shift, 50_000, {
+    const { floor, shift } = await shiftCharged(h)
+    const r = await cerrarComoCaja(floor, shift, 50_000, {
       'card:': '66.050',
       'nequi:': '40.000',
       [`other:${SODEXO}`]: '12.000',
@@ -476,12 +476,12 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
 
   it('un cierre con las líneas de otro conteo (desactualizadas): otros_medios_distintos, dicho en palabras', async () => {
     const h = montarHub()
-    const { sala, e, shift } = await turnoCobrado(h)
+    const { floor, e, shift } = await shiftCharged(h)
     const cashCount = newId()
-    await resolver(
-      sala.registrarConfirmado('CashCountRecorded', shift, {
+    await resolve(
+      floor.registrarConfirmado('CashCountRecorded', shift, {
         cash_count_id: cashCount,
-        tally: conteoDe(50_000),
+        tally: tallyOf(50_000),
         counted_cash: 50_000,
         others: [
           { method: 'card', custom_method_id: null, reported: 66_050 },
@@ -489,8 +489,8 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
         ],
       }),
     )
-    const r = await resolver(
-      sala.registrarConfirmado('ShiftClosed', shift, {
+    const r = await resolve(
+      floor.registrarConfirmado('ShiftClosed', shift, {
         cash_count_id: cashCount,
         expected_cash: 50_000,
         counted_cash: 50_000,
@@ -502,14 +502,14 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
     expect(message(r)).toBe(
       'Los demás medios no coinciden con lo que registró la caja: recarga la app (puede estar desactualizada) y vuelve a contar.',
     )
-    expect(h.hub.turnoAbierto(e.dispositivoId)).not.toBeNull()
+    expect(h.hub.openShift(e.deviceId)).not.toBeNull()
   })
 
   it('un cobro con Nequi después del conteo desactualiza el cierre: se dice en palabras y, al volver a contar, cierra', async () => {
     const h = montarHub()
-    const { sala, e, shift } = await turnoCobrado(h)
+    const { floor, e, shift } = await shiftCharged(h)
     const oldOne = await cerrarComoCaja(
-      sala,
+      floor,
       shift,
       50_000,
       { 'card:': '66.050', 'nequi:': '40.000' },
@@ -518,18 +518,18 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
     // Ese cierre se aceptó; para probar el desfase se arma otro turno.
     expect(oldOne.closeout.ok).toBe(true)
 
-    const t2 = await sala.abrirTurno(0)
-    const order = await pedidoDeCien(sala)
+    const t2 = await floor.openShift(0)
+    const order = await pedidoDeCien(floor)
     expect(
       (
-        await resolver(
-          sala.registrarConfirmado('PaymentRecorded', order, payment(t2, 'nequi', 10_000)),
+        await resolve(
+          floor.registrarConfirmado('PaymentRecorded', order, payment(t2, 'nequi', 10_000)),
         )
       ).ok,
     ).toBe(true)
     const cashCount = newId()
-    await resolver(
-      sala.registrarConfirmado('CashCountRecorded', t2, {
+    await resolve(
+      floor.registrarConfirmado('CashCountRecorded', t2, {
         cash_count_id: cashCount,
         tally: [],
         counted_cash: 0,
@@ -538,13 +538,13 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
     )
     expect(
       (
-        await resolver(
-          sala.registrarConfirmado('PaymentRecorded', order, payment(t2, 'nequi', 5_000)),
+        await resolve(
+          floor.registrarConfirmado('PaymentRecorded', order, payment(t2, 'nequi', 5_000)),
         )
       ).ok,
     ).toBe(true)
-    const tarde = await resolver(
-      sala.registrarConfirmado('ShiftClosed', t2, {
+    const late = await resolve(
+      floor.registrarConfirmado('ShiftClosed', t2, {
         cash_count_id: cashCount,
         expected_cash: 0,
         counted_cash: 0,
@@ -561,10 +561,10 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
         ],
       }),
     )
-    expect(message(tarde)).toBe('Hubo pagos o movimientos después del conteo: vuelve a contar.')
-    expect(h.hub.turnoAbierto(e.dispositivoId)?.id).toBe(t2)
-    const another = await cerrarComoCaja(sala, t2, 0, { 'nequi:': '15.000', 'card:': '' })
+    expect(message(late)).toBe('Hubo pagos o movimientos después del conteo: vuelve a contar.')
+    expect(h.hub.openShift(e.deviceId)?.id).toBe(t2)
+    const another = await cerrarComoCaja(floor, t2, 0, { 'nequi:': '15.000', 'card:': '' })
     expect(another.closeout.ok).toBe(true)
-    expect(h.hub.turnoAbierto(e.dispositivoId)).toBeNull()
+    expect(h.hub.openShift(e.deviceId)).toBeNull()
   })
 })

@@ -30,7 +30,7 @@ export function useEscala(register: Caja, maxima = 1.5) {
 }
 
 /** Estilo para poner algo con su geometría dentro del lienzo. */
-export function posicion(g: Geometria, register: Caja, escala: number): CSSProperties {
+export function placement(g: Geometria, register: Caja, escala: number): CSSProperties {
   return {
     position: 'absolute',
     left: (g.x - register.x) * escala,

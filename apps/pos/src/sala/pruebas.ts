@@ -1,5 +1,5 @@
 import { type ApplicableEvent, type NewEvent, newId, type OrderEventType } from '@pos/core'
-import type { Catalogo, EstadoLocal, EventoLocal } from '@pos/sync'
+import type { Catalog, LocalEvent, LocalState } from '@pos/sync'
 
 // Utilidades de las pruebas de la sala: eventos locales y un catálogo mínimo, sin red ni base.
 
@@ -13,9 +13,9 @@ export function local<T extends OrderEventType>(
   type: T,
   orderId: string,
   data: Extract<NewEvent, { type: T }>['data'],
-  status: EstadoLocal = 'confirmed',
+  status: LocalState = 'confirmed',
   extras: Partial<NewEvent> = {},
-): EventoLocal {
+): LocalEvent {
   const base = {
     id: newId(),
     type,
@@ -74,10 +74,10 @@ export const datosItem = (fields: Record<string, unknown> = {}) => ({
 export const opening = { channel: 'dine_in' as const, table_id: null, guests: 2 }
 
 /** Catálogo mínimo: Cocina y Barra, una categoría de cada una y otra sin estación. */
-export function catalogoDePrueba(fields: Partial<Catalogo> = {}): Catalogo {
+export function catalogoDePrueba(fields: Partial<Catalog> = {}): Catalog {
   return {
     version: 4,
-    restaurant: { name: 'Prueba', sesionInactividadMin: 30 },
+    restaurant: { name: 'Prueba', sessionIdleMin: 30 },
     zones: [],
     tables: [],
     elements: [],
@@ -95,9 +95,9 @@ export function catalogoDePrueba(fields: Partial<Catalogo> = {}): Catalogo {
  * Numera de nuevo la secuencia de los confirmados según su posición: las pruebas arman los
  * eventos en cualquier orden, pero el hub los numera en el orden en que los acepta.
  */
-export function inOrder(locales: readonly EventoLocal[]): EventoLocal[] {
+export function inOrder(locals: readonly LocalEvent[]): LocalEvent[] {
   let n = 0
-  return locales.map((l) =>
+  return locals.map((l) =>
     l.status === 'confirmed' ? { ...l, event: { ...l.event, sequence: ++n } } : l,
   )
 }

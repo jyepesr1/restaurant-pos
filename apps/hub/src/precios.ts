@@ -1,6 +1,6 @@
 import type { NewEvent } from '@pos/core'
-import type { BaseSqlite, Fila } from '@pos/db'
-import type { RevisorPrecios } from '@pos/sync'
+import type { Row, SqliteDatabase } from '@pos/db'
+import type { PriceChecker } from '@pos/sync'
 
 // Revisión del precio copiado (docs/DINERO.md#precio-copiado): el ítem trae el precio, los
 // extras y el impuesto que vio el equipo en su catálogo, con la `catalog_version`. El hub busca
@@ -12,12 +12,12 @@ type ItemAdded = Extract<NewEvent, { type: 'ItemAdded' }>
 const pesos = (n: number) => `$${n.toLocaleString('es-CO')}`
 
 export class HistorialCatalogo {
-  private readonly db: BaseSqlite
-  private readonly restauranteId: string
+  private readonly db: SqliteDatabase
+  private readonly restaurantId: string
 
-  constructor(db: BaseSqlite, restauranteId: string) {
+  constructor(db: SqliteDatabase, restaurantId: string) {
     this.db = db
-    this.restauranteId = restauranteId
+    this.restaurantId = restaurantId
   }
 
   /**
@@ -27,7 +27,7 @@ export class HistorialCatalogo {
    * que tenía cada registro en ese momento. Para una versión anterior se usa ese estado, el más
    * viejo conocido, en vez de dar por inexistente algo que sí estaba en la carta.
    */
-  estadoEn(entity: string, registroId: string, version: number): Fila | undefined {
+  stateIn(entity: string, registroId: string, version: number): Row | undefined {
     const row =
       this.db
         .prepare(
@@ -35,7 +35,7 @@ export class HistorialCatalogo {
            WHERE restaurant_id = ? AND entity = ? AND record_id = ? AND version <= ?
            ORDER BY version DESC LIMIT 1`,
         )
-        .get(this.restauranteId, entity, registroId, version) ??
+        .get(this.restaurantId, entity, registroId, version) ??
       (version < this.counter('history_since')
         ? this.db
             .prepare(
@@ -43,50 +43,50 @@ export class HistorialCatalogo {
                WHERE restaurant_id = ? AND entity = ? AND record_id = ? AND before IS NULL
                ORDER BY version LIMIT 1`,
             )
-            .get(this.restauranteId, entity, registroId)
+            .get(this.restaurantId, entity, registroId)
         : undefined)
-    return row ? (JSON.parse(String(row.after)) as Fila) : undefined
+    return row ? (JSON.parse(String(row.after)) as Row) : undefined
   }
 
   /** Las variantes activas de un producto en esa versión (una variante no cambia de producto). */
-  variantesEn(productId: string, version: number): Fila[] {
+  variantesEn(productId: string, version: number): Row[] {
     return this.db
       .prepare('SELECT id FROM variants WHERE restaurant_id = ? AND product_id = ?')
-      .all(this.restauranteId, productId)
-      .map((f) => this.estadoEn('variants', String(f.id), version))
-      .filter((v): v is Fila => v?.active === 1)
+      .all(this.restaurantId, productId)
+      .map((f) => this.stateIn('variants', String(f.id), version))
+      .filter((v): v is Row => v?.active === 1)
   }
 
   /** Si el grupo estaba activo y enlazado al producto en esa versión. */
-  private grupoDelProducto(productId: string, grupoId: string, version: number): boolean {
-    if (this.estadoEn('modifier_groups', grupoId, version)?.active !== 1) return false
+  private grupoDelProducto(productId: string, groupId: string, version: number): boolean {
+    if (this.stateIn('modifier_groups', groupId, version)?.active !== 1) return false
     return this.db
       .prepare(
         'SELECT id FROM product_modifier_groups WHERE restaurant_id = ? AND product_id = ? AND group_id = ?',
       )
-      .all(this.restauranteId, productId, grupoId)
-      .some((e) => this.estadoEn('product_modifier_groups', String(e.id), version)?.active === 1)
+      .all(this.restaurantId, productId, groupId)
+      .some((e) => this.stateIn('product_modifier_groups', String(e.id), version)?.active === 1)
   }
 
   private counter(name: string): number {
     const row = this.db
       .prepare('SELECT value FROM counters WHERE restaurant_id = ? AND name = ?')
-      .get(this.restauranteId, name)
+      .get(this.restaurantId, name)
     return Number(row?.value ?? 0)
   }
 
-  versionActual(): number {
+  currentVersion(): number {
     return this.counter('catalog')
   }
 
   /** Qué no coincide entre el ítem y el catálogo en su versión; `null` si todo cuadra. */
   variance({ data: d }: ItemAdded): string | null {
     const v = d.catalog_version
-    if (v > this.versionActual())
+    if (v > this.currentVersion())
       return `El equipo usó una versión del catálogo (${v}) que el hub no tiene`
     // Los precios por canal y franja (happy hour) llegan después: hoy ninguno es válido.
     if (d.price_channel_id !== null) return `«${d.name}» trae un precio especial que no existe`
-    const product = this.estadoEn('products', d.product_id, v)
+    const product = this.stateIn('products', d.product_id, v)
     if (product?.active !== 1) return `«${d.name}» no estaba en la carta en esa versión`
 
     const variants = this.variantesEn(d.product_id, v)
@@ -102,7 +102,7 @@ export class HistorialCatalogo {
     if (d.unit_price !== precioBase)
       return `«${d.name}» se cobró a ${pesos(d.unit_price)} y la carta decía ${pesos(precioBase)}`
 
-    const tax = this.estadoEn('taxes', String(product.tax_id), v)
+    const tax = this.stateIn('taxes', String(product.tax_id), v)
     if (tax?.active !== 1 || tax.type !== d.tax_type || Number(tax.rate) !== d.rate)
       return `El impuesto de «${d.name}» no coincide con el de la carta`
 
@@ -110,7 +110,7 @@ export class HistorialCatalogo {
     for (const m of d.modifiers) {
       if (seenSet.has(m.modifier_id)) return `La opción «${m.name}» viene dos veces`
       seenSet.add(m.modifier_id)
-      const modifier = this.estadoEn('modifiers', m.modifier_id, v)
+      const modifier = this.stateIn('modifiers', m.modifier_id, v)
       if (modifier?.active !== 1)
         return `La opción «${m.name}» no estaba en la carta en esa versión`
       if (!this.grupoDelProducto(d.product_id, String(modifier.group_id), v))
@@ -122,9 +122,9 @@ export class HistorialCatalogo {
   }
 }
 
-export function revisorPrecios(db: BaseSqlite, restauranteId: string): RevisorPrecios {
-  const historial = new HistorialCatalogo(db, restauranteId)
+export function revisorPrecios(db: SqliteDatabase, restaurantId: string): PriceChecker {
+  const history = new HistorialCatalogo(db, restaurantId)
   return {
-    revisar: (event) => (event.type === 'ItemAdded' ? historial.variance(event) : null),
+    review: (event) => (event.type === 'ItemAdded' ? history.variance(event) : null),
   }
 }

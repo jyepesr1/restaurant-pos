@@ -1,5 +1,5 @@
-import type { BaseSqlite } from '@pos/db'
-import { BaseOcupadaError } from '@pos/db/node'
+import type { SqliteDatabase } from '@pos/db'
+import { DatabaseBusyError } from '@pos/db/node'
 import { USUARIO_ADMIN } from './acceso/inicial'
 import { administradores } from './acceso/personal'
 import { generarContrasena } from './acceso/secretos'
@@ -19,26 +19,26 @@ const dirDatos = dirDatosDe()
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 function correr(): number {
-  let db: BaseSqlite
+  let db: SqliteDatabase
   try {
     db = abrirDatos(dirDatos).db
   } catch (error) {
     console.error(
-      error instanceof BaseOcupadaError
+      error instanceof DatabaseBusyError
         ? 'No se cambió nada: el hub está abierto. Ciérralo y vuelve a correr esto.'
         : `No se cambió nada: ${message(error)}`,
     )
     return 1
   }
   try {
-    const { access, restauranteId, admin, avisos } = prepararAcceso(db, dirDatos)
-    for (const alert of avisos) console.warn(`⚠ ${alert}`)
+    const { access, restaurantId, admin, alerts } = prepararAcceso(db, dirDatos)
+    for (const alert of alerts) console.warn(`⚠ ${alert}`)
     // Lo que el arranque acaba de crear o regenerar (un PIN nuevo si se perdió la clave) también
     // se muestra: si no, se perdería.
     let lines = lineasAdministrador(admin)
     if (!admin.password) {
       // El arranque deja al administrador con usuario: es el primero de la lista.
-      const id = administradores(db, restauranteId)[0]
+      const id = administradores(db, restaurantId)[0]
       if (!id) throw new Error('No hay ningún administrador activo')
       const user = access.usuarioDe(id) ?? USUARIO_ADMIN
       const password = generarContrasena()
@@ -50,15 +50,15 @@ function correr(): number {
       ]
     }
     mostrarPines(dirDatos, {
-      ventana: [
+      consoleLines: [
         '\nContraseña nueva del administrador:',
         ...lines,
         'Anótala en un lugar seguro: no se vuelve a mostrar. La anterior ya no sirve.',
       ],
       archivo: `restablecer-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`,
       content: `${lines.join('\n')}\n`,
-      alert: (ruta) =>
-        `\nLa contraseña nueva quedó en ${ruta} (solo la puede leer el hub): anótala y borra ese archivo.`,
+      alert: (route) =>
+        `\nLa contraseña nueva quedó en ${route} (solo la puede leer el hub): anótala y borra ese archivo.`,
     })
     return 0
   } catch (error) {

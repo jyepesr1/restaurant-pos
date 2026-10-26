@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { type BaseSqlite, versionActual } from '@pos/db'
-import type { SalaSync } from '@pos/sync'
+import { currentVersion, type SqliteDatabase } from '@pos/db'
+import type { FloorSync } from '@pos/sync'
 import {
   abrirDatos,
   dirDatosDe,
@@ -48,13 +48,13 @@ function ipsLocales(): string[] {
 }
 
 /** Abre la base en exclusiva (un solo hub por carpeta de datos) y la lleva a la última versión. */
-function prepararBase(): BaseSqlite {
+function prepararBase(): SqliteDatabase {
   try {
-    const { db: base, aplicadas } = abrirDatos(dirDatos)
+    const { db: base, appliedMigrations } = abrirDatos(dirDatos)
     console.log(
-      aplicadas.length > 0
-        ? `Base de datos actualizada a la versión ${versionActual(base)}.`
-        : `Base de datos en la versión ${versionActual(base)}.`,
+      appliedMigrations.length > 0
+        ? `Base de datos actualizada a la versión ${currentVersion(base)}.`
+        : `Base de datos en la versión ${currentVersion(base)}.`,
     )
     return base
   } catch (error) {
@@ -65,45 +65,45 @@ function prepararBase(): BaseSqlite {
 }
 
 /** Restaurante, roles, administrador y la clave de los PIN (tarea 0.7). */
-function prepararTodo(db: BaseSqlite) {
+function prepararTodo(db: SqliteDatabase) {
   try {
     // La sala se crea después del acceso, pero la revocación de un equipo debe llegarle.
-    let sala: SalaSync | null = null
+    let floor: FloorSync | null = null
     // Por ahora el aviso al administrador va a la ventana del hub; con la caja (Fase 1), a su pantalla.
     const access = prepararAcceso(
       db,
       dirDatos,
       (alert) => console.warn(`⚠ Seguridad: ${alert}`),
-      (dispositivoId, revocadoEn) => sala?.revoke(dispositivoId, revocadoEn),
+      (deviceId, revokedAt) => floor?.revoke(deviceId, revokedAt),
     )
-    const timeZone = zonaHorariaDe(db, access.restauranteId)
+    const timeZone = zonaHorariaDe(db, access.restaurantId)
     // Las comandas que quedaron en la cola antes de cerrar el hub salen al arrancar.
-    const cola = new ColaImpresion({
+    const queue = new ColaImpresion({
       db,
-      restauranteId: access.restauranteId,
-      onChange: (statuses) => sala?.avisarImpresoras(statuses),
+      restaurantId: access.restaurantId,
+      onChange: (statuses) => floor?.notifyPrinters(statuses),
       onFailure: (error) => console.error('Falló la cola de impresión:', error),
     })
-    const tickets = { db, restauranteId: access.restauranteId, timeZone }
-    sala = prepararSincronizacion(
+    const tickets = { db, restaurantId: access.restaurantId, timeZone }
+    floor = prepararSincronizacion(
       db,
       dirDatos,
-      access.restauranteId,
+      access.restaurantId,
       access.access,
       (error, id) => console.error(`Un evento hizo fallar al hub y se rechazó (${id}):`, error),
       {
         // Dentro de la transacción del evento; la cola arranca cuando ya quedó guardado.
         onSave: (event, changes) => {
-          if (trabajosDeEvento(tickets, event, changes) > 0) setImmediate(() => cola.despertar())
+          if (trabajosDeEvento(tickets, event, changes) > 0) setImmediate(() => queue.despertar())
         },
         onSaveFailure: (error, id) => {
           console.error(`No se pudo armar la comanda del evento ${id}:`, error)
-          cola.comandaSinArmar()
+          queue.comandaSinArmar()
         },
       },
     )
-    cola.despertar()
-    return { ...access, sala, cola, timeZone }
+    queue.despertar()
+    return { ...access, floor, queue, timeZone }
   } catch (error) {
     const detalle = error instanceof Error ? error.message : String(error)
     console.error(`No se pudo preparar el acceso del hub: ${detalle}`)
@@ -113,39 +113,39 @@ function prepararTodo(db: BaseSqlite) {
 
 const port = leerPuerto()
 const db = prepararBase()
-const { access, restauranteId, sala, cola, timeZone, admin, avisos } = prepararTodo(db)
+const { access, restaurantId, floor, queue, timeZone, admin, alerts } = prepararTodo(db)
 const app = crearServidor({
   dirApp,
   diagnostico: { dirDatos },
   access,
-  sincronizacion: { sala, onFailure: (error) => console.error('Falló la sincronización:', error) },
+  sincronizacion: { floor, onFailure: (error) => console.error('Falló la sincronización:', error) },
   catalog: {
     db,
-    restauranteId,
+    restaurantId,
     access,
-    onChange: (version) => sala.avisarCatalogo(version),
-    mesaOcupada: (tableId) => sala.tienePedidoAbierto(tableId),
+    onChange: (version) => floor.notifyCatalog(version),
+    occupiedTable: (tableId) => floor.hasOpenOrder(tableId),
     dirFotos: join(dirDatos, 'photos'),
   },
   impresion: {
     db,
-    restauranteId,
+    restaurantId,
     access,
-    cola,
+    queue,
     timeZone,
-    onChange: (version) => sala.avisarCatalogo(version),
+    onChange: (version) => floor.notifyCatalog(version),
     permitirLocales: process.env.IMPRESORA_PRUEBA === '1',
     esEquipoDelHub: (ip) => ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1',
   },
-  versionBase: versionActual(db),
+  versionBase: currentVersion(db),
   logger: true,
 })
 
-for (const senal of ['SIGINT', 'SIGTERM'] as const) {
-  process.once(senal, async () => {
-    cola.detener()
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, async () => {
+    queue.stop()
     await app.close()
-    await cola.ready()
+    await queue.ready()
     db.close()
     process.exit(0)
   })
@@ -168,19 +168,19 @@ if (!existsSync(dirApp)) {
   )
 }
 
-for (const alert of avisos) console.warn(`⚠ ${alert}`)
+for (const alert of alerts) console.warn(`⚠ ${alert}`)
 const datosAdmin = lineasAdministrador(admin)
 if (datosAdmin.length > 0)
   mostrarPines(dirDatos, {
-    ventana: [
+    consoleLines: [
       '\nAdministrador (para entrar a la caja):',
       ...datosAdmin,
       'Anótalo en un lugar seguro: no se vuelve a mostrar.',
     ],
     archivo: ARCHIVO_PIN_ADMIN,
     content: `${datosAdmin.join('\n')}\n`,
-    alert: (ruta) =>
-      `\nLos datos del administrador quedaron en ${ruta}: anótalos y borra ese archivo.`,
+    alert: (route) =>
+      `\nLos datos del administrador quedaron en ${route}: anótalos y borra ese archivo.`,
   })
 
 console.log('\nHub en marcha. Abre en los dispositivos de la misma red:')

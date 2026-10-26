@@ -119,9 +119,9 @@ const encimadas = (sillas: Silla[]) => {
   return pares
 }
 
-const SEMILLA = { seed: 20261025, numRuns: 400 }
+const SEED = { seed: 20261025, numRuns: 400 }
 const shape = fc.constantFrom(...FORMAS)
-const medida = fc.integer({ min: 16, max: 600 })
+const size = fc.integer({ min: 16, max: 600 })
 
 describe('sillas: cuenta exacta', () => {
   it('hay exactamente tantas sillas como puestos, para cada forma y medida', () => {
@@ -135,7 +135,7 @@ describe('sillas: cuenta exacta', () => {
           expect(sillasDe(f, boxWidth, boxHeight, places)).toHaveLength(places)
         },
       ),
-      { ...SEMILLA, numRuns: 1000 },
+      { ...SEED, numRuns: 1000 },
     )
   })
 
@@ -177,8 +177,8 @@ describe('sillas: nunca dentro de la mesa', () => {
     fc.assert(
       fc.property(
         shape,
-        medida,
-        medida,
+        size,
+        size,
         fc.integer({ min: 1, max: 100 }),
         (f, boxWidth, boxHeight, places) => {
           for (const seat of sillasDe(f, boxWidth, boxHeight, places))
@@ -188,7 +188,7 @@ describe('sillas: nunca dentro de la mesa', () => {
             ).toBe(true)
         },
       ),
-      SEMILLA,
+      SEED,
     )
   })
 
@@ -208,7 +208,7 @@ describe('sillas: nunca dentro de la mesa', () => {
           }
         },
       ),
-      SEMILLA,
+      SEED,
     )
   })
 
@@ -216,8 +216,8 @@ describe('sillas: nunca dentro de la mesa', () => {
     fc.assert(
       fc.property(
         fc.constantFrom('square', 'rectangular', 'bar' as const),
-        medida,
-        medida,
+        size,
+        size,
         fc.integer({ min: 1, max: 8 }),
         (f, boxWidth, boxHeight, places) => {
           for (const s of sillasDe(f, boxWidth, boxHeight, places)) {
@@ -226,7 +226,7 @@ describe('sillas: nunca dentro de la mesa', () => {
           }
         },
       ),
-      SEMILLA,
+      SEED,
     )
   })
 })
@@ -269,7 +269,7 @@ describe('sillas: sin encimarse', () => {
           `${f} ${boxWidth}x${boxHeight} (${places} de ${cupo})`,
         ).toEqual([])
       }),
-      { ...SEMILLA, numRuns: 2000 },
+      { ...SEED, numRuns: 2000 },
     )
   })
 
@@ -283,7 +283,7 @@ describe('sillas: sin encimarse', () => {
           `${f} ${boxWidth}x${boxHeight} (${places})`,
         ).toEqual([])
       }),
-      { ...SEMILLA, numRuns: 2000 },
+      { ...SEED, numRuns: 2000 },
     )
   })
 
@@ -317,7 +317,7 @@ describe('sillas: sin encimarse', () => {
         const below = sillas.filter((s) => s.center[1] > 100).length
         expect(Math.abs(above - below)).toBeLessThanOrEqual(1)
       }),
-      SEMILLA,
+      SEED,
     )
   })
 })

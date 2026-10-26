@@ -16,25 +16,25 @@ function mundo(options: { conImpresora?: boolean } = {}) {
   if (options.conImpresora !== false)
     t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ pre_bill_printer_id: printer.id }), t.restauranteId)
+      .run(JSON.stringify({ pre_bill_printer_id: printer.id }), t.restaurantId)
 
   /** Abre un turno en la caja, cobra un pedido de `precio` en efectivo y cierra el turno cuadrado. */
   const day = (register: Equipo, price = 40_000, tip = 4_000) => {
     const shift = newId()
     expect(
-      register.mandar(
+      register.submit(
         shift,
         'ShiftOpened',
-        { register_id: register.connection.dispositivoId, base: 100_000 },
+        { register_id: register.connection.deviceId, base: 100_000 },
         { aggregate_type: 'register_shift' },
       ).status,
     ).toBe('confirmed')
     const order = t.open(ana)
-    expect(ana.mandar(order, 'ItemAdded', { ...item(), unit_price: price }).status).toBe(
+    expect(ana.submit(order, 'ItemAdded', { ...item(), unit_price: price }).status).toBe(
       'confirmed',
     )
     expect(
-      register.mandar(order, 'PaymentRecorded', {
+      register.submit(order, 'PaymentRecorded', {
         payment_id: newId(),
         check_id: null,
         register_shift_id: shift,
@@ -49,10 +49,10 @@ function mundo(options: { conImpresora?: boolean } = {}) {
         charge_reference: null,
       }).status,
     ).toBe('confirmed')
-    expect(register.mandar(order, 'OrderClosed', {}).status).toBe('confirmed')
+    expect(register.submit(order, 'OrderClosed', {}).status).toBe('confirmed')
     const counted = 100_000 + price + tip
     const cashCount = newId()
-    register.mandar(
+    register.submit(
       shift,
       'CashCountRecorded',
       {
@@ -62,7 +62,7 @@ function mundo(options: { conImpresora?: boolean } = {}) {
       },
       { aggregate_type: 'register_shift' },
     )
-    const closeout = register.mandar(
+    const closeout = register.submit(
       shift,
       'ShiftClosed',
       {
@@ -93,7 +93,7 @@ describe('cierre Z al cerrar la caja', () => {
       charged: [{ name: 'Efectivo', sale: 40_000, tip: 4_000 }],
       sales: { net: 40_000, tips: 4_000, checks: 1 },
     })
-    await t.cola.runOnce()
+    await t.queue.runOnce()
     const [papel] = printer.papel.texts()
     expect(papel).toContain('CIERRE DE CAJA')
     expect(papel).toContain('$144.000')

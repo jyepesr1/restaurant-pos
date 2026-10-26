@@ -1,5 +1,5 @@
 import { claseBoton } from '../ui/Boton'
-import type { EstadoConexion } from '../ui/IndicadorConexion'
+import type { ConnectionState } from '../ui/IndicadorConexion'
 import { Icono, type NombreIcono } from '../ui/iconos'
 import { type Marca, useMarca } from '../ui/marca'
 import { Grupo, Opcion } from '../ui/Opciones'
@@ -9,24 +9,24 @@ import { Marco } from './Marco'
 
 // Índice de los bocetos de la tarea 0.9 (brief §5): para abrirlos en el celular y la tablet.
 
-const PANTALLAS: { ruta: string; title: string; para: string; icono: NombreIcono }[] = [
+const PANTALLAS: { route: string; title: string; para: string; icono: NombreIcono }[] = [
   {
-    ruta: '/mockups/floor-plan',
+    route: '/mockups/floor-plan',
     title: 'Plano de mesas',
     para: 'Mesero y caja',
     icono: 'floorPlan',
   },
-  { ruta: '/mockups/order?table=2', title: 'Toma de pedido', para: 'Mesero', icono: 'pencil' },
-  { ruta: '/mockups/kds', title: 'Cocina y barra (KDS)', para: 'Cocina y barra', icono: 'fire' },
+  { route: '/mockups/order?table=2', title: 'Toma de pedido', para: 'Mesero', icono: 'pencil' },
+  { route: '/mockups/kds', title: 'Cocina y barra (KDS)', para: 'Cocina y barra', icono: 'fire' },
   {
-    ruta: '/mockups/pre-bill?table=12',
+    route: '/mockups/pre-bill?table=12',
     title: 'Precuenta y división',
     para: 'Caja',
     icono: 'receipt',
   },
-  { ruta: '/mockups/checkout?table=12', title: 'Cobro', para: 'Caja', icono: 'bill' },
+  { route: '/mockups/checkout?table=12', title: 'Cobro', para: 'Caja', icono: 'bill' },
   {
-    ruta: '/mockups/components',
+    route: '/mockups/components',
     title: 'Design system',
     para: 'Colores y componentes',
     icono: 'check',
@@ -49,7 +49,7 @@ const DIRECCIONES: { brand: Marca; name: string; idea: string; muestras: string[
   },
 ]
 
-const CONEXIONES: [EstadoConexion, string][] = [
+const CONEXIONES: [ConnectionState, string][] = [
   ['online', 'En línea'],
   ['local_only', 'Solo red local'],
   ['offline', 'Sin conexión'],
@@ -100,12 +100,12 @@ export function Indice() {
         </section>
         <ul className="grid gap-3 sm:grid-cols-2">
           {PANTALLAS.map((p) => (
-            <li key={p.ruta}>
+            <li key={p.route}>
               <a
-                href={p.ruta}
+                href={p.route}
                 onClick={(e) => {
                   e.preventDefault()
-                  navegar(p.ruta)
+                  navegar(p.route)
                 }}
                 className="flex min-h-20 items-center gap-4 rounded-2xl border border-borde bg-superficie p-4 hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
               >

@@ -33,7 +33,7 @@ function liberarFondo(panel: object) {
 export function PanelLateral({
   opened,
   title,
-  alCerrar,
+  onClose,
   pie,
   soloConBoton = false,
   idDescripcion,
@@ -41,7 +41,7 @@ export function PanelLateral({
 }: {
   opened: boolean
   title: string
-  alCerrar: () => void
+  onClose: () => void
   /** Acciones fijas abajo (p. ej. "Agregar"). */
   pie?: ReactNode
   /**
@@ -57,8 +57,8 @@ export function PanelLateral({
   const panel = useRef<HTMLDivElement>(null)
   // Quien llama suele pasar una función nueva en cada render: si el efecto dependiera de ella, se
   // repetiría con cada tecla y el campo que se está escribiendo perdería el foco.
-  const close = useRef(alCerrar)
-  close.current = alCerrar
+  const close = useRef(onClose)
+  close.current = onClose
   const soloRef = useRef(soloConBoton)
   soloRef.current = soloConBoton
 

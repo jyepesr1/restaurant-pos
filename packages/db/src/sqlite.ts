@@ -1,44 +1,45 @@
-/** Valores que acepta SQLite como parámetro. */
-export type ValorSql = string | number | bigint | null | Uint8Array
+/** Values SQLite accepts as a parameter. */
+export type SqlValue = string | number | bigint | null | Uint8Array
 
-export type Fila = Record<string, ValorSql>
+export type Row = Record<string, SqlValue>
 
-export interface Sentencia {
-  run(...parametros: ValorSql[]): { changes: number | bigint }
-  get(...parametros: ValorSql[]): Fila | undefined
-  all(...parametros: ValorSql[]): Fila[]
+export interface Statement {
+  run(...params: SqlValue[]): { changes: number | bigint }
+  get(...params: SqlValue[]): Row | undefined
+  all(...params: SqlValue[]): Row[]
 }
 
 /**
- * Lo mínimo que el sistema necesita de una base SQLite. Lo cumplen `node:sqlite` (hub) y
- * `better-sqlite3`; así el motor se puede cambiar sin tocar las migraciones ni las consultas.
+ * The minimum the system needs from a SQLite database. Both `node:sqlite` (hub) and
+ * `better-sqlite3` satisfy it, so the engine can be swapped without touching migrations or
+ * queries.
  */
-export interface BaseSqlite {
+export interface SqliteDatabase {
   exec(sql: string): void
-  prepare(sql: string): Sentencia
+  prepare(sql: string): Statement
   close(): void
 }
 
 /**
- * Ejecuta `trabajo` dentro de una transacción: todo se guarda o nada. `trabajo` debe ser
- * síncrono: con una función async el COMMIT ocurriría antes de que termine.
+ * Runs `job` inside a transaction: everything is saved or nothing is. `job` must be
+ * synchronous: with an async function the COMMIT would happen before it finishes.
  */
-export function enTransaccion<T>(db: BaseSqlite, trabajo: () => T): T {
-  // Dentro de otra transacción, el trabajo se suma a ella: todo queda o nada queda. No hay
-  // savepoint: quien atrape el error de una transacción de adentro sin volver a lanzarlo deja su
-  // trabajo a medias dentro de la de afuera. Por eso el error siempre se deja subir.
-  if (enCurso.has(db)) {
-    const result = trabajo()
+export function inTransaction<T>(db: SqliteDatabase, job: () => T): T {
+  // Inside another transaction, the job joins it: everything stays or nothing does. There is no
+  // savepoint: whoever catches an inner transaction's error without rethrowing it leaves its work
+  // half done inside the outer one. That is why the error is always allowed to propagate.
+  if (inProgress.has(db)) {
+    const result = job()
     if (typeof (result as { then?: unknown } | undefined)?.then === 'function')
-      throw new Error('enTransaccion no admite funciones asíncronas')
+      throw new Error('inTransaction no admite funciones asíncronas')
     return result
   }
   db.exec('BEGIN IMMEDIATE')
-  enCurso.add(db)
+  inProgress.add(db)
   try {
-    const result = trabajo()
+    const result = job()
     if (typeof (result as { then?: unknown } | undefined)?.then === 'function') {
-      throw new Error('enTransaccion no admite funciones asíncronas')
+      throw new Error('inTransaction no admite funciones asíncronas')
     }
     db.exec('COMMIT')
     return result
@@ -46,14 +47,14 @@ export function enTransaccion<T>(db: BaseSqlite, trabajo: () => T): T {
     try {
       db.exec('ROLLBACK')
     } catch {
-      // SQLite ya deshizo la transacción por su cuenta (disco lleno, E/S): lo que importa
-      // es el error original.
+      // SQLite already rolled back the transaction on its own (disk full, I/O): what matters
+      // is the original error.
     }
     throw error
   } finally {
-    enCurso.delete(db)
+    inProgress.delete(db)
   }
 }
 
-/** Las bases con una transacción de `enTransaccion` abierta. */
-const enCurso = new WeakSet<BaseSqlite>()
+/** The databases with an open `inTransaction` transaction. */
+const inProgress = new WeakSet<SqliteDatabase>()

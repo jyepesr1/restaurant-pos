@@ -87,9 +87,9 @@ export function crearServidor({
     // La app es de una sola página: las rutas de la app devuelven index.html. Un archivo
     // que no existe (p. ej. un JS de una versión anterior) responde 404, no HTML.
     app.setNotFoundHandler((req, reply) => {
-      const ruta = req.url.split('?')[0] ?? ''
-      const esApi = ruta === '/api' || ruta.startsWith('/api/')
-      const esArchivo = /\.[a-z0-9]+$/i.test(ruta)
+      const route = req.url.split('?')[0] ?? ''
+      const esApi = route === '/api' || route.startsWith('/api/')
+      const esArchivo = /\.[a-z0-9]+$/i.test(route)
       const esLectura = req.method === 'GET' || req.method === 'HEAD'
 
       if (esLectura && !esApi && !esArchivo) {

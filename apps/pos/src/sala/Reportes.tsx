@@ -7,11 +7,11 @@ import { pesos } from '../ui/formato'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { navegar } from '../ui/ruta'
 import { Diferencia } from './Caja'
-import { sala, useSala } from './contexto'
+import { floor, useSala } from './contexto'
 import { methodName, reglasDe, taxName } from './cuentas'
 import { claseCampo } from './Entrar'
 import { MarcoSala } from './MarcoSala'
-import type { CierreReporte, Reporte } from './motor'
+import type { CierreReporte, PeriodReport } from './motor'
 import {
   type Atajo,
   csvDeReporte,
@@ -47,24 +47,24 @@ const minus = (n: number) => (n === 0 ? pesos(0) : `-${pesos(n)}`)
 const message = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
 
 export function Reportes() {
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const { catalog, session } = useSala()
-  const reglas = reglasDe(catalog)
+  const rules = reglasDe(catalog)
   const [atajo, setAtajo] = useState<Atajo | 'range'>('today')
   /** El período que se pidió (puede no haber llegado todavía) y el que se está mostrando. */
   const [order, setPedido] = useState<Periodo | null>(null)
-  const [mostrado, setMostrado] = useState<{ report: Reporte; period: Periodo } | null>(null)
+  const [mostrado, setMostrado] = useState<{ report: PeriodReport; period: Periodo } | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // Solo cuenta la respuesta del último pedido: una lenta de antes no pisa la nueva.
   const latest = useRef(0)
 
-  const cargar = useCallback((p: Periodo | null) => {
+  const load = useCallback((p: Periodo | null) => {
     const number = ++latest.current
     setPedido(p)
     setCargando(true)
     setError(null)
-    sala
+    floor
       .report(p)
       .then((r) => {
         if (number !== latest.current) return
@@ -77,25 +77,25 @@ export function Reportes() {
         if (number === latest.current) setCargando(false)
       })
   }, [])
-  useEffect(() => cargar(null), [cargar])
+  useEffect(() => load(null), [load])
 
   const today = mostrado?.report.today ?? null
   const select = (value: Atajo | 'range') => {
     setAtajo(value)
-    if (value !== 'range' && today) cargar(periodoDe(value, today))
+    if (value !== 'range' && today) load(periodoDe(value, today))
   }
 
   const descargar = () => {
     if (!mostrado) return
     const { report, period } = mostrado
-    const csv = csvDeReporte(report, period, reglas, catalog?.restaurant.name ?? '')
+    const csv = csvDeReporte(report, period, rules, catalog?.restaurant.name ?? '')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    const enlace = document.createElement('a')
-    enlace.href = url
-    enlace.download = nombreCsv(period)
-    enlace.click()
+    const link = document.createElement('a')
+    link.href = url
+    link.download = nombreCsv(period)
+    link.click()
     URL.revokeObjectURL(url)
-    avisar(`Descargaste ${nombreCsv(period)}`)
+    notify(`Descargaste ${nombreCsv(period)}`)
   }
 
   return (
@@ -118,7 +118,7 @@ export function Reportes() {
           ))}
         </Grupo>
         {atajo === 'range' && today && (
-          <Rango today={today} initial={mostrado?.period ?? null} alVer={(p) => cargar(p)} />
+          <Rango today={today} initial={mostrado?.period ?? null} alVer={(p) => load(p)} />
         )}
 
         {error && (
@@ -131,7 +131,7 @@ export function Reportes() {
                 ? `${error} Abajo sigue lo de ${periodoEnPalabras(mostrado.period)}.`
                 : error}
             </p>
-            <Boton onClick={() => cargar(order)}>Intentar de nuevo</Boton>
+            <Boton onClick={() => load(order)}>Intentar de nuevo</Boton>
           </div>
         )}
         {!mostrado && !error && <p className="text-texto-suave">Leyendo las ventas…</p>}
@@ -140,7 +140,7 @@ export function Reportes() {
             report={mostrado.report}
             period={mostrado.period}
             cargando={cargando}
-            reglas={reglas}
+            rules={rules}
             puedeElegirImpresora={!!session?.permissions.includes('manage_devices')}
           />
         )}
@@ -207,18 +207,18 @@ function Contenido({
   report,
   period,
   cargando,
-  reglas,
+  rules,
   puedeElegirImpresora,
 }: {
-  report: Reporte
+  report: PeriodReport
   period: Periodo
   cargando: boolean
-  reglas: ReturnType<typeof reglasDe>
+  rules: ReturnType<typeof reglasDe>
   puedeElegirImpresora: boolean
 }) {
   const { report: inf, usuarios } = report
   const v = inf.sales
-  const quien = (id: string | null) => (id ? (usuarios[id] ?? 'Alguien') : '')
+  const who = (id: string | null) => (id ? (usuarios[id] ?? 'Alguien') : '')
   const sinVentas = v.net === 0 && v.checks === 0 && inf.byMethod.length === 0
   return (
     <div
@@ -260,8 +260,8 @@ function Contenido({
                 key={c.shiftId}
                 closeout={c}
                 varios={period.from !== period.until}
-                quien={quien}
-                reglas={reglas}
+                who={who}
+                rules={rules}
                 printer={report.printer}
                 puedeElegirImpresora={puedeElegirImpresora}
               />
@@ -273,15 +273,15 @@ function Contenido({
       <div className="grid gap-4 lg:grid-cols-2">
         <Tarjeta title="Ventas">
           <Filas>
-            <Fila name="Bruto" value={pesos(v.gross)} />
-            {v.voided > 0 && <Fila name="Productos anulados" value={minus(v.voided)} />}
-            {v.discounts > 0 && <Fila name="Descuentos" value={minus(v.discounts)} />}
-            <Fila name="Ventas" value={pesos(v.net)} main />
+            <Row name="Bruto" value={pesos(v.gross)} />
+            {v.voided > 0 && <Row name="Productos anulados" value={minus(v.voided)} />}
+            {v.discounts > 0 && <Row name="Descuentos" value={minus(v.discounts)} />}
+            <Row name="Ventas" value={pesos(v.net)} main />
             {v.settings !== 0 && (
-              <Fila name="Ajuste por redondeo del efectivo" value={pesos(v.settings)} />
+              <Row name="Ajuste por redondeo del efectivo" value={pesos(v.settings)} />
             )}
             {v.taxes.length > 0 && (
-              <Fila
+              <Row
                 name="Base sin impuestos"
                 value={pesos(v.taxes.reduce((a, i) => a + i.base, 0))}
               />
@@ -289,7 +289,7 @@ function Contenido({
             {v.taxes
               .filter((i) => i.tax > 0)
               .map((i) => (
-                <Fila
+                <Row
                   key={`${i.type}${i.rate}`}
                   name={taxName(i.type, i.rate)}
                   value={pesos(i.tax)}
@@ -305,9 +305,9 @@ function Contenido({
           ) : (
             <Filas>
               {inf.byMethod.map((m) => (
-                <Fila
+                <Row
                   key={methodKeyOf(m)}
-                  name={`${methodName(m.method, m.customMethodId, reglas)}${m.payments > 0 ? ` · ${m.payments} ${m.payments === 1 ? 'pago' : 'pagos'}` : ''}`}
+                  name={`${methodName(m.method, m.customMethodId, rules)}${m.payments > 0 ? ` · ${m.payments} ${m.payments === 1 ? 'pago' : 'pagos'}` : ''}`}
                   value={pesos(m.sale)}
                   detalle={m.tip !== 0 ? `+ propina ${pesos(m.tip)}` : undefined}
                 />
@@ -325,7 +325,7 @@ function Contenido({
               columns={['Mesero', 'Ventas', 'Cuentas', 'Ticket']}
               rows={inf.byWaiter.map((m) => ({
                 key: m.userId,
-                celdas: [quien(m.userId), pesos(m.net), String(m.checks), pesos(m.averageTicket)],
+                celdas: [who(m.userId), pesos(m.net), String(m.checks), pesos(m.averageTicket)],
               }))}
             />
           )}
@@ -347,9 +347,9 @@ function Contenido({
                   reason={a.reason}
                   detalle={[
                     a.orderNumber ? `Pedido ${a.orderNumber}` : null,
-                    quien(a.userId),
+                    who(a.userId),
                     a.authorizedById && a.authorizedById !== a.userId
-                      ? `autorizó ${quien(a.authorizedById)}`
+                      ? `autorizó ${who(a.authorizedById)}`
                       : null,
                   ]}
                   etiqueta={
@@ -368,9 +368,9 @@ function Contenido({
                   value={pesos(c.value)}
                   reason={c.reason}
                   detalle={[
-                    quien(c.userId),
+                    who(c.userId),
                     c.authorizedById && c.authorizedById !== c.userId
-                      ? `autorizó ${quien(c.authorizedById)}`
+                      ? `autorizó ${who(c.authorizedById)}`
                       : null,
                   ]}
                   etiqueta={null}
@@ -409,9 +409,9 @@ function Contenido({
 
         <Tarjeta title="Fondo de propinas">
           <Filas>
-            <Fila name="Propinas cobradas" value={pesos(inf.tipPool.tips)} />
-            <Fila name="Pagadas desde la caja" value={minus(inf.tipPool.paidOut)} />
-            <Fila name="Saldo del período" value={pesos(inf.tipPool.balance)} main />
+            <Row name="Propinas cobradas" value={pesos(inf.tipPool.tips)} />
+            <Row name="Pagadas desde la caja" value={minus(inf.tipPool.paidOut)} />
+            <Row name="Saldo del período" value={pesos(inf.tipPool.balance)} main />
           </Filas>
           <Nota>
             Entra la propina de cada pago cobrado en el período y sale lo que se entregó al equipo
@@ -423,7 +423,7 @@ function Contenido({
   )
 }
 
-function Productos({ report }: { report: Reporte }) {
+function Productos({ report }: { report: PeriodReport }) {
   const [all, setTodos] = useState(false)
   const { byProduct } = report.report
   const net = report.report.sales.net
@@ -455,27 +455,27 @@ function Productos({ report }: { report: Reporte }) {
 function Cierre({
   closeout: c,
   varios,
-  quien,
-  reglas,
+  who,
+  rules,
   printer,
   puedeElegirImpresora,
 }: {
   closeout: CierreReporte
   varios: boolean
-  quien: (id: string) => string
-  reglas: ReturnType<typeof reglasDe>
+  who: (id: string) => string
+  rules: ReturnType<typeof reglasDe>
   printer: boolean
   puedeElegirImpresora: boolean
 }) {
-  const avisar = useAvisar()
+  const notify = useAvisar()
   const [imprimiendo, setImprimiendo] = useState(false)
   const [fallo, setFallo] = useState<string | null>(null)
   const reimprimir = async () => {
     setImprimiendo(true)
     setFallo(null)
     try {
-      await sala.reimprimirCierre(c.shiftId)
-      avisar('El cierre de caja salió a la impresora')
+      await floor.reimprimirCierre(c.shiftId)
+      notify('El cierre de caja salió a la impresora')
     } catch (e) {
       setFallo(message(e))
     } finally {
@@ -487,13 +487,13 @@ function Cierre({
     new Intl.DateTimeFormat('es-CO', {
       hour: 'numeric',
       minute: '2-digit',
-      timeZone: reglas?.timeZone ?? 'America/Bogota',
+      timeZone: rules?.timeZone ?? 'America/Bogota',
     }).format(new Date(iso))
   return (
     <li className="flex flex-col gap-3 rounded-xl border border-linea bg-superficie-2 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-semibold">
-          {`${varios ? `${diaCorto(c.businessDay)} · ` : ''}Abrió ${quien(c.abiertoPor)} ${time(c.openedAt)} · Cerró ${quien(c.cerradoPor)} ${time(closed.time)}`}
+          {`${varios ? `${diaCorto(c.businessDay)} · ` : ''}Abrió ${who(c.openedBy)} ${time(c.openedAt)} · Cerró ${who(c.closedBy)} ${time(closed.time)}`}
         </p>
         <span className="flex items-center gap-2">
           <span className="text-sm text-texto-suave">Efectivo</span>
@@ -509,7 +509,7 @@ function Cierre({
         <ul className="flex flex-col gap-1 text-sm">
           {closed.otherMethods.map((m) => (
             <li key={methodKeyOf(m)} className="cifras flex flex-wrap justify-between gap-x-3">
-              <span>{methodName(m.method, m.customMethodId, reglas)}</span>
+              <span>{methodName(m.method, m.customMethodId, rules)}</span>
               <span className="text-texto-suave">
                 {`Según el sistema ${pesos(m.expected)} · Según su cierre ${pesos(m.reported)}`}
                 {m.variance !== 0 &&
@@ -604,7 +604,7 @@ const Filas = ({ children }: { children: ReactNode }) => (
   <dl className="cifras grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">{children}</dl>
 )
 
-function Fila({
+function Row({
   name,
   value,
   detalle,

@@ -1,5 +1,5 @@
 import { newId, type OrderState, orderTaxes, orderTotals } from '@pos/core'
-import type { Catalogo } from '@pos/sync'
+import type { Catalog } from '@pos/sync'
 import { useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
@@ -9,10 +9,10 @@ import { Grupo, Opcion } from '../ui/Opciones'
 import { PanelLateral } from '../ui/PanelLateral'
 import { navegar, useRuta } from '../ui/ruta'
 import { type Cobrando, type PagoNuevo, PanelCobro } from './Cobro'
-import { sala, useSala, useVistaLocal } from './contexto'
+import { floor, useSala, useVistaLocal } from './contexto'
 import {
   enPartesIguales,
-  lineasDe,
+  linesOf,
   methodName,
   porCobrar,
   porProductos,
@@ -37,7 +37,7 @@ const MOTIVOS_ANULAR_PAGO = ['Se registró por error', 'Pagó con otro medio'] a
 const message = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
 
 /** «Mesa 5 + 6», «Para llevar #12». */
-function tituloDe(catalog: Catalogo, order: OrderState): string {
+function tituloDe(catalog: Catalog, order: OrderState): string {
   if (order.tableId) {
     const names = [order.tableId, ...order.mergedTables].map(
       (id) => catalog.tables.find((m) => m.id === id)?.name ?? '?',
@@ -49,11 +49,11 @@ function tituloDe(catalog: Catalogo, order: OrderState): string {
 }
 
 export function Check() {
-  const { parametros } = useRuta()
-  const orderId = parametros.get('order')
+  const { params } = useRuta()
+  const orderId = params.get('order')
   const vista = useVistaLocal()
   const { catalog, session, device, connection } = useSala()
-  const avisar = useAvisar()
+  const notify = useAvisar()
   // Lo cobrado que cerró el pedido: se sigue viendo (el cambio que hay que entregar).
   const [closed, setCerrado] = useState<{ title: string; change: number | null } | null>(null)
   const [ultimoCambio, setUltimoCambio] = useState<number | null>(null)
@@ -100,8 +100,8 @@ export function Check() {
   const order = pedidoVisible.status
   const title = tituloDe(catalog, order)
   const volverAlPedido = `/order?order=${order.id}${order.tableId ? `&table=${order.tableId}` : ''}`
-  const reglas = reglasDe(catalog)
-  if (!reglas)
+  const rules = reglasDe(catalog)
+  if (!rules)
     return (
       <MarcoSala title={`Cuenta · ${title}`} back="/">
         <p className="p-6 text-texto-suave">
@@ -111,7 +111,7 @@ export function Check() {
     )
 
   const permissions = session?.permissions ?? []
-  const enLinea = connection === 'connected'
+  const online = connection === 'connected'
   const esCaja = device?.type === 'register'
   const puedeDividir = permissions.includes('split_check')
   const puedeCobrar = esCaja && permissions.includes('record_payment')
@@ -119,24 +119,24 @@ export function Check() {
   const puedeCerrar = esCaja && permissions.includes('close_table')
   const shift = vista.shift
   const totales = orderTotals(order)
-  const lines = lineasDe(order)
+  const lines = linesOf(order)
   const { balance, checks: divididas, unassigned } = porCobrar(order)
-  const propinaSaldo = propinaSugeridaDe(order, balance, reglas)
-  const propinaCinco = propinaSugeridaDe(order, balance, { ...reglas, suggestedTip: 500 })
+  const propinaSaldo = propinaSugeridaDe(order, balance, rules)
+  const propinaCinco = propinaSugeridaDe(order, balance, { ...rules, suggestedTip: 500 })
   // La que pide el cliente al ver la precuenta (sin propina, otro valor); va al papel y al cobro.
   const propinaVista = propinaElegida ?? propinaSaldo
-  const taxes = orderTaxes(order, reglas.redondeoModo)
+  const taxes = orderTaxes(order, rules.roundingMode)
   const payments = Object.values(order.payments).filter((p) => !p.voided)
   const sinEnviar = unidadesPorEnviar(order)
 
   /** Un trabajo que registra eventos: uno a la vez, y el error se avisa. */
-  const hacer = async (trabajo: () => Promise<void>) => {
+  const hacer = async (job: () => Promise<void>) => {
     if (ocupado) return
     setOcupado(true)
     try {
-      await trabajo()
+      await job()
     } catch (e) {
-      avisar(message(e))
+      notify(message(e))
     } finally {
       setOcupado(false)
     }
@@ -144,72 +144,70 @@ export function Check() {
 
   const imprimir = (checkId: string | null, subtotal: number, tip: number) =>
     hacer(async () => {
-      await sala.record('PreBillPrinted', order.id, {
+      await floor.record('PreBillPrinted', order.id, {
         check_id: checkId,
         subtotal,
         suggested_tip: tip,
       })
-      avisar(
-        reglas.imprimePrecuenta ? 'Precuenta enviada a la impresora' : `${title}: pidió la cuenta`,
-      )
+      notify(rules.printsPreBill ? 'Precuenta enviada a la impresora' : `${title}: pidió la cuenta`)
     })
 
   const split = (newOnes: ReturnType<typeof enPartesIguales>) =>
     hacer(async () => {
-      await sala.record('CheckSplit', order.id, { checks: newOnes })
+      await floor.record('CheckSplit', order.id, { checks: newOnes })
       setModo('single')
       setAsignadas(new Map())
     })
 
   const undo = () =>
     hacer(async () => {
-      await sala.record('SplitUndone', order.id, {})
+      await floor.record('SplitUndone', order.id, {})
     })
 
   /** Cierra el pedido con saldo 0; el hub confirma antes de mostrarlo cerrado. */
   const close = async (change: number | null) => {
-    await sala.registrarConfirmado('OrderClosed', order.id, {})
+    await floor.registrarConfirmado('OrderClosed', order.id, {})
     setCerrado({ title, change })
-    avisar(`${title}: pagada y cerrada`)
+    notify(`${title}: pagada y cerrada`)
   }
 
   // El dinero se muestra como cobrado solo cuando el hub lo acepta: un pago que el hub rechaza
   // desaparecería de la cuenta después de que el cliente ya pagó.
-  const cobrar = (payment: PagoNuevo) =>
+  const charge = (payment: PagoNuevo) =>
     hacer(async () => {
       if (!shift) throw new Error('Abre la caja para cobrar')
-      await sala.registrarConfirmado('PaymentRecorded', order.id, {
+      await floor.registrarConfirmado('PaymentRecorded', order.id, {
         ...payment,
         register_shift_id: shift.id,
       })
       setCobrando(null)
       setUltimoCambio(payment.change)
       // Lo que queda según lo guardado ya con el pago (otro equipo pudo cobrar al mismo tiempo).
-      const after = await sala.sync?.order(order.id)
+      const after = await floor.sync?.order(order.id)
       const queda = after ? orderTotals(after).balance : balance - payment.amount
       // La mesa se cierra sola al quedar en 0 (decisión del dueño, 26-oct-2026). Si el cierre
       // falla, el pago ya quedó y «Cerrar la mesa» lo vuelve a intentar.
       if (queda === 0 && puedeCerrar) await close(payment.change)
-      else avisar(queda === 0 ? 'Pago registrado' : `Pago registrado. Queda ${pesos(queda)}`)
+      else notify(queda === 0 ? 'Pago registrado' : `Pago registrado. Queda ${pesos(queda)}`)
     })
 
   const anularPago = (paymentId: string, reason: string) =>
     hacer(async () => {
       if (!shift) throw new Error('Abre la caja para anular un pago')
-      await sala.registrarConfirmado(
+      await floor.registrarConfirmado(
         'PaymentVoided',
         order.id,
         { payment_id: paymentId, register_shift_id: shift.id },
         { reason },
       )
       setAnulando(null)
-      avisar('Pago anulado')
+      notify('Pago anulado')
     })
 
   // Por qué no se puede cobrar aquí, si no se puede.
   const sinCobro = !puedeCobrar
     ? null
-    : !enLinea
+    : !online
       ? 'Sin conexión con el hub: para cobrar hace falta la red. Revisa el cable o el Wi-Fi.'
       : !shift
         ? 'La caja está cerrada: ábrela con la base para empezar a cobrar.'
@@ -222,12 +220,12 @@ export function Check() {
 
   const montosVista =
     mode === 'even'
-      ? enPartesIguales(order, people, reglas, newId)
+      ? enPartesIguales(order, people, rules, newId)
       : mode === 'products'
-        ? porProductos(order, asignadas, checks, reglas, newId).checks
+        ? porProductos(order, asignadas, checks, rules, newId).checks
         : []
   const sinAsignarVista =
-    mode === 'products' ? porProductos(order, asignadas, checks, reglas, newId).unassigned : 0
+    mode === 'products' ? porProductos(order, asignadas, checks, rules, newId).unassigned : 0
   // Por productos solo antes del primer pago: después se divide lo que queda en partes iguales.
   const porProductosPosible = totales.paid === 0
 
@@ -319,7 +317,7 @@ export function Check() {
               <>
                 <dt className="flex items-center gap-2 text-texto-suave">
                   {propinaElegida === null
-                    ? `Propina sugerida (${reglas.suggestedTip / 100} %, voluntaria)`
+                    ? `Propina sugerida (${rules.suggestedTip / 100} %, voluntaria)`
                     : 'Propina (voluntaria)'}
                   <Boton
                     variant="ghost"
@@ -349,9 +347,9 @@ export function Check() {
                     setEditandoPropina(false)
                   }}
                 >
-                  {`${reglas.suggestedTip / 100} % (sugerida) · ${pesos(propinaSaldo)}`}
+                  {`${rules.suggestedTip / 100} % (sugerida) · ${pesos(propinaSaldo)}`}
                 </Opcion>
-                {reglas.suggestedTip !== 500 && (
+                {rules.suggestedTip !== 500 && (
                   <Opcion
                     elegida={propinaElegida === propinaCinco}
                     alElegir={() => {
@@ -392,7 +390,7 @@ export function Check() {
                 {payments.map((p) => (
                   <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
                     <span>
-                      {methodName(p.method, p.customMethodId, reglas)}
+                      {methodName(p.method, p.customMethodId, rules)}
                       {p.checkId &&
                         ` · ${divididas.find((c) => c.id === p.checkId)?.name ?? 'Cuenta'}`}
                     </span>
@@ -401,7 +399,7 @@ export function Check() {
                       {p.tip > 0 && ` + propina ${pesos(p.tip)}`}
                       {p.roundingAdjustment !== 0 &&
                         ` (redondeo ${p.roundingAdjustment > 0 ? '+' : ''}${pesos(p.roundingAdjustment)})`}
-                      {puedeAnularPago && shift && enLinea && (
+                      {puedeAnularPago && shift && online && (
                         <Boton variant="ghost" onClick={() => setAnulando(p.id)}>
                           Anular
                         </Boton>
@@ -432,9 +430,9 @@ export function Check() {
             disabled={ocupado || balance === 0}
             onClick={() => imprimir(null, balance, propinaVista)}
           >
-            {reglas.imprimePrecuenta ? 'Imprimir precuenta' : 'Pidió la cuenta'}
+            {rules.printsPreBill ? 'Imprimir precuenta' : 'Pidió la cuenta'}
           </Boton>
-          {!reglas.imprimePrecuenta && (
+          {!rules.printsPreBill && (
             <p className="text-sm text-texto-suave">
               Sin impresora de precuentas: muéstrale esta pantalla al cliente.
             </p>
@@ -445,7 +443,7 @@ export function Check() {
               variant="main"
               large
               icono="check"
-              disabled={ocupado || !enLinea}
+              disabled={ocupado || !online}
               onClick={() => hacer(() => close(ultimoCambio))}
             >
               Cerrar la mesa
@@ -472,7 +470,7 @@ export function Check() {
           {sinCobro && (
             <div className="rounded-xl bg-proceso-suave p-3 text-proceso-texto">
               <p>{sinCobro}</p>
-              {!shift && enLinea && (
+              {!shift && online && (
                 <Boton
                   className="mt-2"
                   onClick={() =>
@@ -601,17 +599,17 @@ export function Check() {
       <PanelCobro
         cobrando={cobrando}
         order={order}
-        reglas={reglas}
+        rules={rules}
         cardTerminals={catalog.cardTerminals ?? []}
         ocupado={ocupado}
-        alCerrar={() => setCobrando(null)}
-        alCobrar={cobrar}
+        onClose={() => setCobrando(null)}
+        alCobrar={charge}
       />
       <PanelAnularPago
         key={anulando ?? 'ninguno'}
         paymentId={anulando}
         ocupado={ocupado}
-        alCerrar={() => setAnulando(null)}
+        onClose={() => setAnulando(null)}
         onVoid={anularPago}
       />
     </MarcoSala>
@@ -759,12 +757,12 @@ function Accountant({
 function PanelAnularPago({
   paymentId,
   ocupado,
-  alCerrar,
+  onClose,
   onVoid,
 }: {
   paymentId: string | null
   ocupado: boolean
-  alCerrar: () => void
+  onClose: () => void
   onVoid: (paymentId: string, reason: string) => void
 }) {
   const [reason, setMotivo] = useState<string | null>(null)
@@ -774,7 +772,7 @@ function PanelAnularPago({
     <PanelLateral
       opened={paymentId !== null}
       title="Anular el pago"
-      alCerrar={alCerrar}
+      onClose={onClose}
       pie={
         <Boton
           variant="danger"

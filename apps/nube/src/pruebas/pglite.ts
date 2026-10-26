@@ -1,24 +1,24 @@
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { migrar } from '../migraciones'
-import type { Fila, Sql } from '../sql'
+import type { Row, Sql } from '../sql'
 
 // Postgres embebido (PGlite) para las pruebas: el mismo SQL que correrá en Neon, sin red ni cuentas.
 
-type Conexion = PGlite | Transaction
+type Connection = PGlite | Transaction
 
-export function envolver(db: Conexion): Sql {
+export function envolver(db: Connection): Sql {
   return {
-    async query<T extends Fila = Fila>(text: string, parametros: readonly unknown[] = []) {
-      const r = await db.query<T>(text, [...parametros])
+    async query<T extends Row = Row>(text: string, params: readonly unknown[] = []) {
+      const r = await db.query<T>(text, [...params])
       return r.rows
     },
     async execute(guion: string) {
       await db.exec(guion)
     },
-    async transaccion<T>(trabajo: (sql: Sql) => Promise<T>) {
+    async transaction<T>(job: (sql: Sql) => Promise<T>) {
       // Dentro de una transacción no se abre otra: se sigue en la misma.
-      if (!('transaction' in db)) return trabajo(envolver(db))
-      return db.transaction((tx) => trabajo(envolver(tx)))
+      if (!('transaction' in db)) return job(envolver(db))
+      return db.transaction((tx) => job(envolver(tx)))
     },
   }
 }

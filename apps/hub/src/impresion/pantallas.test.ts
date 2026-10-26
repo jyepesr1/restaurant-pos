@@ -34,8 +34,8 @@ async function screen(t: MontajeImpresion, stations: string[] = [t.kitchen], nam
     user: { id: c.user.id as string },
   }
   /** Un evento de esa pantalla, mandado al hub. */
-  const mandar = (order: string, type: string, data: unknown, extras: Json = {}) => {
-    const x = t.hub.recibirLote(tablet.connection, [
+  const submit = (order: string, type: string, data: unknown, extras: Json = {}) => {
+    const x = t.hub.receiveBatch(tablet.connection, [
       t.event(tablet.connection, session, type, data, {
         aggregate_id: order,
         base_sequence: Number(
@@ -44,7 +44,7 @@ async function screen(t: MontajeImpresion, stations: string[] = [t.kitchen], nam
         ...extras,
       } as never),
     ])
-    return x.resultados[0] as { status: string; reason?: string }
+    return x.results[0] as { status: string; reason?: string }
   }
   return {
     tablet,
@@ -52,7 +52,7 @@ async function screen(t: MontajeImpresion, stations: string[] = [t.kitchen], nam
     session,
     userId: session.user.id,
     cuerpoSesion: { session_id: session.sesionId, secret: session.secret },
-    mandar,
+    submit,
   }
 }
 
@@ -86,9 +86,7 @@ describe('convertir un equipo en pantalla de cocina', () => {
   it('el equipo queda como pantalla (kds) con sus estaciones y su nombre', async () => {
     const t = montarImpresion()
     const p = await screen(t, [t.kitchen, t.bar, t.kitchen], '  Cocina caliente ')
-    const d = t.db
-      .prepare('SELECT * FROM devices WHERE id = ?')
-      .get(p.tablet.connection.dispositivoId)
+    const d = t.db.prepare('SELECT * FROM devices WHERE id = ?').get(p.tablet.connection.deviceId)
     expect(d).toMatchObject({ type: 'kds', name: 'Cocina caliente' })
     expect(JSON.parse(String(d?.station_ids))).toEqual([t.kitchen, t.bar])
   })
@@ -99,10 +97,10 @@ describe('convertir un equipo en pantalla de cocina', () => {
     const vieja = tablet.cuerpoSesion
     const r = await convertir(t, tablet)
     const newOne = r.json()
-    const abiertas = t.db
+    const openHandles = t.db
       .prepare('SELECT id FROM sessions WHERE device_id = ? AND closed_at IS NULL')
-      .all(tablet.connection.dispositivoId)
-    expect(abiertas).toEqual([{ id: newOne.session_id }])
+      .all(tablet.connection.deviceId)
+    expect(openHandles).toEqual([{ id: newOne.session_id }])
     // La sesión del administrador ya no sirve para nada: ni siquiera para volver a convertir.
     const another = await t.post('/api/kitchen/config', vieja, tablet.token)
     expect(another.statusCode).toBe(401)
@@ -138,7 +136,7 @@ describe('convertir un equipo en pantalla de cocina', () => {
     expect(after.roles.map((x: Json) => x.name)).not.toContain('Pantalla de cocina')
     // En Equipos sí está la tablet, para poder retirarla.
     expect(after.devices.some((e: Json) => e.type === 'kds')).toBe(true)
-    const catalog = leerCatalogo(t.db, t.restauranteId)
+    const catalog = leerCatalogo(t.db, t.restaurantId)
     expect(catalog.staff.map((x) => x.name)).not.toContain('Cocina')
   })
 
@@ -234,7 +232,7 @@ describe('convertir un equipo en pantalla de cocina', () => {
     })
     const d = t.db
       .prepare('SELECT station_ids, name FROM devices WHERE id = ?')
-      .get(p.tablet.connection.dispositivoId)
+      .get(p.tablet.connection.deviceId)
     expect(d).toMatchObject({ name: 'Cocina y barra' })
     expect(JSON.parse(String(d?.station_ids))).toEqual([t.kitchen, t.bar])
     // La sesión técnica anterior se cerró; la nueva sí marca.
@@ -243,7 +241,7 @@ describe('convertir un equipo en pantalla de cocina', () => {
     expect(
       t.db
         .prepare('SELECT count(*) AS n FROM sessions WHERE device_id = ? AND closed_at IS NULL')
-        .get(p.tablet.connection.dispositivoId),
+        .get(p.tablet.connection.deviceId),
     ).toEqual({ n: 1 })
   })
 
@@ -254,8 +252,8 @@ describe('convertir un equipo en pantalla de cocina', () => {
     expect(a.userId).not.toBe(b.userId)
     expect(usuariosTecnicos(t)).toHaveLength(2)
     expect(t.db.prepare('SELECT count(*) AS n FROM roles WHERE hidden = 1').get()).toEqual({ n: 1 })
-    const catalog = leerCatalogo(t.db, t.restauranteId)
-    expect(catalog.pantallas?.map((x) => x.name)).toEqual(['Barra', 'Cocina'])
+    const catalog = leerCatalogo(t.db, t.restaurantId)
+    expect(catalog.screens?.map((x) => x.name)).toEqual(['Barra', 'Cocina'])
     expect(catalog.stations.find((e) => e.id === t.kitchen)).toMatchObject({ screen: true })
     expect(catalog.stations.find((e) => e.id === t.postres)).toMatchObject({ screen: false })
   })
@@ -282,7 +280,7 @@ describe('convertir un equipo en pantalla de cocina', () => {
     expect(r.statusCode).toBe(400)
     expect(usuariosTecnicos(t)).toEqual([])
     expect(
-      t.db.prepare('SELECT type FROM devices WHERE id = ?').get(tablet.connection.dispositivoId),
+      t.db.prepare('SELECT type FROM devices WHERE id = ?').get(tablet.connection.deviceId),
     ).toEqual({ type: 'register' })
     // La sesión del administrador sigue abierta.
     expect(
@@ -314,7 +312,7 @@ describe('convertir un equipo en pantalla de cocina', () => {
     expect(seenSet).toEqual(['10.0.0.20'])
     expect(usuariosTecnicos(t)).toEqual([])
     expect(
-      t.db.prepare('SELECT type FROM devices WHERE id = ?').get(tablet.connection.dispositivoId),
+      t.db.prepare('SELECT type FROM devices WHERE id = ?').get(tablet.connection.deviceId),
     ).toEqual({ type: 'register' })
     expect(
       (await t.post('/api/kitchen/config', tablet.cuerpoSesion, tablet.token)).statusCode,
@@ -330,7 +328,7 @@ describe('convertir un equipo en pantalla de cocina', () => {
 
 describe('qué puede hacer la pantalla con su sesión', () => {
   /** Un pedido de la caja con un plato enviado, para que la pantalla lo marque. */
-  function conPlatoEnviado(t: MontajeImpresion) {
+  function withSentDish(t: MontajeImpresion) {
     const ana = t.device('waiter')
     const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
     t.send(ana, order, items)
@@ -340,14 +338,14 @@ describe('qué puede hacer la pantalla con su sesión', () => {
   it('puede marcar listo y recuperar lo marcado por error', async () => {
     const t = montarImpresion()
     const p = await screen(t)
-    const { order, id } = conPlatoEnviado(t)
-    expect(p.mandar(order, 'ItemReady', { item_ids: [id] }).status).toBe('confirmed')
+    const { order, id } = withSentDish(t)
+    expect(p.submit(order, 'ItemReady', { item_ids: [id] }).status).toBe('confirmed')
     expect(t.hub.order(order)?.items[id]?.status).toBe('ready')
-    expect(p.mandar(order, 'ItemReturnedToQueue', { item_ids: [id] }).status).toBe('confirmed')
+    expect(p.submit(order, 'ItemReturnedToQueue', { item_ids: [id] }).status).toBe('confirmed')
     expect(t.hub.order(order)?.items[id]?.status).toBe('sent')
     // Y queda a nombre de la pantalla.
     const e = t.db.prepare("SELECT user_id, device_id FROM events WHERE type = 'ItemReady'").get()
-    expect(e).toEqual({ user_id: p.userId, device_id: p.tablet.connection.dispositivoId })
+    expect(e).toEqual({ user_id: p.userId, device_id: p.tablet.connection.deviceId })
   })
 
   it('puede marcar agotados', async () => {
@@ -374,9 +372,9 @@ describe('qué puede hacer la pantalla con su sesión', () => {
   ])('no puede mandar %s', async (type, data) => {
     const t = montarImpresion()
     const p = await screen(t)
-    const { order } = conPlatoEnviado(t)
+    const { order } = withSentDish(t)
     const before = Number(t.db.prepare('SELECT count(*) AS n FROM events').get()?.n)
-    const r = p.mandar(
+    const r = p.submit(
       type === 'OrderOpened' ? (await import('@pos/core')).newId() : order,
       type,
       data ?? {},
@@ -388,7 +386,7 @@ describe('qué puede hacer la pantalla con su sesión', () => {
   it('no puede agregar ni quitar productos, ni enviar, ni anular, ni mover', async () => {
     const t = montarImpresion()
     const p = await screen(t)
-    const { order, id } = conPlatoEnviado(t)
+    const { order, id } = withSentDish(t)
     const item = {
       item_id: id,
       product_id: id,
@@ -416,7 +414,7 @@ describe('qué puede hacer la pantalla con su sesión', () => {
       ['WaiterAssigned', { waiter_id: p.userId }],
     ]
     for (const [type, data] of attempts) {
-      const r = p.mandar(order, type, data, { reason: 'prueba' })
+      const r = p.submit(order, type, data, { reason: 'prueba' })
       // Por permiso, no por un cuerpo mal armado.
       expect({ type, status: r.status, reason: r.reason }).toEqual({
         type,
@@ -429,9 +427,9 @@ describe('qué puede hacer la pantalla con su sesión', () => {
   it('no puede cobrar ni cerrar aunque el equipo sea de caja: no tiene el permiso', async () => {
     const t = montarImpresion()
     const p = await screen(t)
-    const { order } = conPlatoEnviado(t)
+    const { order } = withSentDish(t)
     for (const type of ['PaymentRecorded', 'OrderClosed', 'PaymentVoided', 'RefundRecorded']) {
-      const r = p.mandar(order, type, {})
+      const r = p.submit(order, type, {})
       expect(r.status, type).toBe('rejected')
     }
   })
@@ -465,11 +463,11 @@ describe('retirar una pantalla', () => {
       { name: 'Risotto', station: t.kitchen },
     ])
     t.send(ana, order, items)
-    expect(p.mandar(order, 'ItemReady', { item_ids: [items[0]?.id] }).status).toBe('confirmed')
+    expect(p.submit(order, 'ItemReady', { item_ids: [items[0]?.id] }).status).toBe('confirmed')
 
     t.advance(60_000)
     const r = await t.post(
-      `/api/devices/${p.tablet.connection.dispositivoId}/revoke`,
+      `/api/devices/${p.tablet.connection.deviceId}/revoke`,
       admin.cuerpoSesion,
       admin.token,
     )
@@ -480,7 +478,7 @@ describe('retirar una pantalla', () => {
     expect(
       t.db
         .prepare('SELECT count(*) AS n FROM sessions WHERE device_id = ? AND closed_at IS NULL')
-        .get(p.tablet.connection.dispositivoId),
+        .get(p.tablet.connection.deviceId),
     ).toEqual({ n: 0 })
     // El usuario técnico no se borra: queda archivado con su historia.
     expect(t.db.prepare('SELECT count(*) AS n FROM users WHERE id = ?').get(p.userId)).toEqual({
@@ -488,7 +486,7 @@ describe('retirar una pantalla', () => {
     })
 
     t.advance(60_000)
-    const after = p.mandar(order, 'ItemReady', { item_ids: [items[1]?.id] })
+    const after = p.submit(order, 'ItemReady', { item_ids: [items[1]?.id] })
     expect(after.status).toBe('rejected')
     expect(t.hub.order(order)?.items[items[1]?.id as string]?.status).toBe('sent')
     // Sus rutas también dejan de servir.
@@ -501,7 +499,7 @@ describe('retirar una pantalla', () => {
     const admin = t.device('admin', 'register')
     const p = await screen(t)
     await t.post(
-      `/api/devices/${p.tablet.connection.dispositivoId}/revoke`,
+      `/api/devices/${p.tablet.connection.deviceId}/revoke`,
       admin.cuerpoSesion,
       admin.token,
     )
@@ -514,12 +512,12 @@ describe('retirar una pantalla', () => {
     const a = await screen(t, [t.kitchen], 'Cocina')
     await screen(t, [t.bar], 'Barra')
     await t.post(
-      `/api/devices/${a.tablet.connection.dispositivoId}/revoke`,
+      `/api/devices/${a.tablet.connection.deviceId}/revoke`,
       admin.cuerpoSesion,
       admin.token,
     )
-    const catalog = leerCatalogo(t.db, t.restauranteId)
-    expect(catalog.pantallas?.map((x) => x.name)).toEqual(['Barra'])
+    const catalog = leerCatalogo(t.db, t.restaurantId)
+    expect(catalog.screens?.map((x) => x.name)).toEqual(['Barra'])
     expect(catalog.stations.find((e) => e.id === t.kitchen)).toMatchObject({ screen: false })
     expect(catalog.stations.find((e) => e.id === t.bar)).toMatchObject({ screen: true })
   })
@@ -528,11 +526,7 @@ describe('retirar una pantalla', () => {
     const t = montarImpresion()
     const admin = t.device('admin', 'register')
     const ana = t.device('waiter')
-    await t.post(
-      `/api/devices/${ana.connection.dispositivoId}/revoke`,
-      admin.cuerpoSesion,
-      admin.token,
-    )
+    await t.post(`/api/devices/${ana.connection.deviceId}/revoke`, admin.cuerpoSesion, admin.token)
     expect(t.db.prepare("SELECT active FROM users WHERE name = 'Ana'").get()).toEqual({
       active: 1,
     })
@@ -545,7 +539,7 @@ describe('retirar una pantalla', () => {
     // El administrador entra en esa misma tablet para cambiar algo, y luego la retiran.
     t.entrar(p.tablet.connection, 'admin')
     await t.post(
-      `/api/devices/${p.tablet.connection.dispositivoId}/revoke`,
+      `/api/devices/${p.tablet.connection.deviceId}/revoke`,
       admin.cuerpoSesion,
       admin.token,
     )

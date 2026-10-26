@@ -1,58 +1,58 @@
-export type { Catalogo } from './catalogo'
-export {
-  type AlmacenDispositivo,
-  AlmacenDispositivoMemoria,
-  type Cursor,
-  type EstadoLocal,
-  type EventoLocal,
-  sinAceptacion,
-} from './dispositivo/almacen'
-export { ClienteSync, type OpcionesCliente } from './dispositivo/cliente'
+export type { Catalog } from './catalog'
+export { type ClientOptions, SyncClient } from './device/client'
 export {
   type Channel,
-  type EstadoConexion,
-  GestorConexion,
-  type Manejadores,
-  type OpcionesGestor,
-  type Temporizadores,
-  TIEMPOS,
-} from './dispositivo/conexion'
+  ConnectionManager,
+  type ConnectionState,
+  type Handlers,
+  type ManagerOptions,
+  TIMINGS,
+  type TimerFns,
+} from './device/connection'
 export {
-  type AlmacenHub,
-  AlmacenMemoria,
-  type Conflicto,
-  type Cuarentena,
-  type Rechazo,
-  TIPOS_COBRO,
-  type TipoConflicto,
-} from './hub/almacen'
+  type Cursor,
+  type DeviceStore,
+  type LocalEvent,
+  type LocalState,
+  MemoryDeviceStore,
+  withoutAcceptance,
+} from './device/store'
+export { canonicalJson, eventFingerprint, fingerprint } from './fingerprint'
+export { type Authenticator, FloorSync } from './hub/floor'
 export {
-  type CambioPedido,
-  type Conexion,
+  type AccessControl,
+  type AccessVerdict,
   type ConfigHub,
-  type ControlAcceso,
+  type Connection,
   HubSync,
-  pedidosDe,
-  type RevisorPrecios,
-  type VeredictoAcceso,
+  type OrderChange,
+  ordersOf,
+  type PriceChecker,
 } from './hub/hub'
 export {
-  type CierreDePedido,
-  type CierreDeTurno,
-  cierreDeTurno,
-  cuadreGuardado,
-  type DatosInforme,
-  datosDeInforme,
-} from './hub/informe'
-export { type Autenticador, SalaSync } from './hub/sala'
-export { canonicalJson, fingerprint, huellaEvento } from './huella'
+  type OrderClose,
+  type ReportData,
+  reportData,
+  type ShiftClose,
+  savedReconciliation,
+  shiftClose,
+} from './hub/report'
 export {
-  type CodigoError,
-  type EstadoImpresora,
-  MensajeDispositivo,
-  type MensajeHub,
-  type ResultadoEvento,
-  TAMANO_LOTE,
-  TAMANO_PAGINA,
-  type TipoDispositivo,
-} from './protocolo'
+  CHARGE_TYPES,
+  type Conflict,
+  type ConflictType,
+  type HubStore,
+  MemoryStore,
+  type Quarantine,
+  type Rejection,
+} from './hub/store'
+export {
+  BATCH_SIZE,
+  DeviceMessage,
+  type DeviceType,
+  type ErrorCode,
+  type EventResult,
+  type HubMessage,
+  PAGE_SIZE,
+  type PrinterStatus,
+} from './protocol'

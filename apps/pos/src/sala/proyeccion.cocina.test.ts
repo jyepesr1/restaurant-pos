@@ -21,15 +21,15 @@ function table(
   }))
   events.push(...items.map((i) => i.ev))
   const ids = (e: string) => items.filter((i) => i.status === e).map((i) => idDe(i.ev))
-  const enviados = items.filter((i) => !['pending', 'held'].includes(i.status))
-  if (enviados.length)
+  const sentList = items.filter((i) => !['pending', 'held'].includes(i.status))
+  if (sentList.length)
     events.push(
       local('ItemsSent', p, {
         tickets: [
           {
             ticket_id: newId(),
             station_id: newId(),
-            item_ids: enviados.map((i) => idDe(i.ev)),
+            item_ids: sentList.map((i) => idDe(i.ev)),
           },
         ],
       }),

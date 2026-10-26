@@ -118,7 +118,7 @@ describe('ShiftOpened: schema', () => {
 
 describe('ShiftOpened: does not touch orders', () => {
   // BUG: a ShiftOpened can name an order in `related` and the hub stores it as an event of that
-  // order (eventosDeAgregado(order) includes it). ProductSoldOut already prevents it in
+  // order (aggregateEvents(order) includes it). ProductSoldOut already prevents it in
   // packages/core/src/events/order.ts (superRefine of NewOrderEvent, «Un evento de producto
   // no toca pedidos»); the same guard is missing for register_shift aggregate events.
   it('a ShiftOpened cannot name an order in related', () => {

@@ -1,5 +1,5 @@
 import { newId } from '@pos/core'
-import type { EventoLocal } from '@pos/sync'
+import type { LocalEvent } from '@pos/sync'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { pedidosAbiertos } from './proyeccion'
@@ -24,9 +24,9 @@ vi.mock('./MarcoSala', () => ({ MarcoSala: ({ children }: { children: unknown })
 
 const { Mesas } = await import('./Mesas')
 
-const table = (name: string, zonaId: string, x: number) => ({
+const table = (name: string, zoneId: string, x: number) => ({
   id: newId(),
-  zonaId,
+  zoneId,
   name,
   x,
   y: 0,
@@ -37,15 +37,15 @@ const table = (name: string, zonaId: string, x: number) => ({
   capacity: 4,
 })
 
-function diningRoom(order: (tables: Record<string, string>) => EventoLocal[]) {
-  const zonaId = newId()
+function diningRoom(order: (tables: Record<string, string>) => LocalEvent[]) {
+  const zoneId = newId()
   const m = {
-    '5': table('5', zonaId, 0),
-    '6': table('6', zonaId, 100),
-    '7': table('7', zonaId, 200),
+    '5': table('5', zoneId, 0),
+    '6': table('6', zoneId, 100),
+    '7': table('7', zoneId, 200),
   }
   status.catalog = catalogoDePrueba({
-    zones: [{ id: zonaId, name: 'Salón', level: 1 }],
+    zones: [{ id: zoneId, name: 'Salón', level: 1 }],
     tables: Object.values(m),
   })
   status.orders = pedidosAbiertos(

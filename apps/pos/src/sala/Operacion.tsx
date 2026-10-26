@@ -7,7 +7,7 @@ import { Menu } from './Carta'
 import { AvisoListos, PantallaCocina, PedidosEnCocina } from './Cocina'
 import { CocinaAjustes } from './CocinaAjustes'
 import { Check } from './Cuenta'
-import { sala, useSala } from './contexto'
+import { floor, useSala } from './contexto'
 import { Entrar } from './Entrar'
 import { Marca } from './Marca'
 import { MarcoSala } from './MarcoSala'
@@ -23,7 +23,7 @@ import { TomaPedido } from './TomaPedido'
 
 const REVISAR_SESION_MS = 30_000
 
-export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLSearchParams }) {
+export function Operacion({ route, params }: { route: string; params: URLSearchParams }) {
   const status = useSala()
   // La marca del restaurante llega con la carta: cuando cambia, todo el equipo se ve con ella.
   // Sin carta todavía (se está leyendo, o el equipo recién entra) se deja la que pintó index.html.
@@ -34,14 +34,14 @@ export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLS
   }, [conCarta, brand])
 
   useEffect(() => {
-    sala.cargar().catch((e) => console.error('No se pudo abrir la base del equipo:', e))
-    const alCambiarVisibilidad = () => sala.cambiarVisibilidad(!document.hidden)
-    const alTocar = () => sala.usar()
-    const revisar = setInterval(() => sala.vencerSesionSiToca(), REVISAR_SESION_MS)
+    floor.load().catch((e) => console.error('No se pudo abrir la base del equipo:', e))
+    const alCambiarVisibilidad = () => floor.changeVisibility(!document.hidden)
+    const alTocar = () => floor.usar()
+    const review = setInterval(() => floor.vencerSesionSiToca(), REVISAR_SESION_MS)
     document.addEventListener('visibilitychange', alCambiarVisibilidad)
     window.addEventListener('pointerdown', alTocar, { passive: true })
     return () => {
-      clearInterval(revisar)
+      clearInterval(review)
       document.removeEventListener('visibilitychange', alCambiarVisibilidad)
       window.removeEventListener('pointerdown', alTocar)
     }
@@ -58,33 +58,33 @@ export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLS
   return (
     <>
       <AvisoListos />
-      <Pantalla ruta={ruta} parametros={parametros} permissions={status.session.permissions} />
+      <Pantalla route={route} params={params} permissions={status.session.permissions} />
     </>
   )
 }
 
 function Pantalla({
-  ruta,
-  parametros,
+  route,
+  params,
   permissions,
 }: {
-  ruta: string
-  parametros: URLSearchParams
+  route: string
+  params: URLSearchParams
   permissions: string[]
 }) {
-  if (ruta === '/kitchen/settings' && permissions.includes('manage_devices'))
+  if (route === '/kitchen/settings' && permissions.includes('manage_devices'))
     return <CocinaAjustes />
-  if (ruta === '/register/settings' && permissions.includes('manage_devices'))
+  if (route === '/register/settings' && permissions.includes('manage_devices'))
     return <CajaAjustes />
-  if (ruta === '/register') return <Caja />
-  if (ruta === '/reports' && permissions.includes('view_reports')) return <Reportes />
-  if (ruta === '/check') return <Check key={parametros.get('order')} />
-  if (ruta === '/kitchen') return <PedidosEnCocina />
-  if (ruta === '/staff' && permissions.includes('manage_users')) return <Personal />
-  if (ruta === '/brand' && permissions.includes('manage_users')) return <Marca />
-  if (ruta === '/menu') return <Menu />
-  if (ruta === '/floor-plan') return <PlanoEditor />
-  if (ruta === '/order') return <TomaPedido key={parametros.get('table')} />
+  if (route === '/register') return <Caja />
+  if (route === '/reports' && permissions.includes('view_reports')) return <Reportes />
+  if (route === '/check') return <Check key={params.get('order')} />
+  if (route === '/kitchen') return <PedidosEnCocina />
+  if (route === '/staff' && permissions.includes('manage_users')) return <Personal />
+  if (route === '/brand' && permissions.includes('manage_users')) return <Marca />
+  if (route === '/menu') return <Menu />
+  if (route === '/floor-plan') return <PlanoEditor />
+  if (route === '/order') return <TomaPedido key={params.get('table')} />
   return <Mesas />
 }
 
@@ -94,7 +94,7 @@ function EquipoRechazado({ code, message }: { code: string; message: string }) {
   useEffect(() => {
     document.title = 'Equipo rechazado · Faro'
   }, [])
-  const olvidar = () => void sala.olvidarEquipo()
+  const olvidar = () => void floor.olvidarEquipo()
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-4">
       <h1 className="font-titulo text-3xl font-semibold">
@@ -146,7 +146,7 @@ function SinCatalogo() {
         <Boton
           variant="main"
           onClick={() =>
-            sala
+            floor
               .actualizarCatalogo()
               .then(() => setError(null))
               .catch((e) => setError(e instanceof Error ? e.message : 'No se pudo'))

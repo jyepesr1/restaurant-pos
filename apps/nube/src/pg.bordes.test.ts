@@ -8,20 +8,20 @@ import type { Sql } from './sql'
 // El conector de `pg` en los casos difíciles: transacciones anidadas, errores a mitad de camino,
 // una conexión que se cae y la conexión perezosa del Worker.
 
-type Llamada = { text: string; parametros: unknown[] | undefined }
+type Call = { text: string; params: unknown[] | undefined }
 
 /** Un cliente que anota todo y que puede fallar en una sentencia concreta. */
 function clienteDeMentira(
-  fallaEn: (text: string, parametros: unknown[] | undefined) => unknown = () => undefined,
+  fallaEn: (text: string, params: unknown[] | undefined) => unknown = () => undefined,
 ) {
-  const llamadas: Llamada[] = []
+  const calls: Call[] = []
   return {
-    llamadas,
-    texts: () => llamadas.map((l) => l.text),
-    cliente: {
-      async query(text: string, parametros?: unknown[]) {
-        llamadas.push({ text, parametros })
-        const error = fallaEn(text, parametros)
+    calls,
+    texts: () => calls.map((l) => l.text),
+    client: {
+      async query(text: string, params?: unknown[]) {
+        calls.push({ text, params })
+        const error = fallaEn(text, params)
         if (error !== undefined) throw error
         return { rows: [{ ok: true }] }
       },
@@ -32,12 +32,12 @@ function clienteDeMentira(
 /** Un cliente sobre PGlite, como en pg.test.ts. */
 function clienteSobrePglite(db: PGlite) {
   return {
-    async query(text: string, parametros?: unknown[]) {
-      if (parametros === undefined) {
+    async query(text: string, params?: unknown[]) {
+      if (params === undefined) {
         const r = await db.exec(text)
         return { rows: r.at(-1)?.rows ?? [] }
       }
-      return db.query(text, parametros)
+      return db.query(text, params)
     },
   }
 }
@@ -45,8 +45,8 @@ function clienteSobrePglite(db: PGlite) {
 describe('sqlDePg: transacciones', () => {
   it('abre BEGIN, hace el trabajo y confirma con COMMIT, en ese orden', async () => {
     const f = clienteDeMentira()
-    const sql = sqlDePg(f.cliente as never)
-    const r = await sql.transaccion(async (tx) => {
+    const sql = sqlDePg(f.client as never)
+    const r = await sql.transaction(async (tx) => {
       await tx.query('SELECT 1')
       return 'ready'
     })
@@ -56,12 +56,12 @@ describe('sqlDePg: transacciones', () => {
 
   it('una transacción anidada no abre otra: un solo BEGIN y un solo COMMIT', async () => {
     const f = clienteDeMentira()
-    const sql = sqlDePg(f.cliente as never)
-    await sql.transaccion(async (externa) => {
+    const sql = sqlDePg(f.client as never)
+    await sql.transaction(async (externa) => {
       await externa.query('SELECT 1')
-      await externa.transaccion(async (interna) => {
+      await externa.transaction(async (interna) => {
         await interna.query('SELECT 2')
-        await interna.transaccion(async (muyInterna) => {
+        await interna.transaction(async (muyInterna) => {
           await muyInterna.query('SELECT 3')
         })
       })
@@ -72,19 +72,19 @@ describe('sqlDePg: transacciones', () => {
 
   it('la anidada devuelve su valor a quien la llamó', async () => {
     const f = clienteDeMentira()
-    const sql = sqlDePg(f.cliente as never)
-    const r = await sql.transaccion((tx) => tx.transaccion(async () => 42))
+    const sql = sqlDePg(f.client as never)
+    const r = await sql.transaction((tx) => tx.transaction(async () => 42))
     expect(r).toBe(42)
   })
 
   it('si falla la anidada y el error sube, se deshace todo: un solo ROLLBACK y ningún COMMIT', async () => {
     const f = clienteDeMentira()
-    const sql = sqlDePg(f.cliente as never)
+    const sql = sqlDePg(f.client as never)
     const error = new Error('falló adentro')
     await expect(
-      sql.transaccion(async (externa) => {
+      sql.transaction(async (externa) => {
         await externa.query('SELECT 1')
-        await externa.transaccion(async (interna) => {
+        await externa.transaction(async (interna) => {
           await interna.query('SELECT 2')
           throw error
         })
@@ -99,9 +99,9 @@ describe('sqlDePg: transacciones', () => {
     await migrar(sql)
     const [a, b] = [newId(), newId()]
     await expect(
-      sql.transaccion(async (externa) => {
+      sql.transaction(async (externa) => {
         await externa.query('INSERT INTO restaurants (id, name) VALUES ($1, $2)', [a, 'A'])
-        await externa.transaccion(async (interna) => {
+        await externa.transaction(async (interna) => {
           await interna.query('INSERT INTO restaurants (id, name) VALUES ($1, $2)', [b, 'B'])
           throw new Error('se cayó')
         })
@@ -116,7 +116,7 @@ describe('sqlDePg: transacciones', () => {
     await migrar(sql)
     const id = newId()
     await expect(
-      sql.transaccion(async (tx) => {
+      sql.transaction(async (tx) => {
         await tx.query('INSERT INTO restaurants (id, name) VALUES ($1, $2)', [id, 'A'])
         // Viola la restricción de largo del id: Postgres aborta la transacción.
         await tx.query('INSERT INTO restaurants (id, name) VALUES ($1, $2)', ['corto', 'B'])
@@ -124,7 +124,7 @@ describe('sqlDePg: transacciones', () => {
     ).rejects.toThrow(/check|violates/i)
     expect(await sql.query('SELECT 1 FROM restaurants')).toEqual([])
     // Una transacción nueva funciona normal después del fallo.
-    await sql.transaccion((tx) =>
+    await sql.transaction((tx) =>
       tx.query('INSERT INTO restaurants (id, name) VALUES ($1, $2)', [id, 'A']),
     )
     expect(await sql.query('SELECT 1 FROM restaurants')).toHaveLength(1)
@@ -136,7 +136,7 @@ describe('sqlDePg: transacciones', () => {
     await migrar(sql)
     for (let i = 0; i < 3; i++) {
       await expect(
-        sql.transaccion(async (tx) => {
+        sql.transaction(async (tx) => {
           await tx.query('INSERT INTO restaurants (id, name) VALUES ($1, $2)', [newId(), 'x'])
           throw new Error(`vuelta ${i}`)
         }),
@@ -147,44 +147,44 @@ describe('sqlDePg: transacciones', () => {
 
   it('al terminar una transacción, el mismo Sql abre una nueva en la siguiente (no se queda «dentro»)', async () => {
     const f = clienteDeMentira()
-    const sql = sqlDePg(f.cliente as never)
-    await sql.transaccion(async () => {})
-    await sql.transaccion(async () => {})
+    const sql = sqlDePg(f.client as never)
+    await sql.transaction(async () => {})
+    await sql.transaction(async () => {})
     expect(f.texts()).toEqual(['BEGIN', 'COMMIT', 'BEGIN', 'COMMIT'])
   })
 
   it('tras un rollback, la siguiente transacción vuelve a abrir BEGIN', async () => {
     const f = clienteDeMentira()
-    const sql = sqlDePg(f.cliente as never)
-    await expect(sql.transaccion(async () => Promise.reject(new Error('x')))).rejects.toThrow('x')
-    await sql.transaccion(async () => {})
+    const sql = sqlDePg(f.client as never)
+    await expect(sql.transaction(async () => Promise.reject(new Error('x')))).rejects.toThrow('x')
+    await sql.transaction(async () => {})
     expect(f.texts()).toEqual(['BEGIN', 'ROLLBACK', 'BEGIN', 'COMMIT'])
   })
 
   it('un trabajo que lanza un valor que no es Error se relanza tal cual', async () => {
     const f = clienteDeMentira()
-    const sql = sqlDePg(f.cliente as never)
+    const sql = sqlDePg(f.client as never)
     const odd = { code: 7 }
-    await expect(sql.transaccion(async () => Promise.reject(odd))).rejects.toBe(odd)
-    await expect(sql.transaccion(async () => Promise.reject('text'))).rejects.toBe('text')
+    await expect(sql.transaction(async () => Promise.reject(odd))).rejects.toBe(odd)
+    await expect(sql.transaction(async () => Promise.reject('text'))).rejects.toBe('text')
     expect(f.texts().filter((t) => t === 'ROLLBACK')).toHaveLength(2)
   })
 
   it('si falla el COMMIT, se intenta deshacer y el error que sube es el del COMMIT', async () => {
     const error = new Error('no se pudo confirmar')
     const f = clienteDeMentira((t) => (t === 'COMMIT' ? error : undefined))
-    const sql = sqlDePg(f.cliente as never)
-    await expect(sql.transaccion(async (tx) => tx.query('SELECT 1'))).rejects.toBe(error)
+    const sql = sqlDePg(f.client as never)
+    await expect(sql.transaction(async (tx) => tx.query('SELECT 1'))).rejects.toBe(error)
     expect(f.texts()).toEqual(['BEGIN', 'SELECT 1', 'COMMIT', 'ROLLBACK'])
   })
 
   it('si falla el BEGIN, no se corre el trabajo ni se hace ROLLBACK', async () => {
     const error = new Error('sin conexión')
     const f = clienteDeMentira((t) => (t === 'BEGIN' ? error : undefined))
-    const sql = sqlDePg(f.cliente as never)
-    const trabajo = vi.fn()
-    await expect(sql.transaccion(trabajo)).rejects.toBe(error)
-    expect(trabajo).not.toHaveBeenCalled()
+    const sql = sqlDePg(f.client as never)
+    const job = vi.fn()
+    await expect(sql.transaction(job)).rejects.toBe(error)
+    expect(job).not.toHaveBeenCalled()
     expect(f.texts()).toEqual(['BEGIN'])
   })
 
@@ -195,9 +195,9 @@ describe('sqlDePg: transacciones', () => {
       if (t === 'ROLLBACK') return new Error('Client was closed and is not queryable')
       return undefined
     })
-    const sql = sqlDePg(f.cliente as never)
+    const sql = sqlDePg(f.client as never)
     await expect(
-      sql.transaccion(async (tx) => {
+      sql.transaction(async (tx) => {
         await tx.query('SELECT 1')
         await tx.query('SELECT 2')
       }),
@@ -206,36 +206,36 @@ describe('sqlDePg: transacciones', () => {
 
   it('el valor que devuelve el trabajo llega aunque sea undefined, null o 0', async () => {
     const f = clienteDeMentira()
-    const sql = sqlDePg(f.cliente as never)
-    expect(await sql.transaccion(async () => undefined)).toBeUndefined()
-    expect(await sql.transaccion(async () => null)).toBeNull()
-    expect(await sql.transaccion(async () => 0)).toBe(0)
+    const sql = sqlDePg(f.client as never)
+    expect(await sql.transaction(async () => undefined)).toBeUndefined()
+    expect(await sql.transaction(async () => null)).toBeNull()
+    expect(await sql.transaction(async () => 0)).toBe(0)
   })
 })
 
 describe('sqlDePg: consultas', () => {
   it('query manda los parámetros en una copia y devuelve las filas', async () => {
     const f = clienteDeMentira()
-    const sql = sqlDePg(f.cliente as never)
-    const parametros = Object.freeze(['a', 1]) as readonly unknown[]
-    expect(await sql.query('SELECT $1, $2', parametros)).toEqual([{ ok: true }])
-    expect(f.llamadas[0]?.parametros).toEqual(['a', 1])
-    expect(f.llamadas[0]?.parametros).not.toBe(parametros)
+    const sql = sqlDePg(f.client as never)
+    const params = Object.freeze(['a', 1]) as readonly unknown[]
+    expect(await sql.query('SELECT $1, $2', params)).toEqual([{ ok: true }])
+    expect(f.calls[0]?.params).toEqual(['a', 1])
+    expect(f.calls[0]?.params).not.toBe(params)
   })
 
   it('ejecutar manda el guion entero sin parámetros (varias sentencias en una)', async () => {
     const f = clienteDeMentira()
-    const sql = sqlDePg(f.cliente as never)
+    const sql = sqlDePg(f.client as never)
     await sql.execute('CREATE TABLE a (x int); CREATE TABLE b (x int);')
-    expect(f.llamadas).toEqual([
-      { text: 'CREATE TABLE a (x int); CREATE TABLE b (x int);', parametros: undefined },
+    expect(f.calls).toEqual([
+      { text: 'CREATE TABLE a (x int); CREATE TABLE b (x int);', params: undefined },
     ])
   })
 
   it('un error de una consulta suelta (fuera de transacción) sube sin cambios y sin ROLLBACK', async () => {
     const error = new Error('sintaxis')
     const f = clienteDeMentira(() => error)
-    const sql = sqlDePg(f.cliente as never)
+    const sql = sqlDePg(f.client as never)
     await expect(sql.query('SELECT')).rejects.toBe(error)
     expect(f.texts()).toEqual(['SELECT'])
   })
@@ -245,7 +245,7 @@ describe('sqlDePg: consultas', () => {
     const sql = sqlDePg(clienteSobrePglite(db) as never)
     await migrar(sql)
     const id = newId()
-    await sql.transaccion(async (tx) => {
+    await sql.transaction(async (tx) => {
       await tx.query('INSERT INTO restaurants (id, name) VALUES ($1, $2)', [id, 'R'])
       // Lo escrito se ve dentro de la misma transacción.
       expect(await tx.query('SELECT name FROM restaurants WHERE id = $1', [id])).toEqual([
@@ -270,7 +270,7 @@ describe('sqlPerezoso', () => {
       execute: async (t) => {
         consultas.push(t)
       },
-      transaccion: async (trabajo) => trabajo(sqlFalso()),
+      transaction: async (job) => job(sqlFalso()),
     }
   }
 
@@ -287,7 +287,7 @@ describe('sqlPerezoso', () => {
       sql.query('a'),
       sql.query('b'),
       sql.execute('c'),
-      sql.transaccion(async () => 1),
+      sql.transaction(async () => 1),
     ])
     await sql.query('d')
     expect(connect).toHaveBeenCalledTimes(1)
@@ -297,14 +297,14 @@ describe('sqlPerezoso', () => {
     const real = {
       query: vi.fn(async () => [{ x: 1 }]),
       execute: vi.fn(),
-      transaccion: vi.fn(async (t) => t(real)),
+      transaction: vi.fn(async (t) => t(real)),
     }
     const sql = sqlPerezoso(async () => real as never)
     expect(await sql.query('SELECT $1', [7])).toEqual([{ x: 1 }])
     expect(real.query).toHaveBeenCalledWith('SELECT $1', [7])
     await sql.execute('guion')
     expect(real.execute).toHaveBeenCalledWith('guion')
-    expect(await sql.transaccion(async (tx) => tx === real)).toBe(true)
+    expect(await sql.transaction(async (tx) => tx === real)).toBe(true)
   })
 
   it('si no se pudo conectar, cada consulta falla con ese error (no se queda colgada)', async () => {
@@ -314,6 +314,6 @@ describe('sqlPerezoso', () => {
     })
     await expect(sql.query('a')).rejects.toBe(error)
     await expect(sql.execute('b')).rejects.toBe(error)
-    await expect(sql.transaccion(async () => 1)).rejects.toBe(error)
+    await expect(sql.transaction(async () => 1)).rejects.toBe(error)
   })
 })

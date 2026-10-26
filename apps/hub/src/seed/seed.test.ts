@@ -1,38 +1,38 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { isValidId } from '@pos/core'
-import { aplicarMigraciones } from '@pos/db'
-import { abrirBase } from '@pos/db/node'
+import { applyMigrations } from '@pos/db'
+import { openDatabase } from '@pos/db/node'
 import { describe, expect, it } from 'vitest'
 import { stringify } from 'yaml'
 import { asegurarAdministrador, asegurarRestaurante, asegurarRoles } from '../acceso/inicial'
 import { idEstable } from '../acceso/registros'
 import { ServicioAcceso } from '../acceso/servicio'
 import { DONENESS, leerCarta } from './carta'
-import { PERSONAL, sembrar, TABLES } from './sembrar'
+import { PERSONAL, seed, TABLES } from './sembrar'
 
 const RUTA_CARTA = fileURLToPath(
   new URL('../../../../docs/datos/carta-la-spritzzeria.yaml', import.meta.url),
 )
 const TEXTO_CARTA = readFileSync(RUTA_CARTA, 'utf8')
-const AHORA = '2026-10-24T20:00:00.000Z'
+const NOW = '2026-10-24T20:00:00.000Z'
 
 function hub() {
-  const db = abrirBase(':memory:')
-  aplicarMigraciones(db)
-  const restauranteId = asegurarRestaurante(db, AHORA)
-  const roles = asegurarRoles(db, restauranteId, AHORA)
+  const db = openDatabase(':memory:')
+  applyMigrations(db)
+  const restaurantId = asegurarRestaurante(db, NOW)
+  const roles = asegurarRoles(db, restaurantId, NOW)
   const access = new ServicioAcceso({
     db,
-    restauranteId,
+    restaurantId,
     key: Buffer.alloc(32, 3),
-    clock: () => AHORA,
+    clock: () => NOW,
   })
   asegurarAdministrador(db, access, roles.admin, false)
-  const cargar = (text = TEXTO_CARTA, ahora = AHORA) =>
-    sembrar(db, access, { restauranteId, roles, menu: leerCarta(text) }, ahora)
+  const load = (text = TEXTO_CARTA, now = NOW) =>
+    seed(db, access, { restaurantId, roles, menu: leerCarta(text) }, now)
   const rows = (sql: string, ...p: string[]) => db.prepare(sql).all(...p)
-  return { db, access, restauranteId, cargar, rows }
+  return { db, access, restaurantId, load, rows }
 }
 
 describe('lectura de la carta', () => {
@@ -125,7 +125,7 @@ describe('lectura de la carta', () => {
 describe('carga en la base', () => {
   it('crea el salón, la carta y el personal con IDs válidos', () => {
     const h = hub()
-    const r = h.cargar()
+    const r = h.load()
 
     const check = (tableName: string) =>
       Number(h.db.prepare(`SELECT count(*) AS n FROM ${tableName} WHERE active = 1`).get()?.n)
@@ -151,10 +151,10 @@ describe('carga en la base', () => {
 
   it('una segunda corrida no cambia nada: ni registros, ni versiones, ni PIN', () => {
     const h = hub()
-    h.cargar()
+    h.load()
     const before = h.rows('SELECT id, version FROM products ORDER BY id')
     const pinesAntes = h.rows('SELECT user_id, pin_hash FROM user_credentials ORDER BY 1')
-    const r = h.cargar(TEXTO_CARTA, '2026-10-25T10:00:00.000Z')
+    const r = h.load(TEXTO_CARTA, '2026-10-25T10:00:00.000Z')
 
     for (const [tableName, c] of Object.entries(r.sqlTables)) {
       expect({ tableName, created: c.created, updated: c.updated }).toEqual({
@@ -170,10 +170,10 @@ describe('carga en la base', () => {
 
   it('si la carta cambia un precio, solo ese producto se actualiza y sube de versión', () => {
     const h = hub()
-    h.cargar()
-    const id = idEstable(h.restauranteId, 'producto:PIZZAS:quattro-formaggi')
+    h.load()
+    const id = idEstable(h.restaurantId, 'producto:PIZZAS:quattro-formaggi')
     const before = h.db.prepare('SELECT price, version FROM products WHERE id = ?').get(id)
-    const r = h.cargar(TEXTO_CARTA.replace('precio: 44900', 'precio: 46900'))
+    const r = h.load(TEXTO_CARTA.replace('precio: 44900', 'precio: 46900'))
 
     const after = h.db.prepare('SELECT price, version FROM products WHERE id = ?').get(id)
     expect(before?.price).toBe(44_900)
@@ -185,7 +185,7 @@ describe('carga en la base', () => {
   it('respeta la configuración que el restaurante ya cambió', () => {
     const h = hub()
     h.db.prepare('UPDATE restaurants SET config = \'{"cash_rounding":50}\'').run()
-    h.cargar()
+    h.load()
     const config = JSON.parse(String(h.db.prepare('SELECT config FROM restaurants').get()?.config))
     expect(config).toMatchObject({ cash_rounding: 50, suggested_tip: 1000 })
   })

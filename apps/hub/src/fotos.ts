@@ -46,13 +46,13 @@ export function guardarFoto(dirFotos: string, imagen: string): string {
   if (!extension) throw new ErrorFoto('El archivo no es una imagen WebP, JPEG o PNG')
   const name = `${createHash('sha256').update(bytes).digest('hex').slice(0, 24)}.${extension}`
   mkdirSync(dirFotos, { recursive: true })
-  const ruta = join(dirFotos, name)
+  const route = join(dirFotos, name)
   // Se escribe aparte y se renombra: un corte de luz a mitad no deja una foto rota con su nombre
   // definitivo (que los equipos guardarían en caché para siempre). Si ya estaba entera, no se toca.
-  if (!existsSync(ruta) || statSync(ruta).size !== bytes.length) {
-    const temporal = `${ruta}.${process.pid}.tmp`
+  if (!existsSync(route) || statSync(route).size !== bytes.length) {
+    const temporal = `${route}.${process.pid}.tmp`
     writeFileSync(temporal, bytes)
-    renameSync(temporal, ruta)
+    renameSync(temporal, route)
   }
   return name
 }
@@ -60,10 +60,10 @@ export function guardarFoto(dirFotos: string, imagen: string): string {
 /** La foto guardada y su tipo, o `null` si el nombre no es de una foto o no está. */
 export function leerFoto(dirFotos: string, name: string): { bytes: Buffer; mime: string } | null {
   if (!NOMBRE_FOTO.test(name)) return null
-  const ruta = join(dirFotos, name)
-  if (!existsSync(ruta)) return null
+  const route = join(dirFotos, name)
+  if (!existsSync(route)) return null
   const extension = name.split('.').pop() as Extension
-  return { bytes: readFileSync(ruta), mime: TYPES[extension].mime }
+  return { bytes: readFileSync(route), mime: TYPES[extension].mime }
 }
 
 /** Ruta pública de una foto guardada (para la carta de los equipos). */

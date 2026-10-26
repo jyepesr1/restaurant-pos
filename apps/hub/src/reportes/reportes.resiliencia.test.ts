@@ -1,6 +1,6 @@
 import { newId, type OrderEvent } from '@pos/core'
 import type { ZReport } from '@pos/printing'
-import { AlmacenSqlite } from '@pos/sync/sqlite'
+import { SqliteStore } from '@pos/sync/sqlite'
 import { describe, expect, it, vi } from 'vitest'
 import { cashPaymentData, event, itemCopy } from '../../../../packages/core/src/testing/factory'
 import { INICIO } from '../acceso/montaje'
@@ -21,21 +21,21 @@ function mundo(options: { width?: 58 | 80; conImpresora?: boolean } = {}) {
   const select = (id: string | null) =>
     t.db
       .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
-      .run(JSON.stringify(id ? { pre_bill_printer_id: id } : {}), t.restauranteId)
+      .run(JSON.stringify(id ? { pre_bill_printer_id: id } : {}), t.restaurantId)
   if (options.conImpresora !== false) select(printer.id)
 
   /** Abre un turno, cobra un pedido y deja el turno listo para cerrar (sin cerrarlo). */
-  const turnoCobrado = (register: Equipo, price = 40_000, tipAmount = 4_000, base = 100_000) => {
+  const shiftCharged = (register: Equipo, price = 40_000, tipAmount = 4_000, base = 100_000) => {
     const shift = newId()
-    register.mandar(
+    register.submit(
       shift,
       'ShiftOpened',
-      { register_id: register.connection.dispositivoId, base },
+      { register_id: register.connection.deviceId, base },
       { aggregate_type: 'register_shift' },
     )
     const vender = (amount: number, tip: number) => {
       const order = t.open(ana)
-      ana.mandar(order, 'ItemAdded', { ...item(), unit_price: amount })
+      ana.submit(order, 'ItemAdded', { ...item(), unit_price: amount })
       const payment = {
         payment_id: newId(),
         check_id: null,
@@ -50,8 +50,8 @@ function mundo(options: { width?: 58 | 80; conImpresora?: boolean } = {}) {
         cardTerminal: null,
         charge_reference: null,
       }
-      expect(register.mandar(order, 'PaymentRecorded', payment).status).toBe('confirmed')
-      expect(register.mandar(order, 'OrderClosed', {}).status).toBe('confirmed')
+      expect(register.submit(order, 'PaymentRecorded', payment).status).toBe('confirmed')
+      expect(register.submit(order, 'OrderClosed', {}).status).toBe('confirmed')
       return order
     }
     vender(price, tipAmount)
@@ -61,7 +61,7 @@ function mundo(options: { width?: 58 | 80; conImpresora?: boolean } = {}) {
   /** Cierra el turno enviando el evento a mano (así se puede reenviar tal cual). */
   const cerrarConEvento = (register: Equipo, shift: string, expected: number) => {
     const cashCount = newId()
-    register.mandar(
+    register.submit(
       shift,
       'CashCountRecorded',
       {
@@ -71,7 +71,7 @@ function mundo(options: { width?: 58 | 80; conImpresora?: boolean } = {}) {
       },
       { aggregate_type: 'register_shift' },
     )
-    const crudo = t.event(
+    const raw = t.event(
       register.connection,
       register.session,
       'ShiftClosed',
@@ -85,68 +85,64 @@ function mundo(options: { width?: 58 | 80; conImpresora?: boolean } = {}) {
       },
       { aggregate_id: shift, aggregate_type: 'register_shift', base_sequence: 0 } as never,
     )
-    return crudo
+    return raw
   }
 
   const cierresZ = () => t.trabajos("WHERE type = 'report'").map((f) => t.content(f) as ZReport)
-  return { t, ana, admin, cashier, printer, select, turnoCobrado, cerrarConEvento, cierresZ }
+  return { t, ana, admin, cashier, printer, select, shiftCharged, cerrarConEvento, cierresZ }
 }
 
-const maxSecuencia = (t: ReturnType<typeof montarImpresion>) =>
+const maxSequence = (t: ReturnType<typeof montarImpresion>) =>
   Number(
     t.db
       .prepare('SELECT coalesce(max(sequence), 0) AS s FROM events WHERE restaurant_id = ?')
-      .get(t.restauranteId)?.s,
+      .get(t.restaurantId)?.s,
   )
 
 describe('cierre Z: una sola vez', () => {
   it('el TurnoCerrado reenviado (mismo evento) no crea otro cierre Z', () => {
-    const { t, admin, turnoCobrado, cerrarConEvento, cierresZ } = mundo()
-    const x = turnoCobrado(admin)
-    const crudo = {
+    const { t, admin, shiftCharged, cerrarConEvento, cierresZ } = mundo()
+    const x = shiftCharged(admin)
+    const raw = {
       ...cerrarConEvento(admin, x.shift, x.expected),
-      base_sequence: maxSecuencia(t),
+      base_sequence: maxSequence(t),
     }
-    const firstOne = t.hub.recibirLote(admin.connection, [crudo as never])
-    expect(firstOne.resultados[0]?.status).toBe('confirmed')
+    const firstOne = t.hub.receiveBatch(admin.connection, [raw as never])
+    expect(firstOne.results[0]?.status).toBe('confirmed')
     expect(cierresZ()).toHaveLength(1)
-    const another = t.hub.recibirLote(admin.connection, [crudo as never])
+    const another = t.hub.receiveBatch(admin.connection, [raw as never])
     // El reenvío no es un evento nuevo: no se guarda otra vez ni dispara el gancho.
-    expect(another.aceptados).toEqual([])
+    expect(another.acceptedEvents).toEqual([])
     expect(cierresZ()).toHaveLength(1)
     expect(t.fallosGuardar).toEqual([])
   })
 
   it('entregar el mismo evento al gancho dos veces, o desde un hub reiniciado, deja un solo trabajo', () => {
-    const { t, admin, turnoCobrado, cerrarConEvento, cierresZ } = mundo()
-    const x = turnoCobrado(admin)
-    const crudo = {
+    const { t, admin, shiftCharged, cerrarConEvento, cierresZ } = mundo()
+    const x = shiftCharged(admin)
+    const raw = {
       ...cerrarConEvento(admin, x.shift, x.expected),
-      base_sequence: maxSecuencia(t),
+      base_sequence: maxSequence(t),
     }
-    const r = t.hub.recibirLote(admin.connection, [crudo as never])
-    const accepted = r.aceptados[0] as OrderEvent
+    const r = t.hub.receiveBatch(admin.connection, [raw as never])
+    const accepted = r.acceptedEvents[0] as OrderEvent
     expect(trabajosDeEvento(t.opcionesComandas, accepted, [])).toBe(1)
     expect(trabajosDeEvento(t.opcionesComandas, accepted, [])).toBe(1)
-    const reiniciado = t.crearHub()
-    reiniciado.recibirLote(admin.connection, [crudo as never])
+    const restarted = t.crearHub()
+    restarted.receiveBatch(admin.connection, [raw as never])
     expect(trabajosDeEvento(t.opcionesComandas, accepted, [])).toBe(1)
     expect(cierresZ()).toHaveLength(1)
     expect(t.trabajos("WHERE type = 'report'")).toHaveLength(1)
   })
 
   it('con dos turnos cerrados salen dos cierres Z, cada uno con lo suyo', () => {
-    const { t, admin, turnoCobrado, cerrarConEvento, cierresZ } = mundo()
-    const a = turnoCobrado(admin, 40_000, 4_000)
-    const ca = { ...cerrarConEvento(admin, a.shift, a.expected), base_sequence: maxSecuencia(t) }
-    expect(t.hub.recibirLote(admin.connection, [ca as never]).resultados[0]?.status).toBe(
-      'confirmed',
-    )
-    const b = turnoCobrado(admin, 10_000, 0, 20_000)
-    const cb = { ...cerrarConEvento(admin, b.shift, b.expected), base_sequence: maxSecuencia(t) }
-    expect(t.hub.recibirLote(admin.connection, [cb as never]).resultados[0]?.status).toBe(
-      'confirmed',
-    )
+    const { t, admin, shiftCharged, cerrarConEvento, cierresZ } = mundo()
+    const a = shiftCharged(admin, 40_000, 4_000)
+    const ca = { ...cerrarConEvento(admin, a.shift, a.expected), base_sequence: maxSequence(t) }
+    expect(t.hub.receiveBatch(admin.connection, [ca as never]).results[0]?.status).toBe('confirmed')
+    const b = shiftCharged(admin, 10_000, 0, 20_000)
+    const cb = { ...cerrarConEvento(admin, b.shift, b.expected), base_sequence: maxSequence(t) }
+    expect(t.hub.receiveBatch(admin.connection, [cb as never]).results[0]?.status).toBe('confirmed')
     const z = cierresZ()
     expect(z).toHaveLength(2)
     expect(z.map((x) => x.cash.base)).toEqual([100_000, 20_000])
@@ -156,18 +152,18 @@ describe('cierre Z: una sola vez', () => {
 
 describe('cierre Z: sin impresora o con una que no sirve', () => {
   const close = (m: ReturnType<typeof mundo>) => {
-    const x = m.turnoCobrado(m.admin)
-    const crudo = {
+    const x = m.shiftCharged(m.admin)
+    const raw = {
       ...m.cerrarConEvento(m.admin, x.shift, x.expected),
-      base_sequence: maxSecuencia(m.t),
+      base_sequence: maxSequence(m.t),
     }
-    return { x, r: m.t.hub.recibirLote(m.admin.connection, [crudo as never]) }
+    return { x, r: m.t.hub.receiveBatch(m.admin.connection, [raw as never]) }
   }
 
   it('sin impresora elegida no se crea nada y el cierre se acepta; la reimpresión pide elegirla', async () => {
     const m = mundo({ conImpresora: false })
     const { x, r } = close(m)
-    expect(r.resultados[0]?.status).toBe('confirmed')
+    expect(r.results[0]?.status).toBe('confirmed')
     expect(m.cierresZ()).toEqual([])
     expect(m.t.fallosGuardar).toEqual([])
     const res = await m.t.post(
@@ -191,37 +187,37 @@ describe('cierre Z: sin impresora o con una que no sirve', () => {
   it('con una impresora archivada o que no existe tampoco se crea nada, y el cierre se acepta', () => {
     const archivada = mundo()
     archivada.t.db.prepare('UPDATE printers SET active = 0 WHERE id = ?').run(archivada.printer.id)
-    expect(close(archivada).r.resultados[0]?.status).toBe('confirmed')
+    expect(close(archivada).r.results[0]?.status).toBe('confirmed')
     expect(archivada.cierresZ()).toEqual([])
 
     const ghost = mundo()
     ghost.select(newId())
-    expect(close(ghost).r.resultados[0]?.status).toBe('confirmed')
+    expect(close(ghost).r.results[0]?.status).toBe('confirmed')
     expect(ghost.cierresZ()).toEqual([])
   })
 
   it('si armar el cierre falla, el cierre de caja se acepta igual y el error se registra', () => {
     const m = mundo()
     // Una configuración que no se puede leer: el cierre de caja nunca debe quedar a medias por esto.
-    m.t.db.prepare('UPDATE restaurants SET config = ? WHERE id = ?').run('[1,2]', m.t.restauranteId)
-    const registro = vi.spyOn(console, 'error').mockImplementation(() => {})
+    m.t.db.prepare('UPDATE restaurants SET config = ? WHERE id = ?').run('[1,2]', m.t.restaurantId)
+    const entry = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       const { r } = close(m)
-      expect(r.resultados[0]?.status).toBe('confirmed')
+      expect(r.results[0]?.status).toBe('confirmed')
       expect(m.cierresZ()).toEqual([])
     } finally {
-      registro.mockRestore()
+      entry.mockRestore()
     }
     // El turno quedó cerrado de verdad.
-    expect(m.t.hub.turnoAbierto(m.admin.connection.dispositivoId)).toBeNull()
+    expect(m.t.hub.openShift(m.admin.connection.deviceId)).toBeNull()
   })
 
   it('la impresora apagada deja el cierre Z pendiente, con su nombre, y sale al volver', async () => {
     const m = mundo()
     m.printer.papel.apagada = true
     const { x } = close(m)
-    await m.t.cola.runOnce()
-    expect(m.printer.papel.recibidos).toHaveLength(0)
+    await m.t.queue.runOnce()
+    expect(m.printer.papel.received).toHaveLength(0)
     const list = await m.t.post('/api/printing/pending', { ...m.admin.cuerpoSesion }, m.admin.token)
     expect(list.json().map((p: { que: string }) => p.que)).toEqual(['Cierre de caja'])
     // Una reimpresión mientras sigue apagada.
@@ -230,7 +226,7 @@ describe('cierre Z: sin impresora o con una que no sirve', () => {
       { ...m.admin.cuerpoSesion, turno_id: x.shift },
       m.admin.token,
     )
-    await m.t.cola.ready()
+    await m.t.queue.ready()
     const two = await m.t.post('/api/printing/pending', { ...m.admin.cuerpoSesion }, m.admin.token)
     expect(two.json().map((p: { que: string }) => p.que)).toEqual([
       'Cierre de caja',
@@ -238,8 +234,8 @@ describe('cierre Z: sin impresora o con una que no sirve', () => {
     ])
     m.printer.papel.apagada = false
     m.t.advance(60 * 60 * 1000)
-    m.t.cola.despertar()
-    await m.t.cola.ready()
+    m.t.queue.despertar()
+    await m.t.queue.ready()
     expect(m.printer.papel.texts()).toHaveLength(2)
     expect(m.t.pendingList()).toBe(0)
   })
@@ -248,12 +244,12 @@ describe('cierre Z: sin impresora o con una que no sirve', () => {
 describe('reimpresión del cierre Z', () => {
   it('cada reimpresión es un trabajo nuevo marcado, con las mismas cifras que el original', async () => {
     const m = mundo()
-    const x = m.turnoCobrado(m.admin, 55_000, 5_000)
-    const crudo = {
+    const x = m.shiftCharged(m.admin, 55_000, 5_000)
+    const raw = {
       ...m.cerrarConEvento(m.admin, x.shift, x.expected),
-      base_sequence: maxSecuencia(m.t),
+      base_sequence: maxSequence(m.t),
     }
-    m.t.hub.recibirLote(m.admin.connection, [crudo as never])
+    m.t.hub.receiveBatch(m.admin.connection, [raw as never])
     for (let i = 0; i < 3; i++) {
       const r = await m.t.post(
         '/api/reports/z-report',
@@ -271,7 +267,7 @@ describe('reimpresión del cierre Z', () => {
       const { reprinted: _b, ...rest } = c
       expect(rest).toEqual(original)
     }
-    await m.t.cola.runOnce()
+    await m.t.queue.runOnce()
     const papel = m.printer.papel.texts()
     expect(papel).toHaveLength(4)
     expect(papel.filter((p) => p.includes('Reimpresión'))).toHaveLength(3)
@@ -283,10 +279,10 @@ describe('reimpresión del cierre Z', () => {
     const m = mundo()
     const register = m.admin
     const shift = newId()
-    register.mandar(
+    register.submit(
       shift,
       'ShiftOpened',
-      { register_id: register.connection.dispositivoId, base: 1_000 },
+      { register_id: register.connection.deviceId, base: 1_000 },
       { aggregate_type: 'register_shift' },
     )
     const r = await m.t.post(
@@ -302,16 +298,16 @@ describe('reimpresión del cierre Z', () => {
 describe('papel de 58 y de 80 mm', () => {
   it.each([58, 80] as const)('el cierre Z en %i mm sale sin líneas que se pasen', async (width) => {
     const m = mundo({ width })
-    const x = m.turnoCobrado(m.admin, 5_000_000, 500_000, 9_999_000)
+    const x = m.shiftCharged(m.admin, 5_000_000, 500_000, 9_999_000)
     // Tanto dinero cabe: el contado se cuadra con el esperado.
-    const crudo = {
+    const raw = {
       ...m.cerrarConEvento(m.admin, x.shift, x.expected),
-      base_sequence: maxSecuencia(m.t),
+      base_sequence: maxSequence(m.t),
     }
-    expect(m.t.hub.recibirLote(m.admin.connection, [crudo as never]).resultados[0]?.status).toBe(
+    expect(m.t.hub.receiveBatch(m.admin.connection, [raw as never]).results[0]?.status).toBe(
       'confirmed',
     )
-    await m.t.cola.runOnce()
+    await m.t.queue.runOnce()
     const [papel] = m.printer.papel.texts()
     expect(papel).toContain('CIERRE DE CAJA')
     const columns = width === 58 ? 32 : 48
@@ -323,17 +319,17 @@ describe('otro restaurante en la misma base', () => {
   /** Un segundo restaurante con un turno ya cerrado y una venta, el mismo día operativo. */
   function otroRestaurante(t: ReturnType<typeof montarImpresion>) {
     const other = newId()
-    const ahora = '2026-10-24T20:00:00.000Z'
+    const now = '2026-10-24T20:00:00.000Z'
     t.db
       .prepare(
         `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
          VALUES (?, ?, ?, ?, 1, 'Otro restaurante', '{}')`,
       )
-      .run(other, other, ahora, ahora)
-    const almacen = new AlmacenSqlite(t.db, other)
+      .run(other, other, now, now)
+    const store = new SqliteStore(t.db, other)
     const shift = newId()
     const order = newId()
-    const crudo = (type: string, aggregate: string, tipoAgregado: string, data: unknown) => ({
+    const raw = (type: string, aggregate: string, tipoAgregado: string, data: unknown) => ({
       id: newId(),
       type,
       schema_version: 1,
@@ -346,10 +342,10 @@ describe('otro restaurante en la misma base', () => {
       device_id: newId(),
       authorization_id: null,
       reason: null,
-      device_time: ahora,
-      hub_estimated_time: ahora,
+      device_time: now,
+      hub_estimated_time: now,
       base_sequence: 0,
-      received_at: ahora,
+      received_at: now,
       business_day: '2026-10-24',
       assignments: {},
       affects: [],
@@ -359,17 +355,17 @@ describe('otro restaurante en la misma base', () => {
     const it = itemCopy({ unit_price: 99_000 })
     const payment = cashPaymentData(99_000, { register_shift_id: shift })
     const base = [
-      crudo('ShiftOpened', shift, 'register_shift', { register_id: newId(), base: 1 }),
+      raw('ShiftOpened', shift, 'register_shift', { register_id: newId(), base: 1 }),
       event(order, 'OrderOpened', { channel: 'dine_in', table_id: newId(), guests: 9 }),
       event(order, 'ItemAdded', it),
       event(order, 'PaymentRecorded', payment),
       event(order, 'OrderClosed', {}, { business_day: '2026-10-24' }),
-      crudo('CashCountRecorded', shift, 'register_shift', {
+      raw('CashCountRecorded', shift, 'register_shift', {
         cash_count_id: cashCount,
         tally: [{ value: 1_000, quantity: 99 }],
         counted_cash: 99_000,
       }),
-      crudo('ShiftClosed', shift, 'register_shift', {
+      raw('ShiftClosed', shift, 'register_shift', {
         cash_count_id: cashCount,
         expected_cash: 99_001,
         counted_cash: 99_000,
@@ -379,8 +375,8 @@ describe('otro restaurante en la misma base', () => {
       }),
     ]
     for (const [i, e] of base.entries())
-      almacen.saveEvent(
-        { ...e, sequence: i + 1, received_at: ahora } as unknown as OrderEvent,
+      store.saveEvent(
+        { ...e, sequence: i + 1, received_at: now } as unknown as OrderEvent,
         `h${i}`,
         [e.aggregate_id],
       )
@@ -389,12 +385,12 @@ describe('otro restaurante en la misma base', () => {
 
   it('el informe no suma ventas ni cierres de otro restaurante, y su cierre Z no se reimprime', async () => {
     const m = mundo()
-    const own = m.turnoCobrado(m.admin)
-    const crudo = {
+    const own = m.shiftCharged(m.admin)
+    const raw = {
       ...m.cerrarConEvento(m.admin, own.shift, own.expected),
-      base_sequence: maxSecuencia(m.t),
+      base_sequence: maxSequence(m.t),
     }
-    m.t.hub.recibirLote(m.admin.connection, [crudo as never])
+    m.t.hub.receiveBatch(m.admin.connection, [raw as never])
     const other = otroRestaurante(m.t)
     const r = await m.t.post(
       '/api/reports',
@@ -421,16 +417,16 @@ describe('cierre Z: el día de las ventas es el de la apertura del turno', () =>
     const m = mundo()
     const register = m.admin
     const shift = newId()
-    register.mandar(
+    register.submit(
       shift,
       'ShiftOpened',
-      { register_id: register.connection.dispositivoId, base: 100_000 },
+      { register_id: register.connection.deviceId, base: 100_000 },
       { aggregate_type: 'register_shift' },
     )
     const vender = (amount: number) => {
       const order = m.t.open(m.ana)
-      m.ana.mandar(order, 'ItemAdded', { ...item(), unit_price: amount })
-      register.mandar(order, 'PaymentRecorded', {
+      m.ana.submit(order, 'ItemAdded', { ...item(), unit_price: amount })
+      register.submit(order, 'PaymentRecorded', {
         payment_id: newId(),
         check_id: null,
         register_shift_id: shift,
@@ -444,15 +440,15 @@ describe('cierre Z: el día de las ventas es el de la apertura del turno', () =>
         cardTerminal: null,
         charge_reference: null,
       })
-      expect(register.mandar(order, 'OrderClosed', {}).status).toBe('confirmed')
+      expect(register.submit(order, 'OrderClosed', {}).status).toBe('confirmed')
     }
     vender(40_000)
     // Pasa la madrugada: son las 6:30 a. m. del 25.
     m.t.advance(Date.parse('2026-10-25T11:30:00.000Z') - INICIO)
     vender(25_000)
     const { cerrarConEvento } = m
-    const crudo = { ...cerrarConEvento(register, shift, 165_000), base_sequence: maxSecuencia(m.t) }
-    expect(m.t.hub.recibirLote(register.connection, [crudo as never]).resultados[0]?.status).toBe(
+    const raw = { ...cerrarConEvento(register, shift, 165_000), base_sequence: maxSequence(m.t) }
+    expect(m.t.hub.receiveBatch(register.connection, [raw as never]).results[0]?.status).toBe(
       'confirmed',
     )
     const [z] = m.cierresZ()
@@ -470,12 +466,12 @@ describe('rutas de reportes: permisos, cuerpos y fechas', () => {
 
   it('sin token 401, el cajero sin el permiso 403, y también para reimprimir', async () => {
     const m = mundo()
-    const x = m.turnoCobrado(m.admin)
-    const crudo = {
+    const x = m.shiftCharged(m.admin)
+    const raw = {
       ...m.cerrarConEvento(m.admin, x.shift, x.expected),
-      base_sequence: maxSecuencia(m.t),
+      base_sequence: maxSequence(m.t),
     }
-    m.t.hub.recibirLote(m.admin.connection, [crudo as never])
+    m.t.hub.receiveBatch(m.admin.connection, [raw as never])
     const before = m.cierresZ().length
     expect((await m.t.post('/api/reports', { ...m.admin.cuerpoSesion })).statusCode).toBe(401)
     expect(
@@ -536,13 +532,13 @@ describe('rutas de reportes: permisos, cuerpos y fechas', () => {
 
   it('las fechas que no son fechas dan 400 y las bisiestas y de borde dan 200', async () => {
     const m = mundo()
-    for (const mala of ['2026-02-29', '2026-04-31', '2026-06-31', '2027-02-29'])
-      expect((await report(m, { from: mala })).statusCode, JSON.stringify(mala)).toBe(400)
+    for (const bad of ['2026-02-29', '2026-04-31', '2026-06-31', '2027-02-29'])
+      expect((await report(m, { from: bad })).statusCode, JSON.stringify(bad)).toBe(400)
     expect((await report(m, { from: '2026-10-24', until: '2026-02-29' })).statusCode).toBe(400)
-    for (const buena of ['2028-02-29', '2026-12-31', '2027-01-01', '2026-01-01', '2036-12-31']) {
-      const r = await report(m, { from: buena })
-      expect(r.statusCode, buena).toBe(200)
-      expect(r.json().report).toMatchObject({ from: buena, until: buena })
+    for (const goodOne of ['2028-02-29', '2026-12-31', '2027-01-01', '2026-01-01', '2036-12-31']) {
+      const r = await report(m, { from: goodOne })
+      expect(r.statusCode, goodOne).toBe(200)
+      expect(r.json().report).toMatchObject({ from: goodOne, until: goodOne })
     }
   })
 
@@ -552,7 +548,7 @@ describe('rutas de reportes: permisos, cuerpos y fechas', () => {
   // da 500 en vez de 400.
   it('un texto que no es fecha da 400, no 500', async () => {
     const m = mundo()
-    for (const mala of [
+    for (const bad of [
       '2026-13-01',
       '2026-00-10',
       '2026-10-32',
@@ -564,7 +560,7 @@ describe('rutas de reportes: permisos, cuerpos y fechas', () => {
       '2026-10-24T00:00:00Z',
       '2026/10/24',
     ])
-      expect((await report(m, { from: mala })).statusCode, JSON.stringify(mala)).toBe(400)
+      expect((await report(m, { from: bad })).statusCode, JSON.stringify(bad)).toBe(400)
   })
 
   it('al revés da 400; solo "hasta" cuenta desde hoy; solo "desde" es un solo día', async () => {

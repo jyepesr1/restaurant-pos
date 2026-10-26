@@ -17,19 +17,19 @@ interface Contexto {
 }
 
 export default {
-  async fetch(req: Request, entorno: Entorno, contexto: Contexto): Promise<Response> {
-    let cliente: Client | null = null
+  async fetch(req: Request, environment: Entorno, contexto: Contexto): Promise<Response> {
+    let client: Client | null = null
     const sql = sqlPerezoso(async () => {
-      cliente = new Client({ connectionString: entorno.HYPERDRIVE.connectionString })
+      client = new Client({ connectionString: environment.HYPERDRIVE.connectionString })
       // Una caída de la conexión a mitad de la petición no debe quedar sin manejar.
-      cliente.on('error', (e) => console.error('Conexión con la base perdida:', e.message))
-      await cliente.connect()
-      return sqlDePg(cliente)
+      client.on('error', (e) => console.error('Conexión con la base perdida:', e.message))
+      await client.connect()
+      return sqlDePg(client)
     })
     try {
-      return await atender(req, { sql, tokenAdmin: entorno.TOKEN_ADMIN })
+      return await atender(req, { sql, tokenAdmin: environment.TOKEN_ADMIN })
     } finally {
-      const opened = cliente as Client | null
+      const opened = client as Client | null
       if (opened) contexto.waitUntil(opened.end().catch(() => {}))
     }
   },

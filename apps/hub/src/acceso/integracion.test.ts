@@ -1,6 +1,6 @@
 import { authorizableFingerprint, newId } from '@pos/core'
-import { HubSync, type MensajeHub, SalaSync } from '@pos/sync'
-import { AlmacenSqlite } from '@pos/sync/sqlite'
+import { FloorSync, type HubMessage, HubSync } from '@pos/sync'
+import { SqliteStore } from '@pos/sync/sqlite'
 import { describe, expect, it } from 'vitest'
 import { firmado, type MontajeAcceso, montarAcceso } from './montaje'
 
@@ -27,11 +27,11 @@ const item = () => ({
 
 function montarHub() {
   const m = montarAcceso()
-  const hub = new HubSync(new AlmacenSqlite(m.db, m.restauranteId), {
-    restauranteId: m.restauranteId,
+  const hub = new HubSync(new SqliteStore(m.db, m.restaurantId), {
+    restaurantId: m.restaurantId,
     timeZone: 'America/Bogota',
-    inicioDiaOperativo: '06:00',
-    instancia: 'hub-1',
+    businessDayStart: '06:00',
+    instance: 'hub-1',
     clock: m.clock,
     access: m.access,
   })
@@ -45,7 +45,7 @@ function pedidoConItemEnviado(m: MontajeAcceso & { hub: HubSync }) {
   const order = newId()
   const it = item()
   const en = { aggregate_id: order }
-  const r = m.hub.recibirLote(connection, [
+  const r = m.hub.receiveBatch(connection, [
     m.event(connection, s, 'OrderOpened', { channel: 'dine_in', table_id: null, guests: 2 }, en),
     m.event(connection, s, 'ItemAdded', it, { ...en, base_sequence: 1 }),
     m.event(
@@ -56,7 +56,7 @@ function pedidoConItemEnviado(m: MontajeAcceso & { hub: HubSync }) {
       { ...en, base_sequence: 2 },
     ),
   ])
-  expect(r.resultados.map((x) => x.status)).toEqual(['confirmed', 'confirmed', 'confirmed'])
+  expect(r.results.map((x) => x.status)).toEqual(['confirmed', 'confirmed', 'confirmed'])
   return { connection, session: s, order, itemId: it.item_id }
 }
 
@@ -72,8 +72,8 @@ describe('acceso en el hub de sincronización', () => {
       { aggregate_id: order, reason: 'El cliente cambió de idea', base_sequence: 3 },
     )
 
-    const r = m.hub.recibirLote(connection, [voidItem])
-    expect(r.resultados[0]).toMatchObject({ status: 'rejected', reason: 'no_permission' })
+    const r = m.hub.receiveBatch(connection, [voidItem])
+    expect(r.results[0]).toMatchObject({ status: 'rejected', reason: 'no_permission' })
     expect(m.hub.order(order)?.items[itemId]?.status).toBe('sent')
   })
 
@@ -93,17 +93,17 @@ describe('acceso en el hub de sincronización', () => {
       ...session,
       pin: m.people.manager.pin,
       action: 'void_sent_item',
-      agregadoId: order,
+      aggregateId: order,
       eventId,
       fingerprint: authorizableFingerprint(borrador),
     })
     if (!a.ok) throw new Error(a.message)
-    const voidItem = firmado(session, { ...borrador, authorization_id: a.autorizacionId })
+    const voidItem = firmado(session, { ...borrador, authorization_id: a.authorizationId })
 
-    const r = m.hub.recibirLote(connection, [voidItem])
-    expect(r.resultados[0]).toMatchObject({
+    const r = m.hub.receiveBatch(connection, [voidItem])
+    expect(r.results[0]).toMatchObject({
       status: 'confirmed',
-      aceptacion: { authorized_by_id: m.people.manager.userId },
+      acceptance: { authorized_by_id: m.people.manager.userId },
     })
     const saved = m.db
       .prepare('SELECT user_id, authorized_by_id FROM events WHERE id = ?')
@@ -119,7 +119,7 @@ describe('acceso en el hub de sincronización', () => {
     })
 
     // Reenviar el mismo evento (respuesta perdida) da la misma respuesta, no "comprobante usado".
-    expect(m.hub.recibirLote(connection, [voidItem]).resultados).toEqual(r.resultados)
+    expect(m.hub.receiveBatch(connection, [voidItem]).results).toEqual(r.results)
   })
 
   it('lo que el mesero hizo sin conexión cuenta como uso de su sesión', () => {
@@ -131,17 +131,17 @@ describe('acceso en el hub de sincronización', () => {
 
   it('un dispositivo revocado es rechazado: no lee el salón y lo nuevo que envía no entra', () => {
     const m = montarHub()
-    const sala = new SalaSync(m.hub, m.access.authenticate)
+    const floor = new FloorSync(m.hub, m.access.authenticate)
     const phone = m.emparejar('waiter')
     const session = m.entrar(phone.connection, 'waiter')
     const register = m.emparejar('register').connection
     const admin = m.entrar(register, 'admin')
-    const recibidos: MensajeHub[] = []
-    const enlace = sala.connect((x) => recibidos.push(x))
-    enlace.recibir({
+    const received: HubMessage[] = []
+    const link = floor.connect((x) => received.push(x))
+    link.receive({
       type: 'hello',
       token: phone.token,
-      hub_instancia: null,
+      hub_instance: null,
       until: 0,
       version_app: 'x',
     })
@@ -154,26 +154,26 @@ describe('acceso en el hub de sincronización', () => {
     m.advance(60_000)
     const r = m.access.revocarDispositivo(register, {
       ...admin,
-      dispositivoId: phone.connection.dispositivoId,
+      deviceId: phone.connection.deviceId,
     })
     if (!r.ok) throw new Error(r.message)
-    sala.revoke(phone.connection.dispositivoId, r.revocadoEn)
+    floor.revoke(phone.connection.deviceId, r.revokedAt)
     m.advance(60_000)
     const after = m.event(phone.connection, session, 'OrderOpened', {
       channel: 'bar',
       table_id: null,
       guests: 1,
     })
-    enlace.recibir({ type: 'push', lote_id: 'l1', events: [before, after] })
-    enlace.recibir({ type: 'pull', from: 0 })
+    link.receive({ type: 'push', batch_id: 'l1', events: [before, after] })
+    link.receive({ type: 'pull', from: 0 })
 
-    const result = recibidos.find((x) => x.type === 'result')
-    expect(result?.type === 'result' && result.resultados.map((x) => x.status)).toEqual([
+    const result = received.find((x) => x.type === 'result')
+    expect(result?.type === 'result' && result.results.map((x) => x.status)).toEqual([
       'quarantine',
       'rejected',
     ])
     expect(
-      recibidos.filter((x) => x.type === 'error').map((x) => x.type === 'error' && x.code),
+      received.filter((x) => x.type === 'error').map((x) => x.type === 'error' && x.code),
     ).toEqual(['revoked_token', 'revoked_token'])
     expect(m.db.prepare('SELECT count(*) AS n FROM events').get()?.n).toBe(0)
 
@@ -193,7 +193,7 @@ describe('acceso en el hub de sincronización', () => {
     const s = m.entrar(phone, 'cashier')
     const closeout = m.event(phone, s, 'OrderClosed', {}, { aggregate_id: order, base_sequence: 3 })
 
-    expect(m.hub.recibirLote(phone, [closeout]).resultados[0]).toMatchObject({
+    expect(m.hub.receiveBatch(phone, [closeout]).results[0]).toMatchObject({
       status: 'rejected',
       reason: 'register_only',
     })

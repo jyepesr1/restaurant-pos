@@ -1,10 +1,16 @@
+export { applyMigrations, currentVersion } from './migrate'
+export { MIGRATIONS, type Migration } from './migrations'
 export {
-  COLUMNAS_COMUNES,
-  TABLAS_INMUTABLES,
-  TABLAS_LOCALES,
-  TABLAS_PROYECCION,
-  TABLAS_VERSIONADAS,
-} from './esquema'
-export { MIGRACIONES, type Migracion } from './migraciones'
-export { aplicarMigraciones, versionActual } from './migrar'
-export { type BaseSqlite, enTransaccion, type Fila, type Sentencia, type ValorSql } from './sqlite'
+  COMMON_COLUMNS,
+  IMMUTABLE_TABLES,
+  LOCAL_TABLES,
+  PROJECTION_TABLES,
+  VERSIONED_TABLES,
+} from './schema'
+export {
+  inTransaction,
+  type Row,
+  type SqliteDatabase,
+  type SqlValue,
+  type Statement,
+} from './sqlite'

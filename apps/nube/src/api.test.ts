@@ -10,14 +10,14 @@ import { baseDePrueba } from './pruebas/pglite'
 // hub con un código de un solo uso y subir eventos sin duplicar.
 
 const ADMIN = 'token-de-administracion-de-prueba'
-const AHORA = new Date('2026-10-26T15:00:00.000Z')
+const NOW = new Date('2026-10-26T15:00:00.000Z')
 
 async function mundo() {
   const { sql, db } = await baseDePrueba()
-  const clock = { ahora: AHORA }
-  const request = (metodo: string, ruta: string, cuerpo?: unknown, token?: string) =>
+  const clock = { now: NOW }
+  const request = (metodo: string, route: string, cuerpo?: unknown, token?: string) =>
     atender(
-      new Request(`https://cloud.faro.test${ruta}`, {
+      new Request(`https://cloud.faro.test${route}`, {
         method: metodo,
         headers: {
           ...(cuerpo !== undefined ? { 'content-type': 'application/json' } : {}),
@@ -30,7 +30,7 @@ async function mundo() {
               ? cuerpo
               : JSON.stringify(cuerpo),
       }),
-      { sql, tokenAdmin: ADMIN, clock: () => clock.ahora },
+      { sql, tokenAdmin: ADMIN, clock: () => clock.now },
     )
   const restaurant = newId()
   const location = newId()
@@ -45,7 +45,7 @@ async function mundo() {
       hub_id: hubId,
       location_id: location,
       name: 'Caja principal',
-      instancia: 'instancia-1',
+      instance: 'instancia-1',
     })
     expect(r.status).toBe(201)
     const { credential } = await r.json()
@@ -73,8 +73,8 @@ describe('migraciones de la nube', () => {
   it('aplican una vez; repetirlas no hace nada; editar una ya aplicada falla', async () => {
     const { sql } = await baseDePrueba()
     expect(await migrar(sql)).toEqual([])
-    const editada = MIGRACIONES_NUBE.map((m) => ({ ...m, sql: `${m.sql}\n-- cambio` }))
-    await expect(migrar(sql, editada)).rejects.toThrow(/cambió después de aplicarse/)
+    const edited = MIGRACIONES_NUBE.map((m) => ({ ...m, sql: `${m.sql}\n-- cambio` }))
+    await expect(migrar(sql, edited)).rejects.toThrow(/cambió después de aplicarse/)
   })
 
   it('los eventos no se cambian ni se borran', async () => {
@@ -137,7 +137,7 @@ describe('administración y registro del hub', () => {
         hub_id,
         location_id: location,
         name: 'Caja',
-        instancia: 'i',
+        instance: 'i',
       })
 
     const code = await fresh()
@@ -146,7 +146,7 @@ describe('administración y registro del hub', () => {
     expect((await record(code)).status).toBe(403)
 
     const other = await fresh()
-    clock.ahora = new Date(AHORA.getTime() + 24 * 60 * 60 * 1000 + 1)
+    clock.now = new Date(NOW.getTime() + 24 * 60 * 60 * 1000 + 1)
     expect((await record(other)).status).toBe(403)
   })
 
@@ -161,7 +161,7 @@ describe('administración y registro del hub', () => {
       hub_id: hubId,
       location_id: location,
       name: 'Caja',
-      instancia: 'i',
+      instance: 'i',
     })
     expect(r.status).toBe(409)
   })
@@ -181,11 +181,11 @@ describe('subir eventos', () => {
     const r = await request('POST', '/v1/events', { events }, credential)
     expect(r.status).toBe(200)
     expect(await r.json()).toEqual({
-      resultados: events.map((e) => ({ id: e.id, status: 'saved' })),
+      results: events.map((e) => ({ id: e.id, status: 'saved' })),
       last_sequence: 2,
     })
     const another = await (await request('POST', '/v1/events', { events }, credential)).json()
-    expect(another.resultados.map((x: { status: string }) => x.status)).toEqual([
+    expect(another.results.map((x: { status: string }) => x.status)).toEqual([
       'already_stored',
       'already_stored',
     ])
@@ -200,7 +200,7 @@ describe('subir eventos', () => {
     await request('POST', '/v1/events', { events: [opened] }, credential)
     const changed = { ...opened, data: { ...opened.data, guests: 9 } }
     const r = await (await request('POST', '/v1/events', { events: [changed] }, credential)).json()
-    expect(r.resultados).toEqual([{ id: opened.id, status: 'divergent' }])
+    expect(r.results).toEqual([{ id: opened.id, status: 'divergent' }])
     const [saved] = (
       await db.query<{ c: number }>("SELECT (content->'data'->>'guests')::int AS c FROM events")
     ).rows
@@ -217,7 +217,7 @@ describe('subir eventos', () => {
     const r = await (
       await request('POST', '/v1/events', { events: [a, { id: 'x', type: 'Nada' }, b] }, credential)
     ).json()
-    expect(r.resultados.map((x: { status: string }) => x.status)).toEqual([
+    expect(r.results.map((x: { status: string }) => x.status)).toEqual([
       'saved',
       'invalid',
       'saved',
@@ -244,7 +244,7 @@ describe('subir eventos', () => {
     await request('POST', '/v1/events', { events }, a.credential)
     // El mismo evento en otro restaurante no es «ya estaba»: es suyo.
     const r = await (await request('POST', '/v1/events', { events }, b.credential)).json()
-    expect(r.resultados.map((x: { status: string }) => x.status)).toEqual(['saved', 'saved'])
+    expect(r.results.map((x: { status: string }) => x.status)).toEqual(['saved', 'saved'])
     expect((await db.query('SELECT count(*)::int AS n FROM events')).rows).toEqual([{ n: 4 }])
     const last = await (await request('GET', '/v1/events/last', undefined, b.credential)).json()
     expect(last).toEqual({ last_sequence: 2 })
@@ -270,7 +270,7 @@ describe('subir eventos', () => {
     if (!a || !b) throw new Error('sin eventos')
     const large = { ...b, data: { ...b.data, notes: 'x'.repeat(70_000) } }
     const r = await (await request('POST', '/v1/events', { events: [a, large] }, credential)).json()
-    expect(r.resultados).toEqual([
+    expect(r.results).toEqual([
       { id: a.id, status: 'saved' },
       { id: b.id, status: 'invalid', reason: 'too_large' },
     ])
@@ -292,11 +292,11 @@ describe('seguridad por fila en la base', () => {
     const b = await hubRegistrado(restB)
     await request('POST', '/v1/events', { events: eventosDePedido() }, a.credential)
     await request('POST', '/v1/events', { events: eventosDePedido() }, b.credential)
-    const enRestaurante = <T>(rest: string, trabajo: (tx: typeof sql) => Promise<T>) =>
-      sql.transaccion(async (tx) => {
+    const enRestaurante = <T>(rest: string, job: (tx: typeof sql) => Promise<T>) =>
+      sql.transaction(async (tx) => {
         await tx.query("SELECT set_config('faro.restaurant_id', $1, true)", [rest])
         await tx.query('SET LOCAL ROLE faro_data')
-        return trabajo(tx)
+        return job(tx)
       })
     // Una consulta sin filtro igual ve solo lo de su restaurante.
     const seenSet = await enRestaurante(restA, (tx) =>
@@ -304,7 +304,7 @@ describe('seguridad por fila en la base', () => {
     )
     expect(seenSet).toEqual([{ r: restA }])
     // Sin decir el restaurante no se ve nada.
-    const nothing = await sql.transaccion(async (tx) => {
+    const nothing = await sql.transaction(async (tx) => {
       await tx.query('SET LOCAL ROLE faro_data')
       return tx.query('SELECT 1 FROM events')
     })
@@ -335,15 +335,15 @@ describe('revisión de código (1.10)', () => {
     if (!a || !b) throw new Error('sin eventos')
     const nulo = { ...b, data: { ...b.data, notes: `con ${String.fromCharCode(0)} nulo` } }
     const r = await (await request('POST', '/v1/events', { events: [a, nulo] }, credential)).json()
-    expect(r.resultados).toEqual([
+    expect(r.results).toEqual([
       { id: a.id, status: 'saved' },
       { id: b.id, status: 'invalid', reason: 'invalid_character' },
     ])
     const [c] = eventosDePedido(10)
     if (!c) throw new Error('sin evento')
-    const suelto = { ...c, data: { ...c.data, [`clave\uD800`]: 1 } }
-    const r2 = await (await request('POST', '/v1/events', { events: [suelto] }, credential)).json()
-    expect(r2.resultados[0]).toMatchObject({ status: 'invalid', reason: 'invalid_character' })
+    const lone = { ...c, data: { ...c.data, [`clave\uD800`]: 1 } }
+    const r2 = await (await request('POST', '/v1/events', { events: [lone] }, credential)).json()
+    expect(r2.results[0]).toMatchObject({ status: 'invalid', reason: 'invalid_character' })
   })
 
   it('ultima_secuencia es la última sin huecos desde 1, no la mayor', async () => {
@@ -372,12 +372,12 @@ describe('revisión de código (1.10)', () => {
         hub_id: id,
         location_id: location,
         name: 'C',
-        instancia: 'i',
+        instance: 'i',
       })
     const first = (await (await record()).json()).credential
-    const segunda = await record()
-    expect(segunda.status).toBe(201)
-    const newOne = (await segunda.json()).credential
+    const second = await record()
+    expect(second.status).toBe(201)
+    const newOne = (await second.json()).credential
     expect(newOne).not.toBe(first)
     expect((await request('GET', '/v1/events/last', undefined, first)).status).toBe(401)
     expect((await request('GET', '/v1/events/last', undefined, newOne)).status).toBe(200)
@@ -391,7 +391,7 @@ describe('revisión de código (1.10)', () => {
         throw Object.assign(new Error('relation "secreta" does not exist'), { code: '42P01' })
       },
       execute: async () => {},
-      transaccion: async () => {
+      transaction: async () => {
         throw new Error('x')
       },
     }
@@ -416,14 +416,14 @@ describe('lote con un dato que Postgres rechaza', () => {
     const badCase = { ...b, business_day: '2026-02-30' }
     const r = await request('POST', '/v1/events', { events: [a, badCase] }, credential)
     expect(r.status).toBe(200)
-    const { resultados } = await r.json()
-    expect(resultados[0]).toEqual({ id: a.id, status: 'saved' })
-    expect(resultados[1]).toMatchObject({ id: b.id, status: 'invalid' })
+    const { results } = await r.json()
+    expect(results[0]).toEqual({ id: a.id, status: 'saved' })
+    expect(results[1]).toMatchObject({ id: b.id, status: 'invalid' })
     // Reenviar el lote da lo mismo: no se queda trabado.
     const another = await (
       await request('POST', '/v1/events', { events: [a, badCase] }, credential)
     ).json()
-    expect(another.resultados.map((x: { status: string }) => x.status)).toEqual([
+    expect(another.results.map((x: { status: string }) => x.status)).toEqual([
       'already_stored',
       'invalid',
     ])

@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { newId } from '@pos/core'
-import { AlmacenDispositivoMemoria, type EventoLocal } from '@pos/sync'
+import { type LocalEvent, MemoryDeviceStore } from '@pos/sync'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AlmacenIndexedDb, BaseDispositivo } from './almacen'
 
@@ -20,10 +20,10 @@ function open() {
 
 const local = (
   position: number,
-  fields: Partial<EventoLocal> = {},
+  fields: Partial<LocalEvent> = {},
   order = newId(),
   related: string[] = [],
-): EventoLocal =>
+): LocalEvent =>
   ({
     event: {
       id: newId(),
@@ -36,7 +36,7 @@ const local = (
     own: true,
     position,
     ...fields,
-  }) as EventoLocal
+  }) as LocalEvent
 
 describe('AlmacenIndexedDb', () => {
   it('se porta igual que el de memoria', async () => {
@@ -50,30 +50,30 @@ describe('AlmacenIndexedDb', () => {
       local(4, { status: 'rejected', reason: 'x' }, other),
     ]
     const idb = open()
-    const memory = new AlmacenDispositivoMemoria()
-    for (const a of [idb, memory]) await a.guardar(events)
+    const memory = new MemoryDeviceStore()
+    for (const a of [idb, memory]) await a.save(events)
 
     for (const metodo of ['listAll', 'ownPending'] as const)
       expect(await idb[metodo]()).toEqual(await memory[metodo]())
     expect(await idb.ownPending(1)).toEqual(await memory.ownPending(1))
     expect((await idb.ownPending()).map((l) => l.position)).toEqual([3, 5])
-    expect(await idb.dePedido(order)).toEqual(await memory.dePedido(order))
-    expect((await idb.dePedido(order)).map((l) => l.position)).toEqual([1, 2, 3])
-    const [firstOne] = events as [EventoLocal]
-    expect(await idb.obtener(firstOne.event.id)).toEqual(firstOne)
-    expect(await idb.obtener(newId())).toBeUndefined()
+    expect(await idb.ofOrder(order)).toEqual(await memory.ofOrder(order))
+    expect((await idb.ofOrder(order)).map((l) => l.position)).toEqual([1, 2, 3])
+    const [firstOne] = events as [LocalEvent]
+    expect(await idb.get(firstOne.event.id)).toEqual(firstOne)
+    expect(await idb.get(newId())).toBeUndefined()
   })
 
   it('al confirmarse, un pendiente sale de la cola; borrar quita del todo', async () => {
     const a = open()
     const e = local(1)
-    await a.guardar([e])
-    await a.guardar([{ ...e, status: 'confirmed' }])
+    await a.save([e])
+    await a.save([{ ...e, status: 'confirmed' }])
     expect(await a.ownPending()).toEqual([])
-    expect((await a.obtener(e.event.id))?.status).toBe('confirmed')
+    expect((await a.get(e.event.id))?.status).toBe('confirmed')
     await a.erase([e.event.id])
     expect(await a.listAll()).toEqual([])
-    await a.guardar([])
+    await a.save([])
   })
 
   it('el cursor arranca en 0 y sobrevive a cerrar y abrir la base', async () => {
@@ -81,15 +81,15 @@ describe('AlmacenIndexedDb', () => {
     const db = new BaseDispositivo(name)
     bases.push(db)
     const a = new AlmacenIndexedDb(db)
-    expect(await a.cursor()).toEqual({ instancia: null, until: 0 })
-    await a.guardarCursor({ instancia: 'h1', until: 7, desfaseMs: -40 })
-    await a.guardar([local(1)])
+    expect(await a.cursor()).toEqual({ instance: null, until: 0 })
+    await a.saveCursor({ instance: 'h1', until: 7, offsetMs: -40 })
+    await a.save([local(1)])
     db.close()
 
     const another = new BaseDispositivo(name)
     bases.push(another)
     const b = new AlmacenIndexedDb(another)
-    expect(await b.cursor()).toEqual({ instancia: 'h1', until: 7, desfaseMs: -40 })
+    expect(await b.cursor()).toEqual({ instance: 'h1', until: 7, offsetMs: -40 })
     expect(await b.ownPending()).toHaveLength(1)
   })
 })

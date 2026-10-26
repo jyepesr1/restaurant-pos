@@ -1,5 +1,5 @@
 import { type OrderItem, type OrderState, orderTotals, rebuild } from '@pos/core'
-import { type EventoLocal, pedidosDe } from '@pos/sync'
+import { type LocalEvent, ordersOf } from '@pos/sync'
 
 // Lo que muestra la pantalla de demo, calculado de los eventos guardados en el dispositivo: los
 // confirmados por el hub y, encima, los propios pendientes (docs/SYNC.md#orden-y-estado-local).
@@ -15,21 +15,21 @@ export interface PedidoVisible {
 }
 
 /** Ítems que toca un evento pendiente que la pantalla marca "sin confirmar". */
-function itemsOf({ event }: EventoLocal): string[] {
+function itemsOf({ event }: LocalEvent): string[] {
   if (event.type === 'ItemAdded') return [event.data.item_id]
   if (event.type === 'ItemsSent') return event.data.tickets.flatMap((c) => c.item_ids)
   return []
 }
 
-const current = (l: EventoLocal) => l.status === 'confirmed' || l.status === 'pending'
+const current = (l: LocalEvent) => l.status === 'confirmed' || l.status === 'pending'
 
 /** Los pedidos abiertos, del más antiguo al más nuevo. */
-export function pedidosAbiertos(locales: readonly EventoLocal[]): PedidoVisible[] {
-  const porPedido = new Map<string, EventoLocal[]>()
-  for (const l of locales) {
+export function pedidosAbiertos(locals: readonly LocalEvent[]): PedidoVisible[] {
+  const porPedido = new Map<string, LocalEvent[]>()
+  for (const l of locals) {
     if (!current(l) || l.event.aggregate_type !== 'order') continue
     // Un evento puede tocar dos pedidos: mover productos va en el origen y llega al destino.
-    for (const id of pedidosDe(l.event)) porPedido.set(id, [...(porPedido.get(id) ?? []), l])
+    for (const id of ordersOf(l.event)) porPedido.set(id, [...(porPedido.get(id) ?? []), l])
   }
   const visibles: PedidoVisible[] = []
   for (const [id, events] of porPedido) {
@@ -78,8 +78,8 @@ export const claveAgotado = (productId: string, variantId: string | null = null)
   variantId ? `${productId}:${variantId}` : productId
 
 /** Lo vigente de los tipos pedidos: lo confirmado en el orden del hub y después lo pendiente. */
-function inOrder(locales: readonly EventoLocal[], types: readonly string[]): EventoLocal[] {
-  const de = locales.filter((l) => current(l) && types.includes(l.event.type))
+function inOrder(locals: readonly LocalEvent[], types: readonly string[]): LocalEvent[] {
+  const de = locals.filter((l) => current(l) && types.includes(l.event.type))
   return [
     ...de
       .filter((l) => l.status === 'confirmed')
@@ -92,9 +92,9 @@ function inOrder(locales: readonly EventoLocal[], types: readonly string[]): Eve
  * Lo agotado (86) según los eventos guardados aquí: lo confirmado en el orden del hub y, encima,
  * lo propio pendiente. Así quien lo marca lo ve al instante, aun sin conexión.
  */
-export function agotados(locales: readonly EventoLocal[]): Set<string> {
+export function agotados(locals: readonly LocalEvent[]): Set<string> {
   const result = new Set<string>()
-  for (const { event } of inOrder(locales, ['ProductSoldOut', 'ProductAvailable'])) {
+  for (const { event } of inOrder(locals, ['ProductSoldOut', 'ProductAvailable'])) {
     if (event.type !== 'ProductSoldOut' && event.type !== 'ProductAvailable') continue
     const key = claveAgotado(event.data.product_id, event.data.variant_id)
     if (event.type === 'ProductSoldOut') result.add(key)
@@ -108,9 +108,9 @@ export function agotados(locales: readonly EventoLocal[]): Set<string> {
  * las unidades que quedan en cada línea: lo sumado a una línea igual (`ItemChanged`) cuenta, lo
  * quitado o anulado no.
  */
-export function masPedidos(locales: readonly EventoLocal[], cuantos = 12): string[] {
+export function masPedidos(locals: readonly LocalEvent[], howMany = 12): string[] {
   const lines = new Map<string, { product: string; quantity: number }>()
-  for (const { event: e } of inOrder(locales, [
+  for (const { event: e } of inOrder(locals, [
     'ItemAdded',
     'ItemChanged',
     'ItemRemoved',
@@ -131,7 +131,7 @@ export function masPedidos(locales: readonly EventoLocal[], cuantos = 12): strin
     if (quantity > 0) tally.set(product, (tally.get(product) ?? 0) + quantity)
   return [...tally]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, cuantos)
+    .slice(0, howMany)
     .map(([id]) => id)
 }
 
