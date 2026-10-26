@@ -130,6 +130,8 @@ diferencia          = contado − esperado     (por medio, con signo)
 
 Ejemplo: base 200.000; venta en efectivo con saldo 36.810 (ajuste −10, propina 3.000); `pago_propinas` 20.000 → esperado **219.800**.
 
+En el cierre (tarea 1.8), cada medio que no es efectivo se compara con lo que dice su cierre (el del datáfono, lo que llegó a la app): `diferencia = reportado − esperado_otro_medio`. Lo esperado puede ser **negativo** (un turno con solo una devolución de un pago de otro día), y lo reportado también.
+
 Un `PagoAnulado` o reembolso cae en el turno en que se registra, no en el del pago original. La reversa en efectivo de un pago anulado es lo que se cobró: `monto + ajuste_redondeo + propina`.
 
 ## Fondo de propinas

@@ -71,7 +71,9 @@ export const nombreDeMedio = (
   reglas: ReglasCobro | null,
 ) =>
   medio === 'otro'
-    ? (reglas?.mediosPropios?.find((m) => m.id === medioPropioId)?.nombre ?? 'Otro')
+    ? ([...(reglas?.mediosPropios ?? []), ...(reglas?.mediosPropiosArchivados ?? [])].find(
+        (m) => m.id === medioPropioId,
+      )?.nombre ?? 'Otro')
     : NOMBRE_MEDIO[medio]
 
 /** «INC 8 %», «IVA 19 %», «Exento» (el mismo nombre que la precuenta impresa). */

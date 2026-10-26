@@ -2,6 +2,7 @@ import {
   aplicarEvento,
   type CuadreTurno,
   configCompleta,
+  cuadreDeOtrosMedios,
   cuadreDeTurno,
   diaOperativo,
   type EstadoPedido,
@@ -468,8 +469,29 @@ export class HubSync {
         return 'arqueo_desactualizado'
       if (arqueo.contado !== evento.datos.contado_efectivo) return 'contado_distinto'
       if (cuadre.efectivo.esperado !== evento.datos.esperado_efectivo) return 'esperado_distinto'
+      // Los demás medios (tarea 1.8): cada uno con lo que registró el hub y lo que dijo su cierre
+      // en el conteo, ni más ni menos.
+      const comoTexto = (l: {
+        medio: string
+        medioPropioId: string | null
+        esperado: number
+        reportado: number
+      }) => `${l.medio}:${l.medioPropioId ?? ''}:${l.esperado}:${l.reportado}`
+      const otros = cuadreDeOtrosMedios(cuadre, arqueo)
+      const delEvento = (evento.datos.otros_medios ?? []).map((o) => ({
+        medio: o.medio,
+        medioPropioId: o.medio_propio_id,
+        esperado: o.esperado,
+        reportado: o.reportado,
+      }))
+      if (otros.map(comoTexto).sort().join('|') !== delEvento.map(comoTexto).sort().join('|'))
+        return 'otros_medios_distintos'
       const umbral = this.config.reglasCobro?.().umbralDiferencia ?? UMBRAL_DIFERENCIA_CAJA
-      if (Math.abs(evento.datos.diferencia) >= Math.max(1, umbral) && !evento.datos.justificacion)
+      const grande = (d: number) => Math.abs(d) >= Math.max(1, umbral)
+      if (
+        (grande(evento.datos.diferencia) || otros.some((o) => grande(o.diferencia))) &&
+        !evento.datos.justificacion
+      )
         return 'falta_justificacion'
       return null
     }

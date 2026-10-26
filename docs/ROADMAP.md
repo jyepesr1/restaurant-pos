@@ -35,7 +35,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.5 | Mover ítems, cambiar y unir mesas, anular con motivo y permiso | ✅ |
 | 1.6 | Precuenta, división, pagos mixtos y propina | ✅ |
 | 1.7 | Apertura, cierre y arqueo de caja | ✅ |
-| 1.8 | Datáfonos nivel 1 y conciliación en el cierre | ⏳ |
+| 1.8 | Datáfonos nivel 1 y conciliación en el cierre | ✅ (por totales; el importador espera un reporte real de Bold) |
 | 1.9 | Reportes básicos y `docs/KPIS.md` | ⏳ |
 | 1.10 | Hub en el PC de caja (Windows) | ⏳ |
 | 1.11 | Prueba de aceptación: servicio de 2 horas sin internet (y la e2e de la Fase 0) | ⏳ |
@@ -271,6 +271,47 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 6. Agrega y envía otro producto, y luego **Mesa y pedido → Mover productos**: elígelo, elige la mesa 8 y toca **Mover 1 a la mesa 8**. La mesa 8 debe mostrarlo.
 7. Abre la mesa 8, **Mesa y pedido → Cancelar el pedido**, elige un motivo, escribe el PIN del administrador y toca **Cancelar el pedido**. La mesa 8 queda libre.
 8. Toca un plato enviado, cambia su nota y toca **Enviar el cambio a cocina**: sale una comanda «CAMBIO».
+
+### 1.8 — Conciliación de datáfonos y apps en el cierre ✅
+
+Decisiones del dueño del 26-oct-2026 ([ADR-011](DECISIONES.md#adr-011--reglas-de-operación-acordadas-para-el-piloto)).
+
+**Lo nuevo** (al cerrar la caja):
+- Con el conteo del efectivo, el cajero escribe lo que dicen los demás cierres: **el total del cierre de Bold** (con propinas) y **lo que llegó por cada app** (Nequi, Daviplata, Bre-B, transferencia y los medios propios). También a ciegas.
+- En el resultado, por medio: lo registrado, lo que dice su cierre y si **cuadra, sobra o falta**. Si el datáfono tiene más que lo registrado, se cobró algo que no se registró en el POS.
+- Desde el umbral (el mismo del efectivo) hay que justificar.
+- El hub no acepta un cierre cuyos medios no cuadren con los que él calcula.
+
+Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas`. Se corrigió:
+- la pantalla de la caja mostraba al cajero lo cobrado en efectivo y en cada medio, y así podía saber lo esperado antes de contar: ahora solo ve cuántos pagos hay (los montos los ve quien tiene permiso de reportes);
+- un medio con solo devoluciones no se podía cerrar en negativo;
+- un campo vacío contaba como $0: ahora los medios con cobros deben tener su cierre escrito;
+- lo esperado cambiaba en pantalla si entraba un pago después del conteo: ahora queda fijo y avisa;
+- cerrar no pedía confirmar, y «Volver a contar» borraba todo;
+- un medio propio archivado salía como «Otro».
+
+**Pruebas:** 188 nuevas (núcleo 83, sincronización 55, app 50), todas pasan.
+
+**Queda pendiente:**
+- **Importar el reporte de Bold** (Excel o CSV) y conciliar pago por pago: hace falta un archivo de ejemplo real descargado del portal de Bold (el brief pide no inventar el formato).
+- Varios turnos por día: el cierre de Bold es del día; si hay cambio de cajero, hay que repartirlo.
+- Restaurantes con datáfonos de varios proveedores: hoy se escribe la suma de sus cierres en una sola línea.
+- Integración con Bold por API (nivel 2) y Redeban (nivel 3).
+- Guardar un borrador del conteo si se sale de la pantalla o se recarga.
+
+**Cómo probarlo:**
+
+1. Arranca el hub con la versión nueva:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+2. Abre la caja, cobra una mesa con **Tarjeta crédito** y otra con **Nequi**.
+3. Toca **Cerrar la caja**. Debajo del efectivo aparecen «Cierre de Bold (total con propinas)» y «Llegó por Nequi», sin mostrar lo registrado.
+4. Escribe el total de Bold igual a lo cobrado con tarjeta y en Nequi $1.000 menos.
+5. Toca **Guardar el conteo**: Bold debe decir «Cuadra» y Nequi «Faltan $1.000», y se pide escribir por qué.
+6. Escribe el motivo y toca **Cerrar la caja**.
 
 ### 1.7 — Apertura, cierre y arqueo de caja ✅
 

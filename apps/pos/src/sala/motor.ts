@@ -952,6 +952,8 @@ function motivoEnPalabras(motivo: string | undefined): string {
     falta_justificacion: 'Escribe por qué no cuadra la caja.',
     arqueo_no_es_el_ultimo: 'La caja se cierra con el último conteo: vuelve a contar.',
     arqueo_desactualizado: 'Hubo pagos o movimientos después del conteo: vuelve a contar.',
+    otros_medios_distintos:
+      'Los demás medios no coinciden con lo que registró la caja: recarga la app (puede estar desactualizada) y vuelve a contar.',
   }
   return (motivo && textos[motivo]) ?? `La caja no lo aceptó (${motivo ?? 'sin motivo'}).`
 }

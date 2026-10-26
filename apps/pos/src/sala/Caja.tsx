@@ -1,6 +1,16 @@
-import { type CuadreTurno, DENOMINACIONES, diaOperativo, nuevoId, totalesPedido } from '@pos/core'
+import {
+  type CuadreMedio,
+  type CuadreTurno,
+  claveDeMedio,
+  cuadreDeOtrosMedios,
+  DENOMINACIONES,
+  diaOperativo,
+  type MedioPago,
+  nuevoId,
+  totalesPedido,
+} from '@pos/core'
 import type { Catalogo } from '@pos/sync'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
 import { Etiqueta } from '../ui/Etiqueta'
@@ -59,6 +69,10 @@ function cuando(iso: string): string {
 const diaDe = (iso: string, reglas: ReglasCobro | null) =>
   diaOperativo(iso, reglas?.zonaHoraria ?? 'America/Bogota', reglas?.inicioDiaOperativo ?? '06:00')
 
+/** Un valor que puede ser negativo (un medio con solo devoluciones): «-5.000» → -5000. */
+export const conSigno = (texto: string) =>
+  (texto.trim().startsWith('-') ? -1 : 1) * soloDigitos(texto) || 0
+
 /** «Mesa 4», «Mesa 5 + 6», «Para llevar». */
 function nombreDePedido(catalogo: Catalogo | null, mesaId: string | null, unidas: string[]) {
   if (!mesaId) return 'Sin mesa'
@@ -66,6 +80,61 @@ function nombreDePedido(catalogo: Catalogo | null, mesaId: string | null, unidas
     (id) => catalogo?.mesas.find((m) => m.id === id)?.nombre ?? '?',
   )
   return `Mesa ${nombres.join(' + ')}`
+}
+
+/** Un medio que no es efectivo y se cuadra en el cierre con lo que dice su propio cierre. */
+export interface MedioDelCierre {
+  clave: string
+  medio: Exclude<MedioPago, 'efectivo'>
+  medioPropioId: string | null
+  /** «Cierre de Bold», «Llegó por Nequi». */
+  etiqueta: string
+  /** Su nombre en el resultado. */
+  nombre: string
+}
+
+const PROVEEDOR: Record<string, string> = {
+  bold: 'Bold',
+  redeban: 'Redeban',
+  credibanco: 'Credibanco',
+}
+
+const claveMedio = claveDeMedio
+
+/**
+ * Los medios a cuadrar al cerrar (tarea 1.8): los que recibe el restaurante y los que tuvieron
+ * pagos en el turno (aunque ya estén apagados). La tarjeta va en una sola línea: los datáfonos de
+ * un mismo proveedor entregan un solo cierre.
+ */
+export function mediosDelCierre(
+  reglas: ReglasCobro | null,
+  cuadre: CuadreTurno,
+  catalogo: Catalogo | null,
+): MedioDelCierre[] {
+  const proveedores = [...new Set((catalogo?.datafonos ?? []).map((d) => d.proveedor ?? 'otro'))]
+  const tarjeta =
+    proveedores.length === 1 && proveedores[0] && PROVEEDOR[proveedores[0]]
+      ? `Cierre de ${PROVEEDOR[proveedores[0]]} (total con propinas)`
+      : 'Cierre de los datáfonos (la suma, con propinas)'
+  const lista: MedioDelCierre[] = []
+  const agregar = (medio: MedioPago, medioPropioId: string | null) => {
+    // Un medio propio sin decir cuál (un reembolso sin su pago aquí) no tiene cierre que pedir.
+    if (medio === 'efectivo' || (medio === 'otro' && !medioPropioId)) return
+    const clave = claveMedio({ medio, medioPropioId })
+    if (lista.some((m) => m.clave === clave)) return
+    const nombre = nombreDeMedio(medio, medioPropioId, reglas)
+    lista.push({
+      clave,
+      medio,
+      medioPropioId,
+      nombre,
+      etiqueta: medio === 'tarjeta' ? tarjeta : `Llegó por ${nombre}`,
+    })
+  }
+  for (const m of reglas?.mediosPago ?? []) agregar(m, null)
+  for (const m of reglas?.mediosPropios ?? []) agregar('otro', m.id)
+  for (const m of cuadre.porMedio) agregar(m.medio, m.medioPropioId)
+  return lista
 }
 
 export function Caja() {
@@ -78,6 +147,8 @@ export function Caja() {
   const [cerrando, setCerrando] = useState(false)
   // El conteo vive aquí: salir del cierre y volver no lo borra.
   const [cantidades, setCantidades] = useState<Record<string, number>>({})
+  // Lo que dicen los cierres de los demás medios (Bold, Nequi…), con el conteo.
+  const [reportes, setReportes] = useState<Record<string, string>>({})
   // El último cierre de este equipo, para mostrar cómo quedó.
   const [cerrado, setCerrado] = useState<CuadreTurno | null>(null)
 
@@ -135,6 +206,9 @@ export function Caja() {
             reglas={reglas}
             cantidades={cantidades}
             alCambiarCantidades={setCantidades}
+            medios={mediosDelCierre(reglas, cuadre, catalogo)}
+            reportes={reportes}
+            alCambiarReportes={setReportes}
             mesasAbiertas={vista.pedidos
               .map((p) => ({
                 id: p.estado.id,
@@ -148,6 +222,7 @@ export function Caja() {
             alCerrar={(c) => {
               setCerrando(false)
               setCantidades({})
+              setReportes({})
               setCerrado(c)
             }}
           />
@@ -168,7 +243,11 @@ export function Caja() {
                 de nuevo con la base de hoy.
               </p>
             )}
-            <Cobrado cuadre={cuadre} reglas={reglas} />
+            <Cobrado
+              cuadre={cuadre}
+              reglas={reglas}
+              conMontos={permisos.includes('ver_reportes')}
+            />
             <Movimientos cuadre={cuadre} />
             {sinRed}
             {puedeMover && (
@@ -257,10 +336,47 @@ export function Caja() {
 /** «3 pagos»; nada si quedó en 0 o menos (una anulación de otro turno). */
 const cuantos = (n: number) => (n > 0 ? ` · ${n === 1 ? '1 pago' : `${n} pagos`}` : '')
 
-/** Lo cobrado en el turno por medio, con el total. */
-function Cobrado({ cuadre, reglas }: { cuadre: CuadreTurno; reglas: ReglasCobro | null }) {
+/**
+ * Lo cobrado en el turno por medio, con el total. El cajero solo ve cuántos pagos hay: con los
+ * montos podría saber lo esperado antes de contar y el arqueo dejaría de ser ciego. Quien ve los
+ * reportes (el administrador) ve los montos.
+ */
+function Cobrado({
+  cuadre,
+  reglas,
+  conMontos,
+}: {
+  cuadre: CuadreTurno
+  reglas: ReglasCobro | null
+  conMontos: boolean
+}) {
   const venta = cuadre.porMedio.reduce((a, m) => a + m.venta, 0)
   const propinas = cuadre.porMedio.reduce((a, m) => a + m.propina, 0)
+  if (!conMontos)
+    return (
+      <section
+        className="rounded-2xl border border-linea bg-superficie p-4"
+        aria-label="Cobrado en este turno"
+      >
+        <h2 className="mb-2 font-semibold">Cobrado en este turno</h2>
+        {cuadre.porMedio.length === 0 ? (
+          <p className="text-texto-suave">Todavía no hay pagos.</p>
+        ) : (
+          <>
+            <ul className="flex flex-col gap-1">
+              {cuadre.porMedio.map((m) => (
+                <li key={claveDeMedio(m)}>
+                  {`${nombreDeMedio(m.medio, m.medioPropioId, reglas)}${cuantos(m.pagos)}`}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-sm text-texto-suave">
+              Los totales se ven al cerrar la caja, después de contar.
+            </p>
+          </>
+        )}
+      </section>
+    )
   return (
     <section
       className="rounded-2xl border border-linea bg-superficie p-4"
@@ -482,6 +598,9 @@ function Cierre({
   reglas,
   cantidades,
   alCambiarCantidades,
+  medios,
+  reportes,
+  alCambiarReportes,
   mesasAbiertas,
   sinRed,
   enLinea,
@@ -492,6 +611,10 @@ function Cierre({
   reglas: ReglasCobro | null
   cantidades: Record<string, number>
   alCambiarCantidades: (c: Record<string, number>) => void
+  medios: MedioDelCierre[]
+  /** Lo escrito en cada medio (texto, para poder empezar con «-»). */
+  reportes: Record<string, string>
+  alCambiarReportes: (r: Record<string, string>) => void
   mesasAbiertas: { id: string; nombre: string; saldo: number }[]
   sinRed: React.ReactNode
   enLinea: boolean
@@ -500,17 +623,49 @@ function Cierre({
 }) {
   const avisar = useAvisar()
   const [arqueoId, setArqueoId] = useState<string | null>(null)
+  // El cuadre de los demás medios con lo reportado en el conteo guardado.
+  const [otros, setOtros] = useState<CuadreMedio[]>([])
   const [justificacion, setJustificacion] = useState('')
   const [ocupado, setOcupado] = useState(false)
+  const [confirmando, setConfirmando] = useState(false)
+  // Lo esperado queda fijo al guardar el conteo: si después entra un pago, hay que recontar.
+  const [esperadoAlContar, setEsperadoAlContar] = useState<number | null>(null)
   const campos = useRef<(HTMLInputElement | null)[]>([])
   const guardar = useRef<HTMLButtonElement>(null)
+  const textoJustificacion = useRef<HTMLTextAreaElement>(null)
+  const botonCerrar = useRef<HTMLButtonElement>(null)
   const clave = (d: (typeof DENOMINACIONES)[number]) => `${d.tipo}${d.valor}`
   const cantidadDe = (d: (typeof DENOMINACIONES)[number]) => cantidades[clave(d)] ?? 0
   const contado = DENOMINACIONES.reduce((a, d) => a + d.valor * cantidadDe(d), 0)
-  const esperado = cuadre.efectivo.esperado
+  const esperado = esperadoAlContar ?? cuadre.efectivo.esperado
+  const cambioDespues = esperadoAlContar !== null && esperadoAlContar !== cuadre.efectivo.esperado
   const diferencia = contado - esperado
+  // Los medios con cobros en el turno deben tener su cierre escrito (un vacío no es un 0).
+  const conCobros = new Set(cuadre.porMedio.map(claveDeMedio))
+  const sinEscribir = medios.filter(
+    (m) => conCobros.has(m.clave) && !(reportes[m.clave] ?? '').trim(),
+  )
   const umbral = reglas?.umbralDiferencia ?? 1000
-  const pideJustificar = diferencia !== 0 && Math.abs(diferencia) >= Math.max(1, umbral)
+  const grande = (d: number) => d !== 0 && Math.abs(d) >= Math.max(1, umbral)
+  const pideJustificar = grande(diferencia) || otros.some((o) => grande(o.diferencia))
+  const hayDiferencia = diferencia !== 0 || otros.some((o) => o.diferencia !== 0)
+  // Las líneas que pasan el umbral, para decir qué hay que explicar.
+  const nombreOtro = (o: CuadreMedio) =>
+    medios.find((m) => m.clave === claveDeMedio(o))?.nombre ??
+    nombreDeMedio(o.medio, o.medioPropioId, reglas)
+  const porExplicar = [
+    ...(grande(diferencia) ? ['efectivo'] : []),
+    ...otros.filter((o) => grande(o.diferencia)).map(nombreOtro),
+  ]
+  const inicioDia = reglas?.inicioDiaOperativo ?? '06:00'
+
+  // Al guardar el conteo, el foco sigue el camino: la justificación si hace falta, si no, cerrar.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: solo al cambiar de conteo, no al escribir
+  useEffect(() => {
+    if (arqueoId === null) return
+    if (pideJustificar) textoJustificacion.current?.focus()
+    else botonCerrar.current?.focus()
+  }, [arqueoId])
 
   const hacer = async (trabajo: () => Promise<void>) => {
     if (ocupado) return
@@ -531,11 +686,32 @@ function Cierre({
       const porValor = new Map<number, number>()
       for (const d of DENOMINACIONES)
         if (cantidadDe(d) > 0) porValor.set(d.valor, (porValor.get(d.valor) ?? 0) + cantidadDe(d))
+      const reportados = medios.map((m) => ({
+        medio: m.medio,
+        medio_propio_id: m.medioPropioId,
+        reportado: conSigno(reportes[m.clave] ?? ''),
+      }))
       await sala.registrarConfirmado('ArqueoRegistrado', cuadre.turnoId, {
         arqueo_id: id,
         conteo: [...porValor].map(([valor, cantidad]) => ({ valor, cantidad })),
         contado_efectivo: contado,
+        otros: reportados,
       })
+      setOtros(
+        cuadreDeOtrosMedios(cuadre, {
+          id,
+          conteo: [],
+          contado,
+          otros: reportados.map((r) => ({
+            medio: r.medio,
+            medioPropioId: r.medio_propio_id,
+            reportado: r.reportado,
+          })),
+          hora: '',
+        }),
+      )
+      setEsperadoAlContar(cuadre.efectivo.esperado)
+      setConfirmando(false)
       setArqueoId(id)
     })
 
@@ -549,6 +725,13 @@ function Cierre({
         contado_efectivo: contado,
         diferencia,
         justificacion: final,
+        otros_medios: otros.map((o) => ({
+          medio: o.medio,
+          medio_propio_id: o.medioPropioId,
+          esperado: o.esperado,
+          reportado: o.reportado,
+          diferencia: o.diferencia,
+        })),
       })
       avisar('Caja cerrada')
       alCerrar({
@@ -558,6 +741,7 @@ function Cierre({
           contado,
           diferencia,
           justificacion: final,
+          otrosMedios: otros,
           hora: new Date().toISOString(),
         },
       })
@@ -590,6 +774,11 @@ function Cierre({
           aria-label="Conteo del efectivo"
         >
           <p>Cuenta el efectivo del cajón: cuántos billetes y monedas hay de cada uno.</p>
+          <p className="text-sm text-texto-suave">
+            {umbral <= 1
+              ? 'Si algo no cuadra, se pide explicarlo.'
+              : `Si algo no cuadra desde ${pesos(umbral)}, se pide explicarlo.`}
+          </p>
           <ul className="flex flex-col gap-2">
             {DENOMINACIONES.map((d, i) => {
               const n = cantidadDe(d)
@@ -649,12 +838,53 @@ function Cierre({
             <span className="font-semibold">Contado</span>
             <span className="font-titulo text-3xl font-bold">{pesos(contado)}</span>
           </p>
+          {medios.length > 0 && (
+            <div className="flex flex-col gap-2 border-t border-linea pt-3">
+              <h3 className="font-semibold">Los demás medios</h3>
+              <p className="text-sm text-texto-suave">
+                {`Escribe el total del cierre del datáfono (en su app o en el papel del cierre) y lo que llegó a cada app, desde las ${inicioDia} de hoy. Si solo hubo devoluciones, empieza con «-».`}
+              </p>
+              {medios.map((m, j) => (
+                <label key={m.clave} className="flex items-center gap-2">
+                  <span className="flex-1">{m.etiqueta}</span>
+                  <input
+                    ref={(el) => {
+                      campos.current[DENOMINACIONES.length + j] = el
+                    }}
+                    inputMode="numeric"
+                    className={`${claseCampo} cifras w-40 text-right`}
+                    value={reportes[m.clave] ?? ''}
+                    placeholder={conCobros.has(m.clave) ? 'Escríbelo' : '0'}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onChange={(e) =>
+                      alCambiarReportes({
+                        ...reportes,
+                        [m.clave]: e.target.value.replace(/[^\d.-]/g, '').slice(0, 13),
+                      })
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return
+                      e.preventDefault()
+                      const siguiente = campos.current[DENOMINACIONES.length + j + 1]
+                      if (siguiente) siguiente.focus()
+                      else guardar.current?.focus()
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+          {sinEscribir.length > 0 && (
+            <p className="text-sm text-texto-suave">
+              {`Falta escribir: ${sinEscribir.map((m) => m.nombre).join(', ')}.`}
+            </p>
+          )}
           {sinRed}
           <Boton
             ref={guardar}
             variante="principal"
             grande
-            disabled={ocupado || !enLinea}
+            disabled={ocupado || !enLinea || sinEscribir.length > 0}
             onClick={guardarConteo}
           >
             {ocupado ? 'Guardando…' : 'Guardar el conteo'}
@@ -668,14 +898,29 @@ function Cierre({
           <Resultado
             cuadre={{
               ...cuadre,
-              cerrado: { esperado, contado, diferencia, justificacion: null, hora: '' },
+              cerrado: {
+                esperado,
+                contado,
+                diferencia,
+                justificacion: null,
+                otrosMedios: otros,
+                hora: '',
+              },
             }}
             reglas={reglas}
+            titulo="Así queda la caja"
           />
-          {diferencia !== 0 && (
+          {cambioDespues && (
+            <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">
+              Entró un pago o un movimiento después del conteo: vuelve a contar.
+            </p>
+          )}
+          {hayDiferencia && (
             <label>
               <span className="font-semibold">
-                {pideJustificar ? '¿Por qué no cuadra?' : '¿Por qué no cuadra? (opcional)'}
+                {pideJustificar
+                  ? `Explica por qué no cuadra: ${porExplicar.join(', ')}`
+                  : '¿Por qué no cuadra? (opcional)'}
               </span>
               {pideJustificar && (
                 <span className="block text-sm text-texto-suave">
@@ -685,6 +930,7 @@ function Cierre({
                 </span>
               )}
               <textarea
+                ref={textoJustificacion}
                 className={`${claseCampo} mt-1 min-h-24 py-2`}
                 maxLength={500}
                 value={justificacion}
@@ -693,27 +939,53 @@ function Cierre({
             </label>
           )}
           {sinRed}
-          <div className="grid grid-cols-[2fr_3fr] gap-2">
-            <Boton
-              disabled={ocupado}
-              onClick={() => {
-                // Un conteo nuevo empieza de cero: no se acomoda al anterior.
-                setArqueoId(null)
-                setJustificacion('')
-                alCambiarCantidades({})
-              }}
+          {pideJustificar && !justificacion.trim() && (
+            <p className="text-sm text-texto-suave">Para cerrar, falta explicar la diferencia.</p>
+          )}
+          {confirmando ? (
+            <div
+              className="rounded-2xl border-2 border-accion-fuerte bg-accion-suave p-3 text-accion-texto"
+              role="alertdialog"
+              aria-labelledby="confirmar-cierre"
             >
-              Volver a contar
-            </Boton>
-            <Boton
-              variante="principal"
-              grande
-              disabled={ocupado || !enLinea || (pideJustificar && !justificacion.trim())}
-              onClick={cerrar}
-            >
-              {ocupado ? 'Cerrando…' : 'Cerrar la caja'}
-            </Boton>
-          </div>
+              <p id="confirmar-cierre" className="mb-3 text-lg font-semibold">
+                ¿Cerrar la caja? Después de cerrar ya no se cobra en este turno.
+              </p>
+              <div className="grid grid-cols-[2fr_3fr] gap-2">
+                <Boton onClick={() => setConfirmando(false)}>Volver</Boton>
+                <Boton variante="principal" disabled={ocupado} onClick={cerrar}>
+                  {ocupado ? 'Cerrando…' : 'Sí, cerrar la caja'}
+                </Boton>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-[2fr_3fr] gap-2">
+              <Boton
+                disabled={ocupado}
+                onClick={() => {
+                  // Volver a contar guarda otro conteo (el anterior queda); lo escrito se puede
+                  // corregir sin empezar de cero.
+                  setArqueoId(null)
+                  setOtros([])
+                  setEsperadoAlContar(null)
+                  setJustificacion('')
+                }}
+              >
+                Volver a contar
+              </Boton>
+              <Boton
+                ref={botonCerrar}
+                variante="principal"
+                grande
+                disabled={
+                  ocupado || !enLinea || cambioDespues || (pideJustificar && !justificacion.trim())
+                }
+                onClick={() => setConfirmando(true)}
+              >
+                Cerrar la caja
+              </Boton>
+            </div>
+          )}
         </>
       )}
     </>
@@ -721,7 +993,15 @@ function Cierre({
 }
 
 /** Cómo quedó (o queda) la caja: lo esperado, lo contado, la diferencia y los otros medios. */
-function Resultado({ cuadre, reglas }: { cuadre: CuadreTurno; reglas: ReglasCobro | null }) {
+function Resultado({
+  cuadre,
+  reglas,
+  titulo = 'Cómo quedó la caja',
+}: {
+  cuadre: CuadreTurno
+  reglas: ReglasCobro | null
+  titulo?: string
+}) {
   const c = cuadre.cerrado
   if (!c) return null
   const digitales = cuadre.porMedio.filter((m) => m.medio !== 'efectivo')
@@ -737,6 +1017,12 @@ function Resultado({ cuadre, reglas }: { cuadre: CuadreTurno; reglas: ReglasCobr
       className="flex flex-col gap-3 rounded-2xl border border-linea bg-superficie p-4 shadow-flota"
       aria-label="Cuadre de la caja"
     >
+      <h2 className="text-lg font-semibold">
+        {titulo}
+        {c.hora && (
+          <span className="ml-2 text-sm font-normal text-texto-suave">{`· cerrada a ${cuando(c.hora)}`}</span>
+        )}
+      </h2>
       <dl className="cifras grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
         <dt>Base</dt>
         <dd className="text-right">{pesos(cuadre.base)}</dd>
@@ -751,37 +1037,65 @@ function Resultado({ cuadre, reglas }: { cuadre: CuadreTurno; reglas: ReglasCobr
         <dd className="text-right font-semibold">{pesos(c.contado)}</dd>
       </dl>
       <p className="flex flex-wrap items-center justify-between gap-2">
-        {c.diferencia === 0 ? (
-          <Etiqueta tono="libre" icono="check">
-            Cuadra
-          </Etiqueta>
-        ) : c.diferencia > 0 ? (
-          <Etiqueta tono="proceso" icono="mas">
-            {`Sobran ${pesos(c.diferencia)}`}
-          </Etiqueta>
-        ) : (
-          <Etiqueta tono="alerta" icono="menos">
-            {`Faltan ${pesos(-c.diferencia)}`}
-          </Etiqueta>
-        )}
-        {c.justificacion && <span className="text-sm text-texto-suave">{c.justificacion}</span>}
+        <span className="font-semibold">Efectivo</span>
+        <Diferencia valor={c.diferencia} />
       </p>
-      {digitales.length > 0 && (
+      {/* Un turno cerrado antes de la 1.8 no tiene el cuadre de los demás medios: solo lo registrado. */}
+      {c.otrosMedios.length > 0 ? (
         <div>
-          <h3 className="font-semibold">Otros medios</h3>
-          <p className="text-sm text-texto-suave">
-            Revísalos con el cierre del datáfono y de las apps (Nequi, Daviplata).
-          </p>
-          <ul className="cifras mt-1 flex flex-col gap-1">
-            {digitales.map((m) => (
-              <li key={`${m.medio}${m.medioPropioId ?? ''}`} className="flex justify-between">
-                <span>{nombreDeMedio(m.medio, m.medioPropioId, reglas)}</span>
-                <span>{pesos(m.venta + m.propina)}</span>
+          <h3 className="font-semibold">Los demás medios</h3>
+          <ul className="cifras mt-1 flex flex-col gap-2">
+            {c.otrosMedios.map((m) => (
+              <li key={claveMedio(m)} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {nombreDeMedio(m.medio, m.medioPropioId, reglas)}
+                  <span className="block text-sm text-texto-suave">{`En la caja ${pesos(m.esperado)} · según su cierre ${pesos(m.reportado)}`}</span>
+                </span>
+                <Diferencia valor={m.diferencia} />
               </li>
             ))}
           </ul>
         </div>
+      ) : (
+        digitales.length > 0 && (
+          <div>
+            <h3 className="font-semibold">Los demás medios</h3>
+            <ul className="cifras mt-1 flex flex-col gap-1">
+              {digitales.map((m) => (
+                <li key={claveMedio(m)} className="flex justify-between">
+                  <span>{nombreDeMedio(m.medio, m.medioPropioId, reglas)}</span>
+                  <span>{pesos(m.venta + m.propina)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      )}
+      {c.justificacion && (
+        <p className="border-t border-linea pt-2 text-sm">
+          <span className="font-semibold">Por qué no cuadra: </span>
+          {c.justificacion}
+        </p>
       )}
     </section>
+  )
+}
+
+/** «Cuadra», «Sobran $X» o «Faltan $X», con su ícono. */
+function Diferencia({ valor }: { valor: number }) {
+  if (valor === 0)
+    return (
+      <Etiqueta tono="libre" icono="check">
+        Cuadra
+      </Etiqueta>
+    )
+  return valor > 0 ? (
+    <Etiqueta tono="proceso" icono="mas">
+      {`Sobran ${pesos(valor)}`}
+    </Etiqueta>
+  ) : (
+    <Etiqueta tono="alerta" icono="menos">
+      {`Faltan ${pesos(-valor)}`}
+    </Etiqueta>
   )
 }

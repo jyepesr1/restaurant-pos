@@ -349,10 +349,31 @@ const datosPorTipo = {
         .array(z.strictObject({ valor: Pesos.min(1), cantidad: z.int().min(0).max(100_000) }))
         .max(30),
       contado_efectivo: Pesos,
+      // Lo que dicen los cierres de los demás medios (tarea 1.8): el del datáfono y lo que llegó a
+      // cada app, escrito también sin ver lo registrado. Los conteos de antes no lo traen.
+      otros: z
+        .array(
+          z.strictObject({
+            medio: MedioPago.exclude(['efectivo']),
+            medio_propio_id: Ulid.nullable(),
+            // Con signo: un día con solo devoluciones en un medio cierra en negativo.
+            reportado: PesosConSigno,
+          }),
+        )
+        .max(30)
+        .optional(),
     })
     .refine(
       (a) => a.conteo.reduce((s, c) => s + c.valor * c.cantidad, 0) === a.contado_efectivo,
       'El total contado no coincide con el conteo',
+    )
+    .refine((a) => {
+      const claves = (a.otros ?? []).map((o) => `${o.medio}:${o.medio_propio_id ?? ''}`)
+      return new Set(claves).size === claves.length
+    }, 'Un medio aparece dos veces')
+    .refine(
+      (a) => (a.otros ?? []).every((o) => (o.medio === 'otro') === (o.medio_propio_id !== null)),
+      'Un medio propio dice cuál es, y solo ese medio lo dice',
     ),
   // Cerrar la caja con el último conteo: lo esperado, lo contado y la diferencia (con signo:
   // negativa es faltante). Desde el umbral del restaurante, con justificación.
@@ -363,10 +384,38 @@ const datosPorTipo = {
       contado_efectivo: Pesos,
       diferencia: PesosConSigno,
       justificacion: Texto.nullable(),
+      // Por cada medio que no es efectivo (tarea 1.8): lo registrado (venta + propina), lo que dice
+      // su cierre y la diferencia, con signo.
+      otros_medios: z
+        .array(
+          z.strictObject({
+            medio: MedioPago.exclude(['efectivo']),
+            medio_propio_id: Ulid.nullable(),
+            esperado: PesosConSigno,
+            // Con signo: un día con solo devoluciones en un medio cierra en negativo.
+            reportado: PesosConSigno,
+            diferencia: PesosConSigno,
+          }),
+        )
+        .max(30)
+        .optional(),
     })
     .refine(
       (t) => t.diferencia === t.contado_efectivo - t.esperado_efectivo,
       'La diferencia es lo contado menos lo esperado',
+    )
+    .refine(
+      (t) => (t.otros_medios ?? []).every((o) => o.diferencia === o.reportado - o.esperado),
+      'La diferencia de cada medio es lo reportado menos lo esperado',
+    )
+    .refine((t) => {
+      const claves = (t.otros_medios ?? []).map((o) => `${o.medio}:${o.medio_propio_id ?? ''}`)
+      return new Set(claves).size === claves.length
+    }, 'Un medio aparece dos veces')
+    .refine(
+      (t) =>
+        (t.otros_medios ?? []).every((o) => (o.medio === 'otro') === (o.medio_propio_id !== null)),
+      'Un medio propio dice cuál es, y solo ese medio lo dice',
     ),
 } as const
 

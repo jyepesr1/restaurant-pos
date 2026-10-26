@@ -25,10 +25,32 @@ export interface MovimientoTurno {
   hora: string
 }
 
+/** Un medio que no es efectivo: se cuadra con su propio cierre (tarea 1.8). */
+export type MedioNoEfectivo = Exclude<MedioPago, 'efectivo'>
+
+/** La clave de un medio en el cuadre: el medio y, si es propio, cuál. */
+export const claveDeMedio = (m: { medio: MedioPago; medioPropioId: string | null }) =>
+  `${m.medio}:${m.medioPropioId ?? ''}`
+
+/** Lo que dice el cierre de un medio que no es efectivo (el datáfono, una app). */
+export interface ReporteMedio {
+  medio: MedioNoEfectivo
+  medioPropioId: string | null
+  reportado: number
+}
+
+/** Un medio que no es efectivo en el cierre: lo registrado y lo que dice su cierre. */
+export interface CuadreMedio extends ReporteMedio {
+  esperado: number
+  diferencia: number
+}
+
 export interface ArqueoTurno {
   id: string
   conteo: { valor: number; cantidad: number }[]
   contado: number
+  /** Los cierres de los demás medios, escritos con el conteo (tarea 1.8). */
+  otros: ReporteMedio[]
   hora: string
 }
 
@@ -55,6 +77,7 @@ export interface CuadreTurno {
     contado: number
     diferencia: number
     justificacion: string | null
+    otrosMedios: CuadreMedio[]
     hora: string
   } | null
 }
@@ -100,7 +123,7 @@ export function cobradoDelTurno(
     propina: number,
     n: number,
   ) => {
-    const clave = `${p.medio}:${p.medioPropioId ?? ''}`
+    const clave = claveDeMedio(p)
     const m = porMedio.get(clave) ?? {
       medio: p.medio,
       medioPropioId: p.medioPropioId,
@@ -192,6 +215,11 @@ export function cuadreDeTurno(
             id: e.datos.arqueo_id,
             conteo: e.datos.conteo,
             contado: e.datos.contado_efectivo,
+            otros: (e.datos.otros ?? []).map((o) => ({
+              medio: o.medio,
+              medioPropioId: o.medio_propio_id,
+              reportado: o.reportado,
+            })),
             hora: horaDe(e),
           })
         break
@@ -202,6 +230,13 @@ export function cuadreDeTurno(
             contado: e.datos.contado_efectivo,
             diferencia: e.datos.diferencia,
             justificacion: e.datos.justificacion,
+            otrosMedios: (e.datos.otros_medios ?? []).map((o) => ({
+              medio: o.medio,
+              medioPropioId: o.medio_propio_id,
+              esperado: o.esperado,
+              reportado: o.reportado,
+              diferencia: o.diferencia,
+            })),
             hora: horaDe(e),
           }
         break
@@ -248,3 +283,29 @@ export const DENOMINACIONES: readonly { valor: number; tipo: 'billete' | 'moneda
   { valor: 100, tipo: 'moneda' },
   { valor: 50, tipo: 'moneda' },
 ]
+
+/**
+ * El cuadre de los demás medios con un conteo (tarea 1.8): por cada medio con algo registrado o
+ * reportado, lo registrado (venta + propina, lo que aprueba el datáfono o llega a la app), lo que
+ * dice su cierre y la diferencia (reportado − esperado).
+ */
+export function cuadreDeOtrosMedios(cuadre: CuadreTurno, arqueo: ArqueoTurno): CuadreMedio[] {
+  const clave = claveDeMedio
+  const lineas = new Map<string, CuadreMedio>()
+  for (const m of cuadre.porMedio)
+    if (m.medio !== 'efectivo')
+      lineas.set(clave(m), {
+        medio: m.medio,
+        medioPropioId: m.medioPropioId,
+        esperado: m.venta + m.propina,
+        reportado: 0,
+        diferencia: 0,
+      })
+  for (const o of arqueo.otros) {
+    const actual = lineas.get(clave(o)) ?? { ...o, esperado: 0, reportado: 0, diferencia: 0 }
+    lineas.set(clave(o), { ...actual, reportado: o.reportado })
+  }
+  return [...lineas.values()]
+    .map((l) => ({ ...l, diferencia: l.reportado - l.esperado }))
+    .filter((l) => l.esperado !== 0 || l.reportado !== 0)
+}

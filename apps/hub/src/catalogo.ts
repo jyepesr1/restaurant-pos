@@ -73,6 +73,9 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
         mediosPropios: config.medios_propios
           .filter((m) => m.activo)
           .map(({ id, nombre }) => ({ id, nombre })),
+        mediosPropiosArchivados: config.medios_propios
+          .filter((m) => !m.activo)
+          .map(({ id, nombre }) => ({ id, nombre })),
         propinaSugerida: config.propina_sugerida,
         redondeoModo: config.redondeo_modo,
         redondeoEfectivo: config.redondeo_efectivo,

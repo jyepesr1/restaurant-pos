@@ -313,6 +313,7 @@ describe('catálogo: restaurante.cobro y datafonos', () => {
     expect(catalogo().restaurante.cobro).toEqual({
       mediosPago: ['efectivo', 'tarjeta', 'nequi', 'daviplata', 'breb', 'transferencia'],
       mediosPropios: [],
+      mediosPropiosArchivados: [],
       propinaSugerida: 1000,
       redondeoModo: 'mitad_arriba',
       redondeoEfectivo: 100,
@@ -801,11 +802,16 @@ describe('POST /api/caja/medios-propios', () => {
     expect(m.catalogo().restaurante.cobro?.mediosPropios?.[0]?.nombre).toBe('Sodexo Pass')
     await guardar(m, { id: a.id, nombre: 'Sodexo Pass', activo: false })
     expect(m.catalogo().restaurante.cobro?.mediosPropios).toEqual([])
+    // El archivado ya no sale al cobrar, pero la carta lo manda para nombrar sus pagos (1.8).
+    expect(m.catalogo().restaurante.cobro?.mediosPropiosArchivados).toEqual([
+      { id: a.id, nombre: 'Sodexo Pass' },
+    ])
     expect(m.configGuardada().medios_propios).toEqual([
       { id: a.id, nombre: 'Sodexo Pass', activo: false },
     ])
     await guardar(m, { id: a.id, nombre: 'Sodexo Pass', activo: true })
     expect(m.catalogo().restaurante.cobro?.mediosPropios).toHaveLength(1)
+    expect(m.catalogo().restaurante.cobro?.mediosPropiosArchivados).toEqual([])
   })
 
   it('un id que no existe, 400', async () => {

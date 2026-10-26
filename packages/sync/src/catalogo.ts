@@ -25,6 +25,8 @@ export interface Catalogo {
       mediosPago: MedioPago[]
       /** Los medios que creó el restaurante (Sodexo, QR del banco), activos. */
       mediosPropios?: { id: string; nombre: string }[]
+      /** Los archivados: ya no salen al cobrar, pero sus pagos los siguen nombrando. */
+      mediosPropiosArchivados?: { id: string; nombre: string }[]
       propinaSugerida: number
       redondeoModo: 'mitad_arriba' | 'mitad_par'
       redondeoEfectivo: number

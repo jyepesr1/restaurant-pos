@@ -16,11 +16,16 @@ export {
 export {
   type ArqueoTurno,
   type CobradoPorMedio,
+  type CuadreMedio,
   type CuadreTurno,
+  claveDeMedio,
   cobradoDelTurno,
+  cuadreDeOtrosMedios,
   cuadreDeTurno,
   DENOMINACIONES,
+  type MedioNoEfectivo,
   type MovimientoTurno,
+  type ReporteMedio,
 } from './caja/turno'
 export { jsonCanonico, PROFUNDIDAD_MAXIMA } from './canonico'
 export {

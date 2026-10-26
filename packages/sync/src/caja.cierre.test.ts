@@ -1,4 +1,4 @@
-import { agregadoDe, nuevoId } from '@pos/core'
+import { agregadoDe, cuadreDeOtrosMedios, nuevoId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { AlmacenSqlite } from './hub/almacen-sqlite'
 import { HubSync } from './hub/hub'
@@ -175,6 +175,20 @@ function entorno(opciones: { umbral?: number } = {}) {
     diferencia: contado - esperado,
     justificacion,
   })
+  // Desde la 1.8 el cierre trae los demás medios tal como los calcula el hub con el conteo.
+  const otrosDe = (turno: string, arqueo: string) => {
+    const cuadre = estado.hub.cuadre(turno)
+    const conteo = cuadre?.arqueos.find((a) => a.id === arqueo)
+    return cuadre && conteo
+      ? cuadreDeOtrosMedios(cuadre, conteo).map((o) => ({
+          medio: o.medio,
+          medio_propio_id: o.medioPropioId,
+          esperado: o.esperado,
+          reportado: o.reportado,
+          diferencia: o.diferencia,
+        }))
+      : []
+  }
   const cerrar = (
     nodo: Nodo,
     turno: string,
@@ -185,7 +199,10 @@ function entorno(opciones: { umbral?: number } = {}) {
   ) =>
     uno(
       nodo,
-      crudo(nodo, 'TurnoCerrado', turno, datosCierre(arqueo, esperado, contado, justificacion)),
+      crudo(nodo, 'TurnoCerrado', turno, {
+        ...datosCierre(arqueo, esperado, contado, justificacion),
+        otros_medios: otrosDe(turno, arqueo),
+      }),
     )
   const anular = (nodo: Nodo, pedido: string, pagoId: string, turno: string) =>
     uno(nodo, crudo(nodo, 'PagoAnulado', pedido, { pago_id: pagoId, turno_caja_id: turno }))
@@ -906,7 +923,8 @@ describe('anular, en este turno, el pago de un turno anterior', () => {
     const pedido = e.abrirPedido(e.caja)
     const pago = e.cobrar(e.caja, pedido, e.pagoPropio(t1, 20_000))
     const { arqueo } = e.contar(e.caja, t1, 0)
-    e.cerrar(e.caja, t1, arqueo, 0, 0)
+    // El Sodexo no se reportó en el conteo (1.8): el cierre lo marca y pide justificarlo.
+    e.cerrar(e.caja, t1, arqueo, 0, 0, 'Sodexo sin reporte')
     const t2 = e.abrirTurno(e.caja, 0)
     const r = e.uno(
       e.caja,

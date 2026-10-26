@@ -475,6 +475,7 @@ describe('cuadreDeTurno: conteos y cierre', () => {
       contado: 5_000,
       diferencia: -5_000,
       justificacion: 'Faltó un vale',
+      otrosMedios: [],
       hora: '2026-10-26T21:00:00Z',
     })
   })
