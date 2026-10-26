@@ -37,7 +37,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.7 | Apertura, cierre y arqueo de caja | ✅ |
 | 1.8 | Datáfonos nivel 1 y conciliación en el cierre | ✅ (por totales; el importador espera un reporte real de Bold) |
 | 1.9 | Reportes básicos y `docs/KPIS.md` | ✅ |
-| 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ⏳ |
+| 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ✅ (falta crear las cuentas y publicarla) |
 | 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja; carta, configuración y personal bajando de la nube | ⏳ |
 | 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
 | 1.13 | Hub en el PC de caja (Windows) | ⏳ |
@@ -276,6 +276,118 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 6. Agrega y envía otro producto, y luego **Mesa y pedido → Mover productos**: elígelo, elige la mesa 8 y toca **Mover 1 a la mesa 8**. La mesa 8 debe mostrarlo.
 7. Abre la mesa 8, **Mesa y pedido → Cancelar el pedido**, elige un motivo, escribe el PIN del administrador y toca **Cancelar el pedido**. La mesa 8 queda libre.
 8. Toca un plato enviado, cambia su nota y toca **Enviar el cambio a cocina**: sale una comanda «CAMBIO».
+
+### 1.10 — La nube: Postgres en Neon y API en Cloudflare Workers ✅ (falta crear las cuentas y publicarla)
+
+Decisión del dueño del 26-oct-2026 ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)). Investigación oficial: [integraciones/neon-cloudflare.md](integraciones/neon-cloudflare.md).
+
+**Lo nuevo** (`apps/nube`):
+- **La base de la nube** en Postgres:
+  - restaurantes;
+  - códigos de registro: sirven para un solo PC de caja y vencen a las 24 horas;
+  - los PC de caja, cada uno con su credencial;
+  - los eventos de todos los restaurantes, que no se pueden cambiar ni borrar.
+- **Cada restaurante ve solo lo suyo, también dentro de la base** (seguridad por fila): aunque una consulta olvide filtrar, la base no devuelve nada de otro restaurante. La API se conecta con su propio rol, sin permisos de más.
+- **La API** (un Worker de Cloudflare conectado a Neon por Hyperdrive):
+  - **el administrador de Faro** crea restaurantes, da códigos y revoca PC de caja;
+  - **un PC de caja** se registra con su código y sube lotes de hasta 500 eventos sin duplicar, y sabe hasta dónde ya está todo en la nube;
+  - **reglas:**
+    - si llega el mismo evento con otro contenido, no pisa lo guardado: queda aparte para revisarlo;
+    - si un evento trae algo que Postgres no acepta, se marca inválido sin tumbar el lote;
+    - si la respuesta del registro se pierde, el mismo PC puede repetirlo con el mismo código.
+- **Comandos** (piden las claves sin mostrarlas en pantalla ni dejarlas en el historial):
+  - `pnpm --filter @pos/nube migrar` crea las tablas en Neon;
+  - `pnpm --filter @pos/nube admin` crea el restaurante de este PC en la nube, da el código o revoca un PC.
+
+Revisado por `revisor-codigo` y `qa-pruebas`. Se corrigió:
+- «hasta dónde está todo» daba la mayor secuencia recibida aunque faltaran eventos antes: ahora es la última sin huecos desde la 1;
+- un carácter nulo en una nota tumbaba el lote entero;
+- el registro no se podía repetir si se perdía la respuesta;
+- dos registros a la vez del mismo PC daban error interno;
+- el Worker abría una conexión a la base incluso para rutas que no la usan;
+- un cuerpo enorme sin tamaño declarado se leía entero;
+- el registro de errores podía guardar datos del restaurante;
+- la API podía cambiar columnas de los PC de caja que no necesita.
+- el mismo evento repetido dentro de un lote con otro contenido no quedaba para revisión;
+- una fecha que Postgres no acepta (el año 0, un 30 de febrero) o un dato anidado sin fondo tumbaban el lote entero; ahora ese evento queda inválido y el resto entra.
+
+**Pruebas:** 296 en la nube (idempotencia, aislamiento entre restaurantes, registro, bordes de la API, migraciones, conector y Worker), todas contra Postgres embebido (PGlite). `pnpm check` pasa.
+
+**Queda pendiente:**
+- **Subir los eventos desde el PC de caja**: es la 1.11. Hasta entonces la nube está lista pero vacía.
+- **Límite de intentos** en el registro y la API (regla de Cloudflare): necesita un dominio propio; con la dirección `workers.dev` no se puede.
+- **Medir la latencia** desde Colombia a São Paulo y a Estados Unidos antes de elegir la región definitiva **(validar)**.
+- **Probar en Neon real** que el rol `faro_api` no se salte la seguridad por fila: en las pruebas se usa Postgres embebido (PGlite) **(validar)**.
+- **Planes de pago antes de clientes reales:**
+  - Neon Launch, con 7 días para restaurar;
+  - Workers Paid, USD 5 al mes.
+
+**Cómo ponerla en marcha** (lo haces tú, en tu computador; tus claves no las ve nadie más):
+
+1. **Crea la cuenta de Cloudflare** en https://dash.cloudflare.com/sign-up, con verificación en dos pasos. Debes ver el panel de Cloudflare.
+2. **Crea la cuenta de Neon** en https://console.neon.tech y un proyecto llamado `faro`, con Postgres 18 y región **AWS São Paulo** (o Estados Unidos este). Debes ver el proyecto con la rama `main` y la base `neondb`.
+3. **Copia la cadena de conexión del dueño:** en Neon, botón **Connect**, rama `main`, base `neondb`, rol `neondb_owner`, **desmarca «Connection pooling»** y copia. Debe empezar con `postgresql://neondb_owner:` y no contener `-pooler`. Guárdala en tu gestor de contraseñas.
+4. **Crea las tablas.** En una terminal, en la carpeta del proyecto:
+
+```bash
+pnpm --filter @pos/nube migrar
+```
+
+   Pega la cadena cuando la pida (no se ve al pegarla) y presiona Enter. Debes ver «Listo: se aplicaron las migraciones 1».
+5. **Crea el rol de la API.** En Neon, abre **SQL Editor** y ejecuta esto, cambiando la clave por una larga que generes en tu gestor de contraseñas:
+
+```sql
+CREATE ROLE faro_api WITH LOGIN PASSWORD 'pon-aqui-una-clave-larga' IN ROLE faro_datos;
+```
+
+   Debes ver «Statement executed successfully». Arma su cadena de conexión: es la del paso 3, cambiando `neondb_owner:<clave>` por `faro_api:<la clave que pusiste>`.
+6. **Conecta Cloudflare con Neon (Hyperdrive).** En la terminal, primero inicia sesión (se abre el navegador; acepta):
+
+```bash
+npx wrangler@4.149.0 login
+```
+
+   Después escribe este comando, presiona Enter, pega la cadena de `faro_api` (no se ve) y presiona Enter otra vez:
+
+```bash
+read -s CADENA
+```
+
+   Y crea la conexión, con la caché apagada para que la carta nunca llegue vieja:
+
+```bash
+npx wrangler@4.149.0 hyperdrive create faro-neon --connection-string="$CADENA" --caching-disabled
+```
+
+   Debes ver un mensaje con el **id** de la configuración. Ese id no es secreto: pásamelo (o ponlo en `apps/nube/wrangler.jsonc`, en lugar de `REEMPLAZAR_CON_EL_ID_DE_HYPERDRIVE`).
+7. **Publica la API:**
+
+```bash
+pnpm --filter @pos/nube desplegar
+```
+
+   Debes ver una dirección como `https://faro-api.<tu-cuenta>.workers.dev`. Ábrela en el navegador agregando `/v1/salud`: debe decir `{"ok":true}`.
+8. **Crea el token de administración.** Genera uno largo en tu gestor de contraseñas y guárdalo ahí. Luego:
+
+```bash
+cd apps/nube && npx wrangler@4.149.0 secret put TOKEN_ADMIN
+```
+
+   Pégalo cuando lo pida. Debes ver «Success! Uploaded secret TOKEN_ADMIN».
+9. **Crea tu restaurante en la nube.** Cierra el hub (**Ctrl+C**) y, en la carpeta del proyecto, cambiando la dirección por la tuya:
+
+```bash
+NUBE_URL=https://faro-api.TU-CUENTA.workers.dev pnpm --filter @pos/nube admin restaurante
+```
+
+   Pega el token de administración (no se ve). Debes ver «Listo: «La Spritzzería» quedó creado en la nube».
+10. **Pide el código del PC de caja** (se usará en la 1.11):
+
+```bash
+NUBE_URL=https://faro-api.TU-CUENTA.workers.dev pnpm --filter @pos/nube admin codigo
+```
+
+   Debes ver un código como `K7PM-QX2R-9DHT` y hasta cuándo sirve (24 horas).
 
 ### 1.9 — Reportes básicos y cierre Z ✅
 

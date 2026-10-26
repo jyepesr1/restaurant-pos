@@ -1,0 +1,18 @@
+{
+  // La API de la nube de Faro (ADR-016, docs/integraciones/neon-cloudflare.md).
+  "$schema": "https://unpkg.com/wrangler@4.149.0/config-schema.json",
+  "name": "faro-api",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "upload_source_maps": true,
+  "observability": { "enabled": true },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      // El id que muestra `wrangler hyperdrive create` (no es un secreto). La cadena de conexión
+      // de Neon vive solo en Hyperdrive, nunca en este archivo.
+      "id": "REEMPLAZAR_CON_EL_ID_DE_HYPERDRIVE"
+    }
+  ]
+}

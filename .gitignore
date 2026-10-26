@@ -34,3 +34,8 @@ apps/hub/datos/
 
 # Herramienta de diseño (decisiones y capturas locales)
 .impeccable/
+
+# Cloudflare Workers (apps/nube)
+.wrangler/
+.dev.vars
+.dev.vars.*
