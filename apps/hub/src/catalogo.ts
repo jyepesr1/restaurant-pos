@@ -87,6 +87,7 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
     datafonos: activos('datafono', 'nombre').map((f) => ({
       id: texto(f.id),
       nombre: texto(f.nombre),
+      proveedor: texto(f.proveedor),
     })),
     zonas: zonas.map((f) => ({ id: texto(f.id), nombre: texto(f.nombre), piso: numero(f.piso) })),
     mesas: activos('mesa', 'zona_id, y, x')

@@ -25,6 +25,12 @@ import { claseCampo } from './Entrar'
 
 const CLAVE_DATAFONO = 'pos-ultimo-datafono'
 
+const PROVEEDOR: Record<string, string> = {
+  bold: 'Bold',
+  redeban: 'Redeban',
+  credibanco: 'Credibanco',
+}
+
 const recordado = () => {
   try {
     return localStorage.getItem(CLAVE_DATAFONO)
@@ -159,8 +165,23 @@ function FormularioCobro({
   // Escribir otro valor: en pesos o en porcentaje.
   const [enPorcentaje, setEnPorcentaje] = useState(false)
   const [recibido, setRecibido] = useState<number | null>(null)
+  // Un datáfono por proveedor: los de un mismo proveedor entregan un solo cierre (Bold une todos
+  // los suyos), así que da igual por cuál se pasó la tarjeta. Solo se elige si hay proveedores
+  // distintos (Bold y Redeban), porque cada uno se concilia aparte en el cierre.
+  const ultimo = recordado()
+  const porProveedor = [
+    ...datafonos
+      .reduce((grupos, d) => {
+        // «Otro» no dice cuál: cada uno de esos va aparte.
+        const clave = d.proveedor && d.proveedor !== 'otro' ? d.proveedor : d.id
+        const actual = grupos.get(clave)
+        if (!actual || d.id === ultimo) grupos.set(clave, d)
+        return grupos
+      }, new Map<string, (typeof datafonos)[number]>())
+      .entries(),
+  ].map(([clave, d]) => ({ id: d.id, nombre: PROVEEDOR[clave] ?? d.nombre }))
   const [datafono, setDatafono] = useState(
-    () => datafonos.find((d) => d.id === recordado())?.id ?? datafonos[0]?.id ?? null,
+    () => porProveedor.find((d) => d.id === ultimo)?.id ?? porProveedor[0]?.id ?? null,
   )
   const [confirmando, setConfirmando] = useState(false)
   const confirmar = useRef<HTMLButtonElement>(null)
@@ -236,9 +257,9 @@ function FormularioCobro({
     })
   }
 
-  const nombreDatafono = datafonos.find((d) => d.id === datafono)?.nombre
+  const nombreDatafono = porProveedor.find((d) => d.id === datafono)?.nombre
   const donde =
-    opcion.medio === 'tarjeta' && nombreDatafono
+    opcion.medio === 'tarjeta' && nombreDatafono && porProveedor.length > 1
       ? `${opcion.nombre.toLowerCase()} (${nombreDatafono})`
       : opcion.nombre.toLowerCase()
 
@@ -480,9 +501,9 @@ function FormularioCobro({
                   No hay datáfonos: agrégalos en «Caja y pagos» para cobrar con tarjeta.
                 </p>
               ) : (
-                datafonos.length > 1 && (
+                porProveedor.length > 1 && (
                   <Grupo etiqueta="Datáfono" className="mt-3 flex flex-wrap gap-2">
-                    {datafonos.map((d) => (
+                    {porProveedor.map((d) => (
                       <Opcion
                         key={d.id}
                         elegida={datafono === d.id}

@@ -34,7 +34,7 @@ export interface Catalogo {
     }
   }
   /** Los datáfonos del restaurante (tarea 1.6), para decir en cuál se cobró una tarjeta. */
-  datafonos?: { id: string; nombre: string }[]
+  datafonos?: { id: string; nombre: string; proveedor?: string }[]
   /** Zonas o pisos del salón, en su orden. */
   zonas: { id: string; nombre: string; piso: number }[]
   /** Geometría en centímetros: esquina superior izquierda, medidas y rotación en grados. */

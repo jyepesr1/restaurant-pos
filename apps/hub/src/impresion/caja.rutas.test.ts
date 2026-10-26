@@ -378,9 +378,10 @@ describe('catálogo: restaurante.cobro y datafonos', () => {
     await m.datafono({ id: archivado.id, nombre: 'Viejo', proveedor: 'redeban', activo: false })
     expect(m.catalogo().datafonos?.map((d) => d.nombre)).toEqual(['Bold 1', 'Bold 2'])
     expect(m.catalogo().datafonos?.map((d) => d.id)).not.toContain(ajeno.datafonoId)
-    // El catálogo solo dice id y nombre: el proveedor es cosa de caja.
+    // El catálogo dice id, nombre y proveedor: los de un mismo proveedor tienen un solo cierre, así
+    // que al cobrar solo se elige el proveedor si hay varios.
     for (const d of m.catalogo().datafonos ?? [])
-      expect(Object.keys(d).sort()).toEqual(['id', 'nombre'])
+      expect(Object.keys(d).sort()).toEqual(['id', 'nombre', 'proveedor'])
   })
 })
 
@@ -559,7 +560,7 @@ describe('POST /api/datafonos', () => {
     })
     expect(m.catalogo().version).toBeGreaterThan(antes)
     expect(m.t.cambiosCatalogo).toEqual([m.catalogo().version])
-    expect(m.catalogo().datafonos).toEqual([{ id: cuerpo.id, nombre: 'Bold 1' }])
+    expect(m.catalogo().datafonos).toEqual([{ id: cuerpo.id, nombre: 'Bold 1', proveedor: 'bold' }])
   })
 
   it.each(['bold', 'redeban', 'credibanco', 'otro'])(
@@ -671,7 +672,7 @@ describe('POST /api/datafonos', () => {
     await m.datafono({ ...bold, id, activo: false })
     const r = await m.datafono({ ...bold, id, activo: true })
     expect(r.statusCode).toBe(200)
-    expect(m.catalogo().datafonos).toEqual([{ id, nombre: 'Bold 1' }])
+    expect(m.catalogo().datafonos).toEqual([{ id, nombre: 'Bold 1', proveedor: 'bold' }])
   })
 
   it('un archivado no estorba el nombre: se puede crear otro con el mismo', async () => {

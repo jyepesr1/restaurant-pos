@@ -287,7 +287,7 @@ Decisiones del dueño del 26-oct-2026 ([ADR-011](DECISIONES.md#adr-011--reglas-d
   - medio: efectivo, tarjeta crédito, tarjeta débito, Nequi, Daviplata, Bre-B, transferencia y los **medios propios** del restaurante;
   - propina: la sugerida ya marcada con su porcentaje, 5 %, sin propina u otro valor en pesos o en porcentaje;
   - solo en efectivo: lo que entrega el cliente, el cambio y «Deja el cambio de propina»; con los medios digitales se cobra lo justo;
-  - con tarjeta, el datáfono (la caja recuerda el último); no se pide número de aprobación;
+  - con tarjeta no se pide el datáfono (los de un mismo proveedor tienen un solo cierre; solo se elige el proveedor si hay varios) ni el número de aprobación;
   - confirmar antes de registrar; el pago se muestra cobrado solo cuando el hub lo acepta;
   - al quedar el saldo en 0 la mesa se cierra sola y se ve el cambio a entregar. Si el cierre falla, «Cerrar la mesa».
   - Atajos en la caja: F2 efectivo, F3 crédito, F4 débito, Enter cobra, Esc vuelve.
@@ -345,7 +345,7 @@ pnpm seed -- --sin-personal
 5. Toca **Cambiar** junto a la propina y elige **Sin propina**: la última línea pasa a «A pagar». Vuelve a elegir la sugerida.
 6. En la caja, toca la mesa 5 en el salón: se abre la cuenta. Elige **Partes iguales**, deja 2 personas y toca **Dividir en 2**.
 7. En **Persona 1** toca **Cobrar**, deja **Efectivo**, escribe 100.000 en «El cliente entrega» y toca **Cobrar** y **Sí, registrar**. Debe quedar «Pagada» y el cambio a entregar.
-8. En **Persona 2** toca **Cobrar**, elige **Tarjeta crédito** (no aparece «El cliente entrega»), elige el datáfono y registra. Debes ver «Pagado y cerrado» y, en el salón, la mesa 5 libre.
+8. En **Persona 2** toca **Cobrar**, elige **Tarjeta crédito** (no aparece «El cliente entrega» ni se pregunta el datáfono) y registra. Debes ver «Pagado y cerrado» y, en el salón, la mesa 5 libre.
 9. En **Caja** debes ver lo cobrado por efectivo y por tarjeta, con sus propinas.
 10. En **Caja y pagos** (con el administrador) agrega un medio propio, por ejemplo «Sodexo»: debe salir al cobrar.
 

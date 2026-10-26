@@ -248,7 +248,9 @@ export function CajaAjustes() {
             </Boton>
           </div>
           <p className="text-texto-suave">
-            Al cobrar con tarjeta se elige en cuál se pasó; la caja recuerda el último.
+            Los de un mismo proveedor entregan un solo cierre: al cobrar no se pregunta en cuál se
+            pasó la tarjeta. Si hay de proveedores distintos (Bold y Redeban), se elige el
+            proveedor.
           </p>
           <ul className="flex flex-col gap-2">
             {caja.datafonos.map((d) => (
