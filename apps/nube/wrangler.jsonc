@@ -12,7 +12,7 @@
       "binding": "HYPERDRIVE",
       // El id que muestra `wrangler hyperdrive create` (no es un secreto). La cadena de conexión
       // de Neon vive solo en Hyperdrive, nunca en este archivo.
-      "id": "REEMPLAZAR_CON_EL_ID_DE_HYPERDRIVE"
+      "id": "482abd5728404ed88ce40944a75e52df"
     }
   ]
 }

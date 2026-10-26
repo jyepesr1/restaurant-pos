@@ -37,7 +37,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.7 | Apertura, cierre y arqueo de caja | ✅ |
 | 1.8 | Datáfonos nivel 1 y conciliación en el cierre | ✅ (por totales; el importador espera un reporte real de Bold) |
 | 1.9 | Reportes básicos y `docs/KPIS.md` | ✅ |
-| 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ✅ (falta crear las cuentas y publicarla) |
+| 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ✅ (publicada el 26-oct-2026) |
 | 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja; carta, configuración y personal bajando de la nube | ⏳ |
 | 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
 | 1.13 | Hub en el PC de caja (Windows) | ⏳ |
@@ -277,7 +277,20 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 7. Abre la mesa 8, **Mesa y pedido → Cancelar el pedido**, elige un motivo, escribe el PIN del administrador y toca **Cancelar el pedido**. La mesa 8 queda libre.
 8. Toca un plato enviado, cambia su nota y toca **Enviar el cambio a cocina**: sale una comanda «CAMBIO».
 
-### 1.10 — La nube: Postgres en Neon y API en Cloudflare Workers ✅ (falta crear las cuentas y publicarla)
+### 1.10 — La nube: Postgres en Neon y API en Cloudflare Workers ✅
+
+**En marcha desde el 26-oct-2026:**
+- **Neon:** proyecto `faro` (`divine-moon-41531979`), región **AWS São Paulo** (`aws-sa-east-1`), Postgres 18, plan gratis (6 horas para restaurar). Migración 1 aplicada y registrada con su huella. Comprobado en Neon:
+  - las tablas existen y la seguridad por fila está activa en `evento` y `evento_distinto`;
+  - un evento de otro restaurante se rechaza;
+  - el rol de la API `faro_api` (creado por el dueño con su clave) es miembro de `faro_datos`, no tiene `BYPASSRLS` y no está en `neon_superuser`.
+- **Cloudflare:**
+  - Hyperdrive `faro-neon` (id `482abd5728404ed88ce40944a75e52df`) apunta a Neon con `faro_api`, sin pooler y con la caché apagada;
+  - el Worker `faro-api` está publicado en https://faro-api.johanyepes.workers.dev con el secreto `TOKEN_ADMIN`.
+- **Probado contra la API publicada:**
+  - `/v1/salud` responde `{"ok":true}`;
+  - sin credencial, con una inventada o con un token de administración equivocado, la respuesta es 401;
+  - una credencial inventada consulta la base: el camino Worker → Hyperdrive → Neon funciona.
 
 Decisión del dueño del 26-oct-2026 ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)). Investigación oficial: [integraciones/neon-cloudflare.md](integraciones/neon-cloudflare.md).
 
@@ -316,13 +329,12 @@ Revisado por `revisor-codigo` y `qa-pruebas`. Se corrigió:
 **Queda pendiente:**
 - **Subir los eventos desde el PC de caja**: es la 1.11. Hasta entonces la nube está lista pero vacía.
 - **Límite de intentos** en el registro y la API (regla de Cloudflare): necesita un dominio propio; con la dirección `workers.dev` no se puede.
-- **Medir la latencia** desde Colombia a São Paulo y a Estados Unidos antes de elegir la región definitiva **(validar)**.
-- **Probar en Neon real** que el rol `faro_api` no se salte la seguridad por fila: en las pruebas se usa Postgres embebido (PGlite) **(validar)**.
+- **Medir la latencia** desde Colombia a São Paulo (la región elegida) frente a Estados Unidos; si conviene cambiar, se crea otro proyecto antes de tener datos **(validar)**.
 - **Planes de pago antes de clientes reales:**
   - Neon Launch, con 7 días para restaurar;
   - Workers Paid, USD 5 al mes.
 
-**Cómo ponerla en marcha** (lo haces tú, en tu computador; tus claves no las ve nadie más):
+**Cómo se puso en marcha** (los pasos 1 a 8 ya están hechos; quedan como referencia para otra cuenta o para rehacerla; las claves solo las escribe el dueño):
 
 1. **Crea la cuenta de Cloudflare** en https://dash.cloudflare.com/sign-up, con verificación en dos pasos. Debes ver el panel de Cloudflare.
 2. **Crea la cuenta de Neon** en https://console.neon.tech y un proyecto llamado `faro`, con Postgres 18 y región **AWS São Paulo** (o Estados Unidos este). Debes ver el proyecto con la rama `main` y la base `neondb`.
