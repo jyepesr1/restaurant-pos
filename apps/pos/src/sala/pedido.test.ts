@@ -39,7 +39,7 @@ const product = (fields: Partial<ProductoCatalogo> = {}): ProductoCatalogo => ({
   ...fields,
 })
 
-const vino = product({
+const wine = product({
   variants: [
     { id: 'V-COPA', name: 'Copa', price: 24_000 },
     { id: 'V-BOTELLA', name: 'Botella', price: 98_000 },
@@ -49,7 +49,7 @@ const vino = product({
 describe('pideOpciones', () => {
   it('es falso sin variantes ni grupos y verdadero con cualquiera de los dos', () => {
     expect(pideOpciones(product())).toBe(false)
-    expect(pideOpciones(vino)).toBe(true)
+    expect(pideOpciones(wine)).toBe(true)
     expect(pideOpciones(product({ groups: [group()] }))).toBe(true)
   })
 })
@@ -60,9 +60,9 @@ describe('faltaElegir', () => {
   })
 
   it('pide el tamaño si el producto tiene variantes y no se eligió, o se eligió una ajena', () => {
-    expect(faltaElegir(vino, null, {})).toEqual(['tamaño'])
-    expect(faltaElegir(vino, 'V-OTRO-PRODUCTO', {})).toEqual(['tamaño'])
-    expect(faltaElegir(vino, 'V-COPA', {})).toEqual([])
+    expect(faltaElegir(wine, null, {})).toEqual(['tamaño'])
+    expect(faltaElegir(wine, 'V-OTRO-PRODUCTO', {})).toEqual(['tamaño'])
+    expect(faltaElegir(wine, 'V-COPA', {})).toEqual([])
   })
 
   it('pide cada grupo bajo su mínimo, con el nombre en minúsculas', () => {
@@ -79,7 +79,7 @@ describe('faltaElegir', () => {
   })
 
   it('junta tamaño y grupos, en ese orden', () => {
-    const p = product({ variants: vino.variants, groups: [group()] })
+    const p = product({ variants: wine.variants, groups: [group()] })
     expect(faltaElegir(p, null, {})).toEqual(['tamaño', 'punto de cocción'])
   })
 })
@@ -106,7 +106,7 @@ describe('datosItem', () => {
   })
 
   it('con variante: el precio y el nombre son los de la variante', () => {
-    const d = datosItem(catalog, vino, 'V-BOTELLA', {})
+    const d = datosItem(catalog, wine, 'V-BOTELLA', {})
     expect(d).toMatchObject({
       variant_id: 'V-BOTELLA',
       name: 'Ramón Bilbao · Botella',
@@ -152,14 +152,14 @@ describe('datosItem', () => {
 
   it('con variante y modificadores a la vez', () => {
     const g = group()
-    const p = product({ variants: vino.variants, groups: [g] })
+    const p = product({ variants: wine.variants, groups: [g] })
     const d = datosItem(catalog, p, 'V-COPA', { [g.id]: ['O-2'] })
     expect(d).toMatchObject({ name: 'Ramón Bilbao · Copa', unit_price: 24_000 })
     expect(d.modifiers).toHaveLength(1)
   })
 
   it('si falta elegir, lanza con lo que falta y no genera nada', () => {
-    const p = product({ variants: vino.variants, groups: [group()] })
+    const p = product({ variants: wine.variants, groups: [group()] })
     expect(() => datosItem(catalog, p, null, {})).toThrow('Falta elegir: tamaño, punto de cocción')
   })
 
@@ -173,7 +173,7 @@ describe('datosItem', () => {
   it('los datos pasan el esquema del evento ItemAgregado', async () => {
     const { validateNewEvent } = await import('@pos/core')
     const g = group()
-    const p = product({ variants: vino.variants, groups: [g] })
+    const p = product({ variants: wine.variants, groups: [g] })
     const data = datosItem(catalog, p, 'V-COPA', { [g.id]: ['O-1'] })
     // El esquema pide ULID en producto, variante y modificador: se prueban con ids reales.
     const real = { ...data, product_id: newId(), variant_id: newId() }
@@ -185,7 +185,7 @@ describe('datosItem', () => {
 
 describe('comandasPorEstacion', () => {
   const orderId = newId()
-  const enCocina = newId()
+  const inKitchen = newId()
   const enBarra = newId()
   const sinEstacion = newId()
 
@@ -208,7 +208,7 @@ describe('comandasPorEstacion', () => {
         id: 'C1',
         name: 'Pizzas',
         stationId: 'E-COCINA',
-        products: [product({ id: enCocina })],
+        products: [product({ id: inKitchen })],
       },
       { id: 'C2', name: 'Tragos', stationId: 'E-BARRA', products: [product({ id: enBarra })] },
       { id: 'C3', name: 'Varios', stationId: null, products: [product({ id: sinEstacion })] },
@@ -216,7 +216,7 @@ describe('comandasPorEstacion', () => {
   })
 
   it('una comanda por estación, con los ítems de cada una', () => {
-    const status = estadoCon([enCocina, enBarra, enCocina])
+    const status = estadoCon([inKitchen, enBarra, inKitchen])
     const r = comandasPorEstacion(catalog, status)
     expect(r?.tickets).toHaveLength(2)
     const kitchen = r?.tickets.find((c) => c.station_id === 'E-COCINA')
@@ -248,7 +248,7 @@ describe('comandasPorEstacion', () => {
 
   it('si algún ítem no tiene a dónde ir, no se envía nada (ni siquiera lo que sí podría)', () => {
     const without = { ...catalog, stations: [] }
-    expect(comandasPorEstacion(without, estadoCon([enCocina, sinEstacion]))).toBeNull()
+    expect(comandasPorEstacion(without, estadoCon([inKitchen, sinEstacion]))).toBeNull()
   })
 
   it('sin ítems por enviar devuelve null', () => {
@@ -256,7 +256,7 @@ describe('comandasPorEstacion', () => {
   })
 
   it('lo ya enviado no vuelve a salir', () => {
-    const aggregate = copy({ product_id: enCocina })
+    const aggregate = copy({ product_id: inKitchen })
     const itemId = aggregate.item_id
     const events = [
       local('OrderOpened', orderId, opening),
@@ -287,20 +287,20 @@ describe('precioElegido', () => {
   })
 
   it('la variante reemplaza el precio base y los extras se suman', () => {
-    const p = product({ variants: vino.variants, groups: [g] })
+    const p = product({ variants: wine.variants, groups: [g] })
     expect(precioElegido(p, 'V-BOTELLA', {})).toBe(98_000)
     expect(precioElegido(p, 'V-COPA', { [g.id]: ['O-3'] })).toBe(27_000)
     expect(precioElegido(p, 'V-COPA', { [g.id]: ['O-3', 'O-1'] })).toBe(27_000)
   })
 
   it('sin variante elegida usa el precio del producto; un id ajeno no suma', () => {
-    const p = product({ price: 20_000, variants: vino.variants, groups: [g] })
+    const p = product({ price: 20_000, variants: wine.variants, groups: [g] })
     expect(precioElegido(p, null, { [g.id]: ['AJENA'] })).toBe(20_000)
   })
 
   it('coincide con lo que cobra el pedido para el ítem guardado', async () => {
     const { rebuild, orderTotals } = await import('@pos/core')
-    const p = product({ variants: vino.variants, groups: [g] })
+    const p = product({ variants: wine.variants, groups: [g] })
     const elegidas = { [g.id]: ['O-3'] }
     const orderId = newId()
     const real = { ...datosItem(catalogoDePrueba(), p, 'V-COPA', elegidas), product_id: newId() }

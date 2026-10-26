@@ -13,7 +13,7 @@ export interface Caja {
 }
 
 /** La escala que hace caber la caja en el ancho del contenedor (sin agrandar de más). */
-export function useEscala(register: Caja, maxima = 1.5) {
+export function useEscala(register: Caja, maxSeen = 1.5) {
   const ref = useRef<HTMLDivElement>(null)
   const [width, setAncho] = useState(0)
   useEffect(() => {
@@ -25,7 +25,7 @@ export function useEscala(register: Caja, maxima = 1.5) {
     observador.observe(el)
     return () => observador.disconnect()
   }, [])
-  const escala = width > 0 ? Math.min(maxima, width / register.width) : 0
+  const escala = width > 0 ? Math.min(maxSeen, width / register.width) : 0
   return { ref, escala }
 }
 
@@ -45,14 +45,14 @@ export function Lienzo({
   register,
   escala,
   refContenedor,
-  etiqueta,
+  label,
   children,
   alTocarFondo,
 }: {
   register: Caja
   escala: number
   refContenedor: React.RefObject<HTMLDivElement | null>
-  etiqueta: string
+  label: string
   children: ReactNode
   alTocarFondo?: () => void
 }) {
@@ -61,7 +61,7 @@ export function Lienzo({
       {/* Tocar el fondo solo quita la selección del editor; con el teclado se hace con Escape. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: ver arriba */}
       <section
-        aria-label={etiqueta}
+        aria-label={label}
         className="relative overflow-hidden rounded-2xl border border-linea bg-superficie [background-image:radial-gradient(var(--color-linea)_1.5px,transparent_1.5px)]"
         style={{
           height: Math.max(200, register.height * escala),
@@ -117,8 +117,8 @@ export function Sillas({
   } else {
     const horizontal = width >= height
     const [lado, cabecera] = horizontal ? [width, height] : [height, width]
-    const cabeceras = places >= 6 && cabecera >= length * 1.3 ? 2 : 0
-    const enLados = places - cabeceras
+    const headers = places >= 6 && cabecera >= length * 1.3 ? 2 : 0
+    const enLados = places - headers
     const above = Math.ceil(enLados / 2)
     const below = enLados - above
     const row = (cuantas: number, lejos: boolean) => {
@@ -134,7 +134,7 @@ export function Sillas({
     }
     row(above, false)
     row(below, true)
-    if (cabeceras) {
+    if (headers) {
       const method = cabecera / 2
       const before = -aire - fondo / 2
       const after = lado + aire + fondo / 2

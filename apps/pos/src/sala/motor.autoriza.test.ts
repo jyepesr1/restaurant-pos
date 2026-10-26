@@ -4,7 +4,7 @@ import type { Channel } from '@pos/sync'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
 import { ErrorApi } from './api'
-import { type Equipo, Sala, type Sesion } from './motor'
+import { type Device, Sala, type Session } from './motor'
 import { catalogoDePrueba } from './pruebas'
 
 // El motor con el PIN de un supervisor (tarea 1.5, ADR-008): `registrar(..., { motivo, autoriza })`
@@ -21,12 +21,12 @@ afterEach(async () => {
 })
 
 const sinRed = (): Channel => ({ send: () => {}, close: () => {} })
-const json = (cuerpo: unknown, status = 200) =>
-  new Response(JSON.stringify(cuerpo), { status, headers: { 'content-type': 'application/json' } })
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 interface Call {
   url: string
-  cuerpo: Record<string, unknown> | null
+  body: Record<string, unknown> | null
   token: string | null
 }
 
@@ -38,7 +38,7 @@ function hubFalso(responder: (l: Call) => Response) {
       const headers = (init?.headers ?? {}) as Record<string, string>
       const llamada: Call = {
         url,
-        cuerpo: init?.body ? JSON.parse(String(init.body)) : null,
+        body: init?.body ? JSON.parse(String(init.body)) : null,
         token: headers.authorization?.replace('Bearer ', '') ?? null,
       }
       calls.push(llamada)
@@ -50,21 +50,21 @@ function hubFalso(responder: (l: Call) => Response) {
 }
 const autorizaciones = (l: Call[]) => l.filter((x) => x.url === '/api/authorizations')
 
-const device: Equipo = {
+const device: Device = {
   deviceId: newId(),
   token: 'token-ana',
   name: 'Ana',
   type: 'waiter',
 }
-const sesionMesero = (): Sesion => ({
-  sesionId: newId(),
+const waiterSession = (): Session => ({
+  sessionId: newId(),
   secret: 'secreto-ana',
   user: { id: newId(), name: 'Ana', role: 'Mesero' },
   permissions: ['take_order'],
-  ultimoUso: Date.now(),
+  lastUsed: Date.now(),
 })
 
-async function open(session: Sesion | null = sesionMesero()) {
+async function open(session: Session | null = waiterSession()) {
   const db = new BaseDispositivo(`prueba-${newId()}`)
   bases.push(db)
   await db.saveSetting('device', device)
@@ -95,8 +95,8 @@ describe('Sala.registrar con autoriza', () => {
     expect(otras).toEqual([])
     expect(llamada).toMatchObject({
       token: 'token-ana',
-      cuerpo: {
-        session_id: session?.sesionId,
+      body: {
+        session_id: session?.sessionId,
         secret: 'secreto-ana',
         pin: '4321',
         action: 'void_sent_item',
@@ -105,8 +105,8 @@ describe('Sala.registrar con autoriza', () => {
       },
     })
     // La huella es la del evento tal como salió (sin comprobante ni firma).
-    expect(llamada?.cuerpo?.fingerprint).toBe(authorizableFingerprint(event))
-    expect(llamada?.cuerpo?.fingerprint).toMatch(/^[0-9a-f]{64}$/)
+    expect(llamada?.body?.fingerprint).toBe(authorizableFingerprint(event))
+    expect(llamada?.body?.fingerprint).toMatch(/^[0-9a-f]{64}$/)
   })
 
   it('el evento sale con el autorizacion_id del hub y una firma válida que cubre ese comprobante', async () => {
@@ -117,14 +117,14 @@ describe('Sala.registrar con autoriza', () => {
       authorizes: { pin: '4321', permission: 'void_sent_item' },
     })
     expect(event.authorization_id).toBe(COMPROBANTE)
-    const { signature, ...sinFirma } = event
-    expect(signature).toBe(signEvent(sinFirma as never, 'secreto-ana'))
+    const { signature, ...unsigned } = event
+    expect(signature).toBe(signEvent(unsigned as never, 'secreto-ana'))
     // La firma cambia si el comprobante cambia: está firmado con él puesto.
-    expect(signEvent({ ...sinFirma, authorization_id: null } as never, 'secreto-ana')).not.toBe(
+    expect(signEvent({ ...unsigned, authorization_id: null } as never, 'secreto-ana')).not.toBe(
       signature,
     )
     // Y la huella (sin comprobante) no cambia por ponerlo.
-    expect(authorizableFingerprint({ ...sinFirma, authorization_id: null } as never)).toBe(
+    expect(authorizableFingerprint({ ...unsigned, authorization_id: null } as never)).toBe(
       authorizableFingerprint(event),
     )
   })
@@ -164,7 +164,7 @@ describe('Sala.registrar con autoriza', () => {
         authorizes: { pin: '1111', permission: 'cancel_order' },
       },
     )
-    expect(autorizaciones(calls)[0]?.cuerpo?.action).toBe('cancel_order')
+    expect(autorizaciones(calls)[0]?.body?.action).toBe('cancel_order')
   })
 
   it('cada evento pide su propio comprobante (evento_id distinto)', async () => {
@@ -178,7 +178,7 @@ describe('Sala.registrar con autoriza', () => {
       reason: 'x',
       authorizes: { pin: '4321', permission: 'void_sent_item' },
     })
-    const ids = autorizaciones(calls).map((l) => l.cuerpo?.event_id)
+    const ids = autorizaciones(calls).map((l) => l.body?.event_id)
     expect(ids).toEqual([a.id, b.id])
     expect(a.id).not.toBe(b.id)
   })
@@ -206,7 +206,7 @@ describe('Sala.registrar con autoriza', () => {
     })
     expect(voidItem).toMatchObject({ related: [target], reason: 'Demora' })
     // La huella cubre el motivo y los relacionados: son parte del contenido que se autoriza.
-    expect(autorizaciones(calls)[0]?.cuerpo?.fingerprint).toBe(authorizableFingerprint(voidItem))
+    expect(autorizaciones(calls)[0]?.body?.fingerprint).toBe(authorizableFingerprint(voidItem))
   })
 
   it('sin opciones: motivo null, sin relacionados y sin comprobante (como antes)', async () => {

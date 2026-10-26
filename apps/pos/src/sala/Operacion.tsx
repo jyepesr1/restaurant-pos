@@ -36,7 +36,7 @@ export function Operacion({ route, params }: { route: string; params: URLSearchP
   useEffect(() => {
     floor.load().catch((e) => console.error('No se pudo abrir la base del equipo:', e))
     const alCambiarVisibilidad = () => floor.changeVisibility(!document.hidden)
-    const alTocar = () => floor.usar()
+    const alTocar = () => floor.enabled()
     const review = setInterval(() => floor.vencerSesionSiToca(), REVISAR_SESION_MS)
     document.addEventListener('visibilitychange', alCambiarVisibilidad)
     window.addEventListener('pointerdown', alTocar, { passive: true })

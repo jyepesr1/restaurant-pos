@@ -8,7 +8,7 @@ import type { PeriodReport } from './motor'
 
 export type Atajo = 'today' | 'yesterday' | 'week' | 'month' | 'lastMonth'
 
-/** El período más largo que da el hub (`MAX_DIAS_REPORTE`). */
+/** El período más largo que da el hub (`MAX_REPORT_DAYS`). */
 export const MAX_DIAS = 62
 
 export interface Periodo {
@@ -111,7 +111,7 @@ export function csvDeReporte(
 ): string {
   const { report: inf } = r
   const v = inf.sales
-  const who = (id: string | null) => (id ? (r.usuarios[id] ?? '') : '')
+  const who = (id: string | null) => (id ? (r.users[id] ?? '') : '')
   const time = (iso: string) => fechaHoraCsv(iso, rules?.timeZone ?? 'America/Bogota')
   const order = (n: number | null) => (n === null ? '' : n)
   const method = (m: { method: PaymentMethod; customMethodId: string | null }) =>

@@ -82,17 +82,17 @@ export interface PagoNuevo {
 /** Cómo se eligió la propina: la sugerida, otro porcentaje o un valor fijo. */
 type Eleccion =
   | { type: 'suggested' }
-  | { type: 'percent'; puntos: number }
+  | { type: 'percent'; points: number }
   | { type: 'value'; pesos: number }
 
-const percent = (puntos: number) => `${`${puntos / 100}`.replace('.', ',')} %`
+const percent = (points: number) => `${`${points / 100}`.replace('.', ',')} %`
 
 export function PanelCobro({
   cobrando,
   order,
   rules,
   cardTerminals,
-  ocupado,
+  taken,
   onClose,
   alCobrar,
 }: {
@@ -100,7 +100,7 @@ export function PanelCobro({
   order: OrderState
   rules: ReglasCobro
   cardTerminals: NonNullable<Catalog['cardTerminals']>
-  ocupado: boolean
+  taken: boolean
   onClose: () => void
   alCobrar: (payment: PagoNuevo) => void
 }) {
@@ -117,7 +117,7 @@ export function PanelCobro({
       order={order}
       rules={rules}
       cardTerminals={cardTerminals}
-      ocupado={ocupado}
+      taken={taken}
       onClose={onClose}
       alCobrar={alCobrar}
     />
@@ -129,7 +129,7 @@ function FormularioCobro({
   order,
   rules,
   cardTerminals,
-  ocupado,
+  taken,
   onClose,
   alCobrar,
 }: {
@@ -137,7 +137,7 @@ function FormularioCobro({
   order: OrderState
   rules: ReglasCobro
   cardTerminals: NonNullable<Catalog['cardTerminals']>
-  ocupado: boolean
+  taken: boolean
   onClose: () => void
   alCobrar: (payment: PagoNuevo) => void
 }) {
@@ -193,17 +193,17 @@ function FormularioCobro({
   const montoValido = amount > 0 && amount <= available
   const value = montoValido ? amount : 0
   /** La propina con un porcentaje; en efectivo, redondeada para pagarla con billetes. */
-  const conPorcentaje = (puntos: number) => {
+  const conPorcentaje = (points: number) => {
     const exacta =
-      puntos === rules.suggestedTip
+      points === rules.suggestedTip
         ? propinaDePago(order, cobrando.check, available, value, rules)
-        : propinaConPorcentaje(order, available, value, puntos, rules)
+        : propinaConPorcentaje(order, available, value, points, rules)
     return esEfectivo ? propinaParaEfectivo(exacta, rules) : exacta
   }
   const tip =
     eleccion.type === 'value'
       ? eleccion.pesos
-      : conPorcentaje(eleccion.type === 'suggested' ? rules.suggestedTip : eleccion.puntos)
+      : conPorcentaje(eleccion.type === 'suggested' ? rules.suggestedTip : eleccion.points)
   const select = (e: Eleccion) => {
     setEleccion(e)
     setConfirmando(false)
@@ -226,7 +226,7 @@ function FormularioCobro({
     : null
   const aCobrar = esEfectivo ? (calculo?.aEntregar ?? 0) : amount + tip
   const sinDatafono = option.method === 'card' && cardTerminal === null
-  const puede = montoValido && !ocupado && !sinDatafono && (!esEfectivo || calculo?.missing === 0)
+  const puede = montoValido && !taken && !sinDatafono && (!esEfectivo || calculo?.missing === 0)
 
   const record = () => {
     if (!puede || !calculo) return
@@ -258,7 +258,7 @@ function FormularioCobro({
   }
 
   const nombreDatafono = porProveedor.find((d) => d.id === cardTerminal)?.name
-  const donde =
+  const where =
     option.method === 'card' && nombreDatafono && porProveedor.length > 1
       ? `${option.name.toLowerCase()} (${nombreDatafono})`
       : option.name.toLowerCase()
@@ -301,18 +301,18 @@ function FormularioCobro({
       aria-labelledby="confirm-payment"
     >
       <p id="confirm-payment" className="mb-3 text-lg font-semibold">
-        {`¿Registrar ${pesos(aCobrar)} en ${donde}?`}
+        {`¿Registrar ${pesos(aCobrar)} en ${where}?`}
       </p>
       <div className="flex gap-2">
         <Boton onClick={() => setConfirmando(false)}>Volver</Boton>
         <button
           ref={confirm}
           type="button"
-          disabled={ocupado}
+          disabled={taken}
           className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl bg-accion-fuerte px-4 font-semibold text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-foco disabled:opacity-60"
           onClick={record}
         >
-          {ocupado ? 'Registrando…' : `Sí, registrar ${pesos(aCobrar)}`}
+          {taken ? 'Registrando…' : `Sí, registrar ${pesos(aCobrar)}`}
         </button>
       </div>
     </div>
@@ -357,14 +357,14 @@ function FormularioCobro({
           )}
         </section>
 
-        <Grupo etiqueta="Medio de pago" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <Grupo label="Medio de pago" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {options.map((o) => (
             <Opcion
               key={o.key}
               shape="card"
               elegida={key === o.key}
               alElegir={() => elegirOpcion(o)}
-              detalle={(() => {
+              detail={(() => {
                 const tecla = Object.keys(atajo).find((k) => atajo[k] === o.key)
                 return conTeclado && tecla ? `Tecla ${tecla}` : undefined
               })()}
@@ -379,14 +379,14 @@ function FormularioCobro({
             <span className="font-semibold">Propina (voluntaria)</span>
             <span className="cifras font-titulo text-2xl font-bold">{pesos(tip)}</span>
           </div>
-          <Grupo etiqueta="Propina" className="mt-3 flex flex-wrap gap-2">
+          <Grupo label="Propina" className="mt-3 flex flex-wrap gap-2">
             {rapidos.map((p) => {
               const elegida =
                 p === 0
                   ? eleccion.type === 'value' && eleccion.pesos === 0
                   : p === rules.suggestedTip
                     ? eleccion.type === 'suggested'
-                    : eleccion.type === 'percent' && eleccion.puntos === p
+                    : eleccion.type === 'percent' && eleccion.points === p
               return (
                 <Opcion
                   key={p}
@@ -397,7 +397,7 @@ function FormularioCobro({
                         ? { type: 'value', pesos: 0 }
                         : p === rules.suggestedTip
                           ? { type: 'suggested' }
-                          : { type: 'percent', puntos: p },
+                          : { type: 'percent', points: p },
                     )
                   }
                 >
@@ -421,8 +421,8 @@ function FormularioCobro({
                 placeholder={enPorcentaje ? 'Ej. 12' : 'Ej. 5.000'}
                 value={
                   enPorcentaje
-                    ? eleccion.type === 'percent' && !rapidos.includes(eleccion.puntos)
-                      ? String(eleccion.puntos / 100)
+                    ? eleccion.type === 'percent' && !rapidos.includes(eleccion.points)
+                      ? String(eleccion.points / 100)
                       : ''
                     : eleccion.type === 'value' && eleccion.pesos > 0
                       ? conPuntos(eleccion.pesos)
@@ -430,12 +430,12 @@ function FormularioCobro({
                 }
                 onChange={(e) => {
                   const n = soloDigitos(e.target.value)
-                  if (enPorcentaje) select({ type: 'percent', puntos: Math.min(n, 100) * 100 })
+                  if (enPorcentaje) select({ type: 'percent', points: Math.min(n, 100) * 100 })
                   else select({ type: 'value', pesos: n })
                 }}
               />
             </label>
-            <Grupo etiqueta="Escribir en" className="flex gap-1">
+            <Grupo label="Escribir en" className="flex gap-1">
               <Opcion elegida={!enPorcentaje} alElegir={() => setEnPorcentaje(false)}>
                 $
               </Opcion>
@@ -505,7 +505,7 @@ function FormularioCobro({
                 </p>
               ) : (
                 porProveedor.length > 1 && (
-                  <Grupo etiqueta="Datáfono" className="mt-3 flex flex-wrap gap-2">
+                  <Grupo label="Datáfono" className="mt-3 flex flex-wrap gap-2">
                     {porProveedor.map((d) => (
                       <Opcion
                         key={d.id}

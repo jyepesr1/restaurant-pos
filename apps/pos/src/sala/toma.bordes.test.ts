@@ -321,12 +321,12 @@ describe('lineaIgual: retenido, anulado y opciones en otro orden', () => {
 
   it('no suma a una línea con otro precio copiado (otra versión de la carta)', () => {
     const product = newId()
-    const vieja = item({ product_id: product, unit_price: 9_900, catalog_version: 1 })
-    const { status } = orderWith(aggregate(vieja))
+    const old = item({ product_id: product, unit_price: 9_900, catalog_version: 1 })
+    const { status } = orderWith(aggregate(old))
     const newOne = (fields: Record<string, unknown>) =>
       lineaIgual(status, item({ product_id: product, unit_price: 9_900, ...fields }))
     expect(newOne({ unit_price: 10_900, catalog_version: 2 })).toBeNull()
-    expect(newOne({ catalog_version: 2 })?.id).toBe(vieja.item_id)
+    expect(newOne({ catalog_version: 2 })?.id).toBe(old.item_id)
     expect(newOne({ tax_type: 'iva', rate: 1_900 })).toBeNull()
     expect(newOne({ rate: 1_900 })).toBeNull()
     expect(newOne({ tax_type: 'exempt', rate: 0 })).toBeNull()
@@ -335,19 +335,19 @@ describe('lineaIgual: retenido, anulado y opciones en otro orden', () => {
   it('la misma opción con otro precio extra no es la misma línea', () => {
     const product = newId()
     const o = newId()
-    const conOpcion = (price: number) => ({
+    const withOption = (price: number) => ({
       modifier_id: o,
       name: 'Doble',
       extra_price: price,
     })
     const { status } = orderWith(
-      aggregate(item({ product_id: product, modifiers: [conOpcion(2_000)] })),
+      aggregate(item({ product_id: product, modifiers: [withOption(2_000)] })),
     )
     expect(
-      lineaIgual(status, item({ product_id: product, modifiers: [conOpcion(3_000)] })),
+      lineaIgual(status, item({ product_id: product, modifiers: [withOption(3_000)] })),
     ).toBeNull()
     expect(
-      lineaIgual(status, item({ product_id: product, modifiers: [conOpcion(2_000)] })),
+      lineaIgual(status, item({ product_id: product, modifiers: [withOption(2_000)] })),
     ).not.toBeNull()
   })
 

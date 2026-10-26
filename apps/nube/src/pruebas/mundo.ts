@@ -61,7 +61,7 @@ export interface HubDePrueba {
   restaurantId: string
 }
 
-export interface Mundo {
+export interface World {
   sql: Sql
   db: Awaited<ReturnType<typeof baseDePrueba>>['db']
   nube: Nube
@@ -69,10 +69,10 @@ export interface Mundo {
   /** Crea (si hace falta) el restaurante y registra un hub con un código nuevo. */
   newHub: (restaurantId?: string) => Promise<HubDePrueba>
   /** Una petición a la API con el token y el reloj de la prueba. */
-  request: (metodo: string, route: string, cuerpo?: unknown, token?: string) => Promise<Response>
+  request: (httpMethod: string, route: string, body?: unknown, token?: string) => Promise<Response>
 }
 
-export async function crearMundo(): Promise<Mundo> {
+export async function crearMundo(): Promise<World> {
   const { sql, db } = await baseDePrueba()
   const clock = { now: NOW }
   const nube = new Nube(sql, () => clock.now)
@@ -92,20 +92,16 @@ export async function crearMundo(): Promise<Mundo> {
     if (!hub) throw new Error('sin hub')
     return { hub, credential: r.credential, restaurantId }
   }
-  const request: Mundo['request'] = (metodo, route, cuerpo, token) =>
+  const request: World['request'] = (httpMethod, route, body, token) =>
     atender(
       new Request(`https://cloud.faro.test${route}`, {
-        method: metodo,
+        method: httpMethod,
         headers: {
-          ...(cuerpo !== undefined ? { 'content-type': 'application/json' } : {}),
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
           ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
         body:
-          cuerpo === undefined
-            ? undefined
-            : typeof cuerpo === 'string'
-              ? cuerpo
-              : JSON.stringify(cuerpo),
+          body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
       }),
       { sql, tokenAdmin: ADMIN, clock: () => clock.now },
     )
@@ -113,7 +109,7 @@ export async function crearMundo(): Promise<Mundo> {
 }
 
 /** Lo guardado de un restaurante, ordenado por id, para comparar corridas distintas. */
-export async function eventosGuardados(db: Mundo['db'], restaurantId: string) {
+export async function eventosGuardados(db: World['db'], restaurantId: string) {
   const r = await db.query<{
     id: string
     fingerprint: string
@@ -127,7 +123,7 @@ export async function eventosGuardados(db: Mundo['db'], restaurantId: string) {
   return r.rows
 }
 
-export async function count(db: Mundo['db'], tableName: string, restaurantId?: string) {
+export async function count(db: World['db'], tableName: string, restaurantId?: string) {
   const r = restaurantId
     ? await db.query<{ n: number }>(
         `SELECT count(*)::int AS n FROM ${tableName} WHERE restaurant_id = $1`,

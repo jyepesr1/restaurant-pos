@@ -3,7 +3,7 @@ import { newId } from '@pos/core'
 import type { Channel } from '@pos/sync'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
-import { type Equipo, Sala, type Sesion } from './motor'
+import { type Device, Sala, type Session } from './motor'
 import { catalogoDePrueba } from './pruebas'
 
 // Entrar sin emparejar (tarea 1.3b, ADR-013): el navegador sin equipo entra con PIN o con usuario
@@ -18,10 +18,10 @@ afterEach(() => {
 /** Un canal que no conecta a nada: aquí solo importa qué se guarda. */
 const sinRed = (): Channel => ({ send: () => {}, close: () => {} })
 
-const json = (cuerpo: unknown, status = 201) =>
-  new Response(JSON.stringify(cuerpo), { status, headers: { 'content-type': 'application/json' } })
+const json = (body: unknown, status = 201) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
-function respuesta(device: Partial<Equipo> | null, type = 'waiter') {
+function response(device: Partial<Device> | null, type = 'waiter') {
   return {
     device: device && {
       device_id: device.deviceId,
@@ -38,8 +38,8 @@ function respuesta(device: Partial<Equipo> | null, type = 'waiter') {
 }
 
 /** El hub falso: anota cada llamada y responde lo que diga `responder` (la carta, siempre igual). */
-function hubFalso(responder: (cuerpo: unknown, token: string | null) => Response) {
-  const calls: { url: string; cuerpo: unknown; token: string | null }[] = []
+function hubFalso(responder: (body: unknown, token: string | null) => Response) {
+  const calls: { url: string; body: unknown; token: string | null }[] = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -48,10 +48,10 @@ function hubFalso(responder: (cuerpo: unknown, token: string | null) => Response
           'Bearer ',
           '',
         ) ?? null
-      const cuerpo = init?.body ? JSON.parse(String(init.body)) : null
-      calls.push({ url, cuerpo, token })
+      const body = init?.body ? JSON.parse(String(init.body)) : null
+      calls.push({ url, body, token })
       if (url === '/api/catalog') return json(catalogoDePrueba(), 200)
-      return responder(cuerpo, token)
+      return responder(body, token)
     }),
   )
   return calls
@@ -73,14 +73,14 @@ describe('Sala.entrar', () => {
       name: 'Equipo de Ana',
       type: 'waiter' as const,
     }
-    const calls = hubFalso(() => json(respuesta(device)))
+    const calls = hubFalso(() => json(response(device)))
     const { floor, db } = await open()
 
-    await floor.entrar('4821')
-    expect(calls[0]).toEqual({ url: '/api/sign-in', cuerpo: { pin: '4821' }, token: null })
+    await floor.signIn('4821')
+    expect(calls[0]).toEqual({ url: '/api/sign-in', body: { pin: '4821' }, token: null })
     expect(floor.instantanea()).toMatchObject({ device, session: { user: { name: 'Ana' } } })
-    expect(await db.leerAjuste<Equipo>('device')).toEqual(device)
-    expect(await db.leerAjuste<Sesion>('session')).toMatchObject({ secret: 'secret' })
+    expect(await db.leerAjuste<Device>('device')).toEqual(device)
+    expect(await db.leerAjuste<Session>('session')).toMatchObject({ secret: 'secret' })
     expect(floor.instantanea().catalog).not.toBeNull()
   })
 
@@ -91,7 +91,7 @@ describe('Sala.entrar', () => {
       name: 'Equipo de Ana',
       type: 'waiter' as const,
     }
-    hubFalso(() => json(respuesta(device)))
+    hubFalso(() => json(response(device)))
     const { db } = await open()
     // La carta que dejó un hub anterior, más adelantada que la del hub nuevo.
     await db.saveSetting('catalog', { ...catalogoDePrueba(), version: 900 })
@@ -100,7 +100,7 @@ describe('Sala.entrar', () => {
     await another.load()
     expect(another.instantanea().catalog?.version).toBe(900)
 
-    await another.entrar('4821')
+    await another.signIn('4821')
     expect(another.instantanea().catalog?.version).toBe(catalogoDePrueba().version)
   })
 
@@ -111,28 +111,28 @@ describe('Sala.entrar', () => {
       name: 'Celular',
       type: 'waiter' as const,
     }
-    const calls = hubFalso(() => json(respuesta(null, 'register')))
+    const calls = hubFalso(() => json(response(null, 'register')))
     const { floor, db } = await open()
     await db.saveSetting('device', device)
     const another = new Sala({ db, open: sinRed })
     salas.push(another)
     await another.load()
 
-    await another.entrar({ user: 'caja', password: 'una-clave-larga' })
+    await another.signIn({ user: 'caja', password: 'una-clave-larga' })
     expect(calls.find((l) => l.url === '/api/sign-in')).toEqual({
       url: '/api/sign-in',
-      cuerpo: { user: 'caja', password: 'una-clave-larga' },
+      body: { user: 'caja', password: 'una-clave-larga' },
       token: 'token-viejo',
     })
     expect(another.instantanea().device).toEqual({ ...device, type: 'register' })
-    expect(await db.leerAjuste<Equipo>('device')).toEqual({ ...device, type: 'register' })
+    expect(await db.leerAjuste<Device>('device')).toEqual({ ...device, type: 'register' })
     void floor
   })
 
   it('si el hub dice que no, no guarda nada y el error llega con su espera', async () => {
-    hubFalso(() => json({ error: 'wrong_pin', message: 'PIN incorrecto', espera_ms: 2000 }, 401))
+    hubFalso(() => json({ error: 'wrong_pin', message: 'PIN incorrecto', wait_ms: 2000 }, 401))
     const { floor, db } = await open()
-    await expect(floor.entrar('0001')).rejects.toMatchObject({
+    await expect(floor.signIn('0001')).rejects.toMatchObject({
       code: 'wrong_pin',
       message: 'PIN incorrecto',
       waitMs: 2000,
@@ -150,6 +150,6 @@ describe('Sala.entrar', () => {
       }),
     )
     const { floor } = await open()
-    await expect(floor.entrar('4821')).rejects.toMatchObject({ code: 'offline' })
+    await expect(floor.signIn('4821')).rejects.toMatchObject({ code: 'offline' })
   })
 })

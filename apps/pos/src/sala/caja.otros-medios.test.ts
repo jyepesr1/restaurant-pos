@@ -81,14 +81,14 @@ describe('mediosDelCierre: la etiqueta de la tarjeta', () => {
     ['bold', 'Cierre de Bold (total con propinas)'],
     ['redeban', 'Cierre de Redeban (total con propinas)'],
     ['credibanco', 'Cierre de Credibanco (total con propinas)'],
-  ])('un proveedor (%s): «Cierre de …»', (provider, etiqueta) => {
+  ])('un proveedor (%s): «Cierre de …»', (provider, label) => {
     const m = mediosDelCierre(rules(), cuadreCon(), catalogoCon([provider, provider]))
-    expect(m.find((x) => x.method === 'card')?.etiqueta).toBe(etiqueta)
+    expect(m.find((x) => x.method === 'card')?.label).toBe(label)
   })
 
   it('varios proveedores: la etiqueta genérica, con la suma', () => {
     const m = mediosDelCierre(rules(), cuadreCon(), catalogoCon(['bold', 'redeban']))
-    expect(m.find((x) => x.method === 'card')?.etiqueta).toBe(
+    expect(m.find((x) => x.method === 'card')?.label).toBe(
       'Cierre de los datáfonos (la suma, con propinas)',
     )
   })
@@ -98,22 +98,22 @@ describe('mediosDelCierre: la etiqueta de la tarjeta', () => {
       expect(
         mediosDelCierre(rules(), cuadreCon(), catalogoCon(proveedores)).find(
           (x) => x.method === 'card',
-        )?.etiqueta,
+        )?.label,
       ).toBe('Cierre de los datáfonos (la suma, con propinas)')
   })
 
   it('un proveedor conocido y otro sin proveedor son dos: la genérica', () => {
     const m = mediosDelCierre(rules(), cuadreCon(), catalogoCon(['bold', undefined]))
-    expect(m.find((x) => x.method === 'card')?.etiqueta).toContain('datáfonos')
+    expect(m.find((x) => x.method === 'card')?.label).toContain('datáfonos')
   })
 
   it('sin datáfonos o sin catálogo: la genérica', () => {
     expect(
       mediosDelCierre(rules(), cuadreCon(), catalogoCon([])).find((x) => x.method === 'card')
-        ?.etiqueta,
+        ?.label,
     ).toBe('Cierre de los datáfonos (la suma, con propinas)')
     expect(
-      mediosDelCierre(rules(), cuadreCon(), null).find((x) => x.method === 'card')?.etiqueta,
+      mediosDelCierre(rules(), cuadreCon(), null).find((x) => x.method === 'card')?.label,
     ).toBe('Cierre de los datáfonos (la suma, con propinas)')
   })
 
@@ -123,7 +123,7 @@ describe('mediosDelCierre: la etiqueta de la tarjeta', () => {
       cuadreCon(),
       null,
     )
-    expect(m.map((x) => x.etiqueta)).toEqual([
+    expect(m.map((x) => x.label)).toEqual([
       'Llegó por Nequi',
       'Llegó por Daviplata',
       'Llegó por Bre-B',
@@ -153,7 +153,7 @@ describe('mediosDelCierre: qué medios entran', () => {
     expect(withIt.at(-1)).toMatchObject({
       key: `other:${VIEJO}`,
       name: 'Bono de la casa',
-      etiqueta: 'Llegó por Bono de la casa',
+      label: 'Llegó por Bono de la casa',
     })
     expect(mediosDelCierre(r, cuadreCon(), null).some((x) => x.customMethodId === VIEJO)).toBe(
       false,
@@ -165,7 +165,7 @@ describe('mediosDelCierre: qué medios entran', () => {
     expect(m.at(-1)).toMatchObject({
       key: `other:${VIEJO}`,
       name: 'Otro',
-      etiqueta: 'Llegó por Otro',
+      label: 'Llegó por Otro',
     })
   })
 

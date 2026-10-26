@@ -11,16 +11,16 @@ import {
 } from '@pos/sync'
 import { afterEach, describe, expect, it } from 'vitest'
 import { BaseDispositivo } from './almacen'
-import { type Equipo, Sala, type Sesion } from './motor'
+import { type Device, Sala, type Session } from './motor'
 import { agotados, claveAgotado, pedidosAbiertos } from './proyeccion'
 
 // Agotado (86) por el motor de la app: `registrar` arma el sobre del producto, lo firma, lo guarda
 // antes de mostrarlo y el hub de prueba lo acepta, lo difunde o lo rechaza (tarea 1.3).
 
-const secretoDe = (sesionId: string) => `secreto-${sesionId}`
+const secretOf = (sessionId: string) => `secreto-${sessionId}`
 
 const firmaValida = (event: Parameters<AccessControl['verify']>[1]) =>
-  event.session_id !== null && event.signature === signEvent(event, secretoDe(event.session_id))
+  event.session_id !== null && event.signature === signEvent(event, secretOf(event.session_id))
 
 const accesoConFirma: AccessControl = {
   verify: (_c, event) =>
@@ -57,8 +57,8 @@ afterEach(async () => {
   for (const b of bases.splice(0)) await b.delete()
 })
 
-function montarHub(access: AccessControl = accesoConFirma) {
-  const tokens = new Map<string, Equipo>()
+function setupHub(access: AccessControl = accesoConFirma) {
+  const tokens = new Map<string, Device>()
   const hub = new HubSync(new MemoryStore(), {
     restaurantId: newId(),
     timeZone: 'America/Bogota',
@@ -91,18 +91,18 @@ function montarHub(access: AccessControl = accesoConFirma) {
   return { hub, tokens, open }
 }
 
-async function device(h: ReturnType<typeof montarHub>, name: string) {
+async function device(h: ReturnType<typeof setupHub>, name: string) {
   const db = new BaseDispositivo(`prueba-${newId()}`)
   bases.push(db)
-  const e: Equipo = { deviceId: newId(), token: newId(), name, type: 'register' }
+  const e: Device = { deviceId: newId(), token: newId(), name, type: 'register' }
   h.tokens.set(e.token, e)
-  const sesionId = newId()
-  const session: Sesion = {
-    sesionId,
-    secret: secretoDe(sesionId),
+  const sessionId = newId()
+  const session: Session = {
+    sessionId,
+    secret: secretOf(sessionId),
     user: { id: newId(), name, role: 'Cajero' },
     permissions: ['take_order', 'mark_product_sold_out'],
-    ultimoUso: Date.now(),
+    lastUsed: Date.now(),
   }
   await db.saveSetting('device', e)
   await db.saveSetting('session', session)
@@ -113,20 +113,20 @@ async function device(h: ReturnType<typeof montarHub>, name: string) {
   return { floor, session, device: e }
 }
 
-async function esperar(condicion: () => Promise<boolean> | boolean, ms = 3000) {
-  const fin = Date.now() + ms
+async function wait(condicion: () => Promise<boolean> | boolean, ms = 3000) {
+  const end = Date.now() + ms
   while (!(await condicion())) {
-    if (Date.now() > fin) throw new Error('No se cumplió a tiempo')
+    if (Date.now() > end) throw new Error('No se cumplió a tiempo')
     await new Promise((r) => setTimeout(r, 10))
   }
 }
 
 const locals = async (s: Sala) => (await s.sync?.locals()) ?? []
-const online = (s: Sala) => esperar(() => s.instantanea().connection === 'connected')
+const online = (s: Sala) => wait(() => s.instantanea().connection === 'connected')
 
 describe('Sala.registrar con eventos de producto', () => {
   it('arma el sobre del producto: agregado_tipo producto, su id, firmado y sin pedido', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, session, device: e } = await device(h, 'Caja')
     const product = newId()
 
@@ -140,7 +140,7 @@ describe('Sala.registrar con eventos de producto', () => {
       aggregate_type: 'product',
       aggregate_id: product,
       related: [],
-      session_id: session.sesionId,
+      session_id: session.sessionId,
       user_id: session.user.id,
       device_id: e.deviceId,
       reason: null,
@@ -158,7 +158,7 @@ describe('Sala.registrar con eventos de producto', () => {
   })
 
   it('un evento de pedido sigue armándose como pedido', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Caja')
     const order = newId()
     const created = await floor.record('OrderOpened', order, {
@@ -171,7 +171,7 @@ describe('Sala.registrar con eventos de producto', () => {
   })
 
   it('el hub de prueba lo acepta con su secuencia y el otro equipo lo recibe', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const register = await device(h, 'Caja')
     const waiter = await device(h, 'Ana')
     await online(register.floor)
@@ -183,8 +183,8 @@ describe('Sala.registrar con eventos de producto', () => {
       product_id: product,
       variant_id: bottle,
     })
-    await esperar(async () => (await locals(waiter.floor)).length === 1)
-    await esperar(() => register.floor.instantanea().pendingList === 0)
+    await wait(async () => (await locals(waiter.floor)).length === 1)
+    await wait(() => register.floor.instantanea().pendingList === 0)
 
     for (const s of [register.floor, waiter.floor]) {
       const l = await locals(s)
@@ -199,12 +199,12 @@ describe('Sala.registrar con eventos de producto', () => {
       product_id: product,
       variant_id: bottle,
     })
-    await esperar(async () => agotados(await locals(waiter.floor)).size === 0)
+    await wait(async () => agotados(await locals(waiter.floor)).size === 0)
     expect(agotados(await locals(register.floor))).toEqual(new Set())
   })
 
   it('sin conexión se ve agotado al instante y al volver se confirma sin duplicarse', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const register = await device(h, 'Caja')
     const waiter = await device(h, 'Ana')
     await online(register.floor)
@@ -222,14 +222,14 @@ describe('Sala.registrar con eventos de producto', () => {
     expect(agotados(await locals(waiter.floor))).toEqual(new Set())
 
     register.floor.simularSinConexion(false)
-    await esperar(async () => agotados(await locals(waiter.floor)).has(product))
-    await esperar(() => register.floor.instantanea().pendingList === 0)
+    await wait(async () => agotados(await locals(waiter.floor)).has(product))
+    await wait(() => register.floor.instantanea().pendingList === 0)
     expect(await locals(register.floor)).toHaveLength(1)
     expect(await locals(waiter.floor)).toHaveLength(1)
   })
 
   it('si el hub lo rechaza (sin permiso), deja de verse agotado en el equipo', async () => {
-    const h = montarHub(accesoSinPermisoDeAgotar)
+    const h = setupHub(accesoSinPermisoDeAgotar)
     const register = await device(h, 'Caja')
     register.floor.simularSinConexion(true)
     const product = newId()
@@ -240,14 +240,14 @@ describe('Sala.registrar con eventos de producto', () => {
     expect(agotados(await locals(register.floor))).toEqual(new Set([product]))
 
     register.floor.simularSinConexion(false)
-    await esperar(async () => (await locals(register.floor))[0]?.status === 'rejected')
+    await wait(async () => (await locals(register.floor))[0]?.status === 'rejected')
     const [l] = await locals(register.floor)
     expect(l?.reason).toBe('no_permission')
     expect(agotados(await locals(register.floor))).toEqual(new Set())
   })
 
   it('un agotado con datos inválidos no se guarda', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Caja')
     await expect(
       floor.record('ProductSoldOut', newId(), {
@@ -264,7 +264,7 @@ describe('Sala.registrar con eventos de producto', () => {
   })
 
   it('un hub que se reinicia y vuelve: el agotado propio ya confirmado sigue visible', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const register = await device(h, 'Caja')
     await online(register.floor)
     const product = newId()
@@ -272,7 +272,7 @@ describe('Sala.registrar con eventos de producto', () => {
       product_id: product,
       variant_id: null,
     })
-    await esperar(() => register.floor.instantanea().pendingList === 0)
+    await wait(() => register.floor.instantanea().pendingList === 0)
 
     register.floor.simularSinConexion(true)
     register.floor.simularSinConexion(false)

@@ -62,11 +62,11 @@ test('el hub sirve los assets de la app con su tipo de contenido', async ({ page
   await page.goto('/')
   const js = await page.locator('script[src]').first().getAttribute('src')
   const css = await page.locator('link[rel="stylesheet"]').first().getAttribute('href')
-  const rutas = [js, css].map((route) => new URL(route ?? '', page.url()).pathname)
+  const routes = [js, css].map((route) => new URL(route ?? '', page.url()).pathname)
 
-  expect(rutas.some((r) => r.endsWith('.js'))).toBe(true)
-  expect(rutas.some((r) => r.endsWith('.css'))).toBe(true)
-  for (const route of rutas) {
+  expect(routes.some((r) => r.endsWith('.js'))).toBe(true)
+  expect(routes.some((r) => r.endsWith('.css'))).toBe(true)
+  for (const route of routes) {
     const res = await request.get(route)
     expect(res.status()).toBe(200)
     const type = res.headers()['content-type'] ?? ''

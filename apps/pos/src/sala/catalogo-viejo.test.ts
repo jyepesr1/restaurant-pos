@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { newId } from '@pos/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
-import { type Equipo, Sala } from './motor'
+import { type Device, Sala } from './motor'
 
 // Una actualización de la app no debe dejar el salón en blanco: la carta guardada en IndexedDB
 // por una versión anterior (sin plano, sin elementos, sin personal) se completa al abrir, y la
@@ -22,7 +22,7 @@ afterEach(async () => {
 })
 
 /** Guarda `catalogo` tal cual en una base nueva y abre la sala sobre ella. */
-async function abrirCon(catalog: unknown, extra: { device?: Equipo } = {}) {
+async function abrirCon(catalog: unknown, extra: { device?: Device } = {}) {
   const db = new BaseDispositivo(`viejo-${newId()}`)
   bases.push(db)
   if (catalog !== undefined) await db.saveSetting('catalog', catalog)
@@ -77,8 +77,8 @@ describe('Sala.cargar() con una carta guardada por una versión anterior', () =>
         algoMas: [1, 2, 3],
       },
     ],
-  ])('%s: carga sin fallar y queda con todo lo que la pantalla lee', async (_case, vieja) => {
-    const { floor } = await abrirCon(vieja)
+  ])('%s: carga sin fallar y queda con todo lo que la pantalla lee', async (_case, old) => {
+    const { floor } = await abrirCon(old)
     const c = floor.instantanea().catalog
     expect(floor.instantanea().cargado).toBe(true)
     expect(c).not.toBeNull()
@@ -140,11 +140,11 @@ describe('Sala.cargar() con una carta guardada por una versión anterior', () =>
 })
 
 describe('Sala.actualizarCatalogo() con la respuesta de un hub anterior', () => {
-  const device: Equipo = { deviceId: newId(), token: 'token', name: 'Caja', type: 'register' }
-  const responder = (cuerpo: unknown, status = 200) =>
+  const device: Device = { deviceId: newId(), token: 'token', name: 'Caja', type: 'register' }
+  const responder = (body: unknown, status = 200) =>
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify(cuerpo), { status })),
+      vi.fn(async () => new Response(JSON.stringify(body), { status })),
     )
 
   it('completa lo que falta, lo guarda ya completo y lo muestra', async () => {
@@ -160,8 +160,8 @@ describe('Sala.actualizarCatalogo() con la respuesta de un hub anterior', () => 
     expect(mostrada?.version).toBe(5)
     expect(mostrada?.elements).toEqual([])
     expect(mostrada?.tables[0]).toMatchObject({ width: 80, height: 80, rotation: 0 })
-    const guardada = await db.leerAjuste<typeof mostrada>('catalog')
-    expect(guardada).toEqual(mostrada)
+    const saved = await db.leerAjuste<typeof mostrada>('catalog')
+    expect(saved).toEqual(mostrada)
   })
 
   it('una respuesta sin mesas (no es la carta) no reemplaza la buena', async () => {

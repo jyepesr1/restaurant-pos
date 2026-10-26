@@ -12,12 +12,12 @@ export interface Simulacion {
   impresorasConFalla: number
 }
 
-interface Estado {
+interface State {
   tables: Mesa[]
   simulacion: Simulacion
 }
 
-const initial = (): Estado => ({
+const initial = (): State => ({
   tables: mesasIniciales(),
   simulacion: { connection: 'local_only', pendingList: 0, impresorasConFalla: 0 },
 })
@@ -30,7 +30,7 @@ const suscribir = (s: () => void) => {
     suscritos.delete(s)
   }
 }
-const patch = (fresh: Estado) => {
+const patch = (fresh: State) => {
   status = fresh
   for (const s of suscritos) s()
 }

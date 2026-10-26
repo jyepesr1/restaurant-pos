@@ -18,7 +18,7 @@ import {
   resumenTurno,
   turnoDeCaja,
 } from './cuentas'
-import { type Equipo, Sala, type Sesion } from './motor'
+import { type Device, Sala, type Session } from './motor'
 import { catalogoDePrueba, datosItem } from './pruebas'
 
 // De punta a punta, en memoria (tarea 1.7): la caja (motor + IndexedDB) habla con un hub de memoria
@@ -89,8 +89,8 @@ async function resolve<T>(
   return r as never
 }
 
-function montarHub() {
-  const tokens = new Map<string, Equipo>()
+function setupHub() {
+  const tokens = new Map<string, Device>()
   const hub = new HubSync(new MemoryStore(), {
     restaurantId: newId(),
     timeZone: 'America/Bogota',
@@ -144,7 +144,7 @@ function montarHub() {
   }
   return h
 }
-type Hub = ReturnType<typeof montarHub>
+type Hub = ReturnType<typeof setupHub>
 
 const salas: Sala[] = []
 const bases: BaseDispositivo[] = []
@@ -160,12 +160,12 @@ afterEach(async () => {
 async function register(h: Hub, name = 'Caja 1') {
   const db = new BaseDispositivo(`closeout-${newId()}`)
   bases.push(db)
-  const e: Equipo = { deviceId: newId(), token: newId(), name, type: 'register' }
+  const e: Device = { deviceId: newId(), token: newId(), name, type: 'register' }
   h.tokens.set(e.token, e)
-  const sesionId = newId()
-  const session: Sesion = {
-    sesionId,
-    secret: `secreto-${sesionId}`,
+  const sessionId = newId()
+  const session: Session = {
+    sessionId,
+    secret: `secreto-${sessionId}`,
     user: { id: newId(), name: 'Carlos', role: 'Cajero' },
     permissions: [
       'take_order',
@@ -176,7 +176,7 @@ async function register(h: Hub, name = 'Caja 1') {
       'cash_movement',
       'close_register_shift',
     ],
-    ultimoUso: Date.now(),
+    lastUsed: Date.now(),
   }
   await db.saveSetting('device', e)
   await db.saveSetting('session', session)
@@ -278,7 +278,7 @@ const message = (r: { ok: boolean }) => (r as unknown as { error: Error }).error
 
 describe('de punta a punta: abrir turno → cobro → entrada → propinas → arqueo → cierre → turno nuevo', () => {
   it('todo se confirma, el turno se cierra con diferencia 0 y la caja abre otro', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e } = await register(h)
     const shift = await floor.openShift(200_000)
     await until(() => sinPendientes(floor))
@@ -372,7 +372,7 @@ describe('de punta a punta: abrir turno → cobro → entrada → propinas → a
   })
 
   it('un faltante de $1.000 o más sin justificación lo rechaza el hub y con ella se cierra', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e } = await register(h)
     const shift = await floor.openShift(100_000)
     const { cashCount } = await count(floor, shift, 98_000)
@@ -399,7 +399,7 @@ describe('de punta a punta: abrir turno → cobro → entrada → propinas → a
   })
 
   it('un faltante por debajo del umbral ($999) se cierra sin justificación', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e } = await register(h)
     const shift = await floor.openShift(100_000)
     const { cashCount } = await count(floor, shift, 99_050)
@@ -414,7 +414,7 @@ describe('de punta a punta: abrir turno → cobro → entrada → propinas → a
 describe('el cierre rechazado, con el motivo en palabras', () => {
   /** Turno con un cobro en efectivo (esperado 305.000: base 200.000 + 105.000) y un conteo. */
   async function ready() {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e } = await register(h)
     const shift = await floor.openShift(200_000)
     const order = await pedidoDeCien(floor)
@@ -501,7 +501,7 @@ describe('el cierre rechazado, con el motivo en palabras', () => {
   })
 
   it('un movimiento o un conteo sin turno abierto: sin_turno', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await register(h)
     const shift = newId()
     const m = await resolve(
@@ -541,7 +541,7 @@ describe('el cierre rechazado, con el motivo en palabras', () => {
 
 describe('sin conexión', () => {
   it('el cierre queda pendiente: el turno sigue abierto aquí hasta que el hub lo acepta', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e } = await register(h)
     const shift = await floor.openShift(10_000)
     await until(() => sinPendientes(floor))
@@ -567,7 +567,7 @@ describe('sin conexión', () => {
   })
 
   it('un movimiento hecho sin conexión suma al cuadre local al guardarse y se confirma al volver', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await register(h)
     const shift = await floor.openShift(10_000)
     await until(() => sinPendientes(floor))

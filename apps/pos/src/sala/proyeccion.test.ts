@@ -1,8 +1,8 @@
 import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import {
+  currentItems,
   estadoMesa,
-  itemsVigentes,
   type PedidoVisible,
   pedidosAbiertos as proyectar,
 } from './proyeccion'
@@ -175,8 +175,8 @@ describe('pedidosAbiertos', () => {
       local('ItemAdded', b, datosItem({ unit_price: 7_000 })),
       local('ItemAdded', a, datosItem({ unit_price: 3_000 })),
     ])
-    const totales = Object.fromEntries(r.map((v) => [v.status.id, v.total]))
-    expect(totales).toEqual({ [a]: 3_000, [b]: 7_000 })
+    const totals = Object.fromEntries(r.map((v) => [v.status.id, v.total]))
+    expect(totals).toEqual({ [a]: 3_000, [b]: 7_000 })
   })
 
   it('el mismo evento repetido no duplica el ítem', () => {
@@ -198,7 +198,7 @@ describe('itemsVigentes', () => {
       c as never,
       local('ItemRemoved', p, { item_id: itemId(b as never) }, 'confirmed'),
     ])
-    expect(itemsVigentes((v as PedidoVisible).status).map((i) => i.id)).toEqual([
+    expect(currentItems((v as PedidoVisible).status).map((i) => i.id)).toEqual([
       itemId(a as never),
       itemId(c as never),
     ])

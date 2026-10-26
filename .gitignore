@@ -26,7 +26,7 @@ test-results/
 .claude/settings.local.json
 
 # Datos que genera el hub en desarrollo
-apps/hub/datos/
+apps/hub/data/
 .e2e/
 
 # Archivo temporal de las sesiones de Claude Code

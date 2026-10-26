@@ -73,7 +73,7 @@ export function Indice() {
             Faro es el estilo del sistema. La Spritzzería muestra cómo se ve con la marca de un
             restaurante. Aquí se elige solo en este equipo, para comparar.
           </p>
-          <Grupo etiqueta="Dirección visual" className="grid gap-2 sm:grid-cols-2">
+          <Grupo label="Dirección visual" className="grid gap-2 sm:grid-cols-2">
             {DIRECCIONES.map((d) => (
               <Opcion
                 key={d.brand}
@@ -126,7 +126,7 @@ export function Indice() {
             Para ver en cada pantalla el indicador de conexión, los eventos por enviar y una
             impresora que no responde.
           </p>
-          <Grupo etiqueta="Conexión" className="flex flex-wrap gap-2">
+          <Grupo label="Conexión" className="flex flex-wrap gap-2">
             {CONEXIONES.map(([connection, text]) => (
               <Opcion
                 key={connection}

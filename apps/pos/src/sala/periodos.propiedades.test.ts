@@ -220,7 +220,7 @@ function build(c: Caso): PeriodReport {
     number,
     number,
   ]
-  const usuarios = Object.fromEntries(c.waiter.map((n, i) => [`u${i}`, n]))
+  const users = Object.fromEntries(c.waiter.map((n, i) => [`u${i}`, n]))
   const closeout: CierreReporte = {
     shiftId: 't1',
     businessDay: '2026-10-24',
@@ -242,7 +242,7 @@ function build(c: Caso): PeriodReport {
   }
   return {
     today: '2026-10-24',
-    usuarios,
+    users,
     printer: false,
     closings: [closeout],
     report: {
@@ -371,11 +371,11 @@ describe('CSV: el reporte entero', () => {
         expect(csv.endsWith('\r\n')).toBe(true)
         const groups = sections(csv)
         // Tantas secciones como en un reporte vacío de textos (los textos no crean ni quitan).
-        const referencia = sections(
+        const reference = sections(
           csvDeReporte(build({ ...c, product: [], waiter: [], reason: [] }), period, RULES(c), 'R'),
         )
         // Las secciones con filas de datos pueden quedar solo con encabezado, pero siguen ahí.
-        expect(groups.length).toBe(referencia.length)
+        expect(groups.length).toBe(reference.length)
         for (const g of groups) {
           const width = g[0]?.length
           for (const f of g) expect(f.length, g[0]?.[0]).toBe(width)
@@ -463,7 +463,7 @@ describe('CSV: el reporte entero', () => {
   it('un reporte vacío sigue siendo un CSV válido, con BOM', () => {
     const empty: PeriodReport = {
       today: '2026-10-24',
-      usuarios: {},
+      users: {},
       printer: false,
       closings: [],
       report: {

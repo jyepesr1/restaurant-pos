@@ -86,7 +86,7 @@ export interface MedioDelCierre {
   method: Exclude<PaymentMethod, 'cash'>
   customMethodId: string | null
   /** «Cierre de Bold», «Llegó por Nequi». */
-  etiqueta: string
+  label: string
   /** Su nombre en el resultado. */
   name: string
 }
@@ -126,7 +126,7 @@ export function mediosDelCierre(
       method,
       customMethodId,
       name,
-      etiqueta: method === 'card' ? card : `Llegó por ${name}`,
+      label: method === 'card' ? card : `Llegó por ${name}`,
     })
   }
   for (const m of rules?.paymentMethods ?? []) add(m, null)
@@ -140,7 +140,7 @@ export function Caja() {
   const vista = useVistaLocal()
   const notify = useAvisar()
   const [base, setBase] = useState(0)
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
   const [moviendo, setMoviendo] = useState<Movement | null>(null)
   const [cerrando, setCerrando] = useState(false)
   // El conteo vive aquí: salir del cierre y volver no lo borra.
@@ -164,8 +164,8 @@ export function Caja() {
   const deOtroDia =
     shift !== null && diaDe(shift.openedAt, rules) !== diaDe(new Date().toISOString(), rules)
 
-  const hacer = async (job: () => Promise<void>) => {
-    if (ocupado) return
+  const act = async (job: () => Promise<void>) => {
+    if (taken) return
     setOcupado(true)
     try {
       await job()
@@ -177,7 +177,7 @@ export function Caja() {
   }
 
   const open = () =>
-    hacer(async () => {
+    act(async () => {
       await floor.openShift(base)
       setCerrado(null)
       notify(`Caja abierta con ${pesos(base)} de base`)
@@ -251,7 +251,7 @@ export function Caja() {
             {puedeMover && (
               <div className="grid grid-cols-3 gap-2">
                 {(['entry', 'output', 'tip_payout'] as const).map((t) => (
-                  <Boton key={t} disabled={!online || ocupado} onClick={() => setMoviendo(t)}>
+                  <Boton key={t} disabled={!online || taken} onClick={() => setMoviendo(t)}>
                     {NOMBRE_MOVIMIENTO[t]}
                   </Boton>
                 ))}
@@ -272,10 +272,10 @@ export function Caja() {
               key={moviendo ?? 'closed'}
               type={moviendo}
               reconciliation={reconciliation}
-              ocupado={ocupado}
+              taken={taken}
               onClose={() => setMoviendo(null)}
               onSave={(data) =>
-                hacer(async () => {
+                act(async () => {
                   await floor.registrarConfirmado('CashMovementRecorded', shift.id, {
                     ...data,
                     days:
@@ -311,13 +311,7 @@ export function Caja() {
                   />
                 </label>
                 {sinRed}
-                <Boton
-                  variant="main"
-                  large
-                  icono="bill"
-                  disabled={ocupado || !online}
-                  onClick={open}
-                >
+                <Boton variant="main" large icono="bill" disabled={taken || !online} onClick={open}>
                   {base === 0 ? 'Abrir sin base' : `Abrir con ${pesos(base)}`}
                 </Boton>
               </section>
@@ -440,13 +434,13 @@ interface DatosMovimiento {
 function PanelMovimiento({
   type,
   reconciliation,
-  ocupado,
+  taken,
   onClose,
   onSave,
 }: {
   type: Movement | null
   reconciliation: ShiftReconciliation
-  ocupado: boolean
+  taken: boolean
   onClose: () => void
   onSave: (data: DatosMovimiento) => void
 }) {
@@ -491,8 +485,8 @@ function PanelMovimiento({
             </p>
             <div className="grid grid-cols-[2fr_3fr] gap-2">
               <Boton onClick={() => setConfirmando(false)}>Volver</Boton>
-              <Boton variant="main" disabled={ocupado} onClick={save}>
-                {ocupado ? 'Registrando…' : `Sí, registrar ${pesos(amount)}`}
+              <Boton variant="main" disabled={taken} onClick={save}>
+                {taken ? 'Registrando…' : `Sí, registrar ${pesos(amount)}`}
               </Boton>
             </div>
           </div>
@@ -557,7 +551,7 @@ function PanelMovimiento({
           type && (
             <div className="flex flex-col gap-2">
               <span className="font-semibold">Motivo</span>
-              <Grupo etiqueta="Motivo" className="flex flex-wrap gap-2">
+              <Grupo label="Motivo" className="flex flex-wrap gap-2">
                 {MOTIVOS[type].map((m) => (
                   <Opcion key={m} elegida={reason === m} alElegir={() => setMotivo(m)}>
                     {m}
@@ -622,7 +616,7 @@ function Cierre({
   // El cuadre de los demás medios con lo reportado en el conteo guardado.
   const [others, setOtros] = useState<MethodReconciliation[]>([])
   const [justification, setJustificacion] = useState('')
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
   // Lo esperado queda fijo al guardar el conteo: si después entra un pago, hay que recontar.
   const [esperadoAlContar, setEsperadoAlContar] = useState<number | null>(null)
@@ -662,8 +656,8 @@ function Cierre({
     else botonCerrar.current?.focus()
   }, [arqueoId])
 
-  const hacer = async (job: () => Promise<void>) => {
-    if (ocupado) return
+  const act = async (job: () => Promise<void>) => {
+    if (taken) return
     setOcupado(true)
     try {
       await job()
@@ -675,7 +669,7 @@ function Cierre({
   }
 
   const guardarConteo = () =>
-    hacer(async () => {
+    act(async () => {
       const id = newId()
       // Billete y moneda del mismo valor (los $1.000) van juntos en el conteo.
       const porValor = new Map<number, number>()
@@ -711,7 +705,7 @@ function Cierre({
     })
 
   const close = () =>
-    hacer(async () => {
+    act(async () => {
       if (!arqueoId) return
       const final = justification.trim() || null
       await floor.registrarConfirmado('ShiftClosed', reconciliation.shiftId, {
@@ -841,7 +835,7 @@ function Cierre({
               </p>
               {methods.map((m, j) => (
                 <label key={m.key} className="flex items-center gap-2">
-                  <span className="flex-1">{m.etiqueta}</span>
+                  <span className="flex-1">{m.label}</span>
                   <input
                     ref={(el) => {
                       fields.current[DENOMINATIONS.length + j] = el
@@ -879,10 +873,10 @@ function Cierre({
             ref={save}
             variant="main"
             large
-            disabled={ocupado || !online || sinEscribir.length > 0}
+            disabled={taken || !online || sinEscribir.length > 0}
             onClick={guardarConteo}
           >
-            {ocupado ? 'Guardando…' : 'Guardar el conteo'}
+            {taken ? 'Guardando…' : 'Guardar el conteo'}
           </Boton>
           <p className="text-sm text-texto-suave">
             Lo que debería haber se ve después de guardar el conteo.
@@ -948,15 +942,15 @@ function Cierre({
               </p>
               <div className="grid grid-cols-[2fr_3fr] gap-2">
                 <Boton onClick={() => setConfirmando(false)}>Volver</Boton>
-                <Boton variant="main" disabled={ocupado} onClick={close}>
-                  {ocupado ? 'Cerrando…' : 'Sí, cerrar la caja'}
+                <Boton variant="main" disabled={taken} onClick={close}>
+                  {taken ? 'Cerrando…' : 'Sí, cerrar la caja'}
                 </Boton>
               </div>
             </div>
           ) : (
             <div className="grid grid-cols-[2fr_3fr] gap-2">
               <Boton
-                disabled={ocupado}
+                disabled={taken}
                 onClick={() => {
                   // Volver a contar guarda otro conteo (el anterior queda); lo escrito se puede
                   // corregir sin empezar de cero.
@@ -973,7 +967,7 @@ function Cierre({
                 variant="main"
                 large
                 disabled={
-                  ocupado || !online || cambioDespues || (pideJustificar && !justification.trim())
+                  taken || !online || cambioDespues || (pideJustificar && !justification.trim())
                 }
                 onClick={() => setConfirmando(true)}
               >

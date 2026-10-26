@@ -11,38 +11,38 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 const DIR_HUB = fileURLToPath(new URL('..', import.meta.url))
 const LATEST = MIGRATIONS.length
 
-/** Un puerto libre del sistema, para no depender del 4000 (que puede estar en uso). */
-function puertoLibre(): Promise<number> {
+/** A free system port, so as not to depend on 4000 (which may be in use). */
+function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
-    const servidor = createServer()
-    servidor.once('error', reject)
-    servidor.listen(0, '127.0.0.1', () => {
-      const { port } = servidor.address() as { port: number }
-      servidor.close(() => resolve(port))
+    const server = createServer()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address() as { port: number }
+      server.close(() => resolve(port))
     })
   })
 }
 
-interface HubArrancado {
+interface StartedHub {
   child: ChildProcess
   output: () => string
   stop: () => Promise<void>
 }
 
-/** Arranca `src/main.ts` como proceso y espera a que imprima que está en marcha (o que muera). */
-function arrancarHub(env: Record<string, string>): Promise<HubArrancado> {
+/** Starts `src/main.ts` as a process and waits until it prints that it is running (or dies). */
+function startHub(env: Record<string, string>): Promise<StartedHub> {
   const child = spawn(
     process.execPath,
     ['--disable-warning=ExperimentalWarning', '--import', 'tsx', 'src/main.ts'],
     { cwd: DIR_HUB, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
   )
   let text = ''
-  const acumular = (chunk: Buffer) => {
+  const accumulate = (chunk: Buffer) => {
     text += String(chunk)
   }
-  child.stdout?.on('data', acumular)
-  child.stderr?.on('data', acumular)
-  const terminado = new Promise<void>((resolve) => child.once('exit', () => resolve()))
+  child.stdout?.on('data', accumulate)
+  child.stderr?.on('data', accumulate)
+  const finished = new Promise<void>((resolve) => child.once('exit', () => resolve()))
 
   return new Promise((resolve, reject) => {
     const review = () => {
@@ -53,21 +53,21 @@ function arrancarHub(env: Record<string, string>): Promise<HubArrancado> {
           output: () => text,
           stop: async () => {
             child.kill('SIGKILL')
-            await terminado
+            await finished
           },
         })
       }
     }
     child.stdout?.on('data', review)
     child.once('exit', (code) =>
-      reject(new Error(`El hub terminó con código ${code} antes de arrancar:\n${text}`)),
+      reject(new Error(`The hub exited with code ${code} before starting:\n${text}`)),
     )
   })
 }
 
-describe('arranque del hub (proceso real)', () => {
+describe('hub startup (real process)', () => {
   let folder: string
-  let hub: HubArrancado | undefined
+  let hub: StartedHub | undefined
 
   beforeEach(() => {
     folder = mkdtempSync(join(tmpdir(), 'pos-hub-'))
@@ -79,22 +79,22 @@ describe('arranque del hub (proceso real)', () => {
     rmSync(folder, { recursive: true, force: true })
   })
 
-  const environment = async (dirDatos: string) => ({
-    DATA_DIR: dirDatos,
+  const environment = async (dataDir: string) => ({
+    DATA_DIR: dataDir,
     DIR_APP: join(folder, 'sin-app'),
-    PORT: String(await puertoLibre()),
+    PORT: String(await freePort()),
   })
 
-  it('con DIR_DATOS en una carpeta nueva crea pos.sqlite migrada a la última versión', async () => {
-    const dirDatos = join(folder, 'nueva', 'data')
-    expect(existsSync(dirDatos)).toBe(false)
+  it('with DATA_DIR in a new folder it creates pos.sqlite migrated to the latest version', async () => {
+    const dataDir = join(folder, 'nueva', 'data')
+    expect(existsSync(dataDir)).toBe(false)
 
-    hub = await arrancarHub(await environment(dirDatos))
+    hub = await startHub(await environment(dataDir))
     expect(hub.output()).toContain(`Base de datos actualizada a la versión ${LATEST}.`)
     await hub.stop()
     hub = undefined
 
-    const route = join(dirDatos, 'pos.sqlite')
+    const route = join(dataDir, 'pos.sqlite')
     expect(existsSync(route)).toBe(true)
     const db = openDatabase(route)
     expect(currentVersion(db)).toBe(LATEST)
@@ -105,21 +105,21 @@ describe('arranque del hub (proceso real)', () => {
     ;(db as unknown as { close(): void }).close()
   })
 
-  it('al reiniciar con la misma carpeta no migra de nuevo y conserva los datos', async () => {
-    const dirDatos = join(folder, 'data')
-    hub = await arrancarHub(await environment(dirDatos))
+  it('restarting with the same folder does not migrate again and keeps the data', async () => {
+    const dataDir = join(folder, 'data')
+    hub = await startHub(await environment(dataDir))
     expect(hub.output()).toContain('Los datos del administrador quedaron en')
     await hub.stop()
 
-    hub = await arrancarHub(await environment(dirDatos))
+    hub = await startHub(await environment(dataDir))
     expect(hub.output()).toContain(`Base de datos en la versión ${LATEST}.`)
     expect(hub.output()).not.toContain('actualizada')
-    // Los datos se mostraron una sola vez; el restaurante y sus roles no se duplican.
+    // The credentials were shown only once; the restaurant and its roles are not duplicated.
     expect(hub.output()).not.toContain('datos del administrador quedaron')
     await hub.stop()
     hub = undefined
 
-    const after = openDatabase(join(dirDatos, 'pos.sqlite'))
+    const after = openDatabase(join(dataDir, 'pos.sqlite'))
     expect(after.prepare('SELECT name FROM restaurants').all()).toEqual([
       { name: 'Mi restaurante' },
     ])
@@ -127,48 +127,47 @@ describe('arranque del hub (proceso real)', () => {
     ;(after as unknown as { close(): void }).close()
   })
 
-  it('con el usuario y la contraseña que muestra al arrancar se entra desde un navegador, sin emparejarlo', async () => {
+  it('the user and password shown at startup sign in from a browser, without pairing it', async () => {
     const env = await environment(join(folder, 'data'))
-    hub = await arrancarHub(env)
-    // Sin ventana (salida a un proceso, como en un servicio) los datos van a un archivo aparte.
-    const archivo = readFileSync(join(env.DATA_DIR, 'pin-administrador.txt'), 'utf8')
-    const datum = (etiqueta: string) =>
-      new RegExp(`${etiqueta}:\\s+(\\S+)`).exec(archivo)?.[1] as string
+    hub = await startHub(env)
+    // Without a window (output to a process, as in a service) the credentials go to a separate file.
+    const file = readFileSync(join(env.DATA_DIR, 'pin-administrador.txt'), 'utf8')
+    const datum = (label: string) => new RegExp(`${label}:\\s+(\\S+)`).exec(file)?.[1] as string
     const url = `http://127.0.0.1:${env.PORT}`
-    const entrar = await fetch(`${url}/api/sign-in`, {
+    const signIn = await fetch(`${url}/api/sign-in`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ user: datum('Usuario'), password: datum('Contraseña') }),
     })
 
-    expect(entrar.status).toBe(201)
-    const r = (await entrar.json()) as {
+    expect(signIn.status).toBe(201)
+    const r = (await signIn.json()) as {
       user: { role: string }
       device: { token: string; type: string }
     }
     expect(r.user.role).toBe('Administrador')
-    // El hub registró este navegador como equipo de caja y le dio su token.
+    // The hub registered this browser as a register device and gave it its token.
     expect(r.device.type).toBe('register')
     expect(datum('PIN para autorizar')).toMatch(/^\d{4}$/)
-    // El log del hub no registra los cuerpos: ni la contraseña ni el token quedan escritos.
-    expect(hub.output()).not.toContain('"contrasena"')
+    // The hub log does not record bodies: neither the password nor the token gets written.
+    expect(hub.output()).not.toContain('"password"')
     expect(hub.output()).not.toContain(datum('Contraseña'))
     expect(hub.output()).not.toContain(r.device.token)
   })
 
-  it('no arranca si la base es más nueva que la aplicación', async () => {
-    const dirDatos = join(folder, 'data')
-    hub = await arrancarHub(await environment(dirDatos))
+  it('does not start if the database is newer than the application', async () => {
+    const dataDir = join(folder, 'data')
+    hub = await startHub(await environment(dataDir))
     await hub.stop()
     hub = undefined
 
-    const db = openDatabase(join(dirDatos, 'pos.sqlite'))
+    const db = openDatabase(join(dataDir, 'pos.sqlite'))
     db.prepare(
       "INSERT INTO migrations (version, name, hash, applied_at) VALUES (99, 'futura', 'x', 'h')",
     ).run()
     ;(db as unknown as { close(): void }).close()
 
-    await expect(arrancarHub(await environment(dirDatos))).rejects.toThrow(
+    await expect(startHub(await environment(dataDir))).rejects.toThrow(
       /más nueva que esta aplicación/,
     )
   })

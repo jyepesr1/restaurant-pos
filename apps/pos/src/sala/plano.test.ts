@@ -8,13 +8,13 @@ import {
   limites,
   measure,
   move,
+  newZone,
   nuevaMesa,
   nuevoElemento,
   problemasDeZona,
   rotate,
   siguienteNombre,
   variasMesas,
-  zonaNueva,
 } from './plano'
 
 const reg = { version: 1, active: true }
@@ -26,14 +26,14 @@ const geo = (x: number, y: number, width = 80, height = 80) => ({
   rotation: 0,
 })
 
-function edicion(): CatalogoEdicion {
+function editView(): CatalogoEdicion {
   const diningRoom = newId()
-  const terraza = newId()
+  const patio = newId()
   return {
     version: 5,
     zones: [
       { ...reg, id: diningRoom, name: 'Salón', position: 0, level: 1 },
-      { ...reg, id: terraza, name: 'Terraza', position: 1, level: 1 },
+      { ...reg, id: patio, name: 'Terraza', position: 1, level: 1 },
     ],
     tables: [
       {
@@ -58,7 +58,7 @@ function edicion(): CatalogoEdicion {
         ...reg,
         ...geo(0, 0),
         id: newId(),
-        zone_id: terraza,
+        zone_id: patio,
         name: '10',
         shape: 'round',
         capacity: 2,
@@ -114,12 +114,12 @@ describe('geometría', () => {
 
 describe('zona', () => {
   it('abrir y guardar sin tocar nada no cambia nada', () => {
-    const c = edicion()
+    const c = editView()
     expect(cambiosDeZona(c, borradorDeZona(c, salonDe(c)))).toEqual([])
   })
 
   it('mover una mesa solo manda su posición', () => {
-    const c = edicion()
+    const c = editView()
     const b = borradorDeZona(c, salonDe(c))
     const [first] = b.tables
     if (!first) throw new Error('falta')
@@ -130,7 +130,7 @@ describe('zona', () => {
   })
 
   it('una mesa nueva toma el siguiente número libre del restaurante y va al primer hueco libre', () => {
-    const c = edicion()
+    const c = editView()
     const b = borradorDeZona(c, salonDe(c))
     const names = c.tables.map((m) => m.name)
     const table = nuevaMesa(b, 'rectangular', names)
@@ -152,7 +152,7 @@ describe('zona', () => {
   })
 
   it('un elemento de texto lleva su texto; los demás, null', () => {
-    const c = edicion()
+    const c = editView()
     const b = borradorDeZona(c, salonDe(c))
     const t = nuevoElemento(b, 'text')
     const p = nuevoElemento(b, 'door')
@@ -163,7 +163,7 @@ describe('zona', () => {
   })
 
   it('quitar una mesa la archiva; una nueva quitada antes de guardar no viaja', () => {
-    const c = edicion()
+    const c = editView()
     const b = borradorDeZona(c, salonDe(c))
     const [first] = b.tables
     if (!first) throw new Error('falta')
@@ -175,7 +175,7 @@ describe('zona', () => {
   })
 
   it('archivar la zona archiva antes sus mesas y elementos (el hub no deja una zona con mesas)', () => {
-    const c = edicion()
+    const c = editView()
     const b = { ...borradorDeZona(c, salonDe(c)), active: false }
     const changes = cambiosDeZona(c, b)
     expect(changes.map((x) => x.entity)).toEqual([
@@ -188,8 +188,8 @@ describe('zona', () => {
   })
 
   it('una zona nueva va antes que sus mesas', () => {
-    const c = edicion()
-    const b = zonaNueva(c)
+    const c = editView()
+    const b = newZone(c)
     b.name = 'Segundo piso'
     b.level = 2
     b.tables.push(nuevaMesa(b, 'square', ['1']))
@@ -203,7 +203,7 @@ describe('zona', () => {
   })
 
   it('no deja dos mesas con el mismo nombre, tampoco entre zonas', () => {
-    const c = edicion()
+    const c = editView()
     const b = borradorDeZona(c, salonDe(c))
     expect(problemasDeZona(c, b)).toEqual([])
     b.tables.push({ ...nuevaMesa(b, 'square', []), name: '10' })
@@ -215,7 +215,7 @@ describe('zona', () => {
 
 describe('carta guardada por una versión anterior de la app', () => {
   it('se completa con lo que le falta en vez de romper la pantalla', () => {
-    const vieja = {
+    const old = {
       version: 3,
       restaurant: { name: 'X', sessionIdleMin: 30 },
       zones: [{ id: 'Z', name: 'Salón' }],
@@ -223,7 +223,7 @@ describe('carta guardada por una versión anterior de la app', () => {
       stations: [],
       categories: [],
     } as unknown as Parameters<typeof completarCatalogo>[0]
-    const c = completarCatalogo(vieja)
+    const c = completarCatalogo(old)
     expect(c.elements).toEqual([])
     expect(c.staff).toEqual([])
     expect(c.zones[0]?.level).toBe(1)
@@ -233,8 +233,8 @@ describe('carta guardada por una versión anterior de la app', () => {
 
 describe('varias mesas de una vez', () => {
   it('pone N mesas en filas, con números seguidos que no chocan con los usados', () => {
-    const c = edicion()
-    const b = { ...zonaNueva(c), name: 'Patio' }
+    const c = editView()
+    const b = { ...newZone(c), name: 'Patio' }
     const tables = variasMesas(b, 'square', 7, 3, ['1', '2', '4'])
     expect(tables.map((m) => m.name)).toEqual(['3', '5', '6', '7', '8', '9', '10'])
     expect(new Set(tables.map((m) => m.y)).size).toBe(3)

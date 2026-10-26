@@ -39,7 +39,7 @@ export function resumirEventos(events: EventoDiagnostico[]): ResumenDiagnostico 
   let recuperacionPendiente: number | null = null
   let cargaTrasRecarga: number | null = null
 
-  for (const { type, time, detalle } of [...events].sort(porOrdenDeRegistro)) {
+  for (const { type, time, detail } of [...events].sort(porOrdenDeRegistro)) {
     switch (type) {
       case 'load': {
         cargas += 1
@@ -53,7 +53,7 @@ export function resumirEventos(events: EventoDiagnostico[]): ResumenDiagnostico 
           })
           cargaTrasRecarga = time
         }
-        if (trasOcultar || detalle?.descartada === true) descartes += 1
+        if (trasOcultar || detail?.descartada === true) descartes += 1
         ocultaDesde = null
         break
       }
@@ -66,8 +66,8 @@ export function resumirEventos(events: EventoDiagnostico[]): ResumenDiagnostico 
         if (ocultaDesde !== null) {
           // El evento se registra tras comprobar la conexión: la duración real viene en el detalle.
           const duracionMs =
-            typeof detalle?.duracionMs === 'number' ? detalle.duracionMs : time - ocultaDesde
-          const conexionPerdida = perdidaMientrasOculta || detalle?.conexionMantenida === false
+            typeof detail?.duracionMs === 'number' ? detail.duracionMs : time - ocultaDesde
+          const conexionPerdida = perdidaMientrasOculta || detail?.conexionMantenida === false
           ocultamientos.push({
             duracionMs,
             conexionPerdida,
@@ -82,16 +82,16 @@ export function resumirEventos(events: EventoDiagnostico[]): ResumenDiagnostico 
         if (ocultaDesde !== null) perdidaMientrasOculta = true
         break
       case 'ws-open': {
-        if (typeof detalle?.reconexiones === 'number' && detalle.reconexiones > 0) reconexiones += 1
+        if (typeof detail?.reconexiones === 'number' && detail.reconexiones > 0) reconexiones += 1
         const latest = ocultamientos.at(-1)
         if (cargaTrasRecarga !== null && latest?.recargada) {
           latest.recuperacionMs = time - cargaTrasRecarga
           cargaTrasRecarga = null
-        } else if (typeof detalle?.msDesdeVisible === 'number') {
+        } else if (typeof detail?.msDesdeVisible === 'number') {
           if (ocultaDesde !== null) {
-            recuperacionPendiente = detalle.msDesdeVisible
+            recuperacionPendiente = detail.msDesdeVisible
           } else if (latest?.conexionPerdida && latest.recuperacionMs === null) {
-            latest.recuperacionMs = detalle.msDesdeVisible
+            latest.recuperacionMs = detail.msDesdeVisible
           }
         } else if (ocultaDesde !== null && perdidaMientrasOculta) {
           // Se reconectó sola antes de que el usuario volviera.

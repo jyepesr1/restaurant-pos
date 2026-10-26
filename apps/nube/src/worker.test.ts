@@ -1,6 +1,6 @@
 import type { PGlite } from '@electric-sql/pglite'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ADMIN, batch, crearMundo, type Mundo } from './pruebas/mundo'
+import { ADMIN, batch, crearMundo, type World } from './pruebas/mundo'
 
 // El Worker de Cloudflare con un `pg.Client` de mentira que habla con PGlite: conecta solo si la
 // ruta usa la base, cierra la conexión al terminar y no filtra nada si la conexión falla.
@@ -48,7 +48,7 @@ import worker from './worker'
 
 const CADENA = 'postgres://faro_api:clave-de-la-base@host.neon.tech/faro'
 
-let m: Mundo
+let m: World
 let credential: string
 beforeEach(async () => {
   m = await crearMundo()
@@ -63,21 +63,21 @@ beforeEach(async () => {
   credential = (await m.newHub()).credential
 })
 
-function llamar(route: string, options: RequestInit = {}) {
+function makeCall(route: string, options: RequestInit = {}) {
   const pendingList: Promise<unknown>[] = []
-  const respuesta = worker.fetch(
+  const response = worker.fetch(
     new Request(`https://cloud.faro.test${route}`, options),
     { HYPERDRIVE: { connectionString: CADENA }, TOKEN_ADMIN: ADMIN },
     { waitUntil: (p) => void pendingList.push(p) },
   )
-  return { respuesta, pendingList }
+  return { response, pendingList }
 }
 
 describe('Worker', () => {
   it('la salud y las rutas que no existen no abren conexión con la base', async () => {
     for (const route of ['/v1/health', '/v1/nothing']) {
-      const { respuesta, pendingList } = llamar(route)
-      await respuesta
+      const { response, pendingList } = makeCall(route)
+      await response
       await Promise.all(pendingList)
     }
     expect(status.createdList).toEqual([])
@@ -86,12 +86,12 @@ describe('Worker', () => {
   })
 
   it('una ruta que usa la base conecta una vez, con la cadena de Hyperdrive, y cierra al terminar', async () => {
-    const { respuesta, pendingList } = llamar('/v1/events', {
+    const { response, pendingList } = makeCall('/v1/events', {
       method: 'POST',
       headers: { authorization: `Bearer ${credential}` },
       body: JSON.stringify({ events: batch(1, 3) }),
     })
-    const r = await respuesta
+    const r = await response
     expect(r.status).toBe(200)
     await Promise.all(pendingList)
     expect(status.createdList).toEqual([{ connectionString: CADENA }])
@@ -101,10 +101,10 @@ describe('Worker', () => {
 
   it('cada petición usa su propia conexión', async () => {
     for (let i = 0; i < 3; i++) {
-      const { respuesta, pendingList } = llamar('/v1/events/last', {
+      const { response, pendingList } = makeCall('/v1/events/last', {
         headers: { authorization: `Bearer ${credential}` },
       })
-      expect((await respuesta).status).toBe(200)
+      expect((await response).status).toBe(200)
       await Promise.all(pendingList)
     }
     expect(status.connectedCount).toBe(3)
@@ -112,10 +112,10 @@ describe('Worker', () => {
   })
 
   it('una caída de la conexión a mitad de camino queda atendida (hay oyente de error)', async () => {
-    const { respuesta, pendingList } = llamar('/v1/events/last', {
+    const { response, pendingList } = makeCall('/v1/events/last', {
       headers: { authorization: `Bearer ${credential}` },
     })
-    await respuesta
+    await response
     await Promise.all(pendingList)
     expect(status.oyentes).toContain('error')
   })
@@ -123,10 +123,10 @@ describe('Worker', () => {
   it('si no se puede conectar: 500 genérico, sin la cadena de conexión ni el motivo', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     status.failing = new Error(`connect ECONNREFUSED ${CADENA}`)
-    const { respuesta, pendingList } = llamar('/v1/events/last', {
+    const { response, pendingList } = makeCall('/v1/events/last', {
       headers: { authorization: `Bearer ${credential}` },
     })
-    const r = await respuesta
+    const r = await response
     await Promise.all(pendingList)
     const text = await r.text()
     expect(r.status).toBeGreaterThanOrEqual(500)
@@ -138,20 +138,20 @@ describe('Worker', () => {
 
   it('si cerrar la conexión falla, la petición igual responde y no queda una promesa sin manejar', async () => {
     status.fallaAlTerminar = true
-    const { respuesta, pendingList } = llamar('/v1/events/last', {
+    const { response, pendingList } = makeCall('/v1/events/last', {
       headers: { authorization: `Bearer ${credential}` },
     })
-    expect((await respuesta).status).toBe(200)
+    expect((await response).status).toBe(200)
     await expect(Promise.all(pendingList)).resolves.toBeDefined()
   })
 
   it('un error interno de la API (la consulta falla) responde 500 y cierra igual la conexión', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     status.fallaConsulta = true
-    const { respuesta, pendingList } = llamar('/v1/events/last', {
+    const { response, pendingList } = makeCall('/v1/events/last', {
       headers: { authorization: `Bearer ${credential}` },
     })
-    const r = await respuesta
+    const r = await response
     await Promise.all(pendingList)
     expect(r.status).toBe(500)
     expect(status.connectedCount).toBe(1)
@@ -159,15 +159,15 @@ describe('Worker', () => {
   })
 
   it('la zona de administración funciona con el token del entorno y no sin él', async () => {
-    const without = llamar('/v1/admin/restaurants', { method: 'POST', body: '{}' })
-    expect((await without.respuesta).status).toBe(401)
+    const without = makeCall('/v1/admin/restaurants', { method: 'POST', body: '{}' })
+    expect((await without.response).status).toBe(401)
     await Promise.all(without.pendingList)
-    const withIt = llamar('/v1/admin/restaurants', {
+    const withIt = makeCall('/v1/admin/restaurants', {
       method: 'POST',
       headers: { authorization: `Bearer ${ADMIN}` },
       body: JSON.stringify({ id: '0'.repeat(26), name: 'R' }),
     })
-    expect((await withIt.respuesta).status).toBe(201)
+    expect((await withIt.response).status).toBe(201)
     await Promise.all(withIt.pendingList)
   })
 

@@ -5,7 +5,7 @@ import { datosItem, inOrder, local, opening } from './pruebas'
 
 // El estado de la mesa en el plano con la cocina (ADR-015): tomando > listo > en cocina > servida.
 
-const idDe = (l: ReturnType<typeof local>) => (l.event.data as { item_id: string }).item_id
+const idOf = (l: ReturnType<typeof local>) => (l.event.data as { item_id: string }).item_id
 
 /** Una mesa con un solo pedido: cada plato con el estado que se indique. */
 function table(
@@ -20,7 +20,7 @@ function table(
     ev: local('ItemAdded', p, datosItem({ course: status === 'held' ? 'dessert' : null })),
   }))
   events.push(...items.map((i) => i.ev))
-  const ids = (e: string) => items.filter((i) => i.status === e).map((i) => idDe(i.ev))
+  const ids = (e: string) => items.filter((i) => i.status === e).map((i) => idOf(i.ev))
   const sentList = items.filter((i) => !['pending', 'held'].includes(i.status))
   if (sentList.length)
     events.push(
@@ -29,7 +29,7 @@ function table(
           {
             ticket_id: newId(),
             station_id: newId(),
-            item_ids: sentList.map((i) => idDe(i.ev)),
+            item_ids: sentList.map((i) => idOf(i.ev)),
           },
         ],
       }),
@@ -100,9 +100,9 @@ describe('estadoMesa con la cocina', () => {
         local('OrderOpened', p, opening),
         a,
         local('ItemsSent', p, {
-          tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [idDe(a)] }],
+          tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [idOf(a)] }],
         }),
-        local('ItemServed', p, { item_ids: [idDe(a)] }),
+        local('ItemServed', p, { item_ids: [idOf(a)] }),
       ]),
     )
     expect(estadoMesa(orders)).toBe('served')
@@ -111,10 +111,10 @@ describe('estadoMesa con la cocina', () => {
         local('OrderOpened', p, opening),
         a,
         local('ItemsSent', p, {
-          tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [idDe(a)] }],
+          tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [idOf(a)] }],
         }),
-        local('ItemServed', p, { item_ids: [idDe(a)] }),
-        local('ItemReturnedToQueue', p, { item_ids: [idDe(a)] }),
+        local('ItemServed', p, { item_ids: [idOf(a)] }),
+        local('ItemReturnedToQueue', p, { item_ids: [idOf(a)] }),
       ]),
     )
     expect(estadoMesa(another)).toBe('in_kitchen')
@@ -127,21 +127,21 @@ describe('estadoMesa con la cocina', () => {
     const itemC = local('ItemAdded', c, datosItem())
     const envio = (p: string, it: typeof itemA) =>
       local('ItemsSent', p, {
-        tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [idDe(it)] }],
+        tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [idOf(it)] }],
       })
     const all = pedidosAbiertos(
       inOrder([
         local('OrderOpened', a, opening),
         itemA,
         envio(a, itemA),
-        local('ItemServed', a, { item_ids: [idDe(itemA)] }),
+        local('ItemServed', a, { item_ids: [idOf(itemA)] }),
         local('OrderOpened', b, opening),
         itemB,
         envio(b, itemB),
         local('OrderOpened', c, opening),
         itemC,
         envio(c, itemC),
-        local('ItemReady', c, { item_ids: [idDe(itemC)] }),
+        local('ItemReady', c, { item_ids: [idOf(itemC)] }),
       ]),
     )
     const de = (...ids: string[]) => all.filter((x) => ids.includes(x.status.id))
@@ -159,9 +159,9 @@ describe('estadoMesa con la cocina', () => {
         local('OrderOpened', p, opening),
         a,
         local('ItemsSent', p, {
-          tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [idDe(a)] }],
+          tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [idOf(a)] }],
         }),
-        local('ItemReady', p, { item_ids: [idDe(a)] }, 'pending'),
+        local('ItemReady', p, { item_ids: [idOf(a)] }, 'pending'),
       ]),
     )
     expect(estadoMesa(orders)).toBe('ready')

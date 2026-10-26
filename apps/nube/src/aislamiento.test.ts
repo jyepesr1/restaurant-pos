@@ -7,21 +7,21 @@ import {
   crearMundo,
   eventoPlano,
   eventosGuardados,
-  type Mundo,
   SEED,
   ulid,
+  type World,
 } from './pruebas/mundo'
 
 // Varios restaurantes en la misma base (ADR-016): nada de uno aparece en el otro, ni por la API
 // ni dentro de la base con el rol de la API (seguridad por fila).
 
-let m: Mundo
+let m: World
 beforeAll(async () => {
   m = await crearMundo()
 })
 
 /** Corre el trabajo como lo hace la API: en una transacción de un restaurante, con el rol limitado. */
-const comoApi = <T>(restaurantId: string | null, job: (tx: Mundo['sql']) => Promise<T>) =>
+const comoApi = <T>(restaurantId: string | null, job: (tx: World['sql']) => Promise<T>) =>
   m.sql.transaction(async (tx) => {
     if (restaurantId !== null)
       await tx.query("SELECT set_config('faro.restaurant_id', $1, true)", [restaurantId])
@@ -31,7 +31,7 @@ const comoApi = <T>(restaurantId: string | null, job: (tx: Mundo['sql']) => Prom
 
 const insertEvent =
   (restaurantId: string, hubId: string, id = newId()) =>
-  (tx: Mundo['sql']) =>
+  (tx: World['sql']) =>
     tx.query(
       `INSERT INTO events (restaurant_id, id, hub_id, type, aggregate_type, aggregate_id,
        hub_sequence, business_day, received_at, content, fingerprint)
@@ -145,7 +145,7 @@ describe('por la API', () => {
     const r = await m.nube.registrarHub({
       code: cb.code,
       hub_id: newId(),
-      location_id: a.hub.sedeId,
+      location_id: a.hub.locationId,
       name: 'Caja B',
       instance: 'i',
     })

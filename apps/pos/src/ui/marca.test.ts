@@ -7,12 +7,12 @@ import { aplicarMarca, BRANDS, esMarca, MARCA_POR_DEFECTO } from './marca'
 // página y cómo se recuerda en el equipo. Sin navegador real: `document` y `localStorage` son
 // simulados (el entorno de pruebas es Node).
 
-const CLAVE = 'pos-brand'
+const KEY = 'pos-brand'
 
 function simularNavegador(options: { saved?: string | null; sinAlmacen?: boolean } = {}) {
   const dataset: Record<string, string | undefined> = {}
   const store = new Map<string, string>()
-  if (options.saved != null) store.set(CLAVE, options.saved)
+  if (options.saved != null) store.set(KEY, options.saved)
   const localStorage = options.sinAlmacen
     ? {
         getItem: () => {
@@ -107,7 +107,7 @@ describe('aplicarMarca', () => {
     const { dataset, store } = simularNavegador()
     aplicarMarca('la-spritzzeria')
     expect(dataset.marca).toBe('la-spritzzeria')
-    expect(store.get(CLAVE)).toBe('la-spritzzeria')
+    expect(store.get(KEY)).toBe('la-spritzzeria')
   })
 
   it('con Faro quita el atributo (Faro es el diseño sin marca) y lo recuerda', () => {
@@ -115,14 +115,14 @@ describe('aplicarMarca', () => {
     dataset.marca = 'la-spritzzeria'
     aplicarMarca('faro')
     expect('marca' in dataset).toBe(false)
-    expect(store.get(CLAVE)).toBe('faro')
+    expect(store.get(KEY)).toBe('faro')
   })
 
   it('cambiar de marca varias veces deja siempre la última', () => {
     const { dataset, store } = simularNavegador()
     for (const m of ['la-spritzzeria', 'faro', 'faro', 'la-spritzzeria', 'faro'] as const) {
       aplicarMarca(m)
-      expect(store.get(CLAVE)).toBe(m)
+      expect(store.get(KEY)).toBe(m)
       expect(dataset.marca).toBe(m === 'faro' ? undefined : m)
     }
   })
@@ -137,7 +137,7 @@ describe('aplicarMarca', () => {
     const { dataset, store } = simularNavegador()
     aplicarMarca()
     expect('marca' in dataset).toBe(false)
-    expect(store.get(CLAVE)).toBe('faro')
+    expect(store.get(KEY)).toBe('faro')
   })
 
   it('si lo guardado es una marca vieja o inventada (de una versión anterior), vuelve a Faro y lo corrige', () => {
@@ -154,7 +154,7 @@ describe('aplicarMarca', () => {
       const { dataset, store } = simularNavegador({ saved: oldOne })
       aplicarMarca()
       expect('marca' in dataset, oldOne).toBe(false)
-      expect(store.get(CLAVE), oldOne).toBe('faro')
+      expect(store.get(KEY), oldOne).toBe('faro')
     }
   })
 
@@ -169,7 +169,7 @@ describe('aplicarMarca', () => {
   it('después de recargar (otra "página" con el mismo almacén) la marca sigue', () => {
     const first = simularNavegador()
     aplicarMarca('la-spritzzeria')
-    const saved = first.store.get(CLAVE)
+    const saved = first.store.get(KEY)
     const second = simularNavegador({ saved })
     aplicarMarca()
     expect(second.dataset.marca).toBe('la-spritzzeria')
@@ -183,7 +183,7 @@ describe('el script de index.html que pinta antes de cargar', () => {
 
   function correrScript(saved: string | null | 'failed') {
     const navegador = simularNavegador({ sinAlmacen: saved === 'failed' })
-    if (saved !== null && saved !== 'failed') navegador.store.set(CLAVE, saved)
+    if (saved !== null && saved !== 'failed') navegador.store.set(KEY, saved)
     const clases = new Set<string>()
     const documentElement = {
       dataset: navegador.dataset,
@@ -203,7 +203,7 @@ describe('el script de index.html que pinta antes de cargar', () => {
   }
 
   it('existe el script y usa la misma clave de almacenamiento', () => {
-    expect(script).toContain(`'${CLAVE}'`)
+    expect(script).toContain(`'${KEY}'`)
   })
 
   it('con la marca del restaurante guardada, la pone antes de pintar', () => {
@@ -226,6 +226,6 @@ describe('el script de index.html que pinta antes de cargar', () => {
     // …y `aplicarMarca()` de main.tsx la devuelve a Faro y limpia lo guardado.
     aplicarMarca()
     expect('marca' in navegador.dataset).toBe(false)
-    expect(navegador.store.get(CLAVE)).toBe('faro')
+    expect(navegador.store.get(KEY)).toBe('faro')
   })
 })

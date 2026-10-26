@@ -9,7 +9,7 @@ import type { PedidoVisible } from './proyeccion'
 export interface ComandaEnCocina {
   /** Única por tarjeta: una comanda cuyos platos se repartieron en dos mesas da dos tarjetas. */
   key: string
-  comandaId: string
+  ticketId: string
   order: PedidoVisible
   stationId: string
   /** Número del día que dio el hub; mientras no lo confirma, nada. */
@@ -22,7 +22,7 @@ export interface ComandaEnCocina {
   list: boolean
 }
 
-const EN_COCINA = new Set(['sent', 'in_preparation', 'ready'])
+const IN_KITCHEN = new Set(['sent', 'in_preparation', 'ready'])
 const current = (l: LocalEvent) => l.status === 'confirmed' || l.status === 'pending'
 
 export function comandasEnCocina(
@@ -42,13 +42,13 @@ export function comandasEnCocina(
       for (const id of c.item_ids) {
         const order = dondeEsta.get(id)
         const i = order?.status.items[id]
-        if (!order || !i || !EN_COCINA.has(i.status) || i.quantity <= i.voidedQuantity) continue
+        if (!order || !i || !IN_KITCHEN.has(i.status) || i.quantity <= i.voidedQuantity) continue
         porPedido.set(order, [...(porPedido.get(order) ?? []), i])
       }
       for (const [order, items] of porPedido)
         tickets.push({
           key: `${c.ticket_id}:${order.status.id}`,
-          comandaId: c.ticket_id,
+          ticketId: c.ticket_id,
           order,
           stationId: c.station_id,
           number: numbers?.[c.ticket_id] ?? null,
@@ -67,16 +67,16 @@ export type Demora = 'on_time' | 'late' | 'very_late'
 export function demora(
   enviadaEn: string,
   now: number,
-  { amarillo, rojo }: { amarillo: number; rojo: number },
+  { yellow, red }: { yellow: number; red: number },
 ): Demora {
   const minutos = (now - Date.parse(enviadaEn)) / 60_000
-  if (minutos >= rojo) return 'very_late'
-  if (minutos >= amarillo) return 'late'
+  if (minutos >= red) return 'very_late'
+  if (minutos >= yellow) return 'late'
   return 'on_time'
 }
 
 /** Tiempos del local, o los de fábrica si el hub es de antes de la 1.4. */
 export const tiemposDe = (restaurant: { kitchenYellowMin?: number; kitchenRedMin?: number }) => ({
-  amarillo: restaurant.kitchenYellowMin ?? 10,
-  rojo: restaurant.kitchenRedMin ?? 20,
+  yellow: restaurant.kitchenYellowMin ?? 10,
+  red: restaurant.kitchenRedMin ?? 20,
 })

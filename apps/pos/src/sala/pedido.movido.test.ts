@@ -1,10 +1,10 @@
 import { applyEvent, newId, type OrderState, rebuild, validateNewEvent } from '@pos/core'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { movidoDe } from './pedido'
+import { movedFrom } from './pedido'
 import { datosItem, local, opening } from './pruebas'
 
-// `movidoDe` (tarea 1.5): la copia con que un plato pasa a otro pedido debe ser exactamente la del
+// `movedFrom` (tarea 1.5): la copia con que un plato pasa a otro pedido debe ser exactamente la del
 // ítem real, o el reductor del hub la rechaza (`copia_distinta`). Aquí se arma con el reductor
 // de verdad, sin red.
 
@@ -50,7 +50,7 @@ const moverEvento = (e: Escenario, ids: string[]) =>
     e.source,
     {
       target_order_id: e.target,
-      items: ids.map((id) => movidoDe(e.sourceState.items[id] as never)),
+      items: ids.map((id) => movedFrom(e.sourceState.items[id] as never)),
     },
     'pending',
     { related: [e.target] },
@@ -80,7 +80,7 @@ describe('movidoDe', () => {
   it('no lleva los campos de catálogo de ItemAgregado (el esquema es estricto)', () => {
     const it = datosItem()
     const e = scenario((o) => [local('ItemAdded', o, it)])
-    const m = movidoDe(e.sourceState.items[it.item_id] as never)
+    const m = movedFrom(e.sourceState.items[it.item_id] as never)
     expect(Object.keys(m.item).sort()).toEqual(
       [
         'guest',
@@ -232,7 +232,7 @@ describe('movidoDe', () => {
     const runOnce = local(
       'ItemsMoved',
       e.target,
-      { target_order_id: e.source, items: [movidoDe(d.status?.items[it.item_id] as never)] },
+      { target_order_id: e.source, items: [movedFrom(d.status?.items[it.item_id] as never)] },
       'pending',
       { related: [e.source] },
     )
@@ -245,13 +245,13 @@ describe('movidoDe', () => {
     const it = datosItem()
     const e = scenario((o) => [local('ItemAdded', o, it, 'confirmed', { user_id: newId() })])
     const real = e.sourceState.items[it.item_id]
-    expect(movidoDe(real as never).added_by).toBe(real?.addedBy)
+    expect(movedFrom(real as never).added_by).toBe(real?.addedBy)
   })
 
   it('una copia con algo distinto sí la rechaza el reductor (la prueba prueba algo)', () => {
     const it = datosItem()
     const e = scenario((o) => [local('ItemAdded', o, it), send(o, [it.item_id])])
-    const m = movidoDe(e.sourceState.items[it.item_id] as never)
+    const m = movedFrom(e.sourceState.items[it.item_id] as never)
     const ev = local(
       'ItemsMoved',
       e.source,

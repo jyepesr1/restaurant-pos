@@ -19,7 +19,7 @@ import {
 import { floor, useSala, useVistaLocal } from './contexto'
 import { MarcoSala } from './MarcoSala'
 import {
-  CANALES,
+  CHANNELS,
   COURSES,
   type Course,
   comandasDeCurso,
@@ -29,13 +29,13 @@ import {
   elCurso,
   faltaElegir,
   lineaIgual,
-  movidoDe,
+  movedFrom,
   type ProductoCatalogo,
   pideOpciones,
   precioElegido,
   unidadesPorEnviar,
 } from './pedido'
-import { claveAgotado, itemsVigentes, ocupaMesa, type PedidoVisible } from './proyeccion'
+import { claveAgotado, currentItems, ocupaMesa, type PedidoVisible } from './proyeccion'
 
 // Toma de pedido (brief §4.2 y §5, regla 2): tocar productos y "Enviar". Cada toque es un evento
 // guardado aquí antes de mostrarse; se envía al hub cuando haya conexión.
@@ -50,7 +50,7 @@ const unidadesDe = (items: readonly OrderItem[]) =>
   items.reduce((n, i) => n + i.quantity - i.voidedQuantity, 0)
 
 /** Lo que está en cocina y el mesero puede marcar entregado (ADR-015). */
-const EN_COCINA = new Set(['sent', 'in_preparation', 'ready'])
+const IN_KITCHEN = new Set(['sent', 'in_preparation', 'ready'])
 
 const TEXTO_ESTADO: Record<string, string> = {
   pending: 'sin enviar',
@@ -61,7 +61,7 @@ const TEXTO_ESTADO: Record<string, string> = {
   served: 'entregado',
 }
 
-type Channel = 'dine_in' | keyof typeof CANALES
+type Channel = 'dine_in' | keyof typeof CHANNELS
 /** Lo más que lleva una línea desde la pantalla (el esquema admite hasta 999). */
 const MAXIMO_LINEA = 99
 
@@ -140,7 +140,7 @@ export function TomaPedido() {
     .filter(Boolean)
   const title = table
     ? `Mesa ${[table.name, ...merged].join(' + ')}`
-    : `${channel === 'dine_in' ? 'Pedido' : CANALES[channel]}${order?.status.dayNumber ? ` #${order.status.dayNumber}` : ''}`
+    : `${channel === 'dine_in' ? 'Pedido' : CHANNELS[channel]}${order?.status.dayNumber ? ` #${order.status.dayNumber}` : ''}`
   const products = catalog.categories.flatMap((c) => c.products)
   // Por dónde sale cada producto (cocina o barra): da su ícono cuando no tiene foto.
   const estacionDe = new Map(
@@ -432,7 +432,7 @@ export function TomaPedido() {
       await floor.record(
         'ItemsMoved',
         status.id,
-        { target_order_id: target, items: items.map(movidoDe) },
+        { target_order_id: target, items: items.map(movedFrom) },
         { related: [target] },
       )
       setAccion(null)
@@ -476,7 +476,7 @@ export function TomaPedido() {
     inOrder(async () => {
       const status = await pedidoGuardado()
       if (!status) return
-      const enUso = Math.max(0, ...itemsVigentes(status).map((i) => i.guest ?? 0))
+      const enUso = Math.max(0, ...currentItems(status).map((i) => i.guest ?? 0))
       const n = status.guests + delta
       if (n < enUso) {
         notify(`La persona ${enUso} tiene cosas: pásalas a otra antes de quitarla`)
@@ -489,10 +489,10 @@ export function TomaPedido() {
   }
 
   // Sin conexión queda guardado aquí, pero cocina todavía no lo tiene: no decir "Enviado".
-  const avisarEnvio = (howMany: number, que = 'a cocina y barra') =>
+  const avisarEnvio = (howMany: number, what = 'a cocina y barra') =>
     notify(
       floor.instantanea().connection === 'connected'
-        ? `Enviado ${que} (${howMany})`
+        ? `Enviado ${what} (${howMany})`
         : `Guardado (${howMany}): llega a cocina cuando vuelva la conexión`,
     )
 
@@ -544,12 +544,12 @@ export function TomaPedido() {
    * El mesero lleva el plato a la mesa (ADR-015): sale de «Pedidos en cocina». Se puede deshacer
    * unos segundos, por si tocó el que no era.
    */
-  const serve = (ids: string[], que: string) =>
+  const serve = (ids: string[], what: string) =>
     inOrder(async () => {
       const status = await pedidoGuardado()
       if (!status || ids.length === 0) return
       await floor.record('ItemServed', status.id, { item_ids: ids })
-      notify(`Entregado: ${que}`, () =>
+      notify(`Entregado: ${what}`, () =>
         inOrder(async () => {
           await floor.record('ItemReturnedToQueue', status.id, { item_ids: ids })
         }),
@@ -605,7 +605,7 @@ export function TomaPedido() {
   // Unidades por enviar ahora (lo retenido espera a que se marche su curso).
   const enPedido = (productId: string) =>
     order
-      ? itemsVigentes(order.status)
+      ? currentItems(order.status)
           .filter(
             (i) => i.productId === productId && (i.status === 'pending' || i.status === 'held'),
           )
@@ -614,7 +614,7 @@ export function TomaPedido() {
   const missingOnes = order ? unidadesPorEnviar(order.status) : 0
   const itemEditado = order && editando ? (order.status.items[editando] ?? null) : null
 
-  const enCocina = order ? itemsVigentes(order.status).filter((i) => EN_COCINA.has(i.status)) : []
+  const inKitchen = order ? currentItems(order.status).filter((i) => IN_KITCHEN.has(i.status)) : []
   const botonEnviar = (
     <Boton
       variant="main"
@@ -628,7 +628,7 @@ export function TomaPedido() {
     </Boton>
   )
   // La precuenta, dividir y cobrar (tarea 1.6), en su pantalla.
-  const conProductos = order !== null && itemsVigentes(order.status).length > 0
+  const conProductos = order !== null && currentItems(order.status).length > 0
   const irACuenta = () => order && navegar(`/check?order=${order.status.id}`)
   const botonCuenta = (
     <Boton variant="secondary" large icono="receipt" className="w-full" onClick={irACuenta}>
@@ -664,7 +664,7 @@ export function TomaPedido() {
       <div className="mx-auto flex max-w-[96rem] gap-5 p-3 pb-28 md:p-5 md:pb-5">
         <section className="min-w-0 flex-1" aria-label="Carta">
           {tableId && candidatos.length > 1 && (
-            <Grupo etiqueta="Pedidos de la mesa" className="mb-3 flex flex-wrap gap-2">
+            <Grupo label="Pedidos de la mesa" className="mb-3 flex flex-wrap gap-2">
               {candidatos.map((p, i) => (
                 <Opcion
                   key={p.status.id}
@@ -723,10 +723,7 @@ export function TomaPedido() {
           )}
 
           {!busqueda.trim() && (
-            <Grupo
-              etiqueta="Categorías"
-              className="-mx-3 mt-3 flex gap-2 overflow-x-auto px-3 pb-1"
-            >
+            <Grupo label="Categorías" className="-mx-3 mt-3 flex gap-2 overflow-x-auto px-3 pb-1">
               {favoritos.length > 0 && (
                 <Opcion
                   elegida={categoriaActual === FAVORITOS}
@@ -811,7 +808,7 @@ export function TomaPedido() {
                       <FotoOIcono
                         photo={p.photo ?? null}
                         icono={iconoDe(estacionDe.get(p.id) ?? '')}
-                        apagada={sinStock}
+                        off={sinStock}
                       />
                       {quantity > 0 && (
                         <span className="cifras absolute top-2 right-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-accion-fuerte px-2 text-sm font-bold text-white shadow-flota">
@@ -889,12 +886,12 @@ export function TomaPedido() {
           onClick={() => setVerPedido(true)}
           className="flex-1 flex-col gap-0! text-base! leading-tight"
         >
-          <span>{`Pedido (${order ? itemsVigentes(order.status).reduce((n, i) => n + i.quantity - i.voidedQuantity, 0) : 0})`}</span>
+          <span>{`Pedido (${order ? currentItems(order.status).reduce((n, i) => n + i.quantity - i.voidedQuantity, 0) : 0})`}</span>
           <span className="cifras font-titulo text-lg">{pesos(order?.total ?? 0)}</span>
         </Boton>
         {/* Con todo enviado, el pulgar entrega lo que está en cocina de una vez (ADR-015). */}
         <div className="flex-1">
-          {missingOnes === 0 && puedeEntregar && enCocina.length > 0 ? (
+          {missingOnes === 0 && puedeEntregar && inKitchen.length > 0 ? (
             <Boton
               variant="success"
               large
@@ -902,12 +899,12 @@ export function TomaPedido() {
               className="w-full"
               onClick={() =>
                 serve(
-                  enCocina.map((i) => i.id),
-                  `${unidadesDe(enCocina)} ${unidadesDe(enCocina) === 1 ? 'producto' : 'productos'}`,
+                  inKitchen.map((i) => i.id),
+                  `${unidadesDe(inKitchen)} ${unidadesDe(inKitchen) === 1 ? 'producto' : 'productos'}`,
                 )
               }
             >
-              {`Entregar ${unidadesDe(enCocina)}`}
+              {`Entregar ${unidadesDe(inKitchen)}`}
             </Boton>
           ) : missingOnes === 0 && conProductos ? (
             botonCuenta
@@ -999,9 +996,9 @@ export function TomaPedido() {
         <PanelCancelar
           table={title}
           withPayments={Object.values(order.status.payments).some((p) => !p.voided)}
-          conPermiso={permissions.includes('cancel_order')}
+          withPermission={permissions.includes('cancel_order')}
           online={online}
-          enCocina={itemsVigentes(order.status).filter((i) => EN_COCINA.has(i.status)).length}
+          inKitchen={currentItems(order.status).filter((i) => IN_KITCHEN.has(i.status)).length}
           onClose={() => setAccion(null)}
           alCancelar={cancelarPedido}
         />
@@ -1009,7 +1006,7 @@ export function TomaPedido() {
       {order && anulando && order.status.items[anulando] && (
         <PanelAnular
           item={order.status.items[anulando] as OrderItem}
-          conPermiso={permissions.includes('void_sent_item')}
+          withPermission={permissions.includes('void_sent_item')}
           online={online}
           onClose={() => setAnulando(null)}
           onVoid={(d) => voidItem(anulando, d)}
@@ -1046,11 +1043,11 @@ export function TomaPedido() {
 function FotoOIcono({
   photo,
   icono,
-  apagada,
+  off,
 }: {
   photo: string | null
   icono: NombreIcono
-  apagada: boolean
+  off: boolean
 }) {
   const [broken, setRota] = useState(false)
   if (photo && !broken)
@@ -1060,14 +1057,11 @@ function FotoOIcono({
         alt=""
         loading="lazy"
         onError={() => setRota(true)}
-        className={`size-full object-cover ${apagada ? 'opacity-40 grayscale' : ''}`}
+        className={`size-full object-cover ${off ? 'opacity-40 grayscale' : ''}`}
       />
     )
   return (
-    <Icono
-      name={icono}
-      className={`size-9 ${apagada ? 'text-alerta-texto' : 'text-texto-suave'}`}
-    />
+    <Icono name={icono} className={`size-9 ${off ? 'text-alerta-texto' : 'text-texto-suave'}`} />
   )
 }
 
@@ -1107,7 +1101,7 @@ function ElegirPara({
   return (
     <div className="mt-3 flex flex-col gap-2">
       {preguntarPersonas && (
-        <Grupo etiqueta="Cuántas personas hay en la mesa" className={row}>
+        <Grupo label="Cuántas personas hay en la mesa" className={row}>
           <span className="shrink-0 font-semibold text-texto-suave">¿Cuántas personas?</span>
           {PERSONAS_RAPIDAS.map((n) => (
             <Opcion key={n} elegida={false} alElegir={() => alContarPersonas(n)}>
@@ -1117,14 +1111,14 @@ function ElegirPara({
         </Grupo>
       )}
       {guests > 0 && (
-        <Grupo etiqueta="Para quién es lo que agregues" className={row}>
+        <Grupo label="Para quién es lo que agregues" className={row}>
           <span className="shrink-0 font-semibold text-texto-suave">Para</span>
           {personasDe(guests).map((c) => (
             <Opcion
               key={c ?? 'table'}
               elegida={guest === c}
               alElegir={() => alElegirComensal(c)}
-              etiqueta={etiquetaComensal(c)}
+              label={etiquetaComensal(c)}
             >
               {nombreComensal(c)}
             </Opcion>
@@ -1132,7 +1126,7 @@ function ElegirPara({
         </Grupo>
       )}
       {coursesEnabled && (
-        <Grupo etiqueta="En qué curso va lo que agregues" className={row}>
+        <Grupo label="En qué curso va lo que agregues" className={row}>
           <span className="shrink-0 font-semibold text-texto-suave">Curso</span>
           {COURSES.map((c) => (
             <Opcion
@@ -1172,13 +1166,13 @@ function Ticket({
   alRetener: (course: Course) => void
   alMarchar: (course: Course) => void
   /** Sin el permiso de marcar, no se ven los botones de entregar. */
-  alEntregar: ((ids: string[], que: string) => void) | null
+  alEntregar: ((ids: string[], what: string) => void) | null
   alEditarNota: () => void
   /** Cambiar de mesa, unir, mover y cancelar; sin pedido todavía, nada. */
   alAcciones: (() => void) | null
 }) {
-  const items = order ? itemsVigentes(order.status) : []
-  const porEntregar = items.filter((i) => EN_COCINA.has(i.status))
+  const items = order ? currentItems(order.status) : []
+  const porEntregar = items.filter((i) => IN_KITCHEN.has(i.status))
   const porCurso = COURSES.map((c) => ({
     ...c,
     items: items.filter((i) => i.course === c.course),
@@ -1276,7 +1270,7 @@ function Ticket({
                       alTocar={() => alTocarItem(i)}
                       alSumar={(delta) => alSumar(i, delta)}
                       alEntregar={
-                        alEntregar && EN_COCINA.has(i.status)
+                        alEntregar && IN_KITCHEN.has(i.status)
                           ? () => alEntregar([i.id], i.name)
                           : null
                       }
@@ -1499,7 +1493,7 @@ function PanelProducto({
     setAbiertoPara(null)
     onClose()
   }
-  const agregarCon = (v: string | null, e: Record<string, string[]>) => {
+  const addWith = (v: string | null, e: Record<string, string[]>) => {
     setAbiertoPara(null)
     alAgregar(v, e, { quantity, notes })
   }
@@ -1513,7 +1507,7 @@ function PanelProducto({
           ? [...actuales, opcionId]
           : actuales
     const allRows = { ...elegidas, [groupId]: newOnes }
-    if (unaSola) agregarCon(null, allRows)
+    if (unaSola) addWith(null, allRows)
     else setElegidas(allRows)
   }
 
@@ -1528,7 +1522,7 @@ function PanelProducto({
           large
           className="w-full"
           disabled={missingOnes.length > 0}
-          onClick={() => agregarCon(variantId, elegidas)}
+          onClick={() => addWith(variantId, elegidas)}
         >
           {missingOnes.length > 0
             ? `Elige ${missingOnes[0]}`
@@ -1543,7 +1537,7 @@ function PanelProducto({
         </p>
       )}
       {product.variants.length > 0 && (
-        <Grupo etiqueta="Tamaño" className="mb-4 flex flex-col gap-2">
+        <Grupo label="Tamaño" className="mb-4 flex flex-col gap-2">
           <p className="font-semibold">Tamaño</p>
           {product.variants.map((v) =>
             varianteAgotada(v.id) ? (
@@ -1558,8 +1552,8 @@ function PanelProducto({
                 key={v.id}
                 shape="card"
                 elegida={v.id === variantId}
-                detalle={pesos(v.price)}
-                alElegir={() => (unaSola ? agregarCon(v.id, elegidas) : setVarianteId(v.id))}
+                detail={pesos(v.price)}
+                alElegir={() => (unaSola ? addWith(v.id, elegidas) : setVarianteId(v.id))}
               >
                 {v.name}
               </Opcion>
@@ -1568,7 +1562,7 @@ function PanelProducto({
         </Grupo>
       )}
       {product.groups.map((g) => (
-        <Grupo key={g.id} etiqueta={g.name} className="mb-4 flex flex-col gap-2">
+        <Grupo key={g.id} label={g.name} className="mb-4 flex flex-col gap-2">
           <p className="font-semibold">
             {g.name}
             {g.minimum > 0 && <span className="font-normal text-texto-suave"> (obligatorio)</span>}
@@ -1581,7 +1575,7 @@ function PanelProducto({
               key={o.id}
               shape="card"
               elegida={elegidas[g.id]?.includes(o.id) ?? false}
-              detalle={o.extraPrice > 0 ? `+ ${pesos(o.extraPrice)}` : undefined}
+              detail={o.extraPrice > 0 ? `+ ${pesos(o.extraPrice)}` : undefined}
               alElegir={() => tocarOpcion(g.id, g.maximum, o.id)}
             >
               {o.name}
@@ -1723,14 +1717,14 @@ function PanelItem({
             <Quantity value={item.quantity} onChange={(n) => alSumar(n - item.quantity)} />
           </Section>
           {enSalon && guests > 0 && (
-            <Grupo etiqueta="Para quién" className="mb-4 flex flex-wrap items-center gap-2">
+            <Grupo label="Para quién" className="mb-4 flex flex-wrap items-center gap-2">
               <p className="w-full font-semibold">Para quién</p>
               {personasDe(guests).map((c) => (
                 <Opcion
                   key={c ?? 'table'}
                   elegida={item.guest === c}
                   alElegir={() => select({ guest: c })}
-                  etiqueta={etiquetaComensal(c)}
+                  label={etiquetaComensal(c)}
                 >
                   {nombreComensal(c)}
                 </Opcion>
@@ -1738,7 +1732,7 @@ function PanelItem({
             </Grupo>
           )}
           {coursesEnabled && (
-            <Grupo etiqueta="Curso" className="mb-4 flex flex-wrap items-center gap-2">
+            <Grupo label="Curso" className="mb-4 flex flex-wrap items-center gap-2">
               <p className="w-full font-semibold">Curso</p>
               {COURSES.map((c) => (
                 <Opcion
@@ -1840,7 +1834,7 @@ function PanelAgotar({
       <p className="mb-4 text-texto-suave">
         Toca lo que se acabó; tócalo otra vez cuando vuelva a haber.
       </p>
-      <Grupo etiqueta="Qué se acabó" className="flex flex-col gap-2">
+      <Grupo label="Qué se acabó" className="flex flex-col gap-2">
         {options.map((o) => {
           const yaAgotado = agotados.has(claveAgotado(product.id, o.id))
           return (
@@ -1848,7 +1842,7 @@ function PanelAgotar({
               key={o.id ?? 'everything'}
               shape="card"
               elegida={yaAgotado}
-              detalle={yaAgotado ? 'agotado' : 'disponible'}
+              detail={yaAgotado ? 'agotado' : 'disponible'}
               alElegir={() => onChange(o.id, !yaAgotado)}
             >
               {o.name}

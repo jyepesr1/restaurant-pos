@@ -14,7 +14,7 @@ import { floor, useSala } from './contexto'
 // dejarle la pantalla al pedido.
 
 // En la Fase 0 no hay nube: conectado al hub es "Solo red local", lo normal (brief §5, regla 7).
-const ESTADO: Record<ConnectionState, EstadoVisible> = {
+const STATUS: Record<ConnectionState, EstadoVisible> = {
   connected: 'local_only',
   connecting: 'connecting',
   no_response: 'offline',
@@ -300,7 +300,7 @@ export function MarcoSala({
               >
                 {title}
               </h1>
-              <IndicadorConexion status={ESTADO[connection]} pendingList={pendingList} compacto />
+              <IndicadorConexion status={STATUS[connection]} pendingList={pendingList} compacto />
               <span aria-live="polite" className="contents">
                 {caidas.length > 0 && (
                   <button

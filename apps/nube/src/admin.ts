@@ -37,11 +37,11 @@ function restauranteLocal(): { id: string; name: string } {
 }
 
 const token = await secret('TOKEN_ADMIN', 'Token de administración de la nube: ')
-const request = async (route: string, cuerpo: object) => {
+const request = async (route: string, body: object) => {
   const r = await fetch(`${nube}${route}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify(cuerpo),
+    body: JSON.stringify(body),
   })
   const data = r.status === 204 ? null : await r.json().catch(() => null)
   if (!r.ok) {

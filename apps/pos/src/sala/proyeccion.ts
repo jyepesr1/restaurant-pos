@@ -49,7 +49,7 @@ export function pedidosAbiertos(locals: readonly LocalEvent[]): PedidoVisible[] 
   return visibles.sort((a, b) => a.status.openedAt.localeCompare(b.status.openedAt))
 }
 
-export const itemsVigentes = (status: OrderState): OrderItem[] =>
+export const currentItems = (status: OrderState): OrderItem[] =>
   Object.values(status.items)
     .filter((i) => i.status !== 'voided')
     .sort((a, b) => a.position - b.position)
@@ -63,7 +63,7 @@ export type EstadoMesaDemo = 'free' | 'taking' | 'ready' | 'check' | 'in_kitchen
  * (ADR-015).
  */
 export function estadoMesa(orders: readonly PedidoVisible[]): EstadoMesaDemo {
-  const items = orders.flatMap((p) => itemsVigentes(p.status))
+  const items = orders.flatMap((p) => currentItems(p.status))
   if (items.length === 0) return 'free'
   if (items.some((i) => i.status === 'pending' || i.status === 'held')) return 'taking'
   if (items.some((i) => i.status === 'ready')) return 'ready'
@@ -142,4 +142,4 @@ export function masPedidos(locals: readonly LocalEvent[], howMany = 12): string[
  */
 export const ocupaMesa = (p: OrderState) =>
   p.status === 'open' &&
-  (itemsVigentes(p).length > 0 || (Object.keys(p.items).length === 0 && !p.emptiedOnMove))
+  (currentItems(p).length > 0 || (Object.keys(p.items).length === 0 && !p.emptiedOnMove))

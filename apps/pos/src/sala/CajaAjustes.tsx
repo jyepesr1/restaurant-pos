@@ -96,10 +96,10 @@ export function CajaAjustes() {
     }
   }
 
-  const cambiarPropina = async (puntos: number) => {
+  const cambiarPropina = async (points: number) => {
     try {
-      await floor.suggestedTip(puntos)
-      notify(puntos === 0 ? 'Sin propina sugerida' : `Propina sugerida: ${puntos / 100} %`)
+      await floor.suggestedTip(points)
+      notify(points === 0 ? 'Sin propina sugerida' : `Propina sugerida: ${points / 100} %`)
       load()
     } catch (e) {
       notify(message(e))
@@ -148,13 +148,13 @@ export function CajaAjustes() {
             Medios de pago
           </h2>
           <p className="text-texto-suave">Los que salen al cobrar. El efectivo siempre está.</p>
-          <Grupo etiqueta="Medios de pago" className="flex flex-wrap gap-2">
+          <Grupo label="Medios de pago" className="flex flex-wrap gap-2">
             {MEDIOS.map((m) => (
               <Opcion
                 key={m}
                 elegida={register.payment_methods.includes(m)}
                 alElegir={() => m !== 'cash' && cambiarMedio(m)}
-                etiqueta={m === 'cash' ? 'Efectivo: siempre se recibe' : undefined}
+                label={m === 'cash' ? 'Efectivo: siempre se recibe' : undefined}
               >
                 {m === 'cash'
                   ? 'Efectivo (siempre)'
@@ -197,7 +197,7 @@ export function CajaAjustes() {
             La que sale en la precuenta y aparece marcada al cobrar, sobre la base sin impuestos. Es
             voluntaria: el cajero la quita o la cambia en cada cobro.
           </p>
-          <Grupo etiqueta="Propina sugerida" className="flex flex-wrap gap-2">
+          <Grupo label="Propina sugerida" className="flex flex-wrap gap-2">
             {[0, 500, 800, 1000].map((p) => (
               <Opcion
                 key={p}
@@ -217,7 +217,7 @@ export function CajaAjustes() {
           <p className="text-texto-suave">
             Desde qué diferencia (sobrante o faltante) el cajero debe explicar por qué no cuadra.
           </p>
-          <Grupo etiqueta="Justificar desde" className="flex flex-wrap gap-2">
+          <Grupo label="Justificar desde" className="flex flex-wrap gap-2">
             {[0, 1000, 5000, 10_000].map((v) => (
               <Opcion
                 key={v}
@@ -238,7 +238,7 @@ export function CajaAjustes() {
             Dónde sale la precuenta que pide el mesero o la caja. Sin impresora, se muestra en la
             pantalla.
           </p>
-          <Grupo etiqueta="Impresora de precuentas" className="flex flex-col gap-2">
+          <Grupo label="Impresora de precuentas" className="flex flex-col gap-2">
             <Opcion shape="card" elegida={elegida === null} alElegir={() => elegirImpresora(null)}>
               Solo en pantalla
             </Opcion>
@@ -248,7 +248,7 @@ export function CajaAjustes() {
                 shape="card"
                 elegida={elegida === i.id}
                 alElegir={() => elegirImpresora(i.id)}
-                detalle={i.connection === 'network' ? i.address : 'USB'}
+                detail={i.connection === 'network' ? i.address : 'USB'}
               >
                 {i.name}
               </Opcion>
@@ -362,7 +362,7 @@ function EditarDatafono({
             onChange={(e) => setNombre(e.target.value)}
           />
         </label>
-        <Grupo etiqueta="Proveedor" className="flex flex-wrap gap-2">
+        <Grupo label="Proveedor" className="flex flex-wrap gap-2">
           {PROVEEDORES.map((p) => (
             <Opcion
               key={p.value}

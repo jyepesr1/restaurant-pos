@@ -66,13 +66,13 @@ export function ProveedorAvisos({ children }: { children: ReactNode }) {
 function TarjetaAviso({ alert, alTerminar }: { alert: Aviso; alTerminar: () => void }) {
   const [pausado, setPausado] = useState(false)
   const restante = useRef(DURACION_AVISO_MS)
-  const terminar = useRef(alTerminar)
-  terminar.current = alTerminar
+  const finish = useRef(alTerminar)
+  finish.current = alTerminar
 
   useEffect(() => {
     if (pausado) return
     const start = Date.now()
-    const t = setTimeout(() => terminar.current(), restante.current)
+    const t = setTimeout(() => finish.current(), restante.current)
     return () => {
       clearTimeout(t)
       restante.current -= Date.now() - start

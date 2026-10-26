@@ -1,5 +1,5 @@
 import { newId, PRICE_LIMIT } from '@pos/core'
-import type { CambioCatalogo, CatalogoEdicion } from './motor'
+import type { CatalogChange, CatalogoEdicion } from './motor'
 
 // El editor de la carta trabaja sobre un borrador de cada producto o grupo de opciones; al
 // guardar, el borrador se compara con lo que había y salen solo los cambios (un registro nuevo
@@ -32,10 +32,10 @@ export interface BorradorProducto {
   fresh: boolean
   name: string
   description: string
-  categoriaId: string
+  categoryId: string
   /** El precio si no tiene variantes; con variantes, el del producto es el de la más barata. */
   price: number
-  impuestoId: string
+  taxId: string
   /** Sale en "Favoritos" al tomar el pedido. */
   favorite: boolean
   active: boolean
@@ -52,9 +52,9 @@ export function borradorDeProducto(c: CatalogoEdicion, id: string): BorradorProd
     fresh: false,
     name: p.name,
     description: p.description ?? '',
-    categoriaId: p.category_id,
+    categoryId: p.category_id,
     price: p.price,
-    impuestoId: p.tax_id,
+    taxId: p.tax_id,
     favorite: p.favorite,
     active: p.active,
     variants: c.variants
@@ -68,15 +68,15 @@ export function borradorDeProducto(c: CatalogoEdicion, id: string): BorradorProd
   }
 }
 
-export function productoNuevo(c: CatalogoEdicion, categoriaId: string): BorradorProducto {
+export function productoNuevo(c: CatalogoEdicion, categoryId: string): BorradorProducto {
   return {
     id: newId(),
     fresh: true,
     name: '',
     description: '',
-    categoriaId,
+    categoryId,
     price: 0,
-    impuestoId: c.taxes.find((i) => i.active)?.id ?? '',
+    taxId: c.taxes.find((i) => i.active)?.id ?? '',
     favorite: false,
     active: true,
     variants: [],
@@ -90,8 +90,8 @@ export function problemasDeProducto(b: BorradorProducto): string[] {
   if (!b.name.trim()) issues.push('Falta el nombre')
   if (b.fresh && b.price === 0 && !b.variants.some((v) => v.active))
     issues.push('Escribe el precio')
-  if (!b.categoriaId) issues.push('Falta la categoría')
-  if (!b.impuestoId) issues.push('Falta el impuesto')
+  if (!b.categoryId) issues.push('Falta la categoría')
+  if (!b.taxId) issues.push('Falta el impuesto')
   const variants = b.variants.filter((v) => v.active)
   if (variants.some((v) => !v.name.trim())) issues.push('Cada tamaño lleva nombre')
   if (new Set(variants.map((v) => v.name.trim().toLowerCase())).size !== variants.length)
@@ -113,10 +113,10 @@ export function diferencias<T extends Record<string, unknown>>(
 }
 
 export function add(
-  changes: CambioCatalogo[],
-  entity: CambioCatalogo['entity'],
+  changes: CatalogChange[],
+  entity: CatalogChange['entity'],
   id: string,
-  data: CambioCatalogo['data'],
+  data: CatalogChange['data'],
 ) {
   if (Object.keys(data).length > 0) changes.push({ entity, id, data })
 }
@@ -157,7 +157,7 @@ function cambiosDeEnlaces(
   c: CatalogoEdicion,
   productId: string,
   groups: string[],
-  changes: CambioCatalogo[],
+  changes: CatalogChange[],
 ) {
   const deProducto = c.links.filter((e) => e.product_id === productId)
   const lugar = ordenes(
@@ -181,8 +181,8 @@ function cambiosDeEnlaces(
 }
 
 /** Los cambios para dejar el producto como el borrador. */
-export function cambiosDeProducto(c: CatalogoEdicion, b: BorradorProducto): CambioCatalogo[] {
-  const changes: CambioCatalogo[] = []
+export function cambiosDeProducto(c: CatalogoEdicion, b: BorradorProducto): CatalogChange[] {
+  const changes: CatalogChange[] = []
   const variants = b.variants.filter((v) => v.active)
   const original = b.fresh ? undefined : c.products.find((p) => p.id === b.id)
   add(
@@ -190,12 +190,12 @@ export function cambiosDeProducto(c: CatalogoEdicion, b: BorradorProducto): Camb
     'products',
     b.id,
     diferencias(original, {
-      category_id: b.categoriaId,
+      category_id: b.categoryId,
       name: b.name.trim(),
       description: b.description.trim() || null,
       // Con variantes, el precio del producto solo sirve para mostrar "desde" (DINERO.md).
       price: variants.length > 0 ? Math.min(...variants.map((v) => v.price)) : b.price,
-      tax_id: b.impuestoId,
+      tax_id: b.taxId,
       favorite: b.favorite,
       active: b.active,
     }),
@@ -293,8 +293,8 @@ export function problemasDeGrupo(g: BorradorGrupo): string[] {
   return issues
 }
 
-export function cambiosDeGrupo(c: CatalogoEdicion, g: BorradorGrupo): CambioCatalogo[] {
-  const changes: CambioCatalogo[] = []
+export function cambiosDeGrupo(c: CatalogoEdicion, g: BorradorGrupo): CatalogChange[] {
+  const changes: CatalogChange[] = []
   const original = g.fresh ? undefined : c.groups.find((x) => x.id === g.id)
   add(
     changes,

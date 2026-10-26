@@ -23,7 +23,7 @@ import {
   SyncClient,
 } from '@pos/sync'
 import { AlmacenIndexedDb, BaseDispositivo } from './almacen'
-import { ErrorApi, llamar, SIN_HUB } from './api'
+import { ErrorApi, makeCall, SIN_HUB } from './api'
 
 // El motor de la app en el dispositivo: las credenciales del equipo, la sesión (PIN o contraseña), el
 // catálogo guardado y la sincronización (SyncClient sobre IndexedDB y un WebSocket que mantiene
@@ -31,20 +31,20 @@ import { ErrorApi, llamar, SIN_HUB } from './api'
 
 export const VERSION_APP = '0.10'
 
-export interface Equipo {
+export interface Device {
   deviceId: string
   token: string
   name: string
   type: DeviceType
 }
 
-export interface Sesion {
-  sesionId: string
+export interface Session {
+  sessionId: string
   secret: string
   user: { id: string; name: string; role: string }
   permissions: string[]
   /** Último uso en este dispositivo (ms): tras `sessionIdleMin` sin uso se pide el PIN. */
-  ultimoUso: number
+  lastUsed: number
 }
 
 /** Lo que devuelve `POST /api/personal/leer`. */
@@ -61,7 +61,7 @@ export interface Personal {
   people: {
     id: string
     name: string
-    rolId: string
+    roleId: string
     active: boolean
     /** El usuario con que entra a la caja; `null` si entra con su PIN. */
     user: string | null
@@ -71,15 +71,15 @@ export interface Personal {
     id: string
     name: string
     type: DeviceType
-    registradoEn: string | null
+    registeredAt: string | null
     revokedAt: string | null
-    ultimoUso: string | null
-    ultimaPersona: string | null
+    lastUsed: string | null
+    lastPerson: string | null
   }[]
 }
 
 /** Un cambio del editor de la carta: crea el registro si no existe, o cambia esos campos. */
-export interface CambioCatalogo {
+export interface CatalogChange {
   entity:
     | 'zones'
     | 'dining_tables'
@@ -96,7 +96,7 @@ export interface CambioCatalogo {
   data: Record<string, string | number | boolean | null>
 }
 
-interface Registro {
+interface Registration {
   id: string
   version: number
   active: boolean
@@ -117,14 +117,15 @@ export interface Geometria {
 
 export interface CatalogoEdicion {
   version: number
-  zones: (Registro & { name: string; position: number; level: number })[]
-  tables: (Registro &
+  zones: (Registration & { name: string; position: number; level: number })[]
+  tables: (Registration &
     Geometria & { zone_id: string; name: string; shape: FormaMesa; capacity: number })[]
-  elements: (Registro & Geometria & { zone_id: string; type: TipoElemento; text: string | null })[]
-  taxes: (Registro & { name: string; type: 'inc' | 'iva' | 'exempt'; rate: number })[]
-  stations: (Registro & { name: string; position: number })[]
-  categories: (Registro & { name: string; position: number; station_id: string | null })[]
-  products: (Registro & {
+  elements: (Registration &
+    Geometria & { zone_id: string; type: TipoElemento; text: string | null })[]
+  taxes: (Registration & { name: string; type: 'inc' | 'iva' | 'exempt'; rate: number })[]
+  stations: (Registration & { name: string; position: number })[]
+  categories: (Registration & { name: string; position: number; station_id: string | null })[]
+  products: (Registration & {
     category_id: string
     name: string
     description: string | null
@@ -134,10 +135,10 @@ export interface CatalogoEdicion {
     /** Nombre del archivo de su foto en el hub (`/fotos/<nombre>`), o nada. */
     photo?: string | null
   })[]
-  variants: (Registro & { product_id: string; name: string; price: number; position: number })[]
-  groups: (Registro & { name: string; minimum: number; maximum: number })[]
-  links: (Registro & { product_id: string; group_id: string; position: number })[]
-  modifiers: (Registro & {
+  variants: (Registration & { product_id: string; name: string; price: number; position: number })[]
+  groups: (Registration & { name: string; minimum: number; maximum: number })[]
+  links: (Registration & { product_id: string; group_id: string; position: number })[]
+  modifiers: (Registration & {
     group_id: string
     name: string
     extra_price: number
@@ -170,7 +171,7 @@ export interface ConfiguracionCocina {
     station_ids: string[]
     last_used: string | null
   }[]
-  tiempos: { amarillo: number; rojo: number }
+  timers: { yellow: number; red: number }
   courses_enabled?: boolean
   /** Dónde sale la precuenta (tarea 1.6); un hub de antes no lo manda. */
   pre_bill_printer_id?: string | null
@@ -222,7 +223,7 @@ export interface PeriodReport {
   report: Report
   closings: CierreReporte[]
   /** Nombres de las personas que aparecen, por id. */
-  usuarios: Record<string, string>
+  users: Record<string, string>
   /** Si hay impresora de precuentas para reimprimir el cierre Z. */
   printer: boolean
 }
@@ -231,7 +232,7 @@ export interface PeriodReport {
 export interface TrabajoPendiente {
   id: string
   printer: string
-  que: string
+  what: string
   attempts: number
   error: string | null
   created_at: string
@@ -249,8 +250,8 @@ export interface OpcionesEvento {
 
 export interface Instantanea {
   cargado: boolean
-  device: Equipo | null
-  session: Sesion | null
+  device: Device | null
+  session: Session | null
   catalog: Catalog | null
   connection: ConnectionState
   /** El usuario apagó la conexión para la demo (docs/ROADMAP.md, 0.10). */
@@ -315,8 +316,8 @@ const avisarFallo = (error: unknown) => console.error('Equipo:', error)
 const CLAVES = { device: 'device', session: 'session', catalog: 'catalog' }
 
 function abrirWebSocket(m: Handlers): Channel {
-  const esquema = location.protocol === 'https:' ? 'wss' : 'ws'
-  const ws = new WebSocket(`${esquema}://${location.host}/api/sync/ws`)
+  const schema = location.protocol === 'https:' ? 'wss' : 'ws'
+  const ws = new WebSocket(`${schema}://${location.host}/api/sync/ws`)
   ws.onopen = () => m.onOpen()
   ws.onclose = () => m.onClose()
   ws.onmessage = (e) => {
@@ -392,8 +393,8 @@ export class Sala {
 
   private async hacerCarga() {
     const [device, session, catalog] = await Promise.all([
-      this.db.leerAjuste<Equipo>(CLAVES.device),
-      this.db.leerAjuste<Sesion>(CLAVES.session),
+      this.db.leerAjuste<Device>(CLAVES.device),
+      this.db.leerAjuste<Session>(CLAVES.session),
       this.db.leerAjuste<Catalog>(CLAVES.catalog),
     ])
     this.patch({
@@ -407,14 +408,14 @@ export class Sala {
   }
 
   /** Cambia el código de emparejamiento por el token propio y empieza a sincronizar. */
-  async emparejar(code: string) {
+  async pair(code: string) {
     const r = await this.api<{
       device_id: string
       token: string
       name: string
       type: DeviceType
-    }>('POST', '/api/pair', { cuerpo: { code: code.trim().toUpperCase() } })
-    const device: Equipo = {
+    }>('POST', '/api/pair', { body: { code: code.trim().toUpperCase() } })
+    const device: Device = {
       deviceId: r.device_id,
       token: r.token,
       name: r.name,
@@ -431,15 +432,15 @@ export class Sala {
    */
   async emparejarPrimero(pin: string, name: string, type: DeviceType) {
     const { code } = await this.api<{ code: string }>('POST', '/api/pairings', {
-      cuerpo: { pin, name, type },
+      body: { pin, name, type },
     })
-    await this.emparejar(code)
+    await this.pair(code)
   }
 
   /** Desde un equipo emparejado (la caja), un administrador aprueba otro equipo con su PIN. */
   async codigoParaOtroEquipo(pin: string, name: string, type: DeviceType) {
     return this.api<{ code: string; expires_at: string }>('POST', '/api/pairings', {
-      cuerpo: { pin, name, type },
+      body: { pin, name, type },
       token: this.equipoActual().token,
     })
   }
@@ -449,7 +450,7 @@ export class Sala {
    * Un navegador sin equipo no se empareja antes: con el acierto, el hub lo registra y le da su
    * token (ADR-013).
    */
-  async entrar(data: string | { user: string; password: string }) {
+  async signIn(data: string | { user: string; password: string }) {
     const device = this.status.device
     const r = await this.api<{
       device: {
@@ -461,13 +462,13 @@ export class Sala {
       type: DeviceType
       session_id: string
       secret: string
-      user: Sesion['user']
+      user: Session['user']
       permissions: string[]
     }>('POST', '/api/sign-in', {
-      cuerpo: typeof data === 'string' ? { pin: data } : data,
+      body: typeof data === 'string' ? { pin: data } : data,
       token: device?.token,
     })
-    const fresh: Equipo | null = r.device
+    const fresh: Device | null = r.device
       ? {
           deviceId: r.device.device_id,
           token: r.device.token,
@@ -479,12 +480,12 @@ export class Sala {
         : null
     // Primero el equipo: sin él, la sesión no sirve de nada.
     if (fresh) await this.db.saveSetting(CLAVES.device, fresh)
-    const session: Sesion = {
-      sesionId: r.session_id,
+    const session: Session = {
+      sessionId: r.session_id,
       secret: r.secret,
       user: r.user,
       permissions: r.permissions,
-      ultimoUso: Date.now(),
+      lastUsed: Date.now(),
     }
     await this.db.saveSetting(CLAVES.session, session)
     this.patch({
@@ -519,7 +520,7 @@ export class Sala {
     await this.db.borrarAjuste(CLAVES.session)
     if (session && this.status.device)
       await this.api('POST', '/api/sessions/close', {
-        cuerpo: { session_id: session.sesionId, secret: session.secret },
+        body: { session_id: session.sessionId, secret: session.secret },
         token: this.status.device.token,
       }).catch(() => {})
   }
@@ -543,7 +544,7 @@ export class Sala {
   }
 
   /** Todo el catálogo, también lo archivado, para el editor de la carta. */
-  async catalogoParaEditar(): Promise<CatalogoEdicion> {
+  async catalogForEditing(): Promise<CatalogoEdicion> {
     const c = await this.api<Partial<CatalogoEdicion> & { version: number }>(
       'GET',
       '/api/catalog/editing',
@@ -556,12 +557,12 @@ export class Sala {
    * Guarda cambios del catálogo (todos o ninguno) con la sesión abierta; el hub avisa a los
    * equipos y este también trae la carta nueva.
    */
-  async editarCatalogo(changes: CambioCatalogo[]): Promise<number> {
-    this.usar()
+  async editarCatalogo(changes: CatalogChange[]): Promise<number> {
+    this.enabled()
     const session = this.status.session
     if (!session) throw new Error('Sin sesión: escribe tu PIN')
     const { version } = await this.api<{ version: number }>('POST', '/api/catalog/changes', {
-      cuerpo: { session_id: session.sesionId, secret: session.secret, changes },
+      body: { session_id: session.sessionId, secret: session.secret, changes },
       token: this.equipoActual().token,
     })
     await this.actualizarCatalogo().catch(avisarFallo)
@@ -571,10 +572,10 @@ export class Sala {
   // ── Fotos y marca (tarea 1.3c) ───────────────────────────────────────
 
   /** Sube (o quita, con `null`) la foto de un producto; devuelve su ruta en el hub. */
-  async subirFoto(productId: string, imagen: string | null): Promise<string | null> {
-    const r = await this.conSesion<{ photo: string | null }>('/api/catalog/photos', {
+  async subirFoto(productId: string, image: string | null): Promise<string | null> {
+    const r = await this.withSession<{ photo: string | null }>('/api/catalog/photos', {
       product_id: productId,
-      imagen,
+      image,
     })
     await this.actualizarCatalogo().catch(avisarFallo)
     return r.photo
@@ -582,7 +583,7 @@ export class Sala {
 
   /** La marca con que se ve el POS en todos los equipos del restaurante. */
   async cambiarMarca(brand: string): Promise<void> {
-    await this.conSesion('/api/restaurant/brand', { brand })
+    await this.withSession('/api/restaurant/brand', { brand })
     // Aquí se ve de una vez, aunque la carta nueva tarde en llegar; los demás equipos, con ella.
     const { catalog } = this.status
     if (catalog)
@@ -594,31 +595,31 @@ export class Sala {
 
   /** Roles y personas, también los archivados (pide `manage_users`). */
   async staff(): Promise<Personal> {
-    return this.conSesion('/api/staff/read', {})
+    return this.withSession('/api/staff/read', {})
   }
 
   /** Crea un rol o cambia su nombre, sus permisos o si está activo. */
-  async guardarRol(role: {
+  async saveRole(role: {
     id?: string
     name: string
     permissions: string[]
     active?: boolean
   }): Promise<string> {
-    return (await this.conSesion<{ id: string }>('/api/staff/roles', { role })).id
+    return (await this.withSession<{ id: string }>('/api/staff/roles', { role })).id
   }
 
   /**
    * Crea o cambia a una persona. Devuelve su PIN si es nueva o se regeneró: solo se ve esta vez.
    */
-  async guardarPersona(person: {
+  async saveStaffMember(person: {
     id?: string
     name: string
     role_id: string
     active?: boolean
     access?: { type: 'pin' } | { type: 'password'; user: string; password?: string }
-    regenerar_pin?: boolean
+    regenerate_pin?: boolean
   }): Promise<{ id: string; pin: string | null }> {
-    const r = await this.conSesion<{ id: string; pin: string | null }>('/api/staff/people', {
+    const r = await this.withSession<{ id: string; pin: string | null }>('/api/staff/people', {
       person,
     })
     // El nombre de cada persona viene en la carta: traerla para verlo en el salón.
@@ -629,64 +630,64 @@ export class Sala {
   // ── Cocina e impresoras (ADR-015) ────────────────────────────────────
 
   kitchenConfig(): Promise<ConfiguracionCocina> {
-    return this.conSesion('/api/kitchen/config', {})
+    return this.withSession('/api/kitchen/config', {})
   }
 
   async savePrinter(printer: ImpresoraCocina): Promise<string> {
-    const { id } = await this.conSesion<{ id: string }>('/api/printers', { printer })
+    const { id } = await this.withSession<{ id: string }>('/api/printers', { printer })
     return id
   }
 
   async testPrinter(printerId: string): Promise<void> {
-    await this.conSesion('/api/printers/test', { printer_id: printerId })
+    await this.withSession('/api/printers/test', { printer_id: printerId })
   }
 
   pendingPrints(): Promise<TrabajoPendiente[]> {
-    return this.conSesion('/api/printing/pending', {})
+    return this.withSession('/api/printing/pending', {})
   }
 
-  async discardJob(trabajoId: string): Promise<void> {
-    await this.conSesion('/api/printing/discard', { trabajo_id: trabajoId })
+  async discardJob(jobId: string): Promise<void> {
+    await this.withSession('/api/printing/discard', { job_id: jobId })
   }
 
   async screenStations(deviceId: string, stationIds: string[]): Promise<void> {
-    await this.conSesion('/api/screens/stations', {
+    await this.withSession('/api/screens/stations', {
       device_id: deviceId,
       station_ids: stationIds,
     })
   }
 
-  async coursesEnabled(usar: boolean): Promise<void> {
-    await this.conSesion('/api/kitchen/courses', { usar })
+  async coursesEnabled(enabled: boolean): Promise<void> {
+    await this.withSession('/api/kitchen/courses', { enabled })
   }
 
-  async kitchenTimers(amarillo: number, rojo: number): Promise<void> {
-    await this.conSesion('/api/kitchen/timers', { amarillo, rojo })
+  async kitchenTimers(yellow: number, red: number): Promise<void> {
+    await this.withSession('/api/kitchen/timers', { yellow, red })
   }
 
   // ── Reportes (tarea 1.9) ─────────────────────────────────────────────
 
   /** El reporte de un período; sin fechas, el día operativo de hoy. */
   report(period: { from: string; until: string } | null = null): Promise<PeriodReport> {
-    return this.conSesion('/api/reports', period ?? {})
+    return this.withSession('/api/reports', period ?? {})
   }
 
   async reimprimirCierre(shiftId: string): Promise<void> {
-    await this.conSesion('/api/reports/z-report', { turno_id: shiftId })
+    await this.withSession('/api/reports/z-report', { shift_id: shiftId })
   }
 
   // ── Caja y pagos (tarea 1.6) ─────────────────────────────────────────
 
   registerConfig(): Promise<ConfiguracionCaja> {
-    return this.conSesion('/api/register/config', {})
+    return this.withSession('/api/register/config', {})
   }
 
   async savePaymentMethods(methods: PaymentMethod[]): Promise<void> {
-    await this.conSesion('/api/register/payment-methods', { methods })
+    await this.withSession('/api/register/payment-methods', { methods })
   }
 
   async guardarDatafono(cardTerminal: Datafono): Promise<ConfiguracionCaja['cardTerminals']> {
-    const r = await this.conSesion<{ cardTerminals: ConfiguracionCaja['cardTerminals'] }>(
+    const r = await this.withSession<{ cardTerminals: ConfiguracionCaja['cardTerminals'] }>(
       '/api/card-terminals',
       { cardTerminal },
     )
@@ -694,7 +695,7 @@ export class Sala {
   }
 
   async guardarMedioPropio(method: MedioPropio): Promise<MedioPropio[]> {
-    const r = await this.conSesion<{ custom_methods: MedioPropio[] }>(
+    const r = await this.withSession<{ custom_methods: MedioPropio[] }>(
       '/api/register/custom-methods',
       {
         method,
@@ -704,15 +705,15 @@ export class Sala {
   }
 
   async varianceThreshold(pesos: number): Promise<void> {
-    await this.conSesion('/api/register/threshold', { pesos })
+    await this.withSession('/api/register/threshold', { pesos })
   }
 
-  async suggestedTip(puntos: number): Promise<void> {
-    await this.conSesion('/api/register/tip', { puntos })
+  async suggestedTip(points: number): Promise<void> {
+    await this.withSession('/api/register/tip', { points })
   }
 
   async preBillPrinter(printerId: string | null): Promise<void> {
-    await this.conSesion('/api/register/pre-bill', { printer_id: printerId })
+    await this.withSession('/api/register/pre-bill', { printer_id: printerId })
   }
 
   /**
@@ -730,21 +731,21 @@ export class Sala {
    * Este equipo pasa a ser pantalla de cocina de esas estaciones: la sesión del administrador se
    * cierra y queda la de la pantalla, que no vence por inactividad.
    */
-  async convertirEnPantalla(name: string, stationIds: string[]): Promise<void> {
-    const r = await this.conSesion<{
+  async convertToScreen(name: string, stationIds: string[]): Promise<void> {
+    const r = await this.withSession<{
       session_id: string
       secret: string
-      user: Sesion['user']
+      user: Session['user']
       permissions: string[]
     }>('/api/screens', { name, station_ids: stationIds })
-    const device: Equipo = { ...this.equipoActual(), type: 'kds', name }
+    const device: Device = { ...this.equipoActual(), type: 'kds', name }
     await this.db.saveSetting(CLAVES.device, device)
-    const session: Sesion = {
-      sesionId: r.session_id,
+    const session: Session = {
+      sessionId: r.session_id,
       secret: r.secret,
       user: r.user,
       permissions: r.permissions,
-      ultimoUso: Date.now(),
+      lastUsed: Date.now(),
     }
     await this.db.saveSetting(CLAVES.session, session)
     this.patch({ device, session, sessionClosedBy: null })
@@ -753,17 +754,17 @@ export class Sala {
 
   /** Retira un equipo (perdido, robado): deja de sincronizar y nadie puede entrar en él. */
   async retirarEquipo(deviceId: string): Promise<void> {
-    await this.conSesion(`/api/devices/${encodeURIComponent(deviceId)}/revoke`, {})
+    await this.withSession(`/api/devices/${encodeURIComponent(deviceId)}/revoke`, {})
   }
 
   /** Una llamada con la sesión abierta. Si el hub dice que ya no vale, se pide entrar de nuevo. */
-  private async conSesion<T>(route: string, cuerpo: object): Promise<T> {
-    this.usar()
+  private async withSession<T>(route: string, body: object): Promise<T> {
+    this.enabled()
     const session = this.status.session
     if (!session) throw new Error('Sin sesión: vuelve a entrar')
     try {
       return await this.api<T>('POST', route, {
-        cuerpo: { session_id: session.sesionId, secret: session.secret, ...cuerpo },
+        body: { session_id: session.sessionId, secret: session.secret, ...body },
         token: this.equipoActual().token,
       })
     } catch (e) {
@@ -783,24 +784,24 @@ export class Sala {
     // Una pantalla de cocina queda abierta siempre: nadie la usa con las manos sucias para entrar.
     if (!session || device?.type === 'kds') return
     const minutos = catalog?.restaurant.sessionIdleMin ?? MINUTOS_POR_DEFECTO
-    if (now - session.ultimoUso >= minutos * 60_000) this.exit('inactivity').catch(avisarFallo)
+    if (now - session.lastUsed >= minutos * 60_000) this.exit('inactivity').catch(avisarFallo)
   }
 
   /** Marca uso (cada toque que hace algo): aplaza el cierre por inactividad. */
-  usar(now = Date.now()) {
+  enabled(now = Date.now()) {
     const { session } = this.status
     if (!session) return
     this.vencerSesionSiToca(now)
     // Cada toque cuenta, pero no hace falta escribir en IndexedDB con cada uno.
-    if (!this.status.session || now - session.ultimoUso < 15_000) return
-    const newOne = { ...session, ultimoUso: now }
+    if (!this.status.session || now - session.lastUsed < 15_000) return
+    const newOne = { ...session, lastUsed: now }
     this.status = { ...this.status, session: newOne }
     this.db.saveSetting(CLAVES.session, newOne).catch(avisarFallo)
   }
 
   // ── Sincronización ───────────────────────────────────────────────────
 
-  private async connect(device: Equipo) {
+  private async connect(device: Device) {
     this.connectionManager?.stop()
     // Cliente y gestor quedan asignados antes del primer `await`: otra llamada que llegue mientras
     // tanto detiene este gestor en vez de dejar un segundo WebSocket huérfano.
@@ -886,7 +887,7 @@ export class Sala {
   ): Promise<NewEvent> {
     const now = Date.now()
     // Primero el uso: si la sesión acaba de vencer, no se firma nada con ella.
-    this.usar(now)
+    this.enabled(now)
     const client = this.client
     const { session, device } = this.status
     if (!client || !session || !device) throw new Error('Sin sesión: escribe tu PIN')
@@ -898,7 +899,7 @@ export class Sala {
       aggregate_id: orderId,
       related: options.related ?? [],
       data,
-      session_id: session.sesionId,
+      session_id: session.sessionId,
       user_id: session.user.id,
       device_id: device.deviceId,
       authorization_id: null,
@@ -910,7 +911,7 @@ export class Sala {
     // Con el PIN de un supervisor (ADR-008): el hub da un comprobante de un solo uso para este
     // evento exacto (su huella), y el evento lo lleva. Pide conexión: sin ella, falla aquí.
     if (options.authorizes) {
-      const { authorization_id } = await this.conSesion<{ authorization_id: string }>(
+      const { authorization_id } = await this.withSession<{ authorization_id: string }>(
         '/api/authorizations',
         {
           pin: options.authorizes.pin,
@@ -922,12 +923,12 @@ export class Sala {
       )
       event.authorization_id = authorization_id
     }
-    const firmado = { ...event, signature: signEvent(event, session.secret) } as NewEvent
-    const r = await client.record(firmado)
+    const signed = { ...event, signature: signEvent(event, session.secret) } as NewEvent
+    const r = await client.record(signed)
     if (!r.ok) throw new Error(`Evento inválido: ${r.errors.join('; ')}`)
     // Que el contador de pendientes ya lo cuente al volver.
     await this.alCambiarDatos()
-    return firmado
+    return signed
   }
 
   /**
@@ -958,12 +959,12 @@ export class Sala {
   }
 
   /** Lo que va por HTTP al hub; con el corte simulado tampoco sale, como si no hubiera red. */
-  private api<T>(...args: Parameters<typeof llamar>): Promise<T> {
+  private api<T>(...args: Parameters<typeof makeCall>): Promise<T> {
     if (this.status.simulandoSinConexion) return Promise.reject(new ErrorApi('offline', SIN_HUB))
-    return llamar<T>(...args)
+    return makeCall<T>(...args)
   }
 
-  private equipoActual(): Equipo {
+  private equipoActual(): Device {
     if (!this.status.device)
       throw new Error('Este equipo todavía no ha entrado: escribe tu PIN o tu contraseña')
     return this.status.device

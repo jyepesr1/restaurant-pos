@@ -10,7 +10,7 @@ import { datosItem, inOrder, local, opening, TIME } from './pruebas'
 
 const COCINA = newId()
 const BARRA = newId()
-const idDe = (l: LocalEvent) => (l.event.data as { item_id: string }).item_id
+const idOf = (l: LocalEvent) => (l.event.data as { item_id: string }).item_id
 
 /** Un pedido abierto con eventos a voluntad; devuelve los eventos y lo que ve el equipo. */
 function build(construct: (p: string) => LocalEvent[]) {
@@ -67,12 +67,12 @@ describe('comandasEnCocina', () => {
     const { p, locals, orders } = build((p) => {
       const a = local('ItemAdded', p, datosItem({ name: 'Tagliata' }))
       const b = local('ItemAdded', p, datosItem({ name: 'Risotto' }))
-      return [a, b, conNumeros(envio(p, [{ ids: [idDe(a), idDe(b)], ticket }]), { [ticket]: 7 })]
+      return [a, b, conNumeros(envio(p, [{ ids: [idOf(a), idOf(b)], ticket }]), { [ticket]: 7 })]
     })
     const r = comandasEnCocina(locals, orders)
     expect(r).toHaveLength(1)
     expect(r[0]).toMatchObject({
-      comandaId: ticket,
+      ticketId: ticket,
       stationId: COCINA,
       number: 7,
       enviadaEn: TIME,
@@ -89,8 +89,8 @@ describe('comandasEnCocina', () => {
       return [
         a,
         b,
-        envio(p, [{ ids: [idDe(a), idDe(b)] }]),
-        local('ItemServed', p, { item_ids: [idDe(a), idDe(b)] }),
+        envio(p, [{ ids: [idOf(a), idOf(b)] }]),
+        local('ItemServed', p, { item_ids: [idOf(a), idOf(b)] }),
       ]
     })
     expect(comandasEnCocina(locals, orders)).toEqual([])
@@ -105,9 +105,9 @@ describe('comandasEnCocina', () => {
         a,
         b,
         c,
-        envio(p, [{ ids: [idDe(a), idDe(b), idDe(c)] }]),
-        local('ItemServed', p, { item_ids: [idDe(a)] }),
-        local('ItemReady', p, { item_ids: [idDe(b)] }),
+        envio(p, [{ ids: [idOf(a), idOf(b), idOf(c)] }]),
+        local('ItemServed', p, { item_ids: [idOf(a)] }),
+        local('ItemReady', p, { item_ids: [idOf(b)] }),
       ]
     })
     expect(resumen(comandasEnCocina(locals, orders))).toEqual([
@@ -122,8 +122,8 @@ describe('comandasEnCocina', () => {
       return [
         a,
         b,
-        envio(p, [{ ids: [idDe(a), idDe(b)] }]),
-        local('ItemReady', p, { item_ids: [idDe(a), idDe(b)] }),
+        envio(p, [{ ids: [idOf(a), idOf(b)] }]),
+        local('ItemReady', p, { item_ids: [idOf(a), idOf(b)] }),
       ]
     })
     expect(comandasEnCocina(locals, orders)[0]?.list).toBe(true)
@@ -136,9 +136,9 @@ describe('comandasEnCocina', () => {
       return [
         a,
         b,
-        envio(p, [{ ids: [idDe(a), idDe(b)] }]),
-        local('ItemServed', p, { item_ids: [idDe(a)] }),
-        local('ItemReady', p, { item_ids: [idDe(b)] }),
+        envio(p, [{ ids: [idOf(a), idOf(b)] }]),
+        local('ItemServed', p, { item_ids: [idOf(a)] }),
+        local('ItemReady', p, { item_ids: [idOf(b)] }),
       ]
     })
     expect(resumen(comandasEnCocina(locals, orders))).toEqual([
@@ -151,8 +151,8 @@ describe('comandasEnCocina', () => {
       const a = local('ItemAdded', p, datosItem())
       return [
         a,
-        envio(p, [{ ids: [idDe(a)] }]),
-        local('ItemInPreparation', p, { item_ids: [idDe(a)] }),
+        envio(p, [{ ids: [idOf(a)] }]),
+        local('ItemInPreparation', p, { item_ids: [idOf(a)] }),
       ]
     })
     const r = comandasEnCocina(locals, orders)
@@ -165,9 +165,9 @@ describe('comandasEnCocina', () => {
       const a = local('ItemAdded', p, datosItem())
       return [
         a,
-        envio(p, [{ ids: [idDe(a)] }]),
-        local('ItemServed', p, { item_ids: [idDe(a)] }),
-        local('ItemReturnedToQueue', p, { item_ids: [idDe(a)] }),
+        envio(p, [{ ids: [idOf(a)] }]),
+        local('ItemServed', p, { item_ids: [idOf(a)] }),
+        local('ItemReturnedToQueue', p, { item_ids: [idOf(a)] }),
       ]
     })
     expect(comandasEnCocina(locals, orders)).toHaveLength(1)
@@ -181,11 +181,11 @@ describe('comandasEnCocina', () => {
         return [
           a,
           b,
-          envio(p, [{ ids: [idDe(a), idDe(b)] }]),
+          envio(p, [{ ids: [idOf(a), idOf(b)] }]),
           local(
             'ItemVoided',
             p,
-            { item_id: idDe(a), quantity: 1, already_prepared: false, ticket_id: null },
+            { item_id: idOf(a), quantity: 1, already_prepared: false, ticket_id: null },
             'confirmed',
             {
               reason: 'se arrepintió',
@@ -203,11 +203,11 @@ describe('comandasEnCocina', () => {
         return [
           a,
           b,
-          envio(p, [{ ids: [idDe(a), idDe(b)] }]),
+          envio(p, [{ ids: [idOf(a), idOf(b)] }]),
           local(
             'ItemVoided',
             p,
-            { item_id: idDe(a), quantity: 3, already_prepared: false, ticket_id: null },
+            { item_id: idOf(a), quantity: 3, already_prepared: false, ticket_id: null },
             'confirmed',
             {
               reason: 'se arrepintió',
@@ -225,11 +225,11 @@ describe('comandasEnCocina', () => {
         const a = local('ItemAdded', p, datosItem())
         return [
           a,
-          envio(p, [{ ids: [idDe(a)] }]),
+          envio(p, [{ ids: [idOf(a)] }]),
           local(
             'ItemVoided',
             p,
-            { item_id: idDe(a), quantity: 1, already_prepared: false, ticket_id: null },
+            { item_id: idOf(a), quantity: 1, already_prepared: false, ticket_id: null },
             'confirmed',
             {
               reason: 'x',
@@ -245,7 +245,7 @@ describe('comandasEnCocina', () => {
     it('un envío pendiente ya cuenta, sin número, y con la hora estimada del hub', () => {
       const { locals, orders } = build((p) => {
         const a = local('ItemAdded', p, datosItem({ name: 'Tagliata' }))
-        return [a, envio(p, [{ ids: [idDe(a)] }], 'pending')]
+        return [a, envio(p, [{ ids: [idOf(a)] }], 'pending')]
       })
       const r = comandasEnCocina(locals, orders)
       expect(resumen(r)).toEqual([{ n: null, items: ['Tagliata'], list: false }])
@@ -259,7 +259,7 @@ describe('comandasEnCocina', () => {
         return [
           a,
           receivedAt(
-            conNumeros(envio(p, [{ ids: [idDe(a)], ticket }]), { [ticket]: 4 }),
+            conNumeros(envio(p, [{ ids: [idOf(a)], ticket }]), { [ticket]: 4 }),
             '2026-10-24T15:03:00.000Z',
           ),
         ]
@@ -274,7 +274,7 @@ describe('comandasEnCocina', () => {
       for (const status of ['rejected', 'quarantine'] as const) {
         const { locals, orders } = build((p) => {
           const a = local('ItemAdded', p, datosItem())
-          return [a, { ...envio(p, [{ ids: [idDe(a)] }]), status }]
+          return [a, { ...envio(p, [{ ids: [idOf(a)] }]), status }]
         })
         expect(comandasEnCocina(locals, orders)).toEqual([])
       }
@@ -290,8 +290,8 @@ describe('comandasEnCocina', () => {
           b,
           conNumeros(
             envio(p, [
-              { ids: [idDe(a)], ticket: c1 },
-              { ids: [idDe(b)], ticket: c2, station: BARRA },
+              { ids: [idOf(a)], ticket: c1 },
+              { ids: [idOf(b)], ticket: c2, station: BARRA },
             ]),
             { [c2]: 9 },
           ),
@@ -309,22 +309,22 @@ describe('comandasEnCocina', () => {
       const { p, locals, orders } = build((p) => {
         const a = local('ItemAdded', p, datosItem({ name: 'Plato' }))
         const b = local('ItemAdded', p, datosItem({ name: 'Trago' }))
-        return [a, b, envio(p, [{ ids: [idDe(a)] }, { ids: [idDe(b)], station: BARRA }])]
+        return [a, b, envio(p, [{ ids: [idOf(a)] }, { ids: [idOf(b)], station: BARRA }])]
       })
       const r = comandasEnCocina(locals, orders)
       expect(r.map((c) => c.stationId)).toEqual([COCINA, BARRA])
       expect(r.every((c) => c.order.status.id === p)).toBe(true)
-      expect(r[0]?.comandaId).not.toBe(r[1]?.comandaId)
+      expect(r[0]?.ticketId).not.toBe(r[1]?.ticketId)
     })
 
     it('envíos en momentos distintos de varios pedidos salen del más viejo al más nuevo', () => {
       const one = build((p) => {
         const a = local('ItemAdded', p, datosItem({ name: 'Tarde' }))
-        return [a, receivedAt(envio(p, [{ ids: [idDe(a)] }]), '2026-10-24T15:30:00.000Z')]
+        return [a, receivedAt(envio(p, [{ ids: [idOf(a)] }]), '2026-10-24T15:30:00.000Z')]
       })
       const two = build((p) => {
         const a = local('ItemAdded', p, datosItem({ name: 'Temprano' }))
-        return [a, receivedAt(envio(p, [{ ids: [idDe(a)] }]), '2026-10-24T15:05:00.000Z')]
+        return [a, receivedAt(envio(p, [{ ids: [idOf(a)] }]), '2026-10-24T15:05:00.000Z')]
       })
       const all = [...one.locals, ...two.locals]
       const orders = pedidosAbiertos(inOrder(all))
@@ -338,9 +338,9 @@ describe('comandasEnCocina', () => {
         const b = local('ItemAdded', p, datosItem({ name: 'Segundo' }))
         return [
           a,
-          envio(p, [{ ids: [idDe(a)] }]),
+          envio(p, [{ ids: [idOf(a)] }]),
           b,
-          receivedAt(envio(p, [{ ids: [idDe(b)] }]), '2026-10-24T15:10:00.000Z'),
+          receivedAt(envio(p, [{ ids: [idOf(b)] }]), '2026-10-24T15:10:00.000Z'),
         ]
       })
       expect(resumen(comandasEnCocina(locals, orders)).map((c) => c.items[0])).toEqual([
@@ -354,7 +354,7 @@ describe('comandasEnCocina', () => {
         const a = local('ItemAdded', p, datosItem({ name: 'Uno' }))
         const b = local('ItemAdded', p, datosItem({ name: 'Dos' }))
         const c = local('ItemAdded', p, datosItem({ name: 'Tres' }))
-        return [a, b, c, envio(p, [{ ids: [idDe(c), idDe(a), idDe(b)] }])]
+        return [a, b, c, envio(p, [{ ids: [idOf(c), idOf(a), idOf(b)] }])]
       })
       expect(comandasEnCocina(locals, orders)[0]?.items.map((i) => i.name)).toEqual([
         'Uno',
@@ -366,7 +366,7 @@ describe('comandasEnCocina', () => {
     it('una comanda con un ítem que ya no existe en el pedido ignora ese ítem', () => {
       const { locals, orders } = build((p) => {
         const a = local('ItemAdded', p, datosItem({ name: 'Real' }))
-        return [a, envio(p, [{ ids: [idDe(a), newId()] }])]
+        return [a, envio(p, [{ ids: [idOf(a), newId()] }])]
       })
       expect(comandasEnCocina(locals, orders)[0]?.items.map((i) => i.name)).toEqual(['Real'])
     })
@@ -374,7 +374,7 @@ describe('comandasEnCocina', () => {
     it('un pedido cerrado o cancelado ya no aparece en cocina', () => {
       const { p, locals } = build((p) => {
         const a = local('ItemAdded', p, datosItem())
-        return [a, envio(p, [{ ids: [idDe(a)] }])]
+        return [a, envio(p, [{ ids: [idOf(a)] }])]
       })
       const canceled = inOrder([
         ...locals,
@@ -388,7 +388,7 @@ describe('comandasEnCocina', () => {
 })
 
 describe('demora', () => {
-  const tiempos = { amarillo: 10, rojo: 20 }
+  const timers = { yellow: 10, red: 20 }
   const sent = '2026-10-24T15:00:00.000Z'
   const t0 = Date.parse(sent)
   const min = 60_000
@@ -406,49 +406,49 @@ describe('demora', () => {
     [20 * min + 1, 'very_late'],
     [3 * 60 * min, 'very_late'],
   ])('a los %i ms de enviada va «%s» (ámbar 10, rojo 20)', (ms, expected) => {
-    expect(demora(sent, t0 + ms, tiempos)).toBe(expected)
+    expect(demora(sent, t0 + ms, timers)).toBe(expected)
   })
 
   it('con el reloj del equipo atrasado (la hora de envío está en el futuro) va a tiempo', () => {
-    expect(demora(sent, t0 - 5 * min, tiempos)).toBe('on_time')
-    expect(demora(sent, t0 - 24 * 60 * min, tiempos)).toBe('on_time')
+    expect(demora(sent, t0 - 5 * min, timers)).toBe('on_time')
+    expect(demora(sent, t0 - 24 * 60 * min, timers)).toBe('on_time')
   })
 
   it('respeta los tiempos del local', () => {
-    expect(demora(sent, t0 + 3 * min, { amarillo: 3, rojo: 6 })).toBe('late')
-    expect(demora(sent, t0 + 6 * min, { amarillo: 3, rojo: 6 })).toBe('very_late')
-    expect(demora(sent, t0 + 5 * min, { amarillo: 15, rojo: 30 })).toBe('on_time')
+    expect(demora(sent, t0 + 3 * min, { yellow: 3, red: 6 })).toBe('late')
+    expect(demora(sent, t0 + 6 * min, { yellow: 3, red: 6 })).toBe('very_late')
+    expect(demora(sent, t0 + 5 * min, { yellow: 15, red: 30 })).toBe('on_time')
   })
 
   it('si el rojo y el ámbar coinciden, gana el rojo', () => {
-    expect(demora(sent, t0 + 7 * min, { amarillo: 7, rojo: 7 })).toBe('very_late')
+    expect(demora(sent, t0 + 7 * min, { yellow: 7, red: 7 })).toBe('very_late')
   })
 
   it('una hora ilegible no marca alarma falsa', () => {
-    expect(demora('no es una fecha', t0, tiempos)).toBe('on_time')
-    expect(demora('', t0, tiempos)).toBe('on_time')
+    expect(demora('no es una fecha', t0, timers)).toBe('on_time')
+    expect(demora('', t0, timers)).toBe('on_time')
   })
 
   it('con minutos con decimales (ámbar 0.5) también compara bien', () => {
-    expect(demora(sent, t0 + 29_999, { amarillo: 0.5, rojo: 1 })).toBe('on_time')
-    expect(demora(sent, t0 + 30_000, { amarillo: 0.5, rojo: 1 })).toBe('late')
+    expect(demora(sent, t0 + 29_999, { yellow: 0.5, red: 1 })).toBe('on_time')
+    expect(demora(sent, t0 + 30_000, { yellow: 0.5, red: 1 })).toBe('late')
   })
 })
 
 describe('tiemposDe', () => {
   it('usa los del restaurante', () => {
     expect(tiemposDe({ kitchenYellowMin: 5, kitchenRedMin: 12 })).toEqual({
-      amarillo: 5,
-      rojo: 12,
+      yellow: 5,
+      red: 12,
     })
   })
 
   it('un hub de antes de la 1.4 (sin los campos) usa 10 y 20', () => {
-    expect(tiemposDe({})).toEqual({ amarillo: 10, rojo: 20 })
+    expect(tiemposDe({})).toEqual({ yellow: 10, red: 20 })
   })
 
   it('si solo viene uno, el otro es el de fábrica', () => {
-    expect(tiemposDe({ kitchenYellowMin: 4 })).toEqual({ amarillo: 4, rojo: 20 })
-    expect(tiemposDe({ kitchenRedMin: 40 })).toEqual({ amarillo: 10, rojo: 40 })
+    expect(tiemposDe({ kitchenYellowMin: 4 })).toEqual({ yellow: 4, red: 20 })
+    expect(tiemposDe({ kitchenRedMin: 40 })).toEqual({ yellow: 10, red: 40 })
   })
 })

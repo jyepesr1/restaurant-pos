@@ -6,9 +6,9 @@ import {
   crearMundo,
   eventoPlano,
   eventosGuardados,
-  type Mundo,
   SEED,
   statuses,
+  type World,
 } from './pruebas/mundo'
 
 // Idempotencia de la subida de eventos (ADR-007, ADR-016): sin importar cuántas veces, en qué
@@ -18,7 +18,7 @@ import {
 
 const RUNS = { seed: SEED, numRuns: 25 }
 
-let m: Mundo
+let m: World
 beforeAll(async () => {
   m = await crearMundo()
 })
@@ -185,11 +185,11 @@ describe('lotes concurrentes con los mismos eventos', () => {
   it('el mismo lote enviado a la vez varias veces: cada evento se guarda una sola vez', async () => {
     const { hub, restaurantId } = await m.newHub()
     const events = batch(1, 30)
-    const respuestas = await Promise.all(
+    const responses = await Promise.all(
       Array.from({ length: 6 }, () => m.nube.recibirEventos(hub, events)),
     )
     for (const e of events) {
-      const veredictos = respuestas.map((r) => r.find((x) => x.id === e.id)?.status)
+      const veredictos = responses.map((r) => r.find((x) => x.id === e.id)?.status)
       expect(veredictos.filter((v) => v === 'saved')).toHaveLength(1)
       expect(veredictos.filter((v) => v === 'already_stored')).toHaveLength(5)
     }
@@ -201,8 +201,8 @@ describe('lotes concurrentes con los mismos eventos', () => {
     const { hub, restaurantId } = await m.newHub()
     const all = batch(1, 40)
     const lotes = [all.slice(0, 20), all.slice(10, 30).reverse(), all.slice(25), [...all].reverse()]
-    const respuestas = await Promise.all(lotes.map((l) => m.nube.recibirEventos(hub, l)))
-    const savedList = respuestas.flat().filter((r) => r.status === 'saved')
+    const responses = await Promise.all(lotes.map((l) => m.nube.recibirEventos(hub, l)))
+    const savedList = responses.flat().filter((r) => r.status === 'saved')
     expect(new Set(savedList.map((g) => g.id)).size).toBe(40)
     expect(savedList).toHaveLength(40)
     expect(await count(m.db, 'events', restaurantId)).toBe(40)
@@ -351,7 +351,7 @@ describe('evento_distinto', () => {
     const reg = await m.nube.registrarHub({
       code: secondOne.code,
       hub_id: eventoPlano(500).id,
-      location_id: a.hub.sedeId,
+      location_id: a.hub.locationId,
       name: 'Caja 2',
       instance: 'i2',
     })

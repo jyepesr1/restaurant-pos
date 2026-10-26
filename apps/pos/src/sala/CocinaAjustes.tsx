@@ -16,18 +16,18 @@ import { Confirmar } from './Personal'
 // las dos), las impresoras con su página de prueba, las pantallas de cocina, convertir este equipo
 // en una y los minutos del ámbar y el rojo. Para quien administra los equipos.
 
-const PAGINAS: { value: ImpresoraCocina['code_page']; name: string; detalle: string }[] = [
+const PAGINAS: { value: ImpresoraCocina['code_page']; name: string; detail: string }[] = [
   {
     value: 'pc850',
     name: 'Con tildes (recomendada)',
-    detalle: 'La de casi todas: Jaltech, Epson, Xprinter',
+    detail: 'La de casi todas: Jaltech, Epson, Xprinter',
   },
   {
     value: 'wpc1252',
     name: 'Con tildes de Windows',
-    detalle: 'Si con la recomendada salen símbolos raros',
+    detail: 'Si con la recomendada salen símbolos raros',
   },
-  { value: 'no_accents', name: 'Sin tildes', detalle: 'Si ninguna imprime bien la ñ' },
+  { value: 'no_accents', name: 'Sin tildes', detail: 'Si ninguna imprime bien la ñ' },
 ]
 
 const NUEVA: ImpresoraCocina = {
@@ -84,7 +84,7 @@ export function CocinaAjustes() {
   const nombreEstacion = (id: string) =>
     config.stations.find((e) => e.id === id)?.name ?? 'Estación'
 
-  const probar = async (id: string, name: string) => {
+  const attempt = async (id: string, name: string) => {
     try {
       await floor.testPrinter(id)
       notify(`Prueba enviada a ${name}: revisa que salga el papel`)
@@ -200,7 +200,7 @@ export function CocinaAjustes() {
                     )}
                   </div>
                   {i.active && (
-                    <Boton icono="printer" onClick={() => probar(i.id, i.name)}>
+                    <Boton icono="printer" onClick={() => attempt(i.id, i.name)}>
                       Imprimir prueba
                     </Boton>
                   )}
@@ -233,7 +233,7 @@ export function CocinaAjustes() {
   )
 }
 
-function Estaciones({
+function Stations({
   config,
   elegidas,
   onChange,
@@ -243,7 +243,7 @@ function Estaciones({
   onChange: (ids: string[]) => void
 }) {
   return (
-    <Grupo etiqueta="Estaciones" className="flex flex-wrap gap-2">
+    <Grupo label="Estaciones" className="flex flex-wrap gap-2">
       {config.stations.map((e) => (
         <Opcion
           key={e.id}
@@ -275,7 +275,7 @@ function EditarImpresora({
   const notify = useAvisar()
   const [b, setB] = useState(initial)
   const [error, setError] = useState<string | null>(null)
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
   const [archivando, setArchivando] = useState(false)
   const patch = (partial: Partial<ImpresoraCocina>) => setB((x) => ({ ...x, ...partial }))
   const otras = config.printers.filter((i) => i.active && i.id !== b.id)
@@ -320,7 +320,7 @@ function EditarImpresora({
                   : `¿Archivar ${b.name}? No tiene respaldo: lo que esté esperando no saldrá y la caja lo verá en «Pedidos en cocina» para descartarlo o reimprimirlo. No se borra: se puede volver a usar.`
               }
               yes="Archivar"
-              ocupado={ocupado}
+              taken={taken}
               alConfirmar={() => save({ active: false })}
               alCancelar={() => setArchivando(false)}
             />
@@ -330,7 +330,7 @@ function EditarImpresora({
                 variant="main"
                 large
                 className="flex-1"
-                disabled={ocupado}
+                disabled={taken}
                 onClick={() => save()}
               >
                 Guardar
@@ -341,7 +341,7 @@ function EditarImpresora({
                 </Boton>
               )}
               {initial.id && !initial.active && (
-                <Boton disabled={ocupado} onClick={() => save({ active: true })}>
+                <Boton disabled={taken} onClick={() => save({ active: true })}>
                   Volver a usar
                 </Boton>
               )}
@@ -364,7 +364,7 @@ function EditarImpresora({
 
         <div className="flex flex-col gap-2">
           <span className="font-semibold">Qué imprime</span>
-          <Estaciones
+          <Stations
             config={config}
             elegidas={b.station_ids}
             onChange={(ids) => patch({ station_ids: ids })}
@@ -378,7 +378,7 @@ function EditarImpresora({
 
         <div className="flex flex-col gap-2">
           <span className="font-semibold">Conexión</span>
-          <Grupo etiqueta="Conexión" className="flex flex-wrap gap-2">
+          <Grupo label="Conexión" className="flex flex-wrap gap-2">
             <Opcion
               elegida={b.connection === 'network'}
               alElegir={() => patch({ connection: 'network' })}
@@ -437,7 +437,7 @@ function EditarImpresora({
 
         <div className="flex flex-col gap-2">
           <span className="font-semibold">Ancho del papel</span>
-          <Grupo etiqueta="Ancho del papel" className="flex flex-wrap gap-2">
+          <Grupo label="Ancho del papel" className="flex flex-wrap gap-2">
             {([80, 58] as const).map((a) => (
               <Opcion key={a} elegida={b.width === a} alElegir={() => patch({ width: a })}>
                 {`${a} mm`}
@@ -448,12 +448,12 @@ function EditarImpresora({
 
         <div className="flex flex-col gap-2">
           <span className="font-semibold">Tildes y eñes</span>
-          <Grupo etiqueta="Tabla de caracteres" className="flex flex-col gap-2">
+          <Grupo label="Tabla de caracteres" className="flex flex-col gap-2">
             {PAGINAS.map((p) => (
               <Opcion
                 key={p.value}
                 shape="card"
-                detalle={p.detalle}
+                detail={p.detail}
                 elegida={b.code_page === p.value}
                 alElegir={() => patch({ code_page: p.value })}
               >
@@ -468,7 +468,7 @@ function EditarImpresora({
 
         <div className="flex flex-col gap-2">
           <span className="font-semibold">Si no responde, imprimir en</span>
-          <Grupo etiqueta="Impresora de respaldo" className="flex flex-wrap gap-2">
+          <Grupo label="Impresora de respaldo" className="flex flex-wrap gap-2">
             <Opcion elegida={b.fallback_id === null} alElegir={() => patch({ fallback_id: null })}>
               Ninguna
             </Opcion>
@@ -497,7 +497,7 @@ function Pantallas({ config, onChange }: { config: ConfiguracionCocina; onChange
   const [name, setNombre] = useState('Pantalla cocina')
   const [stations, setEstaciones] = useState<string[]>([])
   const [confirmando, setConfirmando] = useState(false)
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const cambiarEstaciones = async (deviceId: string, ids: string[]) => {
@@ -509,10 +509,10 @@ function Pantallas({ config, onChange }: { config: ConfiguracionCocina; onChange
       notify(message(e))
     }
   }
-  const convertir = async () => {
+  const convert = async () => {
     setOcupado(true)
     try {
-      await floor.convertirEnPantalla(name.trim(), stations)
+      await floor.convertToScreen(name.trim(), stations)
       navegar('/')
     } catch (e) {
       setError(message(e))
@@ -546,7 +546,7 @@ function Pantallas({ config, onChange }: { config: ConfiguracionCocina; onChange
                 </span>
               </span>
               <span className="text-sm font-semibold">Qué estaciones muestra</span>
-              <Estaciones
+              <Stations
                 config={config}
                 elegidas={p.station_ids}
                 onChange={(ids) => cambiarEstaciones(p.device_id, ids)}
@@ -575,7 +575,7 @@ function Pantallas({ config, onChange }: { config: ConfiguracionCocina; onChange
           />
         </label>
         <span className="font-semibold">Qué estaciones muestra</span>
-        <Estaciones config={config} elegidas={stations} onChange={setEstaciones} />
+        <Stations config={config} elegidas={stations} onChange={setEstaciones} />
         {stations.length === 0 && (
           <span className="text-sm text-texto-suave">Elige al menos una estación.</span>
         )}
@@ -588,8 +588,8 @@ function Pantallas({ config, onChange }: { config: ConfiguracionCocina; onChange
           <Confirmar
             pregunta="Este equipo quedará siempre en la pantalla de cocina, sin pedir PIN, y tu sesión se cierra aquí. Para deshacerlo: desde la caja, Personal y roles, Equipos, «Retirar». ¿Seguimos?"
             yes="Convertir"
-            ocupado={ocupado}
-            alConfirmar={convertir}
+            taken={taken}
+            alConfirmar={convert}
             alCancelar={() => setConfirmando(false)}
           />
         ) : (
@@ -612,12 +612,12 @@ function Pantallas({ config, onChange }: { config: ConfiguracionCocina; onChange
 
 function Tiempos({ config, onChange }: { config: ConfiguracionCocina; onChange: () => void }) {
   const notify = useAvisar()
-  const [amarillo, setAmarillo] = useState(String(config.tiempos.amarillo))
-  const [rojo, setRojo] = useState(String(config.tiempos.rojo))
-  const a = Number(amarillo)
-  const r = Number(rojo)
+  const [yellow, setAmarillo] = useState(String(config.timers.yellow))
+  const [red, setRojo] = useState(String(config.timers.red))
+  const a = Number(yellow)
+  const r = Number(red)
   const valid = Number.isInteger(a) && Number.isInteger(r) && a >= 1 && r > a && r <= 240
-  const change = a !== config.tiempos.amarillo || r !== config.tiempos.rojo
+  const change = a !== config.timers.yellow || r !== config.timers.red
   const save = async () => {
     try {
       await floor.kitchenTimers(a, r)
@@ -639,7 +639,7 @@ function Tiempos({ config, onChange }: { config: ConfiguracionCocina; onChange: 
             <input
               className={`${claseCampo} cifras`}
               inputMode="numeric"
-              value={amarillo}
+              value={yellow}
               onChange={(e) => setAmarillo(e.target.value.replace(/\D/g, ''))}
             />
             min
@@ -651,7 +651,7 @@ function Tiempos({ config, onChange }: { config: ConfiguracionCocina; onChange: 
             <input
               className={`${claseCampo} cifras`}
               inputMode="numeric"
-              value={rojo}
+              value={red}
               onChange={(e) => setRojo(e.target.value.replace(/\D/g, ''))}
             />
             min

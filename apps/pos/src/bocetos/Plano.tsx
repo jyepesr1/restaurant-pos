@@ -38,7 +38,7 @@ export function estadoVisible(table: Mesa, now: number): Visible {
 }
 
 const ACTIVAS: readonly EstadoMesa[] = ['taking', 'in_kitchen', 'ready', 'preBill']
-const activa = (m: Mesa) => ACTIVAS.includes(m.status)
+const active = (m: Mesa) => ACTIVAS.includes(m.status)
 
 /** Las libres van en blanco: así resaltan las que necesitan atención. */
 const claseMesa = (table: Mesa, v: Visible) =>
@@ -67,7 +67,7 @@ export function Plano() {
     )
   }
 
-  const openHandles = tables.filter(activa)
+  const openHandles = tables.filter(active)
   const count = (...statuses: EstadoMesa[]) =>
     tables.filter((m) => statuses.includes(m.status)).length
 
@@ -141,7 +141,7 @@ export function Plano() {
   )
 }
 
-const detalle = (table: Mesa, now: number) =>
+const detail = (table: Mesa, now: number) =>
   [
     table.waiter,
     `${table.guests} ${table.guests === 1 ? 'persona' : 'personas'}`,
@@ -152,7 +152,7 @@ const detalle = (table: Mesa, now: number) =>
 
 function MesaEnPlano({ table, now, alTocar }: { table: Mesa; now: number; alTocar: () => void }) {
   const v = estadoVisible(table, now)
-  const takenPath = activa(table)
+  const takenPath = active(table)
   const tiempo = minutos(minutosDesde(table.abiertaEn, now))
   return (
     <button
@@ -190,11 +190,11 @@ function MesaEnLista({ table, now, alTocar }: { table: Mesa; now: number; alToca
         <Etiqueta tono={v.tono} icono={v.icono}>
           {v.text}
         </Etiqueta>
-        {activa(table) && (
-          <span className="mt-1 block text-sm text-texto-suave">{detalle(table, now)}</span>
+        {active(table) && (
+          <span className="mt-1 block text-sm text-texto-suave">{detail(table, now)}</span>
         )}
       </span>
-      {activa(table) && <span className="cifras font-semibold">{pesos(saldoMesa(table))}</span>}
+      {active(table) && <span className="cifras font-semibold">{pesos(saldoMesa(table))}</span>}
     </button>
   )
 }

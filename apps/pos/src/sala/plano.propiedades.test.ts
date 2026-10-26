@@ -1,7 +1,7 @@
 import { newId } from '@pos/core'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import type { CambioCatalogo, CatalogoEdicion, FormaMesa, Geometria, TipoElemento } from './motor'
+import type { CatalogChange, CatalogoEdicion, FormaMesa, Geometria, TipoElemento } from './motor'
 import {
   ajustar,
   type BorradorZona,
@@ -13,13 +13,13 @@ import {
   MEDIDA_MINIMA,
   measure,
   move,
+  newZone,
   nuevaMesa,
   nuevoElemento,
   problemasDeZona,
   rotate,
   siguienteNombre,
   TIPOS_ELEMENTO,
-  zonaNueva,
 } from './plano'
 
 // Propiedades del plano (tarea 1.2). Semilla fija: determinista.
@@ -67,11 +67,11 @@ const arbPantalla = fc.oneof(
   fc.constantFrom(Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0, -0, 4.99, 5, 5.01),
 )
 
-type Orden =
+type Position =
   | { t: 'move'; x: number; y: number }
   | { t: 'rotate'; g: number }
   | { t: 'measure'; a: number; h: number }
-const arbOrden: fc.Arbitrary<Orden> = fc.oneof(
+const arbOrden: fc.Arbitrary<Position> = fc.oneof(
   fc.record({ t: fc.constant('move' as const), x: arbPantalla, y: arbPantalla }),
   fc.record({
     t: fc.constant('rotate' as const),
@@ -79,7 +79,7 @@ const arbOrden: fc.Arbitrary<Orden> = fc.oneof(
   }),
   fc.record({ t: fc.constant('measure' as const), a: arbPantalla, h: arbPantalla }),
 )
-const hacer = (g: Geometria, o: Orden): Geometria =>
+const act = (g: Geometria, o: Position): Geometria =>
   o.t === 'move' ? move(g, o.x, o.y) : o.t === 'rotate' ? rotate(g, o.g) : measure(g, o.a, o.h)
 
 describe('mover, girar y medir', () => {
@@ -88,7 +88,7 @@ describe('mover, girar y medir', () => {
       fc.property(arbGeometria, fc.array(arbOrden, { maxLength: 12 }), (g0, ordenes) => {
         let g = g0
         for (const o of ordenes) {
-          g = hacer(g, o)
+          g = act(g, o)
           expect(geometriaValida(g)).toBe(true)
         }
         if (ordenes.some((o) => o.t === 'move')) {
@@ -107,8 +107,8 @@ describe('mover, girar y medir', () => {
   it('cada operación solo toca lo suyo', () => {
     fc.assert(
       fc.property(arbGeometria, arbPantalla, arbPantalla, (g, a, b) => {
-        const movida = move(g, a, b)
-        expect([movida.width, movida.height, movida.rotation]).toEqual([
+        const movedTable = move(g, a, b)
+        expect([movedTable.width, movedTable.height, movedTable.rotation]).toEqual([
           g.width,
           g.height,
           g.rotation,
@@ -344,7 +344,7 @@ describe('lugarLibre: poner mesas y elementos nuevos en un salón que se llena',
   function llenar(
     times: { table: FormaMesa } | { element: TipoElemento },
     n: number,
-    b = zonaNueva({ zones: [] } as unknown as CatalogoEdicion),
+    b = newZone({ zones: [] } as unknown as CatalogoEdicion),
   ) {
     for (let i = 0; i < n; i++) {
       if ('table' in times)
@@ -361,7 +361,7 @@ describe('lugarLibre: poner mesas y elementos nuevos en un salón que se llena',
   }
 
   it('lo primero va al origen', () => {
-    const b = zonaNueva({ zones: [] } as unknown as CatalogoEdicion)
+    const b = newZone({ zones: [] } as unknown as CatalogoEdicion)
     expect(nuevaMesa(b, 'square', [])).toMatchObject({ x: 0, y: 0 })
     expect(nuevoElemento(b, 'wall')).toMatchObject({ x: 0, y: 0 })
   })
@@ -376,7 +376,7 @@ describe('lugarLibre: poner mesas y elementos nuevos en un salón que se llena',
         fc.array(arbPaso, { minLength: 1, maxLength: 40 }),
         fc.array(arbFigura, { maxLength: 4 }),
         (steps, previas) => {
-          const b = zonaNueva({ zones: [] } as unknown as CatalogoEdicion)
+          const b = newZone({ zones: [] } as unknown as CatalogoEdicion)
           // Algo ya dibujado, quizá girado.
           for (const [i, f] of previas.entries())
             b.tables.push({
@@ -454,10 +454,10 @@ describe('lugarLibre: poner mesas y elementos nuevos en un salón que se llena',
     const b = llenar({ element: 'wall' }, 1)
     const second = nuevoElemento(b, 'wall')
     b.elements.push(second)
-    const tercera = nuevoElemento(b, 'wall')
+    const third = nuevoElemento(b, 'wall')
     // 300 + 40 + 300 + 40 + 300 > 1500 no cabe una tercera en la misma fila.
     expect(second.y).toBe(0)
-    expect(tercera.x + tercera.width).toBeLessThanOrEqual(1500)
+    expect(third.x + third.width).toBeLessThanOrEqual(1500)
   })
 
   it('lo archivado no ocupa lugar', () => {
@@ -469,7 +469,7 @@ describe('lugarLibre: poner mesas y elementos nuevos en un salón que se llena',
 
 // ── Guardar y volver a abrir ─────────────────────────────────────────────────────────────────
 
-type Registro = Record<string, string | number | boolean | null>
+type Registration = Record<string, string | number | boolean | null>
 const FIELDS: Record<'zones' | 'dining_tables' | 'floor_plan_elements', string[]> = {
   zones: ['name', 'position', 'level', 'active'],
   dining_tables: [
@@ -502,45 +502,45 @@ const entero = (v: unknown, min: number, max: number) =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 
 /** Aplica los cambios como lo haría el hub (`edicion-catalogo.ts`); lanza si los rechazaría. */
-function apply(source: CatalogoEdicion, sentList: CambioCatalogo[]): CatalogoEdicion {
+function apply(source: CatalogoEdicion, sentList: CatalogChange[]): CatalogoEdicion {
   const c = structuredClone(source)
   // Viajan por la red como JSON (así -0 llega como 0).
-  const changes: CambioCatalogo[] = JSON.parse(JSON.stringify(sentList))
+  const changes: CatalogChange[] = JSON.parse(JSON.stringify(sentList))
   let version = c.version
-  const tocados: {
+  const touched: {
     entity: 'zones' | 'dining_tables' | 'floor_plan_elements'
     id: string
-    donde: string
+    where: string
   }[] = []
   const tableName = (e: keyof typeof TABLA) =>
-    c[TABLA[e]] as unknown as (Registro & { id: string })[]
+    c[TABLA[e]] as unknown as (Registration & { id: string })[]
 
   for (const [i, change] of changes.entries()) {
     const e = change.entity as keyof typeof TABLA
-    const donde = `Cambio ${i + 1} (${e})`
-    if (!(e in TABLA)) throw new Error(`${donde}: no es del plano`)
+    const where = `Cambio ${i + 1} (${e})`
+    if (!(e in TABLA)) throw new Error(`${where}: no es del plano`)
     const keys = Object.keys(change.data)
-    if (keys.length === 0) throw new Error(`${donde}: no cambia nada`)
+    if (keys.length === 0) throw new Error(`${where}: no cambia nada`)
     for (const k of keys)
-      if (!FIELDS[e].includes(k)) throw new Error(`${donde}: campo ${k} no existe`)
+      if (!FIELDS[e].includes(k)) throw new Error(`${where}: campo ${k} no existe`)
     const zonaRef = change.data.zone_id
     if (typeof zonaRef === 'string' && !c.zones.some((z) => z.id === zonaRef))
-      throw new Error(`${donde}: zone_id no existe`)
+      throw new Error(`${where}: zone_id no existe`)
     const current = tableName(e).find((f) => f.id === change.id)
     if (!current) {
       for (const k of FIELDS[e])
-        if (!(k in change.data)) throw new Error(`${donde}: falta ${k} al crear`)
-      tableName(e).push({ id: change.id, version: ++version, ...change.data } as Registro & {
+        if (!(k in change.data)) throw new Error(`${where}: falta ${k} al crear`)
+      tableName(e).push({ id: change.id, version: ++version, ...change.data } as Registration & {
         id: string
       })
     } else {
       const cambia = Object.entries(change.data).filter(([k, v]) => current[k] !== v)
-      if (cambia.length !== keys.length) throw new Error(`${donde}: manda campos sin cambio`)
+      if (cambia.length !== keys.length) throw new Error(`${where}: manda campos sin cambio`)
       Object.assign(current, change.data, { version: ++version })
     }
-    const row = tableName(e).find((f) => f.id === change.id) as Registro
+    const row = tableName(e).find((f) => f.id === change.id) as Registration
     const badCase = (field: string) => {
-      throw new Error(`${donde}: ${field} inválido (${String(row[field])})`)
+      throw new Error(`${where}: ${field} inválido (${String(row[field])})`)
     }
     if (typeof row.name === 'string') {
       const max = e === 'zones' ? 80 : 20
@@ -561,20 +561,20 @@ function apply(source: CatalogoEdicion, sentList: CambioCatalogo[]): CatalogoEdi
       if (typeof row.text === 'string' && (row.text !== row.text.trim() || row.text.length > 60))
         badCase('text')
     }
-    tocados.push({ entity: e, id: change.id, donde })
+    touched.push({ entity: e, id: change.id, where })
   }
 
-  for (const t of tocados) {
-    const row = tableName(t.entity).find((f) => f.id === t.id) as Registro
+  for (const t of touched) {
+    const row = tableName(t.entity).find((f) => f.id === t.id) as Registration
     if (row.active === true && t.entity !== 'zones') {
       const zone = c.zones.find((z) => z.id === row.zone_id)
-      if (zone?.active !== true) throw new Error(`${t.donde}: zona está archivado`)
+      if (zone?.active !== true) throw new Error(`${t.where}: zona está archivado`)
     }
     if (row.active === false && t.entity === 'zones')
       if (c.tables.some((m) => m.zone_id === t.id && m.active))
-        throw new Error(`${t.donde}: lo usan mesas; cámbialos primero`)
+        throw new Error(`${t.where}: lo usan mesas; cámbialos primero`)
   }
-  if (tocados.some((t) => t.entity === 'dining_tables')) {
+  if (touched.some((t) => t.entity === 'dining_tables')) {
     const seenSet = new Set<string>()
     for (const m of c.tables.filter((x) => x.active)) {
       const n = m.name.toLowerCase()
@@ -648,7 +648,7 @@ function diningRoom(): CatalogoEdicion {
   }
 }
 
-type Edicion =
+type Edit =
   | { t: 'table'; shape: FormaMesa }
   | { t: 'element'; type: TipoElemento }
   | { t: 'move'; i: number; x: number; y: number }
@@ -673,7 +673,7 @@ const arbNumeroMesa = fc.oneof(
   fc.integer({ min: 1, max: 12 }).map((n) => ` ${n} `),
   fc.constantFrom('T', 't', 'T ', ' t'),
 )
-const arbEdicion: fc.Arbitrary<Edicion> = fc.oneof(
+const arbEdicion: fc.Arbitrary<Edit> = fc.oneof(
   {
     weight: 3,
     arbitrary: fc
@@ -758,7 +758,7 @@ const arbEdicion: fc.Arbitrary<Edicion> = fc.oneof(
 )
 
 /** Lo que haría el editor con cada gesto (mismas funciones de `plano.ts`). */
-function editar(c: CatalogoEdicion, b: BorradorZona, e: Edicion): BorradorZona {
+function edit(c: CatalogoEdicion, b: BorradorZona, e: Edit): BorradorZona {
   const tables = b.tables.filter((m) => m.active)
   const elements = b.elements.filter((x) => x.active)
   const table = tables.length ? tables[e && 'i' in e ? e.i % tables.length : 0] : undefined
@@ -871,13 +871,13 @@ describe('guardar una zona y volver a abrirla', () => {
   it('aplicar al catálogo los cambios de un borrador editado y reabrir da el mismo borrador; guardar otra vez no cambia nada', () => {
     let comprobadas = 0
     fc.assert(
-      fc.property(arbDonde, fc.array(arbEdicion, { maxLength: 25 }), (donde, ediciones) => {
+      fc.property(arbDonde, fc.array(arbEdicion, { maxLength: 25 }), (where, ediciones) => {
         const c = diningRoom()
         let b: BorradorZona =
-          donde === 'nueva'
-            ? { ...zonaNueva(c), name: 'Primer piso', level: 2 }
-            : borradorDeZona(c, donde === 'salon' ? 'ZONA-SALON' : 'ZONA-TERRAZA')
-        for (const e of ediciones) b = editar(c, b, e)
+          where === 'nueva'
+            ? { ...newZone(c), name: 'Primer piso', level: 2 }
+            : borradorDeZona(c, where === 'salon' ? 'ZONA-SALON' : 'ZONA-TERRAZA')
+        for (const e of ediciones) b = edit(c, b, e)
 
         const issues = problemasDeZona(c, b)
         const changes = cambiosDeZona(c, b)
@@ -904,8 +904,8 @@ describe('guardar una zona y volver a abrirla', () => {
     fc.assert(
       fc.property(fc.array(arbEdicion, { maxLength: 25 }), (ediciones) => {
         const c = diningRoom()
-        let b: BorradorZona = { ...zonaNueva(c), name: 'Azotea', level: 3 }
-        for (const e of ediciones) b = editar(c, b, e)
+        let b: BorradorZona = { ...newZone(c), name: 'Azotea', level: 3 }
+        for (const e of ediciones) b = edit(c, b, e)
         const changes = cambiosDeZona(c, b)
         for (const x of changes) expect(Object.keys(x.data).length).toBeGreaterThan(0)
         expect(new Set(changes.map((x) => x.id)).size).toBe(changes.length)
@@ -921,13 +921,13 @@ describe('guardar una zona y volver a abrirla', () => {
 
   it('si la pantalla deja guardar, no quedan dos mesas con el mismo nombre en todo el restaurante', () => {
     fc.assert(
-      fc.property(arbDonde, fc.array(arbEdicion, { maxLength: 25 }), (donde, ediciones) => {
+      fc.property(arbDonde, fc.array(arbEdicion, { maxLength: 25 }), (where, ediciones) => {
         const c = diningRoom()
         let b: BorradorZona =
-          donde === 'nueva'
-            ? { ...zonaNueva(c), name: 'Patio' }
-            : borradorDeZona(c, donde === 'salon' ? 'ZONA-SALON' : 'ZONA-TERRAZA')
-        for (const e of ediciones) b = editar(c, b, e)
+          where === 'nueva'
+            ? { ...newZone(c), name: 'Patio' }
+            : borradorDeZona(c, where === 'salon' ? 'ZONA-SALON' : 'ZONA-TERRAZA')
+        for (const e of ediciones) b = edit(c, b, e)
         if (problemasDeZona(c, b).length > 0) return
         const c2 = apply(c, cambiosDeZona(c, b))
         const names = c2.tables.filter((m) => m.active).map((m) => m.name.trim().toLowerCase())
@@ -942,7 +942,7 @@ describe('guardar una zona y volver a abrirla', () => {
       fc.property(fc.array(arbEdicion, { maxLength: 15 }), (ediciones) => {
         const c = diningRoom()
         let b = borradorDeZona(c, 'ZONA-SALON')
-        for (const e of ediciones) b = editar(c, b, e)
+        for (const e of ediciones) b = edit(c, b, e)
         b = { ...b, active: false }
         const changes = cambiosDeZona(c, b)
         // Solo existentes: lo creado en esta sesión y no guardado no viaja.

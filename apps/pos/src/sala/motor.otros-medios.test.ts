@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
 import { mediosDelCierre, withSign } from './Caja'
 import { cuadreDeCaja, type ReglasCobro, resumenTurno, turnoDeCaja } from './cuentas'
-import { type Equipo, Sala, type Sesion } from './motor'
+import { type Device, Sala, type Session } from './motor'
 import { catalogoDePrueba, datosItem } from './pruebas'
 
 // De punta a punta, en memoria (tarea 1.8): la caja (motor + IndexedDB) habla con un hub de memoria
@@ -90,8 +90,8 @@ async function resolve<T>(
   return r as never
 }
 
-function montarHub() {
-  const tokens = new Map<string, Equipo>()
+function setupHub() {
+  const tokens = new Map<string, Device>()
   const hub = new HubSync(new MemoryStore(), {
     restaurantId: newId(),
     timeZone: 'America/Bogota',
@@ -146,7 +146,7 @@ function montarHub() {
   }
   return h
 }
-type Hub = ReturnType<typeof montarHub>
+type Hub = ReturnType<typeof setupHub>
 
 const salas: Sala[] = []
 const bases: BaseDispositivo[] = []
@@ -162,12 +162,12 @@ afterEach(async () => {
 async function register(h: Hub, name = 'Caja 1') {
   const db = new BaseDispositivo(`closeout-${newId()}`)
   bases.push(db)
-  const e: Equipo = { deviceId: newId(), token: newId(), name, type: 'register' }
+  const e: Device = { deviceId: newId(), token: newId(), name, type: 'register' }
   h.tokens.set(e.token, e)
-  const sesionId = newId()
-  const session: Sesion = {
-    sesionId,
-    secret: `secreto-${sesionId}`,
+  const sessionId = newId()
+  const session: Session = {
+    sessionId,
+    secret: `secreto-${sessionId}`,
     user: { id: newId(), name: 'Carlos', role: 'Cajero' },
     permissions: [
       'take_order',
@@ -178,7 +178,7 @@ async function register(h: Hub, name = 'Caja 1') {
       'cash_movement',
       'close_register_shift',
     ],
-    ultimoUso: Date.now(),
+    lastUsed: Date.now(),
   }
   await db.saveSetting('device', e)
   await db.saveSetting('session', session)
@@ -269,7 +269,7 @@ async function cerrarComoCaja(
   floor: Sala,
   shift: string,
   counted: number,
-  escrito: Record<string, string>,
+  written: Record<string, string>,
   justification: string | null = null,
 ) {
   const savedList = await locals(floor)
@@ -279,7 +279,7 @@ async function cerrarComoCaja(
   const reportados = methods.map((m) => ({
     method: m.method,
     custom_method_id: m.customMethodId,
-    reported: withSign(escrito[m.key] ?? ''),
+    reported: withSign(written[m.key] ?? ''),
   }))
   const cashCount = newId()
   const tally = await resolve(
@@ -322,7 +322,7 @@ async function cerrarComoCaja(
 
 describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → conteo con los cierres → cierre', () => {
   it('con los cierres que coinciden: se confirma, queda guardado y el turno se cierra', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e, shift } = await shiftCharged(h)
 
     // La caja y el hub ven lo mismo antes de cerrar.
@@ -363,7 +363,7 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
   })
 
   it('el Sodexo sin cobros y sin escribir no cuenta: el cierre lo omite', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, shift } = await shiftCharged(h)
     const r = await cerrarComoCaja(floor, shift, 50_000, {
       'card:': '66.050',
@@ -374,7 +374,7 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
   })
 
   it('con un reporte distinto: el hub pide justificación y con ella cierra', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e, shift } = await shiftCharged(h)
     const without = await cerrarComoCaja(floor, shift, 50_000, {
       'card:': '66.050',
@@ -427,7 +427,7 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
   })
 
   it('por debajo del umbral ($999 de diferencia en la tarjeta) se cierra sin justificación', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e, shift } = await shiftCharged(h)
     const r = await cerrarComoCaja(floor, shift, 50_000, {
       'card:': '65.051',
@@ -438,7 +438,7 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
   })
 
   it('un medio propio (Sodexo) con cobro y con lo escrito distinto', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e } = await register(h)
     const shift = await floor.openShift(0)
     const order = await pedidoDeCien(floor)
@@ -458,7 +458,7 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
   })
 
   it('un reporte escrito para un medio sin cobros (un cobro que no se registró): sobrante que pide justificación', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, shift } = await shiftCharged(h)
     const r = await cerrarComoCaja(floor, shift, 50_000, {
       'card:': '66.050',
@@ -475,7 +475,7 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
   })
 
   it('un cierre con las líneas de otro conteo (desactualizadas): otros_medios_distintos, dicho en palabras', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e, shift } = await shiftCharged(h)
     const cashCount = newId()
     await resolve(
@@ -506,7 +506,7 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
   })
 
   it('un cobro con Nequi después del conteo desactualiza el cierre: se dice en palabras y, al volver a contar, cierra', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e, shift } = await shiftCharged(h)
     const oldOne = await cerrarComoCaja(
       floor,

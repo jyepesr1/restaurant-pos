@@ -78,9 +78,9 @@ describe('lateral y linea: definidos', () => {
     for (const { brand } of BRANDS.filter((m) => m.brand !== 'faro'))
       for (const dark of [false, true]) {
         const faro = variables(null, dark)
-        const propia = variables(brand, dark)
-        expect(propia.lateral, `${brand} ${dark} lateral`).not.toBe(faro.lateral)
-        expect(propia.linea, `${brand} ${dark} linea`).not.toBe(faro.linea)
+        const ownItem = variables(brand, dark)
+        expect(ownItem.lateral, `${brand} ${dark} lateral`).not.toBe(faro.lateral)
+        expect(ownItem.linea, `${brand} ${dark} linea`).not.toBe(faro.linea)
       }
   })
 
@@ -106,7 +106,7 @@ describe('lateral y linea: definidos', () => {
   })
 })
 
-describe.each(CASOS)('lateral y linea: %s', (_nombre, brand, dark) => {
+describe.each(CASOS)('lateral y linea: %s', (_name, brand, dark) => {
   const v = variables(brand, dark)
 
   it('el texto y el texto suave se leen sobre el lateral (AA, 4,5:1)', () => {

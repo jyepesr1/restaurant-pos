@@ -2,49 +2,43 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { SqliteDatabase } from '@pos/db'
 import { DatabaseBusyError } from '@pos/db/node'
-import {
-  abrirDatos,
-  dirDatosDe,
-  lineasAdministrador,
-  mostrarPines,
-  prepararAcceso,
-} from '../arranque'
-import { leerCarta, rulesWithoutDish } from './carta'
-import { seed } from './sembrar'
+import { adminLines, dataDirOf, openData, prepareAccess, showPins } from '../startup'
+import { readMenu, rulesWithoutDish } from './menu'
+import { seed } from './seed'
 
-// `pnpm seed`: carga en la base del hub los datos de La Spritzzería. Es para instalar el piloto:
-// se puede correr las veces que se quiera (lo que ya está igual no se toca, lo que editó una
-// persona se respeta), pero no reemplaza al editor del catálogo. El hub debe estar cerrado: usa
-// la base en exclusiva. Con `--sin-personal` no crea las cuentas de ejemplo.
+// `pnpm seed`: loads La Spritzzería's data into the hub database. It is for installing the pilot:
+// it can be run as many times as needed (what is already the same is not touched, what a person
+// edited is respected), but it does not replace the catalog editor. The hub must be closed: it
+// uses the database exclusively. With `--no-staff` it does not create the sample accounts.
 
-const dirDatos = dirDatosDe()
-const rutaCarta =
-  process.env.RUTA_CARTA ||
+const dataDir = dataDirOf()
+const menuPath =
+  process.env.MENU_PATH ||
   fileURLToPath(new URL('../../../../docs/datos/carta-la-spritzzeria.yaml', import.meta.url))
-const sinPersonal = process.argv.includes('--no-staff')
+const withoutStaff = process.argv.includes('--no-staff')
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
-/** Un PIN o una contraseña se muestra en cuanto existe: si algo falla después, no se pierde. */
-function anunciar(quienes: string, lines: readonly string[]) {
+/** A PIN or a password is shown as soon as it exists: if something fails later, it is not lost. */
+function announce(whoCan: string, lines: readonly string[]) {
   if (lines.length === 0) return
-  // Un archivo por corrida: así una corrida nueva no pisa PIN que nadie ha leído.
-  const archivo = `pines-${new Date().toISOString().replace(/[:.]/g, '-')}-${quienes}.txt`
-  mostrarPines(dirDatos, {
+  // One file per run: that way a new run does not overwrite PINs nobody has read.
+  const file = `pines-${new Date().toISOString().replace(/[:.]/g, '-')}-${whoCan}.txt`
+  showPins(dataDir, {
     consoleLines: [
       '\nPIN y contraseñas nuevos:',
       ...lines,
       'Anótalos en un lugar seguro: no se vuelven a mostrar.',
     ],
-    archivo,
+    file,
     content: `${lines.join('\n')}\n`,
     alert: (route) =>
       `\nLos PIN y contraseñas nuevos quedaron en ${route}: anótalos y borra ese archivo.`,
   })
 }
 
-/** Una persona por línea: nombre, PIN y, si entra a la caja, usuario y contraseña. */
-const lineaDe = (p: { name: string; pin: string | null; user?: string; password?: string }) =>
+/** One person per line: name, PIN and, if they sign in at the register, username and password. */
+const lineOf = (p: { name: string; pin: string | null; user?: string; password?: string }) =>
   [
     `  ${p.name.padEnd(14)}`,
     p.user ? `usuario ${p.user}  contraseña ${p.password}` : '',
@@ -53,12 +47,12 @@ const lineaDe = (p: { name: string; pin: string | null; user?: string; password?
     .filter(Boolean)
     .join('  ')
 
-function correr(): number {
-  let menu: ReturnType<typeof leerCarta>
+function run(): number {
+  let menu: ReturnType<typeof readMenu>
   try {
-    menu = leerCarta(readFileSync(rutaCarta, 'utf8'))
+    menu = readMenu(readFileSync(menuPath, 'utf8'))
   } catch (error) {
-    console.error(`No se cargaron los datos: la carta (${rutaCarta}) no sirve: ${message(error)}`)
+    console.error(`No se cargaron los datos: la carta (${menuPath}) no sirve: ${message(error)}`)
     return 1
   }
   for (const name of rulesWithoutDish(menu))
@@ -66,7 +60,7 @@ function correr(): number {
 
   let db: SqliteDatabase
   try {
-    db = abrirDatos(dirDatos).db
+    db = openData(dataDir).db
   } catch (error) {
     console.error(
       error instanceof DatabaseBusyError
@@ -77,17 +71,17 @@ function correr(): number {
   }
 
   try {
-    const { access, restaurantId, roles, admin, alerts } = prepararAcceso(db, dirDatos)
+    const { access, restaurantId, roles, admin, alerts } = prepareAccess(db, dataDir)
     for (const alert of alerts) console.warn(`⚠ ${alert}`)
-    anunciar('administrador', lineasAdministrador(admin))
+    announce('administrador', adminLines(admin))
 
     const { sqlTables, pins } = seed(
       db,
       access,
-      { restaurantId, roles, menu, sinPersonal },
+      { restaurantId, roles, menu, withoutStaff },
       new Date().toISOString(),
     )
-    console.log(`Datos de La Spritzzería cargados en ${dirDatos}`)
+    console.log(`Datos de La Spritzzería cargados en ${dataDir}`)
     for (const [tableName, c] of Object.entries(sqlTables)) {
       const parts = [
         `${c.created} nuevos`,
@@ -98,8 +92,8 @@ function correr(): number {
       ]
       console.log(`  ${tableName.padEnd(28)} ${parts.join(', ')}`)
     }
-    if (pins.length > 0) anunciar('personal', pins.map(lineaDe))
-    else if (sinPersonal) console.log('\nSin personal de ejemplo (--sin-personal).')
+    if (pins.length > 0) announce('personal', pins.map(lineOf))
+    else if (withoutStaff) console.log('\nSin personal de ejemplo (--no-staff).')
     else console.log('\nNo se creó personal nuevo: cada quien conserva su PIN.')
     return 0
   } catch (error) {
@@ -110,4 +104,4 @@ function correr(): number {
   }
 }
 
-process.exitCode = correr()
+process.exitCode = run()

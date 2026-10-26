@@ -13,14 +13,14 @@ export const nombreItem = (i: OrderItem) =>
 /** Los ítems que cuentan: los anulados quedan a la vista, pero no se cobran. */
 export const currentOnes = (table: Mesa) => table.items.filter((i) => !i.voided)
 
-export const lineaDe = (i: OrderItem): LineaCuenta => ({
+export const lineOf = (i: OrderItem): LineaCuenta => ({
   id: i.id,
   quantity: i.quantity,
   unitPrice: i.unitPrice,
   extras: i.options.map((o) => o.extraPrice),
 })
 
-export const totalMesa = (table: Mesa) => totalCuenta(currentOnes(table).map(lineaDe))
+export const totalMesa = (table: Mesa) => totalCuenta(currentOnes(table).map(lineOf))
 export const saldoMesa = (table: Mesa) => saldoDe(totalMesa(table), table.payments)
 
 /** Minutos entre `desde` y `ahora`. */

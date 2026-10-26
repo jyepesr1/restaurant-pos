@@ -6,17 +6,17 @@ import {
   borradorDeZona,
   cambiosDeZona,
   FORMAS,
+  newZone,
   nuevaMesa,
   problemasDeZona,
   variasMesas,
-  zonaNueva,
 } from './plano'
 
 // Bordes del plano (tarea 1.2): varias mesas de una vez y qué hace el editor con un catálogo de
 // edición sin zonas. Semilla fija.
 
 const SEED = 20_261_024
-const vacia = (): CatalogoEdicion => ({
+const emptyOne = (): CatalogoEdicion => ({
   version: 0,
   zones: [],
   tables: [],
@@ -42,7 +42,7 @@ describe('variasMesas', () => {
         fc.array(fc.integer({ min: 1, max: 80 }).map(String), { maxLength: 20 }),
         fc.integer({ min: 0, max: 5 }),
         (shape, quantity, porFila, usados, previas) => {
-          const b = zonaNueva(vacia())
+          const b = newZone(emptyOne())
           for (let i = 0; i < previas; i++)
             b.tables.push(
               nuevaMesa(
@@ -81,11 +81,11 @@ describe('variasMesas', () => {
   })
 
   it('cero mesas da una lista vacía', () => {
-    expect(variasMesas(zonaNueva(vacia()), 'square', 0, 5, [])).toEqual([])
+    expect(variasMesas(newZone(emptyOne()), 'square', 0, 5, [])).toEqual([])
   })
 
   it('una fila de una sola mesa por fila apila hacia abajo', () => {
-    const m = variasMesas(zonaNueva(vacia()), 'square', 3, 1, [])
+    const m = variasMesas(newZone(emptyOne()), 'square', 3, 1, [])
     expect(new Set(m.map((x) => x.x)).size).toBe(1)
     expect(new Set(m.map((x) => x.y)).size).toBe(3)
   })
@@ -94,7 +94,7 @@ describe('variasMesas', () => {
   // fila" a 1..20, pero `variasMesas(…, 0, …)` da x = NaN (división entre cero).
   it('con porFila 0 las mesas no quedan con coordenadas inválidas', () => {
     // Un campo vacío en la pantalla podría dar 0: ninguna posición debe ser NaN o infinita.
-    const m = variasMesas(zonaNueva(vacia()), 'square', 3, 0, [])
+    const m = variasMesas(newZone(emptyOne()), 'square', 3, 0, [])
     for (const x of m) {
       expect(Number.isFinite(x.x)).toBe(true)
       expect(Number.isFinite(x.y)).toBe(true)
@@ -102,8 +102,8 @@ describe('variasMesas', () => {
   })
 
   it('las mesas de varias a la vez se guardan juntas en una sola edición', () => {
-    const c = vacia()
-    const b: BorradorZona = { ...zonaNueva(c), name: 'Patio' }
+    const c = emptyOne()
+    const b: BorradorZona = { ...newZone(c), name: 'Patio' }
     b.tables.push(...variasMesas(b, 'round', 12, 4, []))
     expect(problemasDeZona(c, b)).toEqual([])
     const changes = cambiosDeZona(c, b)
@@ -117,11 +117,11 @@ describe('el editor ante un catálogo de edición sin zonas', () => {
   // «Salón». Aquí se comprueba esa lógica con las funciones de `plano.ts`.
   const open = (c: CatalogoEdicion) => {
     const zone = c.zones.find((z) => z.active)
-    return zone ? borradorDeZona(c, zone.id) : { ...zonaNueva(c), name: 'Salón' }
+    return zone ? borradorDeZona(c, zone.id) : { ...newZone(c), name: 'Salón' }
   }
 
   it('sin zonas arma un «Salón» nuevo, vacío, que no se puede guardar sin tocar', () => {
-    const c = vacia()
+    const c = emptyOne()
     const b = open(c)
     expect(b).toMatchObject({
       fresh: true,
@@ -138,7 +138,7 @@ describe('el editor ante un catálogo de edición sin zonas', () => {
   })
 
   it('con una mesa puesta, guardar crea la zona antes que la mesa', () => {
-    const c = vacia()
+    const c = emptyOne()
     const b = open(c)
     b.tables.push(nuevaMesa(b, 'square', []))
     const changes = cambiosDeZona(c, b)
@@ -147,7 +147,7 @@ describe('el editor ante un catálogo de edición sin zonas', () => {
   })
 
   it('con todas las zonas archivadas también arma una nueva, sin abrir la archivada', () => {
-    const c = vacia()
+    const c = emptyOne()
     c.zones.push({ id: 'Z', version: 3, active: false, name: 'Vieja', position: 0, level: 1 })
     const b = open(c)
     expect(b.fresh).toBe(true)
@@ -156,18 +156,18 @@ describe('el editor ante un catálogo de edición sin zonas', () => {
   })
 
   it('pedir el borrador de una zona que no existe lanza un error claro', () => {
-    expect(() => borradorDeZona(vacia(), 'NO-EXISTE')).toThrow('Esa zona no existe')
+    expect(() => borradorDeZona(emptyOne(), 'NO-EXISTE')).toThrow('Esa zona no existe')
   })
 
   // Lo encontró qa-pruebas en la 1.2 y ya está corregido: Un hub más viejo que la app (o una
-  // respuesta cortada) puede no traer `zonas` ni `elementos`. `catalogoParaEditar` no pasa por
+  // respuesta cortada) puede no traer `zonas` ni `elementos`. `catalogForEditing` no pasa por
   // `completarCatalogo`, así que el editor mostraría el mensaje técnico del navegador en vez de
   // abrir un plano en blanco.
   it('un catálogo de edición sin las claves del plano se trata como uno vacío', () => {
-    // Lo que hace `Sala.catalogoParaEditar` con la respuesta del hub antes de dársela al editor.
+    // Lo que hace `Sala.catalogForEditing` con la respuesta del hub antes de dársela al editor.
     const sinPlano = completarEdicion({ version: 3, taxes: [], categories: [] })
     expect(() => open(sinPlano)).not.toThrow()
-    expect(() => zonaNueva(sinPlano)).not.toThrow()
+    expect(() => newZone(sinPlano)).not.toThrow()
   })
 })
 
@@ -215,11 +215,11 @@ describe('completarCatalogo', () => {
   })
 
   it('es idempotente y respeta ceros (rotación 0, ancho 0 no se cambian por el valor por defecto)', () => {
-    const vieja = {
+    const old = {
       ...goodOne,
       tables: [{ ...(goodOne.tables[0] as object), width: 0, height: 0, rotation: 0 }],
     } as unknown as typeof goodOne
-    const makeOne = completarCatalogo(vieja)
+    const makeOne = completarCatalogo(old)
     expect(makeOne.tables[0]).toMatchObject({ width: 0, height: 0, rotation: 0 })
     expect(completarCatalogo(makeOne)).toEqual(makeOne)
   })

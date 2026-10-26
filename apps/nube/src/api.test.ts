@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { event, itemCopy } from '../../../packages/core/src/testing/factory'
 import { atender, MAX_BYTES_CUERPO } from './api'
 import { MIGRACIONES_NUBE, migrar } from './migraciones'
-import { MAX_EVENTOS_POR_LOTE, normalizarCodigo, nuevoCodigo } from './nube'
+import { MAX_EVENTOS_POR_LOTE, newCode, normalizarCodigo } from './nube'
 import { baseDePrueba } from './pruebas/pglite'
 
 // La API de la nube (tarea 1.10) contra un Postgres embebido: crear el restaurante, registrar el
@@ -12,23 +12,19 @@ import { baseDePrueba } from './pruebas/pglite'
 const ADMIN = 'token-de-administracion-de-prueba'
 const NOW = new Date('2026-10-26T15:00:00.000Z')
 
-async function mundo() {
+async function world() {
   const { sql, db } = await baseDePrueba()
   const clock = { now: NOW }
-  const request = (metodo: string, route: string, cuerpo?: unknown, token?: string) =>
+  const request = (httpMethod: string, route: string, body?: unknown, token?: string) =>
     atender(
       new Request(`https://cloud.faro.test${route}`, {
-        method: metodo,
+        method: httpMethod,
         headers: {
-          ...(cuerpo !== undefined ? { 'content-type': 'application/json' } : {}),
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
           ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
         body:
-          cuerpo === undefined
-            ? undefined
-            : typeof cuerpo === 'string'
-              ? cuerpo
-              : JSON.stringify(cuerpo),
+          body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
       }),
       { sql, tokenAdmin: ADMIN, clock: () => clock.now },
     )
@@ -78,7 +74,7 @@ describe('migraciones de la nube', () => {
   })
 
   it('los eventos no se cambian ni se borran', async () => {
-    const { request, hubRegistrado, db } = await mundo()
+    const { request, hubRegistrado, db } = await world()
     const { credential } = await hubRegistrado()
     await request('POST', '/v1/events', { events: eventosDePedido() }, credential)
     await expect(db.query("UPDATE events SET type = 'x'")).rejects.toThrow(/solo se agregan/)
@@ -88,7 +84,7 @@ describe('migraciones de la nube', () => {
 
 describe('administración y registro del hub', () => {
   it('sin el token de administración no se crea nada', async () => {
-    const { request, restaurant } = await mundo()
+    const { request, restaurant } = await world()
     const without = await request('POST', '/v1/admin/restaurants', { id: restaurant, name: 'X' })
     expect(without.status).toBe(401)
     const other = await request(
@@ -114,7 +110,7 @@ describe('administración y registro del hub', () => {
   })
 
   it('crear el restaurante dos veces no lo duplica; un código para uno que no existe da 404', async () => {
-    const { request, restaurant } = await mundo()
+    const { request, restaurant } = await world()
     const data = { id: restaurant, name: 'La Spritzzería' }
     expect((await request('POST', '/v1/admin/restaurants', data, ADMIN)).status).toBe(201)
     expect((await request('POST', '/v1/admin/restaurants', data, ADMIN)).status).toBe(200)
@@ -123,7 +119,7 @@ describe('administración y registro del hub', () => {
   })
 
   it('el código sirve una vez, sin importar mayúsculas ni guiones, y vence a las 24 horas', async () => {
-    const { request, restaurant, location, clock } = await mundo()
+    const { request, restaurant, location, clock } = await world()
     await request('POST', '/v1/admin/restaurants', { id: restaurant, name: 'R' }, ADMIN)
     const fresh = async () =>
       (
@@ -151,7 +147,7 @@ describe('administración y registro del hub', () => {
   })
 
   it('un hub ya registrado no se registra de nuevo con otro código', async () => {
-    const { request, hubRegistrado, restaurant, location } = await mundo()
+    const { request, hubRegistrado, restaurant, location } = await world()
     const { hubId } = await hubRegistrado()
     const { code } = await (
       await request('POST', '/v1/admin/codes', { restaurant_id: restaurant }, ADMIN)
@@ -167,7 +163,7 @@ describe('administración y registro del hub', () => {
   })
 
   it('los códigos no se repiten y solo usan letras y números fáciles de dictar', () => {
-    const codigos = new Set(Array.from({ length: 2000 }, nuevoCodigo))
+    const codigos = new Set(Array.from({ length: 2000 }, newCode))
     expect(codigos.size).toBe(2000)
     for (const c of codigos) expect(normalizarCodigo(c)).not.toMatch(/[01OIL]/)
   })
@@ -175,7 +171,7 @@ describe('administración y registro del hub', () => {
 
 describe('subir eventos', () => {
   it('guarda un lote, y reenviarlo no lo duplica', async () => {
-    const { request, hubRegistrado, db } = await mundo()
+    const { request, hubRegistrado, db } = await world()
     const { credential } = await hubRegistrado()
     const events = eventosDePedido()
     const r = await request('POST', '/v1/events', { events }, credential)
@@ -193,7 +189,7 @@ describe('subir eventos', () => {
   })
 
   it('el mismo id con otro contenido no pisa el guardado: queda para revisión', async () => {
-    const { request, hubRegistrado, db } = await mundo()
+    const { request, hubRegistrado, db } = await world()
     const { credential } = await hubRegistrado()
     const [opened] = eventosDePedido()
     if (!opened) throw new Error('sin evento')
@@ -211,7 +207,7 @@ describe('subir eventos', () => {
   })
 
   it('un evento mal formado no tumba el lote: los demás se guardan', async () => {
-    const { request, hubRegistrado } = await mundo()
+    const { request, hubRegistrado } = await world()
     const { credential } = await hubRegistrado()
     const [a, b] = eventosDePedido()
     const r = await (
@@ -225,7 +221,7 @@ describe('subir eventos', () => {
   })
 
   it('sin credencial, con una inventada o con un hub revocado no se sube nada', async () => {
-    const { request, hubRegistrado } = await mundo()
+    const { request, hubRegistrado } = await world()
     const { credential, hubId } = await hubRegistrado()
     const events = eventosDePedido()
     expect((await request('POST', '/v1/events', { events })).status).toBe(401)
@@ -237,7 +233,7 @@ describe('subir eventos', () => {
   })
 
   it('cada restaurante ve solo lo suyo, aunque los ids de los eventos coincidan', async () => {
-    const { request, hubRegistrado, db } = await mundo()
+    const { request, hubRegistrado, db } = await world()
     const a = await hubRegistrado(newId())
     const b = await hubRegistrado(newId())
     const events = eventosDePedido()
@@ -251,20 +247,20 @@ describe('subir eventos', () => {
   })
 
   it('límites: lote vacío, más de 500 eventos, cuerpo que no es JSON o demasiado grande', async () => {
-    const { request, hubRegistrado } = await mundo()
+    const { request, hubRegistrado } = await world()
     const { credential } = await hubRegistrado()
     expect((await request('POST', '/v1/events', { events: [] }, credential)).status).toBe(400)
     const muchos = Array.from({ length: MAX_EVENTOS_POR_LOTE + 1 }, () => ({}))
     expect((await request('POST', '/v1/events', { events: muchos }, credential)).status).toBe(400)
     expect((await request('POST', '/v1/events', '{no es json', credential)).status).toBe(400)
-    const enorme = JSON.stringify({ events: ['x'.repeat(MAX_BYTES_CUERPO)] })
-    const r = await request('POST', '/v1/events', enorme, credential)
+    const huge = JSON.stringify({ events: ['x'.repeat(MAX_BYTES_CUERPO)] })
+    const r = await request('POST', '/v1/events', huge, credential)
     expect(r.status).toBe(413)
     expect((await r.json()).error).toBe('batch_too_large')
   })
 
   it('un evento de más de 64 KB es inválido, el resto del lote se guarda', async () => {
-    const { request, hubRegistrado } = await mundo()
+    const { request, hubRegistrado } = await world()
     const { credential } = await hubRegistrado()
     const [a, b] = eventosDePedido()
     if (!a || !b) throw new Error('sin eventos')
@@ -277,7 +273,7 @@ describe('subir eventos', () => {
   })
 
   it('las rutas que no existen dan 404 y la salud responde', async () => {
-    const { request } = await mundo()
+    const { request } = await world()
     expect((await request('GET', '/v1/health')).status).toBe(200)
     expect((await request('GET', '/v1/nothing')).status).toBe(404)
   })
@@ -285,7 +281,7 @@ describe('subir eventos', () => {
 
 describe('seguridad por fila en la base', () => {
   it('dentro de un restaurante solo se ven sus eventos, y no se puede escribir en otro', async () => {
-    const { request, hubRegistrado, sql } = await mundo()
+    const { request, hubRegistrado, sql } = await world()
     const restA = newId()
     const restB = newId()
     const a = await hubRegistrado(restA)
@@ -329,7 +325,7 @@ describe('seguridad por fila en la base', () => {
 
 describe('revisión de código (1.10)', () => {
   it('un texto con carácter nulo o medio sustituto es inválido y no tumba el lote', async () => {
-    const { request, hubRegistrado } = await mundo()
+    const { request, hubRegistrado } = await world()
     const { credential } = await hubRegistrado()
     const [a, b] = eventosDePedido()
     if (!a || !b) throw new Error('sin eventos')
@@ -347,20 +343,20 @@ describe('revisión de código (1.10)', () => {
   })
 
   it('ultima_secuencia es la última sin huecos desde 1, no la mayor', async () => {
-    const { request, hubRegistrado } = await mundo()
+    const { request, hubRegistrado } = await world()
     const { credential } = await hubRegistrado()
     const [s1, s2] = eventosDePedido(1)
     const [s3, s4] = eventosDePedido(3)
-    const subir = async (events: unknown[]) =>
+    const upload = async (events: unknown[]) =>
       (await (await request('POST', '/v1/events', { events }, credential)).json()).last_sequence
     // Llega primero lo de después (3 y 4): falta el 1 y el 2.
-    expect(await subir([s3, s4])).toBe(0)
-    expect(await subir([s1])).toBe(1)
-    expect(await subir([s2])).toBe(4)
+    expect(await upload([s3, s4])).toBe(0)
+    expect(await upload([s1])).toBe(1)
+    expect(await upload([s2])).toBe(4)
   })
 
   it('el registro se puede repetir con el mismo código y el mismo hub: la credencial anterior se anula', async () => {
-    const { request, restaurant, location } = await mundo()
+    const { request, restaurant, location } = await world()
     await request('POST', '/v1/admin/restaurants', { id: restaurant, name: 'R' }, ADMIN)
     const { code } = await (
       await request('POST', '/v1/admin/codes', { restaurant_id: restaurant }, ADMIN)
@@ -408,7 +404,7 @@ describe('revisión de código (1.10)', () => {
 
 describe('lote con un dato que Postgres rechaza', () => {
   it('se guarda el resto y el malo queda inválido, sin 500 ni lote bloqueado', async () => {
-    const { request, hubRegistrado } = await mundo()
+    const { request, hubRegistrado } = await world()
     const { credential } = await hubRegistrado()
     const [a, b] = eventosDePedido()
     if (!a || !b) throw new Error('sin eventos')

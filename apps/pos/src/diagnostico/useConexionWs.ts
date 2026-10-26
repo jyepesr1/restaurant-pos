@@ -32,11 +32,11 @@ export interface EstadoWs {
 function calcularLatencia(muestras: number[]): Latencia | null {
   const ultimaMs = muestras.at(-1)
   if (ultimaMs === undefined) return null
-  const ordenadas = [...muestras].sort((a, b) => a - b)
+  const sorted = [...muestras].sort((a, b) => a - b)
   return {
     ultimaMs,
-    medianaMs: ordenadas[Math.floor(ordenadas.length / 2)] ?? ultimaMs,
-    maximaMs: ordenadas.at(-1) ?? ultimaMs,
+    medianaMs: sorted[Math.floor(sorted.length / 2)] ?? ultimaMs,
+    maximaMs: sorted.at(-1) ?? ultimaMs,
     muestras: muestras.length,
   }
 }
@@ -64,7 +64,7 @@ export function useConexionWs(): EstadoWs {
     let ocultaDesde: number | null = null
     let visibleDesde: number | null = null
     let cierresAlOcultar = 0
-    let pendingCheck: { recibioMensaje: boolean; terminar: () => void } | undefined
+    let pendingCheck: { recibioMensaje: boolean; finish: () => void } | undefined
 
     const cambiarCanal = (channel: EstadoCanal) =>
       setEstado((previous) => (previous.channel === channel ? previous : { ...previous, channel }))
@@ -121,8 +121,8 @@ export function useConexionWs(): EstadoWs {
     }
 
     /** Abandona un socket colgado o muerto sin esperar a que el navegador lo cierre. */
-    function discard(oldOne: WebSocket, detalle: Record<string, unknown>, channel: EstadoCanal) {
-      onClose(oldOne, detalle, channel)
+    function discard(oldOne: WebSocket, detail: Record<string, unknown>, channel: EstadoCanal) {
+      onClose(oldOne, detail, channel)
       release(oldOne)
     }
 
@@ -135,13 +135,13 @@ export function useConexionWs(): EstadoWs {
 
     function onClose(
       closed: WebSocket,
-      detalle: Record<string, unknown>,
+      detail: Record<string, unknown>,
       channel: EstadoCanal = 'disconnected',
     ) {
       // Un socket viejo que ya se reemplazó no cuenta.
       if (!active || closed !== socket) return
       closings += 1
-      registrarEvento('ws-closed', detalle)
+      registrarEvento('ws-closed', detail)
       cambiarCanal(channel)
       attempts += 1
       retry = setTimeout(connect, Math.min(1000 * attempts, ESPERA_MAXIMA_RECONEXION_MS))
@@ -163,7 +163,7 @@ export function useConexionWs(): EstadoWs {
 
     function alCambiarVisibilidad() {
       if (document.hidden) {
-        pendingCheck?.terminar()
+        pendingCheck?.finish()
         generation += 1
         visibleDesde = null
         ocultaDesde = Date.now()
@@ -198,7 +198,7 @@ export function useConexionWs(): EstadoWs {
 
       const current = {
         recibioMensaje: false,
-        terminar: () => {
+        finish: () => {
           clearTimeout(limit)
           if (pendingCheck !== current) return
           pendingCheck = undefined
@@ -220,7 +220,7 @@ export function useConexionWs(): EstadoWs {
           }
         },
       }
-      const limit = setTimeout(() => current.terminar(), ESPERA_COMPROBACION_MS)
+      const limit = setTimeout(() => current.finish(), ESPERA_COMPROBACION_MS)
       pendingCheck = current
     }
 

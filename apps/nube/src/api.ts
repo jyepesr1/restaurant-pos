@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { MAX_EVENTOS_POR_LOTE, Nube, NuevoRestaurante, Registro, sha256 } from './nube'
+import { MAX_EVENTOS_POR_LOTE, Nube, NuevoRestaurante, Registration, sha256 } from './nube'
 import type { Sql } from './sql'
 
 // La API HTTP de la nube (tarea 1.10, ADR-016), como un `fetch` estándar: la misma función corre
@@ -18,8 +18,8 @@ export interface EntornoApi {
   clock?: () => Date
 }
 
-const json = (status: number, cuerpo: unknown) =>
-  new Response(JSON.stringify(cuerpo), {
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), {
     status: status,
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   })
@@ -27,8 +27,8 @@ const error = (status: number, code: string, message: string) =>
   json(status, { error: code, message })
 
 const bearer = (req: Request) => {
-  const [esquema, token] = (req.headers.get('authorization') ?? '').split(' ')
-  return esquema === 'Bearer' && token ? token : null
+  const [schema, token] = (req.headers.get('authorization') ?? '').split(' ')
+  return schema === 'Bearer' && token ? token : null
 }
 
 const MUY_GRANDE = Symbol('too_large')
@@ -90,23 +90,23 @@ export async function atender(req: Request, environment: EntornoApi): Promise<Re
     if (pathname.startsWith('/v1/admin/')) {
       if (!(await esAdmin(req, environment.tokenAdmin)))
         return error(401, 'no_permission', 'Falta el token de administración')
-      const cuerpo = await cuerpoJson(req)
-      if (cuerpo === MUY_GRANDE) return muyGrande()
+      const body = await cuerpoJson(req)
+      if (body === MUY_GRANDE) return muyGrande()
       if (route === 'POST /v1/admin/restaurants') {
-        const data = NuevoRestaurante.safeParse(cuerpo)
+        const data = NuevoRestaurante.safeParse(body)
         if (!data.success) return error(400, 'invalid_data', 'Falta el id o el nombre')
         const r = await nube.crearRestaurante(data.data)
         return json(r === 'created' ? 201 : 200, { status: r })
       }
       if (route === 'POST /v1/admin/codes') {
-        const data = z.strictObject({ restaurant_id: z.string().length(26) }).safeParse(cuerpo)
+        const data = z.strictObject({ restaurant_id: z.string().length(26) }).safeParse(body)
         if (!data.success) return error(400, 'invalid_data', 'Falta el restaurante')
         const r = await nube.crearCodigo(data.data.restaurant_id)
         if (!r) return error(404, 'no_restaurant', 'Ese restaurante no existe')
-        return json(201, { code: r.code, expires_at: r.venceEn })
+        return json(201, { code: r.code, expires_at: r.expiresAt })
       }
       if (route === 'POST /v1/admin/hubs/revoke') {
-        const data = z.strictObject({ hub_id: z.string().length(26) }).safeParse(cuerpo)
+        const data = z.strictObject({ hub_id: z.string().length(26) }).safeParse(body)
         if (!data.success) return error(400, 'invalid_data', 'Falta el hub')
         return (await nube.revocarHub(data.data.hub_id))
           ? new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
@@ -117,9 +117,9 @@ export async function atender(req: Request, environment: EntornoApi): Promise<Re
 
     // ── Registro de un hub (con el código, sin credencial todavía) ──
     if (route === 'POST /v1/hubs/register') {
-      const cuerpo = await cuerpoJson(req)
-      if (cuerpo === MUY_GRANDE) return muyGrande()
-      const data = Registro.safeParse(cuerpo)
+      const body = await cuerpoJson(req)
+      if (body === MUY_GRANDE) return muyGrande()
+      const data = Registration.safeParse(body)
       if (!data.success) return error(400, 'invalid_data', 'Datos con formato inesperado')
       const r = await nube.registrarHub(data.data)
       if (!r.ok)
@@ -137,9 +137,9 @@ export async function atender(req: Request, environment: EntornoApi): Promise<Re
         return error(401, 'invalid_credential', 'Este PC de caja no está registrado o fue revocado')
       if (route === 'GET /v1/events/last')
         return json(200, { last_sequence: await nube.lastSequence(hub) })
-      const cuerpo = await cuerpoJson(req)
-      if (cuerpo === MUY_GRANDE) return muyGrande()
-      const batch = Lote.safeParse(cuerpo)
+      const body = await cuerpoJson(req)
+      if (body === MUY_GRANDE) return muyGrande()
+      const batch = Lote.safeParse(body)
       if (!batch.success)
         return error(400, 'invalid_data', `Un lote trae de 1 a ${MAX_EVENTOS_POR_LOTE} eventos`)
       const results = await nube.recibirEventos(hub, batch.data.events)

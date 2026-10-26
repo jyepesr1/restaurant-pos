@@ -14,7 +14,7 @@ import {
 } from './cuenta'
 import { cambiarMesa, useMesaDeLaRuta, useMesas } from './estado'
 import { Marco } from './Marco'
-import { currentOnes, lineaDe, nombreItem, saldoMesa, totalMesa } from './totales'
+import { currentOnes, lineOf, nombreItem, saldoMesa, totalMesa } from './totales'
 
 // Precuenta y división (brief §4.5, docs/DINERO.md#división-de-la-cuenta). Se divide el SALDO: lo
 // ya pagado queda aparte. Los montos y la propina de cada cuenta los calcula `@pos/core`, y cada
@@ -62,11 +62,11 @@ export function PreBill() {
     mode === 'even'
       ? enPartesIguales(balance, people)
       : mode === 'items' && porItemsPosible
-        ? porItems(items.map(lineaDe), asignadas, checks).amounts
+        ? porItems(items.map(lineOf), asignadas, checks).amounts
         : [balance]
   const unassigned =
     mode === 'items' && porItemsPosible
-      ? porItems(items.map(lineaDe), asignadas, checks).unassigned
+      ? porItems(items.map(lineOf), asignadas, checks).unassigned
       : 0
   const tips = propinasDeCuentas(amounts)
 
@@ -119,11 +119,11 @@ export function PreBill() {
                       </span>
                     )}
                   </span>
-                  <span className="cifras">{pesos(netoLinea(lineaDe(i)))}</span>
+                  <span className="cifras">{pesos(netoLinea(lineOf(i)))}</span>
                 </div>
                 {mode === 'items' && porItemsPosible && (
                   <Grupo
-                    etiqueta={`Quién paga ${nombreItem(i)}`}
+                    label={`Quién paga ${nombreItem(i)}`}
                     className="mt-2 flex flex-wrap gap-2 pl-9"
                   >
                     {Array.from({ length: checks }, (_, c) => (
@@ -161,7 +161,7 @@ export function PreBill() {
         </section>
 
         <section className="flex flex-col gap-3" aria-label="Dividir">
-          <Grupo etiqueta="Cómo se paga" className="grid grid-cols-3 gap-2">
+          <Grupo label="Cómo se paga" className="grid grid-cols-3 gap-2">
             {(
               [
                 ['single', 'Una cuenta'],

@@ -75,10 +75,10 @@ export class AlmacenIndexedDb implements DeviceStore {
   }
 
   async ownPending(limit = Number.POSITIVE_INFINITY) {
-    const consulta = this.db.events
+    const query = this.db.events
       .where('[pending+position]')
       .between([1, Dexie.minKey], [1, Dexie.maxKey])
-    const rows = await (Number.isFinite(limit) ? consulta.limit(limit) : consulta).toArray()
+    const rows = await (Number.isFinite(limit) ? query.limit(limit) : query).toArray()
     return rows.map((f) => f.local)
   }
 

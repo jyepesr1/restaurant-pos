@@ -60,7 +60,7 @@ describe('CSV', () => {
 
   const empty: PeriodReport = {
     today: '2026-10-24',
-    usuarios: { ana: 'Ana' },
+    users: { ana: 'Ana' },
     printer: false,
     closings: [],
     report: {

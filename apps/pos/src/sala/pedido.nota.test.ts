@@ -2,7 +2,7 @@ import { type ApplicableEvent, newId, orderTotals, rebuild } from '@pos/core'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { porEnviar, unidadesPorEnviar } from './pedido'
-import { estadoMesa, itemsVigentes, pedidosAbiertos } from './proyeccion'
+import { currentItems, estadoMesa, pedidosAbiertos } from './proyeccion'
 import { datosItem as item, local, opening } from './pruebas'
 
 // `unidadesPorEnviar` (lo que dice «Enviar N» y el aviso) y la proyección del pedido con `notas`.
@@ -159,9 +159,9 @@ describe('unidadesPorEnviar', () => {
       fc.property(
         fc.array(fc.integer({ min: 1, max: 20 }), { maxLength: 15 }),
         fc.array(fc.boolean(), { maxLength: 15 }),
-        (cantidades, enviadas) => {
+        (cantidades, sentTickets) => {
           const data = cantidades.map((quantity) => item({ quantity }))
-          const aEnviar = data.filter((_, i) => enviadas[i])
+          const aEnviar = data.filter((_, i) => sentTickets[i])
           const { status } = estadoCon(
             ...data.map((d) => adds(d)),
             ...(aEnviar.length
@@ -179,7 +179,7 @@ describe('unidadesPorEnviar', () => {
                 ]
               : []),
           )
-          const expected = cantidades.reduce((n, c, i) => n + (enviadas[i] ? 0 : c), 0)
+          const expected = cantidades.reduce((n, c, i) => n + (sentTickets[i] ? 0 : c), 0)
           expect(unidadesPorEnviar(status)).toBe(expected)
           expect(unidadesPorEnviar(status)).toBeGreaterThanOrEqual(porEnviar(status).length)
         },
@@ -245,7 +245,7 @@ describe('la proyección del pedido con notas', () => {
     const vc = pedidosAbiertos(withIt.locals)
     expect(vc[0]?.total).toBe(vb[0]?.total)
     expect(estadoMesa(vc)).toBe(estadoMesa(vb))
-    expect(itemsVigentes(withIt.status)).toHaveLength(1)
+    expect(currentItems(withIt.status)).toHaveLength(1)
     expect(orderTotals(withIt.status).net).toBe(orderTotals(base.status).net)
   })
 

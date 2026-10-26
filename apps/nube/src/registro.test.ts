@@ -2,13 +2,13 @@ import { newId } from '@pos/core'
 import fc from 'fast-check'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { atender } from './api'
-import { normalizarCodigo, VIGENCIA_CODIGO_MS } from './nube'
-import { ADMIN, batch, crearMundo, type Mundo, NOW, SEED } from './pruebas/mundo'
+import { CODE_TTL_MS, normalizarCodigo } from './nube'
+import { ADMIN, batch, crearMundo, NOW, SEED, type World } from './pruebas/mundo'
 
 // El registro de un hub con un código (ADR-016): un solo hub por código, vigencia de 24 horas,
 // reintento del mismo hub, y credenciales que no sirven si son inventadas o el hub fue revocado.
 
-let m: Mundo
+let m: World
 beforeAll(async () => {
   m = await crearMundo()
 })
@@ -18,7 +18,7 @@ async function restauranteConCodigo() {
   await m.nube.crearRestaurante({ id: restaurant, name: 'R' })
   const c = await m.nube.crearCodigo(restaurant)
   if (!c) throw new Error('sin código')
-  return { restaurant, code: c.code, venceEn: c.venceEn }
+  return { restaurant, code: c.code, expiresAt: c.expiresAt }
 }
 
 const nuevoCodigoDe = async (restaurant: string) => {
@@ -44,8 +44,8 @@ const hubsDe = async (restaurant: string) =>
 describe('código de un solo uso', () => {
   it('con registros concurrentes del mismo código, solo uno gana', async () => {
     const { restaurant, code } = await restauranteConCodigo()
-    const respuestas = await Promise.all(Array.from({ length: 8 }, () => record(code)))
-    const statuses = respuestas.map((r) => r.status).sort()
+    const responses = await Promise.all(Array.from({ length: 8 }, () => record(code)))
+    const statuses = responses.map((r) => r.status).sort()
     expect(statuses).toEqual([201, 403, 403, 403, 403, 403, 403, 403])
     expect(await hubsDe(restaurant)).toHaveLength(1)
   })
@@ -59,21 +59,21 @@ describe('código de un solo uso', () => {
       ` ${code} `,
       code.replaceAll('-', ' '),
     ]
-    const respuestas = await Promise.all(formas.map((c) => record(c)))
-    expect(respuestas.filter((r) => r.status === 201)).toHaveLength(1)
+    const responses = await Promise.all(formas.map((c) => record(c)))
+    expect(responses.filter((r) => r.status === 201)).toHaveLength(1)
     expect(await hubsDe(restaurant)).toHaveLength(1)
   })
 
   it('el mismo hub repitiendo el registro a la vez con el mismo código: queda una sola credencial válida', async () => {
     const { restaurant, code } = await restauranteConCodigo()
     const hubId = newId()
-    const respuestas = await Promise.all(Array.from({ length: 4 }, () => record(code, hubId)))
-    expect(respuestas.map((r) => r.status)).toEqual([201, 201, 201, 201])
+    const responses = await Promise.all(Array.from({ length: 4 }, () => record(code, hubId)))
+    expect(responses.map((r) => r.status)).toEqual([201, 201, 201, 201])
     expect(await hubsDe(restaurant)).toHaveLength(1)
-    const credenciales = await Promise.all(
-      respuestas.map(async (r) => ((await r.json()) as { credential: string }).credential),
+    const credentials = await Promise.all(
+      responses.map(async (r) => ((await r.json()) as { credential: string }).credential),
     )
-    const validas = await Promise.all(credenciales.map((c) => m.nube.authenticate(c)))
+    const validas = await Promise.all(credentials.map((c) => m.nube.authenticate(c)))
     expect(validas.filter((h) => h !== null)).toHaveLength(1)
   })
 
@@ -102,7 +102,7 @@ describe('código de un solo uso', () => {
     const { code } = await restauranteConCodigo()
     const hubId = newId()
     expect((await record(code, hubId)).status).toBe(201)
-    m.clock.now = new Date(NOW.getTime() + VIGENCIA_CODIGO_MS + 1)
+    m.clock.now = new Date(NOW.getTime() + CODE_TTL_MS + 1)
     try {
       expect((await record(code, hubId)).status).toBe(403)
     } finally {
@@ -167,13 +167,13 @@ describe('código mal escrito', () => {
       fc.asyncProperty(escritura, async ({ minusculas, separadores }) => {
         const { restaurant, code } = await restauranteConCodigo()
         const letras = code.replaceAll('-', '')
-        const escrito = [...letras]
+        const written = [...letras]
           .map((c, i) => `${separadores[i]}${minusculas[i] ? c.toLowerCase() : c}`)
           .join('')
           .concat(separadores[12] ?? '')
-        expect(escrito.length).toBeLessThanOrEqual(40)
-        const r = await record(escrito)
-        expect(r.status, JSON.stringify(escrito)).toBe(201)
+        expect(written.length).toBeLessThanOrEqual(40)
+        const r = await record(written)
+        expect(r.status, JSON.stringify(written)).toBe(201)
         expect(await hubsDe(restaurant)).toHaveLength(1)
       }),
       { seed: SEED, numRuns: 30 },
@@ -238,11 +238,11 @@ describe('vigencia del código', () => {
   it('vence exactamente a las 24 horas: un milisegundo antes sirve, justo en el instante ya no', async () => {
     const a = await restauranteConCodigo()
     const b = await restauranteConCodigo()
-    expect(a.venceEn).toBe(new Date(NOW.getTime() + VIGENCIA_CODIGO_MS).toISOString())
+    expect(a.expiresAt).toBe(new Date(NOW.getTime() + CODE_TTL_MS).toISOString())
     try {
-      m.clock.now = new Date(NOW.getTime() + VIGENCIA_CODIGO_MS - 1)
+      m.clock.now = new Date(NOW.getTime() + CODE_TTL_MS - 1)
       expect((await record(a.code)).status).toBe(201)
-      m.clock.now = new Date(NOW.getTime() + VIGENCIA_CODIGO_MS)
+      m.clock.now = new Date(NOW.getTime() + CODE_TTL_MS)
       expect((await record(b.code)).status).toBe(403)
     } finally {
       m.clock.now = NOW
@@ -252,7 +252,7 @@ describe('vigencia del código', () => {
   it('un código vencido no se puede registrar aunque nadie lo haya usado, y uno nuevo sí', async () => {
     const { restaurant, code } = await restauranteConCodigo()
     try {
-      m.clock.now = new Date(NOW.getTime() + 3 * VIGENCIA_CODIGO_MS)
+      m.clock.now = new Date(NOW.getTime() + 3 * CODE_TTL_MS)
       expect((await record(code)).status).toBe(403)
       expect((await record(await nuevoCodigoDe(restaurant))).status).toBe(201)
     } finally {
@@ -264,7 +264,7 @@ describe('vigencia del código', () => {
     const { code } = await restauranteConCodigo()
     try {
       // Reloj muy adelantado = código vencido; muy atrasado = código aún vigente.
-      m.clock.now = new Date(NOW.getTime() - 5 * VIGENCIA_CODIGO_MS)
+      m.clock.now = new Date(NOW.getTime() - 5 * CODE_TTL_MS)
       expect((await record(code)).status).toBe(201)
     } finally {
       m.clock.now = NOW
@@ -408,7 +408,7 @@ describe('credenciales', () => {
 
   it('un token de administración enorme, vacío o casi igual es 401', async () => {
     const { restaurantId } = await m.newHub()
-    const cuerpo = { restaurant_id: restaurantId }
+    const body = { restaurant_id: restaurantId }
     for (const t of [
       '',
       'x',
@@ -416,8 +416,6 @@ describe('credenciales', () => {
       'token-de-administracion-de-prueb',
       'Token-de-administracion-de-prueba',
     ])
-      expect((await m.request('POST', '/v1/admin/codes', cuerpo, t)).status, t.slice(0, 20)).toBe(
-        401,
-      )
+      expect((await m.request('POST', '/v1/admin/codes', body, t)).status, t.slice(0, 20)).toBe(401)
   })
 })

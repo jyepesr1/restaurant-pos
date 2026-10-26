@@ -49,7 +49,7 @@ describe.each([
   ['Faro oscuro', null, true],
   ['La Spritzzería de día', 'la-spritzzeria', false],
   ['La Spritzzería de noche', 'la-spritzzeria', true],
-] as const)('contraste AA: %s', (_nombre, brand, dark) => {
+] as const)('contraste AA: %s', (_name, brand, dark) => {
   const v = variables(brand, dark)
 
   it('define todos los colores', () => {
@@ -109,13 +109,13 @@ describe.each([
 })
 
 describe('los colores de estado no cambian con la marca (ADR-014)', () => {
-  const ESTADO = ['libre', 'proceso', 'alerta'].flatMap((t) =>
+  const STATUS = ['libre', 'proceso', 'alerta'].flatMap((t) =>
     ['fuerte', 'suave', 'texto'].map((n) => `${t}-${n}`),
   )
   it.each([false, true])('La Spritzzería tiene los de Faro (oscuro: %s)', (dark) => {
     const faro = variables(null, dark)
     const brand = variables('la-spritzzeria', dark)
-    for (const name of ESTADO) expect(brand[name], name).toBe(faro[name])
+    for (const name of STATUS) expect(brand[name], name).toBe(faro[name])
   })
 
   it.each([

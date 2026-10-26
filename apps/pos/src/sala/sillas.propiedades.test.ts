@@ -85,15 +85,15 @@ function seSolapan(a: [number, number][], b: [number, number][]): boolean {
 
 /** Puntos a lo largo del borde de la silla (esquinas y puntos intermedios). */
 function puntosDe(seat: Silla): [number, number][] {
-  const puntos: [number, number][] = []
+  const points: [number, number][] = []
   const e = seat.esquinas
   for (let i = 0; i < 4; i++) {
     const [x1, y1] = e[i] as [number, number]
     const [x2, y2] = e[(i + 1) % 4] as [number, number]
-    for (let t = 0; t <= 8; t++) puntos.push([x1 + ((x2 - x1) * t) / 8, y1 + ((y2 - y1) * t) / 8])
+    for (let t = 0; t <= 8; t++) points.push([x1 + ((x2 - x1) * t) / 8, y1 + ((y2 - y1) * t) / 8])
   }
-  puntos.push(seat.center)
-  return puntos
+  points.push(seat.center)
+  return points
 }
 
 /** La silla queda fuera de la mesa: el borde puede tocarla, pero ningún punto entra. */

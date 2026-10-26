@@ -11,7 +11,7 @@ export const MAX_EVENTOS_POR_LOTE = 500
 /** Un evento más grande que esto no es un evento del POS (el hub limita lo que acepta). */
 export const MAX_BYTES_EVENTO = 64 * 1024
 /** Cuánto dura un código de registro. */
-export const VIGENCIA_CODIGO_MS = 24 * 60 * 60 * 1000
+export const CODE_TTL_MS = 24 * 60 * 60 * 1000
 
 const anioValido = (t: string) => {
   const anio = Number(t.slice(0, 4))
@@ -41,14 +41,14 @@ const EventoSubido = z.looseObject({
   data: z.record(z.string(), z.unknown()),
 })
 
-export const Registro = z.strictObject({
+export const Registration = z.strictObject({
   code: z.string().min(1).max(40),
   hub_id: Ulid,
   location_id: Ulid,
   name: z.string().trim().min(1).max(60),
   instance: z.string().min(1).max(100),
 })
-export type Registro = z.infer<typeof Registro>
+export type Registration = z.infer<typeof Registration>
 
 export const NuevoRestaurante = z.strictObject({
   id: Ulid,
@@ -65,7 +65,7 @@ export type EventResult =
 export interface HubAutenticado {
   id: string
   restaurantId: string
-  sedeId: string
+  locationId: string
 }
 
 /**
@@ -117,7 +117,7 @@ export function nuevaCredencial(): string {
 const ALFABETO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 
 /** «K7PM-QX2R-9DHT»: 12 caracteres para escribir a mano al instalar el PC de caja. */
-export function nuevoCodigo(): string {
+export function newCode(): string {
   const letras = [...aleatorio(12)].map((b) => ALFABETO[b % ALFABETO.length]).join('')
   return `${letras.slice(0, 4)}-${letras.slice(4, 8)}-${letras.slice(8)}`
 }
@@ -160,16 +160,16 @@ export class Nube {
   }
 
   /** Un código para registrar un hub del restaurante; null si el restaurante no existe. */
-  async crearCodigo(restaurantId: string): Promise<{ code: string; venceEn: string } | null> {
+  async crearCodigo(restaurantId: string): Promise<{ code: string; expiresAt: string } | null> {
     const [exists] = await this.sql.query('SELECT 1 FROM restaurants WHERE id = $1', [restaurantId])
     if (!exists) return null
-    const code = nuevoCodigo()
-    const venceEn = new Date(this.clock().getTime() + VIGENCIA_CODIGO_MS).toISOString()
+    const code = newCode()
+    const expiresAt = new Date(this.clock().getTime() + CODE_TTL_MS).toISOString()
     await this.sql.query(
       'INSERT INTO registration_codes (fingerprint, restaurant_id, created_at, expires_at) VALUES ($1, $2, $3, $4)',
-      [await sha256(normalizarCodigo(code)), restaurantId, this.clock().toISOString(), venceEn],
+      [await sha256(normalizarCodigo(code)), restaurantId, this.clock().toISOString(), expiresAt],
     )
-    return { code, venceEn }
+    return { code, expiresAt }
   }
 
   /**
@@ -179,7 +179,7 @@ export class Nube {
    * de servir). Otro hub con un código usado, o el mismo hub con otro código, no se registra.
    */
   async registrarHub(
-    data: Registro,
+    data: Registration,
   ): Promise<
     | { ok: true; credential: string; restaurantId: string }
     | { ok: false; reason: 'invalid_code' | 'hub_already_registered' }
@@ -244,7 +244,7 @@ export class Nube {
       'SELECT id, restaurant_id, location_id FROM hubs WHERE credential_hash = $1 AND revoked_at IS NULL',
       [await sha256(credential)],
     )
-    return hub ? { id: hub.id, restaurantId: hub.restaurant_id, sedeId: hub.location_id } : null
+    return hub ? { id: hub.id, restaurantId: hub.restaurant_id, locationId: hub.location_id } : null
   }
 
   /** Revoca un hub: su credencial deja de servir. */
@@ -261,14 +261,14 @@ export class Nube {
    * contenido) no se duplica; uno que ya estaba con otro contenido no pisa el guardado y queda en
    * `divergent_events`. Devuelve el resultado de cada uno, en el orden en que llegaron.
    */
-  async recibirEventos(hub: HubAutenticado, crudos: readonly unknown[]): Promise<EventResult[]> {
+  async recibirEventos(hub: HubAutenticado, rawList: readonly unknown[]): Promise<EventResult[]> {
     const results: EventResult[] = []
     type Valido = { index: number; id: string; fingerprint: string; row: Record<string, unknown> }
     const validEntries: Valido[] = []
     /** El mismo id otra vez en el lote: se compara con lo que quede guardado. */
     const repetidosEnLote: Valido[] = []
     const seenSet = new Set<string>()
-    crudos.forEach((raw, index) => {
+    rawList.forEach((raw, index) => {
       const r = EventoSubido.safeParse(raw)
       // El id solo se devuelve si parece un id (no se le devuelve al hub cualquier texto).
       const crudoId = (raw as { id?: unknown } | null)?.id
@@ -362,11 +362,11 @@ export class Nube {
 
       const newer = new Set(savedList.map((g) => g.id))
       // Lo que quedó guardado de cada id: lo nuevo de este lote o lo de antes.
-      const guardada = new Map<string, string>()
-      for (const v of aGuardar) if (newer.has(v.id)) guardada.set(v.id, v.fingerprint)
+      const saved = new Map<string, string>()
+      for (const v of aGuardar) if (newer.has(v.id)) saved.set(v.id, v.fingerprint)
       const consultar = [
         ...new Set(
-          [...aGuardar, ...repetidosEnLote].map((v) => v.id).filter((id) => !guardada.has(id)),
+          [...aGuardar, ...repetidosEnLote].map((v) => v.id).filter((id) => !saved.has(id)),
         ),
       ]
       if (consultar.length > 0) {
@@ -374,11 +374,11 @@ export class Nube {
           'SELECT id, fingerprint FROM events WHERE restaurant_id = $1 AND id = ANY($2::text[])',
           [hub.restaurantId, consultar],
         )
-        for (const f of rows) guardada.set(f.id, f.fingerprint)
+        for (const f of rows) saved.set(f.id, f.fingerprint)
       }
-      const enLote = repetidosEnLote.filter((v) => guardada.has(v.id))
+      const enLote = repetidosEnLote.filter((v) => saved.has(v.id))
       const distintos = [...aGuardar.filter((v) => !newer.has(v.id)), ...enLote].filter(
-        (v) => guardada.get(v.id) !== v.fingerprint,
+        (v) => saved.get(v.id) !== v.fingerprint,
       )
       if (distintos.length > 0)
         await tx.query(
@@ -401,7 +401,7 @@ export class Nube {
         [hub.restaurantId, hub.id],
       )
       for (const v of [...aGuardar, ...repetidosEnLote]) {
-        if (!guardada.has(v.id)) {
+        if (!saved.has(v.id)) {
           // Repetido en el lote de uno que la base rechazó: corre la misma suerte.
           results[v.index] = { id: v.id, status: 'invalid', reason: 'rejected_by_database' }
           continue
@@ -411,7 +411,7 @@ export class Nube {
           id: v.id,
           status: esNuevo
             ? 'saved'
-            : guardada.get(v.id) === v.fingerprint
+            : saved.get(v.id) === v.fingerprint
               ? 'already_stored'
               : 'divergent',
         }

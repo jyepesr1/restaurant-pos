@@ -13,13 +13,13 @@ import {
   type BorradorPersona,
   borradorDe,
   datosPersona,
-  type EquipoPersonal,
-  normalizarUsuario,
-  type PersonaPersonal,
+  normalizeUsername,
   pideContrasena,
   problemasDe,
-  type RolPersonal,
   resumenRol,
+  type StaffDevice,
+  type StaffMember,
+  type StaffRole,
   usuarioSugerido,
 } from './personas'
 
@@ -50,9 +50,9 @@ export function Personal() {
   const [data, setDatos] = useState<DatosPersonal | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pestana, setPestana] = useState<Pestana>('people')
-  const [person, setPersona] = useState<PersonaPersonal | 'new' | null>(null)
-  const [role, setRol] = useState<RolPersonal | 'new' | null>(null)
-  const [pinNuevo, setPinNuevo] = useState<{
+  const [person, setPersona] = useState<StaffMember | 'new' | null>(null)
+  const [role, setRol] = useState<StaffRole | 'new' | null>(null)
+  const [newPin, setPinNuevo] = useState<{
     name: string
     pin: string
     authorizes: boolean
@@ -82,13 +82,14 @@ export function Personal() {
   const archivadas = (data?.people ?? []).filter((p) => !p.active)
   const soloUnaAdministra = data !== null && administradoras(data).length === 1
 
-  const guardarPersona = async (
+  const saveStaffMember = async (
     b: BorradorPersona,
     extras: Parameters<typeof datosPersona>[1] = {},
   ) => {
-    const r = await floor.guardarPersona(datosPersona(b, extras))
+    const r = await floor.saveStaffMember(datosPersona(b, extras))
     await read()
-    if (r.pin) setPinNuevo({ name: b.name.trim(), pin: r.pin, authorizes: b.entra === 'password' })
+    if (r.pin)
+      setPinNuevo({ name: b.name.trim(), pin: r.pin, authorizes: b.signInMethod === 'password' })
     else
       notify(
         extras.active === false ? `Archivaste a ${b.name.trim()}` : `Guardaste a ${b.name.trim()}`,
@@ -98,7 +99,7 @@ export function Personal() {
   return (
     <MarcoSala title="Personal y roles" back="/">
       <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4">
-        <Grupo etiqueta="Qué ver" className="flex flex-wrap gap-2">
+        <Grupo label="Qué ver" className="flex flex-wrap gap-2">
           <Opcion elegida={pestana === 'people'} alElegir={() => setPestana('people')}>
             Personas
           </Opcion>
@@ -135,9 +136,11 @@ export function Personal() {
                 <FilaPersona
                   key={p.id}
                   person={p}
-                  role={nombreRol(p.rolId)}
+                  role={nombreRol(p.roleId)}
                   esUsted={p.id === session?.user.id}
-                  sinAcceso={p.user === null && pideContrasena(roles.find((r) => r.id === p.rolId))}
+                  sinAcceso={
+                    p.user === null && pideContrasena(roles.find((r) => r.id === p.roleId))
+                  }
                   alTocar={() => setPersona(p)}
                 />
               ))}
@@ -153,7 +156,7 @@ export function Personal() {
                       <FilaPersona
                         key={p.id}
                         person={p}
-                        role={nombreRol(p.rolId)}
+                        role={nombreRol(p.roleId)}
                         esUsted={false}
                         sinAcceso={false}
                         alTocar={() => setPersona(p)}
@@ -174,7 +177,7 @@ export function Personal() {
             <ul className="flex flex-col gap-2">
               {roles.map((r) => (
                 <li key={r.id}>
-                  <Row alTocar={() => setRol(r)} apagada={!r.active}>
+                  <Row alTocar={() => setRol(r)} off={!r.active}>
                     <span className="font-semibold">
                       {r.name}
                       {r.system && (
@@ -214,7 +217,7 @@ export function Personal() {
           esUsted={person !== 'new' && person.id === session?.user.id}
           onClose={() => setPersona(null)}
           onSave={async (b, extras) => {
-            await guardarPersona(b, extras)
+            await saveStaffMember(b, extras)
             setPersona(null)
           }}
         />
@@ -224,11 +227,11 @@ export function Personal() {
         <PanelRol
           role={role === 'new' ? null : role}
           esElSuyo={
-            role !== 'new' && activas.some((p) => p.id === session?.user.id && p.rolId === role.id)
+            role !== 'new' && activas.some((p) => p.id === session?.user.id && p.roleId === role.id)
           }
           onClose={() => setRol(null)}
           onSave={async (r) => {
-            await floor.guardarRol(r)
+            await floor.saveRole(r)
             await read()
             notify(
               r.active === false ? `Archivaste el rol ${r.name}` : `Guardaste el rol ${r.name}`,
@@ -240,8 +243,8 @@ export function Personal() {
 
       {/* El PIN se ve una sola vez: el panel solo se cierra con «Ya lo anoté». */}
       <PanelLateral
-        opened={pinNuevo !== null}
-        title={pinNuevo ? `PIN de ${pinNuevo.name}` : 'PIN'}
+        opened={newPin !== null}
+        title={newPin ? `PIN de ${newPin.name}` : 'PIN'}
         onClose={() => setPinNuevo(null)}
         soloConBoton
         idDescripcion={idPin}
@@ -251,16 +254,16 @@ export function Personal() {
           </Boton>
         }
       >
-        {pinNuevo && (
+        {newPin && (
           <div className="flex flex-col items-center gap-4 text-center">
             <p id={idPin} className="flex flex-col items-center gap-4">
               <span className="font-titulo rounded-2xl bg-superficie-2 px-6 py-4 text-5xl tracking-[0.3em]">
-                {pinNuevo.pin}
+                {newPin.pin}
               </span>
               <span>
-                {pinNuevo.authorizes
-                  ? `Con este PIN, ${pinNuevo.name} aprueba anulaciones y descuentos desde el celular de un mesero. Para entrar usa su usuario y contraseña.`
-                  : `Con este PIN, ${pinNuevo.name} entra desde su celular.`}
+                {newPin.authorizes
+                  ? `Con este PIN, ${newPin.name} aprueba anulaciones y descuentos desde el celular de un mesero. Para entrar usa su usuario y contraseña.`
+                  : `Con este PIN, ${newPin.name} entra desde su celular.`}
               </span>
             </p>
             <p className="text-texto-suave">
@@ -275,18 +278,18 @@ export function Personal() {
 
 function Row({
   alTocar,
-  apagada = false,
+  off = false,
   children,
 }: {
   alTocar: () => void
-  apagada?: boolean
+  off?: boolean
   children: ReactNode
 }) {
   return (
     <button
       type="button"
       onClick={alTocar}
-      className={`flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-borde bg-superficie px-4 py-2 text-left hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco ${apagada ? 'opacity-70' : ''}`}
+      className={`flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-borde bg-superficie px-4 py-2 text-left hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco ${off ? 'opacity-70' : ''}`}
     >
       <span className="flex flex-col">{children}</span>
       <span className="text-texto-suave" aria-hidden="true">
@@ -303,7 +306,7 @@ function FilaPersona({
   sinAcceso,
   alTocar,
 }: {
-  person: PersonaPersonal
+  person: StaffMember
   role: string
   esUsted: boolean
   /** Entra con PIN pero su rol pide contraseña: hoy no puede entrar (una base de antes). */
@@ -340,19 +343,19 @@ export function Confirmar({
   yes,
   alConfirmar,
   alCancelar,
-  ocupado,
+  taken,
 }: {
   pregunta: string
   yes: string
   alConfirmar: () => void
   alCancelar: () => void
-  ocupado: boolean
+  taken: boolean
 }) {
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-alerta-suave p-3" role="alertdialog">
       <p className="text-alerta-texto">{pregunta}</p>
       <div className="flex gap-2">
-        <Boton variant="danger" className="flex-1" disabled={ocupado} onClick={alConfirmar}>
+        <Boton variant="danger" className="flex-1" disabled={taken} onClick={alConfirmar}>
           {yes}
         </Boton>
         <Boton className="flex-1" onClick={alCancelar}>
@@ -368,12 +371,12 @@ function Equipos({
   own,
   alRetirar,
 }: {
-  devices: EquipoPersonal[]
+  devices: StaffDevice[]
   own: string | null
-  alRetirar: (e: EquipoPersonal) => Promise<void>
+  alRetirar: (e: StaffDevice) => Promise<void>
 }) {
   const [retirando, setRetirando] = useState<string | null>(null)
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
   return (
     <section aria-label="Equipos" className="flex flex-col gap-2">
@@ -400,8 +403,8 @@ function Equipos({
             <span className="text-sm text-texto-suave">
               {e.revokedAt
                 ? `Retirado el ${when(e.revokedAt)}`
-                : e.ultimoUso
-                  ? `Último uso: ${e.ultimaPersona ?? 'alguien'}, ${when(e.ultimoUso)}`
+                : e.lastUsed
+                  ? `Último uso: ${e.lastPerson ?? 'alguien'}, ${when(e.lastUsed)}`
                   : 'Sin uso todavía'}
             </span>
             {!e.revokedAt &&
@@ -410,7 +413,7 @@ function Equipos({
                 <Confirmar
                   pregunta={`Retirar ${e.name}: deja de sincronizar y nadie puede entrar en él. Lo que no haya enviado lo revisa un administrador.`}
                   yes="Sí, retirar"
-                  ocupado={ocupado}
+                  taken={taken}
                   alCancelar={() => setRetirando(null)}
                   alConfirmar={async () => {
                     setOcupado(true)
@@ -444,17 +447,17 @@ function PanelPersona({
   onClose,
   onSave,
 }: {
-  person: PersonaPersonal | null
+  person: StaffMember | null
   data: DatosPersonal
   esUsted: boolean
   onClose: () => void
   onSave: (
     b: BorradorPersona,
-    extras?: { active?: boolean; regenerarPin?: boolean },
+    extras?: { active?: boolean; regeneratePin?: boolean },
   ) => Promise<void>
 }) {
   // El rol archivado de alguien también se ve, marcado: si no, no aparecería ninguno elegido.
-  const opcionesRol = data.roles.filter((r) => r.active || r.id === person?.rolId)
+  const opcionesRol = data.roles.filter((r) => r.active || r.id === person?.roleId)
   const waiter = data.roles.find((r) => r.active && r.system && r.name === 'Mesero')
   const [initial] = useState<BorradorPersona>(() =>
     borradorDe(person, waiter?.id ?? opcionesRol[0]?.id ?? ''),
@@ -462,22 +465,22 @@ function PanelPersona({
   const [b, setB] = useState<BorradorPersona>(initial)
   const [error, setError] = useState<string | null>(null)
   const [attempt, setIntento] = useState(0)
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
   const [confirmando, setConfirmando] = useState<'archive' | 'exit' | 'lose' | null>(null)
   const idAyuda = useId()
   const patch = (partial: Partial<BorradorPersona>) => setB((x) => ({ ...x, ...partial }))
   const issues = problemasDe(b, person, data.people, data.roles)
-  const rolElegido = data.roles.find((r) => r.id === b.rolId)
+  const rolElegido = data.roles.find((r) => r.id === b.roleId)
   const exigeContrasena = pideContrasena(rolElegido)
-  const sucio = JSON.stringify(b) !== JSON.stringify(initial)
+  const dirty = JSON.stringify(b) !== JSON.stringify(initial)
   const pierdeAdministrar = esUsted && !rolElegido?.permissions.includes('manage_users')
   const cambiaComoEntra =
     person !== null &&
-    (b.rolId !== person.rolId ||
-      (b.entra === 'pin') !== (person.user === null) ||
+    (b.roleId !== person.roleId ||
+      (b.signInMethod === 'pin') !== (person.user === null) ||
       b.password.length > 0)
 
-  const hacer = async (extras?: { active?: boolean; regenerarPin?: boolean }) => {
+  const act = async (extras?: { active?: boolean; regeneratePin?: boolean }) => {
     setOcupado(true)
     try {
       await onSave(b, extras)
@@ -497,14 +500,14 @@ function PanelPersona({
       setConfirmando('lose')
       return
     }
-    void hacer(person && !person.active ? { active: true } : {})
+    void act(person && !person.active ? { active: true } : {})
   }
-  const close = () => (sucio && confirmando !== 'exit' ? setConfirmando('exit') : onClose())
-  const elegirRol = (r: RolPersonal) =>
+  const close = () => (dirty && confirmando !== 'exit' ? setConfirmando('exit') : onClose())
+  const elegirRol = (r: StaffRole) =>
     patch({
-      rolId: r.id,
-      ...(pideContrasena(r) && b.entra === 'pin'
-        ? { entra: 'password', user: b.user || usuarioSugerido(b.name) }
+      roleId: r.id,
+      ...(pideContrasena(r) && b.signInMethod === 'pin'
+        ? { signInMethod: 'password', user: b.user || usuarioSugerido(b.name) }
         : {}),
     })
 
@@ -522,7 +525,7 @@ function PanelPersona({
             <Confirmar
               pregunta="Hay cambios sin guardar. ¿Salir sin guardarlos?"
               yes="Salir sin guardar"
-              ocupado={false}
+              taken={false}
               alConfirmar={onClose}
               alCancelar={() => setConfirmando(null)}
             />
@@ -530,7 +533,7 @@ function PanelPersona({
             <Confirmar
               pregunta="Vas a perder el acceso a Personal y roles. Solo otra persona administradora te lo puede devolver."
               yes="Sí, guardar"
-              ocupado={ocupado}
+              taken={taken}
               alConfirmar={save}
               alCancelar={() => setConfirmando(null)}
             />
@@ -538,17 +541,17 @@ function PanelPersona({
             <Confirmar
               pregunta={`Archivar a ${person.name}: no podrá entrar hasta que la actives de nuevo.`}
               yes="Sí, archivar"
-              ocupado={ocupado}
-              alConfirmar={() => void hacer({ active: false })}
+              taken={taken}
+              alConfirmar={() => void act({ active: false })}
               alCancelar={() => setConfirmando(null)}
             />
           ) : (
             <>
-              <Boton variant="main" large disabled={ocupado} onClick={save}>
+              <Boton variant="main" large disabled={taken} onClick={save}>
                 {person && !person.active ? 'Volver a activar' : 'Guardar'}
               </Boton>
               {person?.active && (
-                <Boton disabled={ocupado} onClick={() => void hacer({ regenerarPin: true })}>
+                <Boton disabled={taken} onClick={() => void act({ regeneratePin: true })}>
                   Nuevo PIN
                 </Boton>
               )}
@@ -570,7 +573,7 @@ function PanelPersona({
               const sugerido = usuarioSugerido(b.name)
               patch({
                 name,
-                ...(b.entra === 'password' &&
+                ...(b.signInMethod === 'password' &&
                 (b.user === '' || b.user === sugerido) &&
                 !person?.user
                   ? { user: usuarioSugerido(name) }
@@ -580,32 +583,34 @@ function PanelPersona({
           />
         </label>
 
-        <Grupo etiqueta="Rol" className="flex flex-wrap items-center gap-2">
+        <Grupo label="Rol" className="flex flex-wrap items-center gap-2">
           <p className="w-full font-semibold">Rol</p>
           {opcionesRol.map((r) => (
-            <Opcion key={r.id} elegida={b.rolId === r.id} alElegir={() => elegirRol(r)}>
+            <Opcion key={r.id} elegida={b.roleId === r.id} alElegir={() => elegirRol(r)}>
               {r.active ? r.name : `${r.name} (archivado)`}
             </Opcion>
           ))}
         </Grupo>
 
-        <Grupo etiqueta="Cómo entra" className="flex flex-col gap-2">
+        <Grupo label="Cómo entra" className="flex flex-col gap-2">
           <p className="font-semibold">Cómo entra</p>
           {!exigeContrasena && (
             <Opcion
               shape="card"
-              elegida={b.entra === 'pin'}
-              detalle="Meseros: desde su celular"
-              alElegir={() => patch({ entra: 'pin' })}
+              elegida={b.signInMethod === 'pin'}
+              detail="Meseros: desde su celular"
+              alElegir={() => patch({ signInMethod: 'pin' })}
             >
               Con su PIN
             </Opcion>
           )}
           <Opcion
             shape="card"
-            elegida={b.entra === 'password'}
-            detalle="Caja, administración y reportes"
-            alElegir={() => patch({ entra: 'password', user: b.user || usuarioSugerido(b.name) })}
+            elegida={b.signInMethod === 'password'}
+            detail="Caja, administración y reportes"
+            alElegir={() =>
+              patch({ signInMethod: 'password', user: b.user || usuarioSugerido(b.name) })
+            }
           >
             Con usuario y contraseña
           </Opcion>
@@ -614,14 +619,14 @@ function PanelPersona({
               {`El rol ${rolElegido?.name} permite cobrar o administrar: se entra con usuario y contraseña.`}
             </p>
           )}
-          {person?.user && b.entra === 'pin' && (
+          {person?.user && b.signInMethod === 'pin' && (
             <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">
               Al guardar se borran su usuario y su contraseña: desde entonces entra solo con su PIN.
             </p>
           )}
         </Grupo>
 
-        {b.entra === 'password' && (
+        {b.signInMethod === 'password' && (
           <>
             <label className="flex flex-col gap-1">
               <span className="font-semibold">Usuario</span>
@@ -634,7 +639,7 @@ function PanelPersona({
                 spellCheck={false}
                 autoComplete="off"
                 onChange={(e) => patch({ user: e.target.value })}
-                onBlur={() => patch({ user: normalizarUsuario(b.user) })}
+                onBlur={() => patch({ user: normalizeUsername(b.user) })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -690,7 +695,7 @@ function PanelRol({
   onClose,
   onSave,
 }: {
-  role: RolPersonal | null
+  role: StaffRole | null
   /** Si quien edita tiene este rol. */
   esElSuyo: boolean
   onClose: () => void
@@ -705,9 +710,9 @@ function PanelRol({
   const [permissions, setPermisos] = useState<Set<string>>(() => new Set(role?.permissions ?? []))
   const [error, setError] = useState<string | null>(null)
   const [attempt, setIntento] = useState(0)
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
   const [confirmando, setConfirmando] = useState<'archive' | 'exit' | 'lose' | null>(null)
-  const sucio =
+  const dirty =
     name !== (role?.name ?? '') ||
     [...permissions].sort().join() !== [...(role?.permissions ?? [])].sort().join()
 
@@ -718,7 +723,7 @@ function PanelRol({
       else fresh.add(p)
       return fresh
     })
-  const hacer = async (active?: boolean) => {
+  const act = async (active?: boolean) => {
     setOcupado(true)
     try {
       await onSave({
@@ -743,9 +748,9 @@ function PanelRol({
       setConfirmando('lose')
       return
     }
-    void hacer(role && !role.active ? true : undefined)
+    void act(role && !role.active ? true : undefined)
   }
-  const close = () => (sucio && confirmando !== 'exit' ? setConfirmando('exit') : onClose())
+  const close = () => (dirty && confirmando !== 'exit' ? setConfirmando('exit') : onClose())
 
   return (
     <PanelLateral
@@ -761,7 +766,7 @@ function PanelRol({
             <Confirmar
               pregunta="Hay cambios sin guardar. ¿Salir sin guardarlos?"
               yes="Salir sin guardar"
-              ocupado={false}
+              taken={false}
               alConfirmar={onClose}
               alCancelar={() => setConfirmando(null)}
             />
@@ -769,7 +774,7 @@ function PanelRol({
             <Confirmar
               pregunta="Es tu rol: vas a perder el acceso a Personal y roles. Solo otra persona administradora te lo puede devolver."
               yes="Sí, guardar"
-              ocupado={ocupado}
+              taken={taken}
               alConfirmar={save}
               alCancelar={() => setConfirmando(null)}
             />
@@ -777,12 +782,12 @@ function PanelRol({
             <Confirmar
               pregunta={`Archivar el rol ${role.name}: ya no se podrá elegir para nadie.`}
               yes="Sí, archivar"
-              ocupado={ocupado}
-              alConfirmar={() => void hacer(false)}
+              taken={taken}
+              alConfirmar={() => void act(false)}
               alCancelar={() => setConfirmando(null)}
             />
           ) : (
-            <Boton variant="main" large disabled={ocupado} onClick={save}>
+            <Boton variant="main" large disabled={taken} onClick={save}>
               {role && !role.active ? 'Volver a activar' : 'Guardar'}
             </Boton>
           )}

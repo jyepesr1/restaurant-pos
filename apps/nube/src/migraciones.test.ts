@@ -63,12 +63,12 @@ describe('aplicar', () => {
     expect((await db.query('SELECT id, v, extra FROM cosa')).rows).toEqual([
       { id: 1, v: 'uno', extra: 'dos' },
     ])
-    const versiones = (
+    const versions = (
       await db.query<{ version: number }>(
         'SELECT version FROM migrations ORDER BY applied_at, version',
       )
     ).rows.map((r) => r.version)
-    expect(versiones).toEqual([1, 2, 3])
+    expect(versions).toEqual([1, 2, 3])
   })
 
   it('todas de una vez desde cero aplican en orden', async () => {

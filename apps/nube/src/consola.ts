@@ -11,10 +11,10 @@ export function pedirSecreto(pregunta: string): Promise<string> {
       // Solo se muestra la pregunta; lo que se escribe no.
       if (s.includes(pregunta)) escribir.call(rl, s)
     }
-    rl.question(pregunta, (respuesta) => {
+    rl.question(pregunta, (response) => {
       rl.close()
       process.stdout.write('\n')
-      resolve(respuesta.trim())
+      resolve(response.trim())
     })
   })
 }

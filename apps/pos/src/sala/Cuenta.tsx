@@ -23,7 +23,7 @@ import {
 } from './cuentas'
 import { claseCampo } from './Entrar'
 import { MarcoSala } from './MarcoSala'
-import { CANALES, unidadesPorEnviar } from './pedido'
+import { CHANNELS, unidadesPorEnviar } from './pedido'
 
 // La cuenta de un pedido (tarea 1.6, brief §4.5): la precuenta en pantalla y en papel, dividirla
 // (en partes iguales o por productos) y cobrar cada parte. Se divide el SALDO: lo ya pagado queda
@@ -44,7 +44,7 @@ function tituloDe(catalog: Catalog, order: OrderState): string {
     )
     return `Mesa ${names.join(' + ')}`
   }
-  const channel = CANALES[order.channel as keyof typeof CANALES] ?? 'Pedido'
+  const channel = CHANNELS[order.channel as keyof typeof CHANNELS] ?? 'Pedido'
   return order.dayNumber ? `${channel} #${order.dayNumber}` : channel
 }
 
@@ -63,7 +63,7 @@ export function Check() {
   const [asignadas, setAsignadas] = useState<Map<string, number[]>>(new Map())
   const [cobrando, setCobrando] = useState<Cobrando | null>(null)
   const [anulando, setAnulando] = useState<string | null>(null)
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
   const [propinaElegida, setPropinaElegida] = useState<number | null>(null)
   const [editandoPropina, setEditandoPropina] = useState(false)
 
@@ -118,7 +118,7 @@ export function Check() {
   const puedeAnularPago = esCaja && permissions.includes('void_payment')
   const puedeCerrar = esCaja && permissions.includes('close_table')
   const shift = vista.shift
-  const totales = orderTotals(order)
+  const totals = orderTotals(order)
   const lines = linesOf(order)
   const { balance, checks: divididas, unassigned } = porCobrar(order)
   const propinaSaldo = propinaSugeridaDe(order, balance, rules)
@@ -130,8 +130,8 @@ export function Check() {
   const sinEnviar = unidadesPorEnviar(order)
 
   /** Un trabajo que registra eventos: uno a la vez, y el error se avisa. */
-  const hacer = async (job: () => Promise<void>) => {
-    if (ocupado) return
+  const act = async (job: () => Promise<void>) => {
+    if (taken) return
     setOcupado(true)
     try {
       await job()
@@ -142,8 +142,8 @@ export function Check() {
     }
   }
 
-  const imprimir = (checkId: string | null, subtotal: number, tip: number) =>
-    hacer(async () => {
+  const print = (checkId: string | null, subtotal: number, tip: number) =>
+    act(async () => {
       await floor.record('PreBillPrinted', order.id, {
         check_id: checkId,
         subtotal,
@@ -153,14 +153,14 @@ export function Check() {
     })
 
   const split = (newOnes: ReturnType<typeof enPartesIguales>) =>
-    hacer(async () => {
+    act(async () => {
       await floor.record('CheckSplit', order.id, { checks: newOnes })
       setModo('single')
       setAsignadas(new Map())
     })
 
   const undo = () =>
-    hacer(async () => {
+    act(async () => {
       await floor.record('SplitUndone', order.id, {})
     })
 
@@ -174,7 +174,7 @@ export function Check() {
   // El dinero se muestra como cobrado solo cuando el hub lo acepta: un pago que el hub rechaza
   // desaparecería de la cuenta después de que el cliente ya pagó.
   const charge = (payment: PagoNuevo) =>
-    hacer(async () => {
+    act(async () => {
       if (!shift) throw new Error('Abre la caja para cobrar')
       await floor.registrarConfirmado('PaymentRecorded', order.id, {
         ...payment,
@@ -192,7 +192,7 @@ export function Check() {
     })
 
   const anularPago = (paymentId: string, reason: string) =>
-    hacer(async () => {
+    act(async () => {
       if (!shift) throw new Error('Abre la caja para anular un pago')
       await floor.registrarConfirmado(
         'PaymentVoided',
@@ -227,7 +227,7 @@ export function Check() {
   const sinAsignarVista =
     mode === 'products' ? porProductos(order, asignadas, checks, rules, newId).unassigned : 0
   // Por productos solo antes del primer pago: después se divide lo que queda en partes iguales.
-  const porProductosPosible = totales.paid === 0
+  const porProductosPosible = totals.paid === 0
 
   const tocarItem = (id: string, check: number) =>
     setAsignadas((a) => {
@@ -264,10 +264,7 @@ export function Check() {
                   <span className="cifras">{pesos(l.net)}</span>
                 </div>
                 {mode === 'products' && porProductosPosible && !order.checks && (
-                  <Grupo
-                    etiqueta={`Quién paga ${l.name}`}
-                    className="mt-2 flex flex-wrap gap-2 pl-9"
-                  >
+                  <Grupo label={`Quién paga ${l.name}`} className="mt-2 flex flex-wrap gap-2 pl-9">
                     {Array.from({ length: checks }, (_, c) => (
                       <Opcion
                         // biome-ignore lint/suspicious/noArrayIndexKey: las cuentas son posiciones
@@ -304,11 +301,11 @@ export function Check() {
               </>
             )}
             <dt className="font-semibold">Total</dt>
-            <dd className="text-right font-semibold">{pesos(totales.net)}</dd>
-            {totales.paid > 0 && (
+            <dd className="text-right font-semibold">{pesos(totals.net)}</dd>
+            {totals.paid > 0 && (
               <>
                 <dt className="text-libre-texto">Ya pagado</dt>
-                <dd className="text-right text-libre-texto">{`-${pesos(totales.paid)}`}</dd>
+                <dd className="text-right text-libre-texto">{`-${pesos(totals.paid)}`}</dd>
                 <dt className="font-semibold">Saldo</dt>
                 <dd className="text-right font-semibold">{pesos(balance)}</dd>
               </>
@@ -339,7 +336,7 @@ export function Check() {
           </dl>
           {editandoPropina && balance > 0 && (
             <div className="mx-4 mb-4 flex flex-col gap-2 rounded-xl bg-superficie-2/60 p-3">
-              <Grupo etiqueta="Propina" className="flex flex-wrap gap-2">
+              <Grupo label="Propina" className="flex flex-wrap gap-2">
                 <Opcion
                   elegida={propinaElegida === null}
                   alElegir={() => {
@@ -427,8 +424,8 @@ export function Check() {
             variant="secondary"
             large
             icono="receipt"
-            disabled={ocupado || balance === 0}
-            onClick={() => imprimir(null, balance, propinaVista)}
+            disabled={taken || balance === 0}
+            onClick={() => print(null, balance, propinaVista)}
           >
             {rules.printsPreBill ? 'Imprimir precuenta' : 'Pidió la cuenta'}
           </Boton>
@@ -443,8 +440,8 @@ export function Check() {
               variant="main"
               large
               icono="check"
-              disabled={ocupado || !online}
-              onClick={() => hacer(() => close(ultimoCambio))}
+              disabled={taken || !online}
+              onClick={() => act(() => close(ultimoCambio))}
             >
               Cerrar la mesa
             </Boton>
@@ -489,15 +486,15 @@ export function Check() {
               unassigned={unassigned}
               puedeCobrar={puedeCobrar && !sinCobro}
               puedeDeshacer={puedeDividir && !payments.some((p) => p.checkId !== null)}
-              ocupado={ocupado}
+              taken={taken}
               alCobrar={abrirCobro}
-              alImprimir={(c) => imprimir(c.id, c.balance, c.propinaPendiente)}
+              alImprimir={(c) => print(c.id, c.balance, c.propinaPendiente)}
               alDeshacer={undo}
             />
           ) : (
             <>
               {puedeDividir && balance > 0 && (
-                <Grupo etiqueta="Cómo se paga" className="grid grid-cols-3 gap-2">
+                <Grupo label="Cómo se paga" className="grid grid-cols-3 gap-2">
                   {(
                     [
                       ['single', 'Una cuenta'],
@@ -516,7 +513,7 @@ export function Check() {
                   variant="main"
                   large
                   icono="bill"
-                  disabled={!!sinCobro || ocupado}
+                  disabled={!!sinCobro || taken}
                   onClick={() =>
                     abrirCobro({
                       checkId: null,
@@ -584,7 +581,7 @@ export function Check() {
                   <Boton
                     variant="main"
                     large
-                    disabled={ocupado || montosVista.every((c) => c.amount === 0)}
+                    disabled={taken || montosVista.every((c) => c.amount === 0)}
                     onClick={() => split(montosVista)}
                   >
                     {`Dividir en ${montosVista.length}`}
@@ -601,14 +598,14 @@ export function Check() {
         order={order}
         rules={rules}
         cardTerminals={catalog.cardTerminals ?? []}
-        ocupado={ocupado}
+        taken={taken}
         onClose={() => setCobrando(null)}
         alCobrar={charge}
       />
       <PanelAnularPago
         key={anulando ?? 'ninguno'}
         paymentId={anulando}
-        ocupado={ocupado}
+        taken={taken}
         onClose={() => setAnulando(null)}
         onVoid={anularPago}
       />
@@ -621,7 +618,7 @@ function Divididas({
   unassigned,
   puedeCobrar,
   puedeDeshacer,
-  ocupado,
+  taken,
   alCobrar,
   alImprimir,
   alDeshacer,
@@ -630,7 +627,7 @@ function Divididas({
   unassigned: number
   puedeCobrar: boolean
   puedeDeshacer: boolean
-  ocupado: boolean
+  taken: boolean
   alCobrar: (c: Cobrando) => void
   alImprimir: (c: ReturnType<typeof porCobrar>['checks'][number]) => void
   alDeshacer: () => void
@@ -658,7 +655,7 @@ function Divididas({
                 <Boton
                   icono="receipt"
                   aria-label={`Precuenta de ${c.name}`}
-                  disabled={ocupado}
+                  disabled={taken}
                   onClick={() => alImprimir(c)}
                 >
                   Precuenta
@@ -667,7 +664,7 @@ function Divididas({
                   <Boton
                     variant="main"
                     className="flex-1"
-                    disabled={ocupado}
+                    disabled={taken}
                     onClick={() =>
                       alCobrar({
                         checkId: c.id,
@@ -694,7 +691,7 @@ function Divididas({
             {puedeCobrar && (
               <Boton
                 variant="main"
-                disabled={ocupado}
+                disabled={taken}
                 onClick={() =>
                   alCobrar({
                     checkId: null,
@@ -712,7 +709,7 @@ function Divididas({
         )}
       </ul>
       {puedeDeshacer && (
-        <Boton variant="ghost" disabled={ocupado} onClick={alDeshacer}>
+        <Boton variant="ghost" disabled={taken} onClick={alDeshacer}>
           Deshacer la división
         </Boton>
       )}
@@ -756,12 +753,12 @@ function Accountant({
 /** Anular un pago mal registrado: con motivo. La reversa cae en el turno abierto de esta caja. */
 function PanelAnularPago({
   paymentId,
-  ocupado,
+  taken,
   onClose,
   onVoid,
 }: {
   paymentId: string | null
-  ocupado: boolean
+  taken: boolean
   onClose: () => void
   onVoid: (paymentId: string, reason: string) => void
 }) {
@@ -778,7 +775,7 @@ function PanelAnularPago({
           variant="danger"
           large
           className="w-full"
-          disabled={!final || ocupado}
+          disabled={!final || taken}
           onClick={() => paymentId && final && onVoid(paymentId, final)}
         >
           Anular el pago
@@ -787,7 +784,7 @@ function PanelAnularPago({
     >
       <div className="flex flex-col gap-3">
         <p>El saldo vuelve a quedar por cobrar. Si fue en efectivo, devuelve el dinero.</p>
-        <Grupo etiqueta="Motivo" className="flex flex-wrap gap-2">
+        <Grupo label="Motivo" className="flex flex-wrap gap-2">
           {MOTIVOS_ANULAR_PAGO.map((m) => (
             <Opcion key={m} elegida={reason === m} alElegir={() => setMotivo(m)}>
               {m}

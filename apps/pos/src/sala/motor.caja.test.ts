@@ -4,7 +4,7 @@ import type { Channel } from '@pos/sync'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
 import { turnoDeCaja } from './cuentas'
-import { type Equipo, Sala, type Sesion } from './motor'
+import { type Device, Sala, type Session } from './motor'
 import { catalogoDePrueba } from './pruebas'
 
 // «Caja y pagos» y abrir turno en el motor (tarea 1.6): cada método llama a su ruta con el token del
@@ -20,14 +20,14 @@ afterEach(async () => {
 })
 
 const sinRed = (): Channel => ({ send: () => {}, close: () => {} })
-const json = (cuerpo: unknown, status = 200) =>
-  new Response(JSON.stringify(cuerpo), { status, headers: { 'content-type': 'application/json' } })
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 interface Call {
   url: string
-  cuerpo: Record<string, unknown> | null
+  body: Record<string, unknown> | null
   token: string | null
-  metodo: string
+  httpMethod: string
 }
 
 function hubFalso(responder: (l: Call) => Response = () => new Response(null, { status: 204 })) {
@@ -38,8 +38,8 @@ function hubFalso(responder: (l: Call) => Response = () => new Response(null, { 
       const headers = (init?.headers ?? {}) as Record<string, string>
       const llamada: Call = {
         url,
-        metodo: init?.method ?? 'GET',
-        cuerpo: init?.body ? JSON.parse(String(init.body)) : null,
+        httpMethod: init?.method ?? 'GET',
+        body: init?.body ? JSON.parse(String(init.body)) : null,
         token: headers.authorization?.replace('Bearer ', '') ?? null,
       }
       calls.push(llamada)
@@ -50,18 +50,18 @@ function hubFalso(responder: (l: Call) => Response = () => new Response(null, { 
   return calls
 }
 
-const device: Equipo = {
+const device: Device = {
   deviceId: newId(),
   token: 'token-caja',
   name: 'Caja 1',
   type: 'register',
 }
-const session = (): Sesion => ({
-  sesionId: newId(),
+const session = (): Session => ({
+  sessionId: newId(),
   secret: 'secreto-carlos',
   user: { id: newId(), name: 'Carlos', role: 'Cajero' },
   permissions: ['record_payment', 'open_register_shift', 'manage_devices'],
-  ultimoUso: Date.now(),
+  lastUsed: Date.now(),
 })
 
 async function open(sinConexion = false) {
@@ -90,7 +90,7 @@ describe('métodos de «Caja y pagos»: ruta, token y sesión', () => {
       (s: Sala) => s.savePaymentMethods(['cash', 'nequi']),
       { methods: ['cash', 'nequi'] },
     ],
-    ['suggestedTip', '/api/register/tip', (s: Sala) => s.suggestedTip(750), { puntos: 750 }],
+    ['suggestedTip', '/api/register/tip', (s: Sala) => s.suggestedTip(750), { points: 750 }],
     [
       'preBillPrinter',
       '/api/register/pre-bill',
@@ -103,31 +103,31 @@ describe('métodos de «Caja y pagos»: ruta, token y sesión', () => {
       (s: Sala) => s.preBillPrinter(null),
       { printer_id: null },
     ],
-  ])('%s llama a %s con el token del equipo y la sesión', async (_n, route, llamar, extra) => {
+  ])('%s llama a %s con el token del equipo y la sesión', async (_n, route, makeCall, extra) => {
     const calls = hubFalso(() =>
       json({ payment_methods: [], suggested_tip: 1000, custom_methods: [], cardTerminals: [] }),
     )
     const { floor, session: s } = await open()
-    await llamar(floor)
+    await makeCall(floor)
     const [l, ...otras] = deRuta(calls, route)
     expect(otras).toEqual([])
     expect(l).toMatchObject({
-      metodo: 'POST',
+      httpMethod: 'POST',
       token: 'token-caja',
-      cuerpo: { session_id: s.sesionId, secret: 'secreto-carlos', ...extra },
+      body: { session_id: s.sessionId, secret: 'secreto-carlos', ...extra },
     })
   })
 
   it('configuracionCaja devuelve lo que contesta el hub', async () => {
-    const respuesta = {
+    const response = {
       payment_methods: ['cash', 'nequi'],
       suggested_tip: 1000,
       custom_methods: [{ id: 'm', name: 'Sodexo', active: true }],
       cardTerminals: [{ id: 'd', name: 'Bold 1', provider: 'bold', active: true }],
     }
-    hubFalso(() => json(respuesta))
+    hubFalso(() => json(response))
     const { floor } = await open()
-    await expect(floor.registerConfig()).resolves.toEqual(respuesta)
+    await expect(floor.registerConfig()).resolves.toEqual(response)
   })
 
   it('guardarDatafono manda el datáfono y devuelve la lista nueva', async () => {
@@ -138,7 +138,7 @@ describe('métodos de «Caja y pagos»: ruta, token y sesión', () => {
     await expect(floor.guardarDatafono(cardTerminal)).resolves.toEqual(list)
     expect(deRuta(calls, '/api/card-terminals')[0]).toMatchObject({
       token: 'token-caja',
-      cuerpo: { cardTerminal },
+      body: { cardTerminal },
     })
   })
 
@@ -150,7 +150,7 @@ describe('métodos de «Caja y pagos»: ruta, token y sesión', () => {
     await expect(floor.guardarMedioPropio(method)).resolves.toEqual(list)
     expect(deRuta(calls, '/api/register/custom-methods')[0]).toMatchObject({
       token: 'token-caja',
-      cuerpo: { method },
+      body: { method },
     })
   })
 
@@ -224,11 +224,11 @@ describe('Sala.abrirTurno', () => {
       data: { register_id: device.deviceId, base: 200_000 },
       device_id: device.deviceId,
       user_id: s.user.id,
-      session_id: s.sesionId,
+      session_id: s.sessionId,
       related: [],
     })
-    const { signature, ...sinFirma } = e
-    expect(signature).toBe(signEvent(sinFirma as NewEvent, 'secreto-carlos'))
+    const { signature, ...unsigned } = e
+    expect(signature).toBe(signEvent(unsigned as NewEvent, 'secreto-carlos'))
     expect(validateNewEvent(e).ok).toBe(true)
   })
 

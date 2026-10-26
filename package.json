@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "turbo run dev",
     "seed": "pnpm --filter @pos/hub seed",
-    "restablecer-admin": "pnpm --filter @pos/hub restablecer-admin",
+    "reset-admin": "pnpm --filter @pos/hub reset-admin",
     "build": "turbo run build",
     "lint": "biome check .",
     "format": "biome check --write .",

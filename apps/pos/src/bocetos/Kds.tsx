@@ -44,7 +44,7 @@ export function Kds() {
   const tables = useMesas()
   const now = useAhora(5000)
   const notify = useAvisar()
-  const [filtro, setFiltro] = useState<Filtro>('todas')
+  const [filter, setFiltro] = useState<Filtro>('todas')
   const [listos, setListos] = useState<Set<string>>(new Set())
 
   const tickets = useMemo(
@@ -62,9 +62,9 @@ export function Kds() {
           }),
         )
         .filter((c) => c.items.length > 0)
-        .filter((c) => filtro === 'todas' || c.station === filtro)
+        .filter((c) => filter === 'todas' || c.station === filter)
         .sort((a, b) => a.from - b.from),
-    [tables, filtro],
+    [tables, filter],
   )
 
   const alternar = (id: string) =>
@@ -78,9 +78,9 @@ export function Kds() {
   return (
     <Marco title="Cocina y barra" user="Cocina">
       <div className="p-3">
-        <Grupo etiqueta="Estación" className="mb-3 flex flex-wrap gap-2">
+        <Grupo label="Estación" className="mb-3 flex flex-wrap gap-2">
           {(['todas', 'cocina', 'barra'] as const).map((f) => (
-            <Opcion key={f} elegida={filtro === f} alElegir={() => setFiltro(f)}>
+            <Opcion key={f} elegida={filter === f} alElegir={() => setFiltro(f)}>
               <span className="text-lg capitalize">{f}</span>
             </Opcion>
           ))}

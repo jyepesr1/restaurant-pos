@@ -4,12 +4,12 @@ import type { Personal } from './motor'
 // Lógica de la pantalla de personal y roles (tarea 1.3b), sin React: el borrador de una persona,
 // qué le falta para guardarse y qué se le manda al hub. El hub vuelve a revisar todo.
 
-export type PersonaPersonal = Personal['people'][number]
-export type RolPersonal = Personal['roles'][number]
-export type EquipoPersonal = Personal['devices'][number]
+export type StaffMember = Personal['people'][number]
+export type StaffRole = Personal['roles'][number]
+export type StaffDevice = Personal['devices'][number]
 
 /** Si con ese rol hay que entrar con usuario y contraseña (tiene permisos de caja o de administración). */
-export const pideContrasena = (role: RolPersonal | undefined) =>
+export const pideContrasena = (role: StaffRole | undefined) =>
   role?.permissions.some((p) => PASSWORD_PERMISSIONS.has(p as Permission)) ?? false
 
 /** Quienes, activos y con usuario, pueden administrar el personal. */
@@ -18,30 +18,30 @@ export const administradoras = (data: Pick<Personal, 'roles' | 'people'>) =>
     (p) =>
       p.active &&
       p.user !== null &&
-      data.roles.find((r) => r.id === p.rolId)?.permissions.includes('manage_users'),
+      data.roles.find((r) => r.id === p.roleId)?.permissions.includes('manage_users'),
   )
 
 export interface BorradorPersona {
   id?: string
   name: string
-  rolId: string
+  roleId: string
   /** Con PIN (meseros) o con usuario y contraseña (caja, administración, reportes). */
-  entra: 'pin' | 'password'
+  signInMethod: 'pin' | 'password'
   user: string
   /** Vacía en alguien que ya tiene contraseña: no se cambia. */
   password: string
 }
 
-export const LARGO_MINIMO_CONTRASENA = 8
+export const PASSWORD_MIN_LENGTH = 8
 
 /** El borrador para editar a alguien, o uno vacío con el rol sugerido. */
-export function borradorDe(person: PersonaPersonal | null, rolSugerido: string): BorradorPersona {
-  if (!person) return { name: '', rolId: rolSugerido, entra: 'pin', user: '', password: '' }
+export function borradorDe(person: StaffMember | null, rolSugerido: string): BorradorPersona {
+  if (!person) return { name: '', roleId: rolSugerido, signInMethod: 'pin', user: '', password: '' }
   return {
     id: person.id,
     name: person.name,
-    rolId: person.rolId,
-    entra: person.user ? 'password' : 'pin',
+    roleId: person.roleId,
+    signInMethod: person.user ? 'password' : 'pin',
     user: person.user ?? '',
     password: '',
   }
@@ -51,7 +51,7 @@ export function borradorDe(person: PersonaPersonal | null, rolSugerido: string):
  * El usuario como lo guarda el hub: sin espacios a los lados, en minúsculas y sin tildes (quien
  * escribe «maría» quiso decir «maria»).
  */
-export const normalizarUsuario = (u: string) =>
+export const normalizeUsername = (u: string) =>
   u
     .trim()
     .normalize('NFD')
@@ -59,7 +59,7 @@ export const normalizarUsuario = (u: string) =>
     .toLowerCase()
 
 /** «maria2», «maria3»…: el primero que nadie activo tiene. */
-function libreParecido(user: string, people: readonly PersonaPersonal[]): string {
+function libreParecido(user: string, people: readonly StaffMember[]): string {
   for (let i = 2; ; i++) {
     const other = `${user.slice(0, 38)}${i}`
     if (!people.some((p) => p.active && p.user === other)) return other
@@ -80,17 +80,17 @@ export function usuarioSugerido(name: string): string {
 /** Lo que falta o no sirve, en el orden en que se ve en la pantalla. Vacío: se puede guardar. */
 export function problemasDe(
   b: BorradorPersona,
-  original: PersonaPersonal | null,
-  people: readonly PersonaPersonal[],
-  roles: readonly RolPersonal[] = [],
+  original: StaffMember | null,
+  people: readonly StaffMember[],
+  roles: readonly StaffRole[] = [],
 ): string[] {
   const issues: string[] = []
   if (!b.name.trim()) issues.push('Escribe el nombre')
-  if (!b.rolId) issues.push('Elige el rol')
-  else if (b.entra === 'pin' && pideContrasena(roles.find((r) => r.id === b.rolId)))
+  if (!b.roleId) issues.push('Elige el rol')
+  else if (b.signInMethod === 'pin' && pideContrasena(roles.find((r) => r.id === b.roleId)))
     issues.push('Con ese rol se entra con usuario y contraseña')
-  if (b.entra === 'password') {
-    const user = normalizarUsuario(b.user)
+  if (b.signInMethod === 'password') {
+    const user = normalizeUsername(b.user)
     if (!/^[a-z0-9._-]{3,40}$/.test(user))
       issues.push(
         'El usuario lleva de 3 a 40 letras (sin tildes ni espacios), números, punto o guion',
@@ -101,8 +101,8 @@ export function problemasDe(
       )
     // Una contraseña nueva hace falta si no tenía, o si cambia de usuario.
     const necesita = !original?.user || original.user !== user
-    if (b.password.length > 0 && b.password.length < LARGO_MINIMO_CONTRASENA)
-      issues.push(`La contraseña debe tener al menos ${LARGO_MINIMO_CONTRASENA} caracteres`)
+    if (b.password.length > 0 && b.password.length < PASSWORD_MIN_LENGTH)
+      issues.push(`La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`)
     else if (necesita && b.password.length === 0) issues.push('Escribe una contraseña')
   }
   return issues
@@ -111,27 +111,27 @@ export function problemasDe(
 /** Lo que va al hub (`POST /api/personal/personas`). */
 export function datosPersona(
   b: BorradorPersona,
-  extras: { active?: boolean; regenerarPin?: boolean } = {},
+  extras: { active?: boolean; regeneratePin?: boolean } = {},
 ) {
   return {
     ...(b.id ? { id: b.id } : {}),
     name: b.name.trim(),
-    role_id: b.rolId,
+    role_id: b.roleId,
     access:
-      b.entra === 'pin'
+      b.signInMethod === 'pin'
         ? ({ type: 'pin' } as const)
         : {
             type: 'password' as const,
-            user: normalizarUsuario(b.user),
+            user: normalizeUsername(b.user),
             ...(b.password ? { password: b.password } : {}),
           },
     ...(extras.active === undefined ? {} : { active: extras.active }),
-    ...(extras.regenerarPin ? { regenerar_pin: true } : {}),
+    ...(extras.regeneratePin ? { regenerate_pin: true } : {}),
   }
 }
 
 /** «3 personas · 12 permisos». */
-export function resumenRol(role: RolPersonal): string {
+export function resumenRol(role: StaffRole): string {
   const people = `${role.people} ${role.people === 1 ? 'persona' : 'personas'}`
   const permissions = `${role.permissions.length} ${role.permissions.length === 1 ? 'permiso' : 'permisos'}`
   return `${people} · ${permissions}`

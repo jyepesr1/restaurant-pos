@@ -8,7 +8,7 @@ export interface EventoDiagnostico {
   /** Milisegundos desde epoch según el reloj del dispositivo. */
   time: number
   type: TipoEvento
-  detalle?: Record<string, unknown>
+  detail?: Record<string, unknown>
 }
 
 const DIAS_RETENCION = 7
@@ -23,10 +23,10 @@ db.version(1).stores({ events: '++id, time', tests: '++id' })
 /** Guarda un evento. Si el almacenamiento falla (modo privado, bloqueado) se ignora. */
 export async function registrarEvento(
   type: TipoEvento,
-  detalle?: Record<string, unknown>,
+  detail?: Record<string, unknown>,
 ): Promise<void> {
   try {
-    await db.events.add({ time: Date.now(), type, ...(detalle ? { detalle } : {}) })
+    await db.events.add({ time: Date.now(), type, ...(detail ? { detail } : {}) })
   } catch {
     // El diagnóstico debe seguir funcionando aunque no pueda guardar.
   }

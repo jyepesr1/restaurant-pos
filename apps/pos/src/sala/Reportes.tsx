@@ -110,7 +110,7 @@ export function Reportes() {
       }
     >
       <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 md:p-6">
-        <Grupo etiqueta="Período" className="flex flex-wrap gap-2">
+        <Grupo label="Período" className="flex flex-wrap gap-2">
           {ATAJOS.map((a) => (
             <Opcion key={a.value} elegida={atajo === a.value} alElegir={() => select(a.value)}>
               {a.name}
@@ -216,9 +216,9 @@ function Contenido({
   rules: ReturnType<typeof reglasDe>
   puedeElegirImpresora: boolean
 }) {
-  const { report: inf, usuarios } = report
+  const { report: inf, users } = report
   const v = inf.sales
-  const who = (id: string | null) => (id ? (usuarios[id] ?? 'Alguien') : '')
+  const who = (id: string | null) => (id ? (users[id] ?? 'Alguien') : '')
   const sinVentas = v.net === 0 && v.checks === 0 && inf.byMethod.length === 0
   return (
     <div
@@ -239,7 +239,7 @@ function Contenido({
         <Cifra
           name="Comensales"
           value={String(v.guests)}
-          detalle={v.guests > 0 ? `${pesos(v.spendPerGuest)} por persona` : undefined}
+          detail={v.guests > 0 ? `${pesos(v.spendPerGuest)} por persona` : undefined}
         />
         <Cifra name="Propinas" value={pesos(v.tips)} />
       </dl>
@@ -309,7 +309,7 @@ function Contenido({
                   key={methodKeyOf(m)}
                   name={`${methodName(m.method, m.customMethodId, rules)}${m.payments > 0 ? ` · ${m.payments} ${m.payments === 1 ? 'pago' : 'pagos'}` : ''}`}
                   value={pesos(m.sale)}
-                  detalle={m.tip !== 0 ? `+ propina ${pesos(m.tip)}` : undefined}
+                  detail={m.tip !== 0 ? `+ propina ${pesos(m.tip)}` : undefined}
                 />
               ))}
             </Filas>
@@ -345,14 +345,14 @@ function Contenido({
                   title={`${a.units} × ${a.name}`}
                   value={pesos(a.value)}
                   reason={a.reason}
-                  detalle={[
+                  detail={[
                     a.orderNumber ? `Pedido ${a.orderNumber}` : null,
                     who(a.userId),
                     a.authorizedById && a.authorizedById !== a.userId
                       ? `autorizó ${who(a.authorizedById)}`
                       : null,
                   ]}
-                  etiqueta={
+                  label={
                     a.alreadyPrepared ? (
                       <Etiqueta tono="warning" icono="fire">
                         Ya preparado (merma)
@@ -367,13 +367,13 @@ function Contenido({
                   title={c.orderNumber ? `Pedido ${c.orderNumber} cancelado` : 'Pedido cancelado'}
                   value={pesos(c.value)}
                   reason={c.reason}
-                  detalle={[
+                  detail={[
                     who(c.userId),
                     c.authorizedById && c.authorizedById !== c.userId
                       ? `autorizó ${who(c.authorizedById)}`
                       : null,
                   ]}
-                  etiqueta={null}
+                  label={null}
                 />
               ))}
             </ul>
@@ -399,8 +399,8 @@ function Contenido({
                   }
                   value={pesos(d.amount)}
                   reason={d.reason}
-                  detalle={[d.orderNumber ? `Pedido ${d.orderNumber}` : null]}
-                  etiqueta={null}
+                  detail={[d.orderNumber ? `Pedido ${d.orderNumber}` : null]}
+                  label={null}
                 />
               ))}
             </ul>
@@ -469,7 +469,7 @@ function Cierre({
 }) {
   const notify = useAvisar()
   const [imprimiendo, setImprimiendo] = useState(false)
-  const [fallo, setFallo] = useState<string | null>(null)
+  const [failure, setFallo] = useState<string | null>(null)
   const reimprimir = async () => {
     setImprimiendo(true)
     setFallo(null)
@@ -542,9 +542,9 @@ function Cierre({
             Para imprimir el cierre, pide al administrador que elija la impresora en «Caja y pagos».
           </p>
         )}
-        {fallo && (
+        {failure && (
           <p role="alert" className="text-sm text-alerta-texto">
-            {fallo}
+            {failure}
           </p>
         )}
       </div>
@@ -557,12 +557,12 @@ function Cierre({
 function Cifra({
   name,
   value,
-  detalle,
+  detail,
   destacada = false,
 }: {
   name: string
   value: string
-  detalle?: string
+  detail?: string
   destacada?: boolean
 }) {
   return (
@@ -575,7 +575,7 @@ function Cifra({
     >
       <dt className={`text-sm ${destacada ? 'text-accion-texto' : 'text-texto-suave'}`}>{name}</dt>
       <dd className="cifras text-3xl font-bold tracking-tight">{value}</dd>
-      {detalle && <dd className="cifras text-sm text-texto-suave">{detalle}</dd>}
+      {detail && <dd className="cifras text-sm text-texto-suave">{detail}</dd>}
     </div>
   )
 }
@@ -607,12 +607,12 @@ const Filas = ({ children }: { children: ReactNode }) => (
 function Row({
   name,
   value,
-  detalle,
+  detail,
   main = false,
 }: {
   name: string
   value: string
-  detalle?: string
+  detail?: string
   main?: boolean
 }) {
   return (
@@ -620,7 +620,7 @@ function Row({
       <dt className={main ? 'font-semibold' : ''}>{name}</dt>
       <dd className={`text-right ${main ? 'font-semibold' : ''}`}>
         {value}
-        {detalle && <span className="block text-sm text-texto-suave">{detalle}</span>}
+        {detail && <span className="block text-sm text-texto-suave">{detail}</span>}
       </dd>
     </div>
   )
@@ -680,16 +680,16 @@ function Evento({
   title,
   value,
   reason,
-  detalle,
-  etiqueta,
+  detail,
+  label,
 }: {
   title: string
   value: string
   reason: string | null
-  detalle: (string | null)[]
-  etiqueta: ReactNode
+  detail: (string | null)[]
+  label: ReactNode
 }) {
-  const extra = detalle.filter(Boolean).join(' · ')
+  const extra = detail.filter(Boolean).join(' · ')
   return (
     <li className="flex flex-col gap-1 py-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
@@ -697,9 +697,9 @@ function Evento({
         <span className="cifras">{value}</span>
       </div>
       {reason && <p>{reason}</p>}
-      {(extra || etiqueta) && (
+      {(extra || label) && (
         <div className="flex flex-wrap items-center gap-2 text-sm text-texto-suave">
-          {etiqueta}
+          {label}
           {extra && <span>{extra}</span>}
         </div>
       )}

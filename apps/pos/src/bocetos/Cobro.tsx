@@ -167,7 +167,7 @@ export function Cobro() {
 
         {amount > 0 && (
           <section className="flex flex-col gap-3" aria-label="Pago">
-            <Grupo etiqueta="Medio de pago" className="grid grid-cols-2 gap-2">
+            <Grupo label="Medio de pago" className="grid grid-cols-2 gap-2">
               {(
                 [
                   ['cash', 'Efectivo', 'F2'],
@@ -179,7 +179,7 @@ export function Cobro() {
                   shape="card"
                   elegida={method === m}
                   alElegir={() => elegirMedio(m)}
-                  detalle={tecla}
+                  detail={tecla}
                 >
                   {text}
                 </Opcion>

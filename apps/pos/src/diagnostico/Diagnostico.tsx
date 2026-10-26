@@ -19,7 +19,7 @@ type Nivel = 'ok' | 'error' | 'alert' | 'measuring' | 'info'
 
 function detectarCapacidades() {
   return {
-    contextoSeguro: window.isSecureContext,
+    secureContext: window.isSecureContext,
     serviceWorker: 'serviceWorker' in navigator,
     vibracion: 'vibrate' in navigator,
     pantallaEncendida: 'wakeLock' in navigator,
@@ -103,7 +103,7 @@ const textoCanal: Record<EstadoCanal, { severity: Nivel; text: string }> = {
 interface Veredicto {
   severity: 'ok' | 'alert' | 'error'
   title: string
-  puntos: string[]
+  points: string[]
 }
 
 function calcularVeredicto(
@@ -131,16 +131,16 @@ function calcularVeredicto(
     return {
       severity: 'error',
       title: `Revisar: ${plural(errors.length, 'punto', 'puntos')}`,
-      puntos: errors,
+      points: errors,
     }
   }
   if (indexedDb === null || medianaMs === null || resumen.ocultamientos.length === 0) {
-    return { severity: 'alert', title: 'Prueba en curso: sigue los pasos', puntos: alerts }
+    return { severity: 'alert', title: 'Prueba en curso: sigue los pasos', points: alerts }
   }
   if (alerts.length > 0) {
-    return { severity: 'alert', title: 'Funciona, con avisos', puntos: alerts }
+    return { severity: 'alert', title: 'Funciona, con avisos', points: alerts }
   }
-  return { severity: 'ok', title: 'Listo para operar', puntos: [] }
+  return { severity: 'ok', title: 'Listo para operar', points: [] }
 }
 
 const claseVeredicto: Record<Veredicto['severity'], string> = {
@@ -246,9 +246,9 @@ export function Diagnostico() {
             <span aria-hidden="true">{iconoVeredicto[verdict.severity]} </span>
             {verdict.title}
           </p>
-          {verdict.puntos.length > 0 && (
+          {verdict.points.length > 0 && (
             <ul className="mt-2 list-disc pl-5">
-              {verdict.puntos.map((punto) => (
+              {verdict.points.map((punto) => (
                 <li key={punto}>{punto}</li>
               ))}
             </ul>
@@ -334,9 +334,9 @@ export function Diagnostico() {
           />
           <Row
             title="Dirección segura (HTTPS)"
-            severity={capacidades.contextoSeguro ? 'ok' : 'info'}
+            severity={capacidades.secureContext ? 'ok' : 'info'}
             text={
-              capacidades.contextoSeguro
+              capacidades.secureContext
                 ? 'Sí'
                 : 'No: normal al abrir por IP; algunas funciones no estarán'
             }

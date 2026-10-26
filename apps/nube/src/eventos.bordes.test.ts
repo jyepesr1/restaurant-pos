@@ -6,15 +6,15 @@ import {
   crearMundo,
   eventoPlano,
   eventosGuardados,
-  type Mundo,
   SEED,
   statuses,
+  type World,
 } from './pruebas/mundo'
 
 // Los bordes de un evento y de la secuencia de subida: formato, tamaño, caracteres que Postgres
 // no acepta, y «hasta dónde está todo» (last_sequence contigua desde 1).
 
-let m: Mundo
+let m: World
 beforeAll(async () => {
   m = await crearMundo()
 })
@@ -170,7 +170,7 @@ describe('formato de un evento', () => {
     ['sin datos', { data: undefined }],
   ]
 
-  it.each(invalidCases)('%s: es inválido y no tumba al resto del lote', async (_nombre, change) => {
+  it.each(invalidCases)('%s: es inválido y no tumba al resto del lote', async (_name, change) => {
     const { hub, restaurantId } = await m.newHub()
     const badCase = { ...eventoPlano(2), ...change }
     const r = await m.nube.recibirEventos(hub, [eventoPlano(1), badCase, eventoPlano(3)])
@@ -286,13 +286,13 @@ describe('texto que Postgres no acepta', () => {
     ['\\u0000 en el nombre de un campo extra', (t) => ({ [t]: 1 })],
   ]
   const badOnes = ['a\u0000b', '\ud800', 'x\udfff', '\u0000']
-  for (const [name, hacer] of cases)
+  for (const [name, act] of cases)
     it(`${name} o un sustituto suelto: ese evento es inválido y el lote sigue`, async () => {
       const { hub, restaurantId } = await m.newHub()
       for (const [i, t] of badOnes.entries()) {
         const r = await m.nube.recibirEventos(hub, [
           eventoPlano(10 * i + 1),
-          eventoPlano(10 * i + 2, hacer(t)),
+          eventoPlano(10 * i + 2, act(t)),
           eventoPlano(10 * i + 3),
         ])
         expect(r[1], JSON.stringify(t)).toMatchObject({
@@ -362,12 +362,12 @@ describe('fechas en el borde de lo que acepta Postgres', () => {
     const { hub, restaurantId } = await m.newHub()
     await m.nube.recibirEventos(hub, [eventoPlano(1, { received_at: '2000-01-01T00:00:00Z' })])
     const [row] = (
-      await m.db.query<{ vieja: boolean }>(
-        "SELECT saved_at > '2020-01-01' AS vieja FROM events WHERE restaurant_id = $1",
+      await m.db.query<{ old: boolean }>(
+        "SELECT saved_at > '2020-01-01' AS old FROM events WHERE restaurant_id = $1",
         [restaurantId],
       )
     ).rows
-    expect(row?.vieja).toBe(true)
+    expect(row?.old).toBe(true)
   })
 })
 

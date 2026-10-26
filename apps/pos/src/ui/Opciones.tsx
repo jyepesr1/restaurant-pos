@@ -6,17 +6,17 @@ import { Icono } from './iconos'
 
 /** Un grupo de opciones con su nombre para el lector de pantalla. */
 export function Grupo({
-  etiqueta,
+  label,
   className = '',
   children,
 }: {
-  etiqueta: string
+  label: string
   className?: string
   children: ReactNode
 }) {
   return (
     <fieldset className={`m-0 min-w-0 border-0 p-0 ${className}`}>
-      <legend className="sr-only">{etiqueta}</legend>
+      <legend className="sr-only">{label}</legend>
       {children}
     </fieldset>
   )
@@ -26,17 +26,17 @@ export function Opcion({
   elegida,
   alElegir,
   shape = 'pastilla',
-  detalle,
-  etiqueta,
+  detail,
+  label,
   children,
 }: {
   elegida: boolean
   alElegir: () => void
   /** Pastilla (filtros, categorías) o tarjeta (opciones con precio). */
   shape?: 'pastilla' | 'card'
-  detalle?: string
+  detail?: string
   /** Nombre para el lector de pantalla si el texto visible no basta. */
-  etiqueta?: string
+  label?: string
   children: ReactNode
 }) {
   const base =
@@ -52,14 +52,14 @@ export function Opcion({
     <button
       type="button"
       aria-pressed={elegida}
-      aria-label={etiqueta}
+      aria-label={label}
       onClick={alElegir}
       className={`${base} ${color} ${size}`}
     >
       {elegida && <Icono name="check" />}
       <span className="flex flex-1 flex-col">
         <span>{children}</span>
-        {detalle && <span className="cifras text-sm font-normal">{detalle}</span>}
+        {detail && <span className="cifras text-sm font-normal">{detail}</span>}
       </span>
     </button>
   )

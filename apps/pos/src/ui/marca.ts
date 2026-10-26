@@ -20,14 +20,14 @@ export const BRANDS: readonly { brand: Marca; name: string; description: string 
   },
 ]
 export const MARCA_POR_DEFECTO: Marca = 'faro'
-const CLAVE = 'pos-brand'
+const KEY = 'pos-brand'
 
 export const esMarca = (value: unknown): value is Marca => BRANDS.some((m) => m.brand === value)
 
 function read(): Marca {
   try {
-    const guardada = localStorage.getItem(CLAVE)
-    return esMarca(guardada) ? guardada : MARCA_POR_DEFECTO
+    const saved = localStorage.getItem(KEY)
+    return esMarca(saved) ? saved : MARCA_POR_DEFECTO
   } catch {
     return MARCA_POR_DEFECTO
   }
@@ -38,7 +38,7 @@ export function aplicarMarca(brand: Marca = read()) {
   if (brand === 'faro') delete document.documentElement.dataset.marca
   else document.documentElement.dataset.marca = brand
   try {
-    localStorage.setItem(CLAVE, brand)
+    localStorage.setItem(KEY, brand)
   } catch {
     // Sin almacenamiento: vale mientras la página esté abierta.
   }

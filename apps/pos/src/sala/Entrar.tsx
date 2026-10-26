@@ -41,12 +41,12 @@ export function Entrar() {
   const [error, setError] = useState<string | null>(null)
   const [attempt, setIntento] = useState(0)
   const [waitMs, setEsperaMs] = useState(0)
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
 
   const tryAction = async (data: string | { user: string; password: string }) => {
     setOcupado(true)
     try {
-      await floor.entrar(data)
+      await floor.signIn(data)
       recordarModo(typeof data === 'string' ? 'pin' : 'password')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
@@ -76,7 +76,7 @@ export function Entrar() {
               error={error}
               attempt={attempt}
               waitMs={waitMs}
-              ocupado={ocupado}
+              taken={taken}
               alCompletar={(pin) => void tryAction(pin)}
             />
             <Boton variant="ghost" onClick={() => cambiarModo('password')}>
@@ -90,7 +90,7 @@ export function Entrar() {
               error={error}
               attempt={attempt}
               waitMs={waitMs}
-              ocupado={ocupado}
+              taken={taken}
               alEnviar={(user, password) => void tryAction({ user, password })}
             />
             <Boton variant="ghost" onClick={() => cambiarModo('pin')}>
@@ -113,14 +113,14 @@ function ConContrasena({
   error,
   attempt,
   waitMs,
-  ocupado,
+  taken,
   alEnviar,
 }: {
   title: string
   error: string | null
   attempt: number
   waitMs: number
-  ocupado: boolean
+  taken: boolean
   alEnviar: (user: string, password: string) => void
 }) {
   const [user, setUsuario] = useState('')
@@ -133,9 +133,9 @@ function ConContrasena({
   useEffect(() => {
     setRestante(waitMs)
     if (waitMs <= 0) return
-    const fin = Date.now() + waitMs
+    const end = Date.now() + waitMs
     const clock = setInterval(() => {
-      const queda = Math.max(0, fin - Date.now())
+      const queda = Math.max(0, end - Date.now())
       setRestante(queda)
       if (queda === 0) clearInterval(clock)
     }, 250)
@@ -149,10 +149,10 @@ function ConContrasena({
     campoContrasena.current?.focus()
   }, [attempt])
 
-  const bloqueado = ocupado || restante > 0
+  const blocked = taken || restante > 0
   const send = (e: FormEvent) => {
     e.preventDefault()
-    if (bloqueado) return
+    if (blocked) return
     if (!user.trim() || !password) {
       setFalta(!user.trim() ? 'Escribe tu usuario' : 'Escribe tu contraseña')
       return
@@ -196,19 +196,15 @@ function ConContrasena({
       </label>
       {/* Solo se anuncia el cambio de mensaje, no cada segundo de la cuenta atrás. */}
       <p key={attempt} className="min-h-6 text-center text-alerta-texto" role="alert">
-        {restante > 0
-          ? 'Demasiados intentos.'
-          : ocupado
-            ? 'Comprobando…'
-            : (missing ?? error ?? '')}
+        {restante > 0 ? 'Demasiados intentos.' : taken ? 'Comprobando…' : (missing ?? error ?? '')}
       </p>
       {restante > 0 && (
         <p className="cifras text-center text-texto-suave" aria-hidden="true">
           {`Espera ${Math.ceil(restante / 1000)} s`}
         </p>
       )}
-      <Boton type="submit" variant="main" large disabled={bloqueado}>
-        {ocupado ? 'Entrando…' : 'Entrar'}
+      <Boton type="submit" variant="main" large disabled={blocked}>
+        {taken ? 'Entrando…' : 'Entrar'}
       </Boton>
     </form>
   )

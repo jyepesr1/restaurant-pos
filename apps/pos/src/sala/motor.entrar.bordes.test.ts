@@ -3,7 +3,7 @@ import { newId } from '@pos/core'
 import type { Channel } from '@pos/sync'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
-import { type Equipo, Sala, type Sesion } from './motor'
+import { type Device, Sala, type Session } from './motor'
 import { catalogoDePrueba } from './pruebas'
 
 // El motor de la app al entrar (tarea 1.3b, ADR-013) cuando el hub no está, el token no sirve o el
@@ -16,16 +16,16 @@ afterEach(() => {
 })
 
 const sinRed = (): Channel => ({ send: () => {}, close: () => {} })
-const json = (cuerpo: unknown, status = 201) =>
-  new Response(JSON.stringify(cuerpo), { status, headers: { 'content-type': 'application/json' } })
+const json = (body: unknown, status = 201) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
-const equipoNuevo = (n = 'a'): Equipo => ({
+const equipoNuevo = (n = 'a'): Device => ({
   deviceId: newId(),
   token: `token-${n}`,
   name: 'Equipo de Ana',
   type: 'waiter',
 })
-const entry = (device: Equipo | null, type = 'waiter') => ({
+const entry = (device: Device | null, type = 'waiter') => ({
   device: device && {
     device_id: device.deviceId,
     token: device.token,
@@ -39,29 +39,25 @@ const entry = (device: Equipo | null, type = 'waiter') => ({
   permissions: ['take_order'],
 })
 
-type Responder = (
-  url: string,
-  cuerpo: unknown,
-  token: string | null,
-) => Response | Promise<Response>
+type Responder = (url: string, body: unknown, token: string | null) => Response | Promise<Response>
 function hubFalso(responder: Responder) {
-  const calls: { url: string; cuerpo: unknown; token: string | null }[] = []
+  const calls: { url: string; body: unknown; token: string | null }[] = []
   const fetchFalso = vi.fn(async (url: string, init?: RequestInit) => {
     const token =
       (init?.headers as Record<string, string> | undefined)?.authorization?.replace(
         'Bearer ',
         '',
       ) ?? null
-    const cuerpo = init?.body ? JSON.parse(String(init.body)) : null
-    calls.push({ url, cuerpo, token })
+    const body = init?.body ? JSON.parse(String(init.body)) : null
+    calls.push({ url, body, token })
     if (url === '/api/catalog') return json(catalogoDePrueba(), 200)
-    return responder(url, cuerpo, token)
+    return responder(url, body, token)
   })
   vi.stubGlobal('fetch', fetchFalso)
   return { calls, fetchFalso }
 }
 
-async function open(device?: Equipo, session?: Sesion) {
+async function open(device?: Device, session?: Session) {
   const db = new BaseDispositivo(`prueba-${newId()}`)
   if (device) await db.saveSetting('device', device)
   if (session) await db.saveSetting('session', session)
@@ -71,12 +67,12 @@ async function open(device?: Equipo, session?: Sesion) {
   return { floor, db }
 }
 
-const unaSesion = (): Sesion => ({
-  sesionId: newId(),
+const unaSesion = (): Session => ({
+  sessionId: newId(),
   secret: 'secreto-viejo',
   user: { id: newId(), name: 'Luis', role: 'Mesero' },
   permissions: ['take_order'],
-  ultimoUso: Date.now(),
+  lastUsed: Date.now(),
 })
 
 describe('entrar sin conexión', () => {
@@ -87,12 +83,12 @@ describe('entrar sin conexión', () => {
       return json(entry(equipoNuevo()))
     })
     const { floor, db } = await open()
-    await expect(floor.entrar('4821')).rejects.toMatchObject({ code: 'offline' })
+    await expect(floor.signIn('4821')).rejects.toMatchObject({ code: 'offline' })
     expect(floor.instantanea()).toMatchObject({ device: null, session: null })
     expect(await db.leerAjuste('device')).toBeUndefined()
     expect(await db.leerAjuste('session')).toBeUndefined()
     down = false
-    await floor.entrar('4821')
+    await floor.signIn('4821')
     expect(floor.instantanea().session).not.toBeNull()
     expect(fetchFalso).toHaveBeenCalled()
   })
@@ -101,8 +97,8 @@ describe('entrar sin conexión', () => {
     const { fetchFalso } = hubFalso(() => json(entry(equipoNuevo())))
     const { floor } = await open()
     floor.simularSinConexion(true)
-    await expect(floor.entrar('4821')).rejects.toMatchObject({ code: 'offline' })
-    await expect(floor.entrar({ user: 'caja', password: 'una-clave-larga' })).rejects.toMatchObject(
+    await expect(floor.signIn('4821')).rejects.toMatchObject({ code: 'offline' })
+    await expect(floor.signIn({ user: 'caja', password: 'una-clave-larga' })).rejects.toMatchObject(
       {
         code: 'offline',
       },
@@ -115,19 +111,19 @@ describe('entrar sin conexión', () => {
       throw new DOMException('The operation timed out.', 'TimeoutError')
     })
     const { floor } = await open()
-    await expect(floor.entrar('4821')).rejects.toMatchObject({ code: 'offline' })
+    await expect(floor.signIn('4821')).rejects.toMatchObject({ code: 'offline' })
   })
 
   it('si ya había sesión y el hub no está, la sesión anterior no se pierde ni se cambia', async () => {
     const device = equipoNuevo()
-    const vieja = unaSesion()
+    const old = unaSesion()
     hubFalso(() => {
       throw new TypeError('Failed to fetch')
     })
-    const { floor, db } = await open(device, vieja)
-    await expect(floor.entrar('4821')).rejects.toMatchObject({ code: 'offline' })
-    expect(floor.instantanea().session?.sesionId).toBe(vieja.sesionId)
-    expect((await db.leerAjuste<Sesion>('session'))?.sesionId).toBe(vieja.sesionId)
+    const { floor, db } = await open(device, old)
+    await expect(floor.signIn('4821')).rejects.toMatchObject({ code: 'offline' })
+    expect(floor.instantanea().session?.sessionId).toBe(old.sessionId)
+    expect((await db.leerAjuste<Session>('session'))?.sessionId).toBe(old.sessionId)
   })
 
   it('personal y guardar personas sin conexión: «sin conexión», y la sesión sigue abierta', async () => {
@@ -138,10 +134,10 @@ describe('entrar sin conexión', () => {
       return url === '/api/sign-in' ? json(entry(null)) : json({ roles: [], people: [] }, 200)
     })
     const { floor } = await open(device)
-    await floor.entrar('4821')
+    await floor.signIn('4821')
     down = true
     await expect(floor.staff()).rejects.toMatchObject({ code: 'offline' })
-    await expect(floor.guardarPersona({ name: 'Bruno', role_id: newId() })).rejects.toMatchObject({
+    await expect(floor.saveStaffMember({ name: 'Bruno', role_id: newId() })).rejects.toMatchObject({
       code: 'offline',
     })
     expect(floor.instantanea().session).not.toBeNull()
@@ -151,13 +147,13 @@ describe('entrar sin conexión', () => {
 describe('entrar con un token falso o retirado', () => {
   it('token inventado (401): el error llega con su código; el equipo guardado no se borra solo y la sesión vieja tampoco', async () => {
     const device = equipoNuevo('inventado')
-    const vieja = unaSesion()
+    const old = unaSesion()
     hubFalso(() => json({ error: 'invalid_token', message: 'Este equipo no está emparejado' }, 401))
-    const { floor, db } = await open(device, vieja)
-    await expect(floor.entrar('4821')).rejects.toMatchObject({ code: 'invalid_token' })
+    const { floor, db } = await open(device, old)
+    await expect(floor.signIn('4821')).rejects.toMatchObject({ code: 'invalid_token' })
     expect(floor.instantanea().device).toEqual(device)
-    expect(await db.leerAjuste<Equipo>('device')).toEqual(device)
-    expect(floor.instantanea().session?.sesionId).toBe(vieja.sesionId)
+    expect(await db.leerAjuste<Device>('device')).toEqual(device)
+    expect(floor.instantanea().session?.sessionId).toBe(old.sessionId)
   })
 
   it('tras un token inválido, «olvidar el equipo» y volver a entrar registra uno nuevo, sin mandar el token viejo', async () => {
@@ -168,20 +164,20 @@ describe('entrar con un token falso o retirado', () => {
         : json(entry(fresh)),
     )
     const { floor, db } = await open(equipoNuevo('viejo'))
-    await expect(floor.entrar('4821')).rejects.toMatchObject({ code: 'invalid_token' })
+    await expect(floor.signIn('4821')).rejects.toMatchObject({ code: 'invalid_token' })
     await floor.olvidarEquipo()
     expect(floor.instantanea().device).toBeNull()
-    await floor.entrar('4821')
+    await floor.signIn('4821')
     expect(calls.filter((l) => l.url === '/api/sign-in').at(-1)?.token).toBeNull()
     expect(floor.instantanea().device).toEqual(fresh)
-    expect(await db.leerAjuste<Equipo>('device')).toEqual(fresh)
+    expect(await db.leerAjuste<Device>('device')).toEqual(fresh)
   })
 
   it('equipo retirado (403): error «dispositivo_revocado», no se abre sesión ni cambia el tipo del equipo', async () => {
     const device = equipoNuevo('retirado')
     hubFalso(() => json({ error: 'revoked_device', message: 'Este equipo fue retirado' }, 403))
     const { floor, db } = await open(device)
-    await expect(floor.entrar({ user: 'caja', password: 'una-clave-larga' })).rejects.toMatchObject(
+    await expect(floor.signIn({ user: 'caja', password: 'una-clave-larga' })).rejects.toMatchObject(
       {
         code: 'revoked_device',
         message: 'Este equipo fue retirado',
@@ -189,7 +185,7 @@ describe('entrar con un token falso o retirado', () => {
     )
     expect(floor.instantanea().session).toBeNull()
     expect(await db.leerAjuste('session')).toBeUndefined()
-    expect((await db.leerAjuste<Equipo>('device'))?.type).toBe('waiter')
+    expect((await db.leerAjuste<Device>('device'))?.type).toBe('waiter')
   })
 
   it('la contraseña errada espera: llega el tiempo de espera y no se guarda nada', async () => {
@@ -198,13 +194,13 @@ describe('entrar con un token falso o retirado', () => {
         {
           error: 'invalid_credentials',
           message: 'Usuario o contraseña incorrectos',
-          espera_ms: 4000,
+          wait_ms: 4000,
         },
         429,
       ),
     )
     const { floor, db } = await open()
-    await expect(floor.entrar({ user: 'caja', password: 'incorrecta-xx' })).rejects.toMatchObject({
+    await expect(floor.signIn({ user: 'caja', password: 'incorrecta-xx' })).rejects.toMatchObject({
       code: 'invalid_credentials',
       waitMs: 4000,
     })
@@ -219,12 +215,12 @@ describe('entrar con un token falso o retirado', () => {
         : new Response('hello', { status: 201 }),
     )
     const { floor, db } = await open()
-    await expect(floor.entrar('4821')).rejects.toMatchObject({
+    await expect(floor.signIn('4821')).rejects.toMatchObject({
       code: 'error',
       message: expect.stringMatching(/502/),
     })
     mode = 'text'
-    await expect(floor.entrar('4821')).rejects.toBeDefined()
+    await expect(floor.signIn('4821')).rejects.toBeDefined()
     expect(await db.leerAjuste('device')).toBeUndefined()
     expect(await db.leerAjuste('session')).toBeUndefined()
     expect(floor.instantanea()).toMatchObject({ device: null, session: null })
@@ -240,19 +236,19 @@ describe('persistir antes de mostrar al entrar', () => {
       if (key === 'session') throw new Error('IndexedDB llena')
       return original(key, value as never)
     }
-    await expect(floor.entrar('4821')).rejects.toThrow('IndexedDB llena')
+    await expect(floor.signIn('4821')).rejects.toThrow('IndexedDB llena')
     expect(floor.instantanea().session).toBeNull()
   })
 
   it('dos toques seguidos al entrar sin equipo: al final equipo y sesión guardados vienen de la misma respuesta', async () => {
     const a = equipoNuevo('a')
     const b = equipoNuevo('b')
-    const respuestas = [entry(a), entry(b)]
-    hubFalso(() => json(respuestas.shift()))
+    const responses = [entry(a), entry(b)]
+    hubFalso(() => json(responses.shift()))
     const { floor, db } = await open()
-    await Promise.allSettled([floor.entrar('4821'), floor.entrar('4821')])
+    await Promise.allSettled([floor.signIn('4821'), floor.signIn('4821')])
     const status = floor.instantanea()
-    const saved = await db.leerAjuste<Equipo>('device')
+    const saved = await db.leerAjuste<Device>('device')
     expect(status.device).toEqual(saved)
     expect([a.token, b.token]).toContain(status.device?.token)
     expect(status.session).not.toBeNull()
@@ -261,16 +257,16 @@ describe('persistir antes de mostrar al entrar', () => {
 
 describe('personal con la sesión del motor', () => {
   it('«sesión inválida» del hub cierra la sesión local; «sin permiso» no', async () => {
-    let respuesta: Response = json(
+    let response: Response = json(
       { error: 'no_permission', message: 'Tu rol no tiene permiso' },
       403,
     )
-    hubFalso((url) => (url === '/api/sign-in' ? json(entry(null)) : respuesta))
+    hubFalso((url) => (url === '/api/sign-in' ? json(entry(null)) : response))
     const { floor } = await open(equipoNuevo())
-    await floor.entrar('4821')
+    await floor.signIn('4821')
     await expect(floor.staff()).rejects.toMatchObject({ code: 'no_permission' })
     expect(floor.instantanea().session).not.toBeNull()
-    respuesta = json(
+    response = json(
       { error: 'invalid_session', message: 'La sesión se cerró: vuelve a entrar' },
       401,
     )

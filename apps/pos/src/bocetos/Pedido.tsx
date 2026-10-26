@@ -20,7 +20,7 @@ import {
 } from './datos'
 import { cambiarMesa, useMesaDeLaRuta, useMesas } from './estado'
 import { Marco } from './Marco'
-import { lineaDe, nombreItem, totalMesa } from './totales'
+import { lineOf, nombreItem, totalMesa } from './totales'
 
 // Toma de pedido (brief §5, regla 2): tocar productos y "Enviar". Lo que no tiene opciones entra
 // con un toque (y se puede deshacer); el mismo producto otra vez suma a su línea. Lo que tiene una
@@ -213,10 +213,7 @@ export function Order() {
             />
           </label>
           {!busqueda.trim() && (
-            <Grupo
-              etiqueta="Categorías"
-              className="-mx-3 mt-3 flex gap-2 overflow-x-auto px-3 pb-1"
-            >
+            <Grupo label="Categorías" className="-mx-3 mt-3 flex gap-2 overflow-x-auto px-3 pb-1">
               {menu.map((c) => (
                 <Opcion
                   key={c.key}
@@ -405,7 +402,7 @@ function Ticket({
         />
       </div>
       <Grupo
-        etiqueta="Para quién es lo próximo que agregues"
+        label="Para quién es lo próximo que agregues"
         className="flex gap-2 overflow-x-auto border-b border-borde p-3"
       >
         {[null, ...Array.from({ length: guests }, (_, i) => i + 1)].map((c) => (
@@ -413,7 +410,7 @@ function Ticket({
             key={c ?? 'table'}
             elegida={guest === c}
             alElegir={() => alElegirComensal(c)}
-            etiqueta={c === null ? 'Para la mesa' : `Para la persona ${c}`}
+            label={c === null ? 'Para la mesa' : `Para la persona ${c}`}
           >
             {c === null ? 'Mesa' : `P${c}`}
           </Opcion>
@@ -453,7 +450,7 @@ function Ticket({
                 </span>
               </span>
               <span className={`cifras ${i.voided ? 'line-through' : ''}`}>
-                {pesos(netoLinea(lineaDe(i)))}
+                {pesos(netoLinea(lineOf(i)))}
               </span>
             </button>
           </li>
@@ -519,7 +516,7 @@ function PanelProducto({
     setAbiertoPara(null)
     onClose()
   }
-  const agregarCon = (v: string | null, o: Record<string, string>) => {
+  const addWith = (v: string | null, o: Record<string, string>) => {
     setAbiertoPara(null)
     alAgregar(fresh(product, v, elegidasDe(o), guest, quantity, notes.trim()))
   }
@@ -535,7 +532,7 @@ function PanelProducto({
           large
           className="w-full"
           disabled={missingOnes.length > 0}
-          onClick={() => agregarCon(variant, options)}
+          onClick={() => addWith(variant, options)}
         >
           {missingOnes.length > 0 ? `Elige ${missingOnes[0]}` : `Agregar · ${pesos(net)}`}
         </Boton>
@@ -548,9 +545,9 @@ function PanelProducto({
       {product.variants.length > 0 && (
         <ListaOpciones
           title="Tamaño"
-          options={product.variants.map((v) => ({ name: v.name, detalle: pesos(v.price) }))}
+          options={product.variants.map((v) => ({ name: v.name, detail: pesos(v.price) }))}
           elegida={variant}
-          alElegir={(v) => (unaSola ? agregarCon(v, options) : setVariante(v))}
+          alElegir={(v) => (unaSola ? addWith(v, options) : setVariante(v))}
         />
       )}
       {product.groups.map((g: MenuGroup) => (
@@ -559,12 +556,12 @@ function PanelProducto({
           title={`${g.name}${g.minimum > 0 ? ' (obligatorio)' : ''}`}
           options={g.options.map((o) => ({
             name: o.name,
-            detalle: o.extraPrice ? `+${pesos(o.extraPrice)}` : '',
+            detail: o.extraPrice ? `+${pesos(o.extraPrice)}` : '',
           }))}
           elegida={options[g.key] ?? null}
           alElegir={(name) => {
             const newOnes = { ...options, [g.key]: name }
-            if (unaSola) agregarCon(variant, newOnes)
+            if (unaSola) addWith(variant, newOnes)
             else setOpciones(newOnes)
           }}
         />
@@ -590,7 +587,7 @@ function ListaOpciones({
   alElegir,
 }: {
   title: string
-  options: { name: string; detalle: string }[]
+  options: { name: string; detail: string }[]
   elegida: string | null
   alElegir: (name: string) => void
 }) {
@@ -603,7 +600,7 @@ function ListaOpciones({
             key={o.name}
             shape="card"
             elegida={elegida === o.name}
-            detalle={o.detalle}
+            detail={o.detail}
             alElegir={() => alElegir(o.name)}
           >
             {o.name}
@@ -649,17 +646,17 @@ function PanelItem({
   alQuitar: (item: OrderItem) => void
   onVoid: (item: OrderItem, reason: string, alreadyPrepared: boolean) => void
 }) {
-  const [borrador, setBorrador] = useState<OrderItem | null>(null)
+  const [draft, setBorrador] = useState<OrderItem | null>(null)
   const [reason, setMotivo] = useState<string | null>(null)
   const [alreadyPrepared, setYaPreparado] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
-  if (item && borrador?.id !== item.id) {
+  if (item && draft?.id !== item.id) {
     setBorrador(item)
     setMotivo(null)
     setYaPreparado(false)
     setConfirmando(false)
   }
-  if (!item || !borrador) return null
+  if (!item || !draft) return null
   const close = () => {
     setBorrador(null)
     onClose()
@@ -751,7 +748,7 @@ function PanelItem({
             className="flex-1"
             onClick={() => {
               setBorrador(null)
-              onSave(borrador)
+              onSave(draft)
             }}
           >
             Listo
@@ -760,25 +757,23 @@ function PanelItem({
       }
     >
       <Quantity
-        value={borrador.quantity}
-        onChange={(quantity) => setBorrador({ ...borrador, quantity })}
+        value={draft.quantity}
+        onChange={(quantity) => setBorrador({ ...draft, quantity })}
       />
       <ListaOpciones
         title="Para"
         options={['Mesa', ...Array.from({ length: guests }, (_, i) => `P${i + 1}`)].map((name) => ({
           name,
-          detalle: '',
+          detail: '',
         }))}
-        elegida={borrador.guest ? `P${borrador.guest}` : 'Mesa'}
-        alElegir={(n) =>
-          setBorrador({ ...borrador, guest: n === 'Mesa' ? null : Number(n.slice(1)) })
-        }
+        elegida={draft.guest ? `P${draft.guest}` : 'Mesa'}
+        alElegir={(n) => setBorrador({ ...draft, guest: n === 'Mesa' ? null : Number(n.slice(1)) })}
       />
       <label className="block">
         <span className="font-semibold">Notas para cocina</span>
         <input
-          value={borrador.notes}
-          onChange={(e) => setBorrador({ ...borrador, notes: e.target.value })}
+          value={draft.notes}
+          onChange={(e) => setBorrador({ ...draft, notes: e.target.value })}
           className="mt-2 min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 focus-visible:outline-3 focus-visible:outline-foco"
         />
       </label>

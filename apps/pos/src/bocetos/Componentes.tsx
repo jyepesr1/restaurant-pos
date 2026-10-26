@@ -10,12 +10,12 @@ import { Marco } from './Marco'
 // El design system a la vista: colores con significado, botones, etiquetas, indicador de
 // conexión, teclado del PIN, panel lateral y aviso con Deshacer.
 
-const TONOS: { tono: Tono; name: string; uso: string }[] = [
-  { tono: 'free', name: 'Verde', uso: 'Libre, listo, pagado' },
-  { tono: 'progress', name: 'Ámbar', uso: 'En proceso, en espera' },
-  { tono: 'warning', name: 'Rojo', uso: 'Demora, error, quitar' },
-  { tono: 'action', name: 'Azul', uso: 'La acción principal' },
-  { tono: 'neutral', name: 'Gris', uso: 'Lo demás' },
+const TONOS: { tono: Tono; name: string; use: string }[] = [
+  { tono: 'free', name: 'Verde', use: 'Libre, listo, pagado' },
+  { tono: 'progress', name: 'Ámbar', use: 'En proceso, en espera' },
+  { tono: 'warning', name: 'Rojo', use: 'Demora, error, quitar' },
+  { tono: 'action', name: 'Azul', use: 'La acción principal' },
+  { tono: 'neutral', name: 'Gris', use: 'Lo demás' },
 ]
 
 export function Componentes() {
@@ -39,7 +39,7 @@ export function Componentes() {
                 <Etiqueta tono={t.tono} main>
                   {t.name}
                 </Etiqueta>
-                <Etiqueta tono={t.tono}>{t.uso}</Etiqueta>
+                <Etiqueta tono={t.tono}>{t.use}</Etiqueta>
               </li>
             ))}
           </ul>

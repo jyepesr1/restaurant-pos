@@ -574,7 +574,7 @@ describe('recortarAsignaciones', () => {
 })
 
 describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
-  const cobra = (
+  const charges = (
     balance: number,
     tendered: number,
     extra: Partial<{ amount: number; tip: number }> = {},
@@ -595,7 +595,7 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
   ])(
     'saldo %i, el cliente da %i → cobra %i, ajuste %i, cambio %i',
     (balance, tendered, charged, adjustment, change) => {
-      const c = cobra(balance, tendered)
+      const c = charges(balance, tendered)
       expect(c).toMatchObject({ charged, adjustment, change, missing: 0, aEntregar: charged })
       expect(c.rounding).toEqual(adjustment === 0 ? null : ROUNDING)
     },
@@ -603,7 +603,7 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
 
   it('el cobro con ajuste es el mismo del núcleo (cobradoEnEfectivo)', () => {
     for (const balance of [36_810, 36_850, 36_851, 36_860, 36_800, 1, 49, 50, 51, 99, 100])
-      expect(cobra(balance, balance + 1_000_000).charged).toBe(chargedInCash(balance, 100))
+      expect(charges(balance, balance + 1_000_000).charged).toBe(chargedInCash(balance, 100))
   })
 
   it('pago parcial: se cobra el monto exacto, sin redondeo ni regla en el evento', () => {
@@ -623,36 +623,36 @@ describe('pagoEnEfectivo: los ejemplos de docs/DINERO.md', () => {
   })
 
   it('el saldo de medio múltiplo o menos se cobra en $0 con ajuste negativo', () => {
-    expect(cobra(30, 0)).toMatchObject({
+    expect(charges(30, 0)).toMatchObject({
       charged: 0,
       adjustment: -30,
       aEntregar: 0,
       change: 0,
       missing: 0,
     })
-    expect(cobra(50, 0)).toMatchObject({ charged: 0, adjustment: -50, rounding: ROUNDING })
-    expect(cobra(51, 100)).toMatchObject({ charged: 100, adjustment: 49 })
+    expect(charges(50, 0)).toMatchObject({ charged: 0, adjustment: -50, rounding: ROUNDING })
+    expect(charges(51, 100)).toMatchObject({ charged: 100, adjustment: 49 })
   })
 
   it('después de pagar con tarjeta: saldo de $30 en efectivo, la propina sí se entrega', () => {
-    const c = cobra(30, 3_000, { tip: 3_000 })
+    const c = charges(30, 3_000, { tip: 3_000 })
     expect(c).toMatchObject({ charged: 0, adjustment: -30, aEntregar: 3_000, change: 0 })
   })
 
   it('saldo múltiplo de medio múltiplo exacto (150) y saldo 0 con monto 0 es un error', () => {
-    expect(cobra(150, 200)).toMatchObject({ charged: 100, adjustment: -50 })
-    expect(() => cobra(0, 0)).toThrow(RangeError)
+    expect(charges(150, 200)).toMatchObject({ charged: 100, adjustment: -50 })
+    expect(() => charges(0, 0)).toThrow(RangeError)
   })
 
   it('la propina se suma a lo que entrega el cliente; el cambio que sobra se calcula sobre el total', () => {
-    const c = cobra(36_810, 50_000, { tip: 3_000 })
+    const c = charges(36_810, 50_000, { tip: 3_000 })
     expect(c).toMatchObject({ charged: 36_800, aEntregar: 39_800, change: 10_200, missing: 0 })
   })
 
   it('si lo recibido no alcanza: falta lo que falta y el cambio es 0', () => {
-    expect(cobra(36_810, 30_000)).toMatchObject({ missing: 6_800, change: 0 })
-    expect(cobra(36_810, 36_799)).toMatchObject({ missing: 1, change: 0 })
-    expect(cobra(36_810, 36_800)).toMatchObject({ missing: 0, change: 0 })
+    expect(charges(36_810, 30_000)).toMatchObject({ missing: 6_800, change: 0 })
+    expect(charges(36_810, 36_799)).toMatchObject({ missing: 1, change: 0 })
+    expect(charges(36_810, 36_800)).toMatchObject({ missing: 0, change: 0 })
   })
 
   it('rechaza monto 0, monto mayor que el saldo, decimales y negativos', () => {
@@ -1054,7 +1054,7 @@ describe('resumenTurno', () => {
         ),
         (payments) => {
           const events: LocalEvent[] = []
-          const quedan: LocalEvent[] = []
+          const kept: LocalEvent[] = []
           for (const p of payments) {
             const e = pagoEv(pid, { register_shift_id: T1, ...p })
             events.push(e)
@@ -1062,13 +1062,13 @@ describe('resumenTurno', () => {
               events.push(
                 local('PaymentVoided', pid, { payment_id: pagoIdDe(e), register_shift_id: T1 }),
               )
-            else quedan.push(e)
+            else kept.push(e)
           }
           const dejaCero = (r: ReturnType<typeof resumenTurno>) =>
             r.byMethod
               .filter((m) => m.sale !== 0 || m.tip !== 0 || m.payments !== 0)
               .sort((a, b) => a.method.localeCompare(b.method))
-          expect(dejaCero(resumenTurno(events, T1))).toEqual(dejaCero(resumenTurno(quedan, T1)))
+          expect(dejaCero(resumenTurno(events, T1))).toEqual(dejaCero(resumenTurno(kept, T1)))
         },
       ),
       { seed: 20, numRuns: 100 },
@@ -1089,7 +1089,7 @@ describe('los datos del panel de cobro pasan el esquema y el reductor', () => {
     tip: number
     tendered?: number
     checkId?: string | null
-    datafonoId?: string
+    cardTerminalId?: string
   }) {
     const calculo = pagoEnEfectivo(
       { balance: p.balance, amount: p.amount, tip: p.tip, tendered: p.tendered ?? 0 },
@@ -1112,9 +1112,9 @@ describe('los datos del panel de cobro pasan el esquema y el reductor', () => {
       rounding_adjustment: p.method === 'cash' ? final.adjustment : 0,
       rounding: p.method === 'cash' ? final.rounding : null,
       cardTerminal:
-        p.method === 'card' && p.datafonoId
+        p.method === 'card' && p.cardTerminalId
           ? {
-              card_terminal_id: p.datafonoId,
+              card_terminal_id: p.cardTerminalId,
               franchise: null,
               last4: null,
               approval_code: null,
@@ -1195,7 +1195,7 @@ describe('los datos del panel de cobro pasan el esquema y el reductor', () => {
       balance: 40_900,
       amount: 40_900,
       tip: 4_090,
-      datafonoId: newId(),
+      cardTerminalId: newId(),
     })
     expect(payment).toMatchObject({
       tendered: null,
@@ -1274,7 +1274,7 @@ describe('los datos del panel de cobro pasan el esquema y el reductor', () => {
             amount,
             tip,
             tendered: base.aEntregar + sobra,
-            datafonoId: newId(),
+            cardTerminalId: newId(),
           })
           const r = apply(price, payment)
           expect(r.ok).toBe(true)

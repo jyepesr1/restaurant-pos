@@ -9,9 +9,9 @@ import { navegar } from '../ui/ruta'
 import { usePedidos, useSala } from './contexto'
 import { FiguraElemento, Lienzo, placement, Sillas, useEscala } from './LienzoPlano'
 import { MarcoSala } from './MarcoSala'
-import { CANALES } from './pedido'
+import { CHANNELS } from './pedido'
 import { limites } from './plano'
-import { type EstadoMesaDemo, estadoMesa, itemsVigentes, type PedidoVisible } from './proyeccion'
+import { currentItems, type EstadoMesaDemo, estadoMesa, type PedidoVisible } from './proyeccion'
 
 // Plano de mesas (brief §5, regla 1): la pantalla inicial del mesero. Cada zona o piso con sus
 // mesas en su lugar real y sus sillas, y en cada mesa ocupada el estado, el tiempo, el total y
@@ -79,7 +79,7 @@ const recordado = (key: string) => {
 }
 
 /** Lo que se dice de una mesa: estado, tiempo desde que se abrió, total y quién la atiende. */
-interface Resumen {
+interface Summary {
   status: EstadoMesaDemo
   orders: PedidoVisible[]
   total: number
@@ -92,7 +92,7 @@ interface Resumen {
   unidaA: string | null
 }
 
-function resumir(orders: PedidoVisible[], staff: Catalog['staff'], now: number): Resumen {
+function resumir(orders: PedidoVisible[], staff: Catalog['staff'], now: number): Summary {
   const firstOne = orders[0]
   return {
     status: estadoMesa(orders),
@@ -108,7 +108,7 @@ function resumir(orders: PedidoVisible[], staff: Catalog['staff'], now: number):
   }
 }
 
-const describir = (table: Mesa, r: Resumen) =>
+const describir = (table: Mesa, r: Summary) =>
   [
     `Mesa ${table.name}`,
     STATUSES[r.status].text,
@@ -205,7 +205,7 @@ export function Mesas() {
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
             {vista === 'floorPlan' && zones.length > 1 && (
-              <Grupo etiqueta="Zona" className="flex flex-wrap gap-2">
+              <Grupo label="Zona" className="flex flex-wrap gap-2">
                 {zones.map((z) => (
                   <Opcion
                     key={z.id}
@@ -221,7 +221,7 @@ export function Mesas() {
               </Grupo>
             )}
             <span className="flex-1" />
-            <Grupo etiqueta="Ver el salón como" className="flex rounded-xl bg-superficie-2 p-1">
+            <Grupo label="Ver el salón como" className="flex rounded-xl bg-superficie-2 p-1">
               {(['floorPlan', 'list'] as const).map((v) => (
                 <button
                   key={v}
@@ -275,7 +275,7 @@ export function Mesas() {
                         <li key={m.id}>
                           <MesaEnLista
                             table={m}
-                            r={resumenes.get(m.id) as Resumen}
+                            r={resumenes.get(m.id) as Summary}
                             alTocar={() => tocar(m)}
                           />
                         </li>
@@ -298,7 +298,7 @@ export function Mesas() {
   )
 }
 
-const ICONO_CANAL: Record<keyof typeof CANALES, NombreIcono> = {
+const ICONO_CANAL: Record<keyof typeof CHANNELS, NombreIcono> = {
   takeout: 'bag',
   delivery: 'motorcycle',
   bar: 'glass',
@@ -312,7 +312,7 @@ function nombrePedido(catalog: Catalog, p: PedidoVisible): string {
     )
     return `Mesa ${names.join(' + ')}`
   }
-  const channel = CANALES[p.status.channel as keyof typeof CANALES] ?? 'Pedido'
+  const channel = CHANNELS[p.status.channel as keyof typeof CHANNELS] ?? 'Pedido'
   return p.status.dayNumber ? `${channel} #${p.status.dayNumber}` : channel
 }
 
@@ -331,7 +331,7 @@ function PedidosAbiertos({
   now: number
 }) {
   const openOnes = orders
-    .filter((p) => itemsVigentes(p.status).length > 0 || p.status.tableId === null)
+    .filter((p) => currentItems(p.status).length > 0 || p.status.tableId === null)
     .sort((a, b) => Date.parse(b.status.openedAt) - Date.parse(a.status.openedAt))
   return (
     <section
@@ -345,7 +345,7 @@ function PedidosAbiertos({
         <span className="cifras text-texto-suave">{openOnes.length}</span>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        {(Object.keys(CANALES) as (keyof typeof CANALES)[]).map((c) => (
+        {(Object.keys(CHANNELS) as (keyof typeof CHANNELS)[]).map((c) => (
           <button
             key={c}
             type="button"
@@ -353,7 +353,7 @@ function PedidosAbiertos({
             className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border border-linea bg-superficie px-2 text-sm font-semibold transition-colors hover:border-accion-fuerte hover:text-accion-texto focus-visible:outline-3 focus-visible:outline-foco"
           >
             <Icono name={ICONO_CANAL[c]} className="size-5" />
-            <span className="leading-tight">{CANALES[c]}</span>
+            <span className="leading-tight">{CHANNELS[c]}</span>
           </button>
         ))}
       </div>
@@ -366,7 +366,7 @@ function PedidosAbiertos({
           {openOnes.map((p) => {
             const status = estadoMesa([p])
             const v = STATUSES[status]
-            const items = itemsVigentes(p.status).reduce(
+            const items = currentItems(p.status).reduce(
               (s, i) => s + i.quantity - i.voidedQuantity,
               0,
             )
@@ -455,7 +455,7 @@ function PlanoZona({
   catalog: Catalog
   zoneId: string
   name: string
-  resumenes: Map<string, Resumen>
+  resumenes: Map<string, Summary>
   alTocar: (m: Mesa) => void
 }) {
   const tables = catalog.tables.filter((m) => m.zoneId === zoneId)
@@ -484,9 +484,9 @@ function PlanoZona({
     return cruza ? [] : [{ id: m.id, de, a }]
   })
   const grueso = Math.max(8, 20 * escala)
-  const tono = (m: Mesa) => UNION[STATUSES[(resumenes.get(m.id) as Resumen).status].tono]
+  const tono = (m: Mesa) => UNION[STATUSES[(resumenes.get(m.id) as Summary).status].tono]
   return (
-    <Lienzo register={register} escala={escala} refContenedor={ref} etiqueta={`Plano de ${name}`}>
+    <Lienzo register={register} escala={escala} refContenedor={ref} label={`Plano de ${name}`}>
       {enGrupo.length > 0 && (
         <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full">
           {uniones.map((u) => {
@@ -541,7 +541,7 @@ function PlanoZona({
         <MesaEnPlano
           key={m.id}
           table={m}
-          r={resumenes.get(m.id) as Resumen}
+          r={resumenes.get(m.id) as Summary}
           style={placement(m, register, escala)}
           escala={escala}
           alTocar={() => alTocar(m)}
@@ -580,10 +580,10 @@ function cruzaCaja(
   return true
 }
 
-const claseMesa = (r: Resumen) =>
+const claseMesa = (r: Summary) =>
   `${BORDE[STATUSES[r.status].tono]} ${TONOS_SUAVES[STATUSES[r.status].tono]}`
 
-const claseSilla = (r: Resumen) => SILLA[STATUSES[r.status].tono]
+const claseSilla = (r: Summary) => SILLA[STATUSES[r.status].tono]
 
 function MesaEnPlano({
   table,
@@ -593,7 +593,7 @@ function MesaEnPlano({
   alTocar,
 }: {
   table: Mesa
-  r: Resumen
+  r: Summary
   style: React.CSSProperties
   escala: number
   alTocar: () => void
@@ -601,8 +601,8 @@ function MesaEnPlano({
   const v = STATUSES[r.status]
   // En una mesa chica en pantalla solo cabe el número y el ícono; el resto lo dice la lista.
   const lado = Math.min(table.width, table.height) * escala
-  const detalle = lado >= 80
-  const conMesero = lado >= 110
+  const detail = lado >= 80
+  const withWaiter = lado >= 110
   // Que se pueda tocar con el dedo: al menos 48 px, creciendo alrededor de su centro.
   const crecer = (size: number, start: number) => {
     const extra = Math.max(0, 48 - size)
@@ -646,20 +646,20 @@ function MesaEnPlano({
             <span className="font-titulo text-xl font-bold">{table.name}</span>
             <Icono name={r.porConfirmar ? 'clock' : v.icono} className="size-4" />
           </span>
-          {detalle && r.unidaCon && (
+          {detail && r.unidaCon && (
             <span className="max-w-full truncate text-sm font-semibold">{`+ ${r.unidaCon}`}</span>
           )}
-          {detalle && r.unidaA && (
+          {detail && r.unidaA && (
             <span className="max-w-full truncate text-sm font-semibold">{`con la ${r.unidaA}`}</span>
           )}
-          {detalle && r.status !== 'free' && !r.unidaA && (
+          {detail && r.status !== 'free' && !r.unidaA && (
             <span className="cifras text-sm">
               {r.minutos !== null && minutos(r.minutos)}
               <br />
               {pesos(r.total)}
             </span>
           )}
-          {conMesero && r.waiter && !r.unidaA && (
+          {withWaiter && r.waiter && !r.unidaA && (
             <span className="max-w-full truncate text-sm">{r.waiter}</span>
           )}
         </span>
@@ -668,7 +668,7 @@ function MesaEnPlano({
   )
 }
 
-function MesaEnLista({ table, r, alTocar }: { table: Mesa; r: Resumen; alTocar: () => void }) {
+function MesaEnLista({ table, r, alTocar }: { table: Mesa; r: Summary; alTocar: () => void }) {
   const v = STATUSES[r.status]
   const takenPath = r.status !== 'free'
   return (

@@ -4,7 +4,7 @@ import type { Catalog, Channel } from '@pos/sync'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
 import { ErrorApi } from './api'
-import { type Equipo, Sala, type Sesion } from './motor'
+import { type Device, Sala, type Session } from './motor'
 import { catalogoDePrueba } from './pruebas'
 
 // Subir la foto de un producto y cambiar la marca desde el motor de la app (tarea 1.3c). El hub
@@ -25,8 +25,8 @@ afterEach(async () => {
 })
 
 const sinRed = (): Channel => ({ send: () => {}, close: () => {} })
-const json = (cuerpo: unknown, status = 200) =>
-  new Response(JSON.stringify(cuerpo), { status, headers: { 'content-type': 'application/json' } })
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 const PRODUCT = 'P'.repeat(26)
 const OTRO_PRODUCTO = 'Q'.repeat(26)
@@ -63,24 +63,24 @@ function menu(
 }
 
 interface Call {
-  metodo: string
+  httpMethod: string
   route: string
   token: string | null
-  cuerpo: Record<string, unknown> | null
+  body: Record<string, unknown> | null
 }
-type Respuesta = Response | Error | Promise<Response | Error>
-type Hub = (llamada: Call) => Respuesta | undefined
+type ApiResponse = Response | Error | Promise<Response | Error>
+type Hub = (llamada: Call) => ApiResponse | undefined
 
 /** HTTP simulado: `responder` decide cada ruta; lo que no decide, es 404. */
 function hubFalso(responder: Hub) {
   const calls: Call[] = []
   const fetchFalso = vi.fn(async (route: string, init: RequestInit = {}) => {
-    const cabeceras = (init.headers ?? {}) as Record<string, string>
+    const headers = (init.headers ?? {}) as Record<string, string>
     const llamada: Call = {
-      metodo: String(init.method),
+      httpMethod: String(init.method),
       route,
-      token: cabeceras.authorization?.replace('Bearer ', '') ?? null,
-      cuerpo: init.body ? JSON.parse(String(init.body)) : null,
+      token: headers.authorization?.replace('Bearer ', '') ?? null,
+      body: init.body ? JSON.parse(String(init.body)) : null,
     }
     calls.push(llamada)
     const r = await (responder(llamada) ?? json({ error: 'not_found' }, 404))
@@ -95,22 +95,22 @@ function hubFalso(responder: Hub) {
   }
 }
 
-const device: Equipo = {
+const device: Device = {
   deviceId: newId(),
   token: 'token-del-equipo',
   name: 'Caja',
   type: 'register',
 }
-const unaSesion = (fields: Partial<Sesion> = {}): Sesion => ({
-  sesionId: newId(),
+const unaSesion = (fields: Partial<Session> = {}): Session => ({
+  sessionId: newId(),
   secret: 'secreto-de-la-sesion',
   user: { id: newId(), name: 'Gloria', role: 'Administrador' },
   permissions: ['edit_catalog', 'manage_users'],
-  ultimoUso: Date.now(),
+  lastUsed: Date.now(),
   ...fields,
 })
 
-async function open(options: { session?: Sesion | null; catalog?: Catalog | null } = {}) {
+async function open(options: { session?: Session | null; catalog?: Catalog | null } = {}) {
   const db = new BaseDispositivo(`prueba-${newId()}`)
   bases.push(db)
   const session = options.session === undefined ? unaSesion() : options.session
@@ -143,13 +143,13 @@ describe('subirFoto', () => {
 
     const [subida] = hub.deRuta('/api/catalog/photos')
     expect(subida).toMatchObject({
-      metodo: 'POST',
+      httpMethod: 'POST',
       token: device.token,
-      cuerpo: {
-        session_id: session?.sesionId,
+      body: {
+        session_id: session?.sessionId,
         secret: session?.secret,
         product_id: PRODUCT,
-        imagen: IMAGEN,
+        image: IMAGEN,
       },
     })
     // Después de subir se trae la carta, y el producto ya muestra su foto, en pantalla y guardada.
@@ -169,7 +169,7 @@ describe('subirFoto', () => {
     const { floor } = await open({ catalog: menu(6, 'faro', FOTO) })
     expect(productoDe(floor)?.photo).toBe(FOTO)
     expect(await floor.subirFoto(PRODUCT, null)).toBeNull()
-    expect(hub.deRuta('/api/catalog/photos')[0]?.cuerpo).toMatchObject({ imagen: null })
+    expect(hub.deRuta('/api/catalog/photos')[0]?.body).toMatchObject({ image: null })
     expect(productoDe(floor)?.photo).toBeNull()
   })
 
@@ -258,8 +258,8 @@ describe('subirFoto', () => {
 
   it('sesión que venció por inactividad antes de tocar: no sale ningún pedido y se pide el PIN', async () => {
     const hub = hubFalso(() => json({ photo: FOTO }))
-    const vieja = unaSesion({ ultimoUso: Date.now() - 40 * 60_000 })
-    const { floor } = await open({ session: vieja, catalog: menu(5) })
+    const old = unaSesion({ lastUsed: Date.now() - 40 * 60_000 })
+    const { floor } = await open({ session: old, catalog: menu(5) })
     // La carga ya la cerró; si no (carrera), `usar()` la cierra al primer toque.
     await expect(floor.subirFoto(PRODUCT, IMAGEN)).rejects.toThrow(/Sin sesión/)
     expect(hub.fetchFalso).not.toHaveBeenCalledWith('/api/catalog/photos', expect.anything())
@@ -368,7 +368,7 @@ describe('subirFoto', () => {
     const { floor } = await open()
     await floor.subirFoto(PRODUCT, IMAGEN)
     await floor.subirFoto(OTRO_PRODUCTO, IMAGEN)
-    expect(hub.deRuta('/api/catalog/photos').map((l) => l.cuerpo?.product_id)).toEqual([
+    expect(hub.deRuta('/api/catalog/photos').map((l) => l.body?.product_id)).toEqual([
       PRODUCT,
       OTRO_PRODUCTO,
     ])
@@ -409,21 +409,21 @@ describe('cambiarMarca', () => {
     expect(floor.instantanea().catalog?.restaurant.brand).toBe('faro')
     await floor.cambiarMarca('la-spritzzeria')
     expect(hub.deRuta('/api/restaurant/brand')[0]).toMatchObject({
-      metodo: 'POST',
+      httpMethod: 'POST',
       token: device.token,
-      cuerpo: { session_id: session?.sesionId, secret: session?.secret, brand: 'la-spritzzeria' },
+      body: { session_id: session?.sessionId, secret: session?.secret, brand: 'la-spritzzeria' },
     })
     expect(floor.instantanea().catalog?.restaurant.brand).toBe('la-spritzzeria')
     expect(((await db.leerAjuste('catalog')) as Catalog).restaurant.brand).toBe('la-spritzzeria')
   })
 
   it('un hub viejo que no manda marca en la carta no rompe: queda sin marca (se verá como Faro)', async () => {
-    const vieja = menu(6)
+    const old = menu(6)
     // Una carta de un hub anterior a la tarea: el objeto del restaurante no trae `marca`.
-    vieja.restaurant = { name: 'Prueba', sessionIdleMin: 30 }
+    old.restaurant = { name: 'Prueba', sessionIdleMin: 30 }
     hubFalso((l) => {
       if (l.route === '/api/restaurant/brand') return json({ brand: 'faro' })
-      if (l.route === '/api/catalog') return json(vieja)
+      if (l.route === '/api/catalog') return json(old)
       return undefined
     })
     const { floor } = await open()
@@ -512,7 +512,7 @@ describe('cambiarMarca', () => {
       code: 'invalid_data',
       message: 'Esa marca no existe',
     })
-    expect(hub.deRuta('/api/restaurant/brand')[0]?.cuerpo?.brand).toBe('inventada')
+    expect(hub.deRuta('/api/restaurant/brand')[0]?.body?.brand).toBe('inventada')
     expect(floor.instantanea().catalog?.restaurant.brand).toBe('faro')
   })
 

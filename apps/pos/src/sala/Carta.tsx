@@ -26,7 +26,7 @@ import {
 } from './borradores'
 import { floor, useSala } from './contexto'
 import { MarcoSala } from './MarcoSala'
-import type { CambioCatalogo, CatalogoEdicion } from './motor'
+import type { CatalogChange, CatalogoEdicion } from './motor'
 
 // Editor de la carta (tarea 1.1), en la caja: productos con sus tamaños (copa o botella) y sus
 // grupos de opciones (término, sabor, adicionales con precio), categorías y estaciones. Al
@@ -54,7 +54,7 @@ export function Menu() {
   const load = useCallback(
     () =>
       floor
-        .catalogoParaEditar()
+        .catalogForEditing()
         .then((x) => {
           setC(x)
           setError(null)
@@ -67,7 +67,7 @@ export function Menu() {
   }, [load])
 
   /** Guarda en el hub; devuelve el mensaje de error, o `null` si quedó guardado. */
-  const save = async (changes: CambioCatalogo[], hecho: string) => {
+  const save = async (changes: CatalogChange[], hecho: string) => {
     try {
       await floor.editarCatalogo(changes)
       await load()
@@ -81,7 +81,7 @@ export function Menu() {
   return (
     <MarcoSala title="Carta" back="/">
       <div className="mx-auto max-w-4xl p-3">
-        <Grupo etiqueta="Qué editar" className="mb-4 flex flex-wrap gap-2">
+        <Grupo label="Qué editar" className="mb-4 flex flex-wrap gap-2">
           <Opcion elegida={pestana === 'products'} alElegir={() => setPestana('products')}>
             Productos
           </Opcion>
@@ -110,7 +110,7 @@ export function Menu() {
             c={c}
             puedeTodo={puedeTodo}
             onOpen={(id) => setProducto(borradorDeProducto(c, id))}
-            alCrear={(categoriaId) => setProducto(productoNuevo(c, categoriaId))}
+            alCrear={(categoryId) => setProducto(productoNuevo(c, categoryId))}
           />
         ) : pestana === 'options' ? (
           <ListaGrupos
@@ -158,13 +158,13 @@ export function Menu() {
 
 function Row({
   title,
-  detalle,
+  detail,
   extremo,
   archived,
   alTocar,
 }: {
   title: string
-  detalle?: string
+  detail?: string
   extremo?: string
   archived: boolean
   alTocar: () => void
@@ -178,7 +178,7 @@ function Row({
       >
         <span className="flex-1">
           <span className="font-semibold">{title}</span>
-          {detalle && <span className="block text-sm text-texto-suave">{detalle}</span>}
+          {detail && <span className="block text-sm text-texto-suave">{detail}</span>}
         </span>
         {archived && <Etiqueta tono="neutral">Archivado</Etiqueta>}
         {extremo && <span className="cifras">{extremo}</span>}
@@ -196,7 +196,7 @@ function ListaProductos({
   c: CatalogoEdicion
   puedeTodo: boolean
   onOpen: (id: string) => void
-  alCrear: (categoriaId: string) => void
+  alCrear: (categoryId: string) => void
 }) {
   const categories = c.categories.filter((x) => x.active)
   const [category, setCategoria] = useState(categories[0]?.id ?? ARCHIVADOS)
@@ -234,7 +234,7 @@ function ListaProductos({
         )}
       </div>
       {!busqueda.trim() && (
-        <Grupo etiqueta="Categorías" className="-mx-3 mb-3 flex gap-2 overflow-x-auto px-3 pb-1">
+        <Grupo label="Categorías" className="-mx-3 mb-3 flex gap-2 overflow-x-auto px-3 pb-1">
           {categories.map((x) => (
             <Opcion key={x.id} elegida={x.id === category} alElegir={() => setCategoria(x.id)}>
               {x.name}
@@ -255,7 +255,7 @@ function ListaProductos({
             <Row
               key={p.id}
               title={p.name}
-              detalle={
+              detail={
                 [
                   variants.map((v) => v.name).join(' · '),
                   p.active && !categories.some((x) => x.id === p.category_id)
@@ -311,18 +311,18 @@ function ListaGrupos({
         )}
         {groups.map((g) => {
           // Los nombres de los productos distinguen dos grupos que se llaman igual ("Sabor").
-          const usan = productosDeGrupo(c, g.id).map((p) => p.name)
-          const quienes =
-            usan.length === 0
+          const usage = productosDeGrupo(c, g.id).map((p) => p.name)
+          const whoCan =
+            usage.length === 0
               ? 'ningún producto'
-              : usan.length <= 2
-                ? usan.join(' y ')
-                : `${usan.slice(0, 2).join(', ')} y ${usan.length - 2} más`
+              : usage.length <= 2
+                ? usage.join(' y ')
+                : `${usage.slice(0, 2).join(', ')} y ${usage.length - 2} más`
           return (
             <Row
               key={g.id}
               title={g.name}
-              detalle={`${rules(g.minimum, g.maximum)} · ${quienes}`}
+              detail={`${rules(g.minimum, g.maximum)} · ${whoCan}`}
               archived={!g.active}
               alTocar={() => onOpen(g.id)}
             />
@@ -335,11 +335,11 @@ function ListaGrupos({
 
 // ── Campos ─────────────────────────────────────────────────────────────
 
-function Campo({ etiqueta, children }: { etiqueta: string; children: ReactNode }) {
+function Campo({ label: labelText, children }: { label: string; children: ReactNode }) {
   return (
     // biome-ignore lint/a11y/noLabelWithoutControl: el control llega en `children`
     <label className="mb-4 flex flex-col gap-1">
-      <span className="font-semibold">{etiqueta}</span>
+      <span className="font-semibold">{labelText}</span>
       {children}
     </label>
   )
@@ -350,14 +350,14 @@ function CampoPesos({
   value,
   onChange,
   alValidar,
-  etiqueta,
+  label: labelText,
   disabled,
 }: {
   value: number
   onChange: (pesos: number) => void
   /** Avisa si lo escrito es un monto válido: con uno mal escrito no se puede guardar. */
   alValidar: (valid: boolean) => void
-  etiqueta: string
+  label: string
   disabled?: boolean
 }) {
   const format = (n: number) => n.toLocaleString('es-CO')
@@ -367,7 +367,7 @@ function CampoPesos({
   return (
     <span className="flex flex-col gap-1">
       <input
-        aria-label={etiqueta}
+        aria-label={labelText}
         aria-invalid={!valid}
         aria-describedby={valid ? undefined : id}
         inputMode="numeric"
@@ -399,7 +399,7 @@ function CampoPesos({
  * cambios, confirmar que se descartan. */
 function PieGuardar({
   issues,
-  sinCambios,
+  noChanges,
   error,
   onSave,
   confirmandoCierre,
@@ -407,7 +407,7 @@ function PieGuardar({
   alDescartar,
 }: {
   issues: string[]
-  sinCambios: boolean
+  noChanges: boolean
   error: string | null
   onSave: () => Promise<void>
   confirmandoCierre: boolean
@@ -447,21 +447,21 @@ function PieGuardar({
         variant="main"
         large
         className="w-full"
-        disabled={guardando || issues.length > 0 || sinCambios}
+        disabled={guardando || issues.length > 0 || noChanges}
         onClick={async () => {
           setGuardando(true)
           await onSave()
           setGuardando(false)
         }}
       >
-        {guardando ? 'Guardando…' : sinCambios ? 'Sin cambios' : 'Guardar'}
+        {guardando ? 'Guardando…' : noChanges ? 'Sin cambios' : 'Guardar'}
       </Boton>
     </div>
   )
 }
 
 /** Lo común de los paneles: precios mal escritos y la confirmación al cerrar con cambios. */
-function usePanel(sinCambios: boolean, onClose: () => void) {
+function usePanel(noChanges: boolean, onClose: () => void) {
   const [badOnes, setMalos] = useState<ReadonlySet<string>>(new Set())
   const [confirmando, setConfirmando] = useState(false)
   const validar = (key: string) => (valid: boolean) =>
@@ -475,7 +475,7 @@ function usePanel(sinCambios: boolean, onClose: () => void) {
     precioMalo: badOnes.size > 0 ? ['Hay un precio mal escrito'] : [],
     validar,
     confirmando,
-    close: () => (sinCambios ? onClose() : setConfirmando(true)),
+    close: () => (noChanges ? onClose() : setConfirmando(true)),
     seguir: () => setConfirmando(false),
   }
 }
@@ -505,8 +505,8 @@ function PanelProducto({
   const cambiarVariante = (id: string, partial: Partial<BorradorProducto['variants'][number]>) =>
     patch({ variants: b.variants.map((v) => (v.id === id ? { ...v, ...partial } : v)) })
   const groups = c.groups.filter((g) => g.active || b.groups.includes(g.id))
-  const sinCambios = cambiosDeProducto(c, b).length === 0
-  const panel = usePanel(sinCambios, onClose)
+  const noChanges = cambiosDeProducto(c, b).length === 0
+  const panel = usePanel(noChanges, onClose)
 
   return (
     <PanelLateral
@@ -516,7 +516,7 @@ function PanelProducto({
       pie={
         <PieGuardar
           issues={[...panel.precioMalo, ...problemasDeProducto(b)]}
-          sinCambios={sinCambios}
+          noChanges={noChanges}
           error={error}
           onSave={async () => setError(await onSave(b))}
           confirmandoCierre={panel.confirmando}
@@ -535,7 +535,7 @@ function PanelProducto({
           Archivado: no aparece en la carta de los equipos.
         </p>
       )}
-      <Campo etiqueta="Nombre">
+      <Campo label="Nombre">
         <input
           className={field}
           value={b.name}
@@ -544,7 +544,7 @@ function PanelProducto({
           onChange={(e) => patch({ name: e.target.value })}
         />
       </Campo>
-      <Campo etiqueta="Descripción (opcional)">
+      <Campo label="Descripción (opcional)">
         <textarea
           className={`${field} py-2`}
           rows={2}
@@ -554,15 +554,15 @@ function PanelProducto({
           onChange={(e) => patch({ description: e.target.value })}
         />
       </Campo>
-      <Campo etiqueta="Categoría">
+      <Campo label="Categoría">
         <select
           className={field}
-          value={b.categoriaId}
+          value={b.categoryId}
           disabled={!puedeTodo}
-          onChange={(e) => patch({ categoriaId: e.target.value })}
+          onChange={(e) => patch({ categoryId: e.target.value })}
         >
           {c.categories
-            .filter((x) => x.active || x.id === b.categoriaId)
+            .filter((x) => x.active || x.id === b.categoryId)
             .map((x) => (
               <option key={x.id} value={x.id}>
                 {x.name}
@@ -570,15 +570,15 @@ function PanelProducto({
             ))}
         </select>
       </Campo>
-      <Campo etiqueta="Impuesto">
+      <Campo label="Impuesto">
         <select
           className={field}
-          value={b.impuestoId}
+          value={b.taxId}
           disabled={!puedeTodo}
-          onChange={(e) => patch({ impuestoId: e.target.value })}
+          onChange={(e) => patch({ taxId: e.target.value })}
         >
           {c.taxes
-            .filter((x) => x.active || x.id === b.impuestoId)
+            .filter((x) => x.active || x.id === b.taxId)
             .map((x) => (
               <option key={x.id} value={x.id}>
                 {x.name}
@@ -587,9 +587,9 @@ function PanelProducto({
         </select>
       </Campo>
       {variants.length === 0 && (
-        <Campo etiqueta="Precio (con impuesto incluido)">
+        <Campo label="Precio (con impuesto incluido)">
           <CampoPesos
-            etiqueta={`Precio de ${b.name || 'el producto'}`}
+            label={`Precio de ${b.name || 'el producto'}`}
             value={b.price}
             onChange={(price) => patch({ price })}
             alValidar={panel.validar('product')}
@@ -615,7 +615,7 @@ function PanelProducto({
             />
             <span className="w-36">
               <CampoPesos
-                etiqueta={`Precio de ${v.name || 'este tamaño'}`}
+                label={`Precio de ${v.name || 'este tamaño'}`}
                 value={v.price}
                 onChange={(price) => cambiarVariante(v.id, { price })}
                 alValidar={panel.validar(v.id)}
@@ -722,14 +722,14 @@ function PanelProducto({
 // ── Grupo de opciones ──────────────────────────────────────────────────
 
 function Accountant({
-  etiqueta,
+  label: labelText,
   value,
   minimum,
   maximum,
   onChange,
   disabled,
 }: {
-  etiqueta: string
+  label: string
   value: number
   minimum: number
   maximum: number
@@ -738,17 +738,17 @@ function Accountant({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="flex-1 font-semibold">{etiqueta}</span>
+      <span className="flex-1 font-semibold">{labelText}</span>
       <Boton
         icono="minus"
-        aria-label={`${etiqueta}: uno menos`}
+        aria-label={`${labelText}: uno menos`}
         disabled={disabled || value <= minimum}
         onClick={() => onChange(value - 1)}
       />
       <output className="cifras w-8 text-center text-xl font-semibold">{value}</output>
       <Boton
         icono="more"
-        aria-label={`${etiqueta}: uno más`}
+        aria-label={`${labelText}: uno más`}
         disabled={disabled || value >= maximum}
         onClick={() => onChange(value + 1)}
       />
@@ -775,9 +775,9 @@ function PanelGrupo({
   const options = g.options.filter((o) => o.active)
   const cambiarOpcion = (id: string, partial: Partial<BorradorGrupo['options'][number]>) =>
     patch({ options: g.options.map((o) => (o.id === id ? { ...o, ...partial } : o)) })
-  const usan = productosConGrupo(c, g.id)
-  const sinCambios = cambiosDeGrupo(c, g).length === 0
-  const panel = usePanel(sinCambios, onClose)
+  const usage = productosConGrupo(c, g.id)
+  const noChanges = cambiosDeGrupo(c, g).length === 0
+  const panel = usePanel(noChanges, onClose)
 
   return (
     <PanelLateral
@@ -787,7 +787,7 @@ function PanelGrupo({
       pie={
         <PieGuardar
           issues={[...panel.precioMalo, ...problemasDeGrupo(g)]}
-          sinCambios={sinCambios}
+          noChanges={noChanges}
           error={error}
           onSave={async () => setError(await onSave(g))}
           confirmandoCierre={panel.confirmando}
@@ -796,12 +796,12 @@ function PanelGrupo({
         />
       }
     >
-      {usan > 0 && (
+      {usage > 0 && (
         <p className="mb-4 rounded-xl bg-proceso-suave p-3 text-proceso-texto">
-          {`Lo usan ${usan === 1 ? '1 producto' : `${usan} productos`}: un cambio aquí cambia en todos.`}
+          {`Lo usan ${usage === 1 ? '1 producto' : `${usage} productos`}: un cambio aquí cambia en todos.`}
         </p>
       )}
-      <Campo etiqueta="Nombre">
+      <Campo label="Nombre">
         <input
           className={field}
           value={g.name}
@@ -813,7 +813,7 @@ function PanelGrupo({
       </Campo>
       <div className="mb-4 flex flex-col gap-2">
         <Accountant
-          etiqueta="Mínimo a elegir"
+          label="Mínimo a elegir"
           value={g.minimum}
           minimum={0}
           maximum={g.maximum}
@@ -821,7 +821,7 @@ function PanelGrupo({
           onChange={(minimum) => patch({ minimum })}
         />
         <Accountant
-          etiqueta="Máximo a elegir"
+          label="Máximo a elegir"
           value={g.maximum}
           minimum={Math.max(1, g.minimum)}
           maximum={20}
@@ -849,7 +849,7 @@ function PanelGrupo({
             />
             <span className="w-32">
               <CampoPesos
-                etiqueta={`Precio extra de ${o.name || 'esta opción'}`}
+                label={`Precio extra de ${o.name || 'esta opción'}`}
                 value={o.extraPrice}
                 onChange={(extraPrice) => cambiarOpcion(o.id, { extraPrice })}
                 alValidar={panel.validar(o.id)}
@@ -983,7 +983,7 @@ function Categorias({
 }: {
   c: CatalogoEdicion
   puedeTodo: boolean
-  save: (changes: CambioCatalogo[], hecho: string) => Promise<string | null>
+  save: (changes: CatalogChange[], hecho: string) => Promise<string | null>
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -1113,14 +1113,14 @@ function FotoProducto({
   onChange: () => void
 }) {
   const [current, setActual] = useState(photo ? `/photos/${photo}` : null)
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const entry = useRef<HTMLInputElement>(null)
-  const subir = async (imagen: string | null) => {
+  const upload = async (image: string | null) => {
     setOcupado(true)
     setError(null)
     try {
-      setActual(await floor.subirFoto(productId, imagen))
+      setActual(await floor.subirFoto(productId, image))
       onChange()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar la foto')
@@ -1139,11 +1139,11 @@ function FotoProducto({
           )}
         </span>
         <span className="flex flex-col gap-2">
-          <Boton icono="photo" disabled={ocupado} onClick={() => entry.current?.click()}>
-            {ocupado ? 'Guardando…' : current ? 'Cambiar foto' : 'Subir foto'}
+          <Boton icono="photo" disabled={taken} onClick={() => entry.current?.click()}>
+            {taken ? 'Guardando…' : current ? 'Cambiar foto' : 'Subir foto'}
           </Boton>
           {current && (
-            <Boton variant="ghost" disabled={ocupado} onClick={() => void subir(null)}>
+            <Boton variant="ghost" disabled={taken} onClick={() => void upload(null)}>
               Quitar foto
             </Boton>
           )}
@@ -1157,11 +1157,11 @@ function FotoProducto({
         tabIndex={-1}
         aria-hidden="true"
         onChange={async (e) => {
-          const archivo = e.target.files?.[0]
+          const file = e.target.files?.[0]
           e.target.value = ''
-          if (!archivo) return
+          if (!file) return
           try {
-            await subir(await achicarFoto(archivo))
+            await upload(await achicarFoto(file))
           } catch (x) {
             setError(x instanceof Error ? x.message : 'No se pudo leer la foto')
           }

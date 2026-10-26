@@ -18,6 +18,7 @@ import {
   type MesaPlano,
   measure,
   move,
+  newZone,
   nuevaMesa,
   nuevoElemento,
   problemasDeZona,
@@ -25,7 +26,6 @@ import {
   siguienteNombre,
   TIPOS_ELEMENTO,
   variasMesas,
-  zonaNueva,
 } from './plano'
 
 // Editor del plano (tarea 1.2), para la caja o una tablet: cada zona o piso con sus mesas y lo
@@ -67,7 +67,7 @@ export function PlanoEditor() {
   const [nombreInicial, setNombreInicial] = useState('')
   const abrirZona = useCallback((x: CatalogoEdicion, id?: string) => {
     const zone = x.zones.find((z) => z.id === id && z.active) ?? x.zones.find((z) => z.active)
-    setB(zone ? borradorDeZona(x, zone.id) : { ...zonaNueva(x), name: 'Salón' })
+    setB(zone ? borradorDeZona(x, zone.id) : { ...newZone(x), name: 'Salón' })
     setNombreInicial(zone ? '' : 'Salón')
     setSeleccion(null)
     setHistorial([])
@@ -76,7 +76,7 @@ export function PlanoEditor() {
   const load = useCallback(
     (zoneId?: string) =>
       floor
-        .catalogoParaEditar()
+        .catalogForEditing()
         .then((x) => {
           setC(x)
           setError(null)
@@ -94,7 +94,7 @@ export function PlanoEditor() {
   const [history, setHistorial] = useState<BorradorZona[]>([])
   const ultimoCambio = useRef(0)
   // Un error del hub se limpia en cuanto se vuelve a editar.
-  const editar = (fresh: BorradorZona) => {
+  const edit = (fresh: BorradorZona) => {
     setError(null)
     if (b && Date.now() - ultimoCambio.current > 500) setHistorial((h) => [...h.slice(-49), b])
     ultimoCambio.current = Date.now()
@@ -111,7 +111,7 @@ export function PlanoEditor() {
   const [enfocar, setEnfocar] = useState<string | null>(null)
   const changes = c && b ? cambiosDeZona(c, b) : []
   const issues = c && b ? problemasDeZona(c, b) : []
-  const sucio = b?.fresh
+  const dirty = b?.fresh
     ? b.tables.some((m) => m.active) ||
       b.elements.some((e) => e.active) ||
       b.name.trim() !== nombreInicial
@@ -119,11 +119,11 @@ export function PlanoEditor() {
 
   // Recargar o cerrar la pestaña con cambios: el navegador pregunta.
   useEffect(() => {
-    if (!sucio) return
+    if (!dirty) return
     const notify = (e: BeforeUnloadEvent) => e.preventDefault()
     window.addEventListener('beforeunload', notify)
     return () => window.removeEventListener('beforeunload', notify)
-  }, [sucio])
+  }, [dirty])
 
   // Ctrl/⌘+Z deshace (fuera de los campos de texto, que tienen su propio deshacer).
   useEffect(() => {
@@ -140,7 +140,7 @@ export function PlanoEditor() {
   deshacerRef.current = undo
 
   /** Antes de dejar la zona con cambios, pregunta. */
-  const siSePuede = (action: () => void) => (sucio ? setSalir(() => action) : action())
+  const siSePuede = (action: () => void) => (dirty ? setSalir(() => action) : action())
 
   const save = async (): Promise<boolean> => {
     if (!b || !c) return false
@@ -175,14 +175,14 @@ export function PlanoEditor() {
   ]
   const agregarMesa = (shape: FormaMesa) => {
     const m = nuevaMesa(b, shape, nombresUsados)
-    editar({ ...b, tables: [...b.tables, m] })
+    edit({ ...b, tables: [...b.tables, m] })
     setSeleccion({ type: 'table', id: m.id })
     setEnfocar(m.id)
   }
   const agregarVarias = () => {
     if (!varias) return
     const newOnes = variasMesas(b, varias.shape, varias.quantity, varias.porFila, nombresUsados)
-    editar({ ...b, tables: [...b.tables, ...newOnes] })
+    edit({ ...b, tables: [...b.tables, ...newOnes] })
     setVarias(null)
     notify(
       `Agregaste ${newOnes.length} mesas: de la ${newOnes[0]?.name} a la ${newOnes.at(-1)?.name}`,
@@ -190,7 +190,7 @@ export function PlanoEditor() {
   }
   const agregarElemento = (type: TipoElemento) => {
     const e = nuevoElemento(b, type)
-    editar({ ...b, elements: [...b.elements, e] })
+    edit({ ...b, elements: [...b.elements, e] })
     setSeleccion({ type: 'element', id: e.id })
     setEnfocar(e.id)
   }
@@ -198,7 +198,7 @@ export function PlanoEditor() {
   return (
     <MarcoSala title="Plano" back="/" protegerSalida={siSePuede}>
       <div className="mx-auto flex max-w-7xl flex-col gap-3 p-3">
-        <Grupo etiqueta="Zona" className="flex flex-wrap gap-2">
+        <Grupo label="Zona" className="flex flex-wrap gap-2">
           {zones.map((z) => (
             <Opcion
               key={z.id}
@@ -217,7 +217,7 @@ export function PlanoEditor() {
             icono="more"
             onClick={() =>
               siSePuede(() => {
-                setB(zonaNueva(c))
+                setB(newZone(c))
                 setNombreInicial('')
                 setSeleccion(null)
               })
@@ -253,7 +253,7 @@ export function PlanoEditor() {
         {varias && (
           <fieldset className="flex flex-wrap items-end gap-3 rounded-2xl border border-borde bg-superficie p-3">
             <legend className="px-1 font-semibold">Varias mesas iguales, en filas</legend>
-            <Grupo etiqueta="Forma" className="flex flex-wrap gap-2">
+            <Grupo label="Forma" className="flex flex-wrap gap-2">
               {(Object.keys(FORMAS) as FormaMesa[]).map((f) => (
                 <Opcion
                   key={f}
@@ -266,7 +266,7 @@ export function PlanoEditor() {
             </Grupo>
             <span className="w-28">
               <Numero
-                etiqueta="Cuántas"
+                label="Cuántas"
                 value={varias.quantity}
                 min={1}
                 max={60}
@@ -275,7 +275,7 @@ export function PlanoEditor() {
             </span>
             <span className="w-28">
               <Numero
-                etiqueta="Por fila"
+                label="Por fila"
                 value={varias.porFila}
                 min={1}
                 max={20}
@@ -302,7 +302,7 @@ export function PlanoEditor() {
               b={b}
               seleccion={seleccion}
               alElegir={setSeleccion}
-              onChange={editar}
+              onChange={edit}
               enfocar={enfocar}
               alEnfocar={() => setEnfocar(null)}
             />
@@ -316,7 +316,7 @@ export function PlanoEditor() {
               <Propiedades
                 b={b}
                 seleccion={seleccion}
-                onChange={editar}
+                onChange={edit}
                 alElegir={(s) => {
                   setSeleccion(s)
                   if (s) setEnfocar(s.id)
@@ -328,7 +328,7 @@ export function PlanoEditor() {
                 nombresUsados={nombresUsados}
               />
             ) : (
-              <PropiedadesZona c={c} b={b} onChange={editar} />
+              <PropiedadesZona c={c} b={b} onChange={edit} />
             )}
           </aside>
         </div>
@@ -373,7 +373,7 @@ export function PlanoEditor() {
           ) : (
             <>
               <Boton
-                disabled={!sucio || guardando}
+                disabled={!dirty || guardando}
                 onClick={() => siSePuede(() => abrirZona(c, b.fresh ? undefined : b.id))}
               >
                 Descartar
@@ -381,10 +381,10 @@ export function PlanoEditor() {
               <Boton
                 variant="main"
                 large
-                disabled={!sucio || issues.length > 0 || guardando}
+                disabled={!dirty || issues.length > 0 || guardando}
                 onClick={() => void save()}
               >
-                {guardando ? 'Guardando…' : sucio ? 'Guardar' : 'Sin cambios'}
+                {guardando ? 'Guardando…' : dirty ? 'Guardar' : 'Sin cambios'}
               </Boton>
             </>
           )}
@@ -470,7 +470,7 @@ function LienzoEditable({
     const ly = -dx * Math.sin(rad) + dy * Math.cos(rad)
     actualizar(a.type, a.id, (x) => measure(x, a.original.width + lx, a.original.height + ly))
   }
-  const terminar = (e: React.PointerEvent) => {
+  const finish = (e: React.PointerEvent) => {
     if (arrastre.current?.puntero !== e.pointerId) return
     arrastre.current = null
     setFija(null)
@@ -501,7 +501,7 @@ function LienzoEditable({
     type: 'table' | 'element',
     g: MesaPlano | ElementoPlano,
     content: React.ReactNode,
-    etiqueta: string,
+    labelText: string,
     isRound: boolean,
   ) => {
     const elegida = seleccion?.id === g.id
@@ -513,12 +513,12 @@ function LienzoEditable({
         <button
           id={`shape-${g.id}`}
           type="button"
-          aria-label={etiqueta}
+          aria-label={labelText}
           aria-pressed={elegida}
           onPointerDown={(e) => empezar(e, type, g, 'move')}
           onPointerMove={seguir}
-          onPointerUp={terminar}
-          onPointerCancel={terminar}
+          onPointerUp={finish}
+          onPointerCancel={finish}
           onKeyDown={(e) => teclear(e, type, g)}
           onClick={() => alElegir({ type, id: g.id })}
           className={`h-full w-full touch-none cursor-move focus-visible:outline-3 focus-visible:outline-foco ${isRound ? 'rounded-full' : 'rounded-lg'} ${elegida ? 'ring-4 ring-accion-fuerte' : ''}`}
@@ -530,8 +530,8 @@ function LienzoEditable({
             aria-hidden="true"
             onPointerDown={(e) => empezar(e, type, g, 'measure')}
             onPointerMove={seguir}
-            onPointerUp={terminar}
-            onPointerCancel={terminar}
+            onPointerUp={finish}
+            onPointerCancel={finish}
             // 48 px para el dedo; el cuadrito que se ve es más pequeño.
             className="absolute -right-6 -bottom-6 flex size-12 touch-none cursor-nwse-resize items-center justify-center"
           >
@@ -547,7 +547,7 @@ function LienzoEditable({
       register={register}
       escala={escala}
       refContenedor={ref}
-      etiqueta={`Plano de ${b.name || 'la zona nueva'}`}
+      label={`Plano de ${b.name || 'la zona nueva'}`}
       alTocarFondo={() => alElegir(null)}
     >
       {elements.map((e) =>
@@ -579,14 +579,14 @@ function LienzoEditable({
 }
 
 function Numero({
-  etiqueta,
+  label: labelText,
   value,
   onChange,
   min,
   max,
   step = 1,
 }: {
-  etiqueta: string
+  label: string
   value: number
   onChange: (n: number) => void
   min: number
@@ -597,17 +597,17 @@ function Numero({
   // número se confirma al salir del campo o con Enter. Si no vale, vuelve al que había.
   const [text, setTexto] = useState(String(value))
   const [editando, setEditando] = useState(false)
-  const vale = (t: string) => {
+  const isValid = (t: string) => {
     const n = Number(t)
     return t.trim() !== '' && Number.isInteger(n) && n >= min && n <= max
   }
   const confirm = () => {
     setEditando(false)
-    if (vale(text)) onChange(Number(text))
+    if (isValid(text)) onChange(Number(text))
   }
   return (
     <label className="flex flex-col gap-1">
-      <span className="font-semibold">{etiqueta}</span>
+      <span className="font-semibold">{labelText}</span>
       <input
         type="number"
         inputMode="numeric"
@@ -623,7 +623,7 @@ function Numero({
         onChange={(e) => {
           setTexto(e.target.value)
           // Las flechitas del campo dan números válidos: se aplican de una vez.
-          if (vale(e.target.value)) onChange(Number(e.target.value))
+          if (isValid(e.target.value)) onChange(Number(e.target.value))
         }}
         onBlur={confirm}
         onKeyDown={(e) => {
@@ -707,7 +707,7 @@ function Propiedades({
               onChange={(e) => cambiarMesa({ name: e.target.value })}
             />
           </label>
-          <Grupo etiqueta="Forma" className="flex flex-wrap gap-2">
+          <Grupo label="Forma" className="flex flex-wrap gap-2">
             {(Object.keys(FORMAS) as FormaMesa[]).map((f) => (
               <Opcion
                 key={f}
@@ -719,7 +719,7 @@ function Propiedades({
             ))}
           </Grupo>
           <Numero
-            etiqueta="Puestos"
+            label="Puestos"
             value={table.capacity}
             min={1}
             max={100}
@@ -740,7 +740,7 @@ function Propiedades({
       )}
       <div className="grid grid-cols-2 gap-2">
         <Numero
-          etiqueta="Ancho (cm)"
+          label="Ancho (cm)"
           value={g.width}
           min={20}
           max={10_000}
@@ -748,7 +748,7 @@ function Propiedades({
           onChange={(width) => patch(measure(g, width, g.height))}
         />
         <Numero
-          etiqueta="Largo (cm)"
+          label="Largo (cm)"
           value={g.height}
           min={20}
           max={10_000}
@@ -831,7 +831,7 @@ function PropiedadesZona({
         />
       </label>
       <Numero
-        etiqueta="Piso"
+        label="Piso"
         value={b.level}
         min={-5}
         max={100}

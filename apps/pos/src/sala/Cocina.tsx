@@ -14,7 +14,7 @@ import { floor, useSala, useVistaLocal } from './contexto'
 import { MarcoSala } from './MarcoSala'
 import type { TrabajoPendiente } from './motor'
 import { Confirmar } from './Personal'
-import { CANALES } from './pedido'
+import { CHANNELS } from './pedido'
 
 // Lo que está en cocina (ADR-015). En la caja es «Pedidos en cocina»: lo enviado que falta
 // entregar, por estación, con su tiempo y su color; quien puede marcar toca «Listo» si cocina
@@ -26,28 +26,28 @@ import { CANALES } from './pedido'
  */
 const DEMORAS: Record<
   Demora,
-  { icono: NombreIcono; text: string; card: string; clock: string; etiqueta: string }
+  { icono: NombreIcono; text: string; card: string; clock: string; label: string }
 > = {
   on_time: {
     icono: 'clock',
     text: 'A tiempo',
     card: 'border-borde bg-superficie text-texto',
     clock: 'border-2 border-borde bg-superficie text-texto',
-    etiqueta: 'border-2 border-borde bg-superficie text-texto',
+    label: 'border-2 border-borde bg-superficie text-texto',
   },
   late: {
     icono: 'clock',
     text: 'Demorada',
     card: `border-proceso-fuerte/60 ${TONOS_SUAVES.progress}`,
     clock: TONOS_FUERTES.progress,
-    etiqueta: TONOS_SUAVES.progress,
+    label: TONOS_SUAVES.progress,
   },
   very_late: {
     icono: 'warning',
     text: 'Muy demorada',
     card: `border-alerta-fuerte ${TONOS_SUAVES.warning}`,
     clock: TONOS_FUERTES.warning,
-    etiqueta: TONOS_SUAVES.warning,
+    label: TONOS_SUAVES.warning,
   },
 }
 
@@ -59,7 +59,7 @@ function target(catalog: Catalog, c: ComandaEnCocina): string {
     const table = catalog.tables.find((m) => m.id === p.tableId)
     return table ? `Mesa ${table.name}` : 'Mesa'
   }
-  const channel = CANALES[p.channel as keyof typeof CANALES] ?? 'Pedido'
+  const channel = CHANNELS[p.channel as keyof typeof CHANNELS] ?? 'Pedido'
   return p.dayNumber ? `${channel} #${p.dayNumber}` : channel
 }
 
@@ -80,7 +80,7 @@ export function PantallaCocina() {
   const { device, catalog, connection, pendingList, printers } = useSala()
   const { dark, select } = useTema()
   const now = useAhora(15_000)
-  const propia = (catalog?.screens ?? []).find((p) => p.deviceId === device?.deviceId)
+  const ownItem = (catalog?.screens ?? []).find((p) => p.deviceId === device?.deviceId)
   useEffect(() => {
     document.title = `${device?.name ?? 'Pantalla de cocina'} · Faro`
   }, [device?.name])
@@ -122,8 +122,8 @@ export function PantallaCocina() {
           </p>
         )}
         <AvisoImpresoras large />
-        {propia ? (
-          <Tablero mode="screen" stations={propia.stationIds} />
+        {ownItem ? (
+          <Tablero mode="screen" stations={ownItem.stationIds} />
         ) : (
           // Sin saber sus estaciones no se muestra nada: la de barra no debe ver lo de cocina.
           <p className="text-xl text-texto-suave">Leyendo qué estaciones muestra esta pantalla…</p>
@@ -214,15 +214,15 @@ function ConSonido() {
   const [callado, setCallado] = useState(false)
   // El primer toque en cualquier parte despierta el sonido.
   useEffect(() => {
-    const despertar = () => {
+    const wake = () => {
       const ctx = contextoSonido()
       setCallado(ctx?.state === 'suspended')
     }
     const review = setInterval(() => setCallado(audio?.state !== 'running'), 5000)
-    window.addEventListener('pointerdown', despertar)
+    window.addEventListener('pointerdown', wake)
     return () => {
       clearInterval(review)
-      window.removeEventListener('pointerdown', despertar)
+      window.removeEventListener('pointerdown', wake)
     }
   }, [])
   return (
@@ -260,12 +260,12 @@ function Tablero({
   const vista = useVistaLocal()
   const notify = useAvisar()
   const now = floor.ahoraHub(useAhora(15_000))
-  const [filtro, setFiltro] = useState(ALL)
+  const [filter, setFiltro] = useState(ALL)
   const seenItems = useRef<Set<string> | null>(null)
   const tickets = (vista?.tickets ?? []).filter(
     (c) =>
       (stations === null || stations.includes(c.stationId)) &&
-      (filtro === ALL || c.stationId === filtro),
+      (filter === ALL || c.stationId === filter),
   )
 
   // En la pantalla suena una vez por cada comanda que llega (no al abrirla con lo que ya había).
@@ -278,7 +278,7 @@ function Tablero({
   })
 
   if (!catalog || !vista) return <p className="text-texto-suave">Leyendo lo de cocina…</p>
-  const tiempos = tiemposDe(catalog.restaurant)
+  const timers = tiemposDe(catalog.restaurant)
   // «Listo» lo marca la cocina (su pantalla) o la caja cuando cocina avisa; en el celular del
   // mesero esta vista es solo para mirar, y lo suyo es «Entregar» en el pedido.
   const puedeMarcar =
@@ -318,7 +318,7 @@ function Tablero({
   }
   const reimprimir = async (c: ComandaEnCocina) => {
     try {
-      await floor.record('TicketReprinted', c.order.status.id, { ticket_id: c.comandaId })
+      await floor.record('TicketReprinted', c.order.status.id, { ticket_id: c.ticketId })
       notify(`Reimprimiendo ${target(catalog, c)}`)
     } catch (e) {
       notify(e instanceof Error ? e.message : 'No se pudo reimprimir')
@@ -327,17 +327,17 @@ function Tablero({
 
   const sinRecepcion = deLaVista.filter((e) => e.prints === false && e.screen === false)
   const tally = (d: Demora) =>
-    inProgress.filter((c) => demora(c.enviadaEn, now, tiempos) === d).length
+    inProgress.filter((c) => demora(c.enviadaEn, now, timers) === d).length
 
   return (
     <div className="flex flex-col gap-4">
       {deLaVista.length > 1 && (
-        <Grupo etiqueta="Estación" className="flex flex-wrap gap-2">
-          <Opcion elegida={filtro === ALL} alElegir={() => setFiltro(ALL)}>
+        <Grupo label="Estación" className="flex flex-wrap gap-2">
+          <Opcion elegida={filter === ALL} alElegir={() => setFiltro(ALL)}>
             Todas
           </Opcion>
           {deLaVista.map((e) => (
-            <Opcion key={e.id} elegida={filtro === e.id} alElegir={() => setFiltro(e.id)}>
+            <Opcion key={e.id} elegida={filter === e.id} alElegir={() => setFiltro(e.id)}>
               {e.name}
             </Opcion>
           ))}
@@ -357,7 +357,7 @@ function Tablero({
         {(Object.keys(DEMORAS) as Demora[]).map((d) => (
           <li key={d} className="flex items-center gap-2">
             <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-semibold ${DEMORAS[d].etiqueta}`}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-semibold ${DEMORAS[d].label}`}
             >
               <Icono name={DEMORAS[d].icono} className="size-4" />
               {DEMORAS[d].text}
@@ -366,7 +366,7 @@ function Tablero({
           </li>
         ))}
         <li className="text-texto-suave">
-          {`Demorada desde ${tiempos.amarillo} min, muy demorada desde ${tiempos.rojo} min`}
+          {`Demorada desde ${timers.yellow} min, muy demorada desde ${timers.red} min`}
         </li>
       </ul>
 
@@ -386,7 +386,7 @@ function Tablero({
                 catalog={catalog}
                 ticket={c}
                 now={now}
-                tiempos={tiempos}
+                timers={timers}
                 large={mode === 'screen'}
                 actions={
                   <>
@@ -462,18 +462,18 @@ function Tarjeta({
   catalog,
   ticket: c,
   now,
-  tiempos,
+  timers,
   large,
   actions,
 }: {
   catalog: Catalog
   ticket: ComandaEnCocina
   now: number
-  tiempos: { amarillo: number; rojo: number }
+  timers: { yellow: number; red: number }
   large: boolean
   actions: React.ReactNode
 }) {
-  const d = DEMORAS[demora(c.enviadaEn, now, tiempos)]
+  const d = DEMORAS[demora(c.enviadaEn, now, timers)]
   const station = catalog.stations.find((e) => e.id === c.stationId)?.name
   const waiter = catalog.staff.find((u) => u.id === c.order.status.assignedWaiterId)?.name
   const from = Math.max(0, (now - Date.parse(c.enviadaEn)) / 60_000)
@@ -556,7 +556,7 @@ function AvisoImpresoras({ large = false }: { large?: boolean }) {
   const caidas = printers.filter((i) => i.status === 'failed')
   const puedeVer =
     session?.permissions.some((p) => p === 'manage_devices' || p === 'record_payment') ?? false
-  const [trabajos, setTrabajos] = useState<TrabajoPendiente[] | null>(null)
+  const [jobs, setTrabajos] = useState<TrabajoPendiente[] | null>(null)
   const [descartando, setDescartando] = useState<string | null>(null)
   const key = caidas.map((i) => `${i.id}:${i.pendingList}`).join(',')
 
@@ -599,23 +599,23 @@ function AvisoImpresoras({ large = false }: { large?: boolean }) {
           </span>
         </p>
       ))}
-      {trabajos && trabajos.length > 0 && (
+      {jobs && jobs.length > 0 && (
         <ul className="flex flex-col gap-2">
-          {trabajos.map((t) => (
+          {jobs.map((t) => (
             <li
               key={t.id}
               className="flex flex-wrap items-center gap-2 rounded-xl bg-superficie p-2 pl-3 text-texto"
             >
               <span className="flex-1">
-                <span className="font-semibold">{t.que}</span>
+                <span className="font-semibold">{t.what}</span>
                 <span className="text-sm text-texto-suave">{` · ${t.printer} · ${t.attempts} ${t.attempts === 1 ? 'intento' : 'intentos'}`}</span>
               </span>
               {descartando === t.id ? (
                 <div className="w-full">
                   <Confirmar
-                    pregunta={`¿Descartar «${t.que}»? No se imprimirá: si la cocina no la tiene, díselo.`}
+                    pregunta={`¿Descartar «${t.what}»? No se imprimirá: si la cocina no la tiene, díselo.`}
                     yes="Descartar"
-                    ocupado={false}
+                    taken={false}
                     alConfirmar={() => discard(t)}
                     alCancelar={() => setDescartando(null)}
                   />

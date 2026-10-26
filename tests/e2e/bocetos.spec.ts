@@ -85,8 +85,8 @@ async function contrasteInsuficiente(page: Page): Promise<string[]> {
     const envelope = (f: Rgba, fondo: Rgba): Rgba => {
       const a = f[3] + fondo[3] * (1 - f[3])
       if (a === 0) return [0, 0, 0, 0]
-      const mezcla = (i: 0 | 1 | 2) => (f[i] * f[3] + fondo[i] * fondo[3] * (1 - f[3])) / a
-      return [mezcla(0), mezcla(1), mezcla(2), a]
+      const mix = (i: 0 | 1 | 2) => (f[i] * f[3] + fondo[i] * fondo[3] * (1 - f[3])) / a
+      return [mix(0), mix(1), mix(2), a]
     }
     const lum = (c: Rgba) => {
       const k = (v: number) => {
@@ -340,25 +340,25 @@ test.describe('tamaño táctil de 48×48 px', () => {
 // ---------------------------------------------------------------------------------------------
 
 test.describe('contraste AA en claro y oscuro', () => {
-  for (const esquema of ['light', 'dark'] as const) {
+  for (const schema of ['light', 'dark'] as const) {
     for (const { name, route } of PANTALLAS) {
-      test(`${name} con el sistema en ${esquema === 'dark' ? 'dark' : 'claro'}`, async ({
+      test(`${name} con el sistema en ${schema === 'dark' ? 'dark' : 'claro'}`, async ({
         page,
       }) => {
-        await page.emulateMedia({ colorScheme: esquema })
+        await page.emulateMedia({ colorScheme: schema })
         await page.goto(route)
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-        expect(await esOscuro(page)).toBe(esquema === 'dark')
+        expect(await esOscuro(page)).toBe(schema === 'dark')
         expect(await contrasteInsuficiente(page)).toEqual([])
       })
     }
   }
 
-  for (const esquema of ['light', 'dark'] as const) {
-    test(`estados de color del cobro, la precuenta y el KDS con el sistema en ${esquema}`, async ({
+  for (const schema of ['light', 'dark'] as const) {
+    test(`estados de color del cobro, la precuenta y el KDS con el sistema en ${schema}`, async ({
       page,
     }) => {
-      await page.emulateMedia({ colorScheme: esquema })
+      await page.emulateMedia({ colorScheme: schema })
       await page.goto('/mockups/checkout?table=12')
       await page.getByRole('button', { name: '100 mil' }).click()
       await expect(page.getByText('Faltan $181.300')).toBeVisible()
@@ -392,8 +392,8 @@ test.describe('contraste AA en claro y oscuro', () => {
   })
 
   test('pedido con producto en el pedido, panel y aviso, en claro y oscuro', async ({ page }) => {
-    for (const esquema of ['light', 'dark'] as const) {
-      await page.emulateMedia({ colorScheme: esquema })
+    for (const schema of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: schema })
       await page.goto('/mockups/order?table=2')
       await product(page, 'Pinsa').click()
       await expect(alert(page, 'Agregaste Pinsa')).toBeVisible()
@@ -977,8 +977,8 @@ test.describe('productos con opciones', () => {
     await add.click({ force: true, noWaitAfter: true }) // forzarlo tampoco agrega
     await expect(panel).toBeVisible()
     await expect(alert(page, 'Agregaste Tagliata')).toHaveCount(0)
-    for (const termino of ['Rojo', 'Medio', 'Tres cuartos', 'Bien asado'])
-      await expect(panel.getByRole('button', { name: termino })).toBeVisible()
+    for (const doneness of ['Rojo', 'Medio', 'Tres cuartos', 'Bien asado'])
+      await expect(panel.getByRole('button', { name: doneness })).toBeVisible()
 
     await panel.getByRole('button', { name: 'Tres cuartos' }).click()
     await expect(panel).toBeHidden()
@@ -1100,14 +1100,14 @@ test.describe('panel lateral modal', () => {
   }) => {
     await page.goto('/mockups/components')
     const inerte = () => page.locator('#raiz').evaluate((el) => el.hasAttribute('inert'))
-    const bloqueado = () => page.evaluate(() => document.body.style.overflow)
+    const blocked = () => page.evaluate(() => document.body.style.overflow)
     expect(await inerte()).toBe(false)
 
     await page.getByRole('button', { name: 'Abrir panel lateral' }).click()
     const panel = page.getByRole('dialog', { name: 'Panel lateral' })
     await expect(panel).toBeFocused()
     expect(await inerte()).toBe(true)
-    expect(await bloqueado()).toBe('hidden')
+    expect(await blocked()).toBe('hidden')
     // El panel vive fuera de la raíz: se puede usar aunque el fondo esté inerte.
     expect(
       await page.evaluate(() =>
@@ -1118,7 +1118,7 @@ test.describe('panel lateral modal', () => {
     await page.keyboard.press('Escape')
     await expect(panel).toBeHidden()
     expect(await inerte()).toBe(false)
-    expect(await bloqueado()).toBe('')
+    expect(await blocked()).toBe('')
     // El foco vuelve a quien abrió el panel.
     await expect(page.getByRole('button', { name: 'Abrir panel lateral' })).toBeFocused()
   })
@@ -1574,9 +1574,9 @@ test.describe('precuenta (docs/DINERO.md)', () => {
     await who('Patatine al Tartufo').getByRole('button', { name: 'Cuenta 1' }).click()
     await who('Tagliata di Manzo').getByRole('button', { name: 'Cuenta 2' }).click()
     await who('Té Hatsu').getByRole('button', { name: 'Cuenta 2' }).click()
-    const vino = who('Ramón Bilbao Crianza (botella)')
-    await vino.getByRole('button', { name: 'Cuenta 1' }).click()
-    await vino.getByRole('button', { name: 'Cuenta 2' }).click()
+    const wine = who('Ramón Bilbao Crianza (botella)')
+    await wine.getByRole('button', { name: 'Cuenta 1' }).click()
+    await wine.getByRole('button', { name: 'Cuenta 2' }).click()
 
     // Cuenta 1: 44.900 + 27.900 + 64.950 = 137.750 · Cuenta 2: 40.900 + 13.900 + 64.950 = 119.750
     const leidas = await leerCuentas(page)
@@ -1653,8 +1653,8 @@ test.describe('precuenta (docs/DINERO.md)', () => {
     page,
   }, info) => {
     await page.goto('/mockups/pre-bill?table=12')
-    const imprimir = page.getByRole('button', { name: 'Imprimir' })
-    const register = await imprimir.boundingBox()
+    const print = page.getByRole('button', { name: 'Imprimir' })
+    const register = await print.boundingBox()
     const consoleLines = page.viewportSize() as { width: number; height: number }
     if (esCaja(info.project.name)) {
       expect((register?.y ?? 0) + (register?.height ?? 0)).toBeLessThan(consoleLines.height - 20)

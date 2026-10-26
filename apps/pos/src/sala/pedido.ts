@@ -7,7 +7,7 @@ import {
   priceWithExtras,
 } from '@pos/core'
 import type { Catalog } from '@pos/sync'
-import { itemsVigentes } from './proyeccion'
+import { currentItems } from './proyeccion'
 
 // Lo que se guarda al tomar un pedido, armado desde el catálogo. El ítem lleva copia del nombre,
 // el precio y el impuesto vigentes (docs/MODELO_DATOS.md): si la carta cambia después, el pedido
@@ -131,7 +131,7 @@ export function copiaDe(item: OrderItem, catalogoVersion: number): DatosItem {
 
 /** Ítems que faltan por enviar a cocina o barra. */
 export const porEnviar = (status: OrderState) =>
-  itemsVigentes(status).filter((i) => i.status === 'pending')
+  currentItems(status).filter((i) => i.status === 'pending')
 
 /** Unidades por enviar (3 Aperol son 3, no 1 línea): lo que dice «Enviar» y el aviso. */
 export const unidadesPorEnviar = (status: OrderState) =>
@@ -186,7 +186,7 @@ export function lineaIgual(status: OrderState | null, d: DatosItem): OrderItem |
       .join()
   const buscadas = options(d.modifiers.map((m) => ({ id: m.modifier_id, price: m.extra_price })))
   return (
-    itemsVigentes(status).find(
+    currentItems(status).find(
       (i) =>
         (i.status === 'pending' || i.status === 'held') &&
         i.voidedQuantity === 0 &&
@@ -218,7 +218,7 @@ export function comandasDeCurso(
 }
 
 /** Pedidos sin mesa: para llevar, domicilio o barra. */
-export const CANALES = {
+export const CHANNELS = {
   takeout: 'Para llevar',
   delivery: 'Domicilio',
   bar: 'Barra',
@@ -244,7 +244,7 @@ type DatosMovido = Extract<NewEvent, { type: 'ItemsMoved' }>['data']['items'][nu
  * Un ítem tal como se pasa a otro pedido: la copia exacta, su estado, lo anulado y quién lo
  * agregó (el reductor la compara con el ítem real, docs/MODELO_DATOS.md).
  */
-export function movidoDe(i: OrderItem): DatosMovido {
+export function movedFrom(i: OrderItem): DatosMovido {
   const { catalog_version: _v, price_channel_id: _c, ...copy } = copiaDe(i, 0)
   return {
     item: { ...copy, item_id: i.id },

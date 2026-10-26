@@ -3,27 +3,27 @@ import {
   administradoras,
   borradorDe,
   datosPersona,
-  normalizarUsuario,
-  type PersonaPersonal,
+  normalizeUsername,
   pideContrasena,
   problemasDe,
   resumenRol,
+  type StaffMember,
   usuarioSugerido,
 } from './personas'
 
 // La lógica de la pantalla de personal y roles (tarea 1.3b).
 
-const ana: PersonaPersonal = {
+const ana: StaffMember = {
   id: 'A',
   name: 'Ana',
-  rolId: 'MESERO',
+  roleId: 'MESERO',
   active: true,
   user: null,
 }
-const carla: PersonaPersonal = {
+const carla: StaffMember = {
   id: 'C',
   name: 'Carla',
-  rolId: 'CAJERO',
+  roleId: 'CAJERO',
   active: true,
   user: 'carla',
 }
@@ -32,14 +32,14 @@ describe('borrador de una persona', () => {
   it('una nueva entra con PIN y con el rol sugerido; una existente, como está', () => {
     expect(borradorDe(null, 'MESERO')).toEqual({
       name: '',
-      rolId: 'MESERO',
-      entra: 'pin',
+      roleId: 'MESERO',
+      signInMethod: 'pin',
       user: '',
       password: '',
     })
     expect(borradorDe(carla, 'MESERO')).toMatchObject({
       id: 'C',
-      entra: 'password',
+      signInMethod: 'password',
       user: 'carla',
       password: '',
     })
@@ -60,7 +60,7 @@ describe('qué falta para guardar', () => {
     expect(problemasDe(b, null, people)).toEqual([])
     expect(problemasDe({ ...b, name: ' ' }, null, people)).toEqual(['Escribe el nombre'])
 
-    const conClave = { ...b, entra: 'password' as const, user: 'luis' }
+    const conClave = { ...b, signInMethod: 'password' as const, user: 'luis' }
     expect(problemasDe(conClave, null, people)).toEqual(['Escribe una contraseña'])
     expect(problemasDe({ ...conClave, password: 'corta' }, null, people)).toEqual([
       'La contraseña debe tener al menos 8 caracteres',
@@ -83,7 +83,7 @@ describe('qué falta para guardar', () => {
   })
 
   it('un usuario de alguien archivado está libre', () => {
-    const b = { ...borradorDe(null, 'CAJERO'), name: 'Otra', entra: 'password' as const }
+    const b = { ...borradorDe(null, 'CAJERO'), name: 'Otra', signInMethod: 'password' as const }
     expect(
       problemasDe({ ...b, user: 'carla', password: 'larga-123' }, null, [
         { ...carla, active: false },
@@ -110,15 +110,15 @@ describe('rol que pide contraseña y tildes en el usuario', () => {
     expect(problemasDe(b, null, [], [cashier, waiter])).toEqual([
       'Con ese rol se entra con usuario y contraseña',
     ])
-    expect(problemasDe({ ...b, rolId: 'MESERO' }, null, [], [cashier, waiter])).toEqual([])
+    expect(problemasDe({ ...b, roleId: 'MESERO' }, null, [], [cashier, waiter])).toEqual([])
   })
 
   it('«María» como usuario se guarda «maria»', () => {
-    expect(normalizarUsuario('  María ')).toBe('maria')
+    expect(normalizeUsername('  María ')).toBe('maria')
     const b = {
       ...borradorDe(null, 'CAJERO'),
       name: 'María',
-      entra: 'password' as const,
+      signInMethod: 'password' as const,
       user: 'María',
       password: 'larga-123',
     }
@@ -128,11 +128,11 @@ describe('rol que pide contraseña y tildes en el usuario', () => {
 
   it('cuenta quiénes pueden administrar: activos, con usuario y con el permiso', () => {
     const admin = { ...cashier, id: 'ADMIN', permissions: ['manage_users'] }
-    const people: PersonaPersonal[] = [
-      { id: '1', name: 'A', rolId: 'ADMIN', active: true, user: 'a' },
-      { id: '2', name: 'B', rolId: 'ADMIN', active: false, user: 'b' },
-      { id: '3', name: 'C', rolId: 'ADMIN', active: true, user: null },
-      { id: '4', name: 'D', rolId: 'CAJERO', active: true, user: 'd' },
+    const people: StaffMember[] = [
+      { id: '1', name: 'A', roleId: 'ADMIN', active: true, user: 'a' },
+      { id: '2', name: 'B', roleId: 'ADMIN', active: false, user: 'b' },
+      { id: '3', name: 'C', roleId: 'ADMIN', active: true, user: null },
+      { id: '4', name: 'D', roleId: 'CAJERO', active: true, user: 'd' },
     ]
     expect(administradoras({ roles: [admin, cashier], people }).map((p) => p.id)).toEqual(['1'])
   })
@@ -146,13 +146,13 @@ describe('lo que va al hub', () => {
       access: { type: 'pin' },
     })
     expect(
-      datosPersona({ ...borradorDe(carla, 'X'), user: ' Carla ' }, { regenerarPin: true }),
+      datosPersona({ ...borradorDe(carla, 'X'), user: ' Carla ' }, { regeneratePin: true }),
     ).toEqual({
       id: 'C',
       name: 'Carla',
       role_id: 'CAJERO',
       access: { type: 'password', user: 'carla' },
-      regenerar_pin: true,
+      regenerate_pin: true,
     })
     expect(
       datosPersona({ ...borradorDe(carla, 'X'), password: 'nueva-123' }, { active: false }),

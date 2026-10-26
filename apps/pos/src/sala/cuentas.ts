@@ -76,14 +76,14 @@ export function taxName(type: 'inc' | 'iva' | 'exempt', rate: number): string {
 export const reglasDe = (catalog: Catalog | null): ReglasCobro | null =>
   catalog?.restaurant.checkout ?? null
 
-const configDe = (r: ReglasCobro) => ({
+const configOf = (r: ReglasCobro) => ({
   suggested_tip: r.suggestedTip,
   rounding_mode: r.roundingMode,
 })
 
 /** Propina sugerida de `monto` del pedido (el saldo, una cuenta o lo que se cobra ahora). */
 export const propinaSugeridaDe = (order: OrderState, amount: number, rules: ReglasCobro) =>
-  amount <= 0 ? 0 : orderTip(order, amount, configDe(rules))
+  amount <= 0 ? 0 : orderTip(order, amount, configOf(rules))
 
 /**
  * En efectivo, la propina se sugiere redondeada al múltiplo del efectivo para que se pueda pagar
@@ -118,9 +118,9 @@ export const propinaConPorcentaje = (
   order: OrderState,
   available: number,
   value: number,
-  puntos: number,
+  points: number,
   rules: ReglasCobro,
-) => propinaDePago(order, null, available, value, { ...rules, suggestedTip: puntos })
+) => propinaDePago(order, null, available, value, { ...rules, suggestedTip: points })
 
 /** Una línea de la precuenta: lo que sigue en pie, con su neto. */
 export interface LineaCuenta {
@@ -268,8 +268,8 @@ export function recortarAsignaciones(
 ): Map<string, number[]> {
   const newOnes = new Map<string, number[]>()
   for (const [item, de] of asignadas) {
-    const quedan = de.filter((c) => c < checks)
-    if (quedan.length > 0) newOnes.set(item, quedan)
+    const kept = de.filter((c) => c < checks)
+    if (kept.length > 0) newOnes.set(item, kept)
   }
   return newOnes
 }

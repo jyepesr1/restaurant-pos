@@ -33,7 +33,7 @@ interface EstadoPin {
 const sinError: EstadoPin = { error: null, attempt: 0, waitMs: 0 }
 
 /** El error de un intento, con la espera que pida el hub tras varios PIN errados. */
-const fallo = (e: unknown, previous: EstadoPin): EstadoPin => ({
+const failure = (e: unknown, previous: EstadoPin): EstadoPin => ({
   error: message(e),
   attempt: previous.attempt + 1,
   waitMs: e instanceof ErrorApi ? e.waitMs : 0,
@@ -48,7 +48,7 @@ function AutorizarConPin({
   missing,
   online,
   status,
-  ocupado,
+  taken,
   alPin,
 }: {
   ready: boolean
@@ -56,7 +56,7 @@ function AutorizarConPin({
   missing: string
   online: boolean
   status: EstadoPin
-  ocupado: boolean
+  taken: boolean
   alPin: (pin: string) => void
 }) {
   if (!online)
@@ -66,11 +66,11 @@ function AutorizarConPin({
     <div className="flex flex-col gap-2 rounded-2xl border border-linea bg-superficie-2/60 p-3">
       <p className="font-semibold">Pásale el celular al cajero o al administrador</p>
       <TecladoPin
-        title={ocupado ? 'Comprobando el PIN…' : 'Que escriba su PIN para autorizar'}
+        title={taken ? 'Comprobando el PIN…' : 'Que escriba su PIN para autorizar'}
         error={status.error}
         attempt={status.attempt}
         waitMs={status.waitMs}
-        ocupado={ocupado}
+        taken={taken}
         alCompletar={alPin}
       />
     </div>
@@ -92,7 +92,7 @@ function ElegirMotivo({
   return (
     <div className="flex flex-col gap-2">
       <span className="font-semibold">Motivo</span>
-      <Grupo etiqueta="Motivo" className="flex flex-wrap gap-2">
+      <Grupo label="Motivo" className="flex flex-wrap gap-2">
         {MOTIVOS_ANULACION.map((m) => (
           <Opcion key={m} elegida={reason === m} alElegir={() => alElegir(m)}>
             {m}
@@ -127,13 +127,13 @@ const motivoFinal = (reason: string | null, other: string) =>
  */
 export function PanelAnular({
   item,
-  conPermiso,
+  withPermission,
   online,
   onClose,
   onVoid,
 }: {
   item: OrderItem
-  conPermiso: boolean
+  withPermission: boolean
   online: boolean
   onClose: () => void
   onVoid: (d: {
@@ -151,7 +151,7 @@ export function PanelAnular({
     item.status === 'ready' || item.status === 'served',
   )
   const [pin, setPin] = useState(sinError)
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
   const m = motivoFinal(reason, other)
 
   const voidItem = async (key: string | null) => {
@@ -160,7 +160,7 @@ export function PanelAnular({
     try {
       await onVoid({ quantity, reason: m, alreadyPrepared, pin: key })
     } catch (e) {
-      setPin((p) => fallo(e, p))
+      setPin((p) => failure(e, p))
       setOcupado(false)
     }
   }
@@ -171,7 +171,7 @@ export function PanelAnular({
       title={`Anular ${item.name}`}
       onClose={onClose}
       pie={
-        conPermiso ? (
+        withPermission ? (
           <div className="flex flex-col gap-2">
             {pin.error && (
               <p role="alert" className="text-alerta-texto">
@@ -182,7 +182,7 @@ export function PanelAnular({
               variant="danger"
               large
               className="w-full"
-              disabled={ocupado || !m}
+              disabled={taken || !m}
               onClick={() => voidItem(null)}
             >
               {m ? `Anular ${quantity} ${item.name}` : 'Elige el motivo'}
@@ -216,7 +216,7 @@ export function PanelAnular({
         <ElegirMotivo reason={reason} other={other} alElegir={setMotivo} alEscribir={setOtro} />
         <div className="flex flex-col gap-2">
           <span className="font-semibold">¿Ya lo hizo la cocina?</span>
-          <Grupo etiqueta="Ya lo hizo la cocina" className="flex flex-wrap gap-2">
+          <Grupo label="Ya lo hizo la cocina" className="flex flex-wrap gap-2">
             <Opcion elegida={!alreadyPrepared} alElegir={() => setYaPreparado(false)}>
               No, todavía no
             </Opcion>
@@ -226,13 +226,13 @@ export function PanelAnular({
           </Grupo>
           <span className="text-sm text-texto-suave">Lo que ya se hizo cuenta como pérdida.</span>
         </div>
-        {!conPermiso && (
+        {!withPermission && (
           <AutorizarConPin
             ready={!!m}
             missing="Elige el motivo y después pásale el celular al cajero para su PIN."
             online={online}
             status={pin}
-            ocupado={ocupado}
+            taken={taken}
             alPin={(key) => voidItem(key)}
           />
         )}
@@ -266,13 +266,13 @@ function ElegirMesa({
         const tables = catalog.tables.filter((m) => m.zoneId === z.id && !excluir.includes(m.id))
         if (tables.length === 0) return null
         return (
-          <Grupo key={z.id} etiqueta={z.name} className="flex flex-col gap-2">
+          <Grupo key={z.id} label={z.name} className="flex flex-col gap-2">
             <span className="text-sm font-semibold text-texto-suave">{z.name}</span>
             <div className="flex flex-wrap gap-2">
               {tables.map((m) => {
                 const takenPath = occupiedIds.get(m.id)
-                const bloqueada = soloLibres && takenPath !== undefined && !elegidas.includes(m.id)
-                return bloqueada ? (
+                const locked = soloLibres && takenPath !== undefined && !elegidas.includes(m.id)
+                return locked ? (
                   <span
                     key={m.id}
                     className="inline-flex min-h-12 items-center rounded-full border-2 border-dashed border-borde px-4 text-texto-suave"
@@ -284,7 +284,7 @@ function ElegirMesa({
                     key={m.id}
                     elegida={elegidas.includes(m.id)}
                     alElegir={() => alElegir(m.id)}
-                    etiqueta={`Mesa ${m.name}${takenPath ? `, ${takenPath}` : ', libre'}`}
+                    label={`Mesa ${m.name}${takenPath ? `, ${takenPath}` : ', libre'}`}
                   >
                     {takenPath ? `${m.name} · ${takenPath}` : m.name}
                   </Opcion>
@@ -499,7 +499,7 @@ export function PanelMover({
               ))}
             </div>
           )}
-          <Grupo etiqueta="Productos" className="flex flex-col gap-2">
+          <Grupo label="Productos" className="flex flex-col gap-2">
             {items.map((i) => (
               <Opcion
                 key={i.id}
@@ -508,7 +508,7 @@ export function PanelMover({
                 alElegir={() =>
                   setIds((x) => (x.includes(i.id) ? x.filter((y) => y !== i.id) : [...x, i.id]))
                 }
-                detalle={
+                detail={
                   [i.guest ? `P${i.guest}` : null, i.notes].filter(Boolean).join(' · ') || undefined
                 }
               >
@@ -541,18 +541,18 @@ export function PanelMover({
 /** Cancelar el pedido entero: motivo y, sin el permiso, el PIN de quien autoriza. */
 export function PanelCancelar({
   table,
-  conPermiso,
+  withPermission,
   online,
-  enCocina,
+  inKitchen,
   withPayments,
   onClose,
   alCancelar,
 }: {
   /** «Mesa 5», para que el botón diga a qué pedido. */
   table: string
-  conPermiso: boolean
+  withPermission: boolean
   online: boolean
-  enCocina: number
+  inKitchen: number
   withPayments: boolean
   onClose: () => void
   alCancelar: (d: { reason: string; pin: string | null }) => Promise<void>
@@ -560,7 +560,7 @@ export function PanelCancelar({
   const [reason, setMotivo] = useState<string | null>(null)
   const [other, setOtro] = useState('')
   const [pin, setPin] = useState(sinError)
-  const [ocupado, setOcupado] = useState(false)
+  const [taken, setOcupado] = useState(false)
   const m = motivoFinal(reason, other)
   const cancel = async (key: string | null) => {
     if (!m) return
@@ -568,7 +568,7 @@ export function PanelCancelar({
     try {
       await alCancelar({ reason: m, pin: key })
     } catch (e) {
-      setPin((p) => fallo(e, p))
+      setPin((p) => failure(e, p))
       setOcupado(false)
     }
   }
@@ -579,7 +579,7 @@ export function PanelCancelar({
       onClose={onClose}
       pie={
         <div className="flex flex-col gap-2">
-          {conPermiso && pin.error && (
+          {withPermission && pin.error && (
             <p role="alert" className="text-alerta-texto">
               {pin.error}
             </p>
@@ -588,12 +588,12 @@ export function PanelCancelar({
             <Boton large className="flex-1" onClick={onClose}>
               Volver
             </Boton>
-            {conPermiso && (
+            {withPermission && (
               <Boton
                 variant="danger"
                 large
                 className="flex-1"
-                disabled={ocupado || !m || withPayments}
+                disabled={taken || !m || withPayments}
                 onClick={() => cancel(null)}
               >
                 {m ? 'Sí, cancelarlo' : 'Elige el motivo'}
@@ -610,21 +610,21 @@ export function PanelCancelar({
           </p>
         ) : (
           <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">
-            {enCocina > 0
-              ? `Se quita todo el pedido y la cocina recibe «ANULAR» de lo que tenía (${enCocina}). La mesa queda libre.`
+            {inKitchen > 0
+              ? `Se quita todo el pedido y la cocina recibe «ANULAR» de lo que tenía (${inKitchen}). La mesa queda libre.`
               : 'Se quita todo el pedido y la mesa queda libre.'}
           </p>
         )}
         {!withPayments && (
           <ElegirMotivo reason={reason} other={other} alElegir={setMotivo} alEscribir={setOtro} />
         )}
-        {!conPermiso && !withPayments && (
+        {!withPermission && !withPayments && (
           <AutorizarConPin
             ready={!!m}
             missing="Elige el motivo y después pásale el celular al cajero para su PIN."
             online={online}
             status={pin}
-            ocupado={ocupado}
+            taken={taken}
             alPin={(key) => cancel(key)}
           />
         )}
@@ -649,7 +649,7 @@ export function PanelAccionesPedido({
     action: 'move' | 'table' | 'merge'
     icono: NombreIcono
     text: string
-    detalle: string
+    detail: string
   }[] = [
     ...(withTable && withOrder
       ? ([
@@ -657,7 +657,7 @@ export function PanelAccionesPedido({
             action: 'table',
             icono: 'table',
             text: 'Cambiar de mesa',
-            detalle: 'Todo el pedido pasa a otra mesa libre',
+            detail: 'Todo el pedido pasa a otra mesa libre',
           },
         ] as const)
       : []),
@@ -667,7 +667,7 @@ export function PanelAccionesPedido({
             action: 'merge',
             icono: 'people',
             text: 'Unir mesas',
-            detalle: 'Un grupo grande ocupa varias mesas',
+            detail: 'Un grupo grande ocupa varias mesas',
           },
         ] as const)
       : []),
@@ -677,7 +677,7 @@ export function PanelAccionesPedido({
             action: 'move',
             icono: 'seat',
             text: 'Mover productos',
-            detalle: 'Pasar algunos a otra mesa',
+            detail: 'Pasar algunos a otra mesa',
           },
         ] as const)
       : []),
@@ -693,7 +693,7 @@ export function PanelAccionesPedido({
               <Icono name={o.icono} className="size-6 shrink-0" />
               <span className="flex flex-col">
                 <span className="font-semibold">{o.text}</span>
-                <span className="text-sm text-texto-suave">{o.detalle}</span>
+                <span className="text-sm text-texto-suave">{o.detail}</span>
               </span>
             </button>
           </li>

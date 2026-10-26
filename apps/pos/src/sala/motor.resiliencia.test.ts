@@ -12,7 +12,7 @@ import {
 } from '@pos/sync'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
-import { type Equipo, Sala, type Sesion } from './motor'
+import { type Device, Sala, type Session } from './motor'
 import { pedidosAbiertos } from './proyeccion'
 import { catalogoDePrueba } from './pruebas'
 
@@ -23,11 +23,11 @@ import { catalogoDePrueba } from './pruebas'
 const T0 = new Date('2026-10-24T15:00:00.000Z')
 const MIN = 60_000
 
-const secretoDe = (sesionId: string) => `secreto-${sesionId}`
+const secretOf = (sessionId: string) => `secreto-${sessionId}`
 
 const accesoConFirma: AccessControl = {
   verify: (_c, event) =>
-    event.session_id && event.signature === signEvent(event, secretoDe(event.session_id))
+    event.session_id && event.signature === signEvent(event, secretOf(event.session_id))
       ? { ok: true, authorizedById: null, authorizationId: null }
       : { ok: false, reason: 'invalid_signature' },
   recordUse: () => {},
@@ -71,11 +71,11 @@ async function until(condicion: () => Promise<boolean> | boolean, maxMs = 20_000
 
 // ── Hub en memoria con fallas ────────────────────────────────────────────────────────────────
 
-interface EquipoHub extends Equipo {
+interface EquipoHub extends Device {
   revokedAt: string | null
 }
 
-function montarHub(options: { desfaseHubMs?: number } = {}) {
+function setupHub(options: { desfaseHubMs?: number } = {}) {
   const tokens = new Map<string, EquipoHub>()
   const store = new MemoryStore()
   const hub = new HubSync(store, {
@@ -154,7 +154,7 @@ function montarHub(options: { desfaseHubMs?: number } = {}) {
   }
   return h
 }
-type Hub = ReturnType<typeof montarHub>
+type Hub = ReturnType<typeof setupHub>
 
 const salas: Sala[] = []
 const bases: BaseDispositivo[] = []
@@ -168,11 +168,11 @@ afterEach(async () => {
 })
 
 interface OpcionesEquipo {
-  /** Hace `ultimoUso` más viejo o más nuevo que ahora (ms). */
+  /** Hace `lastUsed` más viejo o más nuevo que ahora (ms). */
   haceMs?: number
   catalog?: Catalog | null
   /** El token no está en el hub (equipo retirado o hub reinstalado). */
-  sinToken?: boolean
+  withoutToken?: boolean
   /** Secreto distinto al que conoce el hub. */
   secret?: string
   /** Empezar sin conexión (el usuario apagó la conexión antes de arrancar). */
@@ -190,21 +190,21 @@ async function device(h: Hub, name: string, o: OpcionesEquipo = {}) {
     type: 'waiter',
     revokedAt: null,
   }
-  if (!o.sinToken) h.tokens.set(e.token, e)
-  const sesionId = newId()
-  const session: Sesion = {
-    sesionId,
-    secret: o.secret ?? secretoDe(sesionId),
+  if (!o.withoutToken) h.tokens.set(e.token, e)
+  const sessionId = newId()
+  const session: Session = {
+    sessionId,
+    secret: o.secret ?? secretOf(sessionId),
     user: { id: newId(), name, role: 'Mesero' },
     permissions: ['take_order'],
-    ultimoUso: Date.now() - (o.haceMs ?? 0),
+    lastUsed: Date.now() - (o.haceMs ?? 0),
   }
   await db.saveSetting('device', {
     deviceId: e.deviceId,
     token: e.token,
     name: e.name,
     type: e.type,
-  } satisfies Equipo)
+  } satisfies Device)
   await db.saveSetting('session', session)
   if (o.catalog !== null) await db.saveSetting('catalog', o.catalog ?? catalogoDePrueba())
   const floor = new Sala({ db, open: (m) => h.open(m) })
@@ -242,7 +242,7 @@ const locals = async (s: Sala) => (await s.sync?.locals()) ?? []
 
 describe('registrar firma el evento', () => {
   it('lleva la firma de la sesión y el hub la acepta', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, session, e } = await device(h, 'Ana')
     await until(() => conectada(floor))
     const p = newId()
@@ -252,10 +252,10 @@ describe('registrar firma el evento', () => {
       guests: 2,
     })
 
-    const { signature, ...sinFirma } = event
-    expect(signature).toBe(signEvent(sinFirma as NewEvent, session.secret))
+    const { signature, ...unsigned } = event
+    expect(signature).toBe(signEvent(unsigned as NewEvent, session.secret))
     expect(event).toMatchObject({
-      session_id: session.sesionId,
+      session_id: session.sessionId,
       user_id: session.user.id,
       device_id: e.deviceId,
       aggregate_type: 'order',
@@ -271,7 +271,7 @@ describe('registrar firma el evento', () => {
   })
 
   it('con un secreto que el hub no reconoce el evento se rechaza y no se muestra', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana', { secret: 'secreto-equivocado' })
     await until(() => conectada(floor))
     const p = await openOrder(floor)
@@ -287,7 +287,7 @@ describe('registrar firma el evento', () => {
   })
 
   it('cada evento firmado cubre sus propios datos: la firma cambia con los datos', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana', { sinConexion: true })
     const p = newId()
     const a = await floor.record('OrderOpened', p, {
@@ -307,7 +307,7 @@ describe('registrar firma el evento', () => {
 
 describe('el hub se cae a mitad de una operación', () => {
   it('cae justo después de aceptar un lote, sin que llegue la respuesta: al volver no se duplica nada', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana', { sinConexion: true })
     const p = await openOrder(floor)
     const ids = []
@@ -350,7 +350,7 @@ describe('el hub se cae a mitad de una operación', () => {
   })
 
   it('cae entre dos lotes de 100: los 150 eventos quedan una sola vez y en orden', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana', { sinConexion: true })
     const p = await openOrder(floor)
     for (let i = 0; i < 149; i++) await floor.record('ItemAdded', p, item(1_000))
@@ -376,7 +376,7 @@ describe('el hub se cae a mitad de una operación', () => {
   })
 
   it('el hub está apagado al arrancar: lo registrado se conserva y sube cuando vuelve', async () => {
-    const h = montarHub()
+    const h = setupHub()
     h.down = true
     const { floor } = await device(h, 'Ana')
     await advance(3_000)
@@ -394,7 +394,7 @@ describe('el hub se cae a mitad de una operación', () => {
   })
 
   it('el proceso del hub se reinicia (nueva sala, misma base): el dispositivo reconecta solo', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana')
     await until(() => conectada(floor))
     const p = await openOrder(floor)
@@ -415,8 +415,8 @@ describe('el hub se cae a mitad de una operación', () => {
 
 describe('token inválido o revocado', () => {
   it('el hub no reconoce el token: queda errorHub, se detiene la conexión y no reintenta', async () => {
-    const h = montarHub()
-    const { floor } = await device(h, 'Ana', { sinToken: true })
+    const h = setupHub()
+    const { floor } = await device(h, 'Ana', { withoutToken: true })
     await until(() => floor.instantanea().errorHub !== null)
 
     expect(floor.instantanea().errorHub).toMatchObject({ code: 'invalid_token' })
@@ -430,8 +430,8 @@ describe('token inválido o revocado', () => {
   })
 
   it('con el token inválido se puede seguir registrando: queda guardado como pendiente', async () => {
-    const h = montarHub()
-    const { floor } = await device(h, 'Ana', { sinToken: true })
+    const h = setupHub()
+    const { floor } = await device(h, 'Ana', { withoutToken: true })
     await until(() => floor.instantanea().errorHub !== null)
     await openOrder(floor)
     expect(floor.instantanea().pendingList).toBe(1)
@@ -440,7 +440,7 @@ describe('token inválido o revocado', () => {
   })
 
   it('app_vieja también detiene la conexión', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const oldOne = new Sala({
       db: (() => {
         const db = new BaseDispositivo(`resiliencia-${newId()}`)
@@ -479,7 +479,7 @@ describe('token inválido o revocado', () => {
   })
 
   it('token revocado con el equipo conectado: avisa, sigue conectado y deja de recibir el salón', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const ana = await device(h, 'Ana')
     const beto = await device(h, 'Beto')
     await until(() => conectada(ana.floor) && conectada(beto.floor))
@@ -502,7 +502,7 @@ describe('token inválido o revocado', () => {
   })
 
   it('lo que el equipo retirado hace después de la revocación no entra al salón', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const ana = await device(h, 'Ana')
     await until(() => conectada(ana.floor))
     const now = new Date().toISOString()
@@ -522,8 +522,8 @@ describe('token inválido o revocado', () => {
 
 describe('olvidarEquipo', () => {
   it('borra credenciales y sesión, detiene la conexión y conserva los eventos guardados', async () => {
-    const h = montarHub()
-    const { floor, db } = await device(h, 'Ana', { sinToken: true })
+    const h = setupHub()
+    const { floor, db } = await device(h, 'Ana', { withoutToken: true })
     await until(() => floor.instantanea().errorHub !== null)
     await openOrder(floor)
 
@@ -552,8 +552,8 @@ describe('olvidarEquipo', () => {
   })
 
   it('al volver a abrir la app queda sin equipo (pide emparejar)', async () => {
-    const h = montarHub()
-    const { floor, db } = await device(h, 'Ana', { sinToken: true })
+    const h = setupHub()
+    const { floor, db } = await device(h, 'Ana', { withoutToken: true })
     await until(() => floor.instantanea().errorHub !== null)
     await floor.olvidarEquipo()
     const another = new Sala({ db, open: (m) => h.open(m) })
@@ -564,8 +564,8 @@ describe('olvidarEquipo', () => {
   })
 
   it('emparejar de nuevo conecta con el token nuevo', async () => {
-    const h = montarHub()
-    const { floor, db } = await device(h, 'Ana', { sinToken: true })
+    const h = setupHub()
+    const { floor, db } = await device(h, 'Ana', { withoutToken: true })
     await until(() => floor.instantanea().errorHub !== null)
     await floor.olvidarEquipo()
 
@@ -594,11 +594,11 @@ describe('olvidarEquipo', () => {
         )
       }),
     )
-    await floor.emparejar('  abc123 ')
+    await floor.pair('  abc123 ')
     await until(() => conectada(floor))
     expect(floor.instantanea().device?.token).toBe(fresh.token)
     expect(floor.instantanea().errorHub).toBeNull()
-    expect(await db.leerAjuste<Equipo>('device')).toMatchObject({ token: fresh.token })
+    expect(await db.leerAjuste<Device>('device')).toMatchObject({ token: fresh.token })
   })
 
   // Los eventos guardados llevan el device_id del emparejamiento anterior, y el hub rechaza
@@ -606,8 +606,8 @@ describe('olvidarEquipo', () => {
   // (la pantalla lo advierte antes): esta prueba fija que no se pierde en silencio, queda
   // rechazado con su motivo.
   it('lo pendiente de antes de olvidar el equipo no entra con el token nuevo: queda rechazado con motivo', async () => {
-    const h = montarHub()
-    const { floor } = await device(h, 'Ana', { sinToken: true })
+    const h = setupHub()
+    const { floor } = await device(h, 'Ana', { withoutToken: true })
     await until(() => floor.instantanea().errorHub !== null)
     const p = await openOrder(floor)
     await floor.olvidarEquipo()
@@ -635,7 +635,7 @@ describe('olvidarEquipo', () => {
           ),
       ),
     )
-    await floor.emparejar('ABC123')
+    await floor.pair('ABC123')
     await until(() => sinPendientes(floor))
     expect(h.hub.order(p)).toBeNull()
     const [l] = await locals(floor)
@@ -645,13 +645,13 @@ describe('olvidarEquipo', () => {
 
 describe('sesión que vence por inactividad', () => {
   it('se cierra exactamente a los minutos configurados y avisa al hub', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, session, db } = await device(h, 'Ana', {
       catalog: catalogoDePrueba({ restaurant: { name: 'P', sessionIdleMin: 10 } }),
     })
-    floor.vencerSesionSiToca(session.ultimoUso + 10 * MIN - 1)
+    floor.vencerSesionSiToca(session.lastUsed + 10 * MIN - 1)
     expect(floor.instantanea().session).not.toBeNull()
-    floor.vencerSesionSiToca(session.ultimoUso + 10 * MIN)
+    floor.vencerSesionSiToca(session.lastUsed + 10 * MIN)
     expect(floor.instantanea().session).toBeNull()
     expect(floor.instantanea().sessionClosedBy).toBe('inactivity')
 
@@ -662,22 +662,22 @@ describe('sesión que vence por inactividad', () => {
       .mock.calls.find(([url]) => String(url) === '/api/sessions/close')
     expect(closeout).toBeDefined()
     expect(JSON.parse(String(closeout?.[1]?.body))).toEqual({
-      session_id: session.sesionId,
+      session_id: session.sessionId,
       secret: session.secret,
     })
   })
 
   it('sin catálogo guardado usa 30 minutos', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, session } = await device(h, 'Ana', { catalog: null })
-    floor.vencerSesionSiToca(session.ultimoUso + 29 * MIN)
+    floor.vencerSesionSiToca(session.lastUsed + 29 * MIN)
     expect(floor.instantanea().session).not.toBeNull()
-    floor.vencerSesionSiToca(session.ultimoUso + 30 * MIN)
+    floor.vencerSesionSiToca(session.lastUsed + 30 * MIN)
     expect(floor.instantanea().session).toBeNull()
   })
 
   it('al abrir la app con una sesión ya vencida pide el PIN de nuevo', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, db } = await device(h, 'Ana', { haceMs: 31 * MIN })
     expect(floor.instantanea().session).toBeNull()
     await asentar(10)
@@ -686,7 +686,7 @@ describe('sesión que vence por inactividad', () => {
   })
 
   it('al volver a la pantalla (desbloquear el celular) revisa el vencimiento', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana')
     vi.setSystemTime(Date.now() + 45 * MIN)
     expect(floor.instantanea().session).not.toBeNull()
@@ -697,30 +697,30 @@ describe('sesión que vence por inactividad', () => {
   })
 
   it('cada toque aplaza el cierre: con toques cada 10 minutos nunca vence', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, session } = await device(h, 'Ana')
-    for (let i = 1; i <= 12; i++) floor.usar(session.ultimoUso + i * 10 * MIN)
+    for (let i = 1; i <= 12; i++) floor.enabled(session.lastUsed + i * 10 * MIN)
     expect(floor.instantanea().session).not.toBeNull()
-    expect(floor.instantanea().session?.ultimoUso).toBe(session.ultimoUso + 120 * MIN)
+    expect(floor.instantanea().session?.lastUsed).toBe(session.lastUsed + 120 * MIN)
     // Y pasados 30 minutos sin toques, sí.
-    floor.vencerSesionSiToca(session.ultimoUso + 150 * MIN)
+    floor.vencerSesionSiToca(session.lastUsed + 150 * MIN)
     expect(floor.instantanea().session).toBeNull()
   })
 
   it('un toque ya vencido no revive la sesión', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, session } = await device(h, 'Ana')
-    floor.usar(session.ultimoUso + 40 * MIN)
+    floor.enabled(session.lastUsed + 40 * MIN)
     expect(floor.instantanea().session).toBeNull()
-    floor.usar(session.ultimoUso + 40 * MIN + 1)
-    floor.usar(session.ultimoUso + 41 * MIN)
+    floor.enabled(session.lastUsed + 40 * MIN + 1)
+    floor.enabled(session.lastUsed + 41 * MIN)
     expect(floor.instantanea().session).toBeNull()
     await asentar(10)
     expect(await bases[0]?.leerAjuste('session')).toBeUndefined()
   })
 
   it('salir sin conexión con el hub igual cierra la sesión aquí', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, db } = await device(h, 'Ana')
     vi.mocked(fetch).mockRejectedValue(new TypeError('Failed to fetch'))
     await floor.exit()
@@ -729,7 +729,7 @@ describe('sesión que vence por inactividad', () => {
   })
 
   it('registrar con la sesión ya vencida por inactividad no crea el evento', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana', { sinConexion: true })
     // La sesión sigue "abierta" en pantalla (nadie tocó nada), pero pasó más de la inactividad.
     vi.setSystemTime(Date.now() + 31 * MIN)
@@ -741,36 +741,36 @@ describe('sesión que vence por inactividad', () => {
 
 describe('toques rápidos', () => {
   it('cientos de toques en un segundo no escriben en IndexedDB', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, session, db } = await device(h, 'Ana')
     const escribir = vi.spyOn(db, 'saveSetting')
-    for (let i = 0; i < 300; i++) floor.usar(session.ultimoUso + i * 3)
+    for (let i = 0; i < 300; i++) floor.enabled(session.lastUsed + i * 3)
     expect(escribir).not.toHaveBeenCalled()
-    expect(floor.instantanea().session?.ultimoUso).toBe(session.ultimoUso)
+    expect(floor.instantanea().session?.lastUsed).toBe(session.lastUsed)
   })
 
   it('pasados 15 s se escribe una vez, y los toques del mismo instante no repiten la escritura', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, session, db } = await device(h, 'Ana')
     const escribir = vi.spyOn(db, 'saveSetting')
-    const t = session.ultimoUso + 15_000
-    for (let i = 0; i < 50; i++) floor.usar(t)
+    const t = session.lastUsed + 15_000
+    for (let i = 0; i < 50; i++) floor.enabled(t)
     expect(escribir).toHaveBeenCalledTimes(1)
-    expect(escribir).toHaveBeenCalledWith('session', expect.objectContaining({ ultimoUso: t }))
+    expect(escribir).toHaveBeenCalledWith('session', expect.objectContaining({ lastUsed: t }))
     await asentar(5)
-    expect(await db.leerAjuste<Sesion>('session')).toMatchObject({ ultimoUso: t })
+    expect(await db.leerAjuste<Session>('session')).toMatchObject({ lastUsed: t })
   })
 
   it('14,9 s no escribe; toques cada 10 s por dos horas mantienen viva la sesión sin escribir en cada uno', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, session, db } = await device(h, 'Ana')
-    floor.usar(session.ultimoUso + 14_999)
+    floor.enabled(session.lastUsed + 14_999)
     const escribir = vi.spyOn(db, 'saveSetting')
     expect(escribir).not.toHaveBeenCalled()
 
     let taps = 0
     for (let t = 10_000; t <= 120 * MIN; t += 10_000) {
-      floor.usar(session.ultimoUso + t)
+      floor.enabled(session.lastUsed + t)
       taps += 1
     }
     expect(floor.instantanea().session).not.toBeNull()
@@ -779,7 +779,7 @@ describe('toques rápidos', () => {
   })
 
   it('varios registrar a la vez guardan todo, cada evento una vez, y el hub los confirma', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana')
     await until(() => conectada(floor))
     const p = await openOrder(floor)
@@ -798,7 +798,7 @@ describe('toques rápidos', () => {
   })
 
   it('doble toque en "enviar a cocina": una sola comanda vale y los dos equipos ven lo mismo', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana')
     await until(() => conectada(floor))
     const p = await openOrder(floor)
@@ -834,7 +834,7 @@ describe('reloj del dispositivo desfasado', () => {
   ])(
     'con el hub %s 2 h respecto al dispositivo, la hora estimada sigue la del hub',
     async (_n, offset) => {
-      const h = montarHub({ desfaseHubMs: offset })
+      const h = setupHub({ desfaseHubMs: offset })
       const { floor } = await device(h, 'Ana')
       await until(() => conectada(floor))
       await advance(500)
@@ -855,7 +855,7 @@ describe('reloj del dispositivo desfasado', () => {
   )
 
   it('tras reabrir la app sin conexión se acuerda del desfase aprendido', async () => {
-    const h = montarHub({ desfaseHubMs: 2 * 60 * MIN })
+    const h = setupHub({ desfaseHubMs: 2 * 60 * MIN })
     const { floor, db } = await device(h, 'Ana')
     await until(() => conectada(floor))
     await asentar(10)
@@ -875,7 +875,7 @@ describe('reloj del dispositivo desfasado', () => {
   })
 
   it('sin haber hablado nunca con el hub, la hora estimada es la del dispositivo', async () => {
-    const h = montarHub({ desfaseHubMs: 2 * 60 * MIN })
+    const h = setupHub({ desfaseHubMs: 2 * 60 * MIN })
     const { floor } = await device(h, 'Ana', { sinConexion: true })
     const event = await floor.record('OrderOpened', newId(), {
       channel: 'dine_in',
@@ -888,7 +888,7 @@ describe('reloj del dispositivo desfasado', () => {
 
 describe('arranque y corte simulado', () => {
   it('cargar dos veces a la vez conecta una sola vez', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { db } = await device(h, 'Ana', { sinConexion: true })
     const another = new Sala({ db, open: (m) => h.open(m) })
     salas.push(another)
@@ -901,19 +901,19 @@ describe('arranque y corte simulado', () => {
   })
 
   it('con el corte simulado las llamadas HTTP fallan como sin conexión, sin tocar la red', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana')
     await until(() => conectada(floor))
     floor.simularSinConexion(true)
     vi.mocked(fetch).mockClear()
     await expect(floor.actualizarCatalogo()).rejects.toMatchObject({ code: 'offline' })
-    await expect(floor.entrar('1234')).rejects.toMatchObject({ code: 'offline' })
+    await expect(floor.signIn('1234')).rejects.toMatchObject({ code: 'offline' })
     expect(fetch).not.toHaveBeenCalled()
     expect(floor.instantanea().connection).toBe('disconnected')
   })
 
   it('el latido y el pong no hacen releer la pantalla', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana')
     await until(() => conectada(floor))
     await advance(500)
@@ -924,7 +924,7 @@ describe('arranque y corte simulado', () => {
   })
 
   it('apagar y devolver la conexión varias veces seguidas deja una sola conexión viva', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await device(h, 'Ana')
     await until(() => conectada(floor))
     for (let i = 0; i < 10; i++) {

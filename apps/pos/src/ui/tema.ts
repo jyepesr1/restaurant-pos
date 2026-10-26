@@ -5,12 +5,12 @@ import { useEffect, useState } from 'react'
 
 export type Tema = 'system' | 'light' | 'dark'
 
-const CLAVE = 'pos-theme'
-const consulta = () => window.matchMedia('(prefers-color-scheme: dark)')
+const KEY = 'pos-theme'
+const query = () => window.matchMedia('(prefers-color-scheme: dark)')
 
 function read(): Tema {
   try {
-    const saved = localStorage.getItem(CLAVE)
+    const saved = localStorage.getItem(KEY)
     return saved === 'light' || saved === 'dark' ? saved : 'system'
   } catch {
     return 'system'
@@ -22,16 +22,16 @@ const resolve = (tema: Tema, sistemaOscuro: boolean) =>
 
 /** Pone o quita la clase `oscuro` en <html>. */
 export function aplicarTema(tema: Tema = read()) {
-  document.documentElement.classList.toggle('oscuro', resolve(tema, consulta().matches))
+  document.documentElement.classList.toggle('oscuro', resolve(tema, query().matches))
 }
 
 /** El tema elegido, si la pantalla está en oscuro ahora mismo y cómo cambiarlo. */
 export function useTema(): { tema: Tema; dark: boolean; select: (tema: Tema) => void } {
   const [tema, setTema] = useState<Tema>(read)
-  const [sistemaOscuro, setSistemaOscuro] = useState(() => consulta().matches)
+  const [sistemaOscuro, setSistemaOscuro] = useState(() => query().matches)
 
   useEffect(() => {
-    const media = consulta()
+    const media = query()
     const change = () => setSistemaOscuro(media.matches)
     media.addEventListener('change', change)
     return () => media.removeEventListener('change', change)
@@ -44,8 +44,8 @@ export function useTema(): { tema: Tema; dark: boolean; select: (tema: Tema) => 
 
   const select = (fresh: Tema) => {
     try {
-      if (fresh === 'system') localStorage.removeItem(CLAVE)
-      else localStorage.setItem(CLAVE, fresh)
+      if (fresh === 'system') localStorage.removeItem(KEY)
+      else localStorage.setItem(KEY, fresh)
     } catch {
       // Sin almacenamiento (modo privado): vale solo mientras la página esté abierta.
     }

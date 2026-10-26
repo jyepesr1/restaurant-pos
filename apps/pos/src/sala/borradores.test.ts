@@ -16,11 +16,11 @@ import type { CatalogoEdicion } from './motor'
 
 const reg = { version: 1, active: true }
 
-function edicion(): CatalogoEdicion {
+function editView(): CatalogoEdicion {
   const tax = newId()
   const category = newId()
-  const vino = newId()
-  const termino = newId()
+  const wine = newId()
+  const doneness = newId()
   const tagliata = newId()
   return {
     version: 10,
@@ -33,7 +33,7 @@ function edicion(): CatalogoEdicion {
     products: [
       {
         ...reg,
-        id: vino,
+        id: wine,
         category_id: category,
         name: 'Ramón Bilbao',
         description: null,
@@ -53,19 +53,19 @@ function edicion(): CatalogoEdicion {
       },
     ],
     variants: [
-      { ...reg, id: newId(), product_id: vino, name: 'Botella', price: 129_900, position: 1 },
-      { ...reg, id: newId(), product_id: vino, name: 'Copa', price: 30_900, position: 0 },
+      { ...reg, id: newId(), product_id: wine, name: 'Botella', price: 129_900, position: 1 },
+      { ...reg, id: newId(), product_id: wine, name: 'Copa', price: 30_900, position: 0 },
     ],
-    groups: [{ ...reg, id: termino, name: 'Término', minimum: 1, maximum: 1 }],
-    links: [{ ...reg, id: newId(), product_id: tagliata, group_id: termino, position: 0 }],
+    groups: [{ ...reg, id: doneness, name: 'Término', minimum: 1, maximum: 1 }],
+    links: [{ ...reg, id: newId(), product_id: tagliata, group_id: doneness, position: 0 }],
     modifiers: [
-      { ...reg, id: newId(), group_id: termino, name: 'Medio', extra_price: 0, position: 1 },
-      { ...reg, id: newId(), group_id: termino, name: 'Rojo', extra_price: 0, position: 0 },
+      { ...reg, id: newId(), group_id: doneness, name: 'Medio', extra_price: 0, position: 1 },
+      { ...reg, id: newId(), group_id: doneness, name: 'Rojo', extra_price: 0, position: 0 },
     ],
   }
 }
 
-const idDe = (c: CatalogoEdicion, name: string) =>
+const idOf = (c: CatalogoEdicion, name: string) =>
   c.products.find((p) => p.name === name)?.id as string
 
 describe('leerPesos', () => {
@@ -94,21 +94,21 @@ describe('leerPesos', () => {
 
 describe('producto', () => {
   it('sin tocar nada no hay cambios', () => {
-    const c = edicion()
+    const c = editView()
     for (const name of ['Ramón Bilbao', 'Tagliata'])
-      expect(cambiosDeProducto(c, borradorDeProducto(c, idDe(c, name)))).toEqual([])
+      expect(cambiosDeProducto(c, borradorDeProducto(c, idOf(c, name)))).toEqual([])
   })
 
   it('el borrador trae las variantes y los grupos en su orden', () => {
-    const c = edicion()
-    const b = borradorDeProducto(c, idDe(c, 'Ramón Bilbao'))
+    const c = editView()
+    const b = borradorDeProducto(c, idOf(c, 'Ramón Bilbao'))
     expect(b.variants.map((v) => v.name)).toEqual(['Copa', 'Botella'])
-    expect(borradorDeProducto(c, idDe(c, 'Tagliata')).groups).toEqual([c.groups[0]?.id])
+    expect(borradorDeProducto(c, idOf(c, 'Tagliata')).groups).toEqual([c.groups[0]?.id])
   })
 
   it('cambiar el precio de la botella solo cambia esa variante', () => {
-    const c = edicion()
-    const b = borradorDeProducto(c, idDe(c, 'Ramón Bilbao'))
+    const c = editView()
+    const b = borradorDeProducto(c, idOf(c, 'Ramón Bilbao'))
     const bottle = b.variants[1]
     if (!bottle) throw new Error('falta')
     bottle.price = 135_000
@@ -118,8 +118,8 @@ describe('producto', () => {
   })
 
   it('con variantes, el precio del producto es el de la más barata', () => {
-    const c = edicion()
-    const b = borradorDeProducto(c, idDe(c, 'Ramón Bilbao'))
+    const c = editView()
+    const b = borradorDeProducto(c, idOf(c, 'Ramón Bilbao'))
     const glass = b.variants[0]
     if (!glass) throw new Error('falta')
     glass.price = 28_000
@@ -130,8 +130,8 @@ describe('producto', () => {
   })
 
   it('quitar una variante la archiva; una nueva lleva todos sus campos', () => {
-    const c = edicion()
-    const b = borradorDeProducto(c, idDe(c, 'Ramón Bilbao'))
+    const c = editView()
+    const b = borradorDeProducto(c, idOf(c, 'Ramón Bilbao'))
     const bottle = b.variants[1]
     if (!bottle) throw new Error('falta')
     bottle.active = false
@@ -161,14 +161,14 @@ describe('producto', () => {
   })
 
   it('una variante nueva que se quitó antes de guardar no viaja', () => {
-    const c = edicion()
-    const b = borradorDeProducto(c, idDe(c, 'Tagliata'))
+    const c = editView()
+    const b = borradorDeProducto(c, idOf(c, 'Tagliata'))
     b.variants.push({ id: newId(), fresh: true, name: 'X', price: 1, active: false })
     expect(cambiosDeProducto(c, b)).toEqual([])
   })
 
   it('un producto nuevo lleva todos los campos, con la descripción vacía como null', () => {
-    const c = edicion()
+    const c = editView()
     const b = productoNuevo(c, c.categories[0]?.id as string)
     b.name = '  Pinsa  '
     b.price = 20_900
@@ -177,7 +177,7 @@ describe('producto', () => {
         entity: 'products',
         id: b.id,
         data: {
-          category_id: b.categoriaId,
+          category_id: b.categoryId,
           name: 'Pinsa',
           description: null,
           price: 20_900,
@@ -190,8 +190,8 @@ describe('producto', () => {
   })
 
   it('quitar un grupo archiva su enlace y volver a ponerlo lo reactiva, sin duplicarlo', () => {
-    const c = edicion()
-    const tagliata = idDe(c, 'Tagliata')
+    const c = editView()
+    const tagliata = idOf(c, 'Tagliata')
     const link = c.links[0]
     if (!link) throw new Error('falta')
     const b = borradorDeProducto(c, tagliata)
@@ -208,8 +208,8 @@ describe('producto', () => {
   })
 
   it('un grupo nuevo en un producto crea su enlace', () => {
-    const c = edicion()
-    const b = borradorDeProducto(c, idDe(c, 'Ramón Bilbao'))
+    const c = editView()
+    const b = borradorDeProducto(c, idOf(c, 'Ramón Bilbao'))
     b.groups = [c.groups[0]?.id as string]
     const [change] = cambiosDeProducto(c, b)
     expect(change).toMatchObject({
@@ -219,7 +219,7 @@ describe('producto', () => {
   })
 
   it('avisa lo que falta antes de guardar', () => {
-    const c = edicion()
+    const c = editView()
     const b = productoNuevo(c, '')
     b.variants = [
       { id: newId(), fresh: true, name: 'Copa', price: 1, active: true },
@@ -235,7 +235,7 @@ describe('producto', () => {
   })
 
   it('un producto nuevo sin tamaños pide el precio', () => {
-    const c = edicion()
+    const c = editView()
     const b = productoNuevo(c, c.categories[0]?.id as string)
     b.name = 'Pinsa'
     expect(problemasDeProducto(b)).toEqual(['Escribe el precio'])
@@ -246,29 +246,29 @@ describe('producto', () => {
 
 describe('grupo de opciones', () => {
   it('sin tocar nada no hay cambios; el borrador trae las opciones en orden', () => {
-    const c = edicion()
+    const c = editView()
     const g = borradorDeGrupo(c, c.groups[0]?.id as string)
     expect(g.options.map((o) => o.name)).toEqual(['Rojo', 'Medio'])
     expect(cambiosDeGrupo(c, g)).toEqual([])
   })
 
   it('una opción con precio, el máximo y archivar una opción', () => {
-    const c = edicion()
+    const c = editView()
     const g = borradorDeGrupo(c, c.groups[0]?.id as string)
-    const [rojo, method] = g.options
-    if (!rojo || !method) throw new Error('falta')
+    const [red, method] = g.options
+    if (!red || !method) throw new Error('falta')
     g.maximum = 2
-    rojo.extraPrice = 2_000
+    red.extraPrice = 2_000
     method.active = false
     expect(cambiosDeGrupo(c, g)).toEqual([
       { entity: 'modifier_groups', id: g.id, data: { maximum: 2 } },
-      { entity: 'modifiers', id: rojo.id, data: { extra_price: 2_000 } },
+      { entity: 'modifiers', id: red.id, data: { extra_price: 2_000 } },
       { entity: 'modifiers', id: method.id, data: { active: false } },
     ])
   })
 
   it('un grupo nuevo lleva todo', () => {
-    const c = edicion()
+    const c = editView()
     const g = grupoNuevo()
     g.name = 'Adicionales'
     g.maximum = 3
@@ -298,7 +298,7 @@ describe('grupo de opciones', () => {
   })
 
   it('cuenta los productos activos que lo usan', () => {
-    const c = edicion()
+    const c = editView()
     const group = c.groups[0]?.id as string
     expect(productosConGrupo(c, group)).toBe(1)
     const tagliata = c.products.find((p) => p.name === 'Tagliata')

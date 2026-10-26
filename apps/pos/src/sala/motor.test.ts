@@ -11,19 +11,19 @@ import {
 } from '@pos/sync'
 import { afterEach, describe, expect, it } from 'vitest'
 import { BaseDispositivo } from './almacen'
-import { type Equipo, Sala, type Sesion } from './motor'
+import { type Device, Sala, type Session } from './motor'
 import { pedidosAbiertos } from './proyeccion'
 
 // La prueba de aceptación de la Fase 0 sin navegador: dos equipos con su IndexedDB, un hub en
 // memoria que exige la firma de la sesión, pedidos hechos sin conexión y, al volver, los dos ven
 // lo mismo sin duplicados.
 
-const secretoDe = (sesionId: string) => `secreto-${sesionId}`
+const secretOf = (sessionId: string) => `secreto-${sessionId}`
 
 /** Exige que cada evento venga firmado con el secreto de su sesión. */
 const accesoConFirma: AccessControl = {
   verify: (_c, event) =>
-    event.session_id && event.signature === signEvent(event, secretoDe(event.session_id))
+    event.session_id && event.signature === signEvent(event, secretOf(event.session_id))
       ? { ok: true, authorizedById: null, authorizationId: null }
       : { ok: false, reason: 'invalid_signature' },
   recordUse: () => {},
@@ -50,8 +50,8 @@ afterEach(async () => {
   for (const b of bases.splice(0)) await b.delete()
 })
 
-function montarHub() {
-  const tokens = new Map<string, Equipo>()
+function setupHub() {
+  const tokens = new Map<string, Device>()
   const hub = new HubSync(new MemoryStore(), {
     restaurantId: newId(),
     timeZone: 'America/Bogota',
@@ -85,18 +85,18 @@ function montarHub() {
   return { hub, tokens, open }
 }
 
-async function device(h: ReturnType<typeof montarHub>, name: string) {
+async function device(h: ReturnType<typeof setupHub>, name: string) {
   const db = new BaseDispositivo(`prueba-${newId()}`)
   bases.push(db)
-  const e: Equipo = { deviceId: newId(), token: newId(), name, type: 'waiter' }
+  const e: Device = { deviceId: newId(), token: newId(), name, type: 'waiter' }
   h.tokens.set(e.token, e)
-  const sesionId = newId()
-  const session: Sesion = {
-    sesionId,
-    secret: secretoDe(sesionId),
+  const sessionId = newId()
+  const session: Session = {
+    sessionId,
+    secret: secretOf(sessionId),
     user: { id: newId(), name, role: 'Mesero' },
     permissions: ['take_order'],
-    ultimoUso: Date.now(),
+    lastUsed: Date.now(),
   }
   await db.saveSetting('device', e)
   await db.saveSetting('session', session)
@@ -124,10 +124,10 @@ const item = (name: string, price: number) => ({
   price_channel_id: null,
 })
 
-async function esperar(condicion: () => Promise<boolean> | boolean, ms = 3000) {
-  const fin = Date.now() + ms
+async function wait(condicion: () => Promise<boolean> | boolean, ms = 3000) {
+  const end = Date.now() + ms
   while (!(await condicion())) {
-    if (Date.now() > fin) throw new Error('No se cumplió a tiempo')
+    if (Date.now() > end) throw new Error('No se cumplió a tiempo')
     await new Promise((r) => setTimeout(r, 10))
   }
 }
@@ -141,11 +141,11 @@ const vista = async (s: Sala) =>
 
 describe('Sala (motor de la app)', () => {
   it('dos equipos sin conexión crean pedidos y al volver ven lo mismo, sin duplicados', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const ana = await device(h, 'Ana')
     const beto = await device(h, 'Beto')
-    await esperar(() => ana.instantanea().connection === 'connected')
-    await esperar(() => beto.instantanea().connection === 'connected')
+    await wait(() => ana.instantanea().connection === 'connected')
+    await wait(() => beto.instantanea().connection === 'connected')
 
     ana.simularSinConexion(true)
     beto.simularSinConexion(true)
@@ -166,7 +166,7 @@ describe('Sala (motor de la app)', () => {
 
     ana.simularSinConexion(false)
     beto.simularSinConexion(false)
-    await esperar(async () => {
+    await wait(async () => {
       const [a, b] = [await vista(ana), await vista(beto)]
       return (
         ana.instantanea().pendingList === 0 &&
@@ -181,12 +181,12 @@ describe('Sala (motor de la app)', () => {
   })
 
   it('sin sesión no se puede crear un evento; tras el tiempo sin uso la sesión se cierra', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const s = await device(h, 'Ana')
-    const session = s.instantanea().session as Sesion
-    s.vencerSesionSiToca(session.ultimoUso + 29 * 60_000)
+    const session = s.instantanea().session as Session
+    s.vencerSesionSiToca(session.lastUsed + 29 * 60_000)
     expect(s.instantanea().session).not.toBeNull()
-    s.vencerSesionSiToca(session.ultimoUso + 30 * 60_000)
+    s.vencerSesionSiToca(session.lastUsed + 30 * 60_000)
     expect(s.instantanea().session).toBeNull()
     await expect(
       s.record('OrderOpened', newId(), { channel: 'dine_in', table_id: null, guests: 0 }),
@@ -194,7 +194,7 @@ describe('Sala (motor de la app)', () => {
   })
 
   it('un evento con datos inválidos no se guarda', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const s = await device(h, 'Ana')
     await expect(
       s.record('OrderOpened', newId(), { channel: 'dine_in', table_id: null, guests: -1 }),

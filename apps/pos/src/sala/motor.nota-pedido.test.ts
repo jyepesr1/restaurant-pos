@@ -3,8 +3,8 @@ import { type NewEvent, newId, signEvent } from '@pos/core'
 import { type AccessControl, type Channel, HubSync, MemoryStore } from '@pos/sync'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
-import { type Equipo, Sala, type Sesion } from './motor'
-import { itemsVigentes, pedidosAbiertos } from './proyeccion'
+import { type Device, Sala, type Session } from './motor'
+import { currentItems, pedidosAbiertos } from './proyeccion'
 import { catalogoDePrueba, datosItem } from './pruebas'
 
 // Motor de la sala con lo nuevo de los ajustes del pedido: la nota de todo el pedido (también
@@ -20,21 +20,21 @@ afterEach(async () => {
 })
 
 const sinRed = (): Channel => ({ send: () => {}, close: () => {} })
-const json = (cuerpo: unknown, status = 200) =>
-  new Response(JSON.stringify(cuerpo), { status, headers: { 'content-type': 'application/json' } })
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
-const device: Equipo = {
+const device: Device = {
   deviceId: newId(),
   token: 'token-mesero',
   name: 'Celular',
   type: 'waiter',
 }
-const session = (): Sesion => ({
-  sesionId: newId(),
+const session = (): Session => ({
+  sessionId: newId(),
   secret: 'secreto-ana',
   user: { id: newId(), name: 'Ana', role: 'Mesero' },
   permissions: ['take_order', 'manage_devices'],
-  ultimoUso: Date.now(),
+  lastUsed: Date.now(),
 })
 
 async function open(catalog = catalogoDePrueba(), sinConexion = true) {
@@ -72,8 +72,8 @@ describe('NotaPedidoCambiada sobre el motor', () => {
     const order = newId()
     await floor.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
     const e = await floor.record('OrderNoteChanged', order, { notes: 'alérgico al maní' })
-    const { signature, ...sinFirma } = e
-    expect(signature).toBe(signEvent(sinFirma as NewEvent, 'secreto-ana'))
+    const { signature, ...unsigned } = e
+    expect(signature).toBe(signEvent(unsigned as NewEvent, 'secreto-ana'))
     expect(e).toMatchObject({
       type: 'OrderNoteChanged',
       aggregate_type: 'order',
@@ -151,7 +151,7 @@ describe('cursos apagados', () => {
   it('Sala.usarCursos llama a /api/cocina/cursos con la sesión, el token y el booleano', async () => {
     const calls: {
       url: string
-      cuerpo: Record<string, unknown> | null
+      body: Record<string, unknown> | null
       token: string | null
     }[] = []
     vi.stubGlobal(
@@ -160,7 +160,7 @@ describe('cursos apagados', () => {
         const headers = (init?.headers ?? {}) as Record<string, string>
         calls.push({
           url,
-          cuerpo: init?.body ? JSON.parse(String(init.body)) : null,
+          body: init?.body ? JSON.parse(String(init.body)) : null,
           token: headers.authorization?.replace('Bearer ', '') ?? null,
         })
         return url === '/api/catalog'
@@ -172,10 +172,10 @@ describe('cursos apagados', () => {
     await floor.coursesEnabled(true)
     await floor.coursesEnabled(false)
     const mias = calls.filter((l) => l.url === '/api/kitchen/courses')
-    expect(mias.map((l) => l.cuerpo?.usar)).toEqual([true, false])
+    expect(mias.map((l) => l.body?.enabled)).toEqual([true, false])
     expect(mias[0]).toMatchObject({
       token: 'token-mesero',
-      cuerpo: { secret: 'secreto-ana', usar: true },
+      body: { secret: 'secreto-ana', enabled: true },
     })
   })
 
@@ -217,7 +217,7 @@ describe('cursos apagados', () => {
     await floor.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
     for (let i = 0; i < 4; i++) await floor.record('ItemAdded', order, datosItem({ course: null }))
     const status = await stateOf(floor, order)
-    const lines = itemsVigentes(status as never)
+    const lines = currentItems(status as never)
     expect(lines).toHaveLength(4)
     expect(lines.every((i) => i.course === null && i.status === 'pending')).toBe(true)
     expect(status?.heldCourses).toEqual([])

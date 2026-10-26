@@ -1,6 +1,6 @@
 import { newId } from '@pos/core'
 import { add, diferencias } from './borradores'
-import type { CambioCatalogo, CatalogoEdicion, FormaMesa, Geometria, TipoElemento } from './motor'
+import type { CatalogChange, CatalogoEdicion, FormaMesa, Geometria, TipoElemento } from './motor'
 
 // El plano del salón (tarea 1.2): la geometría va en centímetros (x, y de la esquina superior
 // izquierda, ancho, alto y giro alrededor del centro). El editor trabaja sobre un borrador de cada
@@ -84,7 +84,7 @@ export function borradorDeZona(c: CatalogoEdicion, id: string): BorradorZona {
   }
 }
 
-export const zonaNueva = (c: CatalogoEdicion): BorradorZona => ({
+export const newZone = (c: CatalogoEdicion): BorradorZona => ({
   id: newId(),
   fresh: true,
   name: '',
@@ -153,7 +153,7 @@ const SEPARACION = 40
  * llenándose en filas (no en una sola columna) y nada se sale de los límites que acepta el hub.
  */
 function lugarLibre(b: BorradorZona, width: number, height: number) {
-  const ocupado = [...b.tables, ...b.elements]
+  const taken = [...b.tables, ...b.elements]
     .filter((x) => x.active)
     .map((g) => {
       const c = limites([g], 0)
@@ -164,11 +164,11 @@ function lugarLibre(b: BorradorZona, width: number, height: number) {
         y1: c.y + c.height + SEPARACION,
       }
     })
-  if (ocupado.length === 0) return { x: 0, y: 0 }
-  const x0 = ajustar(Math.min(...ocupado.map((o) => o.x0)) + SEPARACION)
-  const y0 = ajustar(Math.min(...ocupado.map((o) => o.y0)) + SEPARACION)
+  if (taken.length === 0) return { x: 0, y: 0 }
+  const x0 = ajustar(Math.min(...taken.map((o) => o.x0)) + SEPARACION)
+  const y0 = ajustar(Math.min(...taken.map((o) => o.y0)) + SEPARACION)
   const free = (x: number, y: number) =>
-    ocupado.every((o) => x + width <= o.x0 || x >= o.x1 || y + height <= o.y0 || y >= o.y1)
+    taken.every((o) => x + width <= o.x0 || x >= o.x1 || y + height <= o.y0 || y >= o.y1)
   const step = CUADRICULA * 2
   const hastaX = Math.max(x0 + ANCHO_HABITUAL, x0 + width)
   for (let y = y0; y + height <= LIMITE; y += step)
@@ -297,8 +297,8 @@ export function problemasDeZona(c: CatalogoEdicion, b: BorradorZona): string[] {
 }
 
 /** Los cambios para dejar la zona como el borrador. Archivar la zona archiva lo que tiene. */
-export function cambiosDeZona(c: CatalogoEdicion, b: BorradorZona): CambioCatalogo[] {
-  const changes: CambioCatalogo[] = []
+export function cambiosDeZona(c: CatalogoEdicion, b: BorradorZona): CatalogChange[] {
+  const changes: CatalogChange[] = []
   const original = b.fresh ? undefined : c.zones.find((z) => z.id === b.id)
   const archive = !b.active
   // Lo de adentro primero: el hub no deja archivar una zona con mesas activas.

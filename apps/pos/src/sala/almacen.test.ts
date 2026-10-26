@@ -53,8 +53,8 @@ describe('AlmacenIndexedDb', () => {
     const memory = new MemoryDeviceStore()
     for (const a of [idb, memory]) await a.save(events)
 
-    for (const metodo of ['listAll', 'ownPending'] as const)
-      expect(await idb[metodo]()).toEqual(await memory[metodo]())
+    for (const httpMethod of ['listAll', 'ownPending'] as const)
+      expect(await idb[httpMethod]()).toEqual(await memory[httpMethod]())
     expect(await idb.ownPending(1)).toEqual(await memory.ownPending(1))
     expect((await idb.ownPending()).map((l) => l.position)).toEqual([3, 5])
     expect(await idb.ofOrder(order)).toEqual(await memory.ofOrder(order))

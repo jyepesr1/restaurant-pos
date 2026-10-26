@@ -19,11 +19,11 @@ export function distancia(a: string, b: string): number {
     for (let j = 1; j <= b.length; j++) {
       const row = rows[i] as number[]
       const above = rows[i - 1] as number[]
-      const costo = a[i - 1] === b[j - 1] ? 0 : 1
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
       row[j] = Math.min(
         (above[j] as number) + 1,
         (row[j - 1] as number) + 1,
-        (above[j - 1] as number) + costo,
+        (above[j - 1] as number) + cost,
       )
       if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
         row[j] = Math.min(row[j] as number, ((rows[i - 2] as number[])[j - 2] as number) + 1)
@@ -52,18 +52,18 @@ function calce(buscada: string, word: string): number | null {
 export function search<T>(elements: readonly T[], busqueda: string, text: (e: T) => string): T[] {
   const words = normalizar(busqueda).split(' ').filter(Boolean)
   if (words.length === 0) return [...elements]
-  const puntuados: { element: T; puntos: number; position: number }[] = []
+  const puntuados: { element: T; points: number; position: number }[] = []
   elements.forEach((element, position) => {
     const del = normalizar(text(element)).split(' ')
-    let puntos = 0
+    let points = 0
     for (const buscada of words) {
       const mejor = Math.min(...del.map((p) => calce(buscada, p) ?? Number.POSITIVE_INFINITY))
       if (!Number.isFinite(mejor)) return
-      puntos += mejor
+      points += mejor
     }
-    puntuados.push({ element, puntos, position })
+    puntuados.push({ element, points, position })
   })
   return puntuados
-    .sort((a, b) => a.puntos - b.puntos || a.position - b.position)
+    .sort((a, b) => a.points - b.points || a.position - b.position)
     .map((p) => p.element)
 }

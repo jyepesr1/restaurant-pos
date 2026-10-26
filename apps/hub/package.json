@@ -9,8 +9,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "seed": "tsx --disable-warning=ExperimentalWarning src/seed/main.ts",
-    "restablecer-admin": "tsx --disable-warning=ExperimentalWarning src/restablecer.ts",
-    "impresora-prueba": "tsx --disable-warning=ExperimentalWarning src/impresion/impresora-prueba.ts"
+    "reset-admin": "tsx --disable-warning=ExperimentalWarning src/reset.ts",
+    "test-printer": "tsx --disable-warning=ExperimentalWarning src/printing/test-printer.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.7",

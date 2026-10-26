@@ -18,7 +18,7 @@ import {
   resumenTurno,
   turnoDeCaja,
 } from './cuentas'
-import { type Equipo, Sala, type Sesion } from './motor'
+import { type Device, Sala, type Session } from './motor'
 import { pedidosAbiertos } from './proyeccion'
 import { catalogoDePrueba, datosItem } from './pruebas'
 
@@ -89,8 +89,8 @@ async function resolve<T>(
   return r as never
 }
 
-function montarHub() {
-  const tokens = new Map<string, Equipo>()
+function setupHub() {
+  const tokens = new Map<string, Device>()
   const hub = new HubSync(new MemoryStore(), {
     restaurantId: newId(),
     timeZone: 'America/Bogota',
@@ -143,7 +143,7 @@ function montarHub() {
   }
   return h
 }
-type Hub = ReturnType<typeof montarHub>
+type Hub = ReturnType<typeof setupHub>
 
 const salas: Sala[] = []
 const bases: BaseDispositivo[] = []
@@ -159,12 +159,12 @@ afterEach(async () => {
 async function register(h: Hub, name = 'Caja 1') {
   const db = new BaseDispositivo(`checkout-${newId()}`)
   bases.push(db)
-  const e: Equipo = { deviceId: newId(), token: newId(), name, type: 'register' }
+  const e: Device = { deviceId: newId(), token: newId(), name, type: 'register' }
   h.tokens.set(e.token, e)
-  const sesionId = newId()
-  const session: Sesion = {
-    sesionId,
-    secret: `secreto-${sesionId}`,
+  const sessionId = newId()
+  const session: Session = {
+    sessionId,
+    secret: `secreto-${sessionId}`,
     user: { id: newId(), name: 'Carlos', role: 'Cajero' },
     permissions: [
       'take_order',
@@ -173,7 +173,7 @@ async function register(h: Hub, name = 'Caja 1') {
       'split_check',
       'open_register_shift',
     ],
-    ultimoUso: Date.now(),
+    lastUsed: Date.now(),
   }
   await db.saveSetting('device', e)
   await db.saveSetting('session', session)
@@ -239,7 +239,7 @@ const datosPago = (
 
 describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → cerrar', () => {
   it('todo se confirma, el pedido queda cerrado y el resumen del turno cuadra', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e } = await register(h)
     const shift = await floor.openShift(200_000)
     await until(() => sinPendientes(floor))
@@ -303,7 +303,7 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
   })
 
   it('cerrar con saldo pendiente: el hub lo rechaza y registrarConfirmado lanza el motivo en palabras', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await register(h)
     const shift = await floor.openShift(0)
     const order = await pedidoDeCien(floor)
@@ -321,7 +321,7 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
   })
 
   it('cobrar sin turno abierto: el hub lo rechaza con «sin_turno» dicho en palabras y el pago desaparece', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await register(h)
     const order = await pedidoDeCien(floor)
     const fake = newId()
@@ -340,7 +340,7 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
   })
 
   it('un segundo turno de la misma caja se rechaza (turno_ya_abierto) y el primero sigue', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor, e } = await register(h)
     const firstOne = await floor.openShift(100)
     await until(() => sinPendientes(floor))
@@ -354,7 +354,7 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
   })
 
   it('una tarjeta con un datáfono que ya no existe se rechaza con su mensaje', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await register(h)
     const shift = await floor.openShift(0)
     const order = await pedidoDeCien(floor)
@@ -369,7 +369,7 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
   })
 
   it('el mismo pago reenviado (mismo pago_id) no se cobra dos veces', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await register(h)
     const shift = await floor.openShift(0)
     const order = await pedidoDeCien(floor)
@@ -382,7 +382,7 @@ describe('de punta a punta: abrir turno → dividir → efectivo y tarjeta → c
   })
 
   it('sin que el hub conteste, registrarConfirmado falla diciendo que quedó pendiente (no cobrar otra vez)', async () => {
-    const h = montarHub()
+    const h = setupHub()
     const { floor } = await register(h)
     const shift = await floor.openShift(0)
     const order = await pedidoDeCien(floor)
