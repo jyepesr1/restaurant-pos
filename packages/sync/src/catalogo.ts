@@ -1,3 +1,5 @@
+import type { MedioPago, ModoRedondeoEfectivo } from '@pos/core'
+
 // Lo que el hub entrega en `GET /api/catalogo`: el catálogo y el salón vigentes. En la Fase 1 se
 // sincroniza por versión (docs/SYNC.md#catálogo-y-configuración); por ahora va entero.
 
@@ -15,7 +17,24 @@ export interface Catalogo {
     cocinaRojoMin?: number
     /** Si se toman pedidos por curso (entrada, fuerte, postre). Sin el dato, no. */
     usarCursos?: boolean
+    /**
+     * Reglas del cobro (tarea 1.6, docs/DINERO.md): medios que recibe, propina sugerida en
+     * puntos básicos y redondeos. Un hub de antes de la 1.6 no las manda: entonces no se cobra.
+     */
+    cobro?: {
+      mediosPago: MedioPago[]
+      /** Los medios que creó el restaurante (Sodexo, QR del banco), activos. */
+      mediosPropios?: { id: string; nombre: string }[]
+      propinaSugerida: number
+      redondeoModo: 'mitad_arriba' | 'mitad_par'
+      redondeoEfectivo: number
+      redondeoEfectivoModo: ModoRedondeoEfectivo
+      /** Si la precuenta sale impresa; si no, solo se ve en pantalla. */
+      imprimePrecuenta: boolean
+    }
   }
+  /** Los datáfonos del restaurante (tarea 1.6), para decir en cuál se cobró una tarjeta. */
+  datafonos?: { id: string; nombre: string }[]
   /** Zonas o pisos del salón, en su orden. */
   zonas: { id: string; nombre: string; piso: number }[]
   /** Geometría en centímetros: esquina superior izquierda, medidas y rotación en grados. */

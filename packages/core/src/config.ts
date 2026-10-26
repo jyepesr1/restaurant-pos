@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ModoRedondeo } from './dinero/aritmetica'
 import type { ModoRedondeoEfectivo } from './dinero/efectivo'
+import { MedioPago, Ulid } from './eventos/comun'
 
 // Configuración del restaurante (`Restaurante.config`, docs/MODELO_DATOS.md#configuración-del-
 // restaurante). Lo que no venga toma el valor por defecto del piloto. Lo tributario queda
@@ -63,6 +64,34 @@ export const ConfigRestaurante = z.strictObject({
    * defecto, se prenden por restaurante (decisión del dueño del 25-oct-2026).
    */
   usar_cursos: z.boolean().default(false),
+  /**
+   * Medios de pago que recibe el restaurante (tarea 1.6). El efectivo siempre está: la caja
+   * necesita poder cobrar aunque falle el datáfono.
+   */
+  medios_pago: z
+    .array(MedioPago)
+    .min(1)
+    .refine((m) => m.includes('efectivo'), 'El efectivo siempre se recibe')
+    .refine((m) => new Set(m).size === m.length, 'Hay medios repetidos')
+    .refine((m) => !m.includes('otro'), 'Los medios propios van en medios_propios')
+    .default(['efectivo', 'tarjeta', 'nequi', 'daviplata', 'breb', 'transferencia']),
+  /**
+   * Medios que crea el restaurante, con su nombre (Sodexo, QR Bancolombia, Rappi). Salen al cobrar
+   * después de los de arriba; uno archivado ya no sale, pero sus pagos lo siguen nombrando.
+   */
+  medios_propios: z
+    .array(
+      z.strictObject({
+        id: Ulid,
+        nombre: z.string().trim().min(1).max(30),
+        activo: z.boolean(),
+      }),
+    )
+    .max(20)
+    .refine((m) => new Set(m.map((x) => x.id)).size === m.length, 'Hay medios repetidos')
+    .default([]),
+  /** Dónde sale la precuenta impresa; sin impresora, la precuenta solo se ve en pantalla. */
+  impresora_precuenta_id: Ulid.nullable().default(null),
 })
 
 export type ConfigRestaurante = z.infer<typeof ConfigRestaurante>

@@ -23,6 +23,7 @@ const ESTADOS: Record<EstadoMesaDemo, { tono: Tono; icono: NombreIcono; texto: s
   libre: { tono: 'libre', icono: 'circulo', texto: 'Libre' },
   tomando: { tono: 'proceso', icono: 'lapiz', texto: 'Tomando pedido' },
   listo: { tono: 'libre', icono: 'servir', texto: 'Listo para llevar' },
+  cuenta: { tono: 'accion', icono: 'recibo', texto: 'Pidió la cuenta' },
   en_cocina: { tono: 'proceso', icono: 'fuego', texto: 'En preparación' },
   servida: { tono: 'neutro', icono: 'check', texto: 'Servida' },
 }
@@ -123,7 +124,8 @@ const describir = (mesa: Mesa, r: Resumen) =>
     .join(', ')
 
 export function Mesas() {
-  const { catalogo } = useSala()
+  const { catalogo, equipo } = useSala()
+  const esCaja = equipo?.tipo === 'caja'
   const pedidos = usePedidos()
   const ahora = useAhora()
   const [vista, setVista] = useState<Vista>(
@@ -174,9 +176,14 @@ export function Mesas() {
   }
   /** Una mesa unida a otra abre el pedido del grupo, en su mesa principal. */
   const tocar = (mesa: Mesa) => {
-    const grupo = resumenes
-      .get(mesa.id)
-      ?.pedidos.find((p) => p.estado.mesasUnidas.includes(mesa.id))
+    const r = resumenes.get(mesa.id)
+    // En la caja, una mesa que pidió la cuenta abre directo la cuenta (un toque menos al cobrar).
+    const unico = r?.pedidos.length === 1 ? r.pedidos[0] : undefined
+    if (esCaja && r?.estado === 'cuenta' && unico) {
+      navegar(`/cuenta?pedido=${unico.estado.id}`)
+      return
+    }
+    const grupo = r?.pedidos.find((p) => p.estado.mesasUnidas.includes(mesa.id))
     navegar(
       grupo?.estado.mesaId
         ? `/pedido?mesa=${grupo.estado.mesaId}&pedido=${grupo.estado.id}`

@@ -57,6 +57,8 @@ export interface Pago {
   cuentaId: string | null
   turnoCajaId: string
   medio: MedioPago
+  /** Con `medio: 'otro'`, cuál de los medios propios del restaurante. */
+  medioPropioId: string | null
   monto: number
   propina: number
   ajusteRedondeo: number

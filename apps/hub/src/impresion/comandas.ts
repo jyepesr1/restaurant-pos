@@ -1,7 +1,22 @@
 import type { EstadoPedido, EventoPedido, ItemPedido } from '@pos/core'
-import { nuevoId } from '@pos/core'
+import {
+  configCompleta,
+  impuestosDelPedido,
+  nuevoId,
+  propinaDelPedido,
+  propinaPendienteDeCuenta,
+  saldoCuenta,
+  totalesItem,
+  totalesPedido,
+} from '@pos/core'
 import type { BaseSqlite, Fila } from '@pos/db'
-import type { Comanda, ItemComanda, TipoComanda } from '@pos/printing'
+import {
+  type Comanda,
+  type ItemComanda,
+  nombreImpuesto,
+  type Precuenta,
+  type TipoComanda,
+} from '@pos/printing'
 import type { CambioPedido } from '@pos/sync'
 
 // De un evento aceptado a los trabajos de impresión de sus comandas (ADR-015). Corre dentro de la
@@ -42,6 +57,7 @@ export function trabajosDeEvento(
   const antes = cambio?.antes ?? null
   const despues = cambio?.despues ?? null
   if (!despues) return 0
+  if (evento.tipo === 'PrecuentaImpresa') return trabajoDePrecuenta(o, evento, despues)
 
   const porCrear: { comandaId: string; estacionId: string; comanda: Comanda }[] = []
   const armar = (
@@ -213,6 +229,96 @@ function insertar(
   return creados
 }
 
+/**
+ * La precuenta va a la impresora elegida en «Caja y pagos» (tarea 1.6). Sin impresora, o si la
+ * elegida está archivada, solo se ve en pantalla: no se crea nada.
+ */
+function trabajoDePrecuenta(
+  o: OpcionesComandas,
+  evento: Extract<EventoPedido, { tipo: 'PrecuentaImpresa' }>,
+  pedido: EstadoPedido,
+): number {
+  const fila = valor(o, 'SELECT nombre, config FROM restaurante WHERE id = ?')
+  const config = configCompleta(JSON.parse(String(fila?.config ?? '{}')))
+  const impresoraId = config.impresora_precuenta_id
+  if (
+    !impresoraId ||
+    !valor(
+      o,
+      'SELECT 1 FROM impresora WHERE restaurante_id = ? AND id = ? AND activo = 1',
+      impresoraId,
+    )
+  )
+    return 0
+  const mesero = valor(
+    o,
+    'SELECT nombre FROM usuario WHERE restaurante_id = ? AND id = ?',
+    pedido.meseroAsignadoId,
+  )
+  const totales = totalesPedido(pedido)
+  const cuenta = evento.datos.cuenta_id
+    ? (pedido.cuentas?.find((c) => c.id === evento.datos.cuenta_id) ?? null)
+    : null
+  // Lo que se debe lo calcula el hub con el pedido: el evento solo dice qué cuenta se pidió. La
+  // propina es voluntaria: va la que se eligió al pedir la precuenta (la sugerida, ninguna u otra).
+  const subtotal = cuenta ? Math.max(0, saldoCuenta(pedido, cuenta.id) ?? 0) : totales.saldo
+  const propina = evento.datos.propina_sugerida
+  const sugerida = cuenta
+    ? propinaPendienteDeCuenta(cuenta, subtotal)
+    : propinaDelPedido(pedido, subtotal, config)
+  const precuenta: Precuenta = {
+    restaurante: String(fila?.nombre ?? ''),
+    destino: destinoDe(o, pedido),
+    pedido: pedido.numeroDia,
+    mesero: mesero ? String(mesero.nombre) : '',
+    hora: horaDe(o, evento.recibido_en),
+    comensales: pedido.comensales > 0 ? pedido.comensales : null,
+    lineas: Object.values(pedido.items)
+      .filter((i) => i.estado !== 'anulado' && i.cantidad > i.cantidadAnulada)
+      .sort((a, b) => a.orden - b.orden)
+      .map((i) => ({
+        cantidad: i.cantidad - i.cantidadAnulada,
+        nombre: i.nombre,
+        opciones: i.modificadores.map((m) => m.nombre),
+        valor: totalesItem(pedido, i).neto,
+      })),
+    impuestos: impuestosDelPedido(pedido, config.redondeo_modo).map((i) => ({
+      nombre: nombreImpuesto(i.tipo, i.tarifa),
+      base: i.base,
+      valor: i.impuesto,
+    })),
+    total: totales.neto,
+    pagado: totales.pagado,
+    cuenta: cuenta ? { nombre: cuenta.nombre, monto: subtotal } : null,
+    subtotal,
+    propina,
+    tasaPropina: propina === sugerida ? config.propina_sugerida : null,
+  }
+  o.db
+    .prepare(
+      `INSERT INTO trabajo_impresion
+         (id, restaurante_id, impresora_id, tipo, evento_id, comanda_id, contenido, creado_en)
+       VALUES (?, ?, ?, 'precuenta', ?, 'precuenta', ?, ?)
+       ON CONFLICT DO NOTHING`,
+    )
+    .run(
+      nuevoId(),
+      o.restauranteId,
+      impresoraId,
+      evento.id,
+      JSON.stringify(precuenta),
+      evento.recibido_en,
+    )
+  return 1
+}
+
+const horaDe = (o: OpcionesComandas, iso: string) =>
+  new Intl.DateTimeFormat('es-CO', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: o.zonaHoraria,
+  }).format(new Date(iso))
+
 /** Impresoras activas que imprimen esa estación. */
 export function impresorasDe(o: OpcionesComandas, estacionId: string): string[] {
   return o.db
@@ -351,11 +457,7 @@ function datosComanda(
     destino,
     pedido: pedido.numeroDia,
     mesero: mesero ? String(mesero.nombre) : '',
-    hora: new Intl.DateTimeFormat('es-CO', {
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZone: o.zonaHoraria,
-    }).format(new Date(evento.recibido_en)),
+    hora: horaDe(o, evento.recibido_en),
     comensales: pedido.comensales > 0 ? pedido.comensales : null,
     items,
     retenidos: tipo === 'nueva' ? pedido.cursosRetenidos.filter((c) => tieneCurso(pedido, c)) : [],

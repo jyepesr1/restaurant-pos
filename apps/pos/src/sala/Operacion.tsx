@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Boton } from '../ui/Boton'
 import { aplicarMarca, esMarca } from '../ui/marca'
+import { Caja } from './Caja'
+import { CajaAjustes } from './CajaAjustes'
 import { Carta } from './Carta'
 import { AvisoListos, PantallaCocina, PedidosEnCocina } from './Cocina'
 import { CocinaAjustes } from './CocinaAjustes'
+import { Cuenta } from './Cuenta'
 import { sala, useSala } from './contexto'
 import { Entrar } from './Entrar'
 import { Marca } from './Marca'
@@ -70,6 +73,10 @@ function Pantalla({
 }) {
   if (ruta === '/cocina/ajustes' && permisos.includes('administrar_dispositivos'))
     return <CocinaAjustes />
+  if (ruta === '/caja/ajustes' && permisos.includes('administrar_dispositivos'))
+    return <CajaAjustes />
+  if (ruta === '/caja') return <Caja />
+  if (ruta === '/cuenta') return <Cuenta key={parametros.get('pedido')} />
   if (ruta === '/cocina') return <PedidosEnCocina />
   if (ruta === '/personal' && permisos.includes('administrar_usuarios')) return <Personal />
   if (ruta === '/marca' && permisos.includes('administrar_usuarios')) return <Marca />

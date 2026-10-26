@@ -143,6 +143,21 @@ export function prepararSincronizacion(
     acceso,
     alErrorInterno,
     precios: revisorPrecios(db, restauranteId),
+    // Se leen en cada pago: el administrador puede cambiarlas con el hub andando.
+    reglasCobro: () => {
+      const fila = db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)
+      const actual = configCompleta(JSON.parse(String(fila?.config ?? '{}')))
+      return {
+        multiplo: actual.redondeo_efectivo,
+        modo: actual.redondeo_efectivo_modo,
+        medios: actual.medios_pago,
+        mediosPropios: actual.medios_propios.filter((m) => m.activo).map((m) => m.id),
+        datafonos: db
+          .prepare('SELECT id FROM datafono WHERE restaurante_id = ? AND activo = 1')
+          .all(restauranteId)
+          .map((f) => String(f.id)),
+      }
+    },
     ...extra,
   })
   return new SalaSync(hub, acceso.autenticar)

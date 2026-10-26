@@ -33,7 +33,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.3c | Marca del producto (**Faro**, [ADR-014](DECISIONES.md#adr-014--faro-nombre-identidad-y-estilo-del-producto)) y rediseño: barra lateral, salón con sillas y pedidos abiertos, carta en tarjetas con foto opcional, marca opcional por restaurante | ✅ |
 | 1.4 | Comandas: impresora ESC/POS por estación y KDS básico ([ADR-015](DECISIONES.md#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero)): comanda impresa por estación con cola y respaldo, pantalla de cocina opcional, «Entregado» del mesero y «Pedidos en cocina» en la caja | ✅ |
 | 1.5 | Mover ítems, cambiar y unir mesas, anular con motivo y permiso | ✅ |
-| 1.6 | Precuenta, división, pagos mixtos y propina | ⏳ |
+| 1.6 | Precuenta, división, pagos mixtos y propina | ✅ |
 | 1.7 | Apertura, cierre y arqueo de caja | ⏳ |
 | 1.8 | Datáfonos nivel 1 y conciliación en el cierre | ⏳ |
 | 1.9 | Reportes básicos y `docs/KPIS.md` | ⏳ |
@@ -271,6 +271,83 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 6. Agrega y envía otro producto, y luego **Mesa y pedido → Mover productos**: elígelo, elige la mesa 8 y toca **Mover 1 a la mesa 8**. La mesa 8 debe mostrarlo.
 7. Abre la mesa 8, **Mesa y pedido → Cancelar el pedido**, elige un motivo, escribe el PIN del administrador y toca **Cancelar el pedido**. La mesa 8 queda libre.
 8. Toca un plato enviado, cambia su nota y toca **Enviar el cambio a cocina**: sale una comanda «CAMBIO».
+
+### 1.6 — Precuenta, división, pagos mixtos y propina ✅
+
+Decisiones del dueño del 26-oct-2026 ([ADR-011](DECISIONES.md#adr-011--reglas-de-operación-acordadas-para-el-piloto)).
+
+**Lo nuevo:**
+- **Cuenta** (botón junto a «Enviar», o tocar en la caja una mesa que «pidió la cuenta»):
+  - la precuenta en pantalla con el **impuesto discriminado** (base sin impuestos, INC 8 %, total), lo ya pagado, el saldo y la propina;
+  - la propina se cambia ahí mismo (sugerida, 5 %, sin propina u otro valor) y así sale en la precuenta y en el cobro;
+  - «Imprimir precuenta» si hay impresora elegida; si no, «Pidió la cuenta». Las dos marcan la mesa «Pidió la cuenta» hasta que se agregue algo nuevo.
+- **Dividir:** en partes iguales o por productos (un producto que tocan varias cuentas se reparte entre ellas). Cada cuenta se cobra aparte, con su precuenta. «Deshacer la división» mientras ninguna cuenta tenga pagos.
+- **Cobrar** (solo el cajero, en la caja, con la caja abierta y conexión):
+  - valor del pago (pagos parciales);
+  - medio: efectivo, tarjeta crédito, tarjeta débito, Nequi, Daviplata, Bre-B, transferencia y los **medios propios** del restaurante;
+  - propina: la sugerida ya marcada con su porcentaje, 5 %, sin propina u otro valor en pesos o en porcentaje;
+  - solo en efectivo: lo que entrega el cliente, el cambio y «Deja el cambio de propina»; con los medios digitales se cobra lo justo;
+  - con tarjeta, el datáfono (la caja recuerda el último); no se pide número de aprobación;
+  - confirmar antes de registrar; el pago se muestra cobrado solo cuando el hub lo acepta;
+  - al quedar el saldo en 0 la mesa se cierra sola y se ve el cambio a entregar. Si el cierre falla, «Cerrar la mesa».
+  - Atajos en la caja: F2 efectivo, F3 crédito, F4 débito, Enter cobra, Esc vuelve.
+- **Caja:** abrir la caja con la base y ver lo cobrado en el turno por medio, con el total. El cierre con arqueo es la 1.7.
+- **Caja y pagos** (administración): medios de pago (prender y apagar; crear los propios), propina sugerida (sin propina, 5 %, 8 % o 10 %), impresora de precuentas y datáfonos (el seed crea dos Bold).
+
+**Por dentro:**
+- Evento `TurnoAbierto` (agregado `turno_caja`). El hub no deja abrir dos turnos en la misma caja y rechaza pagos, anulaciones y reembolsos sin turno abierto, de otra caja, con un medio apagado, con un datáfono archivado o con otra regla de redondeo.
+- Migración 7: tabla `datafono` y la cola de impresión acepta precuentas.
+- La propina de un pago parcial es la diferencia entre la pendiente antes y después: las partes suman la propina entera. La de una cuenta pagada en parte es la parte de su propina que falta.
+- La precuenta impresa la arma el hub con el pedido (no confía en los montos del equipo).
+
+Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas`. Se corrigió:
+- el cobro mostraba pagado lo que el hub todavía no aceptaba;
+- sin cierre automático la mesa quedaba en saldo 0 sin salida;
+- una cuenta pagada en parte mostraba la propina completa;
+- los pagos parciales sumaban $1 de más de propina;
+- el resumen del turno no ponía las anulaciones en el turno donde se hacen;
+- el hub no revisaba el medio ni el datáfono;
+- los botones de cobrar quedaban fuera del pulgar en el celular;
+- se habían perdido los atajos de teclado;
+- la mesa seguía en «Pidió la cuenta» al pedir más;
+- `/api/caja/medios` respondía error del servidor con «otro»;
+- dividir por productos fallaba si otro equipo anulaba un producto asignado;
+- un `TurnoAbierto` podía nombrar un pedido y quedar en su historia;
+- las opciones de un plato salían sin sangría en la precuenta.
+
+**Pruebas:** 589 nuevas (núcleo 92, sincronización 60, base 35, hub 205, impresión 49, app 148), todas pasan.
+
+**Queda pendiente:**
+- **Anular un pago de una mesa ya cerrada** (pide reabrir la cuenta con permiso): hoy no hay pantalla para reabrir. Mientras tanto, revisar antes de confirmar.
+- Dividir por **monto libre** y **fracciones** (1/3 de botella), y «usar las personas del pedido» para dividir por productos de un toque.
+- **Cerrar la caja** con arqueo (1.7). Mientras tanto, el turno no se cierra: una caja abierta ayer sigue abierta.
+- El orden de los medios de pago al cobrar es fijo.
+- Bonos de regalo con saldo.
+- La propina impresa en la precuenta no tiene tope en el hub (es la que se eligió) — (validar) con el contador si debe tenerlo.
+- Abrir la caja no espera la respuesta del hub: un segundo turno rechazado se ve como «sin confirmar» hasta recargar.
+
+**Cómo probarlo:**
+
+1. Cierra el hub (**Ctrl+C**) y arráncalo con la versión nueva (la base pasa a la versión 7):
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+2. Con el hub cerrado una vez, carga los datáfonos de ejemplo (no toca el personal):
+
+```bash
+pnpm seed -- --sin-personal
+```
+
+3. En el PC de la caja entra con el usuario y la contraseña de **Caja**. En el menú toca **Caja**, escribe la base (por ejemplo 200.000) y toca **Abrir con $200.000**. Debes ver «Caja abierta desde las…».
+4. En un celular, un mesero abre la mesa 5, agrega dos productos y los envía. Toca **Cuenta**: debes ver la base sin impuestos, el INC 8 %, el total y la propina sugerida del 10 %.
+5. Toca **Cambiar** junto a la propina y elige **Sin propina**: la última línea pasa a «A pagar». Vuelve a elegir la sugerida.
+6. En la caja, toca la mesa 5 en el salón: se abre la cuenta. Elige **Partes iguales**, deja 2 personas y toca **Dividir en 2**.
+7. En **Persona 1** toca **Cobrar**, deja **Efectivo**, escribe 100.000 en «El cliente entrega» y toca **Cobrar** y **Sí, registrar**. Debe quedar «Pagada» y el cambio a entregar.
+8. En **Persona 2** toca **Cobrar**, elige **Tarjeta crédito** (no aparece «El cliente entrega»), elige el datáfono y registra. Debes ver «Pagado y cerrado» y, en el salón, la mesa 5 libre.
+9. En **Caja** debes ver lo cobrado por efectivo y por tarjeta, con sus propinas.
+10. En **Caja y pagos** (con el administrador) agrega un medio propio, por ejemplo «Sodexo»: debe salir al cobrar.
 
 ### Ajustes del pedido en el celular (25-oct-2026) ✅
 

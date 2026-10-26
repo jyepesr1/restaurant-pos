@@ -29,3 +29,10 @@ export {
 } from './documento'
 export { escpos } from './escpos'
 export { type Leido, leerEscpos } from './lector'
+export {
+  type LineaPrecuenta,
+  lineasPrecuenta,
+  nombreImpuesto,
+  type Precuenta,
+  pesos,
+} from './precuenta'

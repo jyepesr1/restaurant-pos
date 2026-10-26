@@ -41,6 +41,8 @@ export {
   TIPOS_CON_MOTIVO,
   TIPOS_EVENTO_PEDIDO,
   TIPOS_EVENTO_PRODUCTO,
+  TIPOS_EVENTO_TURNO,
+  type TipoAgregado,
   type TipoEventoPedido,
   validarEventoNuevo,
 } from './eventos/pedido'
@@ -64,7 +66,11 @@ export type {
 } from './pedido/estado'
 export {
   descuentoDeItem,
+  type ImpuestoDiscriminado,
+  impuestosDelPedido,
   precioUnidad,
+  propinaDelPedido,
+  propinaPendienteDeCuenta,
   saldoCuenta,
   type TotalesItem,
   type TotalesPedido,

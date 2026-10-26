@@ -50,8 +50,14 @@ const SECCIONES: readonly { grupo: string; secciones: readonly Seccion[] }[] = [
   {
     grupo: 'Servicio',
     secciones: [
-      { ruta: '/', nombre: 'Salón', icono: 'mesa', tambien: ['/pedido'] },
+      { ruta: '/', nombre: 'Salón', icono: 'mesa', tambien: ['/pedido', '/cuenta'] },
       { ruta: '/cocina', nombre: 'Pedidos en cocina', icono: 'fuego' },
+      {
+        ruta: '/caja',
+        nombre: 'Caja',
+        icono: 'billete',
+        permisos: ['abrir_turno_caja', 'registrar_pago'],
+      },
     ],
   },
   {
@@ -74,6 +80,12 @@ const SECCIONES: readonly { grupo: string; secciones: readonly Seccion[] }[] = [
         ruta: '/cocina/ajustes',
         nombre: 'Cocina e impresoras',
         icono: 'impresora',
+        permisos: ['administrar_dispositivos'],
+      },
+      {
+        ruta: '/caja/ajustes',
+        nombre: 'Caja y pagos',
+        icono: 'tarjeta',
         permisos: ['administrar_dispositivos'],
       },
       {

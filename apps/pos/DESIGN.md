@@ -84,7 +84,8 @@ Los tonos `libre`, `proceso` y `alerta` **no cambian con la marca**.
   - agregar y + / − no muestran aviso (el número cambia a la vista); quitar una línea sí deja Deshacer;
   - «Curso» solo se ve si el restaurante usa cursos (apagado por defecto);
   - en lo que está en cocina, «Entregar» por línea y «Todo entregado».
-- **Estados de la mesa**, de lo más urgente a lo menos: tomando pedido (ámbar), listo para llevar (verde, ícono servir), en preparación (ámbar), servida (gris), libre (verde).
+- **Estados de la mesa**, de lo más urgente a lo menos: tomando pedido (ámbar), listo para llevar (verde, ícono servir), pidió la cuenta (acción, ícono recibo: hay precuenta o un pago parcial), en preparación (ámbar), servida (gris), libre (verde).
+- **Cuenta y cobro** (tarea 1.6): la precuenta a la izquierda y, a la derecha, cómo se paga (una cuenta, partes iguales, por productos) con un «Cobrar» por cuenta. El cobro va en panel lateral: monto, medio, propina sugerida ya marcada y, en efectivo, billetes rápidos con el cambio grande. Registrar dinero pide confirmar. Al quedar el saldo en 0 se muestra «Pagado y cerrado» con el cambio a entregar.
 - **Pedidos en cocina** (caja): tarjetas por comanda del color de su demora (a tiempo sin color, solo con borde; ámbar y rojo según los minutos del local), con «Listo» y «Reimprimir»; abajo, lo listo para llevar, en verde, con «Volver a cocina». En cocina el verde es solo «listo». Arriba, la alerta de impresoras que no imprimen, con lo que espera y «Descartar».
 - **Pantalla de cocina**: sin barra lateral, para una tablet o un televisor; letra más grande, un solo botón «Listo» por tarjeta, reloj, conexión y sonido. La nota del pedido va en un recuadro neutro con lápiz y el rótulo «Para todo el pedido», sin el color de la demora.
 - **Cocina e impresoras**: cómo recibe cada estación, las impresoras con su prueba y su panel de edición, las pantallas, los minutos del ámbar y el rojo, y «Usar cursos».

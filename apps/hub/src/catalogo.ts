@@ -67,7 +67,27 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
       cocinaAmarilloMin: config.cocina_amarillo_min,
       cocinaRojoMin: config.cocina_rojo_min,
       usarCursos: config.usar_cursos,
+      cobro: {
+        mediosPago: config.medios_pago,
+        mediosPropios: config.medios_propios
+          .filter((m) => m.activo)
+          .map(({ id, nombre }) => ({ id, nombre })),
+        propinaSugerida: config.propina_sugerida,
+        redondeoModo: config.redondeo_modo,
+        redondeoEfectivo: config.redondeo_efectivo,
+        redondeoEfectivoModo: config.redondeo_efectivo_modo,
+        // Solo si la impresora elegida sigue activa.
+        imprimePrecuenta:
+          config.impresora_precuenta_id !== null &&
+          todas('SELECT id FROM impresora WHERE restaurante_id = ? AND activo = 1').some(
+            (f) => texto(f.id) === config.impresora_precuenta_id,
+          ),
+      },
     },
+    datafonos: activos('datafono', 'nombre').map((f) => ({
+      id: texto(f.id),
+      nombre: texto(f.nombre),
+    })),
     zonas: zonas.map((f) => ({ id: texto(f.id), nombre: texto(f.nombre), piso: numero(f.piso) })),
     mesas: activos('mesa', 'zona_id, y, x')
       .filter((f) => idsZonas.has(texto(f.zona_id)))

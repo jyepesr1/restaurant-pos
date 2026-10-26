@@ -25,5 +25,10 @@ export {
 } from './efectivo'
 export { type Desglose, desglosar } from './fiscal'
 export { brutoLinea, precioConExtras } from './linea'
-export { type LineaParaPropina, propinaSugerida, repartirPropina } from './propina'
+export {
+  type LineaParaPropina,
+  propinaSobreMonto,
+  propinaSugerida,
+  repartirPropina,
+} from './propina'
 export { partesIguales, repartir } from './reparto'

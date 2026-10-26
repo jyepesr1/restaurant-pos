@@ -77,9 +77,17 @@ const EVENTO_DOC: Record<string, Permiso | null> = {
   // Agotado (86): eventos del producto, no del pedido (tarea 1.3).
   ProductoAgotado: 'agotar_producto',
   ProductoDisponible: 'agotar_producto',
+  // Abrir la caja con la base (tarea 1.6): evento del turno, no del pedido.
+  TurnoAbierto: 'abrir_turno_caja',
 }
 
-const SOLO_CAJA_DOC = ['PagoRegistrado', 'PagoAnulado', 'ReembolsoRegistrado', 'PedidoCerrado']
+const SOLO_CAJA_DOC = [
+  'TurnoAbierto',
+  'PagoRegistrado',
+  'PagoAnulado',
+  'ReembolsoRegistrado',
+  'PedidoCerrado',
+]
 
 function montar() {
   const m = montarAcceso()

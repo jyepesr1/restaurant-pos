@@ -262,11 +262,17 @@ const datosPorTipo = {
             .string()
             .regex(/^\d{4}$/)
             .nullable(),
-          aprobacion: Texto,
+          // El dueño pidió registrar la tarjeta solo con el monto (26-oct-2026): el número de
+          // aprobación es opcional; la conciliación de la 1.8 empareja por monto, datáfono y hora.
+          aprobacion: Texto.nullable(),
           recibo: Texto.nullable(),
+          // Crédito o débito, como lo elige el cajero (tarea 1.6). Los pagos de antes no lo traen.
+          tipo_tarjeta: z.enum(['credito', 'debito']).nullable().optional(),
         })
         .nullable(),
       referencia_cobro: z.string().max(100).nullable(),
+      /** Con `medio: 'otro'`, cuál de los medios propios del restaurante (tarea 1.6). */
+      medio_propio_id: Ulid.nullable().optional(),
     })
     .superRefine((p, ctx) => {
       const problema = (message: string) => ctx.addIssue({ code: 'custom', message })
@@ -292,6 +298,8 @@ const datosPorTipo = {
       if (p.monto + p.ajuste_redondeo < 0) problema('Lo cobrado no puede ser negativo')
       if (p.medio === 'tarjeta' && p.datafono === null)
         problema('Un pago con tarjeta indica el datáfono')
+      if ((p.medio === 'otro') !== Boolean(p.medio_propio_id))
+        problema('Un medio propio dice cuál es, y solo ese medio lo dice')
     }),
   PagoAnulado: z.strictObject({ pago_id: Ulid, turno_caja_id: Ulid }),
   ReembolsoRegistrado: z
@@ -312,6 +320,9 @@ const datosPorTipo = {
   // (docs/MODELO_DATOS.md#eventos-de-mesa-producto-y-caja). Sin variante: todo el producto.
   ProductoAgotado: z.strictObject({ producto_id: Ulid, variante_id: Ulid.nullable() }),
   ProductoDisponible: z.strictObject({ producto_id: Ulid, variante_id: Ulid.nullable() }),
+  // Abrir la caja con la base en efectivo (tarea 1.6; el cierre y el arqueo son de la 1.7). El
+  // agregado es el turno; `caja_id` es, por ahora, el equipo de caja donde se abre.
+  TurnoAbierto: z.strictObject({ caja_id: Ulid, base: Pesos }),
 } as const
 
 export type TipoEventoPedido = keyof typeof datosPorTipo
@@ -322,9 +333,16 @@ export const TIPOS_EVENTO_PRODUCTO: readonly TipoEventoPedido[] = [
   'ProductoAgotado',
   'ProductoDisponible',
 ]
+/** Los eventos cuyo agregado es un turno de caja. */
+export const TIPOS_EVENTO_TURNO: readonly TipoEventoPedido[] = ['TurnoAbierto']
+export type TipoAgregado = 'pedido' | 'producto' | 'turno_caja'
 /** A qué agregado pertenece cada tipo de evento. */
-export const agregadoDe = (tipo: TipoEventoPedido): 'pedido' | 'producto' =>
-  TIPOS_EVENTO_PRODUCTO.includes(tipo) ? 'producto' : 'pedido'
+export const agregadoDe = (tipo: TipoEventoPedido): TipoAgregado =>
+  TIPOS_EVENTO_PRODUCTO.includes(tipo)
+    ? 'producto'
+    : TIPOS_EVENTO_TURNO.includes(tipo)
+      ? 'turno_caja'
+      : 'pedido'
 
 /** Eventos que exigen un motivo en el sobre. */
 export const TIPOS_CON_MOTIVO: readonly TipoEventoPedido[] = [
@@ -341,7 +359,7 @@ export const TIPOS_CON_MOTIVO: readonly TipoEventoPedido[] = [
 const sobre = {
   id: Ulid,
   version_esquema: z.literal(1),
-  agregado_tipo: z.enum(['pedido', 'producto']),
+  agregado_tipo: z.enum(['pedido', 'producto', 'turno_caja']),
   agregado_id: Ulid,
   relacionados: z.array(Ulid).max(20),
   sesion_id: Ulid.nullable(),
@@ -419,6 +437,14 @@ export const EventoPedidoNuevo = z
           message: 'Un evento de producto no toca pedidos',
         })
       }
+    }
+    // Un turno de caja tampoco toca pedidos: si nombrara uno, quedaría en su historia.
+    if (TIPOS_EVENTO_TURNO.includes(evento.tipo) && evento.relacionados.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['relacionados'],
+        message: 'Un evento de caja no toca pedidos',
+      })
     }
     if (TIPOS_CON_MOTIVO.includes(evento.tipo) && !evento.motivo) {
       ctx.addIssue({ code: 'custom', path: ['motivo'], message: `${evento.tipo} exige un motivo` })

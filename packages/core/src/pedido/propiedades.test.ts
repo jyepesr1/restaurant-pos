@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { TIPOS_EVENTO_PEDIDO, TIPOS_EVENTO_PRODUCTO } from '../eventos/pedido'
+import { TIPOS_EVENTO_PEDIDO, TIPOS_EVENTO_PRODUCTO, TIPOS_EVENTO_TURNO } from '../eventos/pedido'
 import { barajar } from '../pruebas/congelar'
 import { type Accion, accionArb, Servicio } from '../pruebas/simulador'
 import { reconstruir } from './aplicar'
@@ -125,11 +125,12 @@ describe('propiedades del reductor con dos pedidos', () => {
     )
 
     // El simulador ejerce todos los eventos de pedido salvo el de rescate, que crea otro pedido.
-    // Los de producto (agotado) no son de un pedido.
+    // Los de producto (agotado) y los de caja no son de un pedido.
     const faltan = TIPOS_EVENTO_PEDIDO.filter(
       (tipo) =>
         tipo !== 'PedidoRescateCreado' &&
         !TIPOS_EVENTO_PRODUCTO.includes(tipo) &&
+        !TIPOS_EVENTO_TURNO.includes(tipo) &&
         !vistos.has(tipo),
     )
     expect(faltan).toEqual([])

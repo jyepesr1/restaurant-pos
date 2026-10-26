@@ -54,18 +54,22 @@ export const itemsVigentes = (estado: EstadoPedido): ItemPedido[] =>
     .filter((i) => i.estado !== 'anulado')
     .sort((a, b) => a.orden - b.orden)
 
-export type EstadoMesaDemo = 'libre' | 'tomando' | 'listo' | 'en_cocina' | 'servida'
+export type EstadoMesaDemo = 'libre' | 'tomando' | 'listo' | 'cuenta' | 'en_cocina' | 'servida'
 
 /**
  * Estado de la mesa en el plano, de lo más urgente a lo menos: con algo sin enviar es «tomando»;
- * con algo listo en cocina, «listo para llevar»; con algo en cocina, «en preparación»; con todo
- * entregado, «servida» (ADR-015).
+ * con algo listo en cocina, «listo para llevar»; con la precuenta pedida o algo pagado, «pidió la
+ * cuenta» (tarea 1.6); con algo en cocina, «en preparación»; con todo entregado, «servida»
+ * (ADR-015).
  */
 export function estadoMesa(pedidos: readonly PedidoVisible[]): EstadoMesaDemo {
   const items = pedidos.flatMap((p) => itemsVigentes(p.estado))
   if (items.length === 0) return 'libre'
   if (items.some((i) => i.estado === 'pendiente' || i.estado === 'retenido')) return 'tomando'
   if (items.some((i) => i.estado === 'listo')) return 'listo'
+  // Ya pidió la cuenta (precuenta) o pagó una parte (tarea 1.6): lo que sigue es cobrar.
+  if (pedidos.some((p) => p.estado.ultimaPrecuenta || totalesPedido(p.estado).pagado > 0))
+    return 'cuenta'
   if (items.some((i) => i.estado !== 'entregado')) return 'en_cocina'
   return 'servida'
 }

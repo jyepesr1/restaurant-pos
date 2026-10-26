@@ -14,3 +14,9 @@ export function minutos(total: number): string {
   if (m < 60) return `${m} min`
   return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`
 }
+
+/** Lo escrito en un campo de dinero, como pesos enteros: «46.350» → 46350 (hasta 9 cifras). */
+export const soloDigitos = (texto: string) => Number(texto.replace(/\D/g, '').slice(0, 9)) || 0
+
+/** Pesos para un campo editable, sin signo: 46350 → «46.350»; 0 → vacío. */
+export const conPuntos = (n: number) => (n ? n.toLocaleString('es-CO') : '')

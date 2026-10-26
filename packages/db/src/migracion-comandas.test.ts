@@ -51,7 +51,7 @@ function baseVersion5() {
 
 const migrada = () => {
   const base = baseVersion5()
-  aplicarMigraciones(base.db)
+  aplicarMigraciones(base.db, HASTA_6)
   return base
 }
 
@@ -120,9 +120,8 @@ describe('migración 6: ficha', () => {
   it('es la 6, se llama comandas y aplica sobre la 5 sin tocar nada más', () => {
     const { db } = baseVersion5()
     expect(MIGRACIONES.find((m) => m.version === 6)?.nombre).toBe('comandas')
-    expect(MIGRACIONES).toHaveLength(6)
     expect(versionActual(db)).toBe(5)
-    expect(aplicarMigraciones(db)).toEqual([6])
+    expect(aplicarMigraciones(db, HASTA_6)).toEqual([6])
     expect(versionActual(db)).toBe(6)
     const registro = db.prepare('SELECT * FROM migracion WHERE version = 6').get()
     expect(registro).toMatchObject({
@@ -133,7 +132,7 @@ describe('migración 6: ficha', () => {
 
   it('repetirla no hace nada, y editarla después de aplicada se rechaza por su huella', () => {
     const { db } = migrada()
-    expect(aplicarMigraciones(db)).toEqual([])
+    expect(aplicarMigraciones(db, HASTA_6)).toEqual([])
     const editada = [
       ...HASTA_6.slice(0, 5),
       { ...(HASTA_6[5] as object), sql: `${MIGRACIONES[5]?.sql}\n-- x` },
@@ -165,7 +164,7 @@ describe('migración 6: no se pierde nada', () => {
     const rolesAntes = base.db.prepare('SELECT * FROM rol ORDER BY id').all()
     expect(antes.usuario).toBe(2)
     expect(antes.dispositivo).toBe(2)
-    aplicarMigraciones(base.db)
+    aplicarMigraciones(base.db, HASTA_6)
     // `migracion` crece en una fila (la 6); el resto queda igual.
     for (const t of TABLAS_ANTES) expect(contar(base.db, t)).toBe(t === 'migracion' ? 6 : antes[t])
     const sinColumnaNueva = (filas: Record<string, ValorSql>[], nueva: string) =>

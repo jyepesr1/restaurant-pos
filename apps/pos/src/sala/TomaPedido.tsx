@@ -633,6 +633,22 @@ export function TomaPedido() {
       {faltan === 0 ? 'Enviar' : `Enviar ${faltan}`}
     </Boton>
   )
+  // La precuenta, dividir y cobrar (tarea 1.6), en su pantalla.
+  const conProductos = pedido !== null && itemsVigentes(pedido.estado).length > 0
+  const irACuenta = () => pedido && navegar(`/cuenta?pedido=${pedido.estado.id}`)
+  const botonCuenta = (
+    <Boton variante="secundario" grande icono="recibo" className="w-full" onClick={irACuenta}>
+      Cuenta
+    </Boton>
+  )
+  const pieTicket = conProductos ? (
+    <div className="grid grid-cols-[2fr_3fr] gap-2">
+      {botonCuenta}
+      {botonEnviar}
+    </div>
+  ) : (
+    botonEnviar
+  )
   const ticket = (
     <Ticket
       pedido={pedido}
@@ -867,7 +883,7 @@ export function TomaPedido() {
             )}
           </div>
           {ticket}
-          <div className="border-t border-linea p-4">{botonEnviar}</div>
+          <div className="border-t border-linea p-4">{pieTicket}</div>
         </aside>
       </div>
 
@@ -899,6 +915,8 @@ export function TomaPedido() {
             >
               {`Entregar ${unidadesDe(enCocina)}`}
             </Boton>
+          ) : faltan === 0 && conProductos ? (
+            botonCuenta
           ) : (
             botonEnviar
           )}
@@ -909,7 +927,7 @@ export function TomaPedido() {
         abierto={verPedido}
         titulo={`Pedido · ${titulo}`}
         alCerrar={() => setVerPedido(false)}
-        pie={botonEnviar}
+        pie={pieTicket}
       >
         {ticket}
       </PanelLateral>

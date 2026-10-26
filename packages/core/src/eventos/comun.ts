@@ -29,6 +29,8 @@ export const MedioPago = z.enum([
   'breb',
   'transferencia',
   'bono',
+  // Un medio que crea el restaurante (Sodexo, QR del banco…): el pago dice cuál (tarea 1.6).
+  'otro',
 ])
 
 /** Fracción de un ítem compartido: 1/3 de botella → { n: 1, d: 3 }. */

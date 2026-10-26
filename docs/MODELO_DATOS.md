@@ -184,6 +184,9 @@ Agotado (86) no es un campo editable: son los eventos `ProductoAgotado` / `Produ
 | `usar_cursos` | `false` | Si se toman pedidos por curso (entrada, fuerte, postre; retener y marchar). Apagado: no se ve «Curso» al tomar el pedido (ADR-011). |
 | `cocina_amarillo_min` / `cocina_rojo_min` | `10` / `20` | Minutos desde el envío tras los que lo de cocina pasa a ámbar y a rojo en «Pedidos en cocina» y en la pantalla de cocina (ADR-015). Se cambian en «Cocina e impresoras». |
 | `marca` | `"faro"` | Con qué marca se ve el POS en todos los equipos (ADR-014): `faro` o una marca preparada (`la-spritzzeria`). La cambia el administrador en «Marca del restaurante». |
+| `medios_pago` | efectivo, tarjeta, Nequi, Daviplata, Bre-B, transferencia | Los que salen al cobrar, en ese orden (tarea 1.6). El efectivo siempre está. Se cambian en «Caja y pagos». |
+| `impresora_precuenta_id` | `null` | Dónde sale la precuenta; sin impresora, solo se ve en pantalla (tarea 1.6). |
+| `medios_propios` | `[]` | Medios que crea el restaurante, con `id`, `nombre` y `activo` (hasta 20). Un pago con uno de ellos va con `medio: 'otro'` y `medio_propio_id`. |
 
 ## Eventos
 
@@ -222,7 +225,7 @@ Cada tipo tiene su esquema Zod en `packages/core` (tarea 0.5). Los montos que sa
 | `PrecuentaImpresa` | `cuenta_id` (opcional), `subtotal`, `propina_sugerida` en **pesos** tal como se imprimió | `tomar_pedido` |
 | `CuentaDividida` | `cuentas`: `[{ cuenta_id, nombre, items (con fracción `{n, d}` en el ítem compartido), monto, propina_sugerida }]` en pesos, calculados sobre el saldo; lo no asignado queda en `sin_asignar` y los pagos previos en `general` ([DINERO.md](DINERO.md#división-de-la-cuenta)) | `dividir_cuenta` |
 | `DivisionDeshecha` | — (solo si ninguna cuenta tiene pagos) | `dividir_cuenta` |
-| `PagoRegistrado` | `pago_id`, `cuenta_id`, `turno_caja_id`, `medio`, `monto`, `propina`, `recibido`, `cambio`, `ajuste_redondeo` con la regla `redondeo` (múltiplo y modo) que lo produjo, datos del datáfono (obligatorios con tarjeta), `referencia_cobro` | `registrar_pago` |
+| `PagoRegistrado` | `pago_id`, `cuenta_id`, `turno_caja_id`, `medio`, `monto`, `propina`, `recibido`, `cambio`, `ajuste_redondeo` con la regla `redondeo` (múltiplo y modo) que lo produjo, datos del datáfono (obligatorios con tarjeta; desde la 1.6 el número de aprobación es opcional y va `tipo_tarjeta`: crédito o débito), `referencia_cobro`, `medio_propio_id` (con `medio: 'otro'`). El hub rechaza un medio apagado, un medio propio archivado y un datáfono que no está activo | `registrar_pago` |
 | `PagoAnulado` | `pago_id`, `turno_caja_id` del turno **actual** (donde cae la reversa) | `anular_pago` |
 | `ReembolsoRegistrado` | `pago_id`, `monto_venta`, `monto_propina` (topes en [DINERO.md](DINERO.md#pagos)), `medio`, `turno_caja_id` | `anular_pago` |
 | `PedidoRescateCreado` | `pedido_original_id`, `mesero_id` (el del pedido original); lo emite el hub con un ID nuevo cuando llegan ítems a un pedido ya cerrado | — |
@@ -236,7 +239,7 @@ Cada tipo tiene su esquema Zod en `packages/core` (tarea 0.5). Los montos que sa
 |---|---|---|---|
 | `MesaMarcadaSucia` / `MesaLimpia` | mesa | — | `tomar_pedido` |
 | `ProductoAgotado` / `ProductoDisponible` | producto | `producto_id`, `variante_id` | `agotar_producto` |
-| `TurnoAbierto` | turno_caja | `caja_id`, `base` (pesos) | `abrir_turno_caja` |
+| `TurnoAbierto` | turno_caja | `caja_id`, `base` (pesos). Desde la tarea 1.6 la caja es el equipo de caja donde se abre (`caja_id` = su `dispositivo_id`). El hub no deja abrir un segundo turno en una caja que ya tiene uno, y un pago, anulación o reembolso solo cae en un turno abierto de la caja que lo registra | `abrir_turno_caja` |
 | `MovimientoCajaRegistrado` | turno_caja | `tipo` (`entrada`, `salida`, `pago_propinas`, `retiro_parcial`, `apertura_cajon`), `monto`; en `pago_propinas`, los días del fondo y a quién se pagó | `movimiento_caja` o `abrir_cajon_sin_venta` |
 | `CatalogoCambiado` | catalogo | `entidad`, `registro_id`, `antes`, `despues`, `catalogo_version`. Se guarda en `catalogo_cambio`, no en `evento` (ver [Catálogo](#catálogo)) | `editar_catalogo`, o `editar_precios` si solo cambian precios |
 | `ArqueoRegistrado` | turno_caja | `conteo` por denominación (`{ "50000": 3, … }`), `contado` por medio de pago | `cerrar_turno_caja` |
@@ -286,7 +289,7 @@ Están en [DINERO.md](DINERO.md#pagos): monto y saldo, efectivo con `recibido = 
 
 | Entidad | Cat. | Campos principales |
 |---|---|---|
-| `Datafono` | V | `proveedor` (`bold`, `redeban`, `otro`), `terminal`, `nombre`, `nivel_integracion` (1 manual, 2 Bold API, 3 Redeban integrado) |
+| `Datafono` | V | Desde la tarea 1.6 (migración 7): `nombre` y `proveedor` (`bold`, `redeban`, `credibanco`, `otro`). En la 1.8: `terminal` y `nivel_integracion` (1 manual, 2 Bold API, 3 Redeban integrado) |
 | `TransaccionDatafono` | P (de `TransaccionDatafonoRegistrada`, `TransaccionDatafonoAnulada`) | `datafono_id`, `aprobacion`, `rrn`, `franquicia`, `tarjeta_enmascarada`, `monto`, `propina`, **`total`** (lo que aprobó el datáfono), `fecha_hora`, `lote`, `origen` (`manual`, `importada`, `webhook`, `integrada`), `estado` |
 | `Conciliacion` | P (de `ConciliacionIniciada`, `ConciliacionCerrada`) | `datafono_id`, `lote` o rango de fechas (puede abarcar varios turnos), `total_pos`, `total_datafono`, `estado` |
 | `ConciliacionItem` | P (de `ConciliacionItemMarcado`) | `conciliacion_id`, `pago_ids`, `transaccion_ids` (una pasada de tarjeta puede pagar dos cuentas), `estado` (`conciliada`, `solo_pos`, `solo_datafono`, `diferencia_monto`, `duplicada`, `anulada`), `justificacion` |

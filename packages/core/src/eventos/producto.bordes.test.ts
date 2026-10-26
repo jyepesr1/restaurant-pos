@@ -12,6 +12,7 @@ import {
   type EventoNuevo,
   TIPOS_EVENTO_PEDIDO,
   TIPOS_EVENTO_PRODUCTO,
+  TIPOS_EVENTO_TURNO,
   validarEventoNuevo,
 } from './pedido'
 
@@ -117,7 +118,13 @@ describe('ProductoAgotado y ProductoDisponible: datos', () => {
     expect([...TIPOS_EVENTO_PRODUCTO].sort()).toEqual([...TIPOS].sort())
     for (const tipo of TIPOS_EVENTO_PRODUCTO) expect(TIPOS_EVENTO_PEDIDO).toContain(tipo)
     for (const tipo of TIPOS_EVENTO_PEDIDO)
-      expect(agregadoDe(tipo)).toBe(TIPOS_EVENTO_PRODUCTO.includes(tipo) ? 'producto' : 'pedido')
+      expect(agregadoDe(tipo)).toBe(
+        TIPOS_EVENTO_PRODUCTO.includes(tipo)
+          ? 'producto'
+          : TIPOS_EVENTO_TURNO.includes(tipo)
+            ? 'turno_caja'
+            : 'pedido',
+      )
   })
 
   // Lo encontró qa-pruebas en la 1.3 y ya está corregido: un evento de producto podía nombrar un
@@ -142,7 +149,7 @@ describe('ningún evento del pedido acepta agregado_tipo producto', () => {
       { seed: 20_261_024, numRuns: 300 },
     )
 
-    const tiposDePedido = TIPOS_EVENTO_PEDIDO.filter((t) => !TIPOS_EVENTO_PRODUCTO.includes(t))
+    const tiposDePedido = TIPOS_EVENTO_PEDIDO.filter((t) => agregadoDe(t) === 'pedido')
     // El rescate lo crea el hub y el simulador no lo ejerce: se arma a mano.
     const rescate = fabrica(nuevoId(), 'PedidoRescateCreado', {
       pedido_original_id: nuevoId(),

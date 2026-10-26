@@ -2,6 +2,7 @@ import {
   type ConfigRestaurante,
   configCompleta,
   jsonCanonico,
+  MedioPago,
   nuevoId,
   type Permiso,
 } from '@pos/core'
@@ -231,6 +232,7 @@ export async function rutasImpresion(
         })),
       tiempos: { amarillo: config.cocina_amarillo_min, rojo: config.cocina_rojo_min },
       usar_cursos: config.usar_cursos,
+      impresora_precuenta_id: config.impresora_precuenta_id,
     }
   })
 
@@ -355,9 +357,11 @@ export async function rutasImpresion(
           que:
             f.tipo === 'prueba'
               ? 'Página de prueba'
-              : [c.estacion, c.destino, c.numero ? `#${c.numero}` : null]
-                  .filter(Boolean)
-                  .join(' · '),
+              : f.tipo === 'precuenta'
+                ? ['Precuenta', c.destino].filter(Boolean).join(' · ')
+                : [c.estacion, c.destino, c.numero ? `#${c.numero}` : null]
+                    .filter(Boolean)
+                    .join(' · '),
           intentos: Number(f.intentos),
           error: f.ultimo_error === null ? null : String(f.ultimo_error),
           creado_en: String(f.creado_en),
@@ -445,7 +449,6 @@ export async function rutasImpresion(
     return reply.code(204).send()
   })
 
-  // Prender o apagar los cursos (entrada, fuerte, postre) en todo el restaurante.
   /**
    * Cambia campos de la configuración del restaurante (versionada: los equipos la leen con la
    * carta). Si no cambia nada, no escribe ni avisa.
@@ -501,6 +504,156 @@ export async function rutasImpresion(
       autor,
     )
     return reply.code(204).send()
+  })
+
+  // ── Caja (tarea 1.6): impresora de precuentas, medios de pago y datáfonos ──
+
+  // Dónde sale la precuenta; sin impresora, solo se ve en pantalla.
+  app.post('/api/caja/precuenta', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({ impresora_id: Id.nullable() }).safeParse(req.body)
+    if (!cuerpo.success) return datosInvalidos(reply)
+    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    if (!autor) return reply
+    const id = cuerpo.data.impresora_id
+    if (
+      id &&
+      !db
+        .prepare('SELECT 1 FROM impresora WHERE restaurante_id = ? AND id = ? AND activo = 1')
+        .get(restauranteId, id)
+    )
+      return datosInvalidos(reply, 'Esa impresora no existe o está archivada')
+    actualizarConfig({ impresora_precuenta_id: id }, autor)
+    return reply.code(204).send()
+  })
+
+  const datafonos = () =>
+    db
+      .prepare('SELECT * FROM datafono WHERE restaurante_id = ? ORDER BY activo DESC, nombre, id')
+      .all(restauranteId)
+      .map((f) => ({
+        id: String(f.id),
+        nombre: String(f.nombre),
+        proveedor: String(f.proveedor),
+        activo: f.activo === 1,
+      }))
+
+  // Lo de la pantalla «Caja y pagos».
+  app.post('/api/caja/configuracion', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.safeParse(req.body)
+    if (!cuerpo.success) return datosInvalidos(reply)
+    if (!quien(req, reply, cuerpo.data, ['administrar_dispositivos'])) return reply
+    const config = configCompleta(
+      JSON.parse(
+        String(
+          db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)?.config ??
+            '{}',
+        ),
+      ),
+    )
+    return {
+      medios_pago: config.medios_pago,
+      medios_propios: config.medios_propios,
+      propina_sugerida: config.propina_sugerida,
+      datafonos: datafonos(),
+    }
+  })
+
+  app.post('/api/caja/medios', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({ medios: z.array(MedioPago).min(1).max(10) }).safeParse(req.body)
+    if (!cuerpo.success) return datosInvalidos(reply)
+    const medios = [...new Set(cuerpo.data.medios)]
+    if (medios.includes('otro'))
+      return datosInvalidos(reply, 'Los medios propios se crean aparte, con su nombre')
+    if (!medios.includes('efectivo')) return datosInvalidos(reply, 'El efectivo siempre se recibe')
+    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    if (!autor) return reply
+    actualizarConfig({ medios_pago: medios }, autor)
+    return reply.code(204).send()
+  })
+
+  // Un medio propio del restaurante (Sodexo, QR del banco): crear, renombrar o archivar.
+  app.post('/api/caja/medios-propios', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({
+      medio: z.strictObject({
+        id: Id.optional(),
+        nombre: z.string().trim().min(1).max(30),
+        activo: z.boolean(),
+      }),
+    }).safeParse(req.body)
+    if (!cuerpo.success)
+      return datosInvalidos(reply, 'Escribe el nombre del medio (hasta 30 letras)')
+    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    if (!autor) return reply
+    const actual = configCompleta(
+      JSON.parse(
+        String(
+          db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)?.config ??
+            '{}',
+        ),
+      ),
+    )
+    const m = cuerpo.data.medio
+    if (m.id && !actual.medios_propios.some((x) => x.id === m.id))
+      return datosInvalidos(reply, 'Ese medio no existe')
+    const repetido = actual.medios_propios.some(
+      (x) => x.activo && x.id !== m.id && x.nombre.toLowerCase() === m.nombre.toLowerCase(),
+    )
+    if (m.activo && repetido) return datosInvalidos(reply, 'Ya hay un medio con ese nombre')
+    const id = m.id ?? nuevoId()
+    const medios = m.id
+      ? actual.medios_propios.map((x) =>
+          x.id === id ? { id, nombre: m.nombre, activo: m.activo } : x,
+        )
+      : [...actual.medios_propios, { id, nombre: m.nombre, activo: m.activo }]
+    if (medios.length > 20) return datosInvalidos(reply, 'Son máximo 20 medios propios')
+    actualizarConfig({ medios_propios: medios }, autor)
+    return { id, medios_propios: medios }
+  })
+
+  // El porcentaje de propina sugerida, en puntos básicos (1000 = 10 %). Tope del 10 % — (validar)
+  // con el contador (Ley 1935 de 2018).
+  app.post('/api/caja/propina', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({ puntos: z.int().min(0).max(1000) }).safeParse(req.body)
+    if (!cuerpo.success) return datosInvalidos(reply, 'La propina sugerida va de 0 % a 10 %')
+    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    if (!autor) return reply
+    actualizarConfig({ propina_sugerida: cuerpo.data.puntos }, autor)
+    return reply.code(204).send()
+  })
+
+  app.post('/api/datafonos', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({
+      datafono: z.strictObject({
+        id: Id.optional(),
+        nombre: z.string().trim().min(1).max(60),
+        proveedor: z.enum(['bold', 'redeban', 'credibanco', 'otro']),
+        activo: z.boolean(),
+      }),
+    }).safeParse(req.body)
+    if (!cuerpo.success) return datosInvalidos(reply, 'Revisa los datos del datáfono')
+    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    if (!autor) return reply
+    const d = cuerpo.data.datafono
+    const repetido = db
+      .prepare(
+        'SELECT id FROM datafono WHERE restaurante_id = ? AND activo = 1 AND lower(nombre) = lower(?)',
+      )
+      .all(restauranteId, d.nombre)
+      .some((f) => String(f.id) !== d.id)
+    if (d.activo && repetido) return datosInvalidos(reply, 'Ya hay un datáfono con ese nombre')
+    const campos = { nombre: d.nombre, proveedor: d.proveedor, activo: d.activo ? 1 : 0 }
+    const id = enTransaccion(db, () => {
+      if (!d.id) return insertarVersionado(db, 'datafono', restauranteId, campos, autor, reloj())
+      const actual = db
+        .prepare('SELECT id FROM datafono WHERE restaurante_id = ? AND id = ?')
+        .get(restauranteId, d.id)
+      if (!actual) return null
+      actualizarVersionado(db, 'datafono', restauranteId, d.id, campos, autor, reloj())
+      return d.id
+    })
+    if (!id) return datosInvalidos(reply, 'Ese datáfono no existe')
+    avisar()
+    return { id, datafonos: datafonos() }
   })
 }
 

@@ -3,6 +3,7 @@ import {
   type EventoNuevo,
   firmarEvento,
   huellaAutorizable,
+  type MedioPago,
   nuevoId,
   type TipoEventoPedido,
 } from '@pos/core'
@@ -169,6 +170,33 @@ export interface ConfiguracionCocina {
   }[]
   tiempos: { amarillo: number; rojo: number }
   usar_cursos?: boolean
+  /** Dónde sale la precuenta (tarea 1.6); un hub de antes no lo manda. */
+  impresora_precuenta_id?: string | null
+}
+
+export interface MedioPropio {
+  id?: string
+  nombre: string
+  activo: boolean
+}
+
+export type ProveedorDatafono = 'bold' | 'redeban' | 'credibanco' | 'otro'
+
+export interface Datafono {
+  id?: string
+  nombre: string
+  proveedor: ProveedorDatafono
+  activo: boolean
+}
+
+/** Lo de la pantalla «Caja y pagos» (`POST /api/caja/configuracion`, tarea 1.6). */
+export interface ConfiguracionCaja {
+  medios_pago: MedioPago[]
+  /** Puntos básicos: 1000 = 10 %. */
+  propina_sugerida: number
+  /** Los medios que creó el restaurante (Sodexo, QR del banco). */
+  medios_propios: MedioPropio[]
+  datafonos: (Datafono & { id: string })[]
 }
 
 /** Una comanda que no ha salido de su impresora (`POST /api/impresion/pendientes`). */
@@ -608,6 +636,50 @@ export class Sala {
     await this.conSesion('/api/cocina/tiempos', { amarillo, rojo })
   }
 
+  // ── Caja y pagos (tarea 1.6) ─────────────────────────────────────────
+
+  configuracionCaja(): Promise<ConfiguracionCaja> {
+    return this.conSesion('/api/caja/configuracion', {})
+  }
+
+  async mediosDePago(medios: MedioPago[]): Promise<void> {
+    await this.conSesion('/api/caja/medios', { medios })
+  }
+
+  async guardarDatafono(datafono: Datafono): Promise<ConfiguracionCaja['datafonos']> {
+    const r = await this.conSesion<{ datafonos: ConfiguracionCaja['datafonos'] }>(
+      '/api/datafonos',
+      { datafono },
+    )
+    return r.datafonos
+  }
+
+  async guardarMedioPropio(medio: MedioPropio): Promise<MedioPropio[]> {
+    const r = await this.conSesion<{ medios_propios: MedioPropio[] }>('/api/caja/medios-propios', {
+      medio,
+    })
+    return r.medios_propios
+  }
+
+  async propinaSugerida(puntos: number): Promise<void> {
+    await this.conSesion('/api/caja/propina', { puntos })
+  }
+
+  async impresoraPrecuenta(impresoraId: string | null): Promise<void> {
+    await this.conSesion('/api/caja/precuenta', { impresora_id: impresoraId })
+  }
+
+  /**
+   * Abre la caja de este equipo con la base en efectivo (`TurnoAbierto`). La pantalla lo deja
+   * solo con conexión, como cobrar: el hub rechaza un segundo turno de la misma caja.
+   */
+  async abrirTurno(base: number): Promise<string> {
+    const equipo = this.equipoActual()
+    const turnoId = nuevoId()
+    await this.registrar('TurnoAbierto', turnoId, { caja_id: equipo.dispositivoId, base })
+    return turnoId
+  }
+
   /**
    * Este equipo pasa a ser pantalla de cocina de esas estaciones: la sesión del administrador se
    * cierra y queda la de la pantalla, que no vence por inactividad.
@@ -812,6 +884,33 @@ export class Sala {
     return firmado
   }
 
+  /**
+   * Como `registrar`, pero espera a que el hub lo acepte: para el dinero (cobrar, cerrar la mesa)
+   * no basta con guardarlo aquí, porque un pago que el hub rechaza desaparece de la cuenta. Si el
+   * hub lo rechaza, falla con el motivo en palabras; si no responde a tiempo, falla diciendo que
+   * quedó pendiente (no hay que cobrar otra vez).
+   */
+  async registrarConfirmado<T extends TipoEventoPedido>(
+    tipo: T,
+    agregadoId: string,
+    datos: Extract<EventoNuevo, { tipo: T }>['datos'],
+    opciones: OpcionesEvento = {},
+    esperaMs = 10_000,
+  ): Promise<EventoNuevo> {
+    const evento = await this.registrar(tipo, agregadoId, datos as never, opciones)
+    const limite = Date.now() + esperaMs
+    for (;;) {
+      const local = (await this.cliente?.locales())?.find((l) => l.evento.id === evento.id)
+      if (local?.estado === 'confirmado') return evento
+      if (local?.estado === 'rechazado') throw new Error(motivoEnPalabras(local.motivo))
+      if (Date.now() > limite)
+        throw new Error(
+          'La caja no confirmó a tiempo. Quedó pendiente: revisa la cuenta en un momento antes de cobrar otra vez.',
+        )
+      await new Promise((r) => setTimeout(r, 150))
+    }
+  }
+
   /** Lo que va por HTTP al hub; con el corte simulado tampoco sale, como si no hubiera red. */
   private api<T>(...args: Parameters<typeof llamar>): Promise<T> {
     if (this.estado.simulandoSinConexion)
@@ -824,4 +923,22 @@ export class Sala {
       throw new Error('Este equipo todavía no ha entrado: escribe tu PIN o tu contraseña')
     return this.estado.equipo
   }
+}
+
+/** Por qué el hub rechazó un evento de dinero, dicho para la caja. */
+function motivoEnPalabras(motivo: string | undefined): string {
+  const textos: Record<string, string> = {
+    sin_turno: 'La caja no tiene turno abierto: ábrela en «Caja».',
+    turno_de_otra_caja: 'Ese turno es de otra caja: cobra desde la caja donde se abrió.',
+    turno_ya_abierto: 'Esta caja ya tiene un turno abierto.',
+    redondeo_distinto: 'Cambió la regla del redondeo del efectivo: vuelve a abrir el cobro.',
+    medio_no_habilitado: 'Ese medio de pago no está habilitado en «Caja y pagos».',
+    datafono_desconocido: 'Ese datáfono ya no está: elige otro.',
+    pago_excede_saldo: 'El pago supera lo que falta: alguien más ya cobró una parte.',
+    saldo_pendiente: 'Todavía queda saldo: alguien agregó algo mientras cobrabas.',
+    sin_permiso: 'No tienes permiso para hacerlo.',
+    solo_caja: 'Esto solo se hace desde un equipo de caja.',
+    pedido_cerrado: 'El pedido ya estaba cerrado.',
+  }
+  return (motivo && textos[motivo]) ?? `La caja no lo aceptó (${motivo ?? 'sin motivo'}).`
 }

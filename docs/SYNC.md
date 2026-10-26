@@ -167,6 +167,7 @@ Si procesar un evento hace fallar al hub, pero el hub todavía puede guardar, el
 | Se agrega a un pedido que la caja ya cerró | El hub crea un pedido de rescate (`PedidoRescateCreado`) y lo aplica allí; conflicto `pedido_cerrado`. |
 | El precio, extras o impuesto copiados no coinciden con el historial del catálogo en su `catalogo_version`, o la franja horaria ya no aplicaba según la hora del hub | Se acepta con conflicto `precio_distinto`. |
 | Mismo evento enviado dos veces | Idempotente: misma respuesta. |
+| Un pago, anulación o reembolso sin turno abierto, o en el turno de otra caja (tarea 1.6) | Rechazo (`sin_turno`, `turno_de_otra_caja`): los pagos solo salen de la caja conectada. Igual un efectivo con otra regla de redondeo que la del restaurante (`redondeo_distinto`) y un segundo turno en la misma caja (`turno_ya_abierto`). |
 
 ## Catálogo y configuración
 

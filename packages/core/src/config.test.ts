@@ -20,6 +20,24 @@ describe('configuración del restaurante', () => {
       cocina_amarillo_min: 10,
       cocina_rojo_min: 20,
       usar_cursos: false,
+      medios_pago: ['efectivo', 'tarjeta', 'nequi', 'daviplata', 'breb', 'transferencia'],
+      medios_propios: [],
+      impresora_precuenta_id: null,
+    })
+  })
+
+  describe('medios de pago e impresora de precuentas (tarea 1.6)', () => {
+    it('el efectivo siempre está, sin repetidos, y un medio que no existe no se acepta', () => {
+      expect(configCompleta({ medios_pago: ['efectivo'] }).medios_pago).toEqual(['efectivo'])
+      expect(() => configCompleta({ medios_pago: ['tarjeta'] })).toThrow()
+      expect(() => configCompleta({ medios_pago: [] })).toThrow()
+      expect(() => configCompleta({ medios_pago: ['efectivo', 'efectivo'] })).toThrow()
+      expect(() => configCompleta({ medios_pago: ['efectivo', 'cheque'] })).toThrow()
+    })
+
+    it('la impresora de precuentas es un ULID o nada', () => {
+      expect(configCompleta({ impresora_precuenta_id: null }).impresora_precuenta_id).toBeNull()
+      expect(() => configCompleta({ impresora_precuenta_id: 'impresora' })).toThrow()
     })
   })
 

@@ -85,18 +85,9 @@ export const propinasDeCuentas = (montos: readonly number[]) => {
   return total === 0 ? montos.map(() => 0) : repartirPropina(propinaSobre(total), montos)
 }
 
-/** Al quitar cuentas, lo asignado a las que ya no existen vuelve a "sin asignar". */
-export function recortarAsignaciones(
-  asignadas: ReadonlyMap<string, readonly number[]>,
-  cuentas: number,
-): Map<string, number[]> {
-  const nuevas = new Map<string, number[]>()
-  for (const [item, de] of asignadas) {
-    const quedan = de.filter((c) => c < cuentas)
-    if (quedan.length > 0) nuevas.set(item, quedan)
-  }
-  return nuevas
-}
+// Al quitar cuentas, lo asignado a las que ya no existen vuelve a «sin asignar»: la misma regla de la
+// app de operación.
+export { recortarAsignaciones } from '../sala/cuentas'
 
 export interface PagoEnEfectivo {
   /** Lo que se cobra por la venta: el monto, redondeado solo si deja el saldo en 0. */

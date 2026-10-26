@@ -491,10 +491,20 @@ describe('hub: validaciones', () => {
     const caja = m.red.dispositivo('caja')
     const conexion = conexionDe(m, ana)
     const pedido = nuevoId()
+    // La caja abre su turno: sin él no se cobra (tarea 1.6).
+    const turno = nuevoId()
+    m.hub().recibirLote(conexionDe(m, caja), [
+      crudo(caja, {
+        tipo: 'TurnoAbierto',
+        agregado_tipo: 'turno_caja',
+        agregado_id: turno,
+        datos: { caja_id: caja.dispositivoId, base: 0 },
+      }),
+    ])
     const pago = {
       pago_id: nuevoId(),
       cuenta_id: null,
-      turno_caja_id: nuevoId(),
+      turno_caja_id: turno,
       medio: 'tarjeta',
       monto: 10_000,
       propina: 0,
@@ -514,12 +524,12 @@ describe('hub: validaciones', () => {
     const base = { agregado_id: pedido }
     m.hub().recibirLote(conexion, [
       crudo(ana, { ...base, datos: { canal: 'salon', mesa_id: null, comensales: 1 } }),
-      crudo(ana, { ...base, tipo: 'ItemAgregado', datos: item(10_000), secuencia_base: 1 }),
+      crudo(ana, { ...base, tipo: 'ItemAgregado', datos: item(10_000), secuencia_base: 2 }),
     ])
-    // La caja cobra y cierra: ana solo sabe de eso si su `secuencia_base` llega a 4.
+    // La caja cobra y cierra: ana solo sabe de eso si su `secuencia_base` llega a 5.
     m.hub().recibirLote(conexionDe(m, caja), [
-      crudo(caja, { ...base, tipo: 'PagoRegistrado', datos: pago, secuencia_base: 2 }),
-      crudo(caja, { ...base, tipo: 'PedidoCerrado', datos: {}, secuencia_base: 3 }),
+      crudo(caja, { ...base, tipo: 'PagoRegistrado', datos: pago, secuencia_base: 3 }),
+      crudo(caja, { ...base, tipo: 'PedidoCerrado', datos: {}, secuencia_base: 4 }),
     ])
 
     const atrasado = m.hub().recibirLote(conexion, [
@@ -527,7 +537,7 @@ describe('hub: validaciones', () => {
         ...base,
         tipo: 'ComensalesCambiados',
         datos: { comensales: 4 },
-        secuencia_base: 2,
+        secuencia_base: 3,
       }),
     ])
     const alDia = m.hub().recibirLote(conexion, [
@@ -535,7 +545,7 @@ describe('hub: validaciones', () => {
         ...base,
         tipo: 'ComensalesCambiados',
         datos: { comensales: 4 },
-        secuencia_base: 5,
+        secuencia_base: 6,
       }),
     ])
 

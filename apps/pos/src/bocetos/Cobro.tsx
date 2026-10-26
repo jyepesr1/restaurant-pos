@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
 import { Etiqueta } from '../ui/Etiqueta'
-import { pesos } from '../ui/formato'
+import { conPuntos, pesos, soloDigitos } from '../ui/formato'
 import { Grupo, Opcion } from '../ui/Opciones'
 import { navegar, useRuta } from '../ui/ruta'
 import { pagoConTarjeta, pagoEnEfectivo, propinaParaEfectivo, propinaSobre } from './cuenta'
@@ -18,8 +18,6 @@ import { saldoMesa, totalMesa } from './totales'
 // Atajos: F2 efectivo, F3 tarjeta, Enter cobra, Esc cancela.
 
 const BILLETES = [20_000, 50_000, 100_000]
-const soloDigitos = (texto: string) => Number(texto.replace(/\D/g, '').slice(0, 9)) || 0
-const conPuntos = (n: number) => (n ? n.toLocaleString('es-CO') : '')
 
 export function Cobro() {
   const numero = useMesaDeLaRuta(12)

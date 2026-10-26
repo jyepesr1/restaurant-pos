@@ -70,7 +70,13 @@ describe('permisos', () => {
 
   it('pagos y cierres solo desde la caja', () => {
     expect([...SOLO_DESDE_CAJA].sort()).toEqual(
-      ['PagoAnulado', 'PagoRegistrado', 'PedidoCerrado', 'ReembolsoRegistrado'].sort(),
+      [
+        'PagoAnulado',
+        'PagoRegistrado',
+        'PedidoCerrado',
+        'ReembolsoRegistrado',
+        'TurnoAbierto',
+      ].sort(),
     )
   })
 

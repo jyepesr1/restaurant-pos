@@ -272,7 +272,7 @@ function transicion(
 function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultado {
   const hora = evento.recibido_en ?? evento.hora_estimada_hub
 
-  // Un evento de producto (agotado) no cambia ningún pedido.
+  // Un evento de producto (agotado) o de caja no cambia ningún pedido.
   if (evento.agregado_tipo !== 'pedido')
     return sinCambio(estado, 'no_es_del_pedido', `${evento.tipo} no es de un pedido`)
 
@@ -352,6 +352,8 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
       )
       nuevo.siguienteOrden += 1
       nuevo.vaciadoAlMover = false
+      // Lo pedido después de la precuenta la deja vieja: la mesa ya no está «pidiendo la cuenta».
+      nuevo.ultimaPrecuenta = null
       if (excedeTope(nuevo))
         return sinCambio(estado, 'total_excede', 'El pedido pasaría del tope permitido')
       return listo(nuevo)
@@ -744,6 +746,7 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
         cuentaId: d.cuenta_id,
         turnoCajaId: d.turno_caja_id,
         medio: d.medio,
+        medioPropioId: d.medio_propio_id ?? null,
         monto: d.monto,
         propina: d.propina,
         ajusteRedondeo: d.ajuste_redondeo,
@@ -820,6 +823,7 @@ function aplicar(estado: EstadoPedido | null, evento: EventoAplicable): Resultad
     // Filtrados arriba; aquí solo para que el switch cubra todos los tipos.
     case 'ProductoAgotado':
     case 'ProductoDisponible':
+    case 'TurnoAbierto':
       return sinCambio(estado, 'no_es_del_pedido', `${evento.tipo} no es de un pedido`)
   }
 }

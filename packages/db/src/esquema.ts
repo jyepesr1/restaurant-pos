@@ -22,6 +22,7 @@ export const TABLAS_VERSIONADAS = [
   'modificador',
   'producto_estacion',
   'impresora',
+  'datafono',
 ] as const
 
 /** Solo se agregan filas: la base rechaza UPDATE y DELETE. */

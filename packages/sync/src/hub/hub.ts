@@ -42,6 +42,29 @@ export interface ConfigHub {
    */
   alGuardar?: (evento: EventoPedido, pedidos: CambioPedido[]) => void
   alFalloAlGuardar?: (error: unknown, eventoId: string) => void
+  /**
+   * Las reglas de cobro que tiene hoy el restaurante (tarea 1.6): un pago en efectivo trae su
+   * regla de redondeo (docs/DINERO.md#pagos), el medio está habilitado y la tarjeta nombra un
+   * datáfono activo. Sin ellas, no se revisan.
+   */
+  reglasCobro?: () => {
+    multiplo: number
+    modo: string
+    medios: readonly string[]
+    /** Los medios propios activos del restaurante. */
+    mediosPropios?: readonly string[]
+    datafonos: readonly string[]
+  }
+}
+
+/** Un turno de caja abierto (tarea 1.6; el cierre y el arqueo son de la 1.7). */
+export interface TurnoCaja {
+  id: string
+  /** Por ahora, el equipo de caja donde se abrió. */
+  cajaId: string
+  base: number
+  abiertoEn: string
+  usuarioId: string
 }
 
 export interface CambioPedido {
@@ -193,6 +216,8 @@ const paraDispositivo = (evento: EventoPedido, dispositivoId: string | null): Ev
 export class HubSync {
   /** Solo pedidos abiertos: los cerrados se reconstruyen de la base. */
   private readonly pedidos = new Map<string, EstadoPedido>()
+  /** Turnos de caja abiertos, por su id. */
+  private readonly turnos = new Map<string, TurnoCaja>()
   private readonly almacen: AlmacenHub
   private readonly config: ConfigHub
 
@@ -206,6 +231,12 @@ export class HubSync {
   tienePedidoAbierto(mesaId: string): boolean {
     for (const p of this.pedidos.values()) if (ocupa(p, mesaId)) return true
     return false
+  }
+
+  /** El turno abierto de una caja, si tiene. */
+  turnoAbierto(cajaId: string): TurnoCaja | null {
+    for (const t of this.turnos.values()) if (t.cajaId === cajaId) return t
+    return null
   }
 
   /** Proyección actual de un pedido. */
@@ -318,6 +349,7 @@ export class HubSync {
     for (;;) {
       const pagina = this.almacen.eventosDesde(desde, TAMANO_PAGINA)
       for (const evento of pagina) {
+        this.aplicarATurnos(evento)
         if (evento.agregado_tipo !== 'pedido') continue
         for (const id of pedidosDe(evento)) {
           const r = aplicarEvento(todos.get(id) ?? null, evento)
@@ -330,7 +362,61 @@ export class HubSync {
     for (const [id, pedido] of todos) if (pedido.estado === 'abierto') this.pedidos.set(id, pedido)
   }
 
+  private aplicarATurnos(evento: EventoPedido) {
+    if (evento.tipo !== 'TurnoAbierto') return
+    this.turnos.set(evento.agregado_id, {
+      id: evento.agregado_id,
+      cajaId: evento.datos.caja_id,
+      base: evento.datos.base,
+      abiertoEn: evento.recibido_en,
+      usuarioId: evento.usuario_id,
+    })
+  }
+
+  /**
+   * Reglas de la caja que no dependen del pedido (tarea 1.6): una caja abre un solo turno a la
+   * vez, y cada pago, anulación o reembolso cae en un turno abierto de la caja que lo registra.
+   * Un pago usa un medio habilitado, un datáfono activo y la regla de redondeo del restaurante.
+   */
+  private problemaDeCaja(evento: EventoNuevo): string | null {
+    if (evento.tipo === 'TurnoAbierto') {
+      if (evento.datos.caja_id !== evento.dispositivo_id) return 'caja_distinta'
+      if (
+        this.turnos.has(evento.agregado_id) ||
+        this.almacen.eventosDeAgregado(evento.agregado_id).length > 0
+      )
+        return 'turno_ya_existe'
+      if (this.turnoAbierto(evento.datos.caja_id)) return 'turno_ya_abierto'
+      return null
+    }
+    if (
+      evento.tipo !== 'PagoRegistrado' &&
+      evento.tipo !== 'PagoAnulado' &&
+      evento.tipo !== 'ReembolsoRegistrado'
+    )
+      return null
+    const turno = this.turnos.get(evento.datos.turno_caja_id)
+    if (!turno) return 'sin_turno'
+    if (turno.cajaId !== evento.dispositivo_id) return 'turno_de_otra_caja'
+    if (evento.tipo === 'PagoRegistrado' && this.config.reglasCobro) {
+      const reglas = this.config.reglasCobro()
+      const { redondeo, medio, datafono, medio_propio_id } = evento.datos
+      if (
+        medio === 'otro'
+          ? !medio_propio_id || !(reglas.mediosPropios ?? []).includes(medio_propio_id)
+          : !reglas.medios.includes(medio)
+      )
+        return 'medio_no_habilitado'
+      if (datafono && !reglas.datafonos.includes(datafono.datafono_id))
+        return 'datafono_desconocido'
+      if (redondeo && (redondeo.multiplo !== reglas.multiplo || redondeo.modo !== reglas.modo))
+        return 'redondeo_distinto'
+    }
+    return null
+  }
+
   private aplicarAProyecciones(evento: EventoPedido) {
+    this.aplicarATurnos(evento)
     if (evento.agregado_tipo !== 'pedido') return
     for (const id of pedidosDe(evento)) {
       const r = aplicarEvento(this.pedido(id), evento)
@@ -415,6 +501,10 @@ export class HubSync {
       afecta: [],
       autorizado_por_id: acceso.autorizadoPorId,
     } as EventoPedido
+
+    // 5b. Caja: turno abierto y redondeo del restaurante.
+    const deCaja = this.problemaDeCaja(evento)
+    if (deCaja) return this.rechazar(conexion, datos, deCaja, recibidoEn)
 
     // 6. Aplicar a cada pedido y decidir. Un evento de producto (agotado) no toca pedidos.
     const esDePedido = evento.agregado_tipo === 'pedido'

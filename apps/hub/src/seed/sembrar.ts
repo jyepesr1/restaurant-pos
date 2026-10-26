@@ -156,6 +156,15 @@ export function sembrar(
       guardar('estacion', id(`estacion:${clave}`), { nombre: e.nombre, orden: e.orden })
     const impuestoId = id('impuesto:inc')
     guardar('impuesto', impuestoId, { ...IMPUESTO }, { soloCrear: true })
+    // Datáfonos Bold del piloto (tarea 1.6). Solo se crean: el administrador los renombra, agrega
+    // o archiva en «Caja y pagos», y el seed lo respeta.
+    for (const n of [1, 2])
+      guardar(
+        'datafono',
+        id(`datafono:bold-${n}`),
+        { nombre: `Bold ${n}`, proveedor: 'bold' },
+        { soloCrear: true },
+      )
 
     // Carta. Primero los grupos de modificadores, que los productos comparten.
     const grupos = new Map<string, GrupoCarta>()

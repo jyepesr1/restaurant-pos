@@ -4,8 +4,10 @@ import {
   type Comanda,
   escpos,
   lineasComanda,
+  lineasPrecuenta,
   lineasPrueba,
   type PaginaCodigos,
+  type Precuenta,
 } from '@pos/printing'
 import type { EstadoImpresora } from '@pos/sync'
 import { type Enviar, enviarPorRed } from './transporte'
@@ -334,7 +336,9 @@ export class ColaImpresion {
     const lineas =
       trabajo.tipo === 'prueba'
         ? lineasPrueba(contenido as PruebaImpresion, formato)
-        : lineasComanda(contenido as Comanda, formato)
+        : trabajo.tipo === 'precuenta'
+          ? lineasPrecuenta(contenido as Precuenta, formato)
+          : lineasComanda(contenido as Comanda, formato)
     return escpos(lineas, formato)
   }
 
