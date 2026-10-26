@@ -6,26 +6,26 @@ import { decodificar, type PaginaCodigos } from './codificacion'
 const PAGINA_DE: Record<number, PaginaCodigos> = { 2: 'pc850', 16: 'wpc1252' }
 
 export interface Leido {
-  texto: string
+  text: string
   /** Cuántas veces se cortó el papel (una por comanda). */
   cortes: number
 }
 
 export function leerEscpos(bytes: Uint8Array): Leido {
-  let pagina: PaginaCodigos = 'sin_tildes'
-  let linea: number[] = []
-  const lineas: string[] = []
+  let pagina: PaginaCodigos = 'no_accents'
+  let line: number[] = []
+  const lines: string[] = []
   let cortes = 0
   for (let i = 0; i < bytes.length; i++) {
     const b = bytes[i] as number
     if (b === 0x1b) {
-      const orden = bytes[i + 1]
-      if (orden === 0x40) i += 1
-      else if (orden === 0x74) {
-        pagina = PAGINA_DE[bytes[i + 2] as number] ?? 'sin_tildes'
+      const position = bytes[i + 1]
+      if (position === 0x40) i += 1
+      else if (position === 0x74) {
+        pagina = PAGINA_DE[bytes[i + 2] as number] ?? 'no_accents'
         i += 2
-      } else if (orden === 0x64) {
-        for (let n = 0; n < (bytes[i + 2] as number); n++) lineas.push('')
+      } else if (position === 0x64) {
+        for (let n = 0; n < (bytes[i + 2] as number); n++) lines.push('')
         i += 2
       } else i += 2
       continue
@@ -33,18 +33,18 @@ export function leerEscpos(bytes: Uint8Array): Leido {
     if (b === 0x1d) {
       if (bytes[i + 1] === 0x56) {
         cortes += 1
-        lineas.push('✂ ─────────')
+        lines.push('✂ ─────────')
         i += 3
       } else i += 2
       continue
     }
     if (b === 0x0a) {
-      lineas.push(decodificar(linea, pagina))
-      linea = []
+      lines.push(decodificar(line, pagina))
+      line = []
       continue
     }
-    linea.push(b)
+    line.push(b)
   }
-  if (linea.length > 0) lineas.push(decodificar(linea, pagina))
-  return { texto: lineas.join('\n'), cortes }
+  if (line.length > 0) lines.push(decodificar(line, pagina))
+  return { text: lines.join('\n'), cortes }
 }

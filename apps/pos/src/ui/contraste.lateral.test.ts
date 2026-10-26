@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { MARCAS } from './marca'
+import { BRANDS } from './marca'
 
 // Colores nuevos de la tarea 1.3c: `lateral` (barra lateral y superior) y `linea` (separadores que
 // no son controles), en Faro y en cada marca de restaurante, en claro y en oscuro. Se leen de
@@ -10,7 +10,7 @@ const css = readFileSync(new URL('../estilos.css', import.meta.url), 'utf8')
 const sinComentarios = css.replace(/\/\*[\s\S]*?\*\//g, '')
 const bloques = [...sinComentarios.matchAll(/([^{};]+)\{([^{}]*)\}/g)].map((m) => ({
   selectores: (m[1] ?? '').split(',').map((x) => x.trim()),
-  texto: m[2] ?? '',
+  text: m[2] ?? '',
   variables: Object.fromEntries(
     [...(m[2] ?? '').matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})\b/gi)].map((v) => [v[1], v[2]]),
   ),
@@ -18,12 +18,12 @@ const bloques = [...sinComentarios.matchAll(/([^{};]+)\{([^{}]*)\}/g)].map((m) =
 
 const bloqueDe = (selector: string) => bloques.find((b) => b.selectores.includes(selector))
 
-function variables(marca: string | null, oscuro: boolean): Record<string, string> {
+function variables(brand: string | null, dark: boolean): Record<string, string> {
   const aplican = [
     ':root',
-    ...(oscuro ? [':root.oscuro'] : []),
-    ...(marca ? [`:root[data-marca="${marca}"]`] : []),
-    ...(marca && oscuro ? [`:root[data-marca="${marca}"].oscuro`] : []),
+    ...(dark ? [':root.oscuro'] : []),
+    ...(brand ? [`:root[data-marca="${brand}"]`] : []),
+    ...(brand && dark ? [`:root[data-marca="${brand}"].oscuro`] : []),
   ]
   const v: Record<string, string> = {}
   for (const b of bloques)
@@ -32,11 +32,11 @@ function variables(marca: string | null, oscuro: boolean): Record<string, string
 }
 
 function luminancia(hex: string): number {
-  const canal = (i: number) => {
+  const channel = (i: number) => {
     const c = Number.parseInt(hex.slice(i, i + 2), 16) / 255
     return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
   }
-  return 0.2126 * canal(1) + 0.7152 * canal(3) + 0.0722 * canal(5)
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
 }
 function contraste(a: string, b: string): number {
   const [x, y] = [luminancia(a), luminancia(b)].sort((p, q) => q - p) as [number, number]
@@ -44,56 +44,52 @@ function contraste(a: string, b: string): number {
 }
 
 // Faro es el diseño base (sin atributo); las demás, las del código.
-const CASOS = MARCAS.flatMap(({ marca, nombre }) =>
+const CASOS = BRANDS.flatMap(({ brand, name }) =>
   [false, true].map(
-    (oscuro) =>
-      [
-        `${nombre} ${oscuro ? 'oscuro' : 'claro'}`,
-        marca === 'faro' ? null : marca,
-        oscuro,
-      ] as const,
+    (dark) =>
+      [`${name} ${dark ? 'oscuro' : 'claro'}`, brand === 'faro' ? null : brand, dark] as const,
   ),
 )
 
 describe('lateral y linea: definidos', () => {
   it('Faro los define en su base clara y en la oscura', () => {
     for (const selector of [':root', ':root.oscuro'])
-      for (const nombre of ['lateral', 'linea'])
-        expect(bloqueDe(selector)?.variables[nombre], `${selector} ${nombre}`).toMatch(
+      for (const name of ['lateral', 'linea'])
+        expect(bloqueDe(selector)?.variables[name], `${selector} ${name}`).toMatch(
           /^#[0-9a-f]{6}$/i,
         )
   })
 
-  it.each(MARCAS.filter((m) => m.marca !== 'faro'))(
+  it.each(BRANDS.filter((m) => m.brand !== 'faro'))(
     '$nombre los define en su propio bloque, de día y de noche (no los hereda de Faro)',
-    ({ marca }) => {
+    ({ brand }) => {
       for (const selector of [
-        `:root[data-marca="${marca}"]`,
-        `:root[data-marca="${marca}"].oscuro`,
+        `:root[data-marca="${brand}"]`,
+        `:root[data-marca="${brand}"].oscuro`,
       ])
-        for (const nombre of ['lateral', 'linea'])
-          expect(bloqueDe(selector)?.variables[nombre], `${selector} ${nombre}`).toMatch(
+        for (const name of ['lateral', 'linea'])
+          expect(bloqueDe(selector)?.variables[name], `${selector} ${name}`).toMatch(
             /^#[0-9a-f]{6}$/i,
           )
     },
   )
 
   it('la marca de restaurante no repite el lateral ni la línea de Faro (se nota que es otra)', () => {
-    for (const { marca } of MARCAS.filter((m) => m.marca !== 'faro'))
-      for (const oscuro of [false, true]) {
-        const faro = variables(null, oscuro)
-        const propia = variables(marca, oscuro)
-        expect(propia.lateral, `${marca} ${oscuro} lateral`).not.toBe(faro.lateral)
-        expect(propia.linea, `${marca} ${oscuro} linea`).not.toBe(faro.linea)
+    for (const { brand } of BRANDS.filter((m) => m.brand !== 'faro'))
+      for (const dark of [false, true]) {
+        const faro = variables(null, dark)
+        const propia = variables(brand, dark)
+        expect(propia.lateral, `${brand} ${dark} lateral`).not.toBe(faro.lateral)
+        expect(propia.linea, `${brand} ${dark} linea`).not.toBe(faro.linea)
       }
   })
 
   it('están escritos como #rrggbb de seis dígitos (otro formato no lo leería la prueba de contraste)', () => {
     for (const b of bloques)
-      for (const nombre of ['lateral', 'linea']) {
-        const lineas = [...b.texto.matchAll(new RegExp(`--${nombre}:\\s*([^;]+);`, 'g'))]
-        for (const l of lineas)
-          expect(l[1]?.trim(), `${b.selectores} ${nombre}`).toMatch(/^#[0-9a-f]{6}$/i)
+      for (const name of ['lateral', 'linea']) {
+        const lines = [...b.text.matchAll(new RegExp(`--${name}:\\s*([^;]+);`, 'g'))]
+        for (const l of lines)
+          expect(l[1]?.trim(), `${b.selectores} ${name}`).toMatch(/^#[0-9a-f]{6}$/i)
       }
   })
 
@@ -104,22 +100,20 @@ describe('lateral y linea: definidos', () => {
 
   it('cada variable que usa un color de Tailwind está definida en la base (no hay colores huérfanos)', () => {
     const base = bloqueDe(':root')?.variables ?? {}
-    const usadas = [...css.matchAll(/--color-[a-z0-9-]+:\s*var\(--([a-z0-9-]+)\)/g)].map(
-      (m) => m[1],
-    )
-    expect(usadas.length).toBeGreaterThan(10)
-    for (const nombre of usadas) expect(base[nombre as string], nombre).toBeDefined()
+    const used = [...css.matchAll(/--color-[a-z0-9-]+:\s*var\(--([a-z0-9-]+)\)/g)].map((m) => m[1])
+    expect(used.length).toBeGreaterThan(10)
+    for (const name of used) expect(base[name as string], name).toBeDefined()
   })
 })
 
-describe.each(CASOS)('lateral y linea: %s', (_nombre, marca, oscuro) => {
-  const v = variables(marca, oscuro)
+describe.each(CASOS)('lateral y linea: %s', (_nombre, brand, dark) => {
+  const v = variables(brand, dark)
 
   it('el texto y el texto suave se leen sobre el lateral (AA, 4,5:1)', () => {
-    for (const texto of ['texto', 'texto-suave'])
+    for (const text of ['texto', 'texto-suave'])
       expect(
-        contraste(v[texto] as string, v.lateral as string),
-        `${texto} sobre lateral`,
+        contraste(v[text] as string, v.lateral as string),
+        `${text} sobre lateral`,
       ).toBeGreaterThanOrEqual(4.5)
   })
 

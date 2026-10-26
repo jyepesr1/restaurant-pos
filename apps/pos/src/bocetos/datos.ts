@@ -1,4 +1,4 @@
-import { type CategoriaCarta, convertirCarta, type ProductoCarta } from '@pos/core'
+import { convertMenu, type MenuCategory, type MenuProduct } from '@pos/core'
 import { parse } from 'yaml'
 import textoCarta from '../../../../docs/datos/carta-la-spritzzeria.yaml?raw'
 
@@ -8,30 +8,28 @@ import textoCarta from '../../../../docs/datos/carta-la-spritzzeria.yaml?raw'
 // Ojo: esto NO es el modelo de la Fase 1. Allí todo cambio es un evento con ULID (ADR-005), nada
 // se borra y los pagos los registra el hub; aquí se simplifica para poder navegar.
 
-export const carta: CategoriaCarta[] = convertirCarta(parse(textoCarta))
-export const productos: ProductoCarta[] = carta.flatMap((c) => c.productos)
-export const estacionDe = new Map(
-  carta.flatMap((c) => c.productos.map((p) => [p.clave, c.estacion])),
-)
+export const menu: MenuCategory[] = convertMenu(parse(textoCarta))
+export const products: MenuProduct[] = menu.flatMap((c) => c.products)
+export const estacionDe = new Map(menu.flatMap((c) => c.products.map((p) => [p.key, c.station])))
 /** Texto en que se busca un producto: su nombre y su categoría ("hamburgesa" → Spritz Burguer). */
 export const textoDeBusqueda = new Map(
-  carta.flatMap((c) => c.productos.map((p) => [p.clave, `${p.nombre} ${c.nombre}`])),
+  menu.flatMap((c) => c.products.map((p) => [p.key, `${p.name} ${c.name}`])),
 )
 
-export const producto = (nombre: string): ProductoCarta => {
-  const p = productos.find((x) => x.nombre === nombre)
-  if (!p) throw new Error(`La carta no tiene «${nombre}»`)
+export const product = (name: string): MenuProduct => {
+  const p = products.find((x) => x.name === name)
+  if (!p) throw new Error(`La carta no tiene «${name}»`)
   return p
 }
 
 export type EstadoMesa =
-  | 'libre'
-  | 'tomando'
-  | 'en_cocina'
-  | 'listo'
-  | 'precuenta'
-  | 'reservada'
-  | 'sucia'
+  | 'free'
+  | 'taking'
+  | 'in_kitchen'
+  | 'ready'
+  | 'preBill'
+  | 'reserved'
+  | 'dirty'
 
 export const MOTIVOS_ANULACION = [
   'Error del mesero',
@@ -40,177 +38,177 @@ export const MOTIVOS_ANULACION = [
   'Producto dañado',
 ] as const
 
-export interface ItemPedido {
+export interface OrderItem {
   id: string
-  producto: ProductoCarta
-  variante: string | null
+  product: MenuProduct
+  variant: string | null
   /** Opciones elegidas (sabor, término), con su precio extra. */
-  opciones: { nombre: string; precioExtra: number }[]
-  precioUnitario: number
-  cantidad: number
-  comensal: number | null
-  notas: string
+  options: { name: string; extraPrice: number }[]
+  unitPrice: number
+  quantity: number
+  guest: number | null
+  notes: string
   /** Cuándo salió a cocina o barra (ms); null si aún no se envía. */
   enviadoEn: number | null
   /** Cocina o barra ya lo entregó. */
   despachado: boolean
-  anulado: { motivo: string; yaPreparado: boolean } | null
+  voided: { reason: string; alreadyPrepared: boolean } | null
 }
 
-export type Medio = 'efectivo' | 'tarjeta'
+export type Medio = 'cash' | 'card'
 
 export interface PagoHecho {
-  medio: Medio
+  method: Medio
   /** La parte del saldo que cancela. */
-  monto: number
-  ajuste: number
-  propina: number
-  recibido: number | null
-  cambio: number | null
+  amount: number
+  adjustment: number
+  tip: number
+  tendered: number | null
+  change: number | null
 }
 
 export interface Mesa {
   numero: number
-  estado: EstadoMesa
+  status: EstadoMesa
   /** Cuándo se abrió (ms). */
   abiertaEn: number | null
-  comensales: number
-  mesero: string | null
-  items: ItemPedido[]
-  pagos: PagoHecho[]
+  guests: number
+  waiter: string | null
+  items: OrderItem[]
+  payments: PagoHecho[]
 }
 
-let siguiente = 0
+let next = 0
 export const nuevoItemId = () => {
-  siguiente += 1
-  return `item-${siguiente}`
+  next += 1
+  return `item-${next}`
 }
 
 const MINUTO = 60_000
 const haceMinutos = (m: number) => Date.now() - m * MINUTO
 
 export function item(
-  nombre: string,
-  campos: Partial<Omit<ItemPedido, 'producto'>> & { enviadoHace?: number } = {},
-): ItemPedido {
-  const p = producto(nombre)
-  const { enviadoHace, ...resto } = campos
-  const variante = resto.variante ?? p.variantes[0]?.nombre ?? null
-  const precio = p.variantes.find((v) => v.nombre === variante)?.precio ?? p.precio
+  name: string,
+  fields: Partial<Omit<OrderItem, 'product'>> & { enviadoHace?: number } = {},
+): OrderItem {
+  const p = product(name)
+  const { enviadoHace, ...rest } = fields
+  const variant = rest.variant ?? p.variants[0]?.name ?? null
+  const price = p.variants.find((v) => v.name === variant)?.price ?? p.price
   return {
     id: nuevoItemId(),
-    producto: p,
-    variante,
-    opciones: [],
-    precioUnitario: precio,
-    cantidad: 1,
-    comensal: null,
-    notas: '',
+    product: p,
+    variant,
+    options: [],
+    unitPrice: price,
+    quantity: 1,
+    guest: null,
+    notes: '',
     enviadoEn: enviadoHace === undefined ? null : haceMinutos(enviadoHace),
     despachado: false,
-    anulado: null,
-    ...resto,
+    voided: null,
+    ...rest,
   }
 }
 
 export const mesaLibre = (numero: number): Mesa => ({
   numero,
-  estado: 'libre',
+  status: 'free',
   abiertaEn: null,
-  comensales: 0,
-  mesero: null,
+  guests: 0,
+  waiter: null,
   items: [],
-  pagos: [],
+  payments: [],
 })
 
 /** El salón de ejemplo: algunas mesas en cada estado, para ver cómo se distinguen. */
 export function mesasIniciales(): Mesa[] {
-  const mesas = Array.from({ length: 25 }, (_, i) => mesaLibre(i + 1))
-  const poner = (numero: number, mesa: Partial<Mesa> & { abiertaHace?: number }) => {
-    const { abiertaHace, ...resto } = mesa
-    mesas[numero - 1] = {
-      ...(mesas[numero - 1] as Mesa),
+  const tables = Array.from({ length: 25 }, (_, i) => mesaLibre(i + 1))
+  const poner = (numero: number, table: Partial<Mesa> & { abiertaHace?: number }) => {
+    const { abiertaHace, ...rest } = table
+    tables[numero - 1] = {
+      ...(tables[numero - 1] as Mesa),
       ...(abiertaHace === undefined ? {} : { abiertaEn: haceMinutos(abiertaHace) }),
-      ...resto,
+      ...rest,
     }
   }
   poner(2, {
-    estado: 'tomando',
+    status: 'taking',
     abiertaHace: 3,
-    comensales: 2,
-    mesero: 'Mesero 1',
-    items: [item('Aperol Spritz', { cantidad: 2 })],
+    guests: 2,
+    waiter: 'Mesero 1',
+    items: [item('Aperol Spritz', { quantity: 2 })],
   })
   poner(4, {
-    estado: 'en_cocina',
+    status: 'in_kitchen',
     abiertaHace: 18,
-    comensales: 4,
-    mesero: 'Mesero 2',
+    guests: 4,
+    waiter: 'Mesero 2',
     items: [
       item('Quattro Formaggi', { enviadoHace: 12 }),
       item('Burrata Spritz', { enviadoHace: 12 }),
-      item('Aperol Spritz', { cantidad: 3, enviadoHace: 12 }),
-      item('Ramón Bilbao Crianza', { variante: 'Botella', enviadoHace: 12 }),
+      item('Aperol Spritz', { quantity: 3, enviadoHace: 12 }),
+      item('Ramón Bilbao Crianza', { variant: 'Botella', enviadoHace: 12 }),
     ],
   })
   poner(7, {
-    estado: 'en_cocina',
+    status: 'in_kitchen',
     abiertaHace: 35,
-    comensales: 2,
-    mesero: 'Mesero 1',
+    guests: 2,
+    waiter: 'Mesero 1',
     items: [
       item('Spritz Burguer', {
-        opciones: [{ nombre: 'Medio', precioExtra: 0 }],
-        notas: 'Sin cebolla',
+        options: [{ name: 'Medio', extraPrice: 0 }],
+        notes: 'Sin cebolla',
         enviadoHace: 27,
       }),
-      item('Té Hatsu', { opciones: [{ nombre: 'Rojo', precioExtra: 0 }], enviadoHace: 27 }),
+      item('Té Hatsu', { options: [{ name: 'Rojo', extraPrice: 0 }], enviadoHace: 27 }),
     ],
   })
   poner(9, {
-    estado: 'listo',
+    status: 'ready',
     abiertaHace: 22,
-    comensales: 2,
-    mesero: 'Mesero 3',
+    guests: 2,
+    waiter: 'Mesero 3',
     items: [
-      item('Margarita Spritz', { cantidad: 2, enviadoHace: 15, despachado: true }),
+      item('Margarita Spritz', { quantity: 2, enviadoHace: 15, despachado: true }),
       item('Pinsa', { enviadoHace: 15, despachado: true }),
     ],
   })
   poner(12, {
-    estado: 'precuenta',
+    status: 'preBill',
     abiertaHace: 64,
-    comensales: 3,
-    mesero: 'Mesero 3',
+    guests: 3,
+    waiter: 'Mesero 3',
     items: [
-      item('Quattro Formaggi', { comensal: 1, enviadoHace: 50, despachado: true }),
+      item('Quattro Formaggi', { guest: 1, enviadoHace: 50, despachado: true }),
       item('Tagliata di Manzo', {
-        comensal: 2,
-        opciones: [{ nombre: 'Tres cuartos', precioExtra: 0 }],
+        guest: 2,
+        options: [{ name: 'Tres cuartos', extraPrice: 0 }],
         enviadoHace: 50,
         despachado: true,
       }),
-      item('Patatine al Tartufo', { comensal: 3, enviadoHace: 50, despachado: true }),
-      item('Ramón Bilbao Crianza', { variante: 'Botella', enviadoHace: 50, despachado: true }),
+      item('Patatine al Tartufo', { guest: 3, enviadoHace: 50, despachado: true }),
+      item('Ramón Bilbao Crianza', { variant: 'Botella', enviadoHace: 50, despachado: true }),
       item('Té Hatsu', {
-        comensal: 3,
-        opciones: [{ nombre: 'Amarillo', precioExtra: 0 }],
+        guest: 3,
+        options: [{ name: 'Amarillo', extraPrice: 0 }],
         enviadoHace: 50,
         despachado: true,
       }),
     ],
   })
-  poner(15, { estado: 'reservada' })
-  poner(18, { estado: 'sucia' })
+  poner(15, { status: 'reserved' })
+  poner(18, { status: 'dirty' })
   poner(21, {
-    estado: 'en_cocina',
+    status: 'in_kitchen',
     abiertaHace: 9,
-    comensales: 5,
-    mesero: 'Mesero 2',
+    guests: 5,
+    waiter: 'Mesero 2',
     items: [
-      item('Pinsa', { cantidad: 2, enviadoHace: 6 }),
-      item('Limonada de Coco', { cantidad: 5, enviadoHace: 6 }),
+      item('Pinsa', { quantity: 2, enviadoHace: 6 }),
+      item('Limonada de Coco', { quantity: 5, enviadoHace: 6 }),
     ],
   })
-  return mesas
+  return tables
 }

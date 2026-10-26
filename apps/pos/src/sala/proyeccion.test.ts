@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import {
   estadoMesa,
@@ -6,11 +6,11 @@ import {
   type PedidoVisible,
   pedidosAbiertos as proyectar,
 } from './proyeccion'
-import { apertura, datosItem, enOrden, local } from './pruebas'
+import { datosItem, inOrder, local, opening } from './pruebas'
 
-const pedidosAbiertos = (locales: Parameters<typeof enOrden>[0]) => proyectar(enOrden(locales))
+const pedidosAbiertos = (locales: Parameters<typeof inOrder>[0]) => proyectar(inOrder(locales))
 
-const itemId = (l: ReturnType<typeof local>) => (l.evento.datos as { item_id: string }).item_id
+const itemId = (l: ReturnType<typeof local>) => (l.event.data as { item_id: string }).item_id
 
 describe('pedidosAbiertos', () => {
   it('sin eventos no hay pedidos', () => {
@@ -18,63 +18,63 @@ describe('pedidosAbiertos', () => {
   })
 
   it('arma el pedido con sus ítems y el neto', () => {
-    const p = nuevoId()
+    const p = newId()
     const r = pedidosAbiertos([
-      local('PedidoAbierto', p, apertura),
-      local('ItemAgregado', p, datosItem({ precio_unitario: 10_000 })),
-      local('ItemAgregado', p, datosItem({ precio_unitario: 5_000, cantidad: 2 })),
+      local('OrderOpened', p, opening),
+      local('ItemAdded', p, datosItem({ unit_price: 10_000 })),
+      local('ItemAdded', p, datosItem({ unit_price: 5_000, quantity: 2 })),
     ])
     expect(r).toHaveLength(1)
-    expect(r[0]?.estado.id).toBe(p)
-    expect(Object.keys(r[0]?.estado.items ?? {})).toHaveLength(2)
+    expect(r[0]?.status.id).toBe(p)
+    expect(Object.keys(r[0]?.status.items ?? {})).toHaveLength(2)
     expect(r[0]?.total).toBe(20_000)
     expect(r[0]?.porConfirmar).toBe(false)
     expect(r[0]?.itemsPorConfirmar.size).toBe(0)
   })
 
   it('marca como por confirmar solo los ítems pendientes de confirmar', () => {
-    const p = nuevoId()
-    const ya = local('ItemAgregado', p, datosItem())
-    const falta = local('ItemAgregado', p, datosItem(), 'pendiente')
-    const [v] = pedidosAbiertos([local('PedidoAbierto', p, apertura), ya, falta])
+    const p = newId()
+    const already = local('ItemAdded', p, datosItem())
+    const missing = local('ItemAdded', p, datosItem(), 'pending')
+    const [v] = pedidosAbiertos([local('OrderOpened', p, opening), already, missing])
     expect(v?.porConfirmar).toBe(true)
-    expect([...(v?.itemsPorConfirmar ?? [])]).toEqual([itemId(falta)])
+    expect([...(v?.itemsPorConfirmar ?? [])]).toEqual([itemId(missing)])
   })
 
   it('un ItemsEnviados pendiente marca como por confirmar los ítems de sus comandas', () => {
-    const p = nuevoId()
-    const [uno, dos, tres] = [1, 2, 3].map(() => local('ItemAgregado', p, datosItem()))
-    const ids = [uno, dos, tres].map((l) => itemId(l as never))
+    const p = newId()
+    const [one, two, tres] = [1, 2, 3].map(() => local('ItemAdded', p, datosItem()))
+    const ids = [one, two, tres].map((l) => itemId(l as never))
     const [v] = pedidosAbiertos([
-      local('PedidoAbierto', p, apertura),
-      uno as never,
-      dos as never,
+      local('OrderOpened', p, opening),
+      one as never,
+      two as never,
       tres as never,
       local(
-        'ItemsEnviados',
+        'ItemsSent',
         p,
         {
-          comandas: [
-            { comanda_id: nuevoId(), estacion_id: nuevoId(), item_ids: [ids[0] as string] },
-            { comanda_id: nuevoId(), estacion_id: nuevoId(), item_ids: [ids[2] as string] },
+          tickets: [
+            { ticket_id: newId(), station_id: newId(), item_ids: [ids[0] as string] },
+            { ticket_id: newId(), station_id: newId(), item_ids: [ids[2] as string] },
           ],
         },
-        'pendiente',
+        'pending',
       ),
     ])
     expect([...(v?.itemsPorConfirmar ?? [])].sort()).toEqual([ids[0], ids[2]].sort())
-    expect(v?.estado.items[ids[0] as string]?.estado).toBe('enviado')
-    expect(v?.estado.items[ids[1] as string]?.estado).toBe('pendiente')
+    expect(v?.status.items[ids[0] as string]?.status).toBe('sent')
+    expect(v?.status.items[ids[1] as string]?.status).toBe('pending')
   })
 
   it('un ItemsEnviados ya confirmado no marca nada', () => {
-    const p = nuevoId()
-    const item = local('ItemAgregado', p, datosItem())
+    const p = newId()
+    const item = local('ItemAdded', p, datosItem())
     const [v] = pedidosAbiertos([
-      local('PedidoAbierto', p, apertura),
+      local('OrderOpened', p, opening),
       item,
-      local('ItemsEnviados', p, {
-        comandas: [{ comanda_id: nuevoId(), estacion_id: nuevoId(), item_ids: [itemId(item)] }],
+      local('ItemsSent', p, {
+        tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [itemId(item)] }],
       }),
     ])
     expect(v?.itemsPorConfirmar.size).toBe(0)
@@ -82,123 +82,123 @@ describe('pedidosAbiertos', () => {
   })
 
   it('un evento pendiente que no es ItemAgregado marca el pedido pero no los ítems', () => {
-    const p = nuevoId()
-    const item = local('ItemAgregado', p, datosItem())
+    const p = newId()
+    const item = local('ItemAdded', p, datosItem())
     const [v] = pedidosAbiertos([
-      local('PedidoAbierto', p, apertura),
+      local('OrderOpened', p, opening),
       item,
-      local('ItemCambiado', p, { item_id: itemId(item), notas: 'sin hielo' }, 'pendiente'),
+      local('ItemChanged', p, { item_id: itemId(item), notes: 'sin hielo' }, 'pending'),
     ])
     expect(v?.porConfirmar).toBe(true)
     expect(v?.itemsPorConfirmar.size).toBe(0)
-    expect(v?.estado.items[itemId(item)]?.notas).toBe('sin hielo')
+    expect(v?.status.items[itemId(item)]?.notes).toBe('sin hielo')
   })
 
   it('un pedido abierto solo con eventos pendientes (sin conexión) ya se ve', () => {
-    const p = nuevoId()
+    const p = newId()
     const [v] = pedidosAbiertos([
-      local('PedidoAbierto', p, apertura, 'pendiente'),
-      local('ItemAgregado', p, datosItem({ precio_unitario: 32_000 }), 'pendiente'),
+      local('OrderOpened', p, opening, 'pending'),
+      local('ItemAdded', p, datosItem({ unit_price: 32_000 }), 'pending'),
     ])
     expect(v?.total).toBe(32_000)
     expect(v?.porConfirmar).toBe(true)
   })
 
   it('ignora los eventos rechazados y los que están en cuarentena', () => {
-    const p = nuevoId()
-    const malo = local('ItemAgregado', p, datosItem({ precio_unitario: 99_000 }), 'rechazado')
-    const raro = local('ItemAgregado', p, datosItem({ precio_unitario: 88_000 }), 'cuarentena')
+    const p = newId()
+    const badCase = local('ItemAdded', p, datosItem({ unit_price: 99_000 }), 'rejected')
+    const odd = local('ItemAdded', p, datosItem({ unit_price: 88_000 }), 'quarantine')
     const [v] = pedidosAbiertos([
-      local('PedidoAbierto', p, apertura),
-      local('ItemAgregado', p, datosItem({ precio_unitario: 1_000 })),
-      malo,
-      raro,
+      local('OrderOpened', p, opening),
+      local('ItemAdded', p, datosItem({ unit_price: 1_000 })),
+      badCase,
+      odd,
     ])
     expect(v?.total).toBe(1_000)
-    expect(v?.estado.items[itemId(malo)]).toBeUndefined()
-    expect(v?.estado.items[itemId(raro)]).toBeUndefined()
+    expect(v?.status.items[itemId(badCase)]).toBeUndefined()
+    expect(v?.status.items[itemId(odd)]).toBeUndefined()
   })
 
   it('un pedido cuya apertura fue rechazada no aparece', () => {
-    const p = nuevoId()
+    const p = newId()
     expect(
       pedidosAbiertos([
-        local('PedidoAbierto', p, apertura, 'rechazado'),
-        local('ItemAgregado', p, datosItem(), 'pendiente'),
+        local('OrderOpened', p, opening, 'rejected'),
+        local('ItemAdded', p, datosItem(), 'pending'),
       ]),
     ).toEqual([])
   })
 
   it('no muestra pedidos cerrados ni cancelados', () => {
-    const cerrado = nuevoId()
-    const cancelado = nuevoId()
-    const abierto = nuevoId()
+    const closed = newId()
+    const canceled = newId()
+    const opened = newId()
     const r = pedidosAbiertos([
-      local('PedidoAbierto', cerrado, apertura),
-      local('PedidoCerrado', cerrado, {}),
-      local('PedidoAbierto', cancelado, apertura),
-      local('PedidoCancelado', cancelado, {}, 'confirmado', { motivo: 'error' }),
-      local('PedidoAbierto', abierto, apertura),
+      local('OrderOpened', closed, opening),
+      local('OrderClosed', closed, {}),
+      local('OrderOpened', canceled, opening),
+      local('OrderCanceled', canceled, {}, 'confirmed', { reason: 'error' }),
+      local('OrderOpened', opened, opening),
     ])
-    expect(r.map((v) => v.estado.id)).toEqual([abierto])
+    expect(r.map((v) => v.status.id)).toEqual([opened])
   })
 
   it('un cierre rechazado deja el pedido abierto', () => {
-    const p = nuevoId()
+    const p = newId()
     const r = pedidosAbiertos([
-      local('PedidoAbierto', p, apertura),
-      local('PedidoCerrado', p, {}, 'rechazado'),
+      local('OrderOpened', p, opening),
+      local('OrderClosed', p, {}, 'rejected'),
     ])
     expect(r).toHaveLength(1)
   })
 
   it('ordena del más antiguo al más nuevo por hora de apertura', () => {
-    const [a, b, c] = [nuevoId(), nuevoId(), nuevoId()]
-    // La hora de apertura es la que puso el hub al recibirlo (`recibido_en`).
-    const abrir = (id: string, hora: string) => {
-      const l = local('PedidoAbierto', id, apertura)
-      return { ...l, evento: { ...l.evento, recibido_en: hora } }
+    const [a, b, c] = [newId(), newId(), newId()]
+    // La hora de apertura es la que puso el hub al recibirlo (`received_at`).
+    const open = (id: string, time: string) => {
+      const l = local('OrderOpened', id, opening)
+      return { ...l, event: { ...l.event, received_at: time } }
     }
     const r = pedidosAbiertos([
-      abrir(b, '2026-10-24T15:10:00.000Z'),
-      abrir(c, '2026-10-24T15:20:00.000Z'),
-      abrir(a, '2026-10-24T15:00:00.000Z'),
+      open(b, '2026-10-24T15:10:00.000Z'),
+      open(c, '2026-10-24T15:20:00.000Z'),
+      open(a, '2026-10-24T15:00:00.000Z'),
     ])
-    expect(r.map((v) => v.estado.id)).toEqual([a, b, c])
+    expect(r.map((v) => v.status.id)).toEqual([a, b, c])
   })
 
   it('separa los pedidos aunque sus eventos lleguen mezclados', () => {
-    const [a, b] = [nuevoId(), nuevoId()]
+    const [a, b] = [newId(), newId()]
     const r = pedidosAbiertos([
-      local('PedidoAbierto', a, apertura),
-      local('PedidoAbierto', b, apertura),
-      local('ItemAgregado', b, datosItem({ precio_unitario: 7_000 })),
-      local('ItemAgregado', a, datosItem({ precio_unitario: 3_000 })),
+      local('OrderOpened', a, opening),
+      local('OrderOpened', b, opening),
+      local('ItemAdded', b, datosItem({ unit_price: 7_000 })),
+      local('ItemAdded', a, datosItem({ unit_price: 3_000 })),
     ])
-    const totales = Object.fromEntries(r.map((v) => [v.estado.id, v.total]))
+    const totales = Object.fromEntries(r.map((v) => [v.status.id, v.total]))
     expect(totales).toEqual({ [a]: 3_000, [b]: 7_000 })
   })
 
   it('el mismo evento repetido no duplica el ítem', () => {
-    const p = nuevoId()
-    const item = local('ItemAgregado', p, datosItem({ precio_unitario: 4_000 }))
-    const [v] = pedidosAbiertos([local('PedidoAbierto', p, apertura), item, item])
+    const p = newId()
+    const item = local('ItemAdded', p, datosItem({ unit_price: 4_000 }))
+    const [v] = pedidosAbiertos([local('OrderOpened', p, opening), item, item])
     expect(v?.total).toBe(4_000)
   })
 })
 
 describe('itemsVigentes', () => {
   it('deja fuera los anulados y ordena por el orden en que se agregaron', () => {
-    const p = nuevoId()
-    const [a, b, c] = [1, 2, 3].map(() => local('ItemAgregado', p, datosItem()))
+    const p = newId()
+    const [a, b, c] = [1, 2, 3].map(() => local('ItemAdded', p, datosItem()))
     const [v] = pedidosAbiertos([
-      local('PedidoAbierto', p, apertura),
+      local('OrderOpened', p, opening),
       a as never,
       b as never,
       c as never,
-      local('ItemQuitado', p, { item_id: itemId(b as never) }, 'confirmado'),
+      local('ItemRemoved', p, { item_id: itemId(b as never) }, 'confirmed'),
     ])
-    expect(itemsVigentes((v as PedidoVisible).estado).map((i) => i.id)).toEqual([
+    expect(itemsVigentes((v as PedidoVisible).status).map((i) => i.id)).toEqual([
       itemId(a as never),
       itemId(c as never),
     ])
@@ -206,67 +206,67 @@ describe('itemsVigentes', () => {
 })
 
 describe('estadoMesa', () => {
-  const visible = (...eventos: ReturnType<typeof local>[]) => {
-    const p = eventos[0]?.evento.agregado_id as string
-    return pedidosAbiertos([local('PedidoAbierto', p, apertura), ...eventos])
+  const visible = (...events: ReturnType<typeof local>[]) => {
+    const p = events[0]?.event.aggregate_id as string
+    return pedidosAbiertos([local('OrderOpened', p, opening), ...events])
   }
   const envio = (p: string, ids: string[]) =>
-    local('ItemsEnviados', p, {
-      comandas: [{ comanda_id: nuevoId(), estacion_id: nuevoId(), item_ids: ids }],
+    local('ItemsSent', p, {
+      tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: ids }],
     })
 
   it('sin pedidos, o con pedidos sin ítems, está libre', () => {
-    expect(estadoMesa([])).toBe('libre')
-    const p = nuevoId()
-    expect(estadoMesa(pedidosAbiertos([local('PedidoAbierto', p, apertura)]))).toBe('libre')
+    expect(estadoMesa([])).toBe('free')
+    const p = newId()
+    expect(estadoMesa(pedidosAbiertos([local('OrderOpened', p, opening)]))).toBe('free')
   })
 
   it('con algo sin enviar está tomando', () => {
-    const p = nuevoId()
-    expect(estadoMesa(visible(local('ItemAgregado', p, datosItem())))).toBe('tomando')
+    const p = newId()
+    expect(estadoMesa(visible(local('ItemAdded', p, datosItem())))).toBe('taking')
   })
 
   it('con todo enviado está en cocina', () => {
-    const p = nuevoId()
-    const item = local('ItemAgregado', p, datosItem())
-    expect(estadoMesa(visible(item, envio(p, [itemId(item)])))).toBe('en_cocina')
+    const p = newId()
+    const item = local('ItemAdded', p, datosItem())
+    expect(estadoMesa(visible(item, envio(p, [itemId(item)])))).toBe('in_kitchen')
   })
 
   it('enviado más un ítem nuevo sin enviar vuelve a tomando', () => {
-    const p = nuevoId()
-    const uno = local('ItemAgregado', p, datosItem())
-    const dos = local('ItemAgregado', p, datosItem())
-    expect(estadoMesa(visible(uno, envio(p, [itemId(uno)]), dos))).toBe('tomando')
+    const p = newId()
+    const one = local('ItemAdded', p, datosItem())
+    const two = local('ItemAdded', p, datosItem())
+    expect(estadoMesa(visible(one, envio(p, [itemId(one)]), two))).toBe('taking')
   })
 
   it('un ítem retenido por curso cuenta como sin enviar', () => {
-    const p = nuevoId()
-    const item = local('ItemAgregado', p, datosItem({ curso: 'postre' }))
-    const mesa = visible(local('CursoRetenido', p, { curso: 'postre' }), item)
-    expect(Object.values(mesa[0]?.estado.items ?? {})[0]?.estado).toBe('retenido')
-    expect(estadoMesa(mesa)).toBe('tomando')
+    const p = newId()
+    const item = local('ItemAdded', p, datosItem({ course: 'dessert' }))
+    const table = visible(local('CourseHeld', p, { course: 'dessert' }), item)
+    expect(Object.values(table[0]?.status.items ?? {})[0]?.status).toBe('held')
+    expect(estadoMesa(table)).toBe('taking')
   })
 
   it('los ítems anulados no cuentan', () => {
-    const p = nuevoId()
-    const item = local('ItemAgregado', p, datosItem())
-    expect(estadoMesa(visible(item, local('ItemQuitado', p, { item_id: itemId(item) })))).toBe(
-      'libre',
+    const p = newId()
+    const item = local('ItemAdded', p, datosItem())
+    expect(estadoMesa(visible(item, local('ItemRemoved', p, { item_id: itemId(item) })))).toBe(
+      'free',
     )
   })
 
   it('con varios pedidos en la mesa mira todos', () => {
-    const [a, b] = [nuevoId(), nuevoId()]
-    const itemA = local('ItemAgregado', a, datosItem())
-    const mesas = pedidosAbiertos([
-      local('PedidoAbierto', a, apertura),
+    const [a, b] = [newId(), newId()]
+    const itemA = local('ItemAdded', a, datosItem())
+    const tables = pedidosAbiertos([
+      local('OrderOpened', a, opening),
       itemA,
       envio(a, [itemId(itemA)]),
-      local('PedidoAbierto', b, apertura),
-      local('ItemAgregado', b, datosItem()),
+      local('OrderOpened', b, opening),
+      local('ItemAdded', b, datosItem()),
     ])
-    expect(mesas).toHaveLength(2)
-    expect(estadoMesa(mesas)).toBe('tomando')
-    expect(estadoMesa(mesas.filter((m) => m.estado.id === a))).toBe('en_cocina')
+    expect(tables).toHaveLength(2)
+    expect(estadoMesa(tables)).toBe('taking')
+    expect(estadoMesa(tables.filter((m) => m.status.id === a))).toBe('in_kitchen')
   })
 })

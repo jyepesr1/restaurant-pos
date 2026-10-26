@@ -1,188 +1,182 @@
-import { type EventoNuevo, nuevoId } from '@pos/core'
+import { type NewEvent, newId } from '@pos/core'
 import { HubSync, type MensajeHub, SalaSync } from '@pos/sync'
 import { AlmacenSqlite } from '@pos/sync/sqlite'
 import { describe, expect, it } from 'vitest'
-import { ABRIR, item, type MontajeHub, montarHub, sumar } from './acceso/montaje-hub'
+import { ABRIR, add, item, type MontajeHub, montarHub } from './acceso/montaje-hub'
 import { actualizarVersionado, SISTEMA } from './acceso/registros'
 
 // Agotado (86) con el control de acceso real del hub: cuarentena, revocación, difusión a los
 // demás equipos y que un ítem de un producto agotado se acepte (docs/SYNC.md, tarea 1.3).
 
-const DE_PRODUCTO = (producto: string) => ({
-  agregado_tipo: 'producto' as const,
-  agregado_id: producto,
+const DE_PRODUCTO = (product: string) => ({
+  aggregate_type: 'product' as const,
+  aggregate_id: product,
 })
-const datos = (producto: string, variante: string | null = null) => ({
-  producto_id: producto,
-  variante_id: variante,
+const data = (product: string, variant: string | null = null) => ({
+  product_id: product,
+  variant_id: variant,
 })
 
-const cambiarRol = (m: MontajeHub, usuarioId: string, rolId: string) =>
+const cambiarRol = (m: MontajeHub, userId: string, rolId: string) =>
   actualizarVersionado(
     m.db,
-    'usuario',
+    'users',
     m.restauranteId,
-    usuarioId,
-    { rol_id: rolId },
+    userId,
+    { role_id: rolId },
     SISTEMA,
-    m.reloj(),
+    m.clock(),
   )
 
 const estadoEn = (m: MontajeHub, id: string) =>
-  m.db.prepare('SELECT estado FROM evento_cuarentena WHERE evento_id = ?').get(id) ??
-  m.db.prepare('SELECT motivo FROM evento_rechazado WHERE evento_id = ?').get(id)
+  m.db.prepare('SELECT status FROM quarantined_events WHERE event_id = ?').get(id) ??
+  m.db.prepare('SELECT reason FROM rejected_events WHERE event_id = ?').get(id)
 
 describe('cuarentena y rechazos de un agotado', () => {
   /** Un cajero con su sesión abierta en la caja, y una función para armar un agotado a una hora. */
   function cajaConSesion() {
     const m = montarHub()
-    const { conexion } = m.emparejar('caja')
-    const sesion = m.entrar(conexion, 'cajero')
-    const producto = nuevoId()
-    const agotar = (hora = m.reloj(), extras = {}) =>
-      m.evento(conexion, sesion, 'ProductoAgotado', datos(producto), {
-        ...DE_PRODUCTO(producto),
-        hora_dispositivo: hora,
-        hora_estimada_hub: hora,
+    const { connection } = m.emparejar('register')
+    const session = m.entrar(connection, 'cashier')
+    const product = newId()
+    const markSoldOut = (time = m.clock(), extras = {}) =>
+      m.event(connection, session, 'ProductSoldOut', data(product), {
+        ...DE_PRODUCTO(product),
+        device_time: time,
+        hub_estimated_time: time,
         ...extras,
       })
-    return { m, conexion, sesion, producto, agotar }
+    return { m, connection, session, product, markSoldOut }
   }
 
   it('al cajero le quitan el permiso: lo de antes va a cuarentena y lo de después se rechaza', () => {
-    const { m, conexion, agotar } = cajaConSesion()
-    const antes = agotar()
+    const { m, connection, markSoldOut } = cajaConSesion()
+    const before = markSoldOut()
     m.avanzar(10 * 60_000)
-    cambiarRol(m, m.personas.cajero.usuarioId, m.roles.mesero)
-    const cambio = m.reloj()
+    cambiarRol(m, m.people.cashier.userId, m.roles.waiter)
+    const change = m.clock()
     m.avanzar(10 * 60_000)
-    const despues = agotar(sumar(cambio, 1000))
+    const after = markSoldOut(add(change, 1000))
 
-    const r = m.hub.recibirLote(conexion, [antes, despues])
+    const r = m.hub.recibirLote(connection, [before, after])
 
-    expect(r.resultados.map((x) => x.estado)).toEqual(['cuarentena', 'rechazado'])
-    expect(r.resultados[1]).toMatchObject({ motivo: 'sin_permiso' })
+    expect(r.resultados.map((x) => x.status)).toEqual(['quarantine', 'rejected'])
+    expect(r.resultados[1]).toMatchObject({ reason: 'no_permission' })
     expect(
-      m.db.prepare('SELECT motivo FROM evento_cuarentena WHERE evento_id = ?').get(antes.id)
-        ?.motivo,
-    ).toBe('permisos_cambiados')
+      m.db.prepare('SELECT reason FROM quarantined_events WHERE event_id = ?').get(before.id)
+        ?.reason,
+    ).toBe('permissions_changed')
     // Ni lo uno ni lo otro entró a la secuencia ni cambió pedido alguno.
-    expect(m.db.prepare('SELECT count(*) AS n FROM evento').get()?.n).toBe(0)
+    expect(m.db.prepare('SELECT count(*) AS n FROM events').get()?.n).toBe(0)
     expect(r.aceptados).toEqual([])
   })
 
   it('al cajero lo archivan: lo de antes va a cuarentena y lo de después se rechaza', () => {
-    const { m, conexion, agotar } = cajaConSesion()
-    const antes = agotar()
+    const { m, connection, markSoldOut } = cajaConSesion()
+    const before = markSoldOut()
     m.avanzar(10 * 60_000)
-    m.acceso.archivarUsuario(m.personas.cajero.usuarioId)
-    const archivado = m.reloj()
+    m.access.archivarUsuario(m.people.cashier.userId)
+    const archived = m.clock()
     m.avanzar(10 * 60_000)
-    const despues = agotar(sumar(archivado, 1000))
+    const after = markSoldOut(add(archived, 1000))
 
-    const r = m.hub.recibirLote(conexion, [antes, despues])
+    const r = m.hub.recibirLote(connection, [before, after])
 
-    expect(r.resultados.map((x) => x.estado)).toEqual(['cuarentena', 'rechazado'])
+    expect(r.resultados.map((x) => x.status)).toEqual(['quarantine', 'rejected'])
     expect(
-      m.db.prepare('SELECT motivo FROM evento_cuarentena WHERE evento_id = ?').get(antes.id)
-        ?.motivo,
-    ).toBe('usuario_archivado')
-    expect(r.resultados[1]).toMatchObject({ motivo: 'usuario_inactivo' })
+      m.db.prepare('SELECT reason FROM quarantined_events WHERE event_id = ?').get(before.id)
+        ?.reason,
+    ).toBe('user_archived')
+    expect(r.resultados[1]).toMatchObject({ reason: 'user_inactive' })
   })
 
   it('un dispositivo revocado: el agotado de antes va a cuarentena y el de después se rechaza', () => {
-    const { m, conexion, agotar } = cajaConSesion()
-    const antes = agotar()
+    const { m, connection, markSoldOut } = cajaConSesion()
+    const before = markSoldOut()
     m.avanzar(60_000)
-    const revocado = { ...conexion, revocadoEn: m.reloj() }
+    const revocado = { ...connection, revocadoEn: m.clock() }
     m.avanzar(60_000)
-    const despues = agotar()
+    const after = markSoldOut()
 
-    const r = m.hub.recibirLote(revocado, [antes, despues])
+    const r = m.hub.recibirLote(revocado, [before, after])
 
-    expect(r.resultados.map((x) => x.estado)).toEqual(['cuarentena', 'rechazado'])
-    expect(r.resultados[1]).toMatchObject({ motivo: 'dispositivo_revocado' })
+    expect(r.resultados.map((x) => x.status)).toEqual(['quarantine', 'rejected'])
+    expect(r.resultados[1]).toMatchObject({ reason: 'revoked_device' })
     expect(
-      m.db.prepare('SELECT motivo FROM evento_cuarentena WHERE evento_id = ?').get(antes.id)
-        ?.motivo,
-    ).toBe('dispositivo_revocado')
+      m.db.prepare('SELECT reason FROM quarantined_events WHERE event_id = ?').get(before.id)
+        ?.reason,
+    ).toBe('revoked_device')
   })
 
   it('una sesión que el hub no conoce va a cuarentena, sin tumbar al hub', () => {
-    const { m, conexion, sesion, producto } = cajaConSesion()
-    const ajena = { ...sesion, sesionId: nuevoId() }
-    const e = m.evento(conexion, ajena, 'ProductoAgotado', datos(producto), DE_PRODUCTO(producto))
-    expect(m.hub.recibirLote(conexion, [e]).resultados).toEqual([
-      { id: e.id, estado: 'cuarentena' },
+    const { m, connection, session, product } = cajaConSesion()
+    const ajena = { ...session, sesionId: newId() }
+    const e = m.event(connection, ajena, 'ProductSoldOut', data(product), DE_PRODUCTO(product))
+    expect(m.hub.recibirLote(connection, [e]).resultados).toEqual([
+      { id: e.id, status: 'quarantine' },
     ])
   })
 
   it('sin sesión, con la firma alterada o de otro dispositivo se rechaza', () => {
-    const { m, conexion, sesion, producto, agotar } = cajaConSesion()
-    const sinSesion = m.evento(
-      conexion,
-      { ...sesion, sesionId: null as unknown as string },
-      'ProductoAgotado',
-      datos(producto),
-      { ...DE_PRODUCTO(producto), sesion_id: null },
+    const { m, connection, session, product, markSoldOut } = cajaConSesion()
+    const sinSesion = m.event(
+      connection,
+      { ...session, sesionId: null as unknown as string },
+      'ProductSoldOut',
+      data(product),
+      { ...DE_PRODUCTO(product), session_id: null },
     )
-    const alterado = { ...agotar(), datos: datos(producto, nuevoId()) }
-    const deOtro = { ...agotar(), dispositivo_id: nuevoId() }
+    const alterado = { ...markSoldOut(), data: data(product, newId()) }
+    const fromOther = { ...markSoldOut(), device_id: newId() }
 
-    const r = m.hub.recibirLote(conexion, [sinSesion, alterado, deOtro])
+    const r = m.hub.recibirLote(connection, [sinSesion, alterado, fromOther])
 
-    expect(r.resultados.map((x) => (x.estado === 'rechazado' ? x.motivo : x.estado))).toEqual([
-      'sin_sesion',
-      'firma_invalida',
-      'dispositivo_distinto',
+    expect(r.resultados.map((x) => (x.status === 'rejected' ? x.reason : x.status))).toEqual([
+      'no_session',
+      'invalid_signature',
+      'device_mismatch',
     ])
   })
 
   it('el mesero no puede, ni siquiera con el agotado de otro; cajero, gerente y administrador sí', () => {
     const m = montarHub()
-    const producto = nuevoId()
-    const probar = (quien: 'mesero' | 'cajero' | 'gerente' | 'admin') => {
-      const { conexion } = m.emparejar(quien === 'cajero' ? 'caja' : 'mesero')
-      const sesion = m.entrar(conexion, quien)
-      const e = m.evento(
-        conexion,
-        sesion,
-        'ProductoAgotado',
-        datos(producto),
-        DE_PRODUCTO(producto),
-      )
-      return m.hub.recibirLote(conexion, [e]).resultados[0]
+    const product = newId()
+    const probar = (quien: 'waiter' | 'cashier' | 'manager' | 'admin') => {
+      const { connection } = m.emparejar(quien === 'cashier' ? 'register' : 'waiter')
+      const session = m.entrar(connection, quien)
+      const e = m.event(connection, session, 'ProductSoldOut', data(product), DE_PRODUCTO(product))
+      return m.hub.recibirLote(connection, [e]).resultados[0]
     }
-    expect(probar('mesero')).toMatchObject({ estado: 'rechazado', motivo: 'sin_permiso' })
-    for (const quien of ['cajero', 'gerente', 'admin'] as const)
-      expect(probar(quien), quien).toMatchObject({ estado: 'confirmado' })
+    expect(probar('waiter')).toMatchObject({ status: 'rejected', reason: 'no_permission' })
+    for (const quien of ['cashier', 'manager', 'admin'] as const)
+      expect(probar(quien), quien).toMatchObject({ status: 'confirmed' })
   })
 
   it('un agotado rechazado en el lote no arrastra al pedido ni a otros productos', () => {
     const m = montarHub()
-    const { conexion } = m.emparejar('mesero')
-    const sesion = m.entrar(conexion, 'mesero')
-    const x = nuevoId()
-    const y = nuevoId()
-    const pedido = nuevoId()
-    const r = m.hub.recibirLote(conexion, [
-      m.evento(conexion, sesion, 'PedidoAbierto', ABRIR, { agregado_id: pedido }),
-      m.evento(conexion, sesion, 'ProductoAgotado', datos(x), DE_PRODUCTO(x)),
-      m.evento(conexion, sesion, 'ProductoDisponible', datos(x), DE_PRODUCTO(x)),
-      m.evento(conexion, sesion, 'ItemAgregado', item(), {
-        agregado_id: pedido,
-        secuencia_base: 1,
+    const { connection } = m.emparejar('waiter')
+    const session = m.entrar(connection, 'waiter')
+    const x = newId()
+    const y = newId()
+    const order = newId()
+    const r = m.hub.recibirLote(connection, [
+      m.event(connection, session, 'OrderOpened', ABRIR, { aggregate_id: order }),
+      m.event(connection, session, 'ProductSoldOut', data(x), DE_PRODUCTO(x)),
+      m.event(connection, session, 'ProductAvailable', data(x), DE_PRODUCTO(x)),
+      m.event(connection, session, 'ItemAdded', item(), {
+        aggregate_id: order,
+        base_sequence: 1,
       }),
-      m.evento(conexion, sesion, 'ProductoAgotado', datos(y), DE_PRODUCTO(y)),
+      m.event(connection, session, 'ProductSoldOut', data(y), DE_PRODUCTO(y)),
     ])
     // El mesero no tiene permiso: los de producto se rechazan (el permiso se juzga antes que la
     // dependencia), pero el pedido y su ítem siguen su camino.
-    expect(r.resultados.map((e) => (e.estado === 'rechazado' ? e.motivo : e.estado))).toEqual([
-      'confirmado',
-      'sin_permiso',
-      'sin_permiso',
-      'confirmado',
-      'sin_permiso',
+    expect(r.resultados.map((e) => (e.status === 'rejected' ? e.reason : e.status))).toEqual([
+      'confirmed',
+      'no_permission',
+      'no_permission',
+      'confirmed',
+      'no_permission',
     ])
   })
 })
@@ -190,78 +184,78 @@ describe('cuarentena y rechazos de un agotado', () => {
 describe('contenido del agotado', () => {
   it('es idempotente: el mismo evento recibe la misma respuesta; con otro contenido, id_repetido', () => {
     const m = montarHub()
-    const { conexion } = m.emparejar('caja')
-    const sesion = m.entrar(conexion, 'cajero')
-    const producto = nuevoId()
-    const e = m.evento(conexion, sesion, 'ProductoAgotado', datos(producto), DE_PRODUCTO(producto))
+    const { connection } = m.emparejar('register')
+    const session = m.entrar(connection, 'cashier')
+    const product = newId()
+    const e = m.event(connection, session, 'ProductSoldOut', data(product), DE_PRODUCTO(product))
 
-    const a = m.hub.recibirLote(conexion, [e])
-    const b = m.hub.recibirLote(conexion, [e])
+    const a = m.hub.recibirLote(connection, [e])
+    const b = m.hub.recibirLote(connection, [e])
     expect(b.resultados).toEqual(a.resultados)
     expect(b.aceptados).toEqual([])
-    expect(m.db.prepare('SELECT count(*) AS n FROM evento').get()?.n).toBe(1)
+    expect(m.db.prepare('SELECT count(*) AS n FROM events').get()?.n).toBe(1)
 
-    const otro = m.firmado(sesion, { ...e, datos: datos(producto, nuevoId()) } as EventoNuevo)
-    expect(m.hub.recibirLote(conexion, [otro]).resultados[0]).toMatchObject({
-      estado: 'rechazado',
-      motivo: 'id_repetido',
+    const other = m.firmado(session, { ...e, data: data(product, newId()) } as NewEvent)
+    expect(m.hub.recibirLote(connection, [other]).resultados[0]).toMatchObject({
+      status: 'rejected',
+      reason: 'duplicate_id',
     })
   })
 
   it('una secuencia_base inventada se rechaza igual que en un pedido', () => {
     const m = montarHub()
-    const { conexion } = m.emparejar('caja')
-    const sesion = m.entrar(conexion, 'cajero')
-    const producto = nuevoId()
-    const e = m.evento(conexion, sesion, 'ProductoAgotado', datos(producto), {
-      ...DE_PRODUCTO(producto),
-      secuencia_base: 50,
+    const { connection } = m.emparejar('register')
+    const session = m.entrar(connection, 'cashier')
+    const product = newId()
+    const e = m.event(connection, session, 'ProductSoldOut', data(product), {
+      ...DE_PRODUCTO(product),
+      base_sequence: 50,
     })
-    expect(m.hub.recibirLote(conexion, [e]).resultados[0]).toMatchObject({
-      estado: 'rechazado',
-      motivo: 'secuencia_base_invalida',
+    expect(m.hub.recibirLote(connection, [e]).resultados[0]).toMatchObject({
+      status: 'rejected',
+      reason: 'invalid_base_sequence',
     })
   })
 
   it('se guarda como evento del producto y sobrevive al reinicio sin tocar los pedidos', () => {
     const m = montarHub()
-    const { conexion } = m.emparejar('caja')
-    const sesion = m.entrar(conexion, 'cajero')
-    const pedido = nuevoId()
-    const producto = nuevoId()
-    const r = m.hub.recibirLote(conexion, [
-      m.evento(conexion, sesion, 'PedidoAbierto', ABRIR, { agregado_id: pedido }),
-      m.evento(conexion, sesion, 'ProductoAgotado', datos(producto), DE_PRODUCTO(producto)),
-      m.evento(conexion, sesion, 'ItemAgregado', item(), {
-        agregado_id: pedido,
-        secuencia_base: 1,
+    const { connection } = m.emparejar('register')
+    const session = m.entrar(connection, 'cashier')
+    const order = newId()
+    const product = newId()
+    const r = m.hub.recibirLote(connection, [
+      m.event(connection, session, 'OrderOpened', ABRIR, { aggregate_id: order }),
+      m.event(connection, session, 'ProductSoldOut', data(product), DE_PRODUCTO(product)),
+      m.event(connection, session, 'ItemAdded', item(), {
+        aggregate_id: order,
+        base_sequence: 1,
       }),
-      m.evento(conexion, sesion, 'ProductoDisponible', datos(producto), DE_PRODUCTO(producto)),
+      m.event(connection, session, 'ProductAvailable', data(product), DE_PRODUCTO(product)),
     ])
-    expect(r.resultados.map((x) => x.estado)).toEqual(Array(4).fill('confirmado'))
+    expect(r.resultados.map((x) => x.status)).toEqual(Array(4).fill('confirmed'))
     expect(
       m.db
-        .prepare('SELECT agregado_tipo, agregado_id FROM evento WHERE tipo = ?')
-        .get('ProductoAgotado'),
-    ).toEqual({ agregado_tipo: 'producto', agregado_id: producto })
-    const antes = structuredClone(m.hub.pedido(pedido))
+        .prepare('SELECT aggregate_type, aggregate_id FROM events WHERE type = ?')
+        .get('ProductSoldOut'),
+    ).toEqual({ aggregate_type: 'product', aggregate_id: product })
+    const before = structuredClone(m.hub.order(order))
 
     const reiniciado = new HubSync(new AlmacenSqlite(m.db, m.restauranteId), {
       restauranteId: m.restauranteId,
-      zonaHoraria: 'America/Bogota',
+      timeZone: 'America/Bogota',
       inicioDiaOperativo: '06:00',
       instancia: 'hub-1',
-      reloj: m.reloj,
-      acceso: m.acceso,
+      clock: m.clock,
+      access: m.access,
     })
-    expect(reiniciado.pedido(pedido)).toEqual(antes)
-    expect(reiniciado.pedido(producto)).toBeNull()
-    expect(reiniciado.tienePedidoAbierto(nuevoId())).toBe(false)
-    expect(reiniciado.traer(0, 'caja').eventos.map((e) => e.tipo)).toEqual([
-      'PedidoAbierto',
-      'ProductoAgotado',
-      'ItemAgregado',
-      'ProductoDisponible',
+    expect(reiniciado.order(order)).toEqual(before)
+    expect(reiniciado.order(product)).toBeNull()
+    expect(reiniciado.tienePedidoAbierto(newId())).toBe(false)
+    expect(reiniciado.pull(0, 'register').events.map((e) => e.type)).toEqual([
+      'OrderOpened',
+      'ProductSoldOut',
+      'ItemAdded',
+      'ProductAvailable',
     ])
   })
 })
@@ -269,140 +263,140 @@ describe('contenido del agotado', () => {
 describe('un ítem de un producto agotado', () => {
   it('se acepta: quien lo pidió sin conexión no se queda sin su pedido', () => {
     const m = montarHub()
-    const caja = m.emparejar('caja')
-    const cajero = m.entrar(caja.conexion, 'cajero')
-    const celular = m.emparejar('mesero')
-    const mesero = m.entrar(celular.conexion, 'mesero')
-    const pedido = nuevoId()
-    const producto = nuevoId()
-    const it1 = { ...item(), producto_id: producto }
+    const register = m.emparejar('register')
+    const cashier = m.entrar(register.connection, 'cashier')
+    const phone = m.emparejar('waiter')
+    const waiter = m.entrar(phone.connection, 'waiter')
+    const order = newId()
+    const product = newId()
+    const it1 = { ...item(), product_id: product }
 
     // La caja agota el producto (secuencia 1); el mesero, sin saberlo, pide el producto.
-    m.hub.recibirLote(caja.conexion, [
-      m.evento(caja.conexion, cajero, 'ProductoAgotado', datos(producto), DE_PRODUCTO(producto)),
+    m.hub.recibirLote(register.connection, [
+      m.event(register.connection, cashier, 'ProductSoldOut', data(product), DE_PRODUCTO(product)),
     ])
-    const r = m.hub.recibirLote(celular.conexion, [
-      m.evento(celular.conexion, mesero, 'PedidoAbierto', ABRIR, { agregado_id: pedido }),
-      m.evento(celular.conexion, mesero, 'ItemAgregado', it1, { agregado_id: pedido }),
+    const r = m.hub.recibirLote(phone.connection, [
+      m.event(phone.connection, waiter, 'OrderOpened', ABRIR, { aggregate_id: order }),
+      m.event(phone.connection, waiter, 'ItemAdded', it1, { aggregate_id: order }),
     ])
 
-    expect(r.resultados.map((x) => x.estado)).toEqual(['confirmado', 'confirmado'])
-    expect(r.resultados[1]).toMatchObject({ conflicto: null })
-    expect(Object.keys(m.hub.pedido(pedido)?.items ?? {})).toEqual([it1.item_id])
+    expect(r.resultados.map((x) => x.status)).toEqual(['confirmed', 'confirmed'])
+    expect(r.resultados[1]).toMatchObject({ conflict: null })
+    expect(Object.keys(m.hub.order(order)?.items ?? {})).toEqual([it1.item_id])
     expect(m.hub.conflictos()).toEqual([])
   })
 
   it('tampoco se rechaza cuando el agotado llega después en el mismo lote', () => {
     const m = montarHub()
-    const { conexion } = m.emparejar('caja')
-    const sesion = m.entrar(conexion, 'cajero')
-    const pedido = nuevoId()
-    const producto = nuevoId()
-    const r = m.hub.recibirLote(conexion, [
-      m.evento(conexion, sesion, 'PedidoAbierto', ABRIR, { agregado_id: pedido }),
-      m.evento(conexion, sesion, 'ProductoAgotado', datos(producto), DE_PRODUCTO(producto)),
-      m.evento(
-        conexion,
-        sesion,
-        'ItemAgregado',
-        { ...item(), producto_id: producto },
+    const { connection } = m.emparejar('register')
+    const session = m.entrar(connection, 'cashier')
+    const order = newId()
+    const product = newId()
+    const r = m.hub.recibirLote(connection, [
+      m.event(connection, session, 'OrderOpened', ABRIR, { aggregate_id: order }),
+      m.event(connection, session, 'ProductSoldOut', data(product), DE_PRODUCTO(product)),
+      m.event(
+        connection,
+        session,
+        'ItemAdded',
+        { ...item(), product_id: product },
         {
-          agregado_id: pedido,
-          secuencia_base: 1,
+          aggregate_id: order,
+          base_sequence: 1,
         },
       ),
     ])
-    expect(r.resultados.map((x) => x.estado)).toEqual(['confirmado', 'confirmado', 'confirmado'])
+    expect(r.resultados.map((x) => x.status)).toEqual(['confirmed', 'confirmed', 'confirmed'])
   })
 })
 
 describe('el aviso nuevo llega a los demás equipos', () => {
   it('un agotado de la caja lo reciben el celular y la cocina, sin la sesión de quien lo hizo', () => {
     const m = montarHub()
-    const sala = new SalaSync(m.hub, m.acceso.autenticar)
-    const caja = m.emparejar('caja')
-    const celular = m.emparejar('mesero')
-    const cocina = m.emparejar('kds')
-    const recibidos: Record<string, MensajeHub[]> = { caja: [], celular: [], cocina: [] }
-    const abrir = (nombre: string, token: string) => {
-      const enlace = sala.conectar((x) => recibidos[nombre]?.push(x))
-      enlace.recibir({ tipo: 'hola', token, hub_instancia: null, hasta: 0, version_app: 'x' })
+    const sala = new SalaSync(m.hub, m.access.authenticate)
+    const register = m.emparejar('register')
+    const phone = m.emparejar('waiter')
+    const kitchen = m.emparejar('kds')
+    const recibidos: Record<string, MensajeHub[]> = { register: [], phone: [], kitchen: [] }
+    const open = (name: string, token: string) => {
+      const enlace = sala.connect((x) => recibidos[name]?.push(x))
+      enlace.recibir({ type: 'hello', token, hub_instancia: null, until: 0, version_app: 'x' })
       return enlace
     }
-    const enCaja = abrir('caja', caja.token)
-    abrir('celular', celular.token)
-    abrir('cocina', cocina.token)
+    const enCaja = open('register', register.token)
+    open('phone', phone.token)
+    open('kitchen', kitchen.token)
 
-    const cajero = m.entrar(caja.conexion, 'cajero')
-    const producto = nuevoId()
-    const botella = nuevoId()
-    const e = m.evento(
-      caja.conexion,
-      cajero,
-      'ProductoAgotado',
-      datos(producto, botella),
-      DE_PRODUCTO(producto),
+    const cashier = m.entrar(register.connection, 'cashier')
+    const product = newId()
+    const bottle = newId()
+    const e = m.event(
+      register.connection,
+      cashier,
+      'ProductSoldOut',
+      data(product, bottle),
+      DE_PRODUCTO(product),
     )
-    enCaja.recibir({ tipo: 'empujar', lote_id: 'l1', eventos: [e] })
+    enCaja.recibir({ type: 'push', lote_id: 'l1', events: [e] })
 
-    for (const nombre of ['celular', 'cocina', 'caja']) {
-      const nuevo = recibidos[nombre]?.find((x) => x.tipo === 'nuevo')
-      expect(nuevo, nombre).toMatchObject({
-        evento: {
+    for (const name of ['phone', 'kitchen', 'register']) {
+      const fresh = recibidos[name]?.find((x) => x.type === 'new')
+      expect(fresh, name).toMatchObject({
+        event: {
           id: e.id,
-          tipo: 'ProductoAgotado',
-          agregado_tipo: 'producto',
-          secuencia: 1,
-          datos: { producto_id: producto, variante_id: botella },
+          type: 'ProductSoldOut',
+          aggregate_type: 'product',
+          sequence: 1,
+          data: { product_id: product, variant_id: bottle },
         },
         hasta_anterior: 0,
-        hasta: 1,
+        until: 1,
       })
     }
     // Los demás no reciben la sesión de quien lo creó; la caja, que es suya, sí.
-    const deCelular = recibidos.celular?.find((x) => x.tipo === 'nuevo')
-    expect(deCelular?.tipo === 'nuevo' && deCelular.evento.sesion_id).toBeNull()
-    const deCaja = recibidos.caja?.find((x) => x.tipo === 'nuevo')
-    expect(deCaja?.tipo === 'nuevo' && deCaja.evento.sesion_id).toBe(cajero.sesionId)
+    const deCelular = recibidos.phone?.find((x) => x.type === 'new')
+    expect(deCelular?.type === 'new' && deCelular.event.session_id).toBeNull()
+    const deCaja = recibidos.register?.find((x) => x.type === 'new')
+    expect(deCaja?.type === 'new' && deCaja.event.session_id).toBe(cashier.sesionId)
   })
 
   it('un equipo revocado no recibe el aviso, y uno que se conecta después lo trae con `traer`', () => {
     const m = montarHub()
-    const sala = new SalaSync(m.hub, m.acceso.autenticar)
-    const caja = m.emparejar('caja')
-    const celular = m.emparejar('mesero')
+    const sala = new SalaSync(m.hub, m.access.authenticate)
+    const register = m.emparejar('register')
+    const phone = m.emparejar('waiter')
     const recibidos: MensajeHub[] = []
-    const enlace = sala.conectar((x) => recibidos.push(x))
+    const enlace = sala.connect((x) => recibidos.push(x))
     enlace.recibir({
-      tipo: 'hola',
-      token: celular.token,
+      type: 'hello',
+      token: phone.token,
       hub_instancia: null,
-      hasta: 0,
+      until: 0,
       version_app: 'x',
     })
-    sala.revocar(celular.conexion.dispositivoId, m.reloj())
+    sala.revoke(phone.connection.dispositivoId, m.clock())
 
-    const cajero = m.entrar(caja.conexion, 'cajero')
-    const producto = nuevoId()
-    m.hub.recibirLote(caja.conexion, [
-      m.evento(caja.conexion, cajero, 'ProductoAgotado', datos(producto), DE_PRODUCTO(producto)),
+    const cashier = m.entrar(register.connection, 'cashier')
+    const product = newId()
+    m.hub.recibirLote(register.connection, [
+      m.event(register.connection, cashier, 'ProductSoldOut', data(product), DE_PRODUCTO(product)),
     ])
-    expect(recibidos.some((x) => x.tipo === 'nuevo')).toBe(false)
+    expect(recibidos.some((x) => x.type === 'new')).toBe(false)
 
     const tarde: MensajeHub[] = []
-    const otro = sala.conectar((x) => tarde.push(x))
-    const nuevoCelular = m.emparejar('mesero')
-    otro.recibir({
-      tipo: 'hola',
+    const other = sala.connect((x) => tarde.push(x))
+    const nuevoCelular = m.emparejar('waiter')
+    other.recibir({
+      type: 'hello',
       token: nuevoCelular.token,
       hub_instancia: null,
-      hasta: 0,
+      until: 0,
       version_app: 'x',
     })
-    otro.recibir({ tipo: 'traer', desde: 0 })
-    const eventos = tarde.find((x) => x.tipo === 'eventos')
-    expect(eventos?.tipo === 'eventos' && eventos.eventos.map((e) => e.tipo)).toEqual([
-      'ProductoAgotado',
+    other.recibir({ type: 'pull', from: 0 })
+    const events = tarde.find((x) => x.type === 'events')
+    expect(events?.type === 'events' && events.events.map((e) => e.type)).toEqual([
+      'ProductSoldOut',
     ])
   })
 })

@@ -1,9 +1,9 @@
 import 'fake-indexeddb/auto'
-import { firmarEvento, nuevoId } from '@pos/core'
+import { newId, signEvent } from '@pos/core'
 import {
   AlmacenMemoria,
-  type Canal,
   type Catalogo,
+  type Channel,
   type ControlAcceso,
   HubSync,
   type Manejadores,
@@ -22,23 +22,23 @@ const secretoDe = (sesionId: string) => `secreto-${sesionId}`
 
 /** Exige que cada evento venga firmado con el secreto de su sesión. */
 const accesoConFirma: ControlAcceso = {
-  verificar: (_c, evento) =>
-    evento.sesion_id && evento.firma === firmarEvento(evento, secretoDe(evento.sesion_id))
-      ? { ok: true, autorizadoPorId: null, autorizacionId: null }
-      : { ok: false, motivo: 'firma_invalida' },
+  verify: (_c, event) =>
+    event.session_id && event.signature === signEvent(event, secretoDe(event.session_id))
+      ? { ok: true, authorizedById: null, autorizacionId: null }
+      : { ok: false, reason: 'invalid_signature' },
   registrarUso: () => {},
 }
 
-const mesaId = nuevoId()
-const catalogo: Catalogo = {
+const tableId = newId()
+const catalog: Catalogo = {
   version: 3,
-  restaurante: { nombre: 'Prueba', sesionInactividadMin: 30 },
-  zonas: [{ id: nuevoId(), nombre: 'Salón', piso: 1 }],
-  mesas: [],
-  elementos: [],
-  personal: [],
-  estaciones: [{ id: nuevoId(), nombre: 'Cocina' }],
-  categorias: [],
+  restaurant: { name: 'Prueba', sesionInactividadMin: 30 },
+  zones: [{ id: newId(), name: 'Salón', level: 1 }],
+  tables: [],
+  elements: [],
+  staff: [],
+  stations: [{ id: newId(), name: 'Cocina' }],
+  categories: [],
 }
 
 const salas: Sala[] = []
@@ -53,75 +53,75 @@ afterEach(async () => {
 function montarHub() {
   const tokens = new Map<string, Equipo>()
   const hub = new HubSync(new AlmacenMemoria(), {
-    restauranteId: nuevoId(),
-    zonaHoraria: 'America/Bogota',
+    restauranteId: newId(),
+    timeZone: 'America/Bogota',
     inicioDiaOperativo: '06:00',
-    instancia: 'hub-prueba',
-    reloj: () => new Date().toISOString(),
-    acceso: accesoConFirma,
+    instancia: 'hub-test',
+    clock: () => new Date().toISOString(),
+    access: accesoConFirma,
   })
   const salaHub = new SalaSync(hub, (token) => {
     const e = tokens.get(token)
-    return e ? { dispositivoId: e.dispositivoId, tipo: e.tipo, revocadoEn: null } : null
+    return e ? { dispositivoId: e.dispositivoId, type: e.type, revocadoEn: null } : null
   })
   /** Un "WebSocket" en memoria: los mensajes viajan como JSON y llegan en otra vuelta. */
-  const abrir = (m: Manejadores): Canal => {
-    let enlace: ReturnType<SalaSync['conectar']> | null = null
+  const open = (m: Manejadores): Channel => {
+    let enlace: ReturnType<SalaSync['connect']> | null = null
     setTimeout(() => {
-      enlace = salaHub.conectar((msg) => {
-        const copia = JSON.parse(JSON.stringify(msg))
-        setTimeout(() => enlace && m.alMensaje(copia))
+      enlace = salaHub.connect((msg) => {
+        const copy = JSON.parse(JSON.stringify(msg))
+        setTimeout(() => enlace && m.alMensaje(copy))
       })
       m.alAbrir()
     })
     return {
-      enviar: (msg) => enlace?.recibir(JSON.parse(JSON.stringify(msg))),
-      cerrar: () => {
-        enlace?.cerrar()
+      send: (msg) => enlace?.recibir(JSON.parse(JSON.stringify(msg))),
+      close: () => {
+        enlace?.close()
         enlace = null
       },
     }
   }
-  return { hub, tokens, abrir }
+  return { hub, tokens, open }
 }
 
-async function equipo(h: ReturnType<typeof montarHub>, nombre: string) {
-  const db = new BaseDispositivo(`prueba-${nuevoId()}`)
+async function device(h: ReturnType<typeof montarHub>, name: string) {
+  const db = new BaseDispositivo(`prueba-${newId()}`)
   bases.push(db)
-  const e: Equipo = { dispositivoId: nuevoId(), token: nuevoId(), nombre, tipo: 'mesero' }
+  const e: Equipo = { dispositivoId: newId(), token: newId(), name, type: 'waiter' }
   h.tokens.set(e.token, e)
-  const sesionId = nuevoId()
-  const sesion: Sesion = {
+  const sesionId = newId()
+  const session: Sesion = {
     sesionId,
-    secreto: secretoDe(sesionId),
-    usuario: { id: nuevoId(), nombre, rol: 'Mesero' },
-    permisos: ['tomar_pedido'],
+    secret: secretoDe(sesionId),
+    user: { id: newId(), name, role: 'Mesero' },
+    permissions: ['take_order'],
     ultimoUso: Date.now(),
   }
-  await db.guardarAjuste('equipo', e)
-  await db.guardarAjuste('sesion', sesion)
-  await db.guardarAjuste('catalogo', catalogo)
-  const sala = new Sala({ db, abrir: h.abrir })
+  await db.saveSetting('device', e)
+  await db.saveSetting('session', session)
+  await db.saveSetting('catalog', catalog)
+  const sala = new Sala({ db, open: h.open })
   salas.push(sala)
   await sala.cargar()
   return sala
 }
 
-const item = (nombre: string, precio: number) => ({
-  item_id: nuevoId(),
-  producto_id: nuevoId(),
-  variante_id: null,
-  nombre,
-  precio_unitario: precio,
-  impuesto_tipo: 'inc' as const,
-  tarifa: 800,
-  cantidad: 1,
-  comensal: null,
-  curso: null,
-  modificadores: [],
-  notas: null,
-  catalogo_version: 3,
-  precio_canal_id: null,
+const item = (name: string, price: number) => ({
+  item_id: newId(),
+  product_id: newId(),
+  variant_id: null,
+  name,
+  unit_price: price,
+  tax_type: 'inc' as const,
+  rate: 800,
+  quantity: 1,
+  guest: null,
+  course: null,
+  modifiers: [],
+  notes: null,
+  catalog_version: 3,
+  price_channel_id: null,
 })
 
 async function esperar(condicion: () => Promise<boolean> | boolean, ms = 3000) {
@@ -134,34 +134,34 @@ async function esperar(condicion: () => Promise<boolean> | boolean, ms = 3000) {
 
 const vista = async (s: Sala) =>
   pedidosAbiertos((await s.sync?.locales()) ?? []).map((p) => ({
-    id: p.estado.id,
+    id: p.status.id,
     total: p.total,
-    items: Object.keys(p.estado.items).sort(),
+    items: Object.keys(p.status.items).sort(),
   }))
 
 describe('Sala (motor de la app)', () => {
   it('dos equipos sin conexión crean pedidos y al volver ven lo mismo, sin duplicados', async () => {
     const h = montarHub()
-    const ana = await equipo(h, 'Ana')
-    const beto = await equipo(h, 'Beto')
-    await esperar(() => ana.instantanea().conexion === 'conectado')
-    await esperar(() => beto.instantanea().conexion === 'conectado')
+    const ana = await device(h, 'Ana')
+    const beto = await device(h, 'Beto')
+    await esperar(() => ana.instantanea().connection === 'connected')
+    await esperar(() => beto.instantanea().connection === 'connected')
 
     ana.simularSinConexion(true)
     beto.simularSinConexion(true)
-    expect(ana.instantanea().conexion).toBe('desconectado')
+    expect(ana.instantanea().connection).toBe('disconnected')
 
-    const p1 = nuevoId()
-    await ana.registrar('PedidoAbierto', p1, { canal: 'salon', mesa_id: mesaId, comensales: 2 })
-    await ana.registrar('ItemAgregado', p1, item('Aperol Spritz', 32_000))
-    const p2 = nuevoId()
-    await beto.registrar('PedidoAbierto', p2, { canal: 'salon', mesa_id: null, comensales: 1 })
-    await beto.registrar('ItemAgregado', p2, item('Pizza Margarita', 44_900))
-    await beto.registrar('ItemAgregado', p2, item('Limonada', 9_900))
+    const p1 = newId()
+    await ana.record('OrderOpened', p1, { channel: 'dine_in', table_id: tableId, guests: 2 })
+    await ana.record('ItemAdded', p1, item('Aperol Spritz', 32_000))
+    const p2 = newId()
+    await beto.record('OrderOpened', p2, { channel: 'dine_in', table_id: null, guests: 1 })
+    await beto.record('ItemAdded', p2, item('Pizza Margarita', 44_900))
+    await beto.record('ItemAdded', p2, item('Limonada', 9_900))
 
     // Persistir antes de mostrar: sin conexión ya se ve, como pendiente.
-    expect(ana.instantanea().pendientes).toBe(2)
-    expect(beto.instantanea().pendientes).toBe(3)
+    expect(ana.instantanea().pendingList).toBe(2)
+    expect(beto.instantanea().pendingList).toBe(3)
     expect(await vista(ana)).toEqual([expect.objectContaining({ id: p1, total: 32_000 })])
 
     ana.simularSinConexion(false)
@@ -169,36 +169,36 @@ describe('Sala (motor de la app)', () => {
     await esperar(async () => {
       const [a, b] = [await vista(ana), await vista(beto)]
       return (
-        ana.instantanea().pendientes === 0 &&
-        beto.instantanea().pendientes === 0 &&
+        ana.instantanea().pendingList === 0 &&
+        beto.instantanea().pendingList === 0 &&
         a.length === 2 &&
         JSON.stringify(a) === JSON.stringify(b)
       )
     })
-    expect(h.hub.pedido(p1)).not.toBeNull()
-    const confirmados = (await ana.sync?.locales())?.filter((l) => l.estado === 'confirmado')
-    expect(confirmados?.map((l) => l.evento.secuencia).sort()).toEqual([1, 2, 3, 4, 5])
+    expect(h.hub.order(p1)).not.toBeNull()
+    const confirmados = (await ana.sync?.locales())?.filter((l) => l.status === 'confirmed')
+    expect(confirmados?.map((l) => l.event.sequence).sort()).toEqual([1, 2, 3, 4, 5])
   })
 
   it('sin sesión no se puede crear un evento; tras el tiempo sin uso la sesión se cierra', async () => {
     const h = montarHub()
-    const s = await equipo(h, 'Ana')
-    const sesion = s.instantanea().sesion as Sesion
-    s.vencerSesionSiToca(sesion.ultimoUso + 29 * 60_000)
-    expect(s.instantanea().sesion).not.toBeNull()
-    s.vencerSesionSiToca(sesion.ultimoUso + 30 * 60_000)
-    expect(s.instantanea().sesion).toBeNull()
+    const s = await device(h, 'Ana')
+    const session = s.instantanea().session as Sesion
+    s.vencerSesionSiToca(session.ultimoUso + 29 * 60_000)
+    expect(s.instantanea().session).not.toBeNull()
+    s.vencerSesionSiToca(session.ultimoUso + 30 * 60_000)
+    expect(s.instantanea().session).toBeNull()
     await expect(
-      s.registrar('PedidoAbierto', nuevoId(), { canal: 'salon', mesa_id: null, comensales: 0 }),
+      s.record('OrderOpened', newId(), { channel: 'dine_in', table_id: null, guests: 0 }),
     ).rejects.toThrow('Sin sesión')
   })
 
   it('un evento con datos inválidos no se guarda', async () => {
     const h = montarHub()
-    const s = await equipo(h, 'Ana')
+    const s = await device(h, 'Ana')
     await expect(
-      s.registrar('PedidoAbierto', nuevoId(), { canal: 'salon', mesa_id: null, comensales: -1 }),
+      s.record('OrderOpened', newId(), { channel: 'dine_in', table_id: null, guests: -1 }),
     ).rejects.toThrow('Evento inválido')
-    expect(s.instantanea().pendientes).toBe(0)
+    expect(s.instantanea().pendingList).toBe(0)
   })
 })

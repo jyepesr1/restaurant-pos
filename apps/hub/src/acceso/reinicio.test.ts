@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { type ControlAcceso, HubSync } from '@pos/sync'
 import { AlmacenSqlite } from '@pos/sync/sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -12,17 +12,17 @@ import type { ServicioAcceso } from './servicio'
 // El hub se cae o se reinicia con la misma carpeta de datos (base + clave de los PIN):
 // docs/SYNC.md#fallas-y-qué-pasa y ADR-008.
 
-type Levantado = ReturnType<ReturnType<typeof hubEnCarpeta>['levantar']>
+type Levantado = ReturnType<ReturnType<typeof hubEnCarpeta>['spinUp']>
 
 /** Lo que devuelve `asegurarAdministrador` cuando no hay nada nuevo que mostrar. */
-const SIN_NOVEDAD = { pin: null, usuario: null, contrasena: null, avisos: [] }
+const SIN_NOVEDAD = { pin: null, user: null, password: null, avisos: [] }
 
 describe('reinicio y caídas del hub', () => {
   let carpeta = ''
   let hubs: ReturnType<typeof hubEnCarpeta>
   beforeEach(() => {
     carpeta = mkdtempSync(join(tmpdir(), 'pos-reinicio-'))
-    hubs = hubEnCarpeta(join(carpeta, 'datos'))
+    hubs = hubEnCarpeta(join(carpeta, 'data'))
   })
   afterEach(() => {
     hubs.apagar()
@@ -31,295 +31,295 @@ describe('reinicio y caídas del hub', () => {
 
   /** Primer arranque: administrador, un dispositivo de caja emparejado y su sesión de admin. */
   function primerArranque() {
-    const h = hubs.levantar()
+    const h = hubs.spinUp()
     const adminPin = h.admin.pin as string
-    let primero: string | null = null
-    const nuevo = (tipo: 'mesero' | 'caja', nombre: string) => {
+    let firstOne: string | null = null
+    const fresh = (type: 'waiter' | 'register', name: string) => {
       // El primer equipo se aprueba sin equipo; los siguientes, desde ese.
-      const aprobador = primero ? h.acceso.autenticar(primero) : null
-      const c = h.acceso.crearEmparejamiento({ pin: adminPin, nombre, tipo }, aprobador)
-      if (!c.ok) throw new Error(c.mensaje)
-      const r = h.acceso.emparejar(c.codigo, '10.0.0.9')
-      if (!r.ok) throw new Error(r.mensaje)
-      primero ??= r.token
+      const aprobador = firstOne ? h.access.authenticate(firstOne) : null
+      const c = h.access.crearEmparejamiento({ pin: adminPin, name, type }, aprobador)
+      if (!c.ok) throw new Error(c.message)
+      const r = h.access.emparejar(c.code, '10.0.0.9')
+      if (!r.ok) throw new Error(r.message)
+      firstOne ??= r.token
       return {
         token: r.token,
-        conexion: h.acceso.autenticar(r.token) as NonNullable<
-          ReturnType<ServicioAcceso['autenticar']>
+        connection: h.access.authenticate(r.token) as NonNullable<
+          ReturnType<ServicioAcceso['authenticate']>
         >,
       }
     }
     // El administrador entra con usuario y contraseña (ADR-013); su PIN solo autoriza.
     const credenciales = {
-      usuario: h.admin.usuario as string,
-      contrasena: h.admin.contrasena as string,
+      user: h.admin.user as string,
+      password: h.admin.password as string,
     }
-    return { h, adminPin, nuevo, credenciales }
+    return { h, adminPin, fresh, credenciales }
   }
 
   const sesionAdmin = (
     h: Levantado,
-    conexion: Parameters<ServicioAcceso['iniciarSesion']>[0],
-    credenciales: { usuario: string; contrasena: string },
+    connection: Parameters<ServicioAcceso['startSession']>[0],
+    credenciales: { user: string; password: string },
   ) => {
-    const r = h.acceso.entrar(credenciales, conexion, '10.0.0.9')
-    if (!r.ok) throw new Error(r.mensaje)
+    const r = h.access.entrar(credenciales, connection, '10.0.0.9')
+    if (!r.ok) throw new Error(r.message)
     return r
   }
 
-  const sesion = (
+  const session = (
     h: Levantado,
-    conexion: Parameters<ServicioAcceso['iniciarSesion']>[0],
+    connection: Parameters<ServicioAcceso['startSession']>[0],
     pin: string,
   ) => {
-    const r = h.acceso.iniciarSesion(conexion, pin)
-    if (!r.ok) throw new Error(r.mensaje)
+    const r = h.access.startSession(connection, pin)
+    if (!r.ok) throw new Error(r.message)
     return r
   }
 
-  function evento(
+  function event(
     _h: Levantado,
-    conexion: { dispositivoId: string },
-    s: { sesionId: string; secreto: string; usuario: { id: string } },
-    tipo: string,
-    datos: unknown,
+    connection: { dispositivoId: string },
+    s: { sesionId: string; secret: string; user: { id: string } },
+    type: string,
+    data: unknown,
     extras: object = {},
   ) {
     return firmar(s, {
-      id: nuevoId(),
-      tipo,
-      version_esquema: 1,
-      agregado_tipo: 'pedido',
-      agregado_id: nuevoId(),
-      relacionados: [],
-      datos,
-      sesion_id: s.sesionId,
-      usuario_id: s.usuario.id,
-      dispositivo_id: conexion.dispositivoId,
-      autorizacion_id: null,
-      motivo: null,
-      hora_dispositivo: hubs.reloj(),
-      hora_estimada_hub: hubs.reloj(),
-      secuencia_base: 0,
+      id: newId(),
+      type,
+      schema_version: 1,
+      aggregate_type: 'order',
+      aggregate_id: newId(),
+      related: [],
+      data,
+      session_id: s.sesionId,
+      user_id: s.user.id,
+      device_id: connection.dispositivoId,
+      authorization_id: null,
+      reason: null,
+      device_time: hubs.clock(),
+      hub_estimated_time: hubs.clock(),
+      base_sequence: 0,
       ...extras,
     } as never)
   }
 
   describe('con la misma carpeta', () => {
     it('la clave y los PIN siguen sirviendo, y no se muestra un administrador nuevo', () => {
-      const { h, adminPin, nuevo } = primerArranque()
-      const mesero = h.acceso.crearUsuario({ nombre: 'Ana', rolId: h.roles.mesero })
-      const celular = nuevo('mesero', 'Celular')
+      const { h, adminPin, fresh } = primerArranque()
+      const waiter = h.access.crearUsuario({ name: 'Ana', rolId: h.roles.waiter })
+      const phone = fresh('waiter', 'Celular')
       expect(h.claveNueva).toBe(true)
       hubs.apagar()
 
-      const despues = hubs.levantar()
-      expect(despues.claveNueva).toBe(false)
-      expect(despues.admin).toEqual(SIN_NOVEDAD)
-      expect(despues.restauranteId).toBe(h.restauranteId)
+      const after = hubs.spinUp()
+      expect(after.claveNueva).toBe(false)
+      expect(after.admin).toEqual(SIN_NOVEDAD)
+      expect(after.restauranteId).toBe(h.restauranteId)
       // El token del dispositivo, el PIN del mesero y el del administrador valen igual.
-      const conexion = despues.acceso.autenticar(celular.token)
-      expect(conexion).toMatchObject({
-        dispositivoId: celular.conexion.dispositivoId,
+      const connection = after.access.authenticate(phone.token)
+      expect(connection).toMatchObject({
+        dispositivoId: phone.connection.dispositivoId,
         revocadoEn: null,
       })
-      expect(sesion(despues, conexion as never, mesero.pin).usuario.nombre).toBe('Ana')
-      const c = despues.acceso.crearEmparejamiento(
-        { pin: adminPin, nombre: 'Otro', tipo: 'kds' },
-        conexion,
+      expect(session(after, connection as never, waiter.pin).user.name).toBe('Ana')
+      const c = after.access.crearEmparejamiento(
+        { pin: adminPin, name: 'Otro', type: 'kds' },
+        connection,
       )
       expect(c).toMatchObject({ ok: true })
     })
 
     it('una sesión abierta antes del reinicio sigue valiendo, con su secreto', () => {
-      const { h, nuevo } = primerArranque()
-      const mesero = h.acceso.crearUsuario({ nombre: 'Ana', rolId: h.roles.mesero })
-      const { conexion, token } = nuevo('mesero', 'Celular')
-      const s = sesion(h, conexion, mesero.pin)
-      const abierto = evento(h, conexion, s, 'PedidoAbierto', ABRIR)
+      const { h, fresh } = primerArranque()
+      const waiter = h.access.crearUsuario({ name: 'Ana', rolId: h.roles.waiter })
+      const { connection, token } = fresh('waiter', 'Celular')
+      const s = session(h, connection, waiter.pin)
+      const opened = event(h, connection, s, 'OrderOpened', ABRIR)
       hubs.apagar()
       hubs.avanzar(30_000)
 
-      const despues = hubs.levantar()
-      const nueva = despues.acceso.autenticar(token) as NonNullable<typeof conexion>
-      const r = despues.hub.recibirLote(nueva, [abierto])
-      expect(r.resultados[0]?.estado).toBe('confirmado')
-      expect(despues.acceso.cerrarSesion(nueva, s)).toEqual({ ok: true })
-      expect(despues.acceso.cerrarSesion(nueva, { ...s, secreto: 'otro' })).toMatchObject({
+      const after = hubs.spinUp()
+      const newOne = after.access.authenticate(token) as NonNullable<typeof connection>
+      const r = after.hub.recibirLote(newOne, [opened])
+      expect(r.resultados[0]?.status).toBe('confirmed')
+      expect(after.access.cerrarSesion(newOne, s)).toEqual({ ok: true })
+      expect(after.access.cerrarSesion(newOne, { ...s, secret: 'other' })).toMatchObject({
         ok: false,
       })
     })
 
     it('un dispositivo revocado sigue revocado tras el reinicio', () => {
-      const { h, adminPin, nuevo, credenciales } = primerArranque()
-      const caja = nuevo('caja', 'Caja')
-      const celular = nuevo('mesero', 'Celular')
-      const admin = sesionAdmin(h, caja.conexion, credenciales)
-      const r = h.acceso.revocarDispositivo(caja.conexion, {
+      const { h, adminPin, fresh, credenciales } = primerArranque()
+      const register = fresh('register', 'Caja')
+      const phone = fresh('waiter', 'Celular')
+      const admin = sesionAdmin(h, register.connection, credenciales)
+      const r = h.access.revocarDispositivo(register.connection, {
         ...admin,
-        dispositivoId: celular.conexion.dispositivoId,
+        dispositivoId: phone.connection.dispositivoId,
       })
-      if (!r.ok) throw new Error(r.mensaje)
+      if (!r.ok) throw new Error(r.message)
       hubs.apagar()
 
-      const despues = hubs.levantar()
-      expect(despues.acceso.autenticar(celular.token)?.revocadoEn).toBe(r.revocadoEn)
+      const after = hubs.spinUp()
+      expect(after.access.authenticate(phone.token)?.revocadoEn).toBe(r.revocadoEn)
       expect(
-        despues.acceso.iniciarSesion(despues.acceso.autenticar(celular.token) as never, adminPin),
-      ).toMatchObject({ codigo: 'dispositivo_revocado' })
+        after.access.startSession(after.access.authenticate(phone.token) as never, adminPin),
+      ).toMatchObject({ code: 'revoked_device' })
     })
 
     it('un usuario archivado sigue archivado: su PIN no entra tras el reinicio', () => {
-      const { h, nuevo } = primerArranque()
-      const luis = h.acceso.crearUsuario({ nombre: 'Luis', rolId: h.roles.mesero })
-      const celular = nuevo('mesero', 'Celular')
-      h.acceso.archivarUsuario(luis.usuarioId)
+      const { h, fresh } = primerArranque()
+      const luis = h.access.crearUsuario({ name: 'Luis', rolId: h.roles.waiter })
+      const phone = fresh('waiter', 'Celular')
+      h.access.archivarUsuario(luis.userId)
       hubs.apagar()
 
-      const despues = hubs.levantar()
+      const after = hubs.spinUp()
       expect(
-        despues.acceso.iniciarSesion(despues.acceso.autenticar(celular.token) as never, luis.pin),
-      ).toMatchObject({ codigo: 'pin_incorrecto' })
+        after.access.startSession(after.access.authenticate(phone.token) as never, luis.pin),
+      ).toMatchObject({ code: 'wrong_pin' })
     })
 
     it('los códigos de emparejamiento pendientes se pierden, y las esperas por fallos empiezan de cero', () => {
-      const { h, adminPin, nuevo } = primerArranque()
-      const ana = h.acceso.crearUsuario({ nombre: 'Ana', rolId: h.roles.mesero })
-      const celular = nuevo('mesero', 'Celular')
-      const c = h.acceso.crearEmparejamiento(
-        { pin: adminPin, nombre: 'X', tipo: 'kds' },
-        celular.conexion,
+      const { h, adminPin, fresh } = primerArranque()
+      const ana = h.access.crearUsuario({ name: 'Ana', rolId: h.roles.waiter })
+      const phone = fresh('waiter', 'Celular')
+      const c = h.access.crearEmparejamiento(
+        { pin: adminPin, name: 'X', type: 'kds' },
+        phone.connection,
       )
-      if (!c.ok) throw new Error(c.mensaje)
-      for (const pin of ['0001', '0002', '0003']) h.acceso.iniciarSesion(celular.conexion, pin)
-      expect(h.acceso.iniciarSesion(celular.conexion, ana.pin)).toMatchObject({ codigo: 'espera' })
+      if (!c.ok) throw new Error(c.message)
+      for (const pin of ['0001', '0002', '0003']) h.access.startSession(phone.connection, pin)
+      expect(h.access.startSession(phone.connection, ana.pin)).toMatchObject({ code: 'wait' })
       hubs.apagar()
 
-      const despues = hubs.levantar()
-      expect(despues.acceso.emparejar(c.codigo, '10.0.0.1')).toMatchObject({
-        codigo: 'codigo_invalido',
+      const after = hubs.spinUp()
+      expect(after.access.emparejar(c.code, '10.0.0.1')).toMatchObject({
+        code: 'invalid_code',
       })
-      expect(despues.acceso.iniciarSesion(celular.conexion, ana.pin)).toMatchObject({ ok: true })
+      expect(after.access.startSession(phone.connection, ana.pin)).toMatchObject({ ok: true })
     })
 
     it('reiniciar varias veces no duplica restaurante, roles ni administrador', () => {
       primerArranque()
       for (let i = 0; i < 4; i++) {
         hubs.apagar()
-        const h = hubs.levantar()
+        const h = hubs.spinUp()
         expect(h.admin).toEqual(SIN_NOVEDAD)
       }
-      const h = hubs.levantar()
-      const cuenta = (t: string) => Number(h.db.prepare(`SELECT count(*) AS n FROM ${t}`).get()?.n)
+      const h = hubs.spinUp()
+      const check = (t: string) => Number(h.db.prepare(`SELECT count(*) AS n FROM ${t}`).get()?.n)
       expect([
-        cuenta('restaurante'),
-        cuenta('rol'),
-        cuenta('usuario'),
-        cuenta('usuario_credencial'),
+        check('restaurants'),
+        check('roles'),
+        check('users'),
+        check('user_credentials'),
       ]).toEqual([1, 4, 1, 1])
     })
   })
 
   describe('con la clave borrada', () => {
     it('ningún PIN guardado sirve; el administrador recibe uno nuevo y avisa; los equipos siguen emparejados', () => {
-      const { h, adminPin, nuevo, credenciales } = primerArranque()
-      const ana = h.acceso.crearUsuario({ nombre: 'Ana', rolId: h.roles.mesero })
-      const celular = nuevo('mesero', 'Celular')
-      const abierta = sesion(h, celular.conexion, ana.pin)
+      const { h, adminPin, fresh, credenciales } = primerArranque()
+      const ana = h.access.crearUsuario({ name: 'Ana', rolId: h.roles.waiter })
+      const phone = fresh('waiter', 'Celular')
+      const abierta = session(h, phone.connection, ana.pin)
       hubs.apagar()
-      rmSync(join(carpeta, 'datos', ARCHIVO_CLAVE))
+      rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
 
-      const despues = hubs.levantar()
-      expect(despues.claveNueva).toBe(true)
-      expect(existsSync(join(carpeta, 'datos', ARCHIVO_CLAVE))).toBe(true)
-      expect(despues.admin.pin).toMatch(/^\d{4}$/)
-      expect(despues.admin.avisos.join(' ')).toMatch(/clave de los PIN/)
-      const conexion = despues.acceso.autenticar(celular.token) as NonNullable<
-        typeof celular.conexion
+      const after = hubs.spinUp()
+      expect(after.claveNueva).toBe(true)
+      expect(existsSync(join(carpeta, 'data', ARCHIVO_CLAVE))).toBe(true)
+      expect(after.admin.pin).toMatch(/^\d{4}$/)
+      expect(after.admin.avisos.join(' ')).toMatch(/clave de los PIN/)
+      const connection = after.access.authenticate(phone.token) as NonNullable<
+        typeof phone.connection
       >
-      expect(conexion.dispositivoId).toBe(celular.conexion.dispositivoId)
+      expect(connection.dispositivoId).toBe(phone.connection.dispositivoId)
 
       // Los PIN de antes no entran; el nuevo del administrador sí.
       hubs.avanzar(60_000)
-      if (despues.admin.pin !== adminPin)
-        expect(despues.acceso.iniciarSesion(conexion, adminPin)).toMatchObject({
-          codigo: 'pin_incorrecto',
+      if (after.admin.pin !== adminPin)
+        expect(after.access.startSession(connection, adminPin)).toMatchObject({
+          code: 'wrong_pin',
         })
       hubs.avanzar(60_000)
-      if (despues.admin.pin !== ana.pin)
-        expect(despues.acceso.iniciarSesion(conexion, ana.pin)).toMatchObject({
-          codigo: 'pin_incorrecto',
+      if (after.admin.pin !== ana.pin)
+        expect(after.access.startSession(connection, ana.pin)).toMatchObject({
+          code: 'wrong_pin',
         })
       // La contraseña no depende de la clave de los PIN: el administrador sigue entrando, y su PIN
       // nuevo autoriza.
       hubs.avanzar(60_000)
-      expect(despues.admin.contrasena).toBeNull()
-      expect(despues.acceso.entrar(credenciales, conexion, '10.0.0.9')).toMatchObject({
+      expect(after.admin.password).toBeNull()
+      expect(after.access.entrar(credenciales, connection, '10.0.0.9')).toMatchObject({
         ok: true,
-        usuario: { nombre: 'Administrador' },
+        user: { name: 'Administrador' },
       })
       // La sesión que Ana tenía abierta es del dispositivo, no de la clave: se cerró al entrar el admin.
-      expect(despues.acceso.cerrarSesion(conexion, abierta)).toMatchObject({ ok: false })
+      expect(after.access.cerrarSesion(connection, abierta)).toMatchObject({ ok: false })
     })
 
     it('lo que un celular firmó con la sesión de antes de perder la clave va a cuarentena: no entra ni se pierde', () => {
-      const { h, nuevo } = primerArranque()
-      const ana = h.acceso.crearUsuario({ nombre: 'Ana', rolId: h.roles.mesero })
-      const celular = nuevo('mesero', 'Celular')
-      const s = sesion(h, celular.conexion, ana.pin)
-      const pendiente = evento(h, celular.conexion, s, 'PedidoAbierto', ABRIR)
+      const { h, fresh } = primerArranque()
+      const ana = h.access.crearUsuario({ name: 'Ana', rolId: h.roles.waiter })
+      const phone = fresh('waiter', 'Celular')
+      const s = session(h, phone.connection, ana.pin)
+      const pending = event(h, phone.connection, s, 'OrderOpened', ABRIR)
       hubs.apagar()
-      rmSync(join(carpeta, 'datos', ARCHIVO_CLAVE))
+      rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
       hubs.avanzar(60_000)
 
       // El secreto de cada sesión sale de la clave: con otra clave, la firma ya no cuadra. Como la
       // sesión es de antes de la clave nueva, el gerente decide.
-      const despues = hubs.levantar()
-      const conexion = despues.acceso.autenticar(celular.token) as never
-      const r = despues.hub.recibirLote(conexion, [pendiente])
-      expect(r.resultados[0]?.estado).toBe('cuarentena')
-      expect(Number(despues.db.prepare('SELECT count(*) AS n FROM evento').get()?.n)).toBe(0)
+      const after = hubs.spinUp()
+      const connection = after.access.authenticate(phone.token) as never
+      const r = after.hub.recibirLote(connection, [pending])
+      expect(r.resultados[0]?.status).toBe('quarantine')
+      expect(Number(after.db.prepare('SELECT count(*) AS n FROM events').get()?.n)).toBe(0)
     })
 
     it('con el PIN nuevo del administrador se regenera el de cada persona, y el viejo deja de servir', () => {
-      const { h, nuevo } = primerArranque()
-      const ana = h.acceso.crearUsuario({ nombre: 'Ana', rolId: h.roles.mesero })
-      const caja = nuevo('caja', 'Caja')
+      const { h, fresh } = primerArranque()
+      const ana = h.access.crearUsuario({ name: 'Ana', rolId: h.roles.waiter })
+      const register = fresh('register', 'Caja')
       hubs.apagar()
-      rmSync(join(carpeta, 'datos', ARCHIVO_CLAVE))
+      rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
 
-      const despues = hubs.levantar()
-      const nuevoPin = despues.acceso.regenerarPin(ana.usuarioId)
-      const c = despues.acceso.crearEmparejamiento(
-        { pin: despues.admin.pin as string, nombre: 'Cel', tipo: 'mesero' },
-        despues.acceso.autenticar(caja.token),
+      const after = hubs.spinUp()
+      const nuevoPin = after.access.regenerarPin(ana.userId)
+      const c = after.access.crearEmparejamiento(
+        { pin: after.admin.pin as string, name: 'Cel', type: 'waiter' },
+        after.access.authenticate(register.token),
       )
-      if (!c.ok) throw new Error(c.mensaje)
-      const e = despues.acceso.emparejar(c.codigo, 'ip')
-      if (!e.ok) throw new Error(e.mensaje)
-      const conexion = despues.acceso.autenticar(e.token) as never
-      expect(despues.acceso.iniciarSesion(conexion, nuevoPin)).toMatchObject({
+      if (!c.ok) throw new Error(c.message)
+      const e = after.access.emparejar(c.code, 'ip')
+      if (!e.ok) throw new Error(e.message)
+      const connection = after.access.authenticate(e.token) as never
+      expect(after.access.startSession(connection, nuevoPin)).toMatchObject({
         ok: true,
-        usuario: { nombre: 'Ana' },
+        user: { name: 'Ana' },
       })
     })
 
     it('la clave nueva queda en la carpeta: al reiniciar otra vez los PIN regenerados sirven', () => {
-      const { nuevo } = primerArranque()
-      const caja = nuevo('caja', 'Caja')
+      const { fresh } = primerArranque()
+      const register = fresh('register', 'Caja')
       hubs.apagar()
-      rmSync(join(carpeta, 'datos', ARCHIVO_CLAVE))
-      const regenerado = hubs.levantar()
+      rmSync(join(carpeta, 'data', ARCHIVO_CLAVE))
+      const regenerado = hubs.spinUp()
       const pin = regenerado.admin.pin as string
       hubs.apagar()
 
-      const otra = hubs.levantar()
-      expect(otra.claveNueva).toBe(false)
-      expect(otra.admin).toEqual(SIN_NOVEDAD)
+      const another = hubs.spinUp()
+      expect(another.claveNueva).toBe(false)
+      expect(another.admin).toEqual(SIN_NOVEDAD)
       expect(
-        otra.acceso.crearEmparejamiento(
-          { pin, nombre: 'X', tipo: 'caja' },
-          otra.acceso.autenticar(caja.token),
+        another.access.crearEmparejamiento(
+          { pin, name: 'X', type: 'register' },
+          another.access.authenticate(register.token),
         ),
       ).toMatchObject({
         ok: true,
@@ -327,7 +327,7 @@ describe('reinicio y caídas del hub', () => {
     })
 
     it('un hub nuevo (carpeta vacía) crea su administrador sin el aviso de clave perdida', () => {
-      const h = hubs.levantar()
+      const h = hubs.spinUp()
       expect(h.claveNueva).toBe(true)
       expect(h.admin.pin).toMatch(/^\d{4}$/)
       expect(h.admin.avisos).toEqual([])
@@ -336,62 +336,62 @@ describe('reinicio y caídas del hub', () => {
     it('si la clave se borra y la base también, es un hub nuevo y arranca limpio', () => {
       primerArranque()
       hubs.apagar()
-      rmSync(join(carpeta, 'datos'), { recursive: true })
+      rmSync(join(carpeta, 'data'), { recursive: true })
 
-      const h = hubs.levantar()
+      const h = hubs.spinUp()
       expect(h.claveNueva).toBe(true)
       expect(h.admin.avisos).toEqual([])
-      expect(Number(h.db.prepare('SELECT count(*) AS n FROM usuario').get()?.n)).toBe(1)
+      expect(Number(h.db.prepare('SELECT count(*) AS n FROM users').get()?.n)).toBe(1)
     })
   })
 
   describe('caída entre autorizar y recibir el evento', () => {
     /** El mesero tiene un ítem enviado y la gerente autoriza anularlo. */
     function conAutorizacion() {
-      const { h, nuevo } = primerArranque()
+      const { h, fresh } = primerArranque()
       // De fábrica, el cajero puede autorizar anulaciones (ADR-013).
-      const gerente = h.acceso.crearUsuario({ nombre: 'Gloria', rolId: h.roles.cajero })
-      const ana = h.acceso.crearUsuario({ nombre: 'Ana', rolId: h.roles.mesero })
-      const { conexion, token } = nuevo('mesero', 'Celular')
-      const s = sesion(h, conexion, ana.pin)
-      const pedido = nuevoId()
+      const manager = h.access.crearUsuario({ name: 'Gloria', rolId: h.roles.cashier })
+      const ana = h.access.crearUsuario({ name: 'Ana', rolId: h.roles.waiter })
+      const { connection, token } = fresh('waiter', 'Celular')
+      const s = session(h, connection, ana.pin)
+      const order = newId()
       const it = item()
-      const en = { agregado_id: pedido }
-      const lote = [
-        evento(h, conexion, s, 'PedidoAbierto', ABRIR, en),
-        evento(h, conexion, s, 'ItemAgregado', it, { ...en, secuencia_base: 1 }),
-        evento(
+      const en = { aggregate_id: order }
+      const batch = [
+        event(h, connection, s, 'OrderOpened', ABRIR, en),
+        event(h, connection, s, 'ItemAdded', it, { ...en, base_sequence: 1 }),
+        event(
           h,
-          conexion,
+          connection,
           s,
-          'ItemsEnviados',
-          { comandas: [{ comanda_id: nuevoId(), estacion_id: nuevoId(), item_ids: [it.item_id] }] },
-          { ...en, secuencia_base: 2 },
+          'ItemsSent',
+          { tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [it.item_id] }] },
+          { ...en, base_sequence: 2 },
         ),
       ]
-      expect(h.hub.recibirLote(conexion, lote).resultados.map((x) => x.estado)).toEqual([
-        'confirmado',
-        'confirmado',
-        'confirmado',
+      expect(h.hub.recibirLote(connection, batch).resultados.map((x) => x.status)).toEqual([
+        'confirmed',
+        'confirmed',
+        'confirmed',
       ])
-      const sinComprobante = evento(h, conexion, s, 'ItemAnulado', datosAnular(it.item_id), {
-        agregado_id: pedido,
-        motivo: 'El cliente cambió de idea',
-        secuencia_base: 3,
+      const sinComprobante = event(h, connection, s, 'ItemVoided', datosAnular(it.item_id), {
+        aggregate_id: order,
+        reason: 'El cliente cambió de idea',
+        base_sequence: 3,
       })
-      const { comprobante, evento: anular } = autorizarEvento(
+      const { comprobante, event: voidItem } = autorizarEvento(
         h,
-        conexion,
+        connection,
         s,
-        gerente.pin,
+        manager.pin,
         sinComprobante as never,
       )
       return {
         h,
         token,
-        anular,
-        gerente,
-        pedido,
+        voidItem,
+        manager,
+        order,
         itemId: it.item_id,
         autorizacionId: comprobante.autorizacionId,
       }
@@ -402,19 +402,19 @@ describe('reinicio y caídas del hub', () => {
       hubs.apagar()
       hubs.avanzar(90_000) // se tarda en volver, pero dentro de la vigencia del comprobante
 
-      const despues = hubs.levantar()
-      expect(despues.db.prepare('SELECT supervisor_id, usada_en FROM autorizacion').get()).toEqual({
-        supervisor_id: c.gerente.usuarioId,
-        usada_en: null,
+      const after = hubs.spinUp()
+      expect(after.db.prepare('SELECT supervisor_id, used_at FROM authorizations').get()).toEqual({
+        supervisor_id: c.manager.userId,
+        used_at: null,
       })
-      const conexion = despues.acceso.autenticar(c.token) as never
-      const r = despues.hub.recibirLote(conexion, [c.anular])
+      const connection = after.access.authenticate(c.token) as never
+      const r = after.hub.recibirLote(connection, [c.voidItem])
       expect(r.resultados[0]).toMatchObject({
-        estado: 'confirmado',
-        aceptacion: { autorizado_por_id: c.gerente.usuarioId },
+        status: 'confirmed',
+        aceptacion: { authorized_by_id: c.manager.userId },
       })
-      expect(despues.db.prepare('SELECT usada_en FROM autorizacion').get()?.usada_en).toBe(
-        hubs.reloj(),
+      expect(after.db.prepare('SELECT used_at FROM authorizations').get()?.used_at).toBe(
+        hubs.clock(),
       )
     })
 
@@ -423,26 +423,27 @@ describe('reinicio y caídas del hub', () => {
       hubs.apagar()
       hubs.avanzar(3 * 60 * 60_000)
 
-      const despues = hubs.levantar()
-      const conexion = despues.acceso.autenticar(c.token) as never
-      expect(despues.hub.recibirLote(conexion, [c.anular]).resultados[0]?.estado).toBe('confirmado')
+      const after = hubs.spinUp()
+      const connection = after.access.authenticate(c.token) as never
+      expect(after.hub.recibirLote(connection, [c.voidItem]).resultados[0]?.status).toBe(
+        'confirmed',
+      )
     })
 
     it('el comprobante se gasta una sola vez aunque el hub se reinicie y el celular reenvíe', () => {
       const c = conAutorizacion()
-      const conexion = c.h.acceso.autenticar(c.token) as never
-      const primera = c.h.hub.recibirLote(conexion, [c.anular])
+      const connection = c.h.access.authenticate(c.token) as never
+      const first = c.h.hub.recibirLote(connection, [c.voidItem])
       hubs.apagar()
 
-      const despues = hubs.levantar()
-      const conexion2 = despues.acceso.autenticar(c.token) as never
-      const segunda = despues.hub.recibirLote(conexion2, [c.anular])
+      const after = hubs.spinUp()
+      const conexion2 = after.access.authenticate(c.token) as never
+      const segunda = after.hub.recibirLote(conexion2, [c.voidItem])
 
-      expect(segunda.resultados).toEqual(primera.resultados)
+      expect(segunda.resultados).toEqual(first.resultados)
       expect(
         Number(
-          despues.db.prepare("SELECT count(*) AS n FROM evento WHERE tipo = 'ItemAnulado'").get()
-            ?.n,
+          after.db.prepare("SELECT count(*) AS n FROM events WHERE type = 'ItemVoided'").get()?.n,
         ),
       ).toBe(1)
     })
@@ -453,7 +454,7 @@ describe('reinicio y caídas del hub', () => {
       // desde ahí ni siquiera puede anotar un rechazo, y el proceso del hub termina.
       class AlmacenQueSeApaga extends AlmacenSqlite {
         caido = false
-        override guardarEvento(..._a: Parameters<AlmacenSqlite['guardarEvento']>): void {
+        override saveEvent(..._a: Parameters<AlmacenSqlite['saveEvent']>): void {
           this.caido = true
           throw new Error('se fue la luz')
         }
@@ -464,63 +465,63 @@ describe('reinicio y caídas del hub', () => {
       }
       const configDe = (h: Levantado) => ({
         restauranteId: h.restauranteId,
-        zonaHoraria: 'America/Bogota',
+        timeZone: 'America/Bogota',
         inicioDiaOperativo: '06:00',
         instancia: 'hub-1',
-        reloj: hubs.reloj,
-        acceso: h.acceso,
+        clock: hubs.clock,
+        access: h.access,
       })
-      const cuenta = (h: Levantado) =>
-        Number(h.db.prepare("SELECT count(*) AS n FROM evento WHERE tipo = 'ItemAnulado'").get()?.n)
-      const conexion = c.h.acceso.autenticar(c.token) as never
+      const check = (h: Levantado) =>
+        Number(h.db.prepare("SELECT count(*) AS n FROM events WHERE type = 'ItemVoided'").get()?.n)
+      const connection = c.h.access.authenticate(c.token) as never
       const muriendo = new HubSync(new AlmacenQueSeApaga(c.h.db, c.h.restauranteId), configDe(c.h))
 
-      expect(() => muriendo.recibirLote(conexion, [c.anular])).toThrow(/apagado/)
-      expect(cuenta(c.h)).toBe(0)
-      expect(c.h.db.prepare('SELECT usada_en FROM autorizacion').get()?.usada_en).toBeNull()
+      expect(() => muriendo.recibirLote(connection, [c.voidItem])).toThrow(/apagado/)
+      expect(check(c.h)).toBe(0)
+      expect(c.h.db.prepare('SELECT used_at FROM authorizations').get()?.used_at).toBeNull()
 
       hubs.apagar()
       hubs.avanzar(20_000)
-      const despues = hubs.levantar()
-      const r = despues.hub.recibirLote(despues.acceso.autenticar(c.token) as never, [c.anular])
+      const after = hubs.spinUp()
+      const r = after.hub.recibirLote(after.access.authenticate(c.token) as never, [c.voidItem])
       expect(r.resultados[0]).toMatchObject({
-        estado: 'confirmado',
-        aceptacion: { autorizado_por_id: c.gerente.usuarioId },
+        status: 'confirmed',
+        aceptacion: { authorized_by_id: c.manager.userId },
       })
-      expect(cuenta(despues)).toBe(1)
+      expect(check(after)).toBe(1)
     })
 
     it('si falla justo al usar el comprobante, el evento y el comprobante quedan igual que antes', () => {
       const c = conAutorizacion()
-      let falla = true
+      let failing = true
       const cae = (a: ServicioAcceso): ControlAcceso => ({
-        verificar: (conexion, ev, pedido) => a.verificar(conexion, ev, pedido),
+        verify: (connection, ev, order) => a.verify(connection, ev, order),
         registrarUso: (ev, v) => {
           // El comprobante se gasta antes de que la transacción termine...
           a.registrarUso(ev, v)
-          if (falla) throw new Error('se fue la luz')
+          if (failing) throw new Error('se fue la luz')
         },
       })
       const hub = new HubSync(new AlmacenSqlite(c.h.db, c.h.restauranteId), {
         restauranteId: c.h.restauranteId,
-        zonaHoraria: 'America/Bogota',
+        timeZone: 'America/Bogota',
         inicioDiaOperativo: '06:00',
         instancia: 'hub-1',
-        reloj: hubs.reloj,
-        acceso: cae(c.h.acceso),
+        clock: hubs.clock,
+        access: cae(c.h.access),
       })
-      const conexion = c.h.acceso.autenticar(c.token) as never
-      const r = hub.recibirLote(conexion, [c.anular])
+      const connection = c.h.access.authenticate(c.token) as never
+      const r = hub.recibirLote(connection, [c.voidItem])
 
       // ...pero la transacción se deshace: ni evento ni comprobante gastado.
-      expect(r.resultados[0]).toMatchObject({ estado: 'rechazado', motivo: 'error_interno' })
+      expect(r.resultados[0]).toMatchObject({ status: 'rejected', reason: 'internal_error' })
       expect(
         Number(
-          c.h.db.prepare("SELECT count(*) AS n FROM evento WHERE tipo = 'ItemAnulado'").get()?.n,
+          c.h.db.prepare("SELECT count(*) AS n FROM events WHERE type = 'ItemVoided'").get()?.n,
         ),
       ).toBe(0)
-      expect(c.h.db.prepare('SELECT usada_en FROM autorizacion').get()?.usada_en).toBeNull()
-      falla = false
+      expect(c.h.db.prepare('SELECT used_at FROM authorizations').get()?.used_at).toBeNull()
+      failing = false
     })
   })
 })

@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { atender } from '../api'
 import { type HubAutenticado, Nube } from '../nube'
 import type { Sql } from '../sql'
@@ -15,49 +15,49 @@ export const SEMILLA = 20261026
 const ALFABETO_ULID = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 
 /** Un ULID válido y determinista a partir de un número (y una letra de marca para distinguir). */
-export function ulid(n: number, marca = 'A'): string {
-  let resto = n
+export function ulid(n: number, brand = 'A'): string {
+  let rest = n
   let cola = ''
   while (cola.length < 24) {
-    cola = ALFABETO_ULID[resto % 32] + cola
-    resto = Math.floor(resto / 32)
+    cola = ALFABETO_ULID[rest % 32] + cola
+    rest = Math.floor(rest / 32)
   }
-  return `0${marca}${cola}`
+  return `0${brand}${cola}`
 }
 
 export interface EventoPlano {
   id: string
-  tipo: string
-  agregado_tipo: string
-  agregado_id: string
-  secuencia: number
-  recibido_en: string
-  dia_operativo: string
-  datos: Record<string, unknown>
-  [campo: string]: unknown
+  type: string
+  aggregate_type: string
+  aggregate_id: string
+  sequence: number
+  received_at: string
+  business_day: string
+  data: Record<string, unknown>
+  [field: string]: unknown
 }
 
 /** Un evento mínimo pero válido para la nube; el número fija su id y su secuencia. */
 export function eventoPlano(n: number, extras: Partial<EventoPlano> = {}): EventoPlano {
   return {
     id: ulid(n, 'E'),
-    tipo: 'ItemAgregado',
-    agregado_tipo: 'pedido',
-    agregado_id: ulid(Math.floor(n / 3), 'P'),
-    secuencia: n,
-    recibido_en: '2026-10-26T15:00:00.000Z',
-    dia_operativo: '2026-10-26',
-    datos: { cantidad: (n % 5) + 1, notas: `nota ${n}` },
+    type: 'ItemAdded',
+    aggregate_type: 'order',
+    aggregate_id: ulid(Math.floor(n / 3), 'P'),
+    sequence: n,
+    received_at: '2026-10-26T15:00:00.000Z',
+    business_day: '2026-10-26',
+    data: { quantity: (n % 5) + 1, notes: `nota ${n}` },
     ...extras,
   }
 }
 
-export const lote = (desde: number, cuantos: number) =>
-  Array.from({ length: cuantos }, (_, i) => eventoPlano(desde + i))
+export const batch = (from: number, cuantos: number) =>
+  Array.from({ length: cuantos }, (_, i) => eventoPlano(from + i))
 
 export interface HubDePrueba {
   hub: HubAutenticado
-  credencial: string
+  credential: string
   restauranteId: string
 }
 
@@ -65,36 +65,36 @@ export interface Mundo {
   sql: Sql
   db: Awaited<ReturnType<typeof baseDePrueba>>['db']
   nube: Nube
-  reloj: { ahora: Date }
+  clock: { ahora: Date }
   /** Crea (si hace falta) el restaurante y registra un hub con un código nuevo. */
   nuevoHub: (restauranteId?: string) => Promise<HubDePrueba>
   /** Una petición a la API con el token y el reloj de la prueba. */
-  pedir: (metodo: string, ruta: string, cuerpo?: unknown, token?: string) => Promise<Response>
+  request: (metodo: string, ruta: string, cuerpo?: unknown, token?: string) => Promise<Response>
 }
 
 export async function crearMundo(): Promise<Mundo> {
   const { sql, db } = await baseDePrueba()
-  const reloj = { ahora: AHORA }
-  const nube = new Nube(sql, () => reloj.ahora)
-  const nuevoHub = async (restauranteId = nuevoId()): Promise<HubDePrueba> => {
-    await nube.crearRestaurante({ id: restauranteId, nombre: 'Restaurante de prueba' })
-    const codigo = await nube.crearCodigo(restauranteId)
-    if (!codigo) throw new Error('sin código')
+  const clock = { ahora: AHORA }
+  const nube = new Nube(sql, () => clock.ahora)
+  const nuevoHub = async (restauranteId = newId()): Promise<HubDePrueba> => {
+    await nube.crearRestaurante({ id: restauranteId, name: 'Restaurante de prueba' })
+    const code = await nube.crearCodigo(restauranteId)
+    if (!code) throw new Error('sin código')
     const r = await nube.registrarHub({
-      codigo: codigo.codigo,
-      hub_id: nuevoId(),
-      sede_id: nuevoId(),
-      nombre: 'Caja',
+      code: code.code,
+      hub_id: newId(),
+      location_id: newId(),
+      name: 'Caja',
       instancia: 'i',
     })
-    if (!r.ok) throw new Error(r.motivo)
-    const hub = await nube.autenticar(r.credencial)
+    if (!r.ok) throw new Error(r.reason)
+    const hub = await nube.authenticate(r.credential)
     if (!hub) throw new Error('sin hub')
-    return { hub, credencial: r.credencial, restauranteId }
+    return { hub, credential: r.credential, restauranteId }
   }
-  const pedir: Mundo['pedir'] = (metodo, ruta, cuerpo, token) =>
+  const request: Mundo['request'] = (metodo, ruta, cuerpo, token) =>
     atender(
-      new Request(`https://nube.faro.test${ruta}`, {
+      new Request(`https://cloud.faro.test${ruta}`, {
         method: metodo,
         headers: {
           ...(cuerpo !== undefined ? { 'content-type': 'application/json' } : {}),
@@ -107,21 +107,21 @@ export async function crearMundo(): Promise<Mundo> {
               ? cuerpo
               : JSON.stringify(cuerpo),
       }),
-      { sql, tokenAdmin: ADMIN, reloj: () => reloj.ahora },
+      { sql, tokenAdmin: ADMIN, clock: () => clock.ahora },
     )
-  return { sql, db, nube, reloj, nuevoHub, pedir }
+  return { sql, db, nube, clock, nuevoHub, request }
 }
 
 /** Lo guardado de un restaurante, ordenado por id, para comparar corridas distintas. */
 export async function eventosGuardados(db: Mundo['db'], restauranteId: string) {
   const r = await db.query<{
     id: string
-    huella: string
-    secuencia_hub: string
+    fingerprint: string
+    hub_sequence: string
     hub_id: string
-    contenido: unknown
+    content: unknown
   }>(
-    'SELECT id, huella, secuencia_hub::text, hub_id, contenido FROM evento WHERE restaurante_id = $1 ORDER BY id',
+    'SELECT id, fingerprint, hub_sequence::text, hub_id, content FROM events WHERE restaurant_id = $1 ORDER BY id',
     [restauranteId],
   )
   return r.rows
@@ -130,11 +130,11 @@ export async function eventosGuardados(db: Mundo['db'], restauranteId: string) {
 export async function contar(db: Mundo['db'], tabla: string, restauranteId?: string) {
   const r = restauranteId
     ? await db.query<{ n: number }>(
-        `SELECT count(*)::int AS n FROM ${tabla} WHERE restaurante_id = $1`,
+        `SELECT count(*)::int AS n FROM ${tabla} WHERE restaurant_id = $1`,
         [restauranteId],
       )
     : await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${tabla}`)
   return r.rows[0]?.n ?? 0
 }
 
-export const estados = (r: { estado: string }[]) => r.map((x) => x.estado)
+export const statuses = (r: { status: string }[]) => r.map((x) => x.status)

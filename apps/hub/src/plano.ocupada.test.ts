@@ -4,7 +4,7 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { firmarEvento, nuevoId } from '@pos/core'
+import { newId, signEvent } from '@pos/core'
 import type { BaseSqlite } from '@pos/db'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { abrirDatos, prepararAcceso } from './arranque'
@@ -23,9 +23,9 @@ const CARTA = readFileSync(
 )
 
 function puertoLibre(): Promise<number> {
-  return new Promise((resolver, rechazar) => {
+  return new Promise((resolver, reject) => {
     const servidor = createServer()
-    servidor.once('error', rechazar)
+    servidor.once('error', reject)
     servidor.listen(0, '127.0.0.1', () => {
       const { port } = servidor.address() as { port: number }
       servidor.close(() => resolver(port))
@@ -34,40 +34,40 @@ function puertoLibre(): Promise<number> {
 }
 
 interface Arrancado {
-  hijo: ChildProcess
-  salida: () => string
+  child: ChildProcess
+  output: () => string
   detener: () => Promise<void>
 }
 
 function arrancar(env: Record<string, string>): Promise<Arrancado> {
-  const hijo = spawn(
+  const child = spawn(
     process.execPath,
     ['--disable-warning=ExperimentalWarning', '--import', 'tsx', 'src/main.ts'],
     { cwd: DIR_HUB, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
   )
-  let texto = ''
+  let text = ''
   const acumular = (trozo: Buffer) => {
-    texto += String(trozo)
+    text += String(trozo)
   }
-  hijo.stdout?.on('data', acumular)
-  hijo.stderr?.on('data', acumular)
-  const terminado = new Promise<void>((resolver) => hijo.once('exit', () => resolver()))
-  return new Promise((resolver, rechazar) => {
+  child.stdout?.on('data', acumular)
+  child.stderr?.on('data', acumular)
+  const terminado = new Promise<void>((resolver) => child.once('exit', () => resolver()))
+  return new Promise((resolver, reject) => {
     const revisar = () => {
-      if (!texto.includes('Hub en marcha')) return
-      hijo.stdout?.off('data', revisar)
+      if (!text.includes('Hub en marcha')) return
+      child.stdout?.off('data', revisar)
       resolver({
-        hijo,
-        salida: () => texto,
+        child,
+        output: () => text,
         detener: async () => {
-          hijo.kill('SIGKILL')
+          child.kill('SIGKILL')
           await terminado
         },
       })
     }
-    hijo.stdout?.on('data', revisar)
-    hijo.once('exit', (codigo) =>
-      rechazar(new Error(`El hub terminó con código ${codigo} antes de arrancar:\n${texto}`)),
+    child.stdout?.on('data', revisar)
+    child.once('exit', (code) =>
+      reject(new Error(`El hub terminó con código ${code} antes de arrancar:\n${text}`)),
     )
   })
 }
@@ -81,51 +81,51 @@ function conectarWs(url: string, token: string) {
   const recibidos: Json[] = []
   const esperando: { cumple: (m: Json) => boolean; resolver: (m: Json) => void }[] = []
   ws.addEventListener('message', (e) => {
-    const mensaje = JSON.parse(String(e.data)) as Json
-    recibidos.push(mensaje)
+    const message = JSON.parse(String(e.data)) as Json
+    recibidos.push(message)
     for (const [i, w] of esperando.entries())
-      if (w.cumple(mensaje)) {
+      if (w.cumple(message)) {
         esperando.splice(i, 1)
-        w.resolver(mensaje)
+        w.resolver(message)
         break
       }
   })
-  const abierto = new Promise<void>((resolver, rechazar) => {
+  const opened = new Promise<void>((resolver, reject) => {
     ws.addEventListener('open', () => resolver())
-    ws.addEventListener('error', () => rechazar(new Error('No abrió el WebSocket')))
+    ws.addEventListener('error', () => reject(new Error('No abrió el WebSocket')))
   })
-  const esperar = (tipo: string, cumple: (m: Json) => boolean = () => true) => {
-    const ya = recibidos.find((m) => m.tipo === tipo && cumple(m))
-    if (ya) return Promise.resolve(ya)
+  const esperar = (type: string, cumple: (m: Json) => boolean = () => true) => {
+    const already = recibidos.find((m) => m.type === type && cumple(m))
+    if (already) return Promise.resolve(already)
     return new Promise<Json>((resolver) =>
-      esperando.push({ cumple: (m) => m.tipo === tipo && cumple(m), resolver }),
+      esperando.push({ cumple: (m) => m.type === type && cumple(m), resolver }),
     )
   }
-  const enviar = (m: object) => ws.send(JSON.stringify(m))
+  const send = (m: object) => ws.send(JSON.stringify(m))
   return {
     ws,
     recibidos,
     esperar,
-    enviar,
+    send,
     async saludar() {
-      await abierto
-      enviar({ tipo: 'hola', token, hub_instancia: null, hasta: 0, version_app: 'prueba' })
-      return esperar('bienvenido')
+      await opened
+      send({ type: 'hello', token, hub_instancia: null, until: 0, version_app: 'prueba' })
+      return esperar('welcome')
     },
-    cerrar: () => ws.close(),
+    close: () => ws.close(),
   }
 }
 
 describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
   let carpeta = ''
   let hub: Arrancado | undefined
-  const abiertos: { cerrar: () => void }[] = []
+  const abiertos: { close: () => void }[] = []
 
   beforeEach(() => {
     carpeta = mkdtempSync(join(tmpdir(), 'pos-ocupada-'))
   })
   afterEach(async () => {
-    for (const c of abiertos.splice(0)) c.cerrar()
+    for (const c of abiertos.splice(0)) c.close()
     await hub?.detener()
     hub = undefined
     rmSync(carpeta, { recursive: true, force: true })
@@ -133,44 +133,42 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
 
   /** Siembra el salón (con personal) y deja la carpeta lista para que arranque el hub. */
   function prepararCarpeta() {
-    const dirDatos = join(carpeta, 'datos')
+    const dirDatos = join(carpeta, 'data')
     const { db } = abrirDatos(dirDatos)
-    const acceso = prepararAcceso(db, dirDatos)
-    const { pines } = sembrar(
+    const access = prepararAcceso(db, dirDatos)
+    const { pins } = sembrar(
       db,
-      acceso.acceso,
-      { restauranteId: acceso.restauranteId, roles: acceso.roles, carta: leerCarta(CARTA) },
+      access.access,
+      { restauranteId: access.restauranteId, roles: access.roles, menu: leerCarta(CARTA) },
       new Date().toISOString(),
     )
     ;(db as BaseSqlite & { close(): void }).close()
     /** Con qué entra cada quien: usuario y contraseña si los tiene (ADR-013), si no su PIN. */
-    const credencialesDe = (nombre: string) => {
-      if (nombre === 'Administrador')
+    const credencialesDe = (name: string) => {
+      if (name === 'Administrador')
         return {
-          usuario: acceso.admin.usuario as string,
-          contrasena: acceso.admin.contrasena as string,
+          user: access.admin.user as string,
+          password: access.admin.password as string,
         }
-      const p = pines.find((x) => x.nombre === nombre)
-      return p?.usuario
-        ? { usuario: p.usuario, contrasena: p.contrasena as string }
-        : { pin: p?.pin as string }
+      const p = pins.find((x) => x.name === name)
+      return p?.user ? { user: p.user, password: p.password as string } : { pin: p?.pin as string }
     }
     return { dirDatos, credencialesDe }
   }
 
-  async function levantar(dirDatos: string, puerto: number) {
+  async function spinUp(dirDatos: string, port: number) {
     hub = await arrancar({
-      DIR_DATOS: dirDatos,
+      DATA_DIR: dirDatos,
       DIR_APP: join(carpeta, 'sin-app'),
-      PUERTO: String(puerto),
+      PORT: String(port),
     })
   }
 
-  async function escenario() {
+  async function scenario() {
     const { dirDatos, credencialesDe } = prepararCarpeta()
-    const puerto = await puertoLibre()
-    await levantar(dirDatos, puerto)
-    const url = `http://127.0.0.1:${puerto}`
+    const port = await puertoLibre()
+    await spinUp(dirDatos, port)
+    const url = `http://127.0.0.1:${port}`
     const post = async (ruta: string, cuerpo: object, token?: string) => {
       const r = await fetch(url + ruta, {
         method: 'POST',
@@ -180,7 +178,7 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
         },
         body: JSON.stringify(cuerpo),
       })
-      return { codigo: r.status, cuerpo: (await r.json()) as Json }
+      return { code: r.status, cuerpo: (await r.json()) as Json }
     }
     const get = async (ruta: string, token: string) =>
       (await (
@@ -188,245 +186,245 @@ describe('mesa ocupada por la ruta real del hub (main.ts)', () => {
       ).json()) as Json
 
     // Entran sin emparejar (ADR-013): el hub registra cada equipo.
-    const emparejar = async (tipo: 'caja' | 'mesero', _nombre: string) => {
+    const emparejar = async (type: 'register' | 'waiter', _nombre: string) => {
       const { cuerpo: r } = await post(
-        '/api/entrar',
-        credencialesDe(tipo === 'caja' ? 'Administrador' : 'Mesero 2'),
+        '/api/sign-in',
+        credencialesDe(type === 'register' ? 'Administrador' : 'Mesero 2'),
       )
-      return r.equipo as { token: string; dispositivo_id: string }
+      return r.device as { token: string; device_id: string }
     }
-    const caja = await emparejar('caja', 'Caja')
-    const celular = await emparejar('mesero', 'Celular')
-    const sesion = async (equipo: { token: string }, nombre: string) =>
-      (await post('/api/entrar', credencialesDe(nombre), equipo.token)).cuerpo as Json
-    const gerente = await sesion(caja, 'Administrador')
-    const mesero = await sesion(celular, 'Mesero 1')
+    const register = await emparejar('register', 'Caja')
+    const phone = await emparejar('waiter', 'Celular')
+    const session = async (device: { token: string }, name: string) =>
+      (await post('/api/sign-in', credencialesDe(name), device.token)).cuerpo as Json
+    const manager = await session(register, 'Administrador')
+    const waiter = await session(phone, 'Mesero 1')
 
     const wsUrl = `${url.replace('http', 'ws')}/api/sync/ws`
-    const enCelular = conectarWs(wsUrl, celular.token)
-    const enCaja = conectarWs(wsUrl, caja.token)
+    const enCelular = conectarWs(wsUrl, phone.token)
+    const enCaja = conectarWs(wsUrl, register.token)
     abiertos.push(enCelular, enCaja)
     await enCelular.saludar()
     await enCaja.saludar()
 
     /** Evento firmado de un equipo; `base` es lo último que ese equipo conoce del hub. */
-    const evento = (
-      quien: { dispositivo_id: string },
+    const event = (
+      quien: { device_id: string },
       s: Json,
-      pedido: string,
-      tipo: string,
-      datos: object,
+      order: string,
+      type: string,
+      data: object,
       base: number,
     ) => {
       const ahora = new Date().toISOString()
       const e = {
-        id: nuevoId(),
-        tipo,
-        version_esquema: 1,
-        agregado_tipo: 'pedido',
-        agregado_id: pedido,
-        relacionados: [],
-        datos,
-        sesion_id: s.sesion_id,
-        usuario_id: s.usuario.id,
-        dispositivo_id: quien.dispositivo_id,
-        autorizacion_id: null,
-        motivo: tipo === 'PedidoCancelado' || tipo === 'PedidoReabierto' ? 'Prueba' : null,
-        hora_dispositivo: ahora,
-        hora_estimada_hub: ahora,
-        secuencia_base: base,
+        id: newId(),
+        type,
+        schema_version: 1,
+        aggregate_type: 'order',
+        aggregate_id: order,
+        related: [],
+        data,
+        session_id: s.session_id,
+        user_id: s.user.id,
+        device_id: quien.device_id,
+        authorization_id: null,
+        reason: type === 'OrderCanceled' || type === 'OrderReopened' ? 'Prueba' : null,
+        device_time: ahora,
+        hub_estimated_time: ahora,
+        base_sequence: base,
       }
-      return { ...e, firma: firmarEvento(e as never, s.secreto) }
+      return { ...e, signature: signEvent(e as never, s.secret) }
     }
-    const empujar = async (ws: ReturnType<typeof conectarWs>, e: Json): Promise<Json> => {
-      const lote = nuevoId()
-      ws.enviar({ tipo: 'empujar', lote_id: lote, eventos: [e] })
-      const r = await ws.esperar('resultado', (m) => m.lote_id === lote)
+    const push = async (ws: ReturnType<typeof conectarWs>, e: Json): Promise<Json> => {
+      const batch = newId()
+      ws.send({ type: 'push', lote_id: batch, events: [e] })
+      const r = await ws.esperar('result', (m) => m.lote_id === batch)
       return r.resultados[0]
     }
-    const editar = (cambios: object[]) =>
+    const editar = (changes: object[]) =>
       post(
-        '/api/catalogo/cambios',
-        { sesion_id: gerente.sesion_id, secreto: gerente.secreto, cambios },
-        caja.token,
+        '/api/catalog/changes',
+        { session_id: manager.session_id, secret: manager.secret, changes },
+        register.token,
       )
-    const catalogo = () => get('/api/catalogo', caja.token)
-    const mesaPorNombre = async (nombre: string) => {
-      const c = await catalogo()
-      const m = (c.mesas as Json[]).find((x) => x.nombre === nombre)
-      if (!m) throw new Error(`No está la mesa ${nombre}`)
+    const catalog = () => get('/api/catalog', register.token)
+    const mesaPorNombre = async (name: string) => {
+      const c = await catalog()
+      const m = (c.tables as Json[]).find((x) => x.name === name)
+      if (!m) throw new Error(`No está la mesa ${name}`)
       return m.id as string
     }
     return {
       dirDatos,
-      puerto,
+      port,
       post,
-      caja,
-      celular,
-      gerente,
-      mesero,
+      register,
+      phone,
+      manager,
+      waiter,
       enCaja,
       enCelular,
-      evento,
-      empujar,
+      event,
+      push,
       editar,
-      catalogo,
+      catalog,
       mesaPorNombre,
-      sesion,
+      session,
       wsUrl,
     }
   }
 
-  const archivar = (id: string) => [{ entidad: 'mesa', id, datos: { activo: false } }]
+  const archive = (id: string) => [{ entity: 'dining_tables', id, data: { active: false } }]
 
   it('con un pedido abierto por WebSocket la mesa no se archiva; al cerrarlo, sí', async () => {
-    const e = await escenario()
-    const mesa = await e.mesaPorNombre('5')
-    const pedido = nuevoId()
-    const abierto = await e.empujar(
+    const e = await scenario()
+    const table = await e.mesaPorNombre('5')
+    const order = newId()
+    const opened = await e.push(
       e.enCelular,
-      e.evento(
-        e.celular,
-        e.mesero,
-        pedido,
-        'PedidoAbierto',
-        { canal: 'salon', mesa_id: mesa, comensales: 2 },
+      e.event(
+        e.phone,
+        e.waiter,
+        order,
+        'OrderOpened',
+        { channel: 'dine_in', table_id: table, guests: 2 },
         0,
       ),
     )
-    expect(abierto.estado).toBe('confirmado')
+    expect(opened.status).toBe('confirmed')
 
-    const bloqueado = await e.editar(archivar(mesa))
-    expect(bloqueado.codigo).toBe(400)
-    expect(bloqueado.cuerpo.mensaje).toMatch(/la mesa 5 tiene un pedido abierto/)
-    expect(((await e.catalogo()).mesas as Json[]).some((m) => m.id === mesa)).toBe(true)
+    const bloqueado = await e.editar(archive(table))
+    expect(bloqueado.code).toBe(400)
+    expect(bloqueado.cuerpo.message).toMatch(/la mesa 5 tiene un pedido abierto/)
+    expect(((await e.catalog()).tables as Json[]).some((m) => m.id === table)).toBe(true)
 
     // Archivar una mesa libre junto con la ocupada tampoco pasa: el guardado es todo o nada.
-    const otra = await e.mesaPorNombre('6')
-    const junto = await e.editar([...archivar(otra), ...archivar(mesa)])
-    expect(junto.codigo).toBe(400)
-    expect(((await e.catalogo()).mesas as Json[]).some((m) => m.id === otra)).toBe(true)
+    const another = await e.mesaPorNombre('6')
+    const junto = await e.editar([...archive(another), ...archive(table)])
+    expect(junto.code).toBe(400)
+    expect(((await e.catalog()).tables as Json[]).some((m) => m.id === another)).toBe(true)
 
     // La caja cierra el pedido (vacío: saldo 0) y entonces la mesa queda libre.
-    const cerrado = await e.empujar(
+    const closed = await e.push(
       e.enCaja,
-      e.evento(e.caja, e.gerente, pedido, 'PedidoCerrado', {}, abierto.aceptacion.secuencia),
+      e.event(e.register, e.manager, order, 'OrderClosed', {}, opened.aceptacion.sequence),
     )
-    expect(cerrado.estado).toBe('confirmado')
-    const libre = await e.editar(archivar(mesa))
-    expect(libre).toMatchObject({ codigo: 200, cuerpo: { cambiados: 1 } })
-    expect(((await e.catalogo()).mesas as Json[]).some((m) => m.id === mesa)).toBe(false)
+    expect(closed.status).toBe('confirmed')
+    const free = await e.editar(archive(table))
+    expect(free).toMatchObject({ code: 200, cuerpo: { cambiados: 1 } })
+    expect(((await e.catalog()).tables as Json[]).some((m) => m.id === table)).toBe(false)
   })
 
   it('un pedido cancelado también libera la mesa', async () => {
-    const e = await escenario()
-    const mesa = await e.mesaPorNombre('8')
-    const pedido = nuevoId()
-    const abierto = await e.empujar(
+    const e = await scenario()
+    const table = await e.mesaPorNombre('8')
+    const order = newId()
+    const opened = await e.push(
       e.enCelular,
-      e.evento(
-        e.celular,
-        e.mesero,
-        pedido,
-        'PedidoAbierto',
-        { canal: 'salon', mesa_id: mesa, comensales: 1 },
+      e.event(
+        e.phone,
+        e.waiter,
+        order,
+        'OrderOpened',
+        { channel: 'dine_in', table_id: table, guests: 1 },
         0,
       ),
     )
-    expect((await e.editar(archivar(mesa))).codigo).toBe(400)
-    const cancelado = await e.empujar(
+    expect((await e.editar(archive(table))).code).toBe(400)
+    const canceled = await e.push(
       e.enCaja,
-      e.evento(e.caja, e.gerente, pedido, 'PedidoCancelado', {}, abierto.aceptacion.secuencia),
+      e.event(e.register, e.manager, order, 'OrderCanceled', {}, opened.aceptacion.sequence),
     )
-    expect(cancelado.estado).toBe('confirmado')
-    expect((await e.editar(archivar(mesa))).codigo).toBe(200)
+    expect(canceled.status).toBe('confirmed')
+    expect((await e.editar(archive(table))).code).toBe(200)
   })
 
   it('al cambiar el pedido de mesa, la vieja se libera y la nueva queda protegida', async () => {
-    const e = await escenario()
-    const origen = await e.mesaPorNombre('1')
-    const destino = await e.mesaPorNombre('2')
-    const pedido = nuevoId()
-    const abierto = await e.empujar(
+    const e = await scenario()
+    const source = await e.mesaPorNombre('1')
+    const target = await e.mesaPorNombre('2')
+    const order = newId()
+    const opened = await e.push(
       e.enCelular,
-      e.evento(
-        e.celular,
-        e.mesero,
-        pedido,
-        'PedidoAbierto',
-        { canal: 'salon', mesa_id: origen, comensales: 1 },
+      e.event(
+        e.phone,
+        e.waiter,
+        order,
+        'OrderOpened',
+        { channel: 'dine_in', table_id: source, guests: 1 },
         0,
       ),
     )
-    const movido = await e.empujar(
+    const moved = await e.push(
       e.enCelular,
-      e.evento(
-        e.celular,
-        e.mesero,
-        pedido,
-        'PedidoMovidoDeMesa',
-        { mesa_destino_id: destino },
-        abierto.aceptacion.secuencia,
+      e.event(
+        e.phone,
+        e.waiter,
+        order,
+        'OrderMovedTable',
+        { target_table_id: target },
+        opened.aceptacion.sequence,
       ),
     )
-    expect(movido.estado).toBe('confirmado')
-    expect((await e.editar(archivar(destino))).codigo).toBe(400)
-    expect((await e.editar(archivar(origen))).codigo).toBe(200)
+    expect(moved.status).toBe('confirmed')
+    expect((await e.editar(archive(target))).code).toBe(400)
+    expect((await e.editar(archive(source))).code).toBe(200)
   })
 
   it('una edición que sí se aplica avisa por WebSocket a los equipos conectados con la versión nueva', async () => {
-    const e = await escenario()
-    const mesa = await e.mesaPorNombre('10')
-    const r = await e.editar([{ entidad: 'mesa', id: mesa, datos: { x: 900 } }])
-    expect(r.codigo).toBe(200)
-    const aviso = await e.enCelular.esperar('catalogo', (m) => m.version === r.cuerpo.version)
-    expect(aviso.version).toBe(r.cuerpo.version)
+    const e = await scenario()
+    const table = await e.mesaPorNombre('10')
+    const r = await e.editar([{ entity: 'dining_tables', id: table, data: { x: 900 } }])
+    expect(r.code).toBe(200)
+    const alert = await e.enCelular.esperar('catalog', (m) => m.version === r.cuerpo.version)
+    expect(alert.version).toBe(r.cuerpo.version)
     // Una edición rechazada no avisa: el siguiente aviso que llega es el de la edición buena.
     const ocupada = await e.mesaPorNombre('11')
-    const pedido = nuevoId()
-    await e.empujar(
+    const order = newId()
+    await e.push(
       e.enCelular,
-      e.evento(
-        e.celular,
-        e.mesero,
-        pedido,
-        'PedidoAbierto',
-        { canal: 'salon', mesa_id: ocupada, comensales: 1 },
+      e.event(
+        e.phone,
+        e.waiter,
+        order,
+        'OrderOpened',
+        { channel: 'dine_in', table_id: ocupada, guests: 1 },
         0,
       ),
     )
-    const antes = e.enCelular.recibidos.filter((m) => m.tipo === 'catalogo').length
-    expect((await e.editar(archivar(ocupada))).codigo).toBe(400)
-    expect(e.enCelular.recibidos.filter((m) => m.tipo === 'catalogo')).toHaveLength(antes)
+    const before = e.enCelular.recibidos.filter((m) => m.type === 'catalog').length
+    expect((await e.editar(archive(ocupada))).code).toBe(400)
+    expect(e.enCelular.recibidos.filter((m) => m.type === 'catalog')).toHaveLength(before)
   })
 
   it('si el hub se apaga y vuelve con el pedido abierto, la mesa sigue protegida', async () => {
-    const e = await escenario()
-    const mesa = await e.mesaPorNombre('12')
-    const pedido = nuevoId()
-    const abierto = await e.empujar(
+    const e = await scenario()
+    const table = await e.mesaPorNombre('12')
+    const order = newId()
+    const opened = await e.push(
       e.enCelular,
-      e.evento(
-        e.celular,
-        e.mesero,
-        pedido,
-        'PedidoAbierto',
-        { canal: 'salon', mesa_id: mesa, comensales: 3 },
+      e.event(
+        e.phone,
+        e.waiter,
+        order,
+        'OrderOpened',
+        { channel: 'dine_in', table_id: table, guests: 3 },
         0,
       ),
     )
-    expect(abierto.estado).toBe('confirmado')
-    expect(e.puerto).toBeGreaterThan(0)
+    expect(opened.status).toBe('confirmed')
+    expect(e.port).toBeGreaterThan(0)
 
     // Corte: el proceso muere sin avisar y vuelve a arrancar con la misma carpeta de datos.
-    for (const c of abiertos.splice(0)) c.cerrar()
+    for (const c of abiertos.splice(0)) c.close()
     await hub?.detener()
     hub = undefined
-    await levantar(e.dirDatos, e.puerto)
+    await spinUp(e.dirDatos, e.port)
 
     // Los equipos siguen emparejados y con su sesión: el hub guarda ambos.
-    const r = await e.editar(archivar(mesa))
-    expect(r.codigo).toBe(400)
-    expect(r.cuerpo.mensaje).toMatch(/tiene un pedido abierto/)
+    const r = await e.editar(archive(table))
+    expect(r.code).toBe(400)
+    expect(r.cuerpo.message).toMatch(/tiene un pedido abierto/)
   })
 })

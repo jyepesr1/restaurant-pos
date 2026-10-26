@@ -1,9 +1,9 @@
 import 'fake-indexeddb/auto'
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import {
   AlmacenMemoria,
-  type Canal,
   type Catalogo,
+  type Channel,
   HubSync,
   type Manejadores,
   SalaSync,
@@ -32,14 +32,14 @@ interface Llamada {
 function montarHttp() {
   const llamadas: Llamada[] = []
   const fetchFalso = vi.fn((ruta: string, init: RequestInit) => {
-    return new Promise<Response>((resolver, rechazar) => {
+    return new Promise<Response>((resolver, reject) => {
       const cabeceras = (init.headers ?? {}) as Record<string, string>
       llamadas.push({
         metodo: String(init.method),
         ruta,
         token: cabeceras.authorization?.replace('Bearer ', '') ?? null,
         cuerpo: init.body ? JSON.parse(String(init.body)) : null,
-        responder: (r) => (r instanceof Error ? rechazar(r) : resolver(r)),
+        responder: (r) => (r instanceof Error ? reject(r) : resolver(r)),
       })
     })
   })
@@ -52,11 +52,11 @@ function montarHttp() {
     llamadas,
     fetchFalso,
     json,
-    cartas: () => llamadas.filter((l) => l.metodo === 'GET' && l.ruta === '/api/catalogo'),
+    cartas: () => llamadas.filter((l) => l.metodo === 'GET' && l.ruta === '/api/catalog'),
     /** Responde todas las peticiones de carta que estén pendientes con esa versión. */
     responderCartas(version: number) {
-      const pendientes = this.cartas().filter((l) => !l.respondida)
-      for (const l of pendientes) {
+      const pendingList = this.cartas().filter((l) => !l.respondida)
+      for (const l of pendingList) {
         l.respondida = true
         l.responder(json(catalogoDePrueba({ version })))
       }
@@ -64,60 +64,60 @@ function montarHttp() {
   }
 }
 const sinAcceso = {
-  verificar: () => ({ ok: true as const, autorizadoPorId: null, autorizacionId: null }),
+  verify: () => ({ ok: true as const, authorizedById: null, autorizacionId: null }),
   registrarUso: () => {},
 }
 
 function montarHub() {
-  const equipo: Equipo = { dispositivoId: nuevoId(), token: TOKEN, nombre: 'Ana', tipo: 'mesero' }
+  const device: Equipo = { dispositivoId: newId(), token: TOKEN, name: 'Ana', type: 'waiter' }
   const hub = new HubSync(new AlmacenMemoria(), {
-    restauranteId: nuevoId(),
-    zonaHoraria: 'America/Bogota',
+    restauranteId: newId(),
+    timeZone: 'America/Bogota',
     inicioDiaOperativo: '06:00',
-    instancia: 'hub-prueba',
-    reloj: () => new Date().toISOString(),
-    acceso: sinAcceso,
+    instancia: 'hub-test',
+    clock: () => new Date().toISOString(),
+    access: sinAcceso,
   })
   let revocadoEn: string | null = null
   const salaHub = new SalaSync(hub, (token) =>
-    token === TOKEN ? { dispositivoId: equipo.dispositivoId, tipo: 'mesero', revocadoEn } : null,
+    token === TOKEN ? { dispositivoId: device.dispositivoId, type: 'waiter', revocadoEn } : null,
   )
   const h = {
-    equipo,
+    device,
     salaHub,
     caido: false,
-    revocar: () => {
+    revoke: () => {
       revocadoEn = new Date().toISOString()
-      salaHub.revocar(equipo.dispositivoId, revocadoEn)
+      salaHub.revoke(device.dispositivoId, revocadoEn)
     },
-    cortar: [] as (() => void)[],
-    abrir(m: Manejadores): Canal {
-      let enlace: ReturnType<SalaSync['conectar']> | null = null
-      let cerrado = false
-      const cortar = () => {
-        if (cerrado) return
-        cerrado = true
-        enlace?.cerrar()
+    cut: [] as (() => void)[],
+    open(m: Manejadores): Channel {
+      let enlace: ReturnType<SalaSync['connect']> | null = null
+      let closed = false
+      const cut = () => {
+        if (closed) return
+        closed = true
+        enlace?.close()
         enlace = null
         m.alCerrar()
       }
-      h.cortar.push(cortar)
+      h.cut.push(cut)
       setTimeout(() => {
-        if (cerrado) return
-        if (h.caido) return cortar()
-        enlace = salaHub.conectar((msg) => {
-          const copia = JSON.parse(JSON.stringify(msg))
+        if (closed) return
+        if (h.caido) return cut()
+        enlace = salaHub.connect((msg) => {
+          const copy = JSON.parse(JSON.stringify(msg))
           setTimeout(() => {
-            if (!cerrado) m.alMensaje(copia)
+            if (!closed) m.alMensaje(copy)
           })
         })
         m.alAbrir()
       })
       return {
-        enviar: (msg) => enlace?.recibir(JSON.parse(JSON.stringify(msg))),
-        cerrar: () => {
-          cerrado = true
-          enlace?.cerrar()
+        send: (msg) => enlace?.recibir(JSON.parse(JSON.stringify(msg))),
+        close: () => {
+          closed = true
+          enlace?.close()
           enlace = null
         },
       }
@@ -151,34 +151,34 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-async function equipo(
+async function device(
   h: ReturnType<typeof montarHub>,
-  o: { sesion?: boolean; version?: number } = {},
+  o: { session?: boolean; version?: number } = {},
 ) {
-  const db = new BaseDispositivo(`catalogo-${nuevoId()}`)
+  const db = new BaseDispositivo(`catalog-${newId()}`)
   bases.push(db)
-  await db.guardarAjuste('equipo', h.equipo)
-  if (o.sesion !== false) {
-    const sesionId = nuevoId()
-    const sesion: Sesion = {
+  await db.saveSetting('device', h.device)
+  if (o.session !== false) {
+    const sesionId = newId()
+    const session: Sesion = {
       sesionId,
-      secreto: `secreto-${sesionId}`,
-      usuario: { id: nuevoId(), nombre: 'Ana', rol: 'Gerente' },
-      permisos: ['editar_catalogo'],
+      secret: `secreto-${sesionId}`,
+      user: { id: newId(), name: 'Ana', role: 'Gerente' },
+      permissions: ['edit_catalog'],
       ultimoUso: Date.now(),
     }
-    await db.guardarAjuste('sesion', sesion)
+    await db.saveSetting('session', session)
   }
-  await db.guardarAjuste('catalogo', catalogoDePrueba({ version: o.version ?? 4 }))
-  const sala = new Sala({ db, abrir: (m) => h.abrir(m) })
+  await db.saveSetting('catalog', catalogoDePrueba({ version: o.version ?? 4 }))
+  const sala = new Sala({ db, open: (m) => h.open(m) })
   salas.push(sala)
   await sala.cargar()
   return { sala, db }
 }
 
-const conectada = (s: Sala) => s.instantanea().conexion === 'conectado'
-const versionDe = (s: Sala) => s.instantanea().catalogo?.version
-const guardada = async (db: BaseDispositivo) => (await db.leerAjuste<Catalogo>('catalogo'))?.version
+const conectada = (s: Sala) => s.instantanea().connection === 'connected'
+const versionDe = (s: Sala) => s.instantanea().catalog?.version
+const guardada = async (db: BaseDispositivo) => (await db.leerAjuste<Catalogo>('catalog'))?.version
 
 /** Espera a que haya `n` peticiones de carta, sin reloj: se reintenta hasta que se cumpla. */
 const cartas = (n: number) =>
@@ -186,8 +186,8 @@ const cartas = (n: number) =>
 
 /** Deja que lo que ya llegó termine de procesarse: manda un ping y espera el pong. */
 async function asentar(s: Sala) {
-  const antes = s.instantanea().cambios
-  await vi.waitFor(() => expect(s.instantanea().cambios).toBeGreaterThanOrEqual(antes))
+  const before = s.instantanea().changes
+  await vi.waitFor(() => expect(s.instantanea().changes).toBeGreaterThanOrEqual(before))
   await new Promise((r) => setTimeout(r, 0))
   await new Promise((r) => setTimeout(r, 0))
 }
@@ -195,7 +195,7 @@ async function asentar(s: Sala) {
 describe('el hub avisa que la carta cambió', () => {
   it('el equipo la vuelve a pedir con su token, la guarda y la muestra', async () => {
     const h = montarHub()
-    const { sala, db } = await equipo(h)
+    const { sala, db } = await device(h)
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
     // Al conectar, pide la carta una vez; se responde con la misma versión que ya tenía.
     await cartas(1)
@@ -215,7 +215,7 @@ describe('el hub avisa que la carta cambió', () => {
 
   it('un aviso con la versión que ya tiene no pide nada', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, { version: 7 })
+    const { sala } = await device(h, { version: 7 })
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
     await cartas(1)
     http.responderCartas(7)
@@ -231,7 +231,7 @@ describe('el hub avisa que la carta cambió', () => {
 
   it('sin sesión abierta no pide la carta (el hub la exige con un equipo, no con una sesión, pero no hay quién la use)', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, { sesion: false })
+    const { sala } = await device(h, { session: false })
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
     await asentar(sala)
     h.salaHub.avisarCatalogo(9)
@@ -242,23 +242,23 @@ describe('el hub avisa que la carta cambió', () => {
 
   it('el aviso no cuenta como cambio de datos ni deja nada pendiente', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h)
+    const { sala } = await device(h)
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
     await cartas(1)
     http.responderCartas(4)
     await asentar(sala)
-    const antes = sala.instantanea()
+    const before = sala.instantanea()
     h.salaHub.avisarCatalogo(10)
     await cartas(2)
     http.responderCartas(10)
     await vi.waitFor(() => expect(versionDe(sala)).toBe(10))
-    expect(sala.instantanea().pendientes).toBe(antes.pendientes)
-    expect(sala.instantanea().cambios).toBe(antes.cambios)
+    expect(sala.instantanea().pendingList).toBe(before.pendingList)
+    expect(sala.instantanea().changes).toBe(before.changes)
   })
 
   it('sin red al pedirla: se queda la carta guardada y no se rompe nada', async () => {
     const h = montarHub()
-    const { sala, db } = await equipo(h)
+    const { sala, db } = await device(h)
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
     await cartas(1)
     http.responderCartas(4)
@@ -273,7 +273,7 @@ describe('el hub avisa que la carta cambió', () => {
 
     expect(versionDe(sala)).toBe(4)
     expect(await guardada(db)).toBe(4)
-    expect(sala.instantanea().conexion).toBe('conectado')
+    expect(sala.instantanea().connection).toBe('connected')
   })
 
   it.each([
@@ -281,13 +281,13 @@ describe('el hub avisa que la carta cambió', () => {
     ['un objeto vacío', () => http.json({})],
     ['una lista', () => http.json([])],
     ['sin mesas', () => http.json({ version: 99 })],
-    ['con la versión como texto', () => http.json({ version: '99', mesas: [] })],
+    ['con la versión como texto', () => http.json({ version: '99', tables: [] })],
     ['una página de error HTML', () => new Response('<html>502</html>', { status: 502 })],
-    ['un 401 del hub', () => http.json({ error: 'token_invalido', mensaje: 'x' }, 401)],
+    ['un 401 del hub', () => http.json({ error: 'invalid_token', message: 'x' }, 401)],
     ['un JSON roto', () => new Response('{roto', { status: 200 })],
-  ])('si el hub responde %s, no reemplaza la carta buena', async (_caso, respuesta) => {
+  ])('si el hub responde %s, no reemplaza la carta buena', async (_case, respuesta) => {
     const h = montarHub()
-    const { sala, db } = await equipo(h)
+    const { sala, db } = await device(h)
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
     await cartas(1)
     http.responderCartas(4)
@@ -301,13 +301,13 @@ describe('el hub avisa que la carta cambió', () => {
     await asentar(sala)
 
     expect(versionDe(sala)).toBe(4)
-    expect(sala.instantanea().catalogo?.categorias).toEqual([])
+    expect(sala.instantanea().catalog?.categories).toEqual([])
     expect(await guardada(db)).toBe(4)
   })
 
   it('dos avisos seguidos y las respuestas en desorden: queda la versión más nueva', async () => {
     const h = montarHub()
-    const { sala, db } = await equipo(h)
+    const { sala, db } = await device(h)
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
     await cartas(1)
     http.responderCartas(4)
@@ -318,14 +318,14 @@ describe('el hub avisa que la carta cambió', () => {
     await cartas(pedidas + 1)
     h.salaHub.avisarCatalogo(9)
     await cartas(pedidas + 2)
-    const [primera, segunda] = http.cartas().slice(pedidas) as Llamada[]
-    if (!primera || !segunda) throw new Error('faltan peticiones')
+    const [first, segunda] = http.cartas().slice(pedidas) as Llamada[]
+    if (!first || !segunda) throw new Error('faltan peticiones')
     // La segunda (versión 9) llega antes que la primera (versión 8).
     segunda.respondida = true
     segunda.responder(http.json(catalogoDePrueba({ version: 9 })))
     await vi.waitFor(() => expect(versionDe(sala)).toBe(9))
-    primera.respondida = true
-    primera.responder(http.json(catalogoDePrueba({ version: 8 })))
+    first.respondida = true
+    first.responder(http.json(catalogoDePrueba({ version: 8 })))
     await asentar(sala)
 
     expect(versionDe(sala)).toBe(9)
@@ -334,7 +334,7 @@ describe('el hub avisa que la carta cambió', () => {
 
   it('avisos repetidos o fuera de orden: cada respuesta trae lo último y queda esa versión', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h)
+    const { sala } = await device(h)
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
     await cartas(1)
     http.responderCartas(4)
@@ -356,14 +356,14 @@ describe('el hub avisa que la carta cambió', () => {
 
   it('al reconectar tras un corte pide la carta por si cambió mientras no había red', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h)
+    const { sala } = await device(h)
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
     await cartas(1)
     http.responderCartas(4)
     await asentar(sala)
 
     sala.simularSinConexion(true)
-    await vi.waitFor(() => expect(sala.instantanea().conexion).toBe('desconectado'))
+    await vi.waitFor(() => expect(sala.instantanea().connection).toBe('disconnected'))
     const pedidas = http.cartas().length
     sala.simularSinConexion(false)
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
@@ -374,14 +374,14 @@ describe('el hub avisa que la carta cambió', () => {
 
   it('con el equipo retirado el hub ya no le manda avisos', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h)
+    const { sala } = await device(h)
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
     await cartas(1)
     http.responderCartas(4)
     await asentar(sala)
     const pedidas = http.cartas().length
-    h.revocar()
-    await vi.waitFor(() => expect(sala.instantanea().errorHub?.codigo).toBe('token_revocado'))
+    h.revoke()
+    await vi.waitFor(() => expect(sala.instantanea().errorHub?.code).toBe('revoked_token'))
     h.salaHub.avisarCatalogo(9)
     await asentar(sala)
     expect(http.cartas()).toHaveLength(pedidas)
@@ -389,37 +389,37 @@ describe('el hub avisa que la carta cambió', () => {
 })
 
 describe('editar la carta desde la app', () => {
-  async function listo() {
+  async function ready() {
     const h = montarHub()
-    const e = await equipo(h)
+    const e = await device(h)
     await vi.waitFor(() => expect(conectada(e.sala)).toBe(true))
     await cartas(1)
     http.responderCartas(4)
     await asentar(e.sala)
     return { h, ...e }
   }
-  const cambio = {
-    entidad: 'producto' as const,
-    id: nuevoId(),
-    datos: { precio: 1_000 },
+  const change = {
+    entity: 'products' as const,
+    id: newId(),
+    data: { price: 1_000 },
   }
 
   it('manda la sesión y los cambios, y trae la carta nueva al terminar', async () => {
-    const { sala } = await listo()
-    const sesion = sala.instantanea().sesion as Sesion
+    const { sala } = await ready()
+    const session = sala.instantanea().session as Sesion
     const pedidas = http.cartas().length
-    const guardar = sala.editarCatalogo([cambio])
+    const guardar = sala.editarCatalogo([change])
 
     await vi.waitFor(() =>
-      expect(http.llamadas.some((l) => l.ruta === '/api/catalogo/cambios')).toBe(true),
+      expect(http.llamadas.some((l) => l.ruta === '/api/catalog/changes')).toBe(true),
     )
-    const post = http.llamadas.find((l) => l.ruta === '/api/catalogo/cambios') as Llamada
+    const post = http.llamadas.find((l) => l.ruta === '/api/catalog/changes') as Llamada
     expect(post.metodo).toBe('POST')
     expect(post.token).toBe(TOKEN)
     expect(post.cuerpo).toEqual({
-      sesion_id: sesion.sesionId,
-      secreto: sesion.secreto,
-      cambios: [cambio],
+      session_id: session.sesionId,
+      secret: session.secret,
+      changes: [change],
     })
     post.respondida = true
     post.responder(http.json({ version: 20, cambiados: 1 }))
@@ -431,23 +431,23 @@ describe('editar la carta desde la app', () => {
   })
 
   it('si el hub rechaza (400), el error llega con su mensaje y no pide la carta', async () => {
-    const { sala } = await listo()
+    const { sala } = await ready()
     const pedidas = http.cartas().length
-    const guardar = sala.editarCatalogo([cambio])
-    const resultado = guardar.then(
+    const guardar = sala.editarCatalogo([change])
+    const result = guardar.then(
       () => null,
       (e: unknown) => e,
     )
     await vi.waitFor(() =>
-      expect(http.llamadas.some((l) => l.ruta === '/api/catalogo/cambios')).toBe(true),
+      expect(http.llamadas.some((l) => l.ruta === '/api/catalog/changes')).toBe(true),
     )
-    const post = http.llamadas.find((l) => l.ruta === '/api/catalogo/cambios') as Llamada
+    const post = http.llamadas.find((l) => l.ruta === '/api/catalog/changes') as Llamada
     post.respondida = true
     post.responder(
-      http.json({ error: 'datos_invalidos', mensaje: 'Cambio 1 (producto): precio mal' }, 400),
+      http.json({ error: 'invalid_data', message: 'Cambio 1 (producto): precio mal' }, 400),
     )
-    expect(await resultado).toMatchObject({
-      codigo: 'datos_invalidos',
+    expect(await result).toMatchObject({
+      code: 'invalid_data',
       message: 'Cambio 1 (producto): precio mal',
     })
     expect(http.cartas()).toHaveLength(pedidas)
@@ -455,42 +455,42 @@ describe('editar la carta desde la app', () => {
   })
 
   it('sin red el cambio falla con aviso claro y no se da por hecho', async () => {
-    const { sala } = await listo()
-    const guardar = sala.editarCatalogo([cambio])
+    const { sala } = await ready()
+    const guardar = sala.editarCatalogo([change])
     await vi.waitFor(() =>
-      expect(http.llamadas.some((l) => l.ruta === '/api/catalogo/cambios')).toBe(true),
+      expect(http.llamadas.some((l) => l.ruta === '/api/catalog/changes')).toBe(true),
     )
-    const post = http.llamadas.find((l) => l.ruta === '/api/catalogo/cambios') as Llamada
+    const post = http.llamadas.find((l) => l.ruta === '/api/catalog/changes') as Llamada
     post.respondida = true
     post.responder(new TypeError('Failed to fetch'))
-    await expect(guardar).rejects.toMatchObject({ codigo: 'sin_conexion' })
+    await expect(guardar).rejects.toMatchObject({ code: 'offline' })
     expect(versionDe(sala)).toBe(4)
   })
 
   it('con la conexión simulada apagada no sale ninguna petición', async () => {
-    const { sala } = await listo()
+    const { sala } = await ready()
     sala.simularSinConexion(true)
-    const antes = http.llamadas.length
-    await expect(sala.editarCatalogo([cambio])).rejects.toMatchObject({ codigo: 'sin_conexion' })
-    expect(http.llamadas).toHaveLength(antes)
+    const before = http.llamadas.length
+    await expect(sala.editarCatalogo([change])).rejects.toMatchObject({ code: 'offline' })
+    expect(http.llamadas).toHaveLength(before)
   })
 
   it('sin sesión no se manda nada', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, { sesion: false })
+    const { sala } = await device(h, { session: false })
     await vi.waitFor(() => expect(conectada(sala)).toBe(true))
-    await expect(sala.editarCatalogo([cambio])).rejects.toThrow('Sin sesión')
-    expect(http.llamadas.some((l) => l.ruta === '/api/catalogo/cambios')).toBe(false)
+    await expect(sala.editarCatalogo([change])).rejects.toThrow('Sin sesión')
+    expect(http.llamadas.some((l) => l.ruta === '/api/catalog/changes')).toBe(false)
   })
 
   it('si guardó pero la carta nueva no llega, el guardado cuenta y la carta vieja se queda', async () => {
-    const { sala } = await listo()
+    const { sala } = await ready()
     const pedidas = http.cartas().length
-    const guardar = sala.editarCatalogo([cambio])
+    const guardar = sala.editarCatalogo([change])
     await vi.waitFor(() =>
-      expect(http.llamadas.some((l) => l.ruta === '/api/catalogo/cambios')).toBe(true),
+      expect(http.llamadas.some((l) => l.ruta === '/api/catalog/changes')).toBe(true),
     )
-    const post = http.llamadas.find((l) => l.ruta === '/api/catalogo/cambios') as Llamada
+    const post = http.llamadas.find((l) => l.ruta === '/api/catalog/changes') as Llamada
     post.respondida = true
     post.responder(http.json({ version: 21, cambiados: 1 }))
     await cartas(pedidas + 1)
@@ -501,15 +501,15 @@ describe('editar la carta desde la app', () => {
   })
 
   it('el editor lee el catálogo completo con el token del equipo', async () => {
-    const { sala } = await listo()
+    const { sala } = await ready()
     const lectura = sala.catalogoParaEditar()
     await vi.waitFor(() =>
-      expect(http.llamadas.some((l) => l.ruta === '/api/catalogo/edicion')).toBe(true),
+      expect(http.llamadas.some((l) => l.ruta === '/api/catalog/editing')).toBe(true),
     )
-    const get = http.llamadas.find((l) => l.ruta === '/api/catalogo/edicion') as Llamada
+    const get = http.llamadas.find((l) => l.ruta === '/api/catalog/editing') as Llamada
     expect(get.token).toBe(TOKEN)
     get.respondida = true
-    get.responder(http.json({ version: 4, productos: [] }))
+    get.responder(http.json({ version: 4, products: [] }))
     await expect(lectura).resolves.toMatchObject({ version: 4 })
   })
 })

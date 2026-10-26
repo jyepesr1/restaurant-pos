@@ -13,9 +13,9 @@ const ULTIMA = MIGRACIONES.length
 
 /** Un puerto libre del sistema, para no depender del 4000 (que puede estar en uso). */
 function puertoLibre(): Promise<number> {
-  return new Promise((resolver, rechazar) => {
+  return new Promise((resolver, reject) => {
     const servidor = createServer()
-    servidor.once('error', rechazar)
+    servidor.once('error', reject)
     servidor.listen(0, '127.0.0.1', () => {
       const { port } = servidor.address() as { port: number }
       servidor.close(() => resolver(port))
@@ -24,43 +24,43 @@ function puertoLibre(): Promise<number> {
 }
 
 interface HubArrancado {
-  hijo: ChildProcess
-  salida: () => string
+  child: ChildProcess
+  output: () => string
   detener: () => Promise<void>
 }
 
 /** Arranca `src/main.ts` como proceso y espera a que imprima que está en marcha (o que muera). */
 function arrancarHub(env: Record<string, string>): Promise<HubArrancado> {
-  const hijo = spawn(
+  const child = spawn(
     process.execPath,
     ['--disable-warning=ExperimentalWarning', '--import', 'tsx', 'src/main.ts'],
     { cwd: DIR_HUB, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
   )
-  let texto = ''
+  let text = ''
   const acumular = (trozo: Buffer) => {
-    texto += String(trozo)
+    text += String(trozo)
   }
-  hijo.stdout?.on('data', acumular)
-  hijo.stderr?.on('data', acumular)
-  const terminado = new Promise<void>((resolver) => hijo.once('exit', () => resolver()))
+  child.stdout?.on('data', acumular)
+  child.stderr?.on('data', acumular)
+  const terminado = new Promise<void>((resolver) => child.once('exit', () => resolver()))
 
-  return new Promise((resolver, rechazar) => {
+  return new Promise((resolver, reject) => {
     const revisar = () => {
-      if (texto.includes('Hub en marcha')) {
-        hijo.stdout?.off('data', revisar)
+      if (text.includes('Hub en marcha')) {
+        child.stdout?.off('data', revisar)
         resolver({
-          hijo,
-          salida: () => texto,
+          child,
+          output: () => text,
           detener: async () => {
-            hijo.kill('SIGKILL')
+            child.kill('SIGKILL')
             await terminado
           },
         })
       }
     }
-    hijo.stdout?.on('data', revisar)
-    hijo.once('exit', (codigo) =>
-      rechazar(new Error(`El hub terminó con código ${codigo} antes de arrancar:\n${texto}`)),
+    child.stdout?.on('data', revisar)
+    child.once('exit', (code) =>
+      reject(new Error(`El hub terminó con código ${code} antes de arrancar:\n${text}`)),
     )
   })
 }
@@ -80,17 +80,17 @@ describe('arranque del hub (proceso real)', () => {
   })
 
   const entorno = async (dirDatos: string) => ({
-    DIR_DATOS: dirDatos,
+    DATA_DIR: dirDatos,
     DIR_APP: join(carpeta, 'sin-app'),
-    PUERTO: String(await puertoLibre()),
+    PORT: String(await puertoLibre()),
   })
 
   it('con DIR_DATOS en una carpeta nueva crea pos.sqlite migrada a la última versión', async () => {
-    const dirDatos = join(carpeta, 'nueva', 'datos')
+    const dirDatos = join(carpeta, 'nueva', 'data')
     expect(existsSync(dirDatos)).toBe(false)
 
     hub = await arrancarHub(await entorno(dirDatos))
-    expect(hub.salida()).toContain(`Base de datos actualizada a la versión ${ULTIMA}.`)
+    expect(hub.output()).toContain(`Base de datos actualizada a la versión ${ULTIMA}.`)
     await hub.detener()
     hub = undefined
 
@@ -100,71 +100,71 @@ describe('arranque del hub (proceso real)', () => {
     expect(versionActual(db)).toBe(ULTIMA)
     expect(aplicarMigraciones(db)).toEqual([])
     expect(
-      db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name = 'evento'").get()?.n,
+      db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name = 'events'").get()?.n,
     ).toBe(1)
     ;(db as unknown as { close(): void }).close()
   })
 
   it('al reiniciar con la misma carpeta no migra de nuevo y conserva los datos', async () => {
-    const dirDatos = join(carpeta, 'datos')
+    const dirDatos = join(carpeta, 'data')
     hub = await arrancarHub(await entorno(dirDatos))
-    expect(hub.salida()).toContain('Los datos del administrador quedaron en')
+    expect(hub.output()).toContain('Los datos del administrador quedaron en')
     await hub.detener()
 
     hub = await arrancarHub(await entorno(dirDatos))
-    expect(hub.salida()).toContain(`Base de datos en la versión ${ULTIMA}.`)
-    expect(hub.salida()).not.toContain('actualizada')
+    expect(hub.output()).toContain(`Base de datos en la versión ${ULTIMA}.`)
+    expect(hub.output()).not.toContain('actualizada')
     // Los datos se mostraron una sola vez; el restaurante y sus roles no se duplican.
-    expect(hub.salida()).not.toContain('datos del administrador quedaron')
+    expect(hub.output()).not.toContain('datos del administrador quedaron')
     await hub.detener()
     hub = undefined
 
-    const despues = abrirBase(join(dirDatos, 'pos.sqlite'))
-    expect(despues.prepare('SELECT nombre FROM restaurante').all()).toEqual([
-      { nombre: 'Mi restaurante' },
+    const after = abrirBase(join(dirDatos, 'pos.sqlite'))
+    expect(after.prepare('SELECT name FROM restaurants').all()).toEqual([
+      { name: 'Mi restaurante' },
     ])
-    expect(despues.prepare('SELECT count(*) AS n FROM rol').get()?.n).toBe(4)
-    ;(despues as unknown as { close(): void }).close()
+    expect(after.prepare('SELECT count(*) AS n FROM roles').get()?.n).toBe(4)
+    ;(after as unknown as { close(): void }).close()
   })
 
   it('con el usuario y la contraseña que muestra al arrancar se entra desde un navegador, sin emparejarlo', async () => {
-    const env = await entorno(join(carpeta, 'datos'))
+    const env = await entorno(join(carpeta, 'data'))
     hub = await arrancarHub(env)
     // Sin ventana (salida a un proceso, como en un servicio) los datos van a un archivo aparte.
-    const archivo = readFileSync(join(env.DIR_DATOS, 'pin-administrador.txt'), 'utf8')
+    const archivo = readFileSync(join(env.DATA_DIR, 'pin-administrador.txt'), 'utf8')
     const dato = (etiqueta: string) =>
       new RegExp(`${etiqueta}:\\s+(\\S+)`).exec(archivo)?.[1] as string
-    const url = `http://127.0.0.1:${env.PUERTO}`
-    const entrar = await fetch(`${url}/api/entrar`, {
+    const url = `http://127.0.0.1:${env.PORT}`
+    const entrar = await fetch(`${url}/api/sign-in`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ usuario: dato('Usuario'), contrasena: dato('Contraseña') }),
+      body: JSON.stringify({ user: dato('Usuario'), password: dato('Contraseña') }),
     })
 
     expect(entrar.status).toBe(201)
     const r = (await entrar.json()) as {
-      usuario: { rol: string }
-      equipo: { token: string; tipo: string }
+      user: { role: string }
+      device: { token: string; type: string }
     }
-    expect(r.usuario.rol).toBe('Administrador')
+    expect(r.user.role).toBe('Administrador')
     // El hub registró este navegador como equipo de caja y le dio su token.
-    expect(r.equipo.tipo).toBe('caja')
+    expect(r.device.type).toBe('register')
     expect(dato('PIN para autorizar')).toMatch(/^\d{4}$/)
     // El log del hub no registra los cuerpos: ni la contraseña ni el token quedan escritos.
-    expect(hub.salida()).not.toContain('"contrasena"')
-    expect(hub.salida()).not.toContain(dato('Contraseña'))
-    expect(hub.salida()).not.toContain(r.equipo.token)
+    expect(hub.output()).not.toContain('"contrasena"')
+    expect(hub.output()).not.toContain(dato('Contraseña'))
+    expect(hub.output()).not.toContain(r.device.token)
   })
 
   it('no arranca si la base es más nueva que la aplicación', async () => {
-    const dirDatos = join(carpeta, 'datos')
+    const dirDatos = join(carpeta, 'data')
     hub = await arrancarHub(await entorno(dirDatos))
     await hub.detener()
     hub = undefined
 
     const db = abrirBase(join(dirDatos, 'pos.sqlite'))
     db.prepare(
-      "INSERT INTO migracion (version, nombre, hash, aplicada_en) VALUES (99, 'futura', 'x', 'h')",
+      "INSERT INTO migrations (version, name, hash, applied_at) VALUES (99, 'futura', 'x', 'h')",
     ).run()
     ;(db as unknown as { close(): void }).close()
 

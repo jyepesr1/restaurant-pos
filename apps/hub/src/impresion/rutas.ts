@@ -1,10 +1,10 @@
 import {
-  type ConfigRestaurante,
-  configCompleta,
-  jsonCanonico,
-  MedioPago,
-  nuevoId,
-  type Permiso,
+  canonicalJson,
+  fullConfig,
+  newId,
+  PaymentMethod,
+  type Permission,
+  type RestaurantConfig,
 } from '@pos/core'
 import { type BaseSqlite, enTransaccion, type Fila } from '@pos/db'
 import { PAGINAS_CODIGOS } from '@pos/printing'
@@ -22,12 +22,12 @@ import type { ColaImpresion, PruebaImpresion } from './cola'
 export interface OpcionesImpresion {
   db: BaseSqlite
   restauranteId: string
-  acceso: ServicioAcceso
+  access: ServicioAcceso
   cola: ColaImpresion
-  zonaHoraria: string
+  timeZone: string
   /** Cambió algo que los equipos leen con la carta (estaciones, pantallas, tiempos). */
-  alCambiar?: (version: number) => void
-  reloj?: () => string
+  onChange?: (version: number) => void
+  clock?: () => string
   /**
    * Acepta impresoras en este mismo equipo (127.0.0.1) y en cualquier puerto: solo para la
    * impresora de prueba (`IMPRESORA_PRUEBA=1`). En el local, solo IP privadas y puertos 9100 a 9109.
@@ -42,30 +42,30 @@ export interface OpcionesImpresion {
  * dirección de una impresora no sirve para tantear equipos de internet ni servicios del PC.
  */
 export function direccionValida(
-  direccion: string,
-  puerto: number | null,
+  address: string,
+  port: number | null,
   locales: boolean,
 ): string | null {
   // Sin ceros a la izquierda: «010.0.0.1» se lee en octal y saldría a 8.0.0.1.
   const octeto = '(0|[1-9]\\d{0,2})'
-  const m = new RegExp(`^${octeto}\\.${octeto}\\.${octeto}\\.${octeto}$`).exec(direccion)
-  const partes = m ? m.slice(1).map(Number) : null
-  if (!partes || partes.some((n) => n > 255))
+  const m = new RegExp(`^${octeto}\\.${octeto}\\.${octeto}\\.${octeto}$`).exec(address)
+  const parts = m ? m.slice(1).map(Number) : null
+  if (!parts || parts.some((n) => n > 255))
     return 'Escribe la IP de la impresora, por ejemplo 192.168.1.50'
-  const [a, b] = partes as [number, number]
+  const [a, b] = parts as [number, number]
   const privada = a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
   const local = a === 127
   if (!privada && !(locales && local))
     return 'Esa IP no es de la red del local: debe empezar por 192.168, 10 o 172.16 a 172.31'
-  const p = puerto ?? 9100
+  const p = port ?? 9100
   if (!locales && (p < 9100 || p > 9109))
     return 'Las impresoras de red usan el puerto 9100 (hasta 9109)'
   return null
 }
 
 const Sesion = z.strictObject({
-  sesion_id: z.string().length(26),
-  secreto: z.string().min(1).max(100),
+  session_id: z.string().length(26),
+  secret: z.string().min(1).max(100),
 })
 const Id = z.string().length(26)
 const Estaciones = z.array(Id).max(50)
@@ -74,18 +74,18 @@ const Estaciones = z.array(Id).max(50)
 
 const Impresora = z.strictObject({
   id: Id.optional(),
-  nombre: z.string().trim().min(1).max(60),
-  conexion: z.enum(['red', 'usb']),
-  direccion: z.string().trim().min(1).max(255),
-  puerto: z.int().min(1).max(65535).nullable(),
-  ancho: z.union([z.literal(58), z.literal(80)]),
-  pagina_codigos: z.enum(PAGINAS_CODIGOS),
-  respaldo_id: Id.nullable(),
-  estacion_ids: Estaciones,
-  activo: z.boolean(),
+  name: z.string().trim().min(1).max(60),
+  connection: z.enum(['network', 'usb']),
+  address: z.string().trim().min(1).max(255),
+  port: z.int().min(1).max(65535).nullable(),
+  width: z.union([z.literal(58), z.literal(80)]),
+  code_page: z.enum(PAGINAS_CODIGOS),
+  fallback_id: Id.nullable(),
+  station_ids: Estaciones,
+  active: z.boolean(),
 })
 
-const lista = (v: unknown): string[] => {
+const list = (v: unknown): string[] => {
   const l = JSON.parse(String(v ?? '[]'))
   return Array.isArray(l) ? l.map(String) : []
 }
@@ -94,53 +94,51 @@ const lista = (v: unknown): string[] => {
  * Lo que comparten las rutas de un equipo emparejado: el token del equipo se revisa antes de leer
  * el cuerpo, y cada acción pide la sesión de alguien con permiso.
  */
-export function guardasDeEquipo(acceso: ServicioAcceso) {
+export function guardasDeEquipo(access: ServicioAcceso) {
   const conexionDe = (req: FastifyRequest): Conexion | null => {
     const [esquema, token] = (req.headers.authorization ?? '').split(' ')
-    const conexion = esquema === 'Bearer' && token ? acceso.autenticar(token) : null
-    return conexion && !conexion.revocadoEn ? conexion : null
+    const connection = esquema === 'Bearer' && token ? access.authenticate(token) : null
+    return connection && !connection.revocadoEn ? connection : null
   }
   // El equipo se comprueba antes de leer el cuerpo: sin token no se recibe ni se valida nada.
   const conEquipo = {
     onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
       if (!conexionDe(req))
         return reply.code(401).send({
-          error: 'token_invalido',
-          mensaje: 'Este equipo ya no tiene acceso: vuelve a entrar',
+          error: 'invalid_token',
+          message: 'Este equipo ya no tiene acceso: vuelve a entrar',
         })
     },
   }
-  const datosInvalidos = (reply: FastifyReply, mensaje = 'Datos con formato inesperado') =>
-    reply.code(400).send({ error: 'datos_invalidos', mensaje })
+  const datosInvalidos = (reply: FastifyReply, message = 'Datos con formato inesperado') =>
+    reply.code(400).send({ error: 'invalid_data', message })
 
   /** Quién lo pide, si su sesión tiene alguno de esos permisos; si no, responde el error. */
   const quien = (
     req: FastifyRequest,
     reply: FastifyReply,
-    sesion: { sesion_id: string; secreto: string },
-    permisos: Permiso[],
+    session: { session_id: string; secret: string },
+    permissions: Permission[],
   ) => {
-    const conexion = conexionDe(req) as Conexion
-    let r = acceso.usuarioConPermiso(
-      conexion,
-      { sesionId: sesion.sesion_id, secreto: sesion.secreto },
-      permisos[0] as Permiso,
+    const connection = conexionDe(req) as Conexion
+    let r = access.usuarioConPermiso(
+      connection,
+      { sesionId: session.session_id, secret: session.secret },
+      permissions[0] as Permission,
     )
-    for (const p of permisos.slice(1)) {
-      if (r.ok || r.codigo !== 'sin_permiso') break
-      r = acceso.usuarioConPermiso(
-        conexion,
-        { sesionId: sesion.sesion_id, secreto: sesion.secreto },
+    for (const p of permissions.slice(1)) {
+      if (r.ok || r.code !== 'no_permission') break
+      r = access.usuarioConPermiso(
+        connection,
+        { sesionId: session.session_id, secret: session.secret },
         p,
       )
     }
     if (!r.ok) {
-      reply
-        .code(r.codigo === 'sin_permiso' ? 403 : 401)
-        .send({ error: r.codigo, mensaje: r.mensaje })
+      reply.code(r.code === 'no_permission' ? 403 : 401).send({ error: r.code, message: r.message })
       return null
     }
-    return { usuarioId: r.usuarioId, dispositivoId: conexion.dispositivoId }
+    return { userId: r.userId, dispositivoId: connection.dispositivoId }
   }
   return { conexionDe, conEquipo, datosInvalidos, quien }
 }
@@ -150,251 +148,249 @@ export async function rutasImpresion(
   {
     db,
     restauranteId,
-    acceso,
+    access,
     cola,
-    zonaHoraria,
-    alCambiar,
-    reloj = () => new Date().toISOString(),
+    timeZone,
+    onChange,
+    clock = () => new Date().toISOString(),
     permitirLocales = false,
     esEquipoDelHub = () => false,
   }: OpcionesImpresion,
 ) {
-  const { conexionDe, conEquipo, datosInvalidos, quien } = guardasDeEquipo(acceso)
+  const { conexionDe, conEquipo, datosInvalidos, quien } = guardasDeEquipo(access)
 
   const estacionesActivas = () =>
     db
       .prepare(
-        'SELECT id, nombre FROM estacion WHERE restaurante_id = ? AND activo = 1 ORDER BY orden, nombre',
+        'SELECT id, name FROM stations WHERE restaurant_id = ? AND active = 1 ORDER BY position, name',
       )
       .all(restauranteId)
-      .map((f) => ({ id: String(f.id), nombre: String(f.nombre) }))
+      .map((f) => ({ id: String(f.id), name: String(f.name) }))
   /**
    * Las estaciones elegidas, sin repetir. Una archivada se quita sin error (la pantalla no la
    * muestra y no se podría desmarcar); una que no es de este restaurante, `null`.
    */
   const estacionesDe = (ids: readonly string[]): string[] | null => {
-    const todas = new Map(
+    const allRows = new Map(
       db
-        .prepare('SELECT id, activo FROM estacion WHERE restaurante_id = ?')
+        .prepare('SELECT id, active FROM stations WHERE restaurant_id = ?')
         .all(restauranteId)
-        .map((f) => [String(f.id), f.activo === 1]),
+        .map((f) => [String(f.id), f.active === 1]),
     )
-    if (ids.some((id) => !todas.has(id))) return null
-    return [...new Set(ids)].filter((id) => todas.get(id))
+    if (ids.some((id) => !allRows.has(id))) return null
+    return [...new Set(ids)].filter((id) => allRows.get(id))
   }
   const version = () =>
     Number(
       db
-        .prepare("SELECT valor FROM contador WHERE restaurante_id = ? AND nombre = 'catalogo'")
-        .get(restauranteId)?.valor ?? 0,
+        .prepare("SELECT value FROM counters WHERE restaurant_id = ? AND name = 'catalog'")
+        .get(restauranteId)?.value ?? 0,
     )
   const avisar = () => {
-    alCambiar?.(version())
+    onChange?.(version())
     cola.despertar()
   }
 
   // Todo lo de la pantalla «Cocina e impresoras».
-  app.post('/api/cocina/configuracion', conEquipo, async (req, reply) => {
+  app.post('/api/kitchen/config', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply)
-    if (!quien(req, reply, cuerpo.data, ['administrar_dispositivos'])) return reply
-    const config = configCompleta(
+    if (!quien(req, reply, cuerpo.data, ['manage_devices'])) return reply
+    const config = fullConfig(
       JSON.parse(
         String(
-          db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)?.config ??
+          db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)?.config ??
             '{}',
         ),
       ),
     )
     return {
-      estaciones: estacionesActivas(),
-      impresoras: db
-        .prepare(
-          'SELECT * FROM impresora WHERE restaurante_id = ? ORDER BY activo DESC, nombre, id',
-        )
+      stations: estacionesActivas(),
+      printers: db
+        .prepare('SELECT * FROM printers WHERE restaurant_id = ? ORDER BY active DESC, name, id')
         .all(restauranteId)
         .map((f) => ({
           id: String(f.id),
-          nombre: String(f.nombre),
-          conexion: String(f.conexion),
-          direccion: String(f.direccion),
-          puerto: f.puerto === null ? null : Number(f.puerto),
-          ancho: Number(f.ancho),
-          pagina_codigos: String(f.pagina_codigos),
-          respaldo_id: f.respaldo_id === null ? null : String(f.respaldo_id),
-          estacion_ids: lista(f.estacion_ids),
-          activo: f.activo === 1,
+          name: String(f.name),
+          connection: String(f.connection),
+          address: String(f.address),
+          port: f.port === null ? null : Number(f.port),
+          width: Number(f.width),
+          code_page: String(f.code_page),
+          fallback_id: f.fallback_id === null ? null : String(f.fallback_id),
+          station_ids: list(f.station_ids),
+          active: f.active === 1,
         })),
-      estados: cola.estado(),
+      statuses: cola.status(),
       pantallas: db
         .prepare(
-          `SELECT d.id, d.nombre, d.estacion_ids, (SELECT max(ultimo_uso) FROM sesion s WHERE s.dispositivo_id = d.id) AS uso
-           FROM dispositivo d WHERE d.restaurante_id = ? AND d.activo = 1 AND d.tipo = 'kds' AND d.revocado_en IS NULL
-           ORDER BY d.nombre, d.id`,
+          `SELECT d.id, d.name, d.station_ids, (SELECT max(last_used) FROM sessions s WHERE s.device_id = d.id) AS uso
+           FROM devices d WHERE d.restaurant_id = ? AND d.active = 1 AND d.type = 'kds' AND d.revoked_at IS NULL
+           ORDER BY d.name, d.id`,
         )
         .all(restauranteId)
         .map((f) => ({
-          dispositivo_id: String(f.id),
-          nombre: String(f.nombre),
-          estacion_ids: lista(f.estacion_ids),
-          ultimo_uso: f.uso === null ? null : String(f.uso),
+          device_id: String(f.id),
+          name: String(f.name),
+          station_ids: list(f.station_ids),
+          last_used: f.uso === null ? null : String(f.uso),
         })),
-      tiempos: { amarillo: config.cocina_amarillo_min, rojo: config.cocina_rojo_min },
-      usar_cursos: config.usar_cursos,
-      impresora_precuenta_id: config.impresora_precuenta_id,
+      tiempos: { amarillo: config.kitchen_yellow_min, rojo: config.kitchen_red_min },
+      courses_enabled: config.courses_enabled,
+      pre_bill_printer_id: config.pre_bill_printer_id,
     }
   })
 
-  app.post('/api/impresoras', conEquipo, async (req, reply) => {
-    const cuerpo = Sesion.extend({ impresora: Impresora }).safeParse(req.body)
+  app.post('/api/printers', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({ printer: Impresora }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply, 'Revisa los datos de la impresora')
-    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    const autor = quien(req, reply, cuerpo.data, ['manage_devices'])
     if (!autor) return reply
-    const i = cuerpo.data.impresora
-    if (i.conexion === 'red') {
-      const problema = direccionValida(i.direccion, i.puerto, permitirLocales)
-      if (problema) return datosInvalidos(reply, problema)
+    const i = cuerpo.data.printer
+    if (i.connection === 'network') {
+      const issue = direccionValida(i.address, i.port, permitirLocales)
+      if (issue) return datosInvalidos(reply, issue)
     }
-    const estacionIds = estacionesDe(i.estacion_ids)
+    const estacionIds = estacionesDe(i.station_ids)
     if (!estacionIds) return datosInvalidos(reply, 'Esa estación no existe')
-    const actual: Fila | undefined = i.id
+    const current: Fila | undefined = i.id
       ? db
-          .prepare('SELECT * FROM impresora WHERE restaurante_id = ? AND id = ?')
+          .prepare('SELECT * FROM printers WHERE restaurant_id = ? AND id = ?')
           .get(restauranteId, i.id)
       : undefined
-    if (i.id && !actual) return datosInvalidos(reply, 'Esa impresora no existe')
-    if (i.respaldo_id) {
-      if (i.respaldo_id === i.id)
+    if (i.id && !current) return datosInvalidos(reply, 'Esa impresora no existe')
+    if (i.fallback_id) {
+      if (i.fallback_id === i.id)
         return datosInvalidos(reply, 'Una impresora no puede ser su propio respaldo')
       const respaldo = db
-        .prepare('SELECT activo FROM impresora WHERE restaurante_id = ? AND id = ?')
-        .get(restauranteId, i.respaldo_id)
-      if (respaldo?.activo !== 1) return datosInvalidos(reply, 'La impresora de respaldo no existe')
+        .prepare('SELECT active FROM printers WHERE restaurant_id = ? AND id = ?')
+        .get(restauranteId, i.fallback_id)
+      if (respaldo?.active !== 1) return datosInvalidos(reply, 'La impresora de respaldo no existe')
     }
-    const campos = {
-      nombre: i.nombre,
-      conexion: i.conexion,
-      direccion: i.direccion,
-      puerto: i.conexion === 'red' ? (i.puerto ?? 9100) : null,
-      ancho: i.ancho,
-      pagina_codigos: i.pagina_codigos,
-      respaldo_id: i.respaldo_id,
-      estacion_ids: JSON.stringify(estacionIds),
-      activo: i.activo ? 1 : 0,
+    const fields = {
+      name: i.name,
+      connection: i.connection,
+      address: i.address,
+      port: i.connection === 'network' ? (i.port ?? 9100) : null,
+      width: i.width,
+      code_page: i.code_page,
+      fallback_id: i.fallback_id,
+      station_ids: JSON.stringify(estacionIds),
+      active: i.active ? 1 : 0,
     }
-    const ahora = reloj()
+    const ahora = clock()
     const id = enTransaccion(db, () => {
-      if (actual) {
+      if (current) {
         actualizarVersionado(
           db,
-          'impresora',
+          'printers',
           restauranteId,
-          String(actual.id),
-          campos,
+          String(current.id),
+          fields,
           autor,
           ahora,
         )
         // Archivar una impresora no deja a otra apuntándole como respaldo.
-        if (!i.activo)
+        if (!i.active)
           for (const f of db
-            .prepare('SELECT id FROM impresora WHERE restaurante_id = ? AND respaldo_id = ?')
-            .all(restauranteId, String(actual.id)))
+            .prepare('SELECT id FROM printers WHERE restaurant_id = ? AND fallback_id = ?')
+            .all(restauranteId, String(current.id)))
             actualizarVersionado(
               db,
-              'impresora',
+              'printers',
               restauranteId,
               String(f.id),
-              { respaldo_id: null },
+              { fallback_id: null },
               autor,
               ahora,
             )
-        return String(actual.id)
+        return String(current.id)
       }
-      return insertarVersionado(db, 'impresora', restauranteId, campos, autor, ahora)
+      return insertarVersionado(db, 'printers', restauranteId, fields, autor, ahora)
     })
     avisar()
     return reply.send({ id })
   })
 
-  app.post('/api/impresoras/prueba', conEquipo, async (req, reply) => {
-    const cuerpo = Sesion.extend({ impresora_id: Id }).safeParse(req.body)
+  app.post('/api/printers/test', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({ printer_id: Id }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply)
-    if (!quien(req, reply, cuerpo.data, ['administrar_dispositivos'])) return reply
-    const impresora = db
-      .prepare('SELECT * FROM impresora WHERE restaurante_id = ? AND id = ? AND activo = 1')
-      .get(restauranteId, cuerpo.data.impresora_id)
-    if (!impresora) return datosInvalidos(reply, 'Esa impresora no existe')
-    const nombres = new Map(estacionesActivas().map((e) => [e.id, e.nombre]))
-    const ahora = reloj()
-    const contenido: PruebaImpresion = {
-      impresora: String(impresora.nombre),
-      estaciones: lista(impresora.estacion_ids).flatMap((e) => nombres.get(e) ?? []),
-      hora: new Intl.DateTimeFormat('es-CO', {
+    if (!quien(req, reply, cuerpo.data, ['manage_devices'])) return reply
+    const printer = db
+      .prepare('SELECT * FROM printers WHERE restaurant_id = ? AND id = ? AND active = 1')
+      .get(restauranteId, cuerpo.data.printer_id)
+    if (!printer) return datosInvalidos(reply, 'Esa impresora no existe')
+    const names = new Map(estacionesActivas().map((e) => [e.id, e.name]))
+    const ahora = clock()
+    const content: PruebaImpresion = {
+      printer: String(printer.name),
+      stations: list(printer.station_ids).flatMap((e) => names.get(e) ?? []),
+      time: new Intl.DateTimeFormat('es-CO', {
         dateStyle: 'medium',
         timeStyle: 'short',
-        timeZone: zonaHoraria,
+        timeZone: timeZone,
       }).format(new Date(ahora)),
     }
-    const id = insertarTrabajo(db, restauranteId, String(impresora.id), contenido, ahora)
+    const id = insertarTrabajo(db, restauranteId, String(printer.id), content, ahora)
     cola.despertar()
     return reply.code(201).send({ trabajo_id: id })
   })
 
   // Lo que no ha salido, para la caja: ver por qué y descartar lo que ya no sirve.
-  const PUEDE_COLA: Permiso[] = ['administrar_dispositivos', 'registrar_pago']
+  const PUEDE_COLA: Permission[] = ['manage_devices', 'record_payment']
 
-  app.post('/api/impresion/pendientes', conEquipo, async (req, reply) => {
+  app.post('/api/printing/pending', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply)
     if (!quien(req, reply, cuerpo.data, PUEDE_COLA)) return reply
     return db
       .prepare(
-        `SELECT t.id, t.tipo, t.contenido, t.intentos, t.ultimo_error, t.creado_en, i.nombre AS impresora
-         FROM trabajo_impresion t JOIN impresora i ON i.id = t.impresora_id
-         WHERE t.restaurante_id = ? AND t.estado = 'pendiente' ORDER BY t.creado_en, t.id LIMIT 200`,
+        `SELECT t.id, t.type, t.content, t.attempts, t.last_error, t.created_at, i.name AS printer
+         FROM print_jobs t JOIN printers i ON i.id = t.printer_id
+         WHERE t.restaurant_id = ? AND t.status = 'pending' ORDER BY t.created_at, t.id LIMIT 200`,
       )
       .all(restauranteId)
       .map((f) => {
-        const c = JSON.parse(String(f.contenido)) as {
-          destino?: string
-          reimpreso?: string | null
-          estacion?: string
+        const c = JSON.parse(String(f.content)) as {
+          target?: string
+          reprinted?: string | null
+          station?: string
           numero?: number | null
         }
         return {
           id: String(f.id),
-          impresora: String(f.impresora),
+          printer: String(f.printer),
           que:
-            f.tipo === 'prueba'
+            f.type === 'test'
               ? 'Página de prueba'
-              : f.tipo === 'precuenta'
-                ? ['Precuenta', c.destino].filter(Boolean).join(' · ')
-                : f.tipo === 'informe'
-                  ? c.reimpreso
+              : f.type === 'preBill'
+                ? ['Precuenta', c.target].filter(Boolean).join(' · ')
+                : f.type === 'report'
+                  ? c.reprinted
                     ? 'Cierre de caja (reimpresión)'
                     : 'Cierre de caja'
-                  : [c.estacion, c.destino, c.numero ? `#${c.numero}` : null]
+                  : [c.station, c.target, c.numero ? `#${c.numero}` : null]
                       .filter(Boolean)
                       .join(' · '),
-          intentos: Number(f.intentos),
-          error: f.ultimo_error === null ? null : String(f.ultimo_error),
-          creado_en: String(f.creado_en),
+          attempts: Number(f.attempts),
+          error: f.last_error === null ? null : String(f.last_error),
+          created_at: String(f.created_at),
         }
       })
   })
 
-  app.post('/api/impresion/descartar', conEquipo, async (req, reply) => {
+  app.post('/api/printing/discard', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.extend({ trabajo_id: Id }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply)
     const autor = quien(req, reply, cuerpo.data, PUEDE_COLA)
     if (!autor) return reply
     const r = db
       .prepare(
-        `UPDATE trabajo_impresion SET estado = 'descartado', terminado_en = ?, descartado_por_id = ?,
-           descartado_dispositivo_id = ?
-         WHERE restaurante_id = ? AND id = ? AND estado = 'pendiente'`,
+        `UPDATE print_jobs SET status = 'discarded', finished_at = ?, discarded_by_id = ?,
+           discarded_device_id = ?
+         WHERE restaurant_id = ? AND id = ? AND status = 'pending'`,
       )
-      .run(reloj(), autor.usuarioId, autor.dispositivoId, restauranteId, cuerpo.data.trabajo_id)
+      .run(clock(), autor.userId, autor.dispositivoId, restauranteId, cuerpo.data.trabajo_id)
     if (Number(r.changes) === 0)
       return datosInvalidos(reply, 'Esa comanda ya salió o ya se descartó')
     cola.despertar()
@@ -402,10 +398,10 @@ export async function rutasImpresion(
   })
 
   // Convertir el equipo desde el que se pide en pantalla de cocina (ADR-015).
-  app.post('/api/pantallas', conEquipo, async (req, reply) => {
+  app.post('/api/screens', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.extend({
-      nombre: z.string().max(100),
-      estacion_ids: Estaciones,
+      name: z.string().max(100),
+      station_ids: Estaciones,
     }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply)
     if (esEquipoDelHub(req.ip))
@@ -413,51 +409,51 @@ export async function rutasImpresion(
         reply,
         'Este es el PC de la caja, donde corre el sistema: no se convierte en pantalla. Hazlo desde la tablet de la cocina.',
       )
-    const r = acceso.convertirEnPantalla(conexionDe(req) as Conexion, {
-      sesionId: cuerpo.data.sesion_id,
-      secreto: cuerpo.data.secreto,
-      nombre: cuerpo.data.nombre,
-      estacionIds: cuerpo.data.estacion_ids,
+    const r = access.convertirEnPantalla(conexionDe(req) as Conexion, {
+      sesionId: cuerpo.data.session_id,
+      secret: cuerpo.data.secret,
+      name: cuerpo.data.name,
+      estacionIds: cuerpo.data.station_ids,
     })
     if (!r.ok)
       return reply
-        .code(r.codigo === 'sin_permiso' ? 403 : r.codigo === 'datos_invalidos' ? 400 : 401)
-        .send({ error: r.codigo, mensaje: r.mensaje })
+        .code(r.code === 'no_permission' ? 403 : r.code === 'invalid_data' ? 400 : 401)
+        .send({ error: r.code, message: r.message })
     avisar()
     return reply.code(201).send({
-      sesion_id: r.sesionId,
-      secreto: r.secreto,
-      usuario: r.usuario,
-      permisos: r.permisos,
-      tipo: 'kds',
+      session_id: r.sesionId,
+      secret: r.secret,
+      user: r.user,
+      permissions: r.permissions,
+      type: 'kds',
     })
   })
 
   // Cambiar lo que muestra una pantalla, desde la caja.
-  app.post('/api/pantallas/estaciones', conEquipo, async (req, reply) => {
-    const cuerpo = Sesion.extend({ dispositivo_id: Id, estacion_ids: Estaciones.min(1) }).safeParse(
+  app.post('/api/screens/stations', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({ device_id: Id, station_ids: Estaciones.min(1) }).safeParse(
       req.body,
     )
     if (!cuerpo.success) return datosInvalidos(reply, 'Elige al menos una estación')
-    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    const autor = quien(req, reply, cuerpo.data, ['manage_devices'])
     if (!autor) return reply
-    const estacionIds = estacionesDe(cuerpo.data.estacion_ids)
+    const estacionIds = estacionesDe(cuerpo.data.station_ids)
     if (!estacionIds) return datosInvalidos(reply, 'Esa estación no existe')
     if (estacionIds.length === 0) return datosInvalidos(reply, 'Elige al menos una estación')
-    const pantalla = db
+    const screen = db
       .prepare(
-        "SELECT 1 FROM dispositivo WHERE restaurante_id = ? AND id = ? AND tipo = 'kds' AND activo = 1 AND revocado_en IS NULL",
+        "SELECT 1 FROM devices WHERE restaurant_id = ? AND id = ? AND type = 'kds' AND active = 1 AND revoked_at IS NULL",
       )
-      .get(restauranteId, cuerpo.data.dispositivo_id)
-    if (!pantalla) return datosInvalidos(reply, 'Esa pantalla no existe')
+      .get(restauranteId, cuerpo.data.device_id)
+    if (!screen) return datosInvalidos(reply, 'Esa pantalla no existe')
     actualizarVersionado(
       db,
-      'dispositivo',
+      'devices',
       restauranteId,
-      cuerpo.data.dispositivo_id,
-      { estacion_ids: JSON.stringify(estacionIds) },
+      cuerpo.data.device_id,
+      { station_ids: JSON.stringify(estacionIds) },
       autor,
-      reloj(),
+      clock(),
     )
     avisar()
     return reply.code(204).send()
@@ -468,42 +464,42 @@ export async function rutasImpresion(
    * carta). Si no cambia nada, no escribe ni avisa.
    */
   const actualizarConfig = (
-    cambios: Partial<ConfigRestaurante>,
-    autor: { usuarioId: string; dispositivoId: string },
+    changes: Partial<RestaurantConfig>,
+    autor: { userId: string; dispositivoId: string },
   ) => {
-    const actual = JSON.parse(
+    const current = JSON.parse(
       String(
-        db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)?.config ??
+        db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)?.config ??
           '{}',
       ),
     ) as Record<string, unknown>
-    const antes = jsonCanonico(configCompleta(actual))
-    const despues = jsonCanonico(configCompleta({ ...actual, ...cambios }))
-    if (antes === despues) return
+    const before = canonicalJson(fullConfig(current))
+    const after = canonicalJson(fullConfig({ ...current, ...changes }))
+    if (before === after) return
     actualizarVersionado(
       db,
-      'restaurante',
+      'restaurants',
       restauranteId,
       restauranteId,
-      { config: despues },
+      { config: after },
       autor,
-      reloj(),
+      clock(),
     )
     avisar()
   }
 
   // Prender o apagar los cursos (entrada, fuerte, postre) en todo el restaurante.
-  app.post('/api/cocina/cursos', conEquipo, async (req, reply) => {
+  app.post('/api/kitchen/courses', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.extend({ usar: z.boolean() }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply)
-    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    const autor = quien(req, reply, cuerpo.data, ['manage_devices'])
     if (!autor) return reply
-    actualizarConfig({ usar_cursos: cuerpo.data.usar }, autor)
+    actualizarConfig({ courses_enabled: cuerpo.data.usar }, autor)
     return reply.code(204).send()
   })
 
   // Minutos para el ámbar y el rojo de lo que se demora en cocina.
-  app.post('/api/cocina/tiempos', conEquipo, async (req, reply) => {
+  app.post('/api/kitchen/timers', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.extend({
       amarillo: z.int().min(1).max(240),
       rojo: z.int().min(1).max(240),
@@ -511,10 +507,10 @@ export async function rutasImpresion(
     if (!cuerpo.success) return datosInvalidos(reply, 'Escribe minutos entre 1 y 240')
     if (cuerpo.data.rojo <= cuerpo.data.amarillo)
       return datosInvalidos(reply, '«Muy demorada» debe llegar después de «demorada»')
-    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    const autor = quien(req, reply, cuerpo.data, ['manage_devices'])
     if (!autor) return reply
     actualizarConfig(
-      { cocina_amarillo_min: cuerpo.data.amarillo, cocina_rojo_min: cuerpo.data.rojo },
+      { kitchen_yellow_min: cuerpo.data.amarillo, kitchen_red_min: cuerpo.data.rojo },
       autor,
     )
     return reply.code(204).send()
@@ -523,162 +519,167 @@ export async function rutasImpresion(
   // ── Caja (tarea 1.6): impresora de precuentas, medios de pago y datáfonos ──
 
   // Dónde sale la precuenta; sin impresora, solo se ve en pantalla.
-  app.post('/api/caja/precuenta', conEquipo, async (req, reply) => {
-    const cuerpo = Sesion.extend({ impresora_id: Id.nullable() }).safeParse(req.body)
+  app.post('/api/register/pre-bill', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({ printer_id: Id.nullable() }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply)
-    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    const autor = quien(req, reply, cuerpo.data, ['manage_devices'])
     if (!autor) return reply
-    const id = cuerpo.data.impresora_id
+    const id = cuerpo.data.printer_id
     if (
       id &&
       !db
-        .prepare('SELECT 1 FROM impresora WHERE restaurante_id = ? AND id = ? AND activo = 1')
+        .prepare('SELECT 1 FROM printers WHERE restaurant_id = ? AND id = ? AND active = 1')
         .get(restauranteId, id)
     )
       return datosInvalidos(reply, 'Esa impresora no existe o está archivada')
-    actualizarConfig({ impresora_precuenta_id: id }, autor)
+    actualizarConfig({ pre_bill_printer_id: id }, autor)
     return reply.code(204).send()
   })
 
-  const datafonos = () =>
+  const cardTerminals = () =>
     db
-      .prepare('SELECT * FROM datafono WHERE restaurante_id = ? ORDER BY activo DESC, nombre, id')
+      .prepare(
+        'SELECT * FROM card_terminals WHERE restaurant_id = ? ORDER BY active DESC, name, id',
+      )
       .all(restauranteId)
       .map((f) => ({
         id: String(f.id),
-        nombre: String(f.nombre),
-        proveedor: String(f.proveedor),
-        activo: f.activo === 1,
+        name: String(f.name),
+        provider: String(f.provider),
+        active: f.active === 1,
       }))
 
   // Lo de la pantalla «Caja y pagos».
-  app.post('/api/caja/configuracion', conEquipo, async (req, reply) => {
+  app.post('/api/register/config', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply)
-    if (!quien(req, reply, cuerpo.data, ['administrar_dispositivos'])) return reply
-    const config = configCompleta(
+    if (!quien(req, reply, cuerpo.data, ['manage_devices'])) return reply
+    const config = fullConfig(
       JSON.parse(
         String(
-          db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)?.config ??
+          db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)?.config ??
             '{}',
         ),
       ),
     )
     return {
-      medios_pago: config.medios_pago,
-      medios_propios: config.medios_propios,
-      propina_sugerida: config.propina_sugerida,
-      umbral_diferencia_caja: config.umbral_diferencia_caja,
-      datafonos: datafonos(),
+      payment_methods: config.payment_methods,
+      custom_methods: config.custom_methods,
+      suggested_tip: config.suggested_tip,
+      register_variance_threshold: config.register_variance_threshold,
+      cardTerminals: cardTerminals(),
     }
   })
 
-  app.post('/api/caja/medios', conEquipo, async (req, reply) => {
-    const cuerpo = Sesion.extend({ medios: z.array(MedioPago).min(1).max(10) }).safeParse(req.body)
+  app.post('/api/register/payment-methods', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({ medios: z.array(PaymentMethod).min(1).max(10) }).safeParse(
+      req.body,
+    )
     if (!cuerpo.success) return datosInvalidos(reply)
     const medios = [...new Set(cuerpo.data.medios)]
-    if (medios.includes('otro'))
+    if (medios.includes('other'))
       return datosInvalidos(reply, 'Los medios propios se crean aparte, con su nombre')
-    if (!medios.includes('efectivo')) return datosInvalidos(reply, 'El efectivo siempre se recibe')
-    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    if (!medios.includes('cash')) return datosInvalidos(reply, 'El efectivo siempre se recibe')
+    const autor = quien(req, reply, cuerpo.data, ['manage_devices'])
     if (!autor) return reply
-    actualizarConfig({ medios_pago: medios }, autor)
+    actualizarConfig({ payment_methods: medios }, autor)
     return reply.code(204).send()
   })
 
   // Un medio propio del restaurante (Sodexo, QR del banco): crear, renombrar o archivar.
-  app.post('/api/caja/medios-propios', conEquipo, async (req, reply) => {
+  app.post('/api/register/custom-methods', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.extend({
-      medio: z.strictObject({
+      method: z.strictObject({
         id: Id.optional(),
-        nombre: z.string().trim().min(1).max(30),
-        activo: z.boolean(),
+        name: z.string().trim().min(1).max(30),
+        active: z.boolean(),
       }),
     }).safeParse(req.body)
     if (!cuerpo.success)
       return datosInvalidos(reply, 'Escribe el nombre del medio (hasta 30 letras)')
-    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    const autor = quien(req, reply, cuerpo.data, ['manage_devices'])
     if (!autor) return reply
-    const actual = configCompleta(
+    const current = fullConfig(
       JSON.parse(
         String(
-          db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)?.config ??
+          db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)?.config ??
             '{}',
         ),
       ),
     )
-    const m = cuerpo.data.medio
-    if (m.id && !actual.medios_propios.some((x) => x.id === m.id))
+    const m = cuerpo.data.method
+    if (m.id && !current.custom_methods.some((x) => x.id === m.id))
       return datosInvalidos(reply, 'Ese medio no existe')
-    const repetido = actual.medios_propios.some(
-      (x) => x.activo && x.id !== m.id && x.nombre.toLowerCase() === m.nombre.toLowerCase(),
+    const repetido = current.custom_methods.some(
+      (x) => x.active && x.id !== m.id && x.name.toLowerCase() === m.name.toLowerCase(),
     )
-    if (m.activo && repetido) return datosInvalidos(reply, 'Ya hay un medio con ese nombre')
-    const id = m.id ?? nuevoId()
+    if (m.active && repetido) return datosInvalidos(reply, 'Ya hay un medio con ese nombre')
+    const id = m.id ?? newId()
     const medios = m.id
-      ? actual.medios_propios.map((x) =>
-          x.id === id ? { id, nombre: m.nombre, activo: m.activo } : x,
+      ? current.custom_methods.map((x) =>
+          x.id === id ? { id, name: m.name, active: m.active } : x,
         )
-      : [...actual.medios_propios, { id, nombre: m.nombre, activo: m.activo }]
+      : [...current.custom_methods, { id, name: m.name, active: m.active }]
     if (medios.length > 20) return datosInvalidos(reply, 'Son máximo 20 medios propios')
-    actualizarConfig({ medios_propios: medios }, autor)
-    return { id, medios_propios: medios }
+    actualizarConfig({ custom_methods: medios }, autor)
+    return { id, custom_methods: medios }
   })
 
   // El porcentaje de propina sugerida, en puntos básicos (1000 = 10 %). Tope del 10 % — (validar)
   // con el contador (Ley 1935 de 2018).
-  app.post('/api/caja/propina', conEquipo, async (req, reply) => {
+  app.post('/api/register/tip', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.extend({ puntos: z.int().min(0).max(1000) }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply, 'La propina sugerida va de 0 % a 10 %')
-    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    const autor = quien(req, reply, cuerpo.data, ['manage_devices'])
     if (!autor) return reply
-    actualizarConfig({ propina_sugerida: cuerpo.data.puntos }, autor)
+    actualizarConfig({ suggested_tip: cuerpo.data.puntos }, autor)
     return reply.code(204).send()
   })
 
   // Desde qué diferencia el cierre de caja pide justificación (tarea 1.7).
-  app.post('/api/caja/umbral', conEquipo, async (req, reply) => {
+  app.post('/api/register/threshold', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.extend({ pesos: z.int().min(0).max(1_000_000) }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply, 'Escribe un valor entre 0 y 1.000.000')
-    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    const autor = quien(req, reply, cuerpo.data, ['manage_devices'])
     if (!autor) return reply
-    actualizarConfig({ umbral_diferencia_caja: cuerpo.data.pesos }, autor)
+    actualizarConfig({ register_variance_threshold: cuerpo.data.pesos }, autor)
     return reply.code(204).send()
   })
 
-  app.post('/api/datafonos', conEquipo, async (req, reply) => {
+  app.post('/api/card-terminals', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.extend({
-      datafono: z.strictObject({
+      cardTerminal: z.strictObject({
         id: Id.optional(),
-        nombre: z.string().trim().min(1).max(60),
-        proveedor: z.enum(['bold', 'redeban', 'credibanco', 'otro']),
-        activo: z.boolean(),
+        name: z.string().trim().min(1).max(60),
+        provider: z.enum(['bold', 'redeban', 'credibanco', 'other']),
+        active: z.boolean(),
       }),
     }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply, 'Revisa los datos del datáfono')
-    const autor = quien(req, reply, cuerpo.data, ['administrar_dispositivos'])
+    const autor = quien(req, reply, cuerpo.data, ['manage_devices'])
     if (!autor) return reply
-    const d = cuerpo.data.datafono
+    const d = cuerpo.data.cardTerminal
     const repetido = db
       .prepare(
-        'SELECT id FROM datafono WHERE restaurante_id = ? AND activo = 1 AND lower(nombre) = lower(?)',
+        'SELECT id FROM card_terminals WHERE restaurant_id = ? AND active = 1 AND lower(name) = lower(?)',
       )
-      .all(restauranteId, d.nombre)
+      .all(restauranteId, d.name)
       .some((f) => String(f.id) !== d.id)
-    if (d.activo && repetido) return datosInvalidos(reply, 'Ya hay un datáfono con ese nombre')
-    const campos = { nombre: d.nombre, proveedor: d.proveedor, activo: d.activo ? 1 : 0 }
+    if (d.active && repetido) return datosInvalidos(reply, 'Ya hay un datáfono con ese nombre')
+    const fields = { name: d.name, provider: d.provider, active: d.active ? 1 : 0 }
     const id = enTransaccion(db, () => {
-      if (!d.id) return insertarVersionado(db, 'datafono', restauranteId, campos, autor, reloj())
-      const actual = db
-        .prepare('SELECT id FROM datafono WHERE restaurante_id = ? AND id = ?')
+      if (!d.id)
+        return insertarVersionado(db, 'card_terminals', restauranteId, fields, autor, clock())
+      const current = db
+        .prepare('SELECT id FROM card_terminals WHERE restaurant_id = ? AND id = ?')
         .get(restauranteId, d.id)
-      if (!actual) return null
-      actualizarVersionado(db, 'datafono', restauranteId, d.id, campos, autor, reloj())
+      if (!current) return null
+      actualizarVersionado(db, 'card_terminals', restauranteId, d.id, fields, autor, clock())
       return d.id
     })
     if (!id) return datosInvalidos(reply, 'Ese datáfono no existe')
     avisar()
-    return { id, datafonos: datafonos() }
+    return { id, cardTerminals: cardTerminals() }
   })
 }
 
@@ -686,13 +687,13 @@ function insertarTrabajo(
   db: BaseSqlite,
   restauranteId: string,
   impresoraId: string,
-  contenido: PruebaImpresion,
+  content: PruebaImpresion,
   ahora: string,
 ): string {
-  const id = nuevoId()
+  const id = newId()
   db.prepare(
-    `INSERT INTO trabajo_impresion (id, restaurante_id, impresora_id, tipo, contenido, creado_en)
-     VALUES (?, ?, ?, 'prueba', ?, ?)`,
-  ).run(id, restauranteId, impresoraId, JSON.stringify(contenido), ahora)
+    `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
+     VALUES (?, ?, ?, 'test', ?, ?)`,
+  ).run(id, restauranteId, impresoraId, JSON.stringify(content), ahora)
   return id
 }

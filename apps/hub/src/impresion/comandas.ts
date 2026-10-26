@@ -1,13 +1,13 @@
-import type { EstadoPedido, EventoPedido, ItemPedido } from '@pos/core'
+import type { OrderEvent, OrderItem, OrderState } from '@pos/core'
 import {
-  configCompleta,
-  impuestosDelPedido,
-  nuevoId,
-  propinaDelPedido,
-  propinaPendienteDeCuenta,
-  saldoCuenta,
-  totalesItem,
-  totalesPedido,
+  checkBalance,
+  checkPendingTip,
+  fullConfig,
+  itemTotals,
+  newId,
+  orderTaxes,
+  orderTip,
+  orderTotals,
 } from '@pos/core'
 import type { BaseSqlite, Fila } from '@pos/db'
 import {
@@ -21,17 +21,17 @@ import type { CambioPedido } from '@pos/sync'
 import { encolarCierreZ } from '../reportes/cierre-z'
 
 // De un evento aceptado a los trabajos de impresión de sus comandas (ADR-015). Corre dentro de la
-// transacción del evento (`ConfigHub.alGuardar`): si el hub se cae justo después, las comandas ya
+// transacción del evento (`ConfigHub.onSave`): si el hub se cae justo después, las comandas ya
 // están en la cola. Solo arma datos; la cola (`cola.ts`) las convierte en bytes al imprimir, con
 // el ancho de la impresora que finalmente la imprima (puede ser la de respaldo).
 
-const EN_COCINA = new Set(['enviado', 'en_preparacion', 'listo'])
+const EN_COCINA = new Set(['sent', 'in_preparation', 'ready'])
 
 const CANALES: Record<string, string> = {
-  salon: 'Mesa',
-  para_llevar: 'Para llevar',
-  domicilio: 'Domicilio',
-  barra: 'Barra',
+  dine_in: 'Mesa',
+  takeout: 'Para llevar',
+  delivery: 'Domicilio',
+  bar: 'Barra',
 }
 
 /** Una comanda ya enviada: de qué estación es, qué llevaba y su número del día. */
@@ -45,150 +45,149 @@ interface Enviada {
 export interface OpcionesComandas {
   db: BaseSqlite
   restauranteId: string
-  zonaHoraria: string
+  timeZone: string
 }
 
 /** Crea los trabajos de impresión que pide el evento. Devuelve cuántos creó. */
 export function trabajosDeEvento(
   o: OpcionesComandas,
-  evento: EventoPedido,
-  cambios: readonly CambioPedido[],
+  event: OrderEvent,
+  changes: readonly CambioPedido[],
 ): number {
   // Al cerrar la caja sale el cierre Z (tarea 1.9).
   // Un fallo aquí no es de una comanda: se registra aparte y el cierre se reimprime desde Reportes.
-  if (evento.tipo === 'TurnoCerrado') {
+  if (event.type === 'ShiftClosed') {
     try {
-      return encolarCierreZ(o, evento.agregado_id, { evento }) === 'en_cola' ? 1 : 0
+      return encolarCierreZ(o, event.aggregate_id, { event }) === 'queued' ? 1 : 0
     } catch (error) {
-      console.error(`No se pudo armar el cierre Z del turno ${evento.agregado_id}:`, error)
+      console.error(`No se pudo armar el cierre Z del turno ${event.aggregate_id}:`, error)
       return 0
     }
   }
-  const cambio = cambios[0]
-  const antes = cambio?.antes ?? null
-  const despues = cambio?.despues ?? null
-  if (!despues) return 0
-  if (evento.tipo === 'PrecuentaImpresa') return trabajoDePrecuenta(o, evento, despues)
+  const change = changes[0]
+  const before = change?.before ?? null
+  const after = change?.after ?? null
+  if (!after) return 0
+  if (event.type === 'PreBillPrinted') return trabajoDePrecuenta(o, event, after)
 
-  const porCrear: { comandaId: string; estacionId: string; comanda: Comanda }[] = []
-  const armar = (
-    tipo: TipoComanda,
-    enviada: Enviada,
+  const porCrear: { comandaId: string; estacionId: string; ticket: Comanda }[] = []
+  const build = (
+    type: TipoComanda,
+    sent: Enviada,
     items: ItemComanda[],
-    pedido: EstadoPedido = despues,
-    desde: string | null = null,
+    order: OrderState = after,
+    from: string | null = null,
   ) => {
     if (items.length > 0)
       porCrear.push({
-        comandaId: enviada.comandaId,
-        estacionId: enviada.estacionId,
-        comanda: { ...datosComanda(o, evento, pedido, tipo, enviada, items), antes: desde },
+        comandaId: sent.comandaId,
+        estacionId: sent.estacionId,
+        ticket: { ...datosComanda(o, event, order, type, sent, items), before: from },
       })
   }
   /** Lo que sigue en cocina de un pedido, agrupado por la comanda con que salió. */
-  const enCocinaPorComanda = (pedido: EstadoPedido, ids?: readonly string[]) => {
-    const grupos = new Map<string, { enviada: Enviada; items: ItemComanda[] }>()
-    for (const item of Object.values(pedido.items)) {
+  const enCocinaPorComanda = (order: OrderState, ids?: readonly string[]) => {
+    const groups = new Map<string, { sent: Enviada; items: ItemComanda[] }>()
+    for (const item of Object.values(order.items)) {
       if (ids && !ids.includes(item.id)) continue
-      if (!EN_COCINA.has(item.estado) || item.cantidad <= item.cantidadAnulada) continue
-      const enviada = enviadaDe(o, pedido.id, item.id)
-      if (!enviada) continue
-      const g = grupos.get(enviada.comandaId) ?? { enviada, items: [] }
+      if (!EN_COCINA.has(item.status) || item.quantity <= item.voidedQuantity) continue
+      const sent = enviadaDe(o, order.id, item.id)
+      if (!sent) continue
+      const g = groups.get(sent.comandaId) ?? { sent, items: [] }
       g.items.push(itemComanda(item))
-      grupos.set(enviada.comandaId, g)
+      groups.set(sent.comandaId, g)
     }
-    return [...grupos.values()]
+    return [...groups.values()]
   }
 
-  switch (evento.tipo) {
-    case 'ItemsEnviados': {
+  switch (event.type) {
+    case 'ItemsSent': {
       // Solo lo que de verdad pasó a enviado: lo ya enviado por otro equipo no se repite.
-      for (const c of evento.datos.comandas) {
+      for (const c of event.data.tickets) {
         const items = c.item_ids
           .filter(
-            (id) =>
-              antes?.items[id]?.estado === 'pendiente' && despues.items[id]?.estado === 'enviado',
+            (id) => before?.items[id]?.status === 'pending' && after.items[id]?.status === 'sent',
           )
-          .map((id) => despues.items[id])
-          .filter((i): i is ItemPedido => !!i)
+          .map((id) => after.items[id])
+          .filter((i): i is OrderItem => !!i)
           .map((i) => itemComanda(i))
-        armar(
-          'nueva',
+        build(
+          'newOne',
           {
-            comandaId: c.comanda_id,
-            estacionId: c.estacion_id,
+            comandaId: c.ticket_id,
+            estacionId: c.station_id,
             itemIds: c.item_ids,
-            numero: evento.asignaciones.numeros_comanda?.[c.comanda_id] ?? null,
+            numero: event.assignments.ticket_numbers?.[c.ticket_id] ?? null,
           },
           items,
         )
       }
       break
     }
-    case 'ComandaReimpresa': {
+    case 'TicketReprinted': {
       // Si sus platos pasaron a otra mesa, el envío está en el pedido de origen.
-      const enviada =
-        enviadas(o, despues.id).find((e) => e.comandaId === evento.datos.comanda_id) ??
-        enviadaGlobal(o, evento.datos.comanda_id)
-      if (!enviada) break
-      armar('reimpresion', enviada, itemsVigentes(despues, enviada.itemIds))
+      const sent =
+        enviadas(o, after.id).find((e) => e.comandaId === event.data.ticket_id) ??
+        enviadaGlobal(o, event.data.ticket_id)
+      if (!sent) break
+      build('reprinting', sent, itemsVigentes(after, sent.itemIds))
       break
     }
-    case 'ItemAnulado': {
-      const item = antes?.items[evento.datos.item_id]
+    case 'ItemVoided': {
+      const item = before?.items[event.data.item_id]
       // Lo que no se había enviado no está en la cocina, y lo entregado ya salió: no hay nada
       // que avisar allá.
-      if (!item || !['enviado', 'en_preparacion', 'listo'].includes(item.estado)) break
-      const enviada = enviadaDe(o, despues.id, item.id)
-      if (!enviada) break
-      armar('anulacion', enviada, [
-        itemComanda({ ...item, cantidad: evento.datos.cantidad, cantidadAnulada: 0 }),
+      if (!item || !['sent', 'in_preparation', 'ready'].includes(item.status)) break
+      const sent = enviadaDe(o, after.id, item.id)
+      if (!sent) break
+      build('voidEntry', sent, [
+        itemComanda({ ...item, quantity: event.data.quantity, voidedQuantity: 0 }),
       ])
       break
     }
-    case 'PedidoCancelado': {
+    case 'OrderCanceled': {
       // Lo que la cocina tenía de un pedido cancelado sale como anulación.
-      if (!antes) break
-      for (const g of enCocinaPorComanda(antes)) armar('anulacion', g.enviada, g.items)
+      if (!before) break
+      for (const g of enCocinaPorComanda(before)) build('voidEntry', g.sent, g.items)
       break
     }
-    case 'PedidoMovidoDeMesa': {
-      if (!antes || antes.mesaId === despues.mesaId) break
-      for (const g of enCocinaPorComanda(despues))
-        armar('traslado', g.enviada, g.items, despues, destinoDe(o, antes))
+    case 'OrderMovedTable': {
+      if (!before || before.tableId === after.tableId) break
+      for (const g of enCocinaPorComanda(after))
+        build('move', g.sent, g.items, after, destinoDe(o, before))
       break
     }
-    case 'ItemsMovidos': {
+    case 'ItemsMoved': {
       // El evento va en el pedido de origen; el de destino viene como relacionado.
-      const destino = cambios.find((c) => c.despues?.id === evento.datos.pedido_destino_id)?.despues
-      if (!antes || !destino) break
-      const ids = evento.datos.items.map((m) => m.item.item_id)
-      for (const g of enCocinaPorComanda({ ...antes, items: pickItems(antes, ids) }))
-        armar('traslado', g.enviada, g.items, destino, destinoDe(o, antes))
+      const target = changes.find((c) => c.after?.id === event.data.target_order_id)?.after
+      if (!before || !target) break
+      const ids = event.data.items.map((m) => m.item.item_id)
+      for (const g of enCocinaPorComanda({ ...before, items: pickItems(before, ids) }))
+        build('move', g.sent, g.items, target, destinoDe(o, before))
       break
     }
-    case 'NotaPedidoCambiada': {
+    case 'OrderNoteChanged': {
       // Con platos ya en cocina, la nota nueva (o que se quitó) sale en papel a cada estación que
       // tiene algo pendiente de ese pedido: una alergia no puede quedar solo en la pantalla.
-      if ((antes?.notas ?? null) === despues.notas) break
+      if ((before?.notes ?? null) === after.notes) break
       const porEstacion = new Map<string, Enviada>()
-      for (const e of enviadas(o, despues.id))
-        if (e.itemIds.some((id) => EN_COCINA.has(despues.items[id]?.estado ?? '')))
+      for (const e of enviadas(o, after.id))
+        if (e.itemIds.some((id) => EN_COCINA.has(after.items[id]?.status ?? '')))
           porEstacion.set(e.estacionId, e)
       for (const e of porEstacion.values())
         porCrear.push({
           comandaId: e.comandaId,
           estacionId: e.estacionId,
-          comanda: datosComanda(o, evento, despues, 'nota', e, []),
+          ticket: datosComanda(o, event, after, 'note', e, []),
         })
       break
     }
-    case 'ItemModificadoTrasEnvio': {
-      const item = despues.items[evento.datos.item_id]
+    case 'ItemModifiedAfterSend': {
+      const item = after.items[event.data.item_id]
       if (!item) break
-      const enviada = enviadaDe(o, despues.id, item.id)
-      if (!enviada) break
-      armar('modificacion', enviada, [itemComanda(item)])
+      const sent = enviadaDe(o, after.id, item.id)
+      if (!sent) break
+      build('modification', sent, [itemComanda(item)])
       break
     }
     default:
@@ -200,7 +199,7 @@ export function trabajosDeEvento(
   if (porCrear.length === 0) return 0
   o.db.exec('SAVEPOINT comandas')
   try {
-    const creados = insertar(o, evento, porCrear)
+    const creados = insertar(o, event, porCrear)
     o.db.exec('RELEASE comandas')
     return creados
   } catch (error) {
@@ -212,27 +211,27 @@ export function trabajosDeEvento(
 
 function insertar(
   o: OpcionesComandas,
-  evento: EventoPedido,
-  porCrear: readonly { comandaId: string; estacionId: string; comanda: Comanda }[],
+  event: OrderEvent,
+  porCrear: readonly { comandaId: string; estacionId: string; ticket: Comanda }[],
 ): number {
   let creados = 0
-  for (const { comandaId, estacionId, comanda } of porCrear) {
+  for (const { comandaId, estacionId, ticket } of porCrear) {
     for (const impresoraId of impresorasDe(o, estacionId)) {
       o.db
         .prepare(
-          `INSERT INTO trabajo_impresion
-             (id, restaurante_id, impresora_id, tipo, evento_id, comanda_id, contenido, creado_en)
-           VALUES (?, ?, ?, 'comanda', ?, ?, ?, ?)
+          `INSERT INTO print_jobs
+             (id, restaurant_id, printer_id, type, event_id, ticket_id, content, created_at)
+           VALUES (?, ?, ?, 'ticket', ?, ?, ?, ?)
            ON CONFLICT DO NOTHING`,
         )
         .run(
-          nuevoId(),
+          newId(),
           o.restauranteId,
           impresoraId,
-          evento.id,
+          event.id,
           comandaId,
-          JSON.stringify(comanda),
-          evento.recibido_en,
+          JSON.stringify(ticket),
+          event.received_at,
         )
       creados += 1
     }
@@ -246,237 +245,235 @@ function insertar(
  */
 function trabajoDePrecuenta(
   o: OpcionesComandas,
-  evento: Extract<EventoPedido, { tipo: 'PrecuentaImpresa' }>,
-  pedido: EstadoPedido,
+  event: Extract<OrderEvent, { type: 'PreBillPrinted' }>,
+  order: OrderState,
 ): number {
-  const fila = valor(o, 'SELECT nombre, config FROM restaurante WHERE id = ?')
-  const config = configCompleta(JSON.parse(String(fila?.config ?? '{}')))
-  const impresoraId = config.impresora_precuenta_id
+  const fila = value(o, 'SELECT name, config FROM restaurants WHERE id = ?')
+  const config = fullConfig(JSON.parse(String(fila?.config ?? '{}')))
+  const impresoraId = config.pre_bill_printer_id
   if (
     !impresoraId ||
-    !valor(
+    !value(
       o,
-      'SELECT 1 FROM impresora WHERE restaurante_id = ? AND id = ? AND activo = 1',
+      'SELECT 1 FROM printers WHERE restaurant_id = ? AND id = ? AND active = 1',
       impresoraId,
     )
   )
     return 0
-  const mesero = valor(
+  const waiter = value(
     o,
-    'SELECT nombre FROM usuario WHERE restaurante_id = ? AND id = ?',
-    pedido.meseroAsignadoId,
+    'SELECT name FROM users WHERE restaurant_id = ? AND id = ?',
+    order.assignedWaiterId,
   )
-  const totales = totalesPedido(pedido)
-  const cuenta = evento.datos.cuenta_id
-    ? (pedido.cuentas?.find((c) => c.id === evento.datos.cuenta_id) ?? null)
+  const totales = orderTotals(order)
+  const check = event.data.check_id
+    ? (order.checks?.find((c) => c.id === event.data.check_id) ?? null)
     : null
   // Lo que se debe lo calcula el hub con el pedido: el evento solo dice qué cuenta se pidió. La
   // propina es voluntaria: va la que se eligió al pedir la precuenta (la sugerida, ninguna u otra).
-  const subtotal = cuenta ? Math.max(0, saldoCuenta(pedido, cuenta.id) ?? 0) : totales.saldo
-  const propina = evento.datos.propina_sugerida
-  const sugerida = cuenta
-    ? propinaPendienteDeCuenta(cuenta, subtotal)
-    : propinaDelPedido(pedido, subtotal, config)
-  const precuenta: Precuenta = {
-    restaurante: String(fila?.nombre ?? ''),
-    destino: destinoDe(o, pedido),
-    pedido: pedido.numeroDia,
-    mesero: mesero ? String(mesero.nombre) : '',
-    hora: horaDe(o, evento.recibido_en),
-    comensales: pedido.comensales > 0 ? pedido.comensales : null,
-    lineas: Object.values(pedido.items)
-      .filter((i) => i.estado !== 'anulado' && i.cantidad > i.cantidadAnulada)
-      .sort((a, b) => a.orden - b.orden)
+  const subtotal = check ? Math.max(0, checkBalance(order, check.id) ?? 0) : totales.balance
+  const tip = event.data.suggested_tip
+  const suggested = check ? checkPendingTip(check, subtotal) : orderTip(order, subtotal, config)
+  const preBill: Precuenta = {
+    restaurant: String(fila?.name ?? ''),
+    target: destinoDe(o, order),
+    order: order.dayNumber,
+    waiter: waiter ? String(waiter.name) : '',
+    time: timeOf(o, event.received_at),
+    guests: order.guests > 0 ? order.guests : null,
+    lines: Object.values(order.items)
+      .filter((i) => i.status !== 'voided' && i.quantity > i.voidedQuantity)
+      .sort((a, b) => a.position - b.position)
       .map((i) => ({
-        cantidad: i.cantidad - i.cantidadAnulada,
-        nombre: i.nombre,
-        opciones: i.modificadores.map((m) => m.nombre),
-        valor: totalesItem(pedido, i).neto,
+        quantity: i.quantity - i.voidedQuantity,
+        name: i.name,
+        options: i.modifiers.map((m) => m.name),
+        value: itemTotals(order, i).net,
       })),
-    impuestos: impuestosDelPedido(pedido, config.redondeo_modo).map((i) => ({
-      nombre: nombreImpuesto(i.tipo, i.tarifa),
+    taxes: orderTaxes(order, config.rounding_mode).map((i) => ({
+      name: nombreImpuesto(i.type, i.rate),
       base: i.base,
-      valor: i.impuesto,
+      value: i.tax,
     })),
-    total: totales.neto,
-    pagado: totales.pagado,
-    cuenta: cuenta ? { nombre: cuenta.nombre, monto: subtotal } : null,
+    total: totales.net,
+    paid: totales.paid,
+    check: check ? { name: check.name, amount: subtotal } : null,
     subtotal,
-    propina,
-    tasaPropina: propina === sugerida ? config.propina_sugerida : null,
+    tip,
+    tasaPropina: tip === suggested ? config.suggested_tip : null,
   }
   o.db
     .prepare(
-      `INSERT INTO trabajo_impresion
-         (id, restaurante_id, impresora_id, tipo, evento_id, comanda_id, contenido, creado_en)
-       VALUES (?, ?, ?, 'precuenta', ?, 'precuenta', ?, ?)
+      `INSERT INTO print_jobs
+         (id, restaurant_id, printer_id, type, event_id, ticket_id, content, created_at)
+       VALUES (?, ?, ?, 'preBill', ?, 'preBill', ?, ?)
        ON CONFLICT DO NOTHING`,
     )
     .run(
-      nuevoId(),
+      newId(),
       o.restauranteId,
       impresoraId,
-      evento.id,
-      JSON.stringify(precuenta),
-      evento.recibido_en,
+      event.id,
+      JSON.stringify(preBill),
+      event.received_at,
     )
   return 1
 }
 
-const horaDe = (o: OpcionesComandas, iso: string) =>
+const timeOf = (o: OpcionesComandas, iso: string) =>
   new Intl.DateTimeFormat('es-CO', {
     hour: 'numeric',
     minute: '2-digit',
-    timeZone: o.zonaHoraria,
+    timeZone: o.timeZone,
   }).format(new Date(iso))
 
 /** Impresoras activas que imprimen esa estación. */
 export function impresorasDe(o: OpcionesComandas, estacionId: string): string[] {
   return o.db
     .prepare(
-      `SELECT i.id FROM impresora i, json_each(i.estacion_ids) e
-       WHERE i.restaurante_id = ? AND i.activo = 1 AND e.value = ?
-       ORDER BY i.creado_en, i.id`,
+      `SELECT i.id FROM printers i, json_each(i.station_ids) e
+       WHERE i.restaurant_id = ? AND i.active = 1 AND e.value = ?
+       ORDER BY i.created_at, i.id`,
     )
     .all(o.restauranteId, estacionId)
     .map((f) => String(f.id))
 }
 
 /**
- * La comanda con que salió a cocina un ítem. Si el ítem se pasó de otro pedido (`ItemsMovidos`
+ * La comanda con que salió a cocina un ítem. Si el ítem se pasó de otro pedido (`ItemsMoved`
  * conserva su id), el envío está en el pedido de origen: se busca en todo el restaurante.
  */
-function enviadaDe(o: OpcionesComandas, pedidoId: string, itemId: string): Enviada | undefined {
-  const delPedido = enviadas(o, pedidoId).find((e) => e.itemIds.includes(itemId))
-  if (delPedido) return delPedido
-  const filas = o.db
+function enviadaDe(o: OpcionesComandas, orderId: string, itemId: string): Enviada | undefined {
+  const fromOrder = enviadas(o, orderId).find((e) => e.itemIds.includes(itemId))
+  if (fromOrder) return fromOrder
+  const rows = o.db
     .prepare(
-      `SELECT e.datos, e.asignaciones FROM evento e
-       WHERE e.restaurante_id = ? AND e.tipo = 'ItemsEnviados'
-         AND EXISTS (SELECT 1 FROM json_each(e.datos, '$.comandas') c, json_each(c.value, '$.item_ids') i
+      `SELECT e.data, e.assignments FROM events e
+       WHERE e.restaurant_id = ? AND e.type = 'ItemsSent'
+         AND EXISTS (SELECT 1 FROM json_each(e.data, '$.tickets') c, json_each(c.value, '$.item_ids') i
                      WHERE i.value = ?)
-       ORDER BY e.secuencia DESC LIMIT 1`,
+       ORDER BY e.sequence DESC LIMIT 1`,
     )
     .all(o.restauranteId, itemId)
-  return deFilas(filas).find((e) => e.itemIds.includes(itemId))
+  return deFilas(rows).find((e) => e.itemIds.includes(itemId))
 }
 
 /** Una comanda por su id, en cualquier pedido del restaurante. */
 function enviadaGlobal(o: OpcionesComandas, comandaId: string): Enviada | undefined {
-  const filas = o.db
+  const rows = o.db
     .prepare(
-      `SELECT e.datos, e.asignaciones FROM evento e
-       WHERE e.restaurante_id = ? AND e.tipo = 'ItemsEnviados'
-         AND EXISTS (SELECT 1 FROM json_each(e.datos, '$.comandas') c
-                     WHERE json_extract(c.value, '$.comanda_id') = ?)
+      `SELECT e.data, e.assignments FROM events e
+       WHERE e.restaurant_id = ? AND e.type = 'ItemsSent'
+         AND EXISTS (SELECT 1 FROM json_each(e.data, '$.tickets') c
+                     WHERE json_extract(c.value, '$.ticket_id') = ?)
        LIMIT 1`,
     )
     .all(o.restauranteId, comandaId)
-  return deFilas(filas).find((e) => e.comandaId === comandaId)
+  return deFilas(rows).find((e) => e.comandaId === comandaId)
 }
 
 /** Las comandas que se enviaron de ese pedido, con su número del día. */
-function enviadas(o: OpcionesComandas, pedidoId: string): Enviada[] {
-  const filas = o.db
+function enviadas(o: OpcionesComandas, orderId: string): Enviada[] {
+  const rows = o.db
     .prepare(
-      `SELECT e.datos, e.asignaciones FROM evento_agregado a
-       JOIN evento e ON e.restaurante_id = a.restaurante_id AND e.id = a.evento_id
-       WHERE a.restaurante_id = ? AND a.agregado_id = ? AND e.tipo = 'ItemsEnviados'
-       ORDER BY a.secuencia`,
+      `SELECT e.data, e.assignments FROM event_aggregates a
+       JOIN events e ON e.restaurant_id = a.restaurant_id AND e.id = a.event_id
+       WHERE a.restaurant_id = ? AND a.aggregate_id = ? AND e.type = 'ItemsSent'
+       ORDER BY a.sequence`,
     )
-    .all(o.restauranteId, pedidoId)
-  return deFilas(filas)
+    .all(o.restauranteId, orderId)
+  return deFilas(rows)
 }
 
-function deFilas(filas: readonly Fila[]): Enviada[] {
-  return filas.flatMap((f) => {
-    const datos = JSON.parse(String(f.datos)) as {
-      comandas: { comanda_id: string; estacion_id: string; item_ids: string[] }[]
+function deFilas(rows: readonly Fila[]): Enviada[] {
+  return rows.flatMap((f) => {
+    const data = JSON.parse(String(f.data)) as {
+      tickets: { ticket_id: string; station_id: string; item_ids: string[] }[]
     }
     const numeros = (
-      JSON.parse(String(f.asignaciones)) as { numeros_comanda?: Record<string, number> }
-    ).numeros_comanda
-    return datos.comandas.map((c) => ({
-      comandaId: c.comanda_id,
-      estacionId: c.estacion_id,
+      JSON.parse(String(f.assignments)) as { ticket_numbers?: Record<string, number> }
+    ).ticket_numbers
+    return data.tickets.map((c) => ({
+      comandaId: c.ticket_id,
+      estacionId: c.station_id,
       itemIds: c.item_ids,
-      numero: numeros?.[c.comanda_id] ?? null,
+      numero: numeros?.[c.ticket_id] ?? null,
     }))
   })
 }
 
 /** Lo que sigue en pie de una comanda (sin lo anulado). */
-function itemsVigentes(pedido: EstadoPedido, ids: readonly string[]): ItemComanda[] {
+function itemsVigentes(order: OrderState, ids: readonly string[]): ItemComanda[] {
   return ids
-    .map((id) => pedido.items[id])
-    .filter((i): i is ItemPedido => !!i && i.estado !== 'anulado' && i.cantidad > i.cantidadAnulada)
+    .map((id) => order.items[id])
+    .filter((i): i is OrderItem => !!i && i.status !== 'voided' && i.quantity > i.voidedQuantity)
     .map((i) => itemComanda(i))
 }
 
-function itemComanda(i: ItemPedido): ItemComanda {
+function itemComanda(i: OrderItem): ItemComanda {
   return {
-    cantidad: i.cantidad - i.cantidadAnulada,
-    nombre: i.nombre,
-    comensal: i.comensal,
-    curso: i.curso,
-    opciones: i.modificadores.map((m) => m.nombre),
-    notas: i.notas,
+    quantity: i.quantity - i.voidedQuantity,
+    name: i.name,
+    guest: i.guest,
+    course: i.course,
+    options: i.modifiers.map((m) => m.name),
+    notes: i.notes,
   }
 }
 
-const valor = (o: OpcionesComandas, sql: string, ...params: string[]) =>
+const value = (o: OpcionesComandas, sql: string, ...params: string[]) =>
   o.db.prepare(sql).get(o.restauranteId, ...params)
 
 /** «Mesa 5», «Mesa 5 + 6» (un grupo con mesas unidas), «Para llevar»… */
-function destinoDe(o: OpcionesComandas, pedido: EstadoPedido): string {
-  if (!pedido.mesaId) return CANALES[pedido.canal] ?? 'Pedido'
-  const nombre = (id: string) =>
-    valor(o, 'SELECT nombre FROM mesa WHERE restaurante_id = ? AND id = ?', id)?.nombre
-  const principal = nombre(pedido.mesaId)
-  const unidas = (pedido.mesasUnidas ?? []).map(nombre).filter((n) => n !== undefined)
-  return principal === undefined ? 'Mesa' : `Mesa ${[principal, ...unidas].map(String).join(' + ')}`
+function destinoDe(o: OpcionesComandas, order: OrderState): string {
+  if (!order.tableId) return CANALES[order.channel] ?? 'Pedido'
+  const name = (id: string) =>
+    value(o, 'SELECT name FROM dining_tables WHERE restaurant_id = ? AND id = ?', id)?.name
+  const main = name(order.tableId)
+  const merged = (order.mergedTables ?? []).map(name).filter((n) => n !== undefined)
+  return main === undefined ? 'Mesa' : `Mesa ${[main, ...merged].map(String).join(' + ')}`
 }
 
 /** Solo esos ítems del pedido. */
-function pickItems(pedido: EstadoPedido, ids: readonly string[]): EstadoPedido['items'] {
-  return Object.fromEntries(Object.entries(pedido.items).filter(([id]) => ids.includes(id)))
+function pickItems(order: OrderState, ids: readonly string[]): OrderState['items'] {
+  return Object.fromEntries(Object.entries(order.items).filter(([id]) => ids.includes(id)))
 }
 
 function datosComanda(
   o: OpcionesComandas,
-  evento: EventoPedido,
-  pedido: EstadoPedido,
-  tipo: TipoComanda,
-  enviada: Enviada,
+  event: OrderEvent,
+  order: OrderState,
+  type: TipoComanda,
+  sent: Enviada,
   items: ItemComanda[],
 ): Comanda {
-  const estacion = valor(
+  const station = value(
     o,
-    'SELECT nombre FROM estacion WHERE restaurante_id = ? AND id = ?',
-    enviada.estacionId,
+    'SELECT name FROM stations WHERE restaurant_id = ? AND id = ?',
+    sent.estacionId,
   )
-  const mesero = valor(
+  const waiter = value(
     o,
-    'SELECT nombre FROM usuario WHERE restaurante_id = ? AND id = ?',
-    pedido.meseroAsignadoId,
+    'SELECT name FROM users WHERE restaurant_id = ? AND id = ?',
+    order.assignedWaiterId,
   )
-  const destino = destinoDe(o, pedido)
+  const target = destinoDe(o, order)
   return {
-    tipo,
-    estacion: estacion ? String(estacion.nombre) : 'Estación',
-    numero: enviada.numero,
-    destino,
-    pedido: pedido.numeroDia,
-    mesero: mesero ? String(mesero.nombre) : '',
-    hora: horaDe(o, evento.recibido_en),
-    comensales: pedido.comensales > 0 ? pedido.comensales : null,
+    type,
+    station: station ? String(station.name) : 'Estación',
+    numero: sent.numero,
+    target,
+    order: order.dayNumber,
+    waiter: waiter ? String(waiter.name) : '',
+    time: timeOf(o, event.received_at),
+    guests: order.guests > 0 ? order.guests : null,
     items,
-    retenidos: tipo === 'nueva' ? pedido.cursosRetenidos.filter((c) => tieneCurso(pedido, c)) : [],
+    retenidos: type === 'newOne' ? order.heldCourses.filter((c) => tieneCurso(order, c)) : [],
     // En una anulación o un cambio, la nota del pedido distrae: ya salió con la comanda original.
-    notaPedido: tipo === 'nueva' || tipo === 'reimpresion' || tipo === 'nota' ? pedido.notas : null,
+    notaPedido: type === 'newOne' || type === 'reprinting' || type === 'note' ? order.notes : null,
   }
 }
 
 /** Si el pedido tiene algo de ese curso todavía retenido. */
-const tieneCurso = (pedido: EstadoPedido, curso: string) =>
-  Object.values(pedido.items).some((i) => i.curso === curso && i.estado === 'retenido')
+const tieneCurso = (order: OrderState, course: string) =>
+  Object.values(order.items).some((i) => i.course === course && i.status === 'held')

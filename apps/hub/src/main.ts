@@ -25,14 +25,14 @@ const dirApp = process.env.DIR_APP || fileURLToPath(new URL('../../pos/dist', im
 const dirDatos = dirDatosDe()
 
 function leerPuerto(): number {
-  const valor = process.env.PUERTO
-  if (valor === undefined) return PUERTO_POR_DEFECTO
-  const puerto = Number(valor)
-  if (!Number.isInteger(puerto) || puerto < 1 || puerto > 65535) {
-    console.error(`PUERTO inválido: "${valor}". Usa un número entre 1 y 65535.`)
+  const value = process.env.PORT
+  if (value === undefined) return PUERTO_POR_DEFECTO
+  const port = Number(value)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    console.error(`PUERTO inválido: "${value}". Usa un número entre 1 y 65535.`)
     process.exit(1)
   }
-  return puerto
+  return port
 }
 
 const esIpPrivada = (ip: string) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)
@@ -41,8 +41,10 @@ const esIpPrivada = (ip: string) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.
 function ipsLocales(): string[] {
   return Object.values(networkInterfaces())
     .flat()
-    .filter((red) => red?.family === 'IPv4' && !red.internal && esIpPrivada(red.address))
-    .map((red) => red?.address as string)
+    .filter(
+      (network) => network?.family === 'IPv4' && !network.internal && esIpPrivada(network.address),
+    )
+    .map((network) => network?.address as string)
 }
 
 /** Abre la base en exclusiva (un solo hub por carpeta de datos) y la lleva a la última versión. */
@@ -68,40 +70,40 @@ function prepararTodo(db: BaseSqlite) {
     // La sala se crea después del acceso, pero la revocación de un equipo debe llegarle.
     let sala: SalaSync | null = null
     // Por ahora el aviso al administrador va a la ventana del hub; con la caja (Fase 1), a su pantalla.
-    const acceso = prepararAcceso(
+    const access = prepararAcceso(
       db,
       dirDatos,
-      (aviso) => console.warn(`⚠ Seguridad: ${aviso}`),
-      (dispositivoId, revocadoEn) => sala?.revocar(dispositivoId, revocadoEn),
+      (alert) => console.warn(`⚠ Seguridad: ${alert}`),
+      (dispositivoId, revocadoEn) => sala?.revoke(dispositivoId, revocadoEn),
     )
-    const zonaHoraria = zonaHorariaDe(db, acceso.restauranteId)
+    const timeZone = zonaHorariaDe(db, access.restauranteId)
     // Las comandas que quedaron en la cola antes de cerrar el hub salen al arrancar.
     const cola = new ColaImpresion({
       db,
-      restauranteId: acceso.restauranteId,
-      alCambiar: (estados) => sala?.avisarImpresoras(estados),
-      alFallo: (error) => console.error('Falló la cola de impresión:', error),
+      restauranteId: access.restauranteId,
+      onChange: (statuses) => sala?.avisarImpresoras(statuses),
+      onFailure: (error) => console.error('Falló la cola de impresión:', error),
     })
-    const comandas = { db, restauranteId: acceso.restauranteId, zonaHoraria }
+    const tickets = { db, restauranteId: access.restauranteId, timeZone }
     sala = prepararSincronizacion(
       db,
       dirDatos,
-      acceso.restauranteId,
-      acceso.acceso,
+      access.restauranteId,
+      access.access,
       (error, id) => console.error(`Un evento hizo fallar al hub y se rechazó (${id}):`, error),
       {
         // Dentro de la transacción del evento; la cola arranca cuando ya quedó guardado.
-        alGuardar: (evento, cambios) => {
-          if (trabajosDeEvento(comandas, evento, cambios) > 0) setImmediate(() => cola.despertar())
+        onSave: (event, changes) => {
+          if (trabajosDeEvento(tickets, event, changes) > 0) setImmediate(() => cola.despertar())
         },
-        alFalloAlGuardar: (error, id) => {
+        onSaveFailure: (error, id) => {
           console.error(`No se pudo armar la comanda del evento ${id}:`, error)
           cola.comandaSinArmar()
         },
       },
     )
     cola.despertar()
-    return { ...acceso, sala, cola, zonaHoraria }
+    return { ...access, sala, cola, timeZone }
   } catch (error) {
     const detalle = error instanceof Error ? error.message : String(error)
     console.error(`No se pudo preparar el acceso del hub: ${detalle}`)
@@ -109,29 +111,29 @@ function prepararTodo(db: BaseSqlite) {
   }
 }
 
-const puerto = leerPuerto()
+const port = leerPuerto()
 const db = prepararBase()
-const { acceso, restauranteId, sala, cola, zonaHoraria, admin, avisos } = prepararTodo(db)
+const { access, restauranteId, sala, cola, timeZone, admin, avisos } = prepararTodo(db)
 const app = crearServidor({
   dirApp,
   diagnostico: { dirDatos },
-  acceso,
-  sincronizacion: { sala, alFallo: (error) => console.error('Falló la sincronización:', error) },
-  catalogo: {
+  access,
+  sincronizacion: { sala, onFailure: (error) => console.error('Falló la sincronización:', error) },
+  catalog: {
     db,
     restauranteId,
-    acceso,
-    alCambiar: (version) => sala.avisarCatalogo(version),
-    mesaOcupada: (mesaId) => sala.tienePedidoAbierto(mesaId),
-    dirFotos: join(dirDatos, 'fotos'),
+    access,
+    onChange: (version) => sala.avisarCatalogo(version),
+    mesaOcupada: (tableId) => sala.tienePedidoAbierto(tableId),
+    dirFotos: join(dirDatos, 'photos'),
   },
   impresion: {
     db,
     restauranteId,
-    acceso,
+    access,
     cola,
-    zonaHoraria,
-    alCambiar: (version) => sala.avisarCatalogo(version),
+    timeZone,
+    onChange: (version) => sala.avisarCatalogo(version),
     permitirLocales: process.env.IMPRESORA_PRUEBA === '1',
     esEquipoDelHub: (ip) => ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1',
   },
@@ -143,17 +145,17 @@ for (const senal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(senal, async () => {
     cola.detener()
     await app.close()
-    await cola.listo()
+    await cola.ready()
     db.close()
     process.exit(0)
   })
 }
 
 try {
-  await app.listen({ host: '0.0.0.0', port: puerto })
+  await app.listen({ host: '0.0.0.0', port: port })
 } catch (error) {
   if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
-    console.error(`El puerto ${puerto} ya está en uso. ¿El hub ya está abierto en otra ventana?`)
+    console.error(`El puerto ${port} ya está en uso. ¿El hub ya está abierto en otra ventana?`)
   } else {
     console.error('No se pudo iniciar el hub:', error)
   }
@@ -166,7 +168,7 @@ if (!existsSync(dirApp)) {
   )
 }
 
-for (const aviso of avisos) console.warn(`⚠ ${aviso}`)
+for (const alert of avisos) console.warn(`⚠ ${alert}`)
 const datosAdmin = lineasAdministrador(admin)
 if (datosAdmin.length > 0)
   mostrarPines(dirDatos, {
@@ -176,12 +178,12 @@ if (datosAdmin.length > 0)
       'Anótalo en un lugar seguro: no se vuelve a mostrar.',
     ],
     archivo: ARCHIVO_PIN_ADMIN,
-    contenido: `${datosAdmin.join('\n')}\n`,
-    aviso: (ruta) =>
+    content: `${datosAdmin.join('\n')}\n`,
+    alert: (ruta) =>
       `\nLos datos del administrador quedaron en ${ruta}: anótalos y borra ese archivo.`,
   })
 
 console.log('\nHub en marcha. Abre en los dispositivos de la misma red:')
 for (const ip of ipsLocales()) {
-  console.log(`  http://${ip}:${puerto}`)
+  console.log(`  http://${ip}:${port}`)
 }

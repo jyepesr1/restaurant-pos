@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { AlmacenMemoria } from './hub/almacen'
 import type { MensajeHub } from './protocolo'
@@ -18,155 +18,155 @@ import type { Nodo } from './pruebas/red'
 // `traer` de varias páginas, cortes con un lote y un `traer` en vuelo, y rechazos reenviados.
 
 /** Evento en bruto, como lo envía un dispositivo, para hablarle al hub sin pasar por el cliente. */
-const crudo = (nodo: Nodo, pedido: string, tipo: string, datos: unknown, base = 0) => ({
-  id: nuevoId(),
-  tipo,
-  version_esquema: 1,
-  agregado_tipo: 'pedido',
-  agregado_id: pedido,
-  relacionados: [],
-  datos,
-  sesion_id: null,
-  usuario_id: nodo.usuarioId,
-  dispositivo_id: nodo.dispositivoId,
-  autorizacion_id: null,
-  motivo: null,
-  hora_dispositivo: AHORA,
-  hora_estimada_hub: AHORA,
-  secuencia_base: base,
+const crudo = (node: Nodo, order: string, type: string, data: unknown, base = 0) => ({
+  id: newId(),
+  type,
+  schema_version: 1,
+  aggregate_type: 'order',
+  aggregate_id: order,
+  related: [],
+  data,
+  session_id: null,
+  user_id: node.userId,
+  device_id: node.dispositivoId,
+  authorization_id: null,
+  reason: null,
+  device_time: AHORA,
+  hub_estimated_time: AHORA,
+  base_sequence: base,
 })
 
-const conexionDe = (m: Montaje, nodo: Nodo) => {
-  const conexion = m.red.tokens.get(`token-${nodo.nombre}`)
-  if (!conexion) throw new Error(`Sin token para ${nodo.nombre}`)
-  return conexion
+const conexionDe = (m: Montaje, node: Nodo) => {
+  const connection = m.network.tokens.get(`token-${node.name}`)
+  if (!connection) throw new Error(`Sin token para ${node.name}`)
+  return connection
 }
 
-const abrir = (nodo: Nodo, pedido: string) =>
-  crudo(nodo, pedido, 'PedidoAbierto', { canal: 'barra', mesa_id: null, comensales: 1 })
+const open = (node: Nodo, order: string) =>
+  crudo(node, order, 'OrderOpened', { channel: 'bar', table_id: null, guests: 1 })
 
 /** Mete `total` eventos directo en el hub (un pedido y sus ítems), sin dispositivos conectados. */
-function sembrar(m: Montaje, nodo: Nodo, total: number) {
-  const pedido = nuevoId()
-  const eventos = [abrir(nodo, pedido)]
+function sembrar(m: Montaje, node: Nodo, total: number) {
+  const order = newId()
+  const events = [open(node, order)]
   for (let i = 1; i < total; i++)
-    eventos.push(crudo(nodo, pedido, 'ItemAgregado', item(1000 + (i % 500))))
-  for (let i = 0; i < eventos.length; i += 100) {
-    const r = m.hub().recibirLote(conexionDe(m, nodo), eventos.slice(i, i + 100))
-    expect(r.aceptados).toHaveLength(Math.min(100, eventos.length - i))
+    events.push(crudo(node, order, 'ItemAdded', item(1000 + (i % 500))))
+  for (let i = 0; i < events.length; i += 100) {
+    const r = m.hub().recibirLote(conexionDe(m, node), events.slice(i, i + 100))
+    expect(r.aceptados).toHaveLength(Math.min(100, events.length - i))
   }
-  return pedido
+  return order
 }
 
 /** Anota todo mensaje del hub que recibe un dispositivo. */
-function espiar(nodo: Nodo) {
-  const vistos: MensajeHub[] = []
-  const original = nodo.cliente.recibir.bind(nodo.cliente)
-  nodo.cliente.recibir = (mensaje) => {
-    vistos.push(mensaje)
-    return original(mensaje)
+function espiar(node: Nodo) {
+  const seenSet: MensajeHub[] = []
+  const original = node.cliente.recibir.bind(node.cliente)
+  node.cliente.recibir = (message) => {
+    seenSet.push(message)
+    return original(message)
   }
-  return vistos
+  return seenSet
 }
 
 /** Entrega al hub el mensaje de ese tipo que esté en vuelo, sin importar su lugar en la cola. */
-async function entregarAlHub(m: Montaje, nodo: Nodo, tipo: string) {
-  const indice = nodo.aHub.findIndex((x) => x.tipo === tipo)
-  expect(indice, `no hay un ${tipo} en vuelo`).toBeGreaterThanOrEqual(0)
-  await m.red.entregarUno(nodo, 'al_hub', indice)
+async function entregarAlHub(m: Montaje, node: Nodo, type: string) {
+  const indice = node.aHub.findIndex((x) => x.type === type)
+  expect(indice, `no hay un ${type} en vuelo`).toBeGreaterThanOrEqual(0)
+  await m.network.entregarUno(node, 'to_hub', indice)
 }
 
-const tipos = (mensajes: readonly { tipo: string }[]) => mensajes.map((x) => x.tipo)
+const types = (mensajes: readonly { type: string }[]) => mensajes.map((x) => x.type)
 
 describe('mensajes del hub fuera de orden', () => {
   it('una página vieja de `eventos` después de un `nuevo` no retrocede el cursor ni duplica', async () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    const caja = m.red.dispositivo('caja')
-    await m.red.conectarTodos()
-    const pedido = await abrirPedido(ana)
-    await m.red.estabilizar()
+    const ana = m.network.device('ana')
+    const register = m.network.device('register')
+    await m.network.conectarTodos()
+    const order = await abrirPedido(ana)
+    await m.network.settle()
 
-    const paginaVieja = m.hub().traer(0, 'caja') // hasta 1
-    expect(paginaVieja).toMatchObject({ hasta: 1, hay_mas: false })
-    await ana.crear(pedido, 'ItemAgregado', item())
-    await ana.crear(pedido, 'ItemAgregado', item(12_900))
-    await m.red.estabilizar()
-    expect((await caja.almacen.cursor()).hasta).toBe(3)
+    const paginaVieja = m.hub().pull(0, 'register') // hasta 1
+    expect(paginaVieja).toMatchObject({ until: 1, hay_mas: false })
+    await ana.crear(order, 'ItemAdded', item())
+    await ana.crear(order, 'ItemAdded', item(12_900))
+    await m.network.settle()
+    expect((await register.almacen.cursor()).until).toBe(3)
 
-    await caja.cliente.recibir(paginaVieja)
+    await register.cliente.recibir(paginaVieja)
 
-    expect((await caja.almacen.cursor()).hasta).toBe(3)
-    expect(await caja.cliente.locales()).toHaveLength(3)
-    await venLoMismo(m.hub(), eventosDe(m), [ana, caja], [pedido])
+    expect((await register.almacen.cursor()).until).toBe(3)
+    expect(await register.cliente.locales()).toHaveLength(3)
+    await venLoMismo(m.hub(), eventosDe(m), [ana, register], [order])
   })
 
   it('una página vieja con `hay_mas` hace traer de nuevo desde el cursor, sin dañar nada', async () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    const caja = m.red.dispositivo('caja')
-    await m.red.conectarTodos()
-    const pedido = await abrirPedido(ana)
-    await m.red.estabilizar()
-    const paginaVieja = { ...m.hub().traer(0, 'caja'), hay_mas: true }
-    await ana.crear(pedido, 'ItemAgregado', item())
-    await m.red.estabilizar()
+    const ana = m.network.device('ana')
+    const register = m.network.device('register')
+    await m.network.conectarTodos()
+    const order = await abrirPedido(ana)
+    await m.network.settle()
+    const paginaVieja = { ...m.hub().pull(0, 'register'), hay_mas: true }
+    await ana.crear(order, 'ItemAdded', item())
+    await m.network.settle()
 
-    const vistos = espiar(caja)
-    await caja.cliente.recibir(paginaVieja)
+    const seenSet = espiar(register)
+    await register.cliente.recibir(paginaVieja)
     // El cursor ya va en 2: no vuelve a pedir lo que tiene.
-    expect(caja.aHub).toEqual([{ tipo: 'traer', desde: 2 }])
-    await m.red.estabilizar()
+    expect(register.aHub).toEqual([{ type: 'pull', from: 2 }])
+    await m.network.settle()
 
-    expect(tipos(vistos)).toEqual(['eventos', 'eventos'])
-    await venLoMismo(m.hub(), eventosDe(m), [ana, caja], [pedido])
+    expect(types(seenSet)).toEqual(['events', 'events'])
+    await venLoMismo(m.hub(), eventosDe(m), [ana, register], [order])
   })
 
   it('un `nuevo` que llega antes que la página que ya lo incluye se absorbe sin dejar al dispositivo atrás', async () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    const caja = m.red.dispositivo('caja')
-    await ana.conectar()
-    await m.red.estabilizar()
-    const pedido = await abrirPedido(ana)
-    await ana.crear(pedido, 'ItemAgregado', item())
-    await m.red.estabilizar()
+    const ana = m.network.device('ana')
+    const register = m.network.device('register')
+    await ana.connect()
+    await m.network.settle()
+    const order = await abrirPedido(ana)
+    await ana.crear(order, 'ItemAdded', item())
+    await m.network.settle()
 
     // La caja se conecta y pide `traer 0`; mientras la respuesta viaja, ana agrega otro ítem.
-    await caja.conectar()
-    await m.red.entregarUno(caja, 'al_hub') // hola
-    await m.red.entregarUno(caja, 'al_dispositivo') // bienvenido → traer
-    await m.red.entregarUno(caja, 'al_hub') // traer → eventos (1 y 2)
-    await ana.crear(pedido, 'ItemAgregado', item(12_900))
-    await m.red.entregarUno(ana, 'al_hub') // el hub acepta el 3 y difunde `nuevo`
-    expect(tipos(caja.aDispositivo)).toEqual(['eventos', 'nuevo'])
+    await register.connect()
+    await m.network.entregarUno(register, 'to_hub') // hola
+    await m.network.entregarUno(register, 'to_device') // bienvenido → traer
+    await m.network.entregarUno(register, 'to_hub') // traer → eventos (1 y 2)
+    await ana.crear(order, 'ItemAdded', item(12_900))
+    await m.network.entregarUno(ana, 'to_hub') // el hub acepta el 3 y difunde `nuevo`
+    expect(types(register.aDispositivo)).toEqual(['events', 'new'])
 
     // El canal los reordena: `nuevo` (hueco: la caja está en 0) llega antes que `eventos`.
-    await m.red.entregarUno(caja, 'al_dispositivo', 1)
-    await m.red.estabilizar()
+    await m.network.entregarUno(register, 'to_device', 1)
+    await m.network.settle()
 
-    await venLoMismo(m.hub(), eventosDe(m), [ana, caja], [pedido])
+    await venLoMismo(m.hub(), eventosDe(m), [ana, register], [order])
   })
 
   it('un `resultado` repetido o de un lote que ya no está en vuelo se ignora', async () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    await m.red.conectarTodos()
-    const vistos = espiar(ana)
-    const pedido = await abrirPedido(ana)
-    await m.red.estabilizar()
-    const resultado = vistos.find((x) => x.tipo === 'resultado')
-    expect(resultado).toBeDefined()
+    const ana = m.network.device('ana')
+    await m.network.conectarTodos()
+    const seenSet = espiar(ana)
+    const order = await abrirPedido(ana)
+    await m.network.settle()
+    const result = seenSet.find((x) => x.type === 'result')
+    expect(result).toBeDefined()
 
-    const antes = await ana.cliente.locales()
-    await ana.cliente.recibir(resultado as MensajeHub)
+    const before = await ana.cliente.locales()
+    await ana.cliente.recibir(result as MensajeHub)
     await ana.cliente.recibir({
-      ...(resultado as MensajeHub & { tipo: 'resultado' }),
-      lote_id: 'otro',
+      ...(result as MensajeHub & { type: 'result' }),
+      lote_id: 'other',
     })
 
-    expect(await ana.cliente.locales()).toEqual(antes)
-    await venLoMismo(m.hub(), eventosDe(m), [ana], [pedido])
+    expect(await ana.cliente.locales()).toEqual(before)
+    await venLoMismo(m.hub(), eventosDe(m), [ana], [order])
   })
 })
 
@@ -183,17 +183,17 @@ describe('traer con varias páginas', () => {
     'un dispositivo nuevo con %i eventos en el hub se pone al día en %i página(s)',
     async (total, paginas) => {
       const m = montar()
-      const ana = m.red.dispositivo('ana')
-      const pedido = sembrar(m, ana, total)
+      const ana = m.network.device('ana')
+      const order = sembrar(m, ana, total)
       expect(eventosDe(m)).toHaveLength(total)
 
-      const caja = m.red.dispositivo('caja')
-      const vistos = espiar(caja)
-      await m.red.conectarTodos()
+      const register = m.network.device('register')
+      const seenSet = espiar(register)
+      await m.network.conectarTodos()
 
-      const paginasRecibidas = vistos.filter((x) => x.tipo === 'eventos')
+      const paginasRecibidas = seenSet.filter((x) => x.type === 'events')
       expect(paginasRecibidas).toHaveLength(paginas)
-      expect(paginasRecibidas.map((p) => p.eventos.length)).toEqual(
+      expect(paginasRecibidas.map((p) => p.events.length)).toEqual(
         Array.from({ length: paginas }, (_, i) =>
           Math.min(TAMANO_PAGINA, Math.max(0, total - i * TAMANO_PAGINA)),
         ),
@@ -202,159 +202,159 @@ describe('traer con varias páginas', () => {
       expect(paginasRecibidas.map((p) => p.hay_mas)).toEqual(
         Array.from({ length: paginas }, (_, i) => i < paginas - 1),
       )
-      await venLoMismo(m.hub(), eventosDe(m), [caja], [pedido])
+      await venLoMismo(m.hub(), eventosDe(m), [register], [order])
     },
   )
 
   it('un evento nuevo que llega entre dos páginas no se pierde ni retrasa el cursor', async () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    const pedido = sembrar(m, ana, 2 * TAMANO_PAGINA + 203)
+    const ana = m.network.device('ana')
+    const order = sembrar(m, ana, 2 * TAMANO_PAGINA + 203)
     // Ana solo saluda: queda conectada para enviar un evento, sin descargar lo sembrado.
-    await ana.conectar()
-    await m.red.entregarUno(ana, 'al_hub') // hola
+    await ana.connect()
+    await m.network.entregarUno(ana, 'to_hub') // hola
 
-    const caja = m.red.dispositivo('caja')
-    await caja.conectar()
-    await m.red.entregarUno(caja, 'al_hub') // hola
-    await m.red.entregarUno(caja, 'al_dispositivo') // bienvenido → traer 0
-    await m.red.entregarUno(caja, 'al_hub') // traer
-    await m.red.entregarUno(caja, 'al_dispositivo') // página 1 → traer 500
-    expect((await caja.almacen.cursor()).hasta).toBe(TAMANO_PAGINA)
+    const register = m.network.device('register')
+    await register.connect()
+    await m.network.entregarUno(register, 'to_hub') // hola
+    await m.network.entregarUno(register, 'to_device') // bienvenido → traer 0
+    await m.network.entregarUno(register, 'to_hub') // traer
+    await m.network.entregarUno(register, 'to_device') // página 1 → traer 500
+    expect((await register.almacen.cursor()).until).toBe(TAMANO_PAGINA)
 
-    await ana.crear(pedido, 'ItemAgregado', item(7000))
-    await entregarAlHub(m, ana, 'empujar') // el hub acepta el 1204 y lo difunde a la caja
-    expect(tipos(caja.aDispositivo)).toEqual(['nuevo'])
-    await m.red.entregarUno(caja, 'al_dispositivo') // `nuevo` con hueco: no avanza
-    expect((await caja.almacen.cursor()).hasta).toBe(TAMANO_PAGINA)
+    await ana.crear(order, 'ItemAdded', item(7000))
+    await entregarAlHub(m, ana, 'push') // el hub acepta el 1204 y lo difunde a la caja
+    expect(types(register.aDispositivo)).toEqual(['new'])
+    await m.network.entregarUno(register, 'to_device') // `nuevo` con hueco: no avanza
+    expect((await register.almacen.cursor()).until).toBe(TAMANO_PAGINA)
 
-    await m.red.estabilizar()
+    await m.network.settle()
     expect(eventosDe(m)).toHaveLength(2 * TAMANO_PAGINA + 204)
-    await venLoMismo(m.hub(), eventosDe(m), [caja], [pedido])
+    await venLoMismo(m.hub(), eventosDe(m), [register], [order])
   })
 
   it('se corta la conexión entre dos páginas: al volver sigue desde su cursor, no desde cero', async () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    const pedido = sembrar(m, ana, 2 * TAMANO_PAGINA + 1)
-    const caja = m.red.dispositivo('caja')
-    await caja.conectar()
-    await m.red.entregarUno(caja, 'al_hub') // hola
-    await m.red.entregarUno(caja, 'al_dispositivo') // bienvenido
-    await m.red.entregarUno(caja, 'al_hub') // traer 0
-    await m.red.entregarUno(caja, 'al_dispositivo') // página 1
-    expect((await caja.almacen.cursor()).hasta).toBe(TAMANO_PAGINA)
+    const ana = m.network.device('ana')
+    const order = sembrar(m, ana, 2 * TAMANO_PAGINA + 1)
+    const register = m.network.device('register')
+    await register.connect()
+    await m.network.entregarUno(register, 'to_hub') // hola
+    await m.network.entregarUno(register, 'to_device') // bienvenido
+    await m.network.entregarUno(register, 'to_hub') // traer 0
+    await m.network.entregarUno(register, 'to_device') // página 1
+    expect((await register.almacen.cursor()).until).toBe(TAMANO_PAGINA)
 
-    caja.desconectar()
-    await caja.conectar()
-    await m.red.entregarUno(caja, 'al_hub') // hola
-    await m.red.entregarUno(caja, 'al_dispositivo') // bienvenido
-    expect(caja.aHub).toEqual([{ tipo: 'traer', desde: TAMANO_PAGINA }])
+    register.disconnect()
+    await register.connect()
+    await m.network.entregarUno(register, 'to_hub') // hola
+    await m.network.entregarUno(register, 'to_device') // bienvenido
+    expect(register.aHub).toEqual([{ type: 'pull', from: TAMANO_PAGINA }])
 
-    await m.red.estabilizar()
-    await venLoMismo(m.hub(), eventosDe(m), [caja], [pedido])
+    await m.network.settle()
+    await venLoMismo(m.hub(), eventosDe(m), [register], [order])
   })
 })
 
 describe('corte con un lote y un `traer` en vuelo', () => {
   /** Qué alcanzó a llegar al hub antes del corte. */
   const casos = [
-    { llego: 'nada', traer: false, empujar: false },
-    { llego: 'solo el traer', traer: true, empujar: false },
-    { llego: 'solo el lote', traer: false, empujar: true },
-    { llego: 'el traer y el lote', traer: true, empujar: true },
+    { llego: 'nada', pull: false, push: false },
+    { llego: 'solo el traer', pull: true, push: false },
+    { llego: 'solo el lote', pull: false, push: true },
+    { llego: 'el traer y el lote', pull: true, push: true },
   ] as const
 
-  for (const caso of casos) {
+  for (const caseName of casos) {
     for (const tardios of [false, true]) {
-      it(`llegó ${caso.llego}${tardios ? ' y los mensajes viejos llegan tarde' : ''}: nada se pierde ni se duplica`, async () => {
+      it(`llegó ${caseName.llego}${tardios ? ' y los mensajes viejos llegan tarde' : ''}: nada se pierde ni se duplica`, async () => {
         const m = montar()
-        const ana = m.red.dispositivo('ana')
-        const luis = m.red.dispositivo('luis')
-        await m.red.conectarTodos()
-        const pedido = await abrirPedido(luis)
-        await m.red.estabilizar()
+        const ana = m.network.device('ana')
+        const luis = m.network.device('luis')
+        await m.network.conectarTodos()
+        const order = await abrirPedido(luis)
+        await m.network.settle()
 
-        ana.desconectar()
-        await ana.crear(pedido, 'ItemAgregado', item(10_000))
-        await ana.crear(pedido, 'ItemAgregado', item(20_000))
-        await ana.crear(pedido, 'ItemAgregado', item(30_000))
+        ana.disconnect()
+        await ana.crear(order, 'ItemAdded', item(10_000))
+        await ana.crear(order, 'ItemAdded', item(20_000))
+        await ana.crear(order, 'ItemAdded', item(30_000))
 
         // Se reconecta: sale `traer` y el lote de 3, y la conexión se corta con ambos en vuelo.
-        await ana.conectar()
-        await m.red.entregarUno(ana, 'al_hub') // hola
-        await m.red.entregarUno(ana, 'al_dispositivo') // bienvenido
-        expect(tipos(ana.aHub)).toEqual(['traer', 'empujar'])
-        if (caso.traer) await entregarAlHub(m, ana, 'traer')
-        if (caso.empujar) await entregarAlHub(m, ana, 'empujar')
+        await ana.connect()
+        await m.network.entregarUno(ana, 'to_hub') // hola
+        await m.network.entregarUno(ana, 'to_device') // bienvenido
+        expect(types(ana.aHub)).toEqual(['pull', 'push'])
+        if (caseName.pull) await entregarAlHub(m, ana, 'pull')
+        if (caseName.push) await entregarAlHub(m, ana, 'push')
         const viejos = [...ana.aDispositivo]
         const enElHub = eventosDe(m).length
-        expect(enElHub).toBe(caso.empujar ? 4 : 1)
+        expect(enElHub).toBe(caseName.push ? 4 : 1)
 
-        ana.desconectar()
-        await ana.conectar()
-        if (tardios) for (const viejo of viejos) await ana.cliente.recibir(viejo)
-        await m.red.entregarUno(ana, 'al_hub') // hola
-        await m.red.entregarUno(ana, 'al_dispositivo') // bienvenido
+        ana.disconnect()
+        await ana.connect()
+        if (tardios) for (const oldOne of viejos) await ana.cliente.recibir(oldOne)
+        await m.network.entregarUno(ana, 'to_hub') // hola
+        await m.network.entregarUno(ana, 'to_device') // bienvenido
 
         // El estado de la conexión vieja no se arrastra: sale un `traer` y, si queda algo
         // pendiente, un solo lote. (El eco `nuevo` tardío puede haber confirmado ya los eventos.)
-        const pendientes = await ana.cliente.pendientes()
-        expect(tipos(ana.aHub).sort()).toEqual(pendientes > 0 ? ['empujar', 'traer'] : ['traer'])
+        const pendingList = await ana.cliente.pendingList()
+        expect(types(ana.aHub).sort()).toEqual(pendingList > 0 ? ['pull', 'push'] : ['pull'])
 
-        await m.red.estabilizar()
+        await m.network.settle()
         expect(eventosDe(m)).toHaveLength(4)
-        await venLoMismo(m.hub(), eventosDe(m), [ana, luis], [pedido])
+        await venLoMismo(m.hub(), eventosDe(m), [ana, luis], [order])
       })
     }
   }
 
   it('al cortar con el lote en vuelo, el siguiente lote sale completo y en orden', async () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    const pedido = await abrirPedido(ana)
+    const ana = m.network.device('ana')
+    const order = await abrirPedido(ana)
     const items = Array.from({ length: 230 }, (_, i) => item(1000 + i))
-    for (const i of items) await ana.crear(pedido, 'ItemAgregado', i)
+    for (const i of items) await ana.crear(order, 'ItemAdded', i)
 
-    await ana.conectar()
-    await m.red.entregarUno(ana, 'al_hub') // hola
-    await m.red.entregarUno(ana, 'al_dispositivo') // bienvenido → traer + lote de 100
-    await entregarAlHub(m, ana, 'empujar') // el hub acepta los primeros 100
+    await ana.connect()
+    await m.network.entregarUno(ana, 'to_hub') // hola
+    await m.network.entregarUno(ana, 'to_device') // bienvenido → traer + lote de 100
+    await entregarAlHub(m, ana, 'push') // el hub acepta los primeros 100
     expect(eventosDe(m)).toHaveLength(100)
-    ana.desconectar() // el `resultado` se pierde con el corte
+    ana.disconnect() // el `resultado` se pierde con el corte
 
-    await m.red.conectarTodos()
-    const orden = eventosDe(m)
+    await m.network.conectarTodos()
+    const position = eventosDe(m)
       .slice(1)
-      .map((e) => (e.datos as { item_id: string }).item_id)
-    expect(orden).toEqual(items.map((i) => i.item_id))
-    await venLoMismo(m.hub(), eventosDe(m), [ana], [pedido])
+      .map((e) => (e.data as { item_id: string }).item_id)
+    expect(position).toEqual(items.map((i) => i.item_id))
+    await venLoMismo(m.hub(), eventosDe(m), [ana], [order])
   })
 })
 
 describe('evento rechazado que se reenvía tal cual', () => {
   const rechazos = (m: Montaje) =>
-    Number(m.db.prepare('SELECT count(*) AS n FROM evento_rechazado').get()?.n)
+    Number(m.db.prepare('SELECT count(*) AS n FROM rejected_events').get()?.n)
 
   it('el hub responde lo mismo y no guarda un segundo rechazo', () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    const conexion = conexionDe(m, ana)
-    const pedido = nuevoId()
-    m.hub().recibirLote(conexion, [abrir(ana, pedido)])
-    const caro = crudo(ana, pedido, 'ItemAgregado', item(100_000_000, { cantidad: 999 }), 1)
-    const despues = crudo(ana, pedido, 'ItemAgregado', item(5000), 1)
+    const ana = m.network.device('ana')
+    const connection = conexionDe(m, ana)
+    const order = newId()
+    m.hub().recibirLote(connection, [open(ana, order)])
+    const expensive = crudo(ana, order, 'ItemAdded', item(100_000_000, { quantity: 999 }), 1)
+    const after = crudo(ana, order, 'ItemAdded', item(5000), 1)
 
-    const primera = m.hub().recibirLote(conexion, [caro, despues])
-    const segunda = m.hub().recibirLote(conexion, [caro, despues])
-    const solaLaDependiente = m.hub().recibirLote(conexion, [despues])
+    const first = m.hub().recibirLote(connection, [expensive, after])
+    const segunda = m.hub().recibirLote(connection, [expensive, after])
+    const solaLaDependiente = m.hub().recibirLote(connection, [after])
 
-    expect(primera.resultados).toEqual([
-      { id: caro.id, estado: 'rechazado', motivo: 'total_excede' },
-      { id: despues.id, estado: 'rechazado', motivo: 'depende_de_rechazado' },
+    expect(first.resultados).toEqual([
+      { id: expensive.id, status: 'rejected', reason: 'total_exceeds' },
+      { id: after.id, status: 'rejected', reason: 'depends_on_rejected' },
     ])
-    expect(segunda.resultados).toEqual(primera.resultados)
-    expect(solaLaDependiente.resultados).toEqual([primera.resultados[1]])
+    expect(segunda.resultados).toEqual(first.resultados)
+    expect(solaLaDependiente.resultados).toEqual([first.resultados[1]])
     expect(segunda.aceptados).toEqual([])
     expect(rechazos(m)).toBe(2)
     expect(eventosDe(m)).toHaveLength(1)
@@ -362,119 +362,119 @@ describe('evento rechazado que se reenvía tal cual', () => {
 
   it('el rechazo es estable: aunque el hub cambie, el mismo evento recibe la misma respuesta', () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    const conexion = conexionDe(m, ana)
-    const pedido = nuevoId()
-    const huerfano = crudo(ana, pedido, 'ItemAgregado', item())
+    const ana = m.network.device('ana')
+    const connection = conexionDe(m, ana)
+    const order = newId()
+    const huerfano = crudo(ana, order, 'ItemAdded', item())
 
-    const antes = m.hub().recibirLote(conexion, [huerfano])
-    m.hub().recibirLote(conexion, [abrir(ana, pedido)]) // ahora el pedido sí existe
-    const despues = m.hub().recibirLote(conexion, [huerfano])
+    const before = m.hub().recibirLote(connection, [huerfano])
+    m.hub().recibirLote(connection, [open(ana, order)]) // ahora el pedido sí existe
+    const after = m.hub().recibirLote(connection, [huerfano])
 
-    expect(antes.resultados[0]).toMatchObject({ estado: 'rechazado', motivo: 'pedido_inexistente' })
-    expect(despues.resultados).toEqual(antes.resultados)
-    expect(despues.aceptados).toEqual([])
+    expect(before.resultados[0]).toMatchObject({ status: 'rejected', reason: 'order_not_found' })
+    expect(after.resultados).toEqual(before.resultados)
+    expect(after.aceptados).toEqual([])
     expect(eventosDe(m)).toHaveLength(1)
   })
 
   it('el mismo id rechazado con otro contenido da `id_repetido`, y repetido igual da la misma respuesta', () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    const conexion = conexionDe(m, ana)
-    const pedido = nuevoId()
-    const huerfano = crudo(ana, pedido, 'ItemAgregado', item())
-    const otroContenido = { ...huerfano, datos: item(2000) }
-    m.hub().recibirLote(conexion, [huerfano])
+    const ana = m.network.device('ana')
+    const connection = conexionDe(m, ana)
+    const order = newId()
+    const huerfano = crudo(ana, order, 'ItemAdded', item())
+    const otroContenido = { ...huerfano, data: item(2000) }
+    m.hub().recibirLote(connection, [huerfano])
 
-    const a = m.hub().recibirLote(conexion, [otroContenido])
-    const b = m.hub().recibirLote(conexion, [otroContenido])
+    const a = m.hub().recibirLote(connection, [otroContenido])
+    const b = m.hub().recibirLote(connection, [otroContenido])
 
     // Rechazado antes con otro contenido: este es nuevo, y se rechaza por la regla del pedido.
-    expect(a.resultados[0]).toMatchObject({ estado: 'rechazado' })
+    expect(a.resultados[0]).toMatchObject({ status: 'rejected' })
     expect(b.resultados).toEqual(a.resultados)
   })
 
   it('un evento ya confirmado que vuelve con otro contenido da `id_repetido` cada vez, sin tumbar el lote', () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    const conexion = conexionDe(m, ana)
-    const original = abrir(ana, nuevoId())
-    const alterado = { ...original, datos: { canal: 'barra', mesa_id: null, comensales: 7 } }
-    const otro = abrir(ana, nuevoId())
-    m.hub().recibirLote(conexion, [original])
+    const ana = m.network.device('ana')
+    const connection = conexionDe(m, ana)
+    const original = open(ana, newId())
+    const alterado = { ...original, data: { channel: 'bar', table_id: null, guests: 7 } }
+    const other = open(ana, newId())
+    m.hub().recibirLote(connection, [original])
 
-    const a = m.hub().recibirLote(conexion, [alterado, otro])
-    const b = m.hub().recibirLote(conexion, [alterado, otro])
+    const a = m.hub().recibirLote(connection, [alterado, other])
+    const b = m.hub().recibirLote(connection, [alterado, other])
 
-    expect(a.resultados[0]).toMatchObject({ estado: 'rechazado', motivo: 'id_repetido' })
+    expect(a.resultados[0]).toMatchObject({ status: 'rejected', reason: 'duplicate_id' })
     expect(b.resultados[0]).toEqual(a.resultados[0])
-    expect(a.resultados[1]?.estado).toBe('confirmado')
+    expect(a.resultados[1]?.status).toBe('confirmed')
     expect(b.resultados[1]).toEqual(a.resultados[1])
     expect(eventosDe(m)).toHaveLength(2)
   })
 
   it('por la red: se pierde el `resultado` con rechazos, el lote se reenvía y el dispositivo recibe lo mismo', async () => {
     const m = montar()
-    const ana = m.red.dispositivo('ana')
-    const luis = m.red.dispositivo('luis')
-    await m.red.conectarTodos()
-    const pedido = await abrirPedido(ana)
-    const otro = await abrirPedido(luis)
-    await m.red.estabilizar()
+    const ana = m.network.device('ana')
+    const luis = m.network.device('luis')
+    await m.network.conectarTodos()
+    const order = await abrirPedido(ana)
+    const other = await abrirPedido(luis)
+    await m.network.settle()
 
-    ana.desconectar()
-    const caro = item(100_000_000, { cantidad: 999 })
-    const despues = item()
-    await ana.crear(pedido, 'ItemAgregado', caro)
-    await ana.crear(pedido, 'ItemAgregado', despues)
-    await ana.crear(otro, 'ItemAgregado', item(5000))
+    ana.disconnect()
+    const expensive = item(100_000_000, { quantity: 999 })
+    const after = item()
+    await ana.crear(order, 'ItemAdded', expensive)
+    await ana.crear(order, 'ItemAdded', after)
+    await ana.crear(other, 'ItemAdded', item(5000))
 
-    ana.regla('al_dispositivo', 'resultado', 'perder')
-    await m.red.conectarTodos()
+    ana.rule('to_device', 'result', 'drop')
+    await m.network.conectarTodos()
     // Sin `resultado`, los dos rechazados siguen pendientes; el tercero ya se confirmó por el eco.
-    expect(await ana.cliente.pendientes()).toBe(2)
+    expect(await ana.cliente.pendingList()).toBe(2)
     const rechazosAntes = rechazos(m)
     expect(rechazosAntes).toBe(2)
 
-    ana.desconectar()
-    await m.red.conectarTodos()
+    ana.disconnect()
+    await m.network.conectarTodos()
 
     const motivos = (await ana.cliente.locales())
-      .filter((l) => l.estado === 'rechazado')
-      .map((l) => l.motivo)
-    expect(motivos).toEqual(['total_excede', 'depende_de_rechazado'])
+      .filter((l) => l.status === 'rejected')
+      .map((l) => l.reason)
+    expect(motivos).toEqual(['total_exceeds', 'depends_on_rejected'])
     expect(rechazos(m)).toBe(rechazosAntes)
     expect(eventosDe(m)).toHaveLength(3)
-    await venLoMismo(m.hub(), eventosDe(m), [ana, luis], [pedido, otro])
+    await venLoMismo(m.hub(), eventosDe(m), [ana, luis], [order, other])
   })
 
   it('el hub restaurado de un respaldo que ya tiene el evento no lo rechaza como `id_repetido` al reenviarlo', async () => {
-    const m = montar({ almacen: 'memoria' })
-    const ana = m.red.dispositivo('ana')
-    await m.red.conectarTodos()
-    const pedido = await abrirPedido(ana)
-    await m.red.estabilizar()
-    // Con el pedido ya confirmado (cursor 1), ana agrega un ítem: lleva `secuencia_base` 1.
-    await ana.crear(pedido, 'ItemAgregado', item())
-    await m.red.estabilizar()
-    const respaldo = structuredClone((m.almacen as AlmacenMemoria).eventos)
+    const m = montar({ almacen: 'memory' })
+    const ana = m.network.device('ana')
+    await m.network.conectarTodos()
+    const order = await abrirPedido(ana)
+    await m.network.settle()
+    // Con el pedido ya confirmado (cursor 1), ana agrega un ítem: lleva `base_sequence` 1.
+    await ana.crear(order, 'ItemAdded', item())
+    await m.network.settle()
+    const respaldo = structuredClone((m.almacen as AlmacenMemoria).events)
     // Después del respaldo, un ítem más: el único que el respaldo no tiene.
-    const ultimo = await ana.crear(pedido, 'ItemAgregado', item(8900))
-    await m.red.estabilizar()
+    const ultimo = await ana.crear(order, 'ItemAdded', item(8900))
+    await m.network.settle()
     expect(eventosDe(m)).toHaveLength(3)
 
-    for (const nodo of m.red.nodos) nodo.desconectar()
+    for (const node of m.network.nodos) node.disconnect()
     const restaurado = new AlmacenMemoria()
-    restaurado.eventos = respaldo
-    m.estado.instancia = 'hub-2'
-    m.red.sala = m.crearSala(restaurado)
-    await m.red.conectarTodos()
+    restaurado.events = respaldo
+    m.status.instancia = 'hub-2'
+    m.network.sala = m.crearSala(restaurado)
+    await m.network.conectarTodos()
 
     const local = await ana.almacen.obtener(ultimo.id)
-    expect(local?.estado, `el último ítem terminó ${local?.estado} (${local?.motivo})`).toBe(
-      'confirmado',
+    expect(local?.status, `el último ítem terminó ${local?.status} (${local?.reason})`).toBe(
+      'confirmed',
     )
     expect(restaurado.rechazos).toEqual([])
-    await venLoMismo(m.hub(), restaurado.eventosDesde(0, 1000), [ana], [pedido])
+    await venLoMismo(m.hub(), restaurado.eventosDesde(0, 1000), [ana], [order])
   })
 })

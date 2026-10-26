@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import type { BaseSqlite, ValorSql } from '../sqlite'
 
 export const AHORA = '2026-10-24T15:00:00.000Z'
@@ -15,135 +15,129 @@ export function insertarVersionado(
   db: BaseSqlite,
   tabla: string,
   restauranteId: string,
-  campos: Record<string, ValorSql>,
-  id = nuevoId(),
+  fields: Record<string, ValorSql>,
+  id = newId(),
 ): string {
   insertar(db, tabla, {
     id,
-    restaurante_id: restauranteId,
-    creado_en: AHORA,
-    actualizado_en: AHORA,
+    restaurant_id: restauranteId,
+    created_at: AHORA,
+    updated_at: AHORA,
     version: 1,
-    ...campos,
+    ...fields,
   })
   return id
 }
 
 /** Restaurante con sede, zona, impuesto, categoría y producto: lo mínimo para casi todo. */
 export function sembrar(db: BaseSqlite) {
-  const restaurante = nuevoId()
-  insertarVersionado(
-    db,
-    'restaurante',
-    restaurante,
-    { nombre: 'Prueba', config: '{}' },
-    restaurante,
-  )
-  const sede = insertarVersionado(db, 'sede', restaurante, {
-    nombre: 'Envigado',
-    zona_horaria: 'America/Bogota',
+  const restaurant = newId()
+  insertarVersionado(db, 'restaurants', restaurant, { name: 'Prueba', config: '{}' }, restaurant)
+  const location = insertarVersionado(db, 'locations', restaurant, {
+    name: 'Envigado',
+    time_zone: 'America/Bogota',
   })
-  const zona = insertarVersionado(db, 'zona', restaurante, { sede_id: sede, nombre: 'Salón' })
-  const impuesto = insertarVersionado(db, 'impuesto', restaurante, {
-    nombre: 'INC 8 %',
-    tipo: 'inc',
-    tarifa: 800,
+  const zone = insertarVersionado(db, 'zones', restaurant, { location_id: location, name: 'Salón' })
+  const tax = insertarVersionado(db, 'taxes', restaurant, {
+    name: 'INC 8 %',
+    type: 'inc',
+    rate: 800,
   })
-  const categoria = insertarVersionado(db, 'categoria', restaurante, { nombre: 'Pizzas' })
-  const producto = insertarVersionado(db, 'producto', restaurante, {
-    categoria_id: categoria,
-    nombre: 'Margarita',
-    precio: 40900,
-    impuesto_id: impuesto,
+  const category = insertarVersionado(db, 'categories', restaurant, { name: 'Pizzas' })
+  const product = insertarVersionado(db, 'products', restaurant, {
+    category_id: category,
+    name: 'Margarita',
+    price: 40900,
+    tax_id: tax,
   })
-  return { restaurante, sede, zona, impuesto, categoria, producto }
+  return { restaurant, location, zone, tax, category, product }
 }
 
 export function insertarEvento(
   db: BaseSqlite,
-  restaurante: string,
-  campos: Record<string, ValorSql> = {},
+  restaurant: string,
+  fields: Record<string, ValorSql> = {},
 ): Record<string, ValorSql> {
   const fila: Record<string, ValorSql> = {
-    restaurante_id: restaurante,
-    id: nuevoId(),
-    tipo: 'PedidoAbierto',
-    version_esquema: 1,
-    agregado_tipo: 'pedido',
-    agregado_id: nuevoId(),
-    datos: '{"canal":"salon"}',
-    usuario_id: nuevoId(),
-    dispositivo_id: nuevoId(),
-    hora_dispositivo: AHORA,
-    hora_estimada_hub: AHORA,
-    secuencia_base: 0,
-    secuencia: 1,
-    recibido_en: AHORA,
-    dia_operativo: '2026-10-24',
-    contenido_hash: 'abc',
-    ...campos,
+    restaurant_id: restaurant,
+    id: newId(),
+    type: 'OrderOpened',
+    schema_version: 1,
+    aggregate_type: 'order',
+    aggregate_id: newId(),
+    data: '{"channel":"salon"}',
+    user_id: newId(),
+    device_id: newId(),
+    device_time: AHORA,
+    hub_estimated_time: AHORA,
+    base_sequence: 0,
+    sequence: 1,
+    received_at: AHORA,
+    business_day: '2026-10-24',
+    content_hash: 'abc',
+    ...fields,
   }
-  insertar(db, 'evento', fila)
+  insertar(db, 'events', fila)
   return fila
 }
 
 export function insertarPedido(
   db: BaseSqlite,
-  restaurante: string,
-  campos: Record<string, ValorSql> = {},
+  restaurant: string,
+  fields: Record<string, ValorSql> = {},
 ): string {
-  const id = nuevoId()
-  insertar(db, 'pedido', {
+  const id = newId()
+  insertar(db, 'orders', {
     id,
-    restaurante_id: restaurante,
-    canal: 'salon',
-    estado: 'abierto',
-    abierto_en: AHORA,
-    ultima_secuencia: 1,
-    ...campos,
+    restaurant_id: restaurant,
+    channel: 'dine_in',
+    status: 'open',
+    opened_at: AHORA,
+    last_sequence: 1,
+    ...fields,
   })
   return id
 }
 
 export function insertarItem(
   db: BaseSqlite,
-  restaurante: string,
-  pedido: string,
-  campos: Record<string, ValorSql> = {},
+  restaurant: string,
+  order: string,
+  fields: Record<string, ValorSql> = {},
 ): string {
-  const id = nuevoId()
-  insertar(db, 'pedido_item', {
+  const id = newId()
+  insertar(db, 'order_items', {
     id,
-    restaurante_id: restaurante,
-    pedido_id: pedido,
-    orden: 1,
-    producto_id: nuevoId(),
-    nombre: 'Pinsa',
-    precio_unitario: 20900,
-    impuesto_tipo: 'inc',
-    tarifa: 800,
-    cantidad: 1,
-    estado: 'pendiente',
-    agregado_por: nuevoId(),
-    ...campos,
+    restaurant_id: restaurant,
+    order_id: order,
+    position: 1,
+    product_id: newId(),
+    name: 'Pinsa',
+    unit_price: 20900,
+    tax_type: 'inc',
+    rate: 800,
+    quantity: 1,
+    status: 'pending',
+    added_by: newId(),
+    ...fields,
   })
   return id
 }
 
 export function insertarConflicto(
   db: BaseSqlite,
-  restaurante: string,
-  campos: Record<string, ValorSql> = {},
+  restaurant: string,
+  fields: Record<string, ValorSql> = {},
 ): void {
-  insertar(db, 'conflicto', {
-    id: nuevoId(),
-    restaurante_id: restaurante,
-    tipo: 'mesa_duplicada',
-    evento_id: nuevoId(),
-    agregado_id: nuevoId(),
-    descripcion: 'Dos pedidos en la mesa 5',
-    detectado_en: AHORA,
-    ...campos,
+  insertar(db, 'conflicts', {
+    id: newId(),
+    restaurant_id: restaurant,
+    type: 'duplicate_table',
+    event_id: newId(),
+    aggregate_id: newId(),
+    description: 'Dos pedidos en la mesa 5',
+    detected_at: AHORA,
+    ...fields,
   })
 }
 

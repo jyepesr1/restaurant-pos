@@ -3,6 +3,6 @@
 // estaba vacía hasta esta tarea, pero la columna lleva un valor por defecto por si acaso.
 
 export const sql = `
-ALTER TABLE autorizacion ADD COLUMN contenido_hash TEXT NOT NULL DEFAULT '';
-ALTER TABLE autorizacion ADD COLUMN sesion_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE authorizations ADD COLUMN content_hash TEXT NOT NULL DEFAULT '';
+ALTER TABLE authorizations ADD COLUMN session_id TEXT NOT NULL DEFAULT '';
 `

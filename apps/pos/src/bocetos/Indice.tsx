@@ -10,18 +10,23 @@ import { Marco } from './Marco'
 // Índice de los bocetos de la tarea 0.9 (brief §5): para abrirlos en el celular y la tablet.
 
 const PANTALLAS: { ruta: string; titulo: string; para: string; icono: NombreIcono }[] = [
-  { ruta: '/bocetos/plano', titulo: 'Plano de mesas', para: 'Mesero y caja', icono: 'plano' },
-  { ruta: '/bocetos/pedido?mesa=2', titulo: 'Toma de pedido', para: 'Mesero', icono: 'lapiz' },
-  { ruta: '/bocetos/kds', titulo: 'Cocina y barra (KDS)', para: 'Cocina y barra', icono: 'fuego' },
   {
-    ruta: '/bocetos/precuenta?mesa=12',
+    ruta: '/mockups/floor-plan',
+    titulo: 'Plano de mesas',
+    para: 'Mesero y caja',
+    icono: 'floorPlan',
+  },
+  { ruta: '/mockups/order?table=2', titulo: 'Toma de pedido', para: 'Mesero', icono: 'pencil' },
+  { ruta: '/mockups/kds', titulo: 'Cocina y barra (KDS)', para: 'Cocina y barra', icono: 'fire' },
+  {
+    ruta: '/mockups/pre-bill?table=12',
     titulo: 'Precuenta y división',
     para: 'Caja',
-    icono: 'recibo',
+    icono: 'receipt',
   },
-  { ruta: '/bocetos/cobro?mesa=12', titulo: 'Cobro', para: 'Caja', icono: 'billete' },
+  { ruta: '/mockups/checkout?table=12', titulo: 'Cobro', para: 'Caja', icono: 'bill' },
   {
-    ruta: '/bocetos/componentes',
+    ruta: '/mockups/components',
     titulo: 'Design system',
     para: 'Colores y componentes',
     icono: 'check',
@@ -29,39 +34,39 @@ const PANTALLAS: { ruta: string; titulo: string; para: string; icono: NombreIcon
 ]
 
 // Faro es el estilo del sistema; La Spritzzería es la marca opcional del primer cliente (1.3c).
-const DIRECCIONES: { marca: Marca; nombre: string; idea: string; muestras: string[] }[] = [
+const DIRECCIONES: { brand: Marca; name: string; idea: string; muestras: string[] }[] = [
   {
-    marca: 'faro',
-    nombre: 'Faro',
+    brand: 'faro',
+    name: 'Faro',
     idea: 'El estilo del sistema: claro, verde azulado, letra Figtree. Lo ve todo restaurante sin marca propia.',
     muestras: ['#f2f5f5', '#ffffff', '#0f766e', '#12201f'],
   },
   {
-    marca: 'la-spritzzeria',
-    nombre: 'La Spritzzería',
+    brand: 'la-spritzzeria',
+    name: 'La Spritzzería',
     idea: 'El mundo de su carta: arena y marino de día, la terraza de noche; toldo a rayas y títulos en League Gothic.',
     muestras: ['#f8ecda', '#1d3552', '#dc5a0f', '#0f1b2b'],
   },
 ]
 
 const CONEXIONES: [EstadoConexion, string][] = [
-  ['en_linea', 'En línea'],
-  ['solo_local', 'Solo red local'],
-  ['sin_conexion', 'Sin conexión'],
+  ['online', 'En línea'],
+  ['local_only', 'Solo red local'],
+  ['offline', 'Sin conexión'],
 ]
 
 export function Indice() {
   const simulacion = useSimulacion()
-  const [marca, elegirMarca] = useMarca()
+  const [brand, elegirMarca] = useMarca()
   return (
-    <Marco titulo="Bocetos del POS" volver="/">
+    <Marco titulo="Bocetos del POS" back="/">
       <div className="mx-auto max-w-3xl p-4">
         <p className="mb-4 text-texto-suave">
           Bocetos navegables con la carta real de La Spritzzería. Los datos son de ejemplo y no se
           guardan: recargar la página los reinicia.
         </p>
-        <section className="mb-6" aria-labelledby="direccion">
-          <h2 id="direccion" className="font-titulo mb-1 text-2xl font-semibold">
+        <section className="mb-6" aria-labelledby="address">
+          <h2 id="address" className="font-titulo mb-1 text-2xl font-semibold">
             Dirección visual
           </h2>
           <p className="mb-3 text-sm text-texto-suave">
@@ -71,13 +76,13 @@ export function Indice() {
           <Grupo etiqueta="Dirección visual" className="grid gap-2 sm:grid-cols-2">
             {DIRECCIONES.map((d) => (
               <Opcion
-                key={d.marca}
-                forma="tarjeta"
-                elegida={marca === d.marca}
-                alElegir={() => elegirMarca(d.marca)}
+                key={d.brand}
+                shape="card"
+                elegida={brand === d.brand}
+                alElegir={() => elegirMarca(d.brand)}
               >
                 <span className="flex items-center gap-2">
-                  <span className="text-lg">{d.nombre}</span>
+                  <span className="text-lg">{d.name}</span>
                   <span className="ml-auto flex" aria-hidden="true">
                     {d.muestras.map((color) => (
                       <span
@@ -105,7 +110,7 @@ export function Indice() {
                 className="flex min-h-20 items-center gap-4 rounded-2xl border border-borde bg-superficie p-4 hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
               >
                 <span className="rounded-xl bg-accion-suave p-3 text-accion-texto">
-                  <Icono nombre={p.icono} width="1.5em" height="1.5em" />
+                  <Icono name={p.icono} width="1.5em" height="1.5em" />
                 </span>
                 <span>
                   <span className="font-titulo block text-2xl font-semibold">{p.titulo}</span>
@@ -122,15 +127,15 @@ export function Indice() {
             impresora que no responde.
           </p>
           <Grupo etiqueta="Conexión" className="flex flex-wrap gap-2">
-            {CONEXIONES.map(([conexion, texto]) => (
+            {CONEXIONES.map(([connection, text]) => (
               <Opcion
-                key={conexion}
-                elegida={simulacion.conexion === conexion}
+                key={connection}
+                elegida={simulacion.connection === connection}
                 alElegir={() =>
-                  simular({ conexion, pendientes: conexion === 'sin_conexion' ? 3 : 0 })
+                  simular({ connection, pendingList: connection === 'offline' ? 3 : 0 })
                 }
               >
-                {texto}
+                {text}
               </Opcion>
             ))}
           </Grupo>
@@ -147,7 +152,7 @@ export function Indice() {
         </section>
         <button
           type="button"
-          className={`${claseBoton('secundario')} mt-6`}
+          className={`${claseBoton('secondary')} mt-6`}
           onClick={reiniciarBocetos}
         >
           Volver a los datos de ejemplo

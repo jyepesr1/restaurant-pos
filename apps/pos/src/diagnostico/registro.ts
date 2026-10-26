@@ -1,32 +1,32 @@
 import Dexie, { type EntityTable } from 'dexie'
 
-export type TipoEvento = 'carga' | 'oculta' | 'visible' | 'ws-abierto' | 'ws-cerrado'
+export type TipoEvento = 'load' | 'hidden' | 'visible' | 'ws-open' | 'ws-closed'
 
 export interface EventoDiagnostico {
   /** Autoincremental: da el orden real de registro aunque dos eventos compartan milisegundo. */
   id?: number
   /** Milisegundos desde epoch según el reloj del dispositivo. */
-  hora: number
-  tipo: TipoEvento
+  time: number
+  type: TipoEvento
   detalle?: Record<string, unknown>
 }
 
 const DIAS_RETENCION = 7
 
 // Base propia del diagnóstico: se puede borrar sin tocar datos del POS.
-const db = new Dexie('pos-diagnostico') as Dexie & {
-  eventos: EntityTable<EventoDiagnostico, 'id'>
-  pruebas: EntityTable<{ id?: number; valor: string }, 'id'>
+const db = new Dexie('pos-diagnostics') as Dexie & {
+  events: EntityTable<EventoDiagnostico, 'id'>
+  tests: EntityTable<{ id?: number; value: string }, 'id'>
 }
-db.version(1).stores({ eventos: '++id, hora', pruebas: '++id' })
+db.version(1).stores({ events: '++id, time', tests: '++id' })
 
 /** Guarda un evento. Si el almacenamiento falla (modo privado, bloqueado) se ignora. */
 export async function registrarEvento(
-  tipo: TipoEvento,
+  type: TipoEvento,
   detalle?: Record<string, unknown>,
 ): Promise<void> {
   try {
-    await db.eventos.add({ hora: Date.now(), tipo, ...(detalle ? { detalle } : {}) })
+    await db.events.add({ time: Date.now(), type, ...(detalle ? { detalle } : {}) })
   } catch {
     // El diagnóstico debe seguir funcionando aunque no pueda guardar.
   }
@@ -35,7 +35,7 @@ export async function registrarEvento(
 /** Todos los eventos en orden de registro; vacío si el almacenamiento no funciona. */
 export async function leerEventos(): Promise<EventoDiagnostico[]> {
   try {
-    return await db.eventos.toArray()
+    return await db.events.toArray()
   } catch {
     return []
   }
@@ -43,7 +43,7 @@ export async function leerEventos(): Promise<EventoDiagnostico[]> {
 
 export async function borrarEventos(): Promise<void> {
   try {
-    await db.eventos.clear()
+    await db.events.clear()
   } catch {
     // Sin almacenamiento no hay nada que borrar.
   }
@@ -53,7 +53,7 @@ export async function borrarEventos(): Promise<void> {
 export async function purgarEventosAntiguos(): Promise<void> {
   try {
     const limite = Date.now() - DIAS_RETENCION * 24 * 60 * 60 * 1000
-    await db.eventos.where('hora').below(limite).delete()
+    await db.events.where('time').below(limite).delete()
   } catch {
     // Igual que arriba: la purga es opcional.
   }
@@ -62,11 +62,11 @@ export async function purgarEventosAntiguos(): Promise<void> {
 /** Escribe y lee un registro de prueba (en su propia tabla) para confirmar que IndexedDB funciona. */
 export async function probarIndexedDb(): Promise<boolean> {
   try {
-    const valor = String(Math.random())
-    const id = await db.pruebas.add({ valor })
-    const leido = await db.pruebas.get(id)
-    await db.pruebas.delete(id)
-    return leido?.valor === valor
+    const value = String(Math.random())
+    const id = await db.tests.add({ value })
+    const leido = await db.tests.get(id)
+    await db.tests.delete(id)
+    return leido?.value === value
   } catch {
     return false
   }

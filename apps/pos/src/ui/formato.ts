@@ -3,9 +3,9 @@
 const pesosCo = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 })
 
 /** 40900 → "$40.900"; -1500 → "-$1.500". Un monto con decimales es un error de programa. */
-export function pesos(monto: number): string {
-  if (!Number.isSafeInteger(monto)) throw new RangeError(`Monto inválido: ${monto}`)
-  return `${monto < 0 ? '-' : ''}$${pesosCo.format(Math.abs(monto))}`
+export function pesos(amount: number): string {
+  if (!Number.isSafeInteger(amount)) throw new RangeError(`Monto inválido: ${amount}`)
+  return `${amount < 0 ? '-' : ''}$${pesosCo.format(Math.abs(amount))}`
 }
 
 /** Minutos transcurridos, para mesas y comandas: "8 min", "1 h 05". */
@@ -16,7 +16,7 @@ export function minutos(total: number): string {
 }
 
 /** Lo escrito en un campo de dinero, como pesos enteros: «46.350» → 46350 (hasta 9 cifras). */
-export const soloDigitos = (texto: string) => Number(texto.replace(/\D/g, '').slice(0, 9)) || 0
+export const soloDigitos = (text: string) => Number(text.replace(/\D/g, '').slice(0, 9)) || 0
 
 /** Pesos para un campo editable, sin signo: 46350 → «46.350»; 0 → vacío. */
 export const conPuntos = (n: number) => (n ? n.toLocaleString('es-CO') : '')

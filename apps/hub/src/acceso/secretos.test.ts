@@ -21,9 +21,9 @@ describe('PIN', () => {
   })
 
   it('genera 4 dígitos, con ceros a la izquierda, y nunca uno trivial', () => {
-    const azar = [1234, 7, 5555, 42]
-    expect(generarPin(() => azar.shift() as number)).toBe('0007')
-    expect(generarPin(() => azar.shift() as number)).toBe('0042')
+    const random = [1234, 7, 5555, 42]
+    expect(generarPin(() => random.shift() as number)).toBe('0007')
+    expect(generarPin(() => random.shift() as number)).toBe('0042')
     for (let i = 0; i < 2000; i++) {
       const pin = generarPin()
       expect(esPinConFormato(pin)).toBe(true)
@@ -52,12 +52,12 @@ describe('clave del hub', () => {
 
   it('se crea una vez, solo legible por el hub, y luego se lee igual', () => {
     carpeta = mkdtempSync(join(tmpdir(), 'pos-clave-'))
-    const primera = cargarClave(carpeta)
+    const first = cargarClave(carpeta)
     const segunda = cargarClave(carpeta)
 
-    expect(primera.nueva).toBe(true)
-    expect(segunda.nueva).toBe(false)
-    expect(segunda.clave.equals(primera.clave)).toBe(true)
+    expect(first.newOne).toBe(true)
+    expect(segunda.newOne).toBe(false)
+    expect(segunda.key.equals(first.key)).toBe(true)
     if (process.platform !== 'win32')
       expect(statSync(join(carpeta, ARCHIVO_CLAVE)).mode & 0o777).toBe(0o600)
   })
@@ -86,26 +86,26 @@ describe('espera tras intentos fallidos', () => {
 
   it('es por quien intenta y se olvida tras 10 min sin fallos', () => {
     let ahora = 0
-    const intentos = new Intentos(() => ahora)
-    for (let i = 0; i < 3; i++) intentos.fallo('a')
-    expect(intentos.esperaMs('a')).toBe(2000)
-    expect(intentos.esperaMs('b')).toBe(0)
+    const attempts = new Intentos(() => ahora)
+    for (let i = 0; i < 3; i++) attempts.fallo('a')
+    expect(attempts.esperaMs('a')).toBe(2000)
+    expect(attempts.esperaMs('b')).toBe(0)
 
     ahora += 2000
-    expect(intentos.esperaMs('a')).toBe(0)
-    expect(intentos.fallo('a')).toBe(4000)
+    expect(attempts.esperaMs('a')).toBe(0)
+    expect(attempts.fallo('a')).toBe(4000)
 
     ahora += 10 * 60_000
-    expect(intentos.fallo('a')).toBe(0)
+    expect(attempts.fallo('a')).toBe(0)
   })
 
   it('avisa al administrador cuando hay muchos fallos en 10 minutos, una vez', () => {
     const avisos: string[] = []
-    const intentos = new Intentos(
+    const attempts = new Intentos(
       () => 0,
       (n) => avisos.push(n),
     )
-    for (let i = 0; i < FALLOS_PARA_AVISO + 5; i++) intentos.fallo(`equipo-${i % 3}`)
+    for (let i = 0; i < FALLOS_PARA_AVISO + 5; i++) attempts.fallo(`device-${i % 3}`)
     expect(avisos).toEqual([
       `${FALLOS_PARA_AVISO} PIN o códigos errados en 10 minutos en el restaurante`,
     ])

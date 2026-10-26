@@ -8,106 +8,108 @@ import { SISTEMA } from './registros'
 
 const montar = () => {
   const m = montarAcceso()
-  const rol = (datos: Parameters<typeof guardarRol>[3]) =>
-    guardarRol(m.db, m.restauranteId, m.acceso, datos, SISTEMA, m.reloj())
-  const persona = (datos: Parameters<typeof guardarPersona>[3]) =>
-    guardarPersona(m.db, m.restauranteId, m.acceso, datos, SISTEMA, m.reloj())
-  const leer = () => leerPersonal(m.db, m.restauranteId, m.acceso)
-  return { ...m, rol, persona, leer }
+  const role = (data: Parameters<typeof guardarRol>[3]) =>
+    guardarRol(m.db, m.restauranteId, m.access, data, SISTEMA, m.clock())
+  const persona = (data: Parameters<typeof guardarPersona>[3]) =>
+    guardarPersona(m.db, m.restauranteId, m.access, data, SISTEMA, m.clock())
+  const leer = () => leerPersonal(m.db, m.restauranteId, m.access)
+  return { ...m, role, persona, leer }
 }
 
 describe('roles', () => {
   it('se crea un rol con los permisos que se quieran, y quitar uno lo archiva sin borrarlo', () => {
     const m = montar()
-    const id = m.rol({ nombre: 'Bartender', permisos: ['tomar_pedido', 'agotar_producto'] })
-    const ana = m.persona({ nombre: 'Bea', rolId: id })
-    expect(m.acceso.permisosDe(ana.usuarioId)).toEqual(['agotar_producto', 'tomar_pedido'])
+    const id = m.role({ name: 'Bartender', permissions: ['take_order', 'mark_product_sold_out'] })
+    const ana = m.persona({ name: 'Bea', rolId: id })
+    expect(m.access.permisosDe(ana.userId)).toEqual(['mark_product_sold_out', 'take_order'])
 
-    m.rol({ id, nombre: 'Bartender', permisos: ['tomar_pedido'] })
-    expect(m.acceso.permisosDe(ana.usuarioId)).toEqual(['tomar_pedido'])
-    const filas = m.db.prepare('SELECT permiso, activo FROM rol_permiso WHERE rol_id = ?').all(id)
-    expect(filas).toContainEqual({ permiso: 'agotar_producto', activo: 0 })
+    m.role({ id, name: 'Bartender', permissions: ['take_order'] })
+    expect(m.access.permisosDe(ana.userId)).toEqual(['take_order'])
+    const rows = m.db
+      .prepare('SELECT permission, active FROM role_permissions WHERE role_id = ?')
+      .all(id)
+    expect(rows).toContainEqual({ permission: 'mark_product_sold_out', active: 0 })
 
     // Volver a darlo reactiva la misma fila.
-    m.rol({ id, nombre: 'Bartender', permisos: ['tomar_pedido', 'agotar_producto'] })
-    expect(m.db.prepare('SELECT count(*) AS n FROM rol_permiso WHERE rol_id = ?').get(id)?.n).toBe(
-      2,
-    )
+    m.role({ id, name: 'Bartender', permissions: ['take_order', 'mark_product_sold_out'] })
+    expect(
+      m.db.prepare('SELECT count(*) AS n FROM role_permissions WHERE role_id = ?').get(id)?.n,
+    ).toBe(2)
     expect(m.leer().roles.find((r) => r.id === id)).toMatchObject({
-      nombre: 'Bartender',
-      sistema: false,
-      personas: 1,
-      permisos: ['agotar_producto', 'tomar_pedido'],
+      name: 'Bartender',
+      system: false,
+      people: 1,
+      permissions: ['mark_product_sold_out', 'take_order'],
     })
   })
 
   it('a un rol de fábrica se le cambian los permisos, pero no el nombre ni se archiva', () => {
     const m = montar()
-    m.rol({ id: m.roles.cajero, nombre: 'Cajero', permisos: ['tomar_pedido', 'cortesia'] })
-    expect(m.acceso.permisosDe(m.personas.cajero.usuarioId)).toEqual(['cortesia', 'tomar_pedido'])
-    expect(() => m.rol({ id: m.roles.cajero, nombre: 'Caja', permisos: [] })).toThrow(
+    m.role({ id: m.roles.cashier, name: 'Cajero', permissions: ['take_order', 'comp'] })
+    expect(m.access.permisosDe(m.people.cashier.userId)).toEqual(['comp', 'take_order'])
+    expect(() => m.role({ id: m.roles.cashier, name: 'Caja', permissions: [] })).toThrow(
       /no se renombran/,
     )
     expect(() =>
-      m.rol({ id: m.roles.mesero, nombre: 'Mesero', permisos: [], activo: false }),
+      m.role({ id: m.roles.waiter, name: 'Mesero', permissions: [], active: false }),
     ).toThrow(/no se archivan/)
   })
 
   it('no hay dos roles activos con el mismo nombre, sin importar mayúsculas ni tildes iguales', () => {
     const m = montar()
-    expect(() => m.rol({ nombre: 'mesero', permisos: [] })).toThrow(/Ya hay un rol/)
-    expect(() => m.rol({ nombre: '  ', permisos: [] })).toThrow(ErrorPersonal)
-    expect(() => m.rol({ nombre: 'X', permisos: ['borrar_todo'] })).toThrow(/desconocido/)
+    expect(() => m.role({ name: 'mesero', permissions: [] })).toThrow(/Ya hay un rol/)
+    expect(() => m.role({ name: '  ', permissions: [] })).toThrow(ErrorPersonal)
+    expect(() => m.role({ name: 'X', permissions: ['delete_all'] })).toThrow(/desconocido/)
   })
 
   it('un rol con personas no se archiva; vacío, sí', () => {
     const m = montar()
     expect(() =>
-      m.rol({ id: m.roles.gerente, nombre: 'Gerente', permisos: [], activo: false }),
+      m.role({ id: m.roles.manager, name: 'Gerente', permissions: [], active: false }),
     ).toThrow(/tiene personas/)
-    const vacio = m.rol({ nombre: 'Temporada', permisos: ['tomar_pedido'] })
-    m.rol({ id: vacio, nombre: 'Temporada', permisos: [], activo: false })
-    expect(m.leer().roles.find((r) => r.id === vacio)?.activo).toBe(false)
+    const empty = m.role({ name: 'Temporada', permissions: ['take_order'] })
+    m.role({ id: empty, name: 'Temporada', permissions: [], active: false })
+    expect(m.leer().roles.find((r) => r.id === empty)?.active).toBe(false)
     // Con el nombre libre, se puede crear otro igual.
-    expect(() => m.rol({ nombre: 'Temporada', permisos: [] })).not.toThrow()
+    expect(() => m.role({ name: 'Temporada', permissions: [] })).not.toThrow()
   })
 
   it('no deja al restaurante sin nadie que pueda administrar el personal', () => {
     const m = montar()
-    const todos = m.leer().roles.find((r) => r.id === m.roles.admin)?.permisos ?? []
+    const all = m.leer().roles.find((r) => r.id === m.roles.admin)?.permissions ?? []
     expect(() =>
-      m.rol({
+      m.role({
         id: m.roles.admin,
-        nombre: 'Administrador',
-        permisos: todos.filter((p) => p !== 'administrar_usuarios'),
+        name: 'Administrador',
+        permissions: all.filter((p) => p !== 'manage_users'),
       }),
     ).toThrow(/Tiene que quedar al menos una persona/)
     // Nada cambió: la transacción se deshizo.
-    expect(m.acceso.permisosDe(m.personas.admin.usuarioId)).toContain('administrar_usuarios')
+    expect(m.access.permisosDe(m.people.admin.userId)).toContain('manage_users')
   })
 })
 
 describe('quien entra con PIN no puede tener permisos de caja ni de administración', () => {
   it('ni al crearla, ni al darle ese permiso a su rol', () => {
     const m = montar()
-    expect(() => m.persona({ nombre: 'Pía', rolId: m.roles.cajero })).toThrow(
+    expect(() => m.persona({ name: 'Pía', rolId: m.roles.cashier })).toThrow(
       /Pía entra con PIN y su rol permite «/,
     )
     expect(() =>
-      m.rol({
-        id: m.roles.mesero,
-        nombre: 'Mesero',
-        permisos: ['tomar_pedido', 'registrar_pago'],
+      m.role({
+        id: m.roles.waiter,
+        name: 'Mesero',
+        permissions: ['take_order', 'record_payment'],
       }),
     ).toThrow(/entra con PIN y su rol permite «Cobrar»/)
     // Nada cambió.
-    expect(m.acceso.permisosDe(m.personas.mesero.usuarioId)).not.toContain('registrar_pago')
+    expect(m.access.permisosDe(m.people.waiter.userId)).not.toContain('record_payment')
     // Los permisos de pedidos sí se pueden dar a quien entra con PIN.
     expect(() =>
-      m.rol({
-        id: m.roles.mesero,
-        nombre: 'Mesero',
-        permisos: ['tomar_pedido', 'descontar', 'anular_item_enviado'],
+      m.role({
+        id: m.roles.waiter,
+        name: 'Mesero',
+        permissions: ['take_order', 'apply_discount', 'void_sent_item'],
       }),
     ).not.toThrow()
   })
@@ -115,50 +117,49 @@ describe('quien entra con PIN no puede tener permisos de caja ni de administraci
   it('el PIN de alguien con permisos de caja no abre sesión, aunque no tenga contraseña (base vieja)', () => {
     const m = montar()
     // Como quedaría un Gerente de antes de ADR-013: rol que cobra, persona sin contraseña.
-    const ana = m.personas.mesero
-    m.db.prepare('UPDATE usuario SET rol_id = ? WHERE id = ?').run(m.roles.cajero, ana.usuarioId)
-    const { conexion } = m.emparejar('mesero')
-    expect(m.acceso.iniciarSesion(conexion, ana.pin)).toMatchObject({
+    const ana = m.people.waiter
+    m.db.prepare('UPDATE users SET role_id = ? WHERE id = ?').run(m.roles.cashier, ana.userId)
+    const { connection } = m.emparejar('waiter')
+    expect(m.access.startSession(connection, ana.pin)).toMatchObject({
       ok: false,
-      mensaje: 'PIN incorrecto',
+      message: 'PIN incorrecto',
     })
-    expect(m.acceso.entrar({ pin: ana.pin }, null, 'ip-9')).toMatchObject({ ok: false })
+    expect(m.access.entrar({ pin: ana.pin }, null, 'ip-9')).toMatchObject({ ok: false })
   })
 })
 
 describe('volver a activar a alguien', () => {
   it('si su PIN quedó en otra persona, recibe uno nuevo; si su usuario, hay que ponerle otro', () => {
     const m = montar()
-    const ana = m.personas.mesero
-    const datos = { id: ana.usuarioId, nombre: 'Ana', rolId: m.roles.mesero }
-    m.persona({ ...datos, activo: false })
+    const ana = m.people.waiter
+    const data = { id: ana.userId, name: 'Ana', rolId: m.roles.waiter }
+    m.persona({ ...data, active: false })
     // Su PIN lo toma otra persona mientras está archivada.
-    const huella = String(
-      m.db
-        .prepare('SELECT pin_huella FROM usuario_credencial WHERE usuario_id = ?')
-        .get(ana.usuarioId)?.pin_huella,
+    const fingerprint = String(
+      m.db.prepare('SELECT pin_hash FROM user_credentials WHERE user_id = ?').get(ana.userId)
+        ?.pin_hash,
     )
     m.db
-      .prepare('UPDATE usuario_credencial SET pin_huella = ? WHERE usuario_id = ?')
-      .run(huella, m.personas.mesero2.usuarioId)
-    const r = m.persona({ ...datos, activo: true })
+      .prepare('UPDATE user_credentials SET pin_hash = ? WHERE user_id = ?')
+      .run(fingerprint, m.people.waiter2.userId)
+    const r = m.persona({ ...data, active: true })
     expect(r.pin).toMatch(/^\d{4}$/)
-    expect(m.leer().personas.find((p) => p.id === ana.usuarioId)?.activo).toBe(true)
+    expect(m.leer().people.find((p) => p.id === ana.userId)?.active).toBe(true)
 
-    const carlos = m.personas.cajero
-    const deCarlos = { id: carlos.usuarioId, nombre: 'Carlos', rolId: m.roles.cajero }
-    m.persona({ ...deCarlos, activo: false })
+    const carlos = m.people.cashier
+    const deCarlos = { id: carlos.userId, name: 'Carlos', rolId: m.roles.cashier }
+    m.persona({ ...deCarlos, active: false })
     m.persona({
-      nombre: 'Otro Carlos',
-      rolId: m.roles.cajero,
-      acceso: { tipo: 'contrasena', usuario: 'carlos', contrasena: 'otra-clave-1' },
+      name: 'Otro Carlos',
+      rolId: m.roles.cashier,
+      access: { type: 'password', user: 'carlos', password: 'otra-clave-1' },
     })
-    expect(() => m.persona({ ...deCarlos, activo: true })).toThrow(/ya lo tiene otra persona/)
+    expect(() => m.persona({ ...deCarlos, active: true })).toThrow(/ya lo tiene otra persona/)
     expect(() =>
       m.persona({
         ...deCarlos,
-        activo: true,
-        acceso: { tipo: 'contrasena', usuario: 'carlos.b', contrasena: 'nueva-clave-2' },
+        active: true,
+        access: { type: 'password', user: 'carlos.b', password: 'nueva-clave-2' },
       }),
     ).not.toThrow()
   })
@@ -167,150 +168,152 @@ describe('volver a activar a alguien', () => {
 describe('personas', () => {
   it('un mesero nuevo entra con su PIN; alguien de caja, con usuario y contraseña', () => {
     const m = montar()
-    const mesero = m.persona({ nombre: 'Pedro', rolId: m.roles.mesero })
-    expect(mesero.pin).toMatch(/^\d{4}$/)
-    expect(m.acceso.entrar({ pin: mesero.pin as string }, null, 'ip-1')).toMatchObject({ ok: true })
+    const waiter = m.persona({ name: 'Pedro', rolId: m.roles.waiter })
+    expect(waiter.pin).toMatch(/^\d{4}$/)
+    expect(m.access.entrar({ pin: waiter.pin as string }, null, 'ip-1')).toMatchObject({ ok: true })
 
-    const caja = m.persona({
-      nombre: 'Carla',
-      rolId: m.roles.cajero,
-      acceso: { tipo: 'contrasena', usuario: 'Carla', contrasena: 'caja-segura-1' },
+    const register = m.persona({
+      name: 'Carla',
+      rolId: m.roles.cashier,
+      access: { type: 'password', user: 'Carla', password: 'caja-segura-1' },
     })
     expect(
-      m.acceso.entrar({ usuario: 'carla', contrasena: 'caja-segura-1' }, null, 'ip-2'),
+      m.access.entrar({ user: 'carla', password: 'caja-segura-1' }, null, 'ip-2'),
     ).toMatchObject({
       ok: true,
-      usuario: { nombre: 'Carla' },
+      user: { name: 'Carla' },
     })
     // Su PIN no abre sesión: solo autoriza.
-    expect(m.acceso.entrar({ pin: caja.pin as string }, null, 'ip-3')).toMatchObject({ ok: false })
-    expect(m.leer().personas.find((p) => p.id === caja.usuarioId)?.usuario).toBe('carla')
+    expect(m.access.entrar({ pin: register.pin as string }, null, 'ip-3')).toMatchObject({
+      ok: false,
+    })
+    expect(m.leer().people.find((p) => p.id === register.userId)?.user).toBe('carla')
   })
 
   it('el usuario es único en el restaurante y la contraseña tiene al menos 8 caracteres', () => {
     const m = montar()
-    const con = (usuario: string, contrasena?: string) => () =>
+    const withIt = (user: string, password?: string) => () =>
       m.persona({
-        nombre: 'X',
-        rolId: m.roles.cajero,
-        acceso: { tipo: 'contrasena', usuario, contrasena },
+        name: 'X',
+        rolId: m.roles.cashier,
+        access: { type: 'password', user, password },
       })
-    expect(con(String(m.personas.admin.usuario), 'larga-12345')).toThrow(/Ya hay alguien/)
-    expect(con('nuevo', 'corta')).toThrow(/al menos 8/)
-    expect(con('con espacio', 'larga-12345')).toThrow(/de 3 a 40/)
-    expect(con('nuevo')).toThrow(/Escribe una contraseña/)
+    expect(withIt(String(m.people.admin.user), 'larga-12345')).toThrow(/Ya hay alguien/)
+    expect(withIt('nuevo', 'corta')).toThrow(/al menos 8/)
+    expect(withIt('con espacio', 'larga-12345')).toThrow(/de 3 a 40/)
+    expect(withIt('nuevo')).toThrow(/Escribe una contraseña/)
     // Ninguno de esos intentos dejó a alguien creado.
-    expect(m.leer().personas.filter((p) => p.nombre === 'X')).toEqual([])
+    expect(m.leer().people.filter((p) => p.name === 'X')).toEqual([])
   })
 
   it('pasar a alguien de PIN a contraseña y de vuelta; cambiar el rol cierra su sesión', () => {
     const m = montar()
-    const { conexion } = m.emparejar('mesero')
-    const sesion = m.entrar(conexion, 'mesero')
-    const datos = { id: m.personas.mesero.usuarioId, nombre: 'Ana' }
+    const { connection } = m.emparejar('waiter')
+    const session = m.entrar(connection, 'waiter')
+    const data = { id: m.people.waiter.userId, name: 'Ana' }
 
     // Con PIN no puede quedar en un rol que cobra (ADR-013)…
-    expect(() => m.persona({ ...datos, rolId: m.roles.cajero })).toThrow(
+    expect(() => m.persona({ ...data, rolId: m.roles.cashier })).toThrow(
       /Ana entra con PIN y su rol permite/,
     )
     // …en uno que no cobra, sí; y cambiar el rol cierra su sesión.
-    const barra = m.rol({ nombre: 'Barra', permisos: ['tomar_pedido'] })
-    m.persona({ ...datos, rolId: barra })
-    expect(m.acceso.cerrarSesion(conexion, sesion)).toMatchObject({ codigo: 'sesion_invalida' })
+    const bar = m.role({ name: 'Barra', permissions: ['take_order'] })
+    m.persona({ ...data, rolId: bar })
+    expect(m.access.cerrarSesion(connection, session)).toMatchObject({ code: 'invalid_session' })
 
     m.persona({
-      ...datos,
-      rolId: m.roles.cajero,
-      acceso: { tipo: 'contrasena', usuario: 'ana', contrasena: 'ana-clave-99' },
+      ...data,
+      rolId: m.roles.cashier,
+      access: { type: 'password', user: 'ana', password: 'ana-clave-99' },
     })
-    expect(m.acceso.iniciarSesion(conexion, m.personas.mesero.pin)).toMatchObject({ ok: false })
+    expect(m.access.startSession(connection, m.people.waiter.pin)).toMatchObject({ ok: false })
     // Mismo usuario sin contraseña nueva: no cambia nada.
     expect(() =>
       m.persona({
-        ...datos,
-        rolId: m.roles.cajero,
-        acceso: { tipo: 'contrasena', usuario: 'ana' },
+        ...data,
+        rolId: m.roles.cashier,
+        access: { type: 'password', user: 'ana' },
       }),
     ).not.toThrow()
     expect(() =>
       m.persona({
-        ...datos,
-        rolId: m.roles.cajero,
-        acceso: { tipo: 'contrasena', usuario: 'ana2' },
+        ...data,
+        rolId: m.roles.cashier,
+        access: { type: 'password', user: 'ana2' },
       }),
     ).toThrow(/escribe también una contraseña/)
 
-    m.persona({ ...datos, rolId: m.roles.mesero, acceso: { tipo: 'pin' } })
+    m.persona({ ...data, rolId: m.roles.waiter, access: { type: 'pin' } })
     m.avanzar(61_000)
-    expect(m.acceso.iniciarSesion(conexion, m.personas.mesero.pin)).toMatchObject({ ok: true })
+    expect(m.access.startSession(connection, m.people.waiter.pin)).toMatchObject({ ok: true })
   })
 
   it('regenerar el PIN da uno nuevo y el viejo deja de servir; archivar libera el usuario', () => {
     const m = montar()
-    const { conexion } = m.emparejar('mesero')
-    const datos = { id: m.personas.mesero.usuarioId, nombre: 'Ana', rolId: m.roles.mesero }
-    const r = m.persona({ ...datos, regenerarPin: true })
+    const { connection } = m.emparejar('waiter')
+    const data = { id: m.people.waiter.userId, name: 'Ana', rolId: m.roles.waiter }
+    const r = m.persona({ ...data, regenerarPin: true })
     expect(r.pin).toMatch(/^\d{4}$/)
-    if (r.pin !== m.personas.mesero.pin)
-      expect(m.acceso.iniciarSesion(conexion, m.personas.mesero.pin)).toMatchObject({ ok: false })
+    if (r.pin !== m.people.waiter.pin)
+      expect(m.access.startSession(connection, m.people.waiter.pin)).toMatchObject({ ok: false })
     m.avanzar(61_000)
-    expect(m.acceso.iniciarSesion(conexion, r.pin as string)).toMatchObject({ ok: true })
+    expect(m.access.startSession(connection, r.pin as string)).toMatchObject({ ok: true })
 
-    m.persona({ ...datos, activo: false })
+    m.persona({ ...data, active: false })
     m.avanzar(61_000)
-    expect(m.acceso.iniciarSesion(conexion, r.pin as string)).toMatchObject({ ok: false })
-    expect(m.leer().personas.find((p) => p.id === datos.id)?.activo).toBe(false)
+    expect(m.access.startSession(connection, r.pin as string)).toMatchObject({ ok: false })
+    expect(m.leer().people.find((p) => p.id === data.id)?.active).toBe(false)
   })
 
   it('no se archiva a la última persona que administra el personal', () => {
     const m = montar()
     expect(() =>
       m.persona({
-        id: m.personas.admin.usuarioId,
-        nombre: 'Administrador',
+        id: m.people.admin.userId,
+        name: 'Administrador',
         rolId: m.roles.admin,
-        activo: false,
+        active: false,
       }),
     ).toThrow(/Tiene que quedar al menos una persona/)
     expect(
       () =>
         m.persona({
-          id: m.personas.admin.usuarioId,
-          nombre: 'Administrador',
+          id: m.people.admin.userId,
+          name: 'Administrador',
           rolId: m.roles.admin,
-          acceso: { tipo: 'pin' },
+          access: { type: 'pin' },
         }),
       // Antes de quedarse sin administrador, choca con que un administrador no entra con PIN.
     ).toThrow(/entra con PIN y su rol permite/)
-    expect(m.acceso.tieneContrasena(m.personas.admin.usuarioId)).toBe(true)
+    expect(m.access.tieneContrasena(m.people.admin.userId)).toBe(true)
   })
 })
 
 describe('equipos en la pantalla de personal', () => {
   it('cada equipo con su último uso y quién; el retirado al final', () => {
     const m = montar()
-    const celular = m.acceso.entrar({ pin: m.personas.mesero.pin }, null, 'ip-1')
-    const caja = m.acceso.entrar({ usuario: 'carlos', contrasena: 'clave-de-carlos' }, null, 'ip-2')
-    if (!celular.ok || !caja.ok || !celular.equipo || !caja.equipo) throw new Error('no entró')
+    const phone = m.access.entrar({ pin: m.people.waiter.pin }, null, 'ip-1')
+    const register = m.access.entrar({ user: 'carlos', password: 'clave-de-carlos' }, null, 'ip-2')
+    if (!phone.ok || !register.ok || !phone.device || !register.device) throw new Error('no entró')
     m.avanzar(60_000)
-    const admin = m.acceso.entrar(
+    const admin = m.access.entrar(
       {
-        usuario: String(m.personas.admin.usuario),
-        contrasena: String(m.personas.admin.contrasena),
+        user: String(m.people.admin.user),
+        password: String(m.people.admin.password),
       },
       null,
       'ip-3',
     )
-    if (!admin.ok || !admin.equipo) throw new Error('no entró')
-    const conexion = m.acceso.autenticar(admin.equipo.token)
-    if (!conexion) throw new Error('sin conexión')
-    m.acceso.revocarDispositivo(conexion, { ...admin, dispositivoId: celular.equipo.dispositivoId })
+    if (!admin.ok || !admin.device) throw new Error('no entró')
+    const connection = m.access.authenticate(admin.device.token)
+    if (!connection) throw new Error('sin conexión')
+    m.access.revocarDispositivo(connection, { ...admin, dispositivoId: phone.device.dispositivoId })
 
-    const equipos = m.leer().equipos
-    expect(equipos.map((e) => [e.nombre, e.tipo, e.ultimaPersona, e.revocadoEn !== null])).toEqual([
-      ['Equipo de Administrador', 'caja', 'Administrador', false],
-      ['Equipo de Carlos', 'caja', 'Carlos', false],
-      ['Equipo de Ana', 'mesero', 'Ana', true],
+    const devices = m.leer().devices
+    expect(devices.map((e) => [e.name, e.type, e.ultimaPersona, e.revocadoEn !== null])).toEqual([
+      ['Equipo de Administrador', 'register', 'Administrador', false],
+      ['Equipo de Carlos', 'register', 'Carlos', false],
+      ['Equipo de Ana', 'waiter', 'Ana', true],
     ])
   })
 })
@@ -318,15 +321,15 @@ describe('equipos en la pantalla de personal', () => {
 describe('API de personal', () => {
   function montarApi() {
     const m = montar()
-    const cambios: number[] = []
+    const changes: number[] = []
     const app = crearServidor({
-      acceso: m.acceso,
-      catalogo: {
+      access: m.access,
+      catalog: {
         db: m.db,
         restauranteId: m.restauranteId,
-        acceso: m.acceso,
-        reloj: m.reloj,
-        alCambiar: (v) => cambios.push(v),
+        access: m.access,
+        clock: m.clock,
+        onChange: (v) => changes.push(v),
       },
     })
     const post = (url: string, cuerpo: unknown, token?: string) =>
@@ -336,66 +339,61 @@ describe('API de personal', () => {
         payload: cuerpo as object,
         headers: token ? { authorization: `Bearer ${token}` } : {},
       })
-    return { ...m, post, cambios }
+    return { ...m, post, changes }
   }
 
   it('el administrador lee, crea un rol y una persona; los equipos traen la carta de nuevo', async () => {
     const api = montarApi()
-    const caja = (
-      await api.post('/api/entrar', {
-        usuario: api.personas.admin.usuario,
-        contrasena: api.personas.admin.contrasena,
+    const register = (
+      await api.post('/api/sign-in', {
+        user: api.people.admin.user,
+        password: api.people.admin.password,
       })
     ).json()
-    const sesion = { sesion_id: caja.sesion_id, secreto: caja.secreto }
-    const token = caja.equipo.token
+    const session = { session_id: register.session_id, secret: register.secret }
+    const token = register.device.token
 
-    const leido = await api.post('/api/personal/leer', sesion, token)
+    const leido = await api.post('/api/staff/read', session, token)
     expect(leido.statusCode).toBe(200)
-    expect(leido.json().roles.map((r: { nombre: string }) => r.nombre)).toContain('Reportes')
+    expect(leido.json().roles.map((r: { name: string }) => r.name)).toContain('Reportes')
 
-    const rol = await api.post(
-      '/api/personal/roles',
-      { ...sesion, rol: { nombre: 'Barra', permisos: ['tomar_pedido'] } },
+    const role = await api.post(
+      '/api/staff/roles',
+      { ...session, role: { name: 'Barra', permissions: ['take_order'] } },
       token,
     )
-    expect(rol.statusCode).toBe(200)
+    expect(role.statusCode).toBe(200)
     const persona = await api.post(
-      '/api/personal/personas',
-      { ...sesion, persona: { nombre: 'Bruno', rol_id: rol.json().id } },
+      '/api/staff/people',
+      { ...session, persona: { name: 'Bruno', role_id: role.json().id } },
       token,
     )
     expect(persona.statusCode).toBe(200)
     expect(persona.json().pin).toMatch(/^\d{4}$/)
-    expect(api.cambios).toHaveLength(2)
+    expect(api.changes).toHaveLength(2)
 
     const repetido = await api.post(
-      '/api/personal/roles',
-      { ...sesion, rol: { nombre: 'barra', permisos: [] } },
+      '/api/staff/roles',
+      { ...session, role: { name: 'barra', permissions: [] } },
       token,
     )
     expect(repetido.statusCode).toBe(400)
-    expect(repetido.json().mensaje).toMatch(/Ya hay un rol/)
+    expect(repetido.json().message).toMatch(/Ya hay un rol/)
   })
 
   it('sin el permiso responde 403; sin sesión, 401; con datos raros, 400', async () => {
     const api = montarApi()
-    const mesero = (await api.post('/api/entrar', { pin: api.personas.mesero.pin })).json()
-    const sesion = { sesion_id: mesero.sesion_id, secreto: mesero.secreto }
-    expect((await api.post('/api/personal/leer', sesion, mesero.equipo.token)).statusCode).toBe(403)
+    const waiter = (await api.post('/api/sign-in', { pin: api.people.waiter.pin })).json()
+    const session = { session_id: waiter.session_id, secret: waiter.secret }
+    expect((await api.post('/api/staff/read', session, waiter.device.token)).statusCode).toBe(403)
     expect(
-      (await api.post('/api/personal/leer', { ...sesion, secreto: 'otro' }, mesero.equipo.token))
+      (await api.post('/api/staff/read', { ...session, secret: 'other' }, waiter.device.token))
         .statusCode,
     ).toBe(401)
-    expect((await api.post('/api/personal/leer', sesion)).statusCode).toBe(401)
+    expect((await api.post('/api/staff/read', session)).statusCode).toBe(401)
     expect(
-      (
-        await api.post(
-          '/api/personal/roles',
-          { ...sesion, rol: { nombre: 1 } },
-          mesero.equipo.token,
-        )
-      ).statusCode,
+      (await api.post('/api/staff/roles', { ...session, role: { name: 1 } }, waiter.device.token))
+        .statusCode,
     ).toBe(400)
   })
 })

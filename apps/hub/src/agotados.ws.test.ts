@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { firmarEvento, nuevoId } from '@pos/core'
+import { newId, signEvent } from '@pos/core'
 import type { MensajeHub } from '@pos/sync'
 import { afterEach, describe, expect, it } from 'vitest'
 import type WebSocket from 'ws'
@@ -22,42 +22,40 @@ const CARTA = readFileSync(
 let carpeta = ''
 afterEach(() => rmSync(carpeta, { recursive: true, force: true }))
 
-type Sesion = { sesion_id: string; secreto: string; usuario: { id: string } }
+type Sesion = { session_id: string; secret: string; user: { id: string } }
 
 async function montar() {
   carpeta = mkdtempSync(join(tmpdir(), 'pos-agotados-'))
   const { db } = abrirDatos(carpeta)
   let sala: ReturnType<typeof prepararSincronizacion> | null = null
-  const acceso = prepararAcceso(
+  const access = prepararAcceso(
     db,
     carpeta,
     () => {},
-    (id, en) => sala?.revocar(id, en),
+    (id, en) => sala?.revoke(id, en),
   )
-  const { pines } = sembrar(
+  const { pins } = sembrar(
     db,
-    acceso.acceso,
-    { restauranteId: acceso.restauranteId, roles: acceso.roles, carta: leerCarta(CARTA) },
+    access.access,
+    { restauranteId: access.restauranteId, roles: access.roles, menu: leerCarta(CARTA) },
     new Date().toISOString(),
   )
-  sala = prepararSincronizacion(db, carpeta, acceso.restauranteId, acceso.acceso)
+  sala = prepararSincronizacion(db, carpeta, access.restauranteId, access.access)
   const app = crearServidor({
-    acceso: acceso.acceso,
+    access: access.access,
     sincronizacion: { sala, intervaloLatidoMs: 60_000 },
-    catalogo: { db, restauranteId: acceso.restauranteId, acceso: acceso.acceso },
+    catalog: { db, restauranteId: access.restauranteId, access: access.access },
   })
   await app.ready()
   /** Con qué entra cada quien: usuario y contraseña si los tiene (ADR-013), si no su PIN. */
-  const credencialesDe = (nombre: string) => {
-    if (nombre === 'Administrador')
+  const credencialesDe = (name: string) => {
+    if (name === 'Administrador')
       return {
-        usuario: acceso.admin.usuario as string,
-        contrasena: acceso.admin.contrasena as string,
+        user: access.admin.user as string,
+        password: access.admin.password as string,
       }
-    const p = pines.find((x) => x.nombre === nombre)
-    return p?.usuario
-      ? { usuario: p.usuario, contrasena: p.contrasena as string }
-      : { pin: p?.pin as string }
+    const p = pins.find((x) => x.name === name)
+    return p?.user ? { user: p.user, password: p.password as string } : { pin: p?.pin as string }
   }
   const post = async (url: string, cuerpo: object, token?: string) =>
     (
@@ -73,138 +71,136 @@ async function montar() {
    * Entra sin emparejar (ADR-013): el hub registra el equipo, de caja si quien entra cobra. El
    * tipo y el nombre de cada llamada solo dicen qué equipo es en la prueba.
    */
-  async function equipo(_tipo: 'mesero' | 'caja', _nombre: string, quien: string) {
-    const r = await post('/api/entrar', credencialesDe(quien))
+  async function device(_tipo: 'waiter' | 'register', _nombre: string, quien: string) {
+    const r = await post('/api/sign-in', credencialesDe(quien))
     return {
-      token: r.equipo.token as string,
-      dispositivoId: r.equipo.dispositivo_id as string,
-      sesion: r as Sesion,
+      token: r.device.token as string,
+      dispositivoId: r.device.device_id as string,
+      session: r as Sesion,
     }
   }
 
   /** Abre el WebSocket; `esperar` se resuelve cuando llega (o ya llegó) un mensaje así. */
-  async function conectar(token: string) {
+  async function connect(token: string) {
     const recibidos: MensajeHub[] = []
-    const pendientes: { sirve: (m: MensajeHub) => boolean; listo: (m: MensajeHub) => void }[] = []
+    const pendingList: { sirve: (m: MensajeHub) => boolean; ready: (m: MensajeHub) => void }[] = []
     const ws: WebSocket = await app.injectWS('/api/sync/ws')
     ws.on('message', (d) => {
       const m = JSON.parse(d.toString()) as MensajeHub
       recibidos.push(m)
-      for (const [i, p] of pendientes.entries())
+      for (const [i, p] of pendingList.entries())
         if (p.sirve(m)) {
-          pendientes.splice(i, 1)
-          p.listo(m)
+          pendingList.splice(i, 1)
+          p.ready(m)
           break
         }
     })
-    const enviar = (m: object) => ws.send(JSON.stringify(m))
-    enviar({ tipo: 'hola', token, hub_instancia: null, hasta: 0, version_app: 'prueba' })
-    const esperar = <T extends MensajeHub['tipo']>(
-      tipo: T,
-      sirve: (m: Extract<MensajeHub, { tipo: T }>) => boolean = () => true,
+    const send = (m: object) => ws.send(JSON.stringify(m))
+    send({ type: 'hello', token, hub_instancia: null, until: 0, version_app: 'prueba' })
+    const esperar = <T extends MensajeHub['type']>(
+      type: T,
+      sirve: (m: Extract<MensajeHub, { type: T }>) => boolean = () => true,
     ) =>
-      new Promise<Extract<MensajeHub, { tipo: T }>>((listo) => {
+      new Promise<Extract<MensajeHub, { type: T }>>((ready) => {
         const cumple = (m: MensajeHub) =>
-          m.tipo === tipo && sirve(m as Extract<MensajeHub, { tipo: T }>)
-        const ya = recibidos.find(cumple)
-        if (ya) listo(ya as Extract<MensajeHub, { tipo: T }>)
-        else pendientes.push({ sirve: cumple, listo: listo as (m: MensajeHub) => void })
+          m.type === type && sirve(m as Extract<MensajeHub, { type: T }>)
+        const already = recibidos.find(cumple)
+        if (already) ready(already as Extract<MensajeHub, { type: T }>)
+        else pendingList.push({ sirve: cumple, ready: ready as (m: MensajeHub) => void })
       })
-    await esperar('bienvenido')
-    return { ws, recibidos, enviar, esperar }
+    await esperar('welcome')
+    return { ws, recibidos, send, esperar }
   }
 
-  const catalogo = async (token: string) =>
+  const catalog = async (token: string) =>
     (
       await app.inject({
         method: 'GET',
-        url: '/api/catalogo',
+        url: '/api/catalog',
         headers: { authorization: `Bearer ${token}` },
       })
     ).json()
 
-  return { app, equipo, conectar, catalogo }
+  return { app, device, connect, catalog }
 }
 
-const evento = (
-  e: { sesion: Sesion; dispositivoId: string },
-  tipo: string,
-  datos: unknown,
+const event = (
+  e: { session: Sesion; dispositivoId: string },
+  type: string,
+  data: unknown,
   extras: Record<string, unknown> = {},
 ) => {
   const ahora = new Date().toISOString()
   const base = {
-    id: nuevoId(),
-    tipo,
-    version_esquema: 1,
-    agregado_tipo: 'pedido',
-    agregado_id: nuevoId(),
-    relacionados: [],
-    datos,
-    sesion_id: e.sesion.sesion_id,
-    usuario_id: e.sesion.usuario.id,
-    dispositivo_id: e.dispositivoId,
-    autorizacion_id: null,
-    motivo: null,
-    hora_dispositivo: ahora,
-    hora_estimada_hub: ahora,
-    secuencia_base: 0,
+    id: newId(),
+    type,
+    schema_version: 1,
+    aggregate_type: 'order',
+    aggregate_id: newId(),
+    related: [],
+    data,
+    session_id: e.session.session_id,
+    user_id: e.session.user.id,
+    device_id: e.dispositivoId,
+    authorization_id: null,
+    reason: null,
+    device_time: ahora,
+    hub_estimated_time: ahora,
+    base_sequence: 0,
     ...extras,
   }
-  return { ...base, firma: firmarEvento(base as never, e.sesion.secreto) }
+  return { ...base, signature: signEvent(base as never, e.session.secret) }
 }
 
-const agotar = (
-  e: Parameters<typeof evento>[0],
-  producto: string,
-  variante: string | null = null,
+const markSoldOut = (
+  e: Parameters<typeof event>[0],
+  product: string,
+  variant: string | null = null,
 ) =>
-  evento(
+  event(
     e,
-    'ProductoAgotado',
-    { producto_id: producto, variante_id: variante },
-    { agregado_tipo: 'producto', agregado_id: producto },
+    'ProductSoldOut',
+    { product_id: product, variant_id: variant },
+    { aggregate_type: 'product', aggregate_id: product },
   )
 
-type ProductoCarta = {
+type MenuProduct = {
   id: string
-  nombre: string
-  precio: number
-  impuesto: { tipo: string; tarifa: number }
-  variantes: { id: string }[]
+  name: string
+  price: number
+  tax: { type: string; rate: number }
+  variants: { id: string }[]
 }
-const primerProductoSimple = (catalogo: { categorias: { productos: ProductoCarta[] }[] }) =>
-  catalogo.categorias
-    .flatMap((c) => c.productos)
-    .find((p) => p.variantes.length === 0) as ProductoCarta
+const primerProductoSimple = (catalog: { categories: { products: MenuProduct[] }[] }) =>
+  catalog.categories.flatMap((c) => c.products).find((p) => p.variants.length === 0) as MenuProduct
 
 describe('agotados por el WebSocket', () => {
   it('la caja marca agotado: se confirma y el celular del mesero recibe el aviso nuevo, sin la sesión', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular Ana', 'Mesero 1')
-    const producto = primerProductoSimple(await m.catalogo(caja.token))
-    const enCaja = await m.conectar(caja.token)
-    const enCelular = await m.conectar(celular.token)
+    const register = await m.device('register', 'Caja', 'Caja')
+    const phone = await m.device('waiter', 'Celular Ana', 'Mesero 1')
+    const product = primerProductoSimple(await m.catalog(register.token))
+    const enCaja = await m.connect(register.token)
+    const enCelular = await m.connect(phone.token)
 
-    const e = agotar(caja, producto.id)
-    enCaja.enviar({ tipo: 'empujar', lote_id: 'l1', eventos: [e] })
+    const e = markSoldOut(register, product.id)
+    enCaja.send({ type: 'push', lote_id: 'l1', events: [e] })
 
-    const resultado = await enCaja.esperar('resultado')
-    expect(resultado).toMatchObject({
+    const result = await enCaja.esperar('result')
+    expect(result).toMatchObject({
       lote_id: 'l1',
-      resultados: [{ id: e.id, estado: 'confirmado', aceptacion: { secuencia: 1 } }],
+      resultados: [{ id: e.id, status: 'confirmed', aceptacion: { sequence: 1 } }],
     })
-    const aviso = await enCelular.esperar('nuevo', (n) => n.evento.id === e.id)
-    expect(aviso).toMatchObject({
+    const alert = await enCelular.esperar('new', (n) => n.event.id === e.id)
+    expect(alert).toMatchObject({
       hasta_anterior: 0,
-      hasta: 1,
-      evento: {
-        tipo: 'ProductoAgotado',
-        agregado_tipo: 'producto',
-        agregado_id: producto.id,
-        sesion_id: null,
-        datos: { producto_id: producto.id, variante_id: null },
+      until: 1,
+      event: {
+        type: 'ProductSoldOut',
+        aggregate_type: 'product',
+        aggregate_id: product.id,
+        session_id: null,
+        data: { product_id: product.id, variant_id: null },
       },
     })
 
@@ -215,22 +211,22 @@ describe('agotados por el WebSocket', () => {
 
   it('el mesero no puede agotar: lo rechaza con sin_permiso y no se avisa a nadie', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular Ana', 'Mesero 1')
-    const producto = primerProductoSimple(await m.catalogo(caja.token))
-    const enCaja = await m.conectar(caja.token)
-    const enCelular = await m.conectar(celular.token)
+    const register = await m.device('register', 'Caja', 'Caja')
+    const phone = await m.device('waiter', 'Celular Ana', 'Mesero 1')
+    const product = primerProductoSimple(await m.catalog(register.token))
+    const enCaja = await m.connect(register.token)
+    const enCelular = await m.connect(phone.token)
 
-    const e = agotar(celular, producto.id)
-    enCelular.enviar({ tipo: 'empujar', lote_id: 'l1', eventos: [e] })
-    expect(await enCelular.esperar('resultado')).toMatchObject({
-      resultados: [{ id: e.id, estado: 'rechazado', motivo: 'sin_permiso' }],
+    const e = markSoldOut(phone, product.id)
+    enCelular.send({ type: 'push', lote_id: 'l1', events: [e] })
+    expect(await enCelular.esperar('result')).toMatchObject({
+      resultados: [{ id: e.id, status: 'rejected', reason: 'no_permission' }],
     })
     // El pong llega después de todo lo anterior en el mismo orden: si hubiera aviso, ya estaría.
-    enCaja.enviar({ tipo: 'ping', marca: 'fin' })
+    enCaja.send({ type: 'ping', brand: 'fin' })
     await enCaja.esperar('pong')
-    expect(enCaja.recibidos.some((x) => x.tipo === 'nuevo')).toBe(false)
-    expect(enCelular.recibidos.some((x) => x.tipo === 'nuevo')).toBe(false)
+    expect(enCaja.recibidos.some((x) => x.type === 'new')).toBe(false)
+    expect(enCelular.recibidos.some((x) => x.type === 'new')).toBe(false)
 
     enCaja.ws.terminate()
     enCelular.ws.terminate()
@@ -239,49 +235,49 @@ describe('agotados por el WebSocket', () => {
 
   it('un ítem de un producto agotado entra con el precio de la carta y sin conflicto', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular Ana', 'Mesero 1')
-    const catalogo = await m.catalogo(caja.token)
-    const producto = primerProductoSimple(catalogo)
-    const enCaja = await m.conectar(caja.token)
-    const enCelular = await m.conectar(celular.token)
-    enCaja.enviar({ tipo: 'empujar', lote_id: 'a', eventos: [agotar(caja, producto.id)] })
-    await enCelular.esperar('nuevo')
+    const register = await m.device('register', 'Caja', 'Caja')
+    const phone = await m.device('waiter', 'Celular Ana', 'Mesero 1')
+    const catalog = await m.catalog(register.token)
+    const product = primerProductoSimple(catalog)
+    const enCaja = await m.connect(register.token)
+    const enCelular = await m.connect(phone.token)
+    enCaja.send({ type: 'push', lote_id: 'a', events: [markSoldOut(register, product.id)] })
+    await enCelular.esperar('new')
 
     // El celular, que ya sabe que está agotado, igual manda lo que su mesero ya había tomado.
-    const pedido = nuevoId()
-    const abrir = evento(
-      celular,
-      'PedidoAbierto',
-      { canal: 'barra', mesa_id: null, comensales: 1 },
-      { agregado_id: pedido },
+    const order = newId()
+    const open = event(
+      phone,
+      'OrderOpened',
+      { channel: 'bar', table_id: null, guests: 1 },
+      { aggregate_id: order },
     )
-    const itemAgotado = evento(
-      celular,
-      'ItemAgregado',
+    const itemAgotado = event(
+      phone,
+      'ItemAdded',
       {
-        item_id: nuevoId(),
-        producto_id: producto.id,
-        variante_id: null,
-        nombre: producto.nombre,
-        precio_unitario: producto.precio,
-        impuesto_tipo: producto.impuesto.tipo,
-        tarifa: producto.impuesto.tipo === 'exento' ? 0 : producto.impuesto.tarifa,
-        cantidad: 2,
-        comensal: null,
-        curso: null,
-        modificadores: [],
-        notas: null,
-        catalogo_version: catalogo.version,
-        precio_canal_id: null,
+        item_id: newId(),
+        product_id: product.id,
+        variant_id: null,
+        name: product.name,
+        unit_price: product.price,
+        tax_type: product.tax.type,
+        rate: product.tax.type === 'exempt' ? 0 : product.tax.rate,
+        quantity: 2,
+        guest: null,
+        course: null,
+        modifiers: [],
+        notes: null,
+        catalog_version: catalog.version,
+        price_channel_id: null,
       },
-      { agregado_id: pedido, secuencia_base: 1 },
+      { aggregate_id: order, base_sequence: 1 },
     )
-    enCelular.enviar({ tipo: 'empujar', lote_id: 'b', eventos: [abrir, itemAgotado] })
+    enCelular.send({ type: 'push', lote_id: 'b', events: [open, itemAgotado] })
 
-    const r = await enCelular.esperar('resultado', (x) => x.lote_id === 'b')
-    expect(r.resultados.map((x) => x.estado)).toEqual(['confirmado', 'confirmado'])
-    expect(r.resultados[1]).toMatchObject({ conflicto: null })
+    const r = await enCelular.esperar('result', (x) => x.lote_id === 'b')
+    expect(r.resultados.map((x) => x.status)).toEqual(['confirmed', 'confirmed'])
+    expect(r.resultados[1]).toMatchObject({ conflict: null })
 
     enCaja.ws.terminate()
     enCelular.ws.terminate()
@@ -290,32 +286,32 @@ describe('agotados por el WebSocket', () => {
 
   it('un equipo que se conecta después trae el agotado con `traer`, en su lugar de la secuencia', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular Ana', 'Mesero 1')
-    const producto = primerProductoSimple(await m.catalogo(caja.token))
-    const enCaja = await m.conectar(caja.token)
-    enCaja.enviar({ tipo: 'empujar', lote_id: 'a', eventos: [agotar(caja, producto.id)] })
-    await enCaja.esperar('resultado')
-    enCaja.enviar({
-      tipo: 'empujar',
+    const register = await m.device('register', 'Caja', 'Caja')
+    const phone = await m.device('waiter', 'Celular Ana', 'Mesero 1')
+    const product = primerProductoSimple(await m.catalog(register.token))
+    const enCaja = await m.connect(register.token)
+    enCaja.send({ type: 'push', lote_id: 'a', events: [markSoldOut(register, product.id)] })
+    await enCaja.esperar('result')
+    enCaja.send({
+      type: 'push',
       lote_id: 'b',
-      eventos: [
-        evento(
-          caja,
-          'ProductoDisponible',
-          { producto_id: producto.id, variante_id: null },
-          { agregado_tipo: 'producto', agregado_id: producto.id, secuencia_base: 1 },
+      events: [
+        event(
+          register,
+          'ProductAvailable',
+          { product_id: product.id, variant_id: null },
+          { aggregate_type: 'product', aggregate_id: product.id, base_sequence: 1 },
         ),
       ],
     })
-    await enCaja.esperar('resultado', (x) => x.lote_id === 'b')
+    await enCaja.esperar('result', (x) => x.lote_id === 'b')
 
-    const tarde = await m.conectar(celular.token)
-    tarde.enviar({ tipo: 'traer', desde: 0 })
-    const traido = await tarde.esperar('eventos')
-    expect(traido.eventos.map((x) => [x.secuencia, x.tipo, x.agregado_tipo])).toEqual([
-      [1, 'ProductoAgotado', 'producto'],
-      [2, 'ProductoDisponible', 'producto'],
+    const tarde = await m.connect(phone.token)
+    tarde.send({ type: 'pull', from: 0 })
+    const traido = await tarde.esperar('events')
+    expect(traido.events.map((x) => [x.sequence, x.type, x.aggregate_type])).toEqual([
+      [1, 'ProductSoldOut', 'product'],
+      [2, 'ProductAvailable', 'product'],
     ])
 
     enCaja.ws.terminate()

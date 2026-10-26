@@ -1,4 +1,4 @@
-import type { ItemPedido } from '@pos/core'
+import type { OrderItem } from '@pos/core'
 import type { EventoLocal } from '@pos/sync'
 import type { PedidoVisible } from './proyeccion'
 
@@ -8,60 +8,60 @@ import type { PedidoVisible } from './proyeccion'
 
 export interface ComandaEnCocina {
   /** Única por tarjeta: una comanda cuyos platos se repartieron en dos mesas da dos tarjetas. */
-  clave: string
+  key: string
   comandaId: string
-  pedido: PedidoVisible
+  order: PedidoVisible
   estacionId: string
   /** Número del día que dio el hub; mientras no lo confirma, nada. */
   numero: number | null
   /** Desde cuándo está en cocina: cuando la recibió el hub (o se envió, si aún no llega). */
   enviadaEn: string
   /** Lo que falta entregar de esta comanda. */
-  items: ItemPedido[]
+  items: OrderItem[]
   /** Todo lo que falta ya está listo para llevar a la mesa. */
-  lista: boolean
+  list: boolean
 }
 
-const EN_COCINA = new Set(['enviado', 'en_preparacion', 'listo'])
-const vigente = (l: EventoLocal) => l.estado === 'confirmado' || l.estado === 'pendiente'
+const EN_COCINA = new Set(['sent', 'in_preparation', 'ready'])
+const current = (l: EventoLocal) => l.status === 'confirmed' || l.status === 'pending'
 
 export function comandasEnCocina(
   locales: readonly EventoLocal[],
-  pedidos: readonly PedidoVisible[],
+  orders: readonly PedidoVisible[],
 ): ComandaEnCocina[] {
   // Cada plato está en el pedido que lo tiene ahora: si se pasó a otra mesa, la comanda sigue
   // siendo la de su envío, pero la tarjeta muestra la mesa nueva.
   const dondeEsta = new Map<string, PedidoVisible>()
-  for (const p of pedidos) for (const id of Object.keys(p.estado.items)) dondeEsta.set(id, p)
-  const comandas: ComandaEnCocina[] = []
+  for (const p of orders) for (const id of Object.keys(p.status.items)) dondeEsta.set(id, p)
+  const tickets: ComandaEnCocina[] = []
   for (const l of locales) {
-    if (!vigente(l) || l.evento.tipo !== 'ItemsEnviados') continue
-    const numeros = l.evento.asignaciones?.numeros_comanda
-    for (const c of l.evento.datos.comandas) {
-      const porPedido = new Map<PedidoVisible, ItemPedido[]>()
+    if (!current(l) || l.event.type !== 'ItemsSent') continue
+    const numeros = l.event.assignments?.ticket_numbers
+    for (const c of l.event.data.tickets) {
+      const porPedido = new Map<PedidoVisible, OrderItem[]>()
       for (const id of c.item_ids) {
-        const pedido = dondeEsta.get(id)
-        const i = pedido?.estado.items[id]
-        if (!pedido || !i || !EN_COCINA.has(i.estado) || i.cantidad <= i.cantidadAnulada) continue
-        porPedido.set(pedido, [...(porPedido.get(pedido) ?? []), i])
+        const order = dondeEsta.get(id)
+        const i = order?.status.items[id]
+        if (!order || !i || !EN_COCINA.has(i.status) || i.quantity <= i.voidedQuantity) continue
+        porPedido.set(order, [...(porPedido.get(order) ?? []), i])
       }
-      for (const [pedido, items] of porPedido)
-        comandas.push({
-          clave: `${c.comanda_id}:${pedido.estado.id}`,
-          comandaId: c.comanda_id,
-          pedido,
-          estacionId: c.estacion_id,
-          numero: numeros?.[c.comanda_id] ?? null,
-          enviadaEn: l.evento.recibido_en ?? l.evento.hora_estimada_hub,
-          items: items.sort((a, b) => a.orden - b.orden),
-          lista: items.every((i) => i.estado === 'listo'),
+      for (const [order, items] of porPedido)
+        tickets.push({
+          key: `${c.ticket_id}:${order.status.id}`,
+          comandaId: c.ticket_id,
+          order,
+          estacionId: c.station_id,
+          numero: numeros?.[c.ticket_id] ?? null,
+          enviadaEn: l.event.received_at ?? l.event.hub_estimated_time,
+          items: items.sort((a, b) => a.position - b.position),
+          list: items.every((i) => i.status === 'ready'),
         })
     }
   }
-  return comandas.sort((a, b) => a.enviadaEn.localeCompare(b.enviadaEn))
+  return tickets.sort((a, b) => a.enviadaEn.localeCompare(b.enviadaEn))
 }
 
-export type Demora = 'a_tiempo' | 'demorada' | 'muy_demorada'
+export type Demora = 'on_time' | 'late' | 'very_late'
 
 /** Cómo va de tiempo: ámbar desde `amarillo` minutos y rojo desde `rojo` (config del local). */
 export function demora(
@@ -70,13 +70,13 @@ export function demora(
   { amarillo, rojo }: { amarillo: number; rojo: number },
 ): Demora {
   const minutos = (ahora - Date.parse(enviadaEn)) / 60_000
-  if (minutos >= rojo) return 'muy_demorada'
-  if (minutos >= amarillo) return 'demorada'
-  return 'a_tiempo'
+  if (minutos >= rojo) return 'very_late'
+  if (minutos >= amarillo) return 'late'
+  return 'on_time'
 }
 
 /** Tiempos del local, o los de fábrica si el hub es de antes de la 1.4. */
-export const tiemposDe = (restaurante: { cocinaAmarilloMin?: number; cocinaRojoMin?: number }) => ({
-  amarillo: restaurante.cocinaAmarilloMin ?? 10,
-  rojo: restaurante.cocinaRojoMin ?? 20,
+export const tiemposDe = (restaurant: { cocinaAmarilloMin?: number; cocinaRojoMin?: number }) => ({
+  amarillo: restaurant.cocinaAmarilloMin ?? 10,
+  rojo: restaurant.cocinaRojoMin ?? 20,
 })

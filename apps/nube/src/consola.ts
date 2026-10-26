@@ -20,11 +20,11 @@ export function pedirSecreto(pregunta: string): Promise<string> {
 }
 
 /** Una variable de entorno o, si no está, preguntarla sin mostrarla. */
-export async function secreto(variable: string, pregunta: string): Promise<string> {
-  const valor = process.env[variable]?.trim() || (await pedirSecreto(pregunta))
-  if (!valor) {
+export async function secret(variable: string, pregunta: string): Promise<string> {
+  const value = process.env[variable]?.trim() || (await pedirSecreto(pregunta))
+  if (!value) {
     console.error('No escribiste nada. No se hizo ningún cambio.')
     process.exit(1)
   }
-  return valor
+  return value
 }

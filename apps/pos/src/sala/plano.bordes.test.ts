@@ -18,17 +18,17 @@ import {
 const SEMILLA = 20_261_024
 const vacia = (): CatalogoEdicion => ({
   version: 0,
-  zonas: [],
-  mesas: [],
-  elementos: [],
-  impuestos: [],
-  estaciones: [],
-  categorias: [],
-  productos: [],
-  variantes: [],
-  grupos: [],
-  enlaces: [],
-  modificadores: [],
+  zones: [],
+  tables: [],
+  elements: [],
+  taxes: [],
+  stations: [],
+  categories: [],
+  products: [],
+  variants: [],
+  groups: [],
+  links: [],
+  modifiers: [],
 })
 const formas = Object.keys(FORMAS) as (keyof typeof FORMAS)[]
 
@@ -41,38 +41,38 @@ describe('variasMesas', () => {
         fc.integer({ min: 1, max: 15 }),
         fc.array(fc.integer({ min: 1, max: 80 }).map(String), { maxLength: 20 }),
         fc.integer({ min: 0, max: 5 }),
-        (forma, cantidad, porFila, usados, previas) => {
+        (shape, quantity, porFila, usados, previas) => {
           const b = zonaNueva(vacia())
           for (let i = 0; i < previas; i++)
-            b.mesas.push(
+            b.tables.push(
               nuevaMesa(
                 b,
-                'redonda',
-                b.mesas.map((m) => m.nombre),
+                'round',
+                b.tables.map((m) => m.name),
               ),
             )
-          const nuevas = variasMesas(b, forma, cantidad, porFila, usados)
-          expect(nuevas).toHaveLength(cantidad)
-          const nombres = nuevas.map((m) => m.nombre)
-          expect(new Set(nombres).size).toBe(cantidad)
-          for (const n of nombres) expect(usados).not.toContain(n)
+          const newOnes = variasMesas(b, shape, quantity, porFila, usados)
+          expect(newOnes).toHaveLength(quantity)
+          const names = newOnes.map((m) => m.name)
+          expect(new Set(names).size).toBe(quantity)
+          for (const n of names) expect(usados).not.toContain(n)
           // Los más chicos libres, en orden creciente.
-          expect(nombres.map(Number)).toEqual([...nombres.map(Number)].sort((a, c) => a - c))
-          for (const m of nuevas) {
+          expect(names.map(Number)).toEqual([...names.map(Number)].sort((a, c) => a - c))
+          for (const m of newOnes) {
             expect(m.x % 10).toBe(0)
             expect(m.y % 10).toBe(0)
-            expect(m.nuevo && m.activo).toBe(true)
+            expect(m.fresh && m.active).toBe(true)
           }
-          expect(new Set(nuevas.map((m) => m.y)).size).toBe(Math.ceil(cantidad / porFila))
+          expect(new Set(newOnes.map((m) => m.y)).size).toBe(Math.ceil(quantity / porFila))
           // Ninguna encima de otra ni de lo que había.
-          const todas = [...b.mesas, ...nuevas]
-          for (const [i, a] of todas.entries())
-            for (const c of todas.slice(i + 1))
+          const allRows = [...b.tables, ...newOnes]
+          for (const [i, a] of allRows.entries())
+            for (const c of allRows.slice(i + 1))
               expect(
-                a.x < c.x + c.ancho &&
-                  c.x < a.x + a.ancho &&
-                  a.y < c.y + c.alto &&
-                  c.y < a.y + a.alto,
+                a.x < c.x + c.width &&
+                  c.x < a.x + a.width &&
+                  a.y < c.y + c.height &&
+                  c.y < a.y + a.height,
               ).toBe(false)
         },
       ),
@@ -81,11 +81,11 @@ describe('variasMesas', () => {
   })
 
   it('cero mesas da una lista vacía', () => {
-    expect(variasMesas(zonaNueva(vacia()), 'cuadrada', 0, 5, [])).toEqual([])
+    expect(variasMesas(zonaNueva(vacia()), 'square', 0, 5, [])).toEqual([])
   })
 
   it('una fila de una sola mesa por fila apila hacia abajo', () => {
-    const m = variasMesas(zonaNueva(vacia()), 'cuadrada', 3, 1, [])
+    const m = variasMesas(zonaNueva(vacia()), 'square', 3, 1, [])
     expect(new Set(m.map((x) => x.x)).size).toBe(1)
     expect(new Set(m.map((x) => x.y)).size).toBe(3)
   })
@@ -94,7 +94,7 @@ describe('variasMesas', () => {
   // fila" a 1..20, pero `variasMesas(…, 0, …)` da x = NaN (división entre cero).
   it('con porFila 0 las mesas no quedan con coordenadas inválidas', () => {
     // Un campo vacío en la pantalla podría dar 0: ninguna posición debe ser NaN o infinita.
-    const m = variasMesas(zonaNueva(vacia()), 'cuadrada', 3, 0, [])
+    const m = variasMesas(zonaNueva(vacia()), 'square', 3, 0, [])
     for (const x of m) {
       expect(Number.isFinite(x.x)).toBe(true)
       expect(Number.isFinite(x.y)).toBe(true)
@@ -103,55 +103,55 @@ describe('variasMesas', () => {
 
   it('las mesas de varias a la vez se guardan juntas en una sola edición', () => {
     const c = vacia()
-    const b: BorradorZona = { ...zonaNueva(c), nombre: 'Patio' }
-    b.mesas.push(...variasMesas(b, 'redonda', 12, 4, []))
+    const b: BorradorZona = { ...zonaNueva(c), name: 'Patio' }
+    b.tables.push(...variasMesas(b, 'round', 12, 4, []))
     expect(problemasDeZona(c, b)).toEqual([])
-    const cambios = cambiosDeZona(c, b)
-    expect(cambios).toHaveLength(13)
-    expect(cambios[0]?.entidad).toBe('zona')
+    const changes = cambiosDeZona(c, b)
+    expect(changes).toHaveLength(13)
+    expect(changes[0]?.entity).toBe('zones')
   })
 })
 
 describe('el editor ante un catálogo de edición sin zonas', () => {
   // `PlanoEditor.abrirZona` toma la primera zona activa o, si no hay, arma una nueva llamada
   // «Salón». Aquí se comprueba esa lógica con las funciones de `plano.ts`.
-  const abrir = (c: CatalogoEdicion) => {
-    const zona = c.zonas.find((z) => z.activo)
-    return zona ? borradorDeZona(c, zona.id) : { ...zonaNueva(c), nombre: 'Salón' }
+  const open = (c: CatalogoEdicion) => {
+    const zone = c.zones.find((z) => z.active)
+    return zone ? borradorDeZona(c, zone.id) : { ...zonaNueva(c), name: 'Salón' }
   }
 
   it('sin zonas arma un «Salón» nuevo, vacío, que no se puede guardar sin tocar', () => {
     const c = vacia()
-    const b = abrir(c)
+    const b = open(c)
     expect(b).toMatchObject({
-      nuevo: true,
-      nombre: 'Salón',
-      orden: 0,
-      piso: 1,
-      mesas: [],
-      elementos: [],
+      fresh: true,
+      name: 'Salón',
+      position: 0,
+      level: 1,
+      tables: [],
+      elements: [],
     })
     expect(problemasDeZona(c, b)).toEqual([])
     // «Sucio» lo decide la pantalla por mesas/elementos/nombre distinto del inicial: aquí hay
     // 0 mesas y el nombre es el inicial.
-    expect(b.mesas.length + b.elementos.length).toBe(0)
+    expect(b.tables.length + b.elements.length).toBe(0)
   })
 
   it('con una mesa puesta, guardar crea la zona antes que la mesa', () => {
     const c = vacia()
-    const b = abrir(c)
-    b.mesas.push(nuevaMesa(b, 'cuadrada', []))
-    const cambios = cambiosDeZona(c, b)
-    expect(cambios.map((x) => x.entidad)).toEqual(['zona', 'mesa'])
-    expect(cambios[0]?.datos).toEqual({ nombre: 'Salón', piso: 1, orden: 0, activo: true })
+    const b = open(c)
+    b.tables.push(nuevaMesa(b, 'square', []))
+    const changes = cambiosDeZona(c, b)
+    expect(changes.map((x) => x.entity)).toEqual(['zones', 'dining_tables'])
+    expect(changes[0]?.data).toEqual({ name: 'Salón', level: 1, position: 0, active: true })
   })
 
   it('con todas las zonas archivadas también arma una nueva, sin abrir la archivada', () => {
     const c = vacia()
-    c.zonas.push({ id: 'Z', version: 3, activo: false, nombre: 'Vieja', orden: 0, piso: 1 })
-    const b = abrir(c)
-    expect(b.nuevo).toBe(true)
-    expect(b.orden).toBe(1)
+    c.zones.push({ id: 'Z', version: 3, active: false, name: 'Vieja', position: 0, level: 1 })
+    const b = open(c)
+    expect(b.fresh).toBe(true)
+    expect(b.position).toBe(1)
     expect(() => borradorDeZona(c, 'Z')).not.toThrow()
   })
 
@@ -165,8 +165,8 @@ describe('el editor ante un catálogo de edición sin zonas', () => {
   // abrir un plano en blanco.
   it('un catálogo de edición sin las claves del plano se trata como uno vacío', () => {
     // Lo que hace `Sala.catalogoParaEditar` con la respuesta del hub antes de dársela al editor.
-    const sinPlano = completarEdicion({ version: 3, impuestos: [], categorias: [] })
-    expect(() => abrir(sinPlano)).not.toThrow()
+    const sinPlano = completarEdicion({ version: 3, taxes: [], categories: [] })
+    expect(() => open(sinPlano)).not.toThrow()
     expect(() => zonaNueva(sinPlano)).not.toThrow()
   })
 })
@@ -174,110 +174,110 @@ describe('el editor ante un catálogo de edición sin zonas', () => {
 describe('completarCatalogo', () => {
   const buena = {
     version: 9,
-    restaurante: { nombre: 'X', sesionInactividadMin: 30 },
-    zonas: [{ id: 'Z', nombre: 'Salón', piso: 2 }],
-    mesas: [
+    restaurant: { name: 'X', sesionInactividadMin: 30 },
+    zones: [{ id: 'Z', name: 'Salón', level: 2 }],
+    tables: [
       {
         id: 'M',
         zonaId: 'Z',
-        nombre: '1',
+        name: '1',
         x: 10,
         y: 20,
-        ancho: 100,
-        alto: 60,
-        rotacion: 45,
-        forma: 'redonda',
-        capacidad: 2,
+        width: 100,
+        height: 60,
+        rotation: 45,
+        shape: 'round',
+        capacity: 2,
       },
     ],
-    elementos: [
+    elements: [
       {
         id: 'E',
         zonaId: 'Z',
-        tipo: 'pared',
-        texto: null,
+        type: 'wall',
+        text: null,
         x: 0,
         y: 0,
-        ancho: 300,
-        alto: 20,
-        rotacion: 0,
+        width: 300,
+        height: 20,
+        rotation: 0,
       },
     ],
-    personal: [{ id: 'U', nombre: 'Ana' }],
-    estaciones: [],
-    categorias: [],
+    staff: [{ id: 'U', name: 'Ana' }],
+    stations: [],
+    categories: [],
   } as unknown as Parameters<typeof completarCatalogo>[0]
 
   it('una carta completa queda igual y no se modifica el original', () => {
-    const copia = structuredClone(buena)
+    const copy = structuredClone(buena)
     expect(completarCatalogo(buena)).toEqual(buena)
-    expect(buena).toEqual(copia)
+    expect(buena).toEqual(copy)
   })
 
   it('es idempotente y respeta ceros (rotación 0, ancho 0 no se cambian por el valor por defecto)', () => {
     const vieja = {
       ...buena,
-      mesas: [{ ...(buena.mesas[0] as object), ancho: 0, alto: 0, rotacion: 0 }],
+      tables: [{ ...(buena.tables[0] as object), width: 0, height: 0, rotation: 0 }],
     } as unknown as typeof buena
-    const una = completarCatalogo(vieja)
-    expect(una.mesas[0]).toMatchObject({ ancho: 0, alto: 0, rotacion: 0 })
-    expect(completarCatalogo(una)).toEqual(una)
+    const makeOne = completarCatalogo(vieja)
+    expect(makeOne.tables[0]).toMatchObject({ width: 0, height: 0, rotation: 0 })
+    expect(completarCatalogo(makeOne)).toEqual(makeOne)
   })
 
   it('completa solo lo que falta, mesa por mesa', () => {
     const mixta = {
       ...buena,
-      zonas: [
-        { id: 'A', nombre: 'A' },
-        { id: 'B', nombre: 'B', piso: 3 },
+      zones: [
+        { id: 'A', name: 'A' },
+        { id: 'B', name: 'B', level: 3 },
       ],
-      mesas: [
-        { id: '1', zonaId: 'A', nombre: '1', x: 0, y: 0, forma: 'cuadrada', capacidad: 4 },
+      tables: [
+        { id: '1', zonaId: 'A', name: '1', x: 0, y: 0, shape: 'square', capacity: 4 },
         {
           id: '2',
           zonaId: 'B',
-          nombre: '2',
+          name: '2',
           x: 0,
           y: 0,
-          ancho: 200,
-          alto: 50,
-          rotacion: 90,
-          forma: 'barra',
-          capacidad: 1,
+          width: 200,
+          height: 50,
+          rotation: 90,
+          shape: 'bar',
+          capacity: 1,
         },
       ],
     } as unknown as typeof buena
     const c = completarCatalogo(mixta)
-    expect(c.zonas.map((z) => z.piso)).toEqual([1, 3])
-    expect(c.mesas[0]).toMatchObject({ ancho: 80, alto: 80, rotacion: 0 })
-    expect(c.mesas[1]).toMatchObject({ ancho: 200, alto: 50, rotacion: 90 })
+    expect(c.zones.map((z) => z.level)).toEqual([1, 3])
+    expect(c.tables[0]).toMatchObject({ width: 80, height: 80, rotation: 0 })
+    expect(c.tables[1]).toMatchObject({ width: 200, height: 50, rotation: 90 })
   })
 
   it('valores null (de un guardado raro) también se completan', () => {
-    const raro = {
+    const odd = {
       ...buena,
-      zonas: null,
-      mesas: [
+      zones: null,
+      tables: [
         {
           id: '1',
           zonaId: 'A',
-          nombre: '1',
+          name: '1',
           x: 0,
           y: 0,
-          ancho: null,
-          alto: null,
-          rotacion: null,
-          forma: 'cuadrada',
-          capacidad: 4,
+          width: null,
+          height: null,
+          rotation: null,
+          shape: 'square',
+          capacity: 4,
         },
       ],
-      elementos: null,
-      personal: null,
+      elements: null,
+      staff: null,
     } as unknown as typeof buena
-    const c = completarCatalogo(raro)
-    expect(c.zonas).toEqual([])
-    expect(c.elementos).toEqual([])
-    expect(c.personal).toEqual([])
-    expect(c.mesas[0]).toMatchObject({ ancho: 80, alto: 80, rotacion: 0 })
+    const c = completarCatalogo(odd)
+    expect(c.zones).toEqual([])
+    expect(c.elements).toEqual([])
+    expect(c.staff).toEqual([])
+    expect(c.tables[0]).toMatchObject({ width: 80, height: 80, rotation: 0 })
   })
 })

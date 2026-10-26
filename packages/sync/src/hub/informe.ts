@@ -1,10 +1,10 @@
 import {
-  type CuadreTurno,
-  cuadreDeTurno,
-  type EntradaInforme,
-  type EstadoPedido,
-  type EventoPedido,
-  reconstruir,
+  type OrderEvent,
+  type OrderState,
+  type ReportInput,
+  rebuild,
+  type ShiftReconciliation,
+  shiftReconciliation,
 } from '@pos/core'
 import type { AlmacenHub } from './almacen'
 
@@ -14,31 +14,31 @@ import type { AlmacenHub } from './almacen'
 
 /** Lo que cuenta en el día en que se registró (KPIS.md#período). */
 const DEL_PERIODO = [
-  'PagoRegistrado',
-  'PagoAnulado',
-  'ReembolsoRegistrado',
-  'ItemAnulado',
-  'PedidoCancelado',
-  'MovimientoCajaRegistrado',
+  'PaymentRecorded',
+  'PaymentVoided',
+  'RefundRecorded',
+  'ItemVoided',
+  'OrderCanceled',
+  'CashMovementRecorded',
 ]
 
 /** Un turno cerrado, con su cuadre y quién lo abrió y cerró. */
 export interface CierreDeTurno {
-  cuadre: CuadreTurno
+  reconciliation: ShiftReconciliation
   /** El día operativo en que se cerró (el del reporte que lo lista). */
-  diaOperativo: string
+  businessDay: string
   /** El día operativo en que se abrió: el de las ventas de su cierre Z. */
   diaApertura: string
   abiertoPor: string
   cerradoPor: string
-  eventoId: string
+  eventId: string
 }
 
 /** Un cierre de mesa del período: el pedido al cerrar y en su cierre anterior. */
-export type CierreDePedido = NonNullable<EntradaInforme['cierres']>[number]
+export type CierreDePedido = NonNullable<ReportInput['closings']>[number]
 
-export type DatosInforme = Omit<EntradaInforme, 'config' | 'cierres' | 'cerrados'> & {
-  cierres: CierreDePedido[]
+export type DatosInforme = Omit<ReportInput, 'config' | 'closings' | 'closedIds'> & {
+  closings: CierreDePedido[]
   cierresDeCaja: CierreDeTurno[]
 }
 
@@ -46,27 +46,27 @@ export type DatosInforme = Omit<EntradaInforme, 'config' | 'cierres' | 'cerrados
  * Agrega a los eventos los pagos que reversan sus anulaciones y reembolsos, aunque se hayan
  * registrado otro día: sin ellos no se sabe de qué medio sale la plata.
  */
-function conPagosOriginales(almacen: AlmacenHub, eventos: EventoPedido[]): EventoPedido[] {
-  const ids = new Set(eventos.map((e) => e.id))
-  const extra: EventoPedido[] = []
-  for (const e of eventos) {
-    if (e.tipo !== 'PagoAnulado' && e.tipo !== 'ReembolsoRegistrado') continue
-    const pagoId = e.datos.pago_id
-    const pago = almacen
-      .eventosDeAgregado(e.agregado_id)
-      .find((p) => p.tipo === 'PagoRegistrado' && p.datos.pago_id === pagoId)
-    if (pago && !ids.has(pago.id)) {
-      ids.add(pago.id)
-      extra.push(pago)
+function conPagosOriginales(almacen: AlmacenHub, events: OrderEvent[]): OrderEvent[] {
+  const ids = new Set(events.map((e) => e.id))
+  const extra: OrderEvent[] = []
+  for (const e of events) {
+    if (e.type !== 'PaymentVoided' && e.type !== 'RefundRecorded') continue
+    const paymentId = e.data.payment_id
+    const payment = almacen
+      .eventosDeAgregado(e.aggregate_id)
+      .find((p) => p.type === 'PaymentRecorded' && p.data.payment_id === paymentId)
+    if (payment && !ids.has(payment.id)) {
+      ids.add(payment.id)
+      extra.push(payment)
     }
   }
-  return [...eventos, ...extra].sort((a, b) => a.secuencia - b.secuencia)
+  return [...events, ...extra].sort((a, b) => a.sequence - b.sequence)
 }
 
-const pedidosPorId = (almacen: AlmacenHub, ids: Iterable<string>): EstadoPedido[] =>
+const ordersById = (almacen: AlmacenHub, ids: Iterable<string>): OrderState[] =>
   [...new Set(ids)]
-    .map((id) => reconstruir(almacen.eventosDeAgregado(id), id))
-    .filter((p): p is EstadoPedido => p !== null)
+    .map((id) => rebuild(almacen.eventosDeAgregado(id), id))
+    .filter((p): p is OrderState => p !== null)
 
 /**
  * El cuadre de un turno con lo guardado en la base (sirve también para uno ya cerrado). `propios`
@@ -74,90 +74,90 @@ const pedidosPorId = (almacen: AlmacenHub, ids: Iterable<string>): EstadoPedido[
  */
 export function cuadreGuardado(
   almacen: AlmacenHub,
-  turnoId: string,
-  propios: EventoPedido[] = almacen.eventosDeAgregado(turnoId),
-): CuadreTurno | null {
-  const apertura = propios.find((e) => e.tipo === 'TurnoAbierto')
-  if (!apertura) return null
-  const eventos = conPagosOriginales(almacen, [
-    ...propios,
-    ...almacen.cobrosDeTurno(turnoId, apertura.dia_operativo),
+  shiftId: string,
+  ownOnes: OrderEvent[] = almacen.eventosDeAgregado(shiftId),
+): ShiftReconciliation | null {
+  const opening = ownOnes.find((e) => e.type === 'ShiftOpened')
+  if (!opening) return null
+  const events = conPagosOriginales(almacen, [
+    ...ownOnes,
+    ...almacen.cobrosDeTurno(shiftId, opening.business_day),
   ])
-  return cuadreDeTurno(eventos, turnoId)
+  return shiftReconciliation(events, shiftId)
 }
 
 /** El cierre de un turno, si está cerrado. */
-export function cierreDeTurno(almacen: AlmacenHub, turnoId: string): CierreDeTurno | null {
-  const eventos = almacen.eventosDeAgregado(turnoId)
-  const apertura = eventos.find((e) => e.tipo === 'TurnoAbierto')
-  const cierre = eventos.find((e) => e.tipo === 'TurnoCerrado')
-  if (!apertura || !cierre) return null
-  const cuadre = cuadreGuardado(almacen, turnoId, eventos)
-  if (!cuadre?.cerrado) return null
+export function cierreDeTurno(almacen: AlmacenHub, shiftId: string): CierreDeTurno | null {
+  const events = almacen.eventosDeAgregado(shiftId)
+  const opening = events.find((e) => e.type === 'ShiftOpened')
+  const closeout = events.find((e) => e.type === 'ShiftClosed')
+  if (!opening || !closeout) return null
+  const reconciliation = cuadreGuardado(almacen, shiftId, events)
+  if (!reconciliation?.closed) return null
   return {
-    cuadre,
-    diaOperativo: cierre.dia_operativo,
-    diaApertura: apertura.dia_operativo,
-    abiertoPor: apertura.usuario_id,
-    cerradoPor: cierre.usuario_id,
-    eventoId: cierre.id,
+    reconciliation,
+    businessDay: closeout.business_day,
+    diaApertura: opening.business_day,
+    abiertoPor: opening.user_id,
+    cerradoPor: closeout.user_id,
+    eventId: closeout.id,
   }
 }
 
-export function datosDeInforme(almacen: AlmacenHub, desde: string, hasta: string): DatosInforme {
+export function datosDeInforme(almacen: AlmacenHub, from: string, until: string): DatosInforme {
   // Los eventos de cada pedido, leídos una vez.
-  const delPedido = new Map<string, EventoPedido[]>()
+  const fromOrder = new Map<string, OrderEvent[]>()
   const eventosDe = (id: string) => {
-    const todos = delPedido.get(id) ?? almacen.eventosDeAgregado(id)
-    delPedido.set(id, todos)
-    return todos
+    const all = fromOrder.get(id) ?? almacen.eventosDeAgregado(id)
+    fromOrder.set(id, all)
+    return all
   }
   /** El pedido tal como quedó después del evento de esa secuencia (o justo antes, con `<`). */
-  const estadoHasta = (id: string, secuencia: number, incluido = true) =>
-    reconstruir(
-      eventosDe(id).filter((x) => (incluido ? x.secuencia <= secuencia : x.secuencia < secuencia)),
+  const estadoHasta = (id: string, sequence: number, incluido = true) =>
+    rebuild(
+      eventosDe(id).filter((x) => (incluido ? x.sequence <= sequence : x.sequence < sequence)),
       id,
     )
 
   // Cada cierre de mesa del período suma lo que cambió desde su cierre anterior: un pedido
   // reabierto otro día no cambia lo ya reportado (DINERO.md#día-operativo-e-informes).
-  const cierres: CierreDePedido[] = []
-  for (const c of almacen.eventosDelPeriodo(['PedidoCerrado'], desde, hasta)) {
-    const despues = estadoHasta(c.agregado_id, c.secuencia)
-    if (!despues) continue
-    const anterior = eventosDe(c.agregado_id)
-      .filter((x) => x.tipo === 'PedidoCerrado' && x.agregado_id === c.agregado_id)
-      .filter((x) => x.secuencia < c.secuencia)
+  const closings: CierreDePedido[] = []
+  for (const c of almacen.eventosDelPeriodo(['OrderClosed'], from, until)) {
+    const after = estadoHasta(c.aggregate_id, c.sequence)
+    if (!after) continue
+    const previous = eventosDe(c.aggregate_id)
+      .filter((x) => x.type === 'OrderClosed' && x.aggregate_id === c.aggregate_id)
+      .filter((x) => x.sequence < c.sequence)
       .at(-1)
-    cierres.push({
-      antes: anterior ? estadoHasta(c.agregado_id, anterior.secuencia) : null,
-      despues,
+    closings.push({
+      before: previous ? estadoHasta(c.aggregate_id, previous.sequence) : null,
+      after,
     })
   }
-  const eventos = conPagosOriginales(almacen, almacen.eventosDelPeriodo(DEL_PERIODO, desde, hasta))
-  const relacionados = pedidosPorId(
+  const events = conPagosOriginales(almacen, almacen.eventosDelPeriodo(DEL_PERIODO, from, until))
+  const related = ordersById(
     almacen,
-    eventos
-      .filter((e) => e.tipo === 'ItemAnulado' || e.tipo === 'PedidoCancelado')
-      .map((e) => e.agregado_id),
+    events
+      .filter((e) => e.type === 'ItemVoided' || e.type === 'OrderCanceled')
+      .map((e) => e.aggregate_id),
   )
   // El pedido justo antes de cada anulación: el ítem pudo irse después a otra mesa.
-  const alAnular = new Map<string, EstadoPedido>()
-  for (const e of eventos) {
-    if (e.tipo !== 'ItemAnulado') continue
-    const antes = estadoHasta(e.agregado_id, e.secuencia, false)
-    if (antes) alAnular.set(e.id, antes)
+  const onVoid = new Map<string, OrderState>()
+  for (const e of events) {
+    if (e.type !== 'ItemVoided') continue
+    const before = estadoHasta(e.aggregate_id, e.sequence, false)
+    if (before) onVoid.set(e.id, before)
   }
   return {
-    desde,
-    hasta,
-    cierres,
-    relacionados,
-    alAnular,
-    eventos,
+    from,
+    until,
+    closings,
+    related,
+    onVoid,
+    events,
     cierresDeCaja: almacen
-      .eventosDelPeriodo(['TurnoCerrado'], desde, hasta)
-      .map((e) => cierreDeTurno(almacen, e.agregado_id))
+      .eventosDelPeriodo(['ShiftClosed'], from, until)
+      .map((e) => cierreDeTurno(almacen, e.aggregate_id))
       .filter((c): c is CierreDeTurno => c !== null),
   }
 }

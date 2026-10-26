@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import type { CierreZ } from '@pos/printing'
 import { describe, expect, it } from 'vitest'
 import { item } from '../acceso/montaje-hub'
@@ -7,101 +7,101 @@ import { type Equipo, montarImpresion } from '../impresion/montaje-impresion'
 // Reportes (tarea 1.9): el cierre Z sale solo al cerrar la caja, se reimprime desde Reportes y la
 // ruta del informe pide «Ver todos los reportes».
 
-function mundo(opciones: { conImpresora?: boolean } = {}) {
+function mundo(options: { conImpresora?: boolean } = {}) {
   const t = montarImpresion()
-  const ana = t.equipo('mesero')
-  const admin = t.equipo('admin', 'caja')
-  const cajero = t.equipo('cajero', 'caja')
-  const impresora = t.impresoraNueva('Caja', [])
-  if (opciones.conImpresora !== false)
+  const ana = t.device('waiter')
+  const admin = t.device('admin', 'register')
+  const cashier = t.device('cashier', 'register')
+  const printer = t.impresoraNueva('Caja', [])
+  if (options.conImpresora !== false)
     t.db
-      .prepare('UPDATE restaurante SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ impresora_precuenta_id: impresora.id }), t.restauranteId)
+      .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
+      .run(JSON.stringify({ pre_bill_printer_id: printer.id }), t.restauranteId)
 
   /** Abre un turno en la caja, cobra un pedido de `precio` en efectivo y cierra el turno cuadrado. */
-  const dia = (caja: Equipo, precio = 40_000, propina = 4_000) => {
-    const turno = nuevoId()
+  const day = (register: Equipo, price = 40_000, tip = 4_000) => {
+    const shift = newId()
     expect(
-      caja.mandar(
-        turno,
-        'TurnoAbierto',
-        { caja_id: caja.conexion.dispositivoId, base: 100_000 },
-        { agregado_tipo: 'turno_caja' },
-      ).estado,
-    ).toBe('confirmado')
-    const pedido = t.abrir(ana)
-    expect(ana.mandar(pedido, 'ItemAgregado', { ...item(), precio_unitario: precio }).estado).toBe(
-      'confirmado',
+      register.mandar(
+        shift,
+        'ShiftOpened',
+        { register_id: register.connection.dispositivoId, base: 100_000 },
+        { aggregate_type: 'register_shift' },
+      ).status,
+    ).toBe('confirmed')
+    const order = t.open(ana)
+    expect(ana.mandar(order, 'ItemAdded', { ...item(), unit_price: price }).status).toBe(
+      'confirmed',
     )
     expect(
-      caja.mandar(pedido, 'PagoRegistrado', {
-        pago_id: nuevoId(),
-        cuenta_id: null,
-        turno_caja_id: turno,
-        medio: 'efectivo',
-        monto: precio,
-        propina,
-        recibido: precio + propina,
-        cambio: 0,
-        ajuste_redondeo: 0,
-        redondeo: { multiplo: 100, modo: 'cercano_mitad_abajo' },
-        datafono: null,
-        referencia_cobro: null,
-      }).estado,
-    ).toBe('confirmado')
-    expect(caja.mandar(pedido, 'PedidoCerrado', {}).estado).toBe('confirmado')
-    const contado = 100_000 + precio + propina
-    const arqueo = nuevoId()
-    caja.mandar(
-      turno,
-      'ArqueoRegistrado',
+      register.mandar(order, 'PaymentRecorded', {
+        payment_id: newId(),
+        check_id: null,
+        register_shift_id: shift,
+        method: 'cash',
+        amount: price,
+        tip,
+        tendered: price + tip,
+        change: 0,
+        rounding_adjustment: 0,
+        rounding: { multiple: 100, mode: 'nearest_half_down' },
+        cardTerminal: null,
+        charge_reference: null,
+      }).status,
+    ).toBe('confirmed')
+    expect(register.mandar(order, 'OrderClosed', {}).status).toBe('confirmed')
+    const counted = 100_000 + price + tip
+    const cashCount = newId()
+    register.mandar(
+      shift,
+      'CashCountRecorded',
       {
-        arqueo_id: arqueo,
-        conteo: [{ valor: 1_000, cantidad: contado / 1_000 }],
-        contado_efectivo: contado,
+        cash_count_id: cashCount,
+        tally: [{ value: 1_000, quantity: counted / 1_000 }],
+        counted_cash: counted,
       },
-      { agregado_tipo: 'turno_caja' },
+      { aggregate_type: 'register_shift' },
     )
-    const cierre = caja.mandar(
-      turno,
-      'TurnoCerrado',
+    const closeout = register.mandar(
+      shift,
+      'ShiftClosed',
       {
-        arqueo_id: arqueo,
-        esperado_efectivo: contado,
-        contado_efectivo: contado,
-        diferencia: 0,
-        justificacion: null,
-        otros_medios: [],
+        cash_count_id: cashCount,
+        expected_cash: counted,
+        counted_cash: counted,
+        variance: 0,
+        justification: null,
+        other_methods: [],
       },
-      { agregado_tipo: 'turno_caja' },
+      { aggregate_type: 'register_shift' },
     )
-    return { turno, pedido, cierre }
+    return { shift, order, closeout }
   }
-  const cierresZ = () => t.trabajos("WHERE tipo = 'informe'").map((f) => t.contenido(f) as CierreZ)
-  return { t, ana, admin, cajero, impresora, dia, cierresZ }
+  const cierresZ = () => t.trabajos("WHERE type = 'report'").map((f) => t.content(f) as CierreZ)
+  return { t, ana, admin, cashier, printer, day, cierresZ }
 }
 
 describe('cierre Z al cerrar la caja', () => {
   it('cerrar el turno pone el cierre Z en la impresora de precuentas, y se imprime', async () => {
-    const { t, admin, impresora, dia, cierresZ } = mundo()
-    const { cierre } = dia(admin)
-    expect(cierre.estado).toBe('confirmado')
+    const { t, admin, printer, day, cierresZ } = mundo()
+    const { closeout } = day(admin)
+    expect(closeout.status).toBe('confirmed')
     const [z] = cierresZ()
     expect(z).toMatchObject({
-      reimpreso: null,
-      efectivo: { base: 100_000, cobrado: 44_000, esperado: 144_000, diferencia: 0 },
-      cobrado: [{ nombre: 'Efectivo', venta: 40_000, propina: 4_000 }],
-      ventas: { neto: 40_000, propinas: 4_000, cuentas: 1 },
+      reprinted: null,
+      cash: { base: 100_000, charged: 44_000, expected: 144_000, variance: 0 },
+      charged: [{ name: 'Efectivo', sale: 40_000, tip: 4_000 }],
+      sales: { net: 40_000, tips: 4_000, checks: 1 },
     })
-    await t.cola.vuelta()
-    const [papel] = impresora.papel.textos()
+    await t.cola.runOnce()
+    const [papel] = printer.papel.textos()
     expect(papel).toContain('CIERRE DE CAJA')
     expect(papel).toContain('$144.000')
   })
 
   it('sin impresora de precuentas no se crea nada y el cierre se acepta igual', () => {
-    const { t, admin, dia, cierresZ } = mundo({ conImpresora: false })
-    expect(dia(admin).cierre.estado).toBe('confirmado')
+    const { t, admin, day, cierresZ } = mundo({ conImpresora: false })
+    expect(day(admin).closeout.status).toBe('confirmed')
     expect(cierresZ()).toEqual([])
     expect(t.fallosGuardar).toEqual([])
   })
@@ -109,56 +109,56 @@ describe('cierre Z al cerrar la caja', () => {
 
 describe('rutas de reportes', () => {
   it('el informe de hoy, con los cierres y los nombres; el cajero sin el permiso no lo ve', async () => {
-    const { t, admin, cajero, dia } = mundo()
-    const { turno } = dia(admin)
-    const r = await t.post('/api/reportes', { ...admin.cuerpoSesion }, admin.token)
+    const { t, admin, cashier, day } = mundo()
+    const { shift } = day(admin)
+    const r = await t.post('/api/reports', { ...admin.cuerpoSesion }, admin.token)
     expect(r.statusCode).toBe(200)
     const cuerpo = r.json()
-    expect(cuerpo.informe.ventas).toMatchObject({ neto: 40_000, cuentas: 1 })
-    expect(cuerpo.cierres).toEqual([
+    expect(cuerpo.report.sales).toMatchObject({ net: 40_000, checks: 1 })
+    expect(cuerpo.closings).toEqual([
       expect.objectContaining({
-        turnoId: turno,
-        cerrado: expect.objectContaining({ diferencia: 0 }),
+        shiftId: shift,
+        closed: expect.objectContaining({ variance: 0 }),
       }),
     ])
     expect(Object.values(cuerpo.usuarios)).toContain('Ana')
-    expect(cuerpo.impresora).toBe(true)
+    expect(cuerpo.printer).toBe(true)
 
-    const sinPermiso = await t.post('/api/reportes', { ...cajero.cuerpoSesion }, cajero.token)
+    const sinPermiso = await t.post('/api/reports', { ...cashier.cuerpoSesion }, cashier.token)
     expect(sinPermiso.statusCode).toBe(403)
-    expect((await t.post('/api/reportes', { ...admin.cuerpoSesion })).statusCode).toBe(401)
+    expect((await t.post('/api/reports', { ...admin.cuerpoSesion })).statusCode).toBe(401)
   })
 
   it('rechaza fechas al revés, inválidas o un período de más de 62 días', async () => {
     const { t, admin } = mundo()
-    const pedir = (desde: string, hasta: string) =>
-      t.post('/api/reportes', { ...admin.cuerpoSesion, desde, hasta }, admin.token)
-    expect((await pedir('2026-10-24', '2026-10-23')).statusCode).toBe(400)
-    expect((await pedir('2026-02-30', '2026-03-01')).statusCode).toBe(400)
-    expect((await pedir('2026-01-01', '2026-03-04')).statusCode).toBe(400)
-    expect((await pedir('2026-01-01', '2026-03-03')).statusCode).toBe(200)
+    const request = (from: string, until: string) =>
+      t.post('/api/reports', { ...admin.cuerpoSesion, from, until }, admin.token)
+    expect((await request('2026-10-24', '2026-10-23')).statusCode).toBe(400)
+    expect((await request('2026-02-30', '2026-03-01')).statusCode).toBe(400)
+    expect((await request('2026-01-01', '2026-03-04')).statusCode).toBe(400)
+    expect((await request('2026-01-01', '2026-03-03')).statusCode).toBe(200)
   })
 
   it('reimprime el cierre Z de un turno cerrado; uno abierto o inexistente da 404', async () => {
-    const { t, admin, dia, cierresZ } = mundo()
-    const { turno } = dia(admin)
-    const pedir = (turno_id: string) =>
-      t.post('/api/reportes/cierre-z', { ...admin.cuerpoSesion, turno_id }, admin.token)
-    expect((await pedir(turno)).statusCode).toBe(204)
+    const { t, admin, day, cierresZ } = mundo()
+    const { shift } = day(admin)
+    const request = (turno_id: string) =>
+      t.post('/api/reports/z-report', { ...admin.cuerpoSesion, turno_id }, admin.token)
+    expect((await request(shift)).statusCode).toBe(204)
     expect(cierresZ()).toHaveLength(2)
-    expect(cierresZ()[1]?.reimpreso).not.toBeNull()
-    expect((await pedir(nuevoId())).statusCode).toBe(404)
+    expect(cierresZ()[1]?.reprinted).not.toBeNull()
+    expect((await request(newId())).statusCode).toBe(404)
   })
 
   it('sin impresora de precuentas, la reimpresión lo dice', async () => {
-    const { t, admin, dia } = mundo({ conImpresora: false })
-    const { turno } = dia(admin)
+    const { t, admin, day } = mundo({ conImpresora: false })
+    const { shift } = day(admin)
     const r = await t.post(
-      '/api/reportes/cierre-z',
-      { ...admin.cuerpoSesion, turno_id: turno },
+      '/api/reports/z-report',
+      { ...admin.cuerpoSesion, turno_id: shift },
       admin.token,
     )
     expect(r.statusCode).toBe(409)
-    expect(r.json().error).toBe('sin_impresora')
+    expect(r.json().error).toBe('no_printer')
   })
 })

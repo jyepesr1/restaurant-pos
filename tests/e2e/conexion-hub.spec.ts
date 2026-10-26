@@ -16,9 +16,9 @@ test('la app avisa cuando el hub deja de responder y se recupera cuando vuelve',
   await page.goto('/')
   await expect(page.getByText('Conectado al hub')).toBeVisible()
 
-  await page.route('**/api/salud', (ruta) => ruta.abort('connectionrefused'))
+  await page.route('**/api/health', (ruta) => ruta.abort('connectionrefused'))
   await expect(page.getByText('Sin conexión con el hub')).toBeVisible()
 
-  await page.unroute('**/api/salud')
+  await page.unroute('**/api/health')
   await expect(page.getByText('Conectado al hub')).toBeVisible()
 })

@@ -5,19 +5,19 @@
 // ya normalizado (minúsculas) y es único entre los vigentes de cada restaurante.
 
 export const sql = `
-ALTER TABLE usuario_credencial ADD COLUMN nombre_usuario TEXT
-  CHECK (nombre_usuario IS NULL OR (length(nombre_usuario) BETWEEN 3 AND 40
-    AND nombre_usuario = lower(nombre_usuario)));
-ALTER TABLE usuario_credencial ADD COLUMN contrasena_huella TEXT;
-ALTER TABLE usuario_credencial ADD COLUMN contrasena_cambiada_en TEXT;
-CREATE UNIQUE INDEX usuario_unico_entre_vigentes
-  ON usuario_credencial (restaurante_id, nombre_usuario)
-  WHERE vigente = 1 AND nombre_usuario IS NOT NULL;
+ALTER TABLE user_credentials ADD COLUMN username TEXT
+  CHECK (username IS NULL OR (length(username) BETWEEN 3 AND 40
+    AND username = lower(username)));
+ALTER TABLE user_credentials ADD COLUMN password_hash TEXT;
+ALTER TABLE user_credentials ADD COLUMN password_changed_at TEXT;
+CREATE UNIQUE INDEX username_unique_among_current
+  ON user_credentials (restaurant_id, username)
+  WHERE current = 1 AND username IS NOT NULL;
 -- Usuario y contraseña van juntos: uno sin el otro no deja entrar a nadie.
-CREATE TRIGGER usuario_con_contrasena_insert BEFORE INSERT ON usuario_credencial
-WHEN (NEW.nombre_usuario IS NULL) <> (NEW.contrasena_huella IS NULL)
+CREATE TRIGGER users_with_password_insert BEFORE INSERT ON user_credentials
+WHEN (NEW.username IS NULL) <> (NEW.password_hash IS NULL)
 BEGIN SELECT RAISE(ABORT, 'usuario_credencial: usuario y contraseña van juntos'); END;
-CREATE TRIGGER usuario_con_contrasena_update BEFORE UPDATE ON usuario_credencial
-WHEN (NEW.nombre_usuario IS NULL) <> (NEW.contrasena_huella IS NULL)
+CREATE TRIGGER users_with_password_update BEFORE UPDATE ON user_credentials
+WHEN (NEW.username IS NULL) <> (NEW.password_hash IS NULL)
 BEGIN SELECT RAISE(ABORT, 'usuario_credencial: usuario y contraseña van juntos'); END;
 `

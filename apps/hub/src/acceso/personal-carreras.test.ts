@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { montarApi } from './montaje-api'
-import { ABRIR, montarHub, sumar } from './montaje-hub'
+import { ABRIR, add, montarHub } from './montaje-hub'
 import { administradores, guardarPersona, guardarRol } from './personal'
 import { SISTEMA } from './registros'
 import { huellaPin } from './secretos'
@@ -14,16 +14,16 @@ const contar = (m: { db: ReturnType<typeof montarHub>['db'] }, sql: string, ...p
   Number(m.db.prepare(sql).get(...p)?.n)
 
 /** Foto de lo que un cambio fallido no debe tocar. */
-function foto(m: ReturnType<typeof montarHub>) {
+function photo(m: ReturnType<typeof montarHub>) {
   const t = (sql: string) => JSON.stringify(m.db.prepare(sql).all())
   return [
-    t('SELECT * FROM usuario ORDER BY id'),
-    t('SELECT * FROM usuario_credencial ORDER BY usuario_id'),
-    t('SELECT * FROM rol ORDER BY id'),
-    t('SELECT * FROM rol_permiso ORDER BY id'),
-    t('SELECT * FROM sesion ORDER BY id'),
-    t('SELECT * FROM contador ORDER BY nombre'),
-    t('SELECT * FROM dispositivo ORDER BY id'),
+    t('SELECT * FROM users ORDER BY id'),
+    t('SELECT * FROM user_credentials ORDER BY user_id'),
+    t('SELECT * FROM roles ORDER BY id'),
+    t('SELECT * FROM role_permissions ORDER BY id'),
+    t('SELECT * FROM sessions ORDER BY id'),
+    t('SELECT * FROM counters ORDER BY name'),
+    t('SELECT * FROM devices ORDER BY id'),
   ].join('\n')
 }
 
@@ -33,103 +33,103 @@ async function conDosAdmins() {
   const jefes = guardarRol(
     m.db,
     m.restauranteId,
-    m.acceso,
+    m.access,
     {
-      nombre: 'Jefes',
-      permisos: ['administrar_usuarios', 'administrar_dispositivos', 'tomar_pedido'],
+      name: 'Jefes',
+      permissions: ['manage_users', 'manage_devices', 'take_order'],
     },
     SISTEMA,
-    m.reloj(),
+    m.clock(),
   )
-  const jefa = m.acceso.crearUsuario({
-    nombre: 'Jefa',
+  const jefa = m.access.crearUsuario({
+    name: 'Jefa',
     rolId: jefes,
-    usuario: 'jefa',
-    contrasena: 'clave-de-la-jefa',
+    user: 'jefa',
+    password: 'clave-de-la-jefa',
   })
-  const x = await api.entrarAdmin()
+  const x = await api.signInAdmin()
   const r = await api.post(
-    '/api/entrar',
-    { usuario: 'jefa', contrasena: 'clave-de-la-jefa' },
+    '/api/sign-in',
+    { user: 'jefa', password: 'clave-de-la-jefa' },
     { ip: '10.0.0.77' },
   )
   const y = {
-    token: r.json().equipo.token as string,
-    sesion: { sesion_id: r.json().sesion_id as string, secreto: r.json().secreto as string },
+    token: r.json().device.token as string,
+    session: { session_id: r.json().session_id as string, secret: r.json().secret as string },
   }
-  const persona = (quien: { token: string; sesion: object }, p: object) =>
-    api.post('/api/personal/personas', { ...quien.sesion, persona: p }, { token: quien.token })
-  const rol = (quien: { token: string; sesion: object }, p: object) =>
-    api.post('/api/personal/roles', { ...quien.sesion, rol: p }, { token: quien.token })
-  return { m, api, x, y, jefa, jefes, persona, rol }
+  const persona = (quien: { token: string; session: object }, p: object) =>
+    api.post('/api/staff/people', { ...quien.session, persona: p }, { token: quien.token })
+  const role = (quien: { token: string; session: object }, p: object) =>
+    api.post('/api/staff/roles', { ...quien.session, role: p }, { token: quien.token })
+  return { m, api, x, y, jefa, jefes, persona, role }
 }
 
 describe('dos solicitudes a la vez', () => {
   it('dos equipos crean a la persona con el mismo usuario: una entra y la otra recibe «ya hay alguien»', async () => {
     const { m, x, y, persona } = await conDosAdmins()
-    const antes = contar(m, 'SELECT count(*) AS n FROM usuario')
-    const nueva = (n: string) => ({
-      nombre: `Carla ${n}`,
-      rol_id: m.roles.cajero,
-      acceso: { tipo: 'contrasena', usuario: 'carla', contrasena: `clave-de-carla-${n}` },
+    const before = contar(m, 'SELECT count(*) AS n FROM users')
+    const newOne = (n: string) => ({
+      name: `Carla ${n}`,
+      role_id: m.roles.cashier,
+      access: { type: 'password', user: 'carla', password: `clave-de-carla-${n}` },
     })
-    const [a, b] = await Promise.all([persona(x, nueva('uno')), persona(y, nueva('dos'))])
+    const [a, b] = await Promise.all([persona(x, newOne('uno')), persona(y, newOne('dos'))])
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 400])
     const mala = a.statusCode === 400 ? a : b
-    expect(mala.json().mensaje).toMatch(/Ya hay alguien con el usuario «carla»/)
-    expect(contar(m, 'SELECT count(*) AS n FROM usuario')).toBe(antes + 1)
-    expect(
-      contar(m, "SELECT count(*) AS n FROM usuario_credencial WHERE nombre_usuario = 'carla'"),
-    ).toBe(1)
+    expect(mala.json().message).toMatch(/Ya hay alguien con el usuario «carla»/)
+    expect(contar(m, 'SELECT count(*) AS n FROM users')).toBe(before + 1)
+    expect(contar(m, "SELECT count(*) AS n FROM user_credentials WHERE username = 'carla'")).toBe(1)
     // Y sin huérfanos: cada usuario activo tiene su credencial.
     expect(
       contar(
         m,
-        'SELECT count(*) AS n FROM usuario u WHERE NOT EXISTS (SELECT 1 FROM usuario_credencial c WHERE c.usuario_id = u.id)',
+        'SELECT count(*) AS n FROM users u WHERE NOT EXISTS (SELECT 1 FROM user_credentials c WHERE c.user_id = u.id)',
       ),
     ).toBe(0)
   })
 
   it('crear a «la misma persona» dos veces (doble envío) deja dos personas distintas con PIN distintos: no hay idempotencia', async () => {
     const { m, x, y, persona } = await conDosAdmins()
-    const datos = { nombre: 'Bruno', rol_id: m.roles.mesero }
-    const [a, b] = await Promise.all([persona(x, datos), persona(y, datos)])
+    const data = { name: 'Bruno', role_id: m.roles.waiter }
+    const [a, b] = await Promise.all([persona(x, data), persona(y, data)])
     expect([a.statusCode, b.statusCode]).toEqual([200, 200])
     expect(a.json().id).not.toBe(b.json().id)
     expect(a.json().pin).not.toBe(b.json().pin)
-    expect(contar(m, "SELECT count(*) AS n FROM usuario WHERE nombre = 'Bruno'")).toBe(2)
+    expect(contar(m, "SELECT count(*) AS n FROM users WHERE name = 'Bruno'")).toBe(2)
   })
 
   it('40 meseros creados a la vez desde dos equipos: todos con PIN de 4 dígitos, distintos y que entran', async () => {
     const { m, api, x, y, persona } = await conDosAdmins()
-    const lote = Array.from({ length: 40 }, (_, i) =>
-      persona(i % 2 ? x : y, { nombre: `Mesero ${i}`, rol_id: m.roles.mesero }),
+    const batch = Array.from({ length: 40 }, (_, i) =>
+      persona(i % 2 ? x : y, { name: `Mesero ${i}`, role_id: m.roles.waiter }),
     )
-    const res = await Promise.all(lote)
-    const pines = res.map((r) => r.json().pin as string)
+    const res = await Promise.all(batch)
+    const pins = res.map((r) => r.json().pin as string)
     expect(res.every((r) => r.statusCode === 200)).toBe(true)
-    expect(new Set(pines).size).toBe(40)
-    for (const pin of pines) expect(pin).toMatch(/^\d{4}$/)
+    expect(new Set(pins).size).toBe(40)
+    for (const pin of pins) expect(pin).toMatch(/^\d{4}$/)
     // Cada PIN entra a su persona (IP distinta: no esperan).
-    for (const [i, pin] of pines.slice(0, 6).entries()) {
-      const r = await api.post('/api/entrar', { pin }, { ip: `10.20.0.${i + 1}` })
+    for (const [i, pin] of pins.slice(0, 6).entries()) {
+      const r = await api.post('/api/sign-in', { pin }, { ip: `10.20.0.${i + 1}` })
       expect(r.statusCode).toBe(201)
     }
   })
 
   it('cada uno le quita a la rol del otro el permiso de administrar, a la vez: uno se acepta, el otro pierde su permiso, y queda uno', async () => {
-    const { m, x, y, jefes, rol } = await conDosAdmins()
-    const sin = (id: string) =>
+    const { m, x, y, jefes, role } = await conDosAdmins()
+    const without = (id: string) =>
       (
-        m.db.prepare('SELECT permiso FROM rol_permiso WHERE rol_id = ? AND activo = 1').all(id) as {
-          permiso: string
+        m.db
+          .prepare('SELECT permission FROM role_permissions WHERE role_id = ? AND active = 1')
+          .all(id) as {
+          permission: string
         }[]
       )
-        .map((f) => f.permiso)
-        .filter((p) => p !== 'administrar_usuarios')
+        .map((f) => f.permission)
+        .filter((p) => p !== 'manage_users')
     const [a, b] = await Promise.all([
-      rol(y, { id: m.roles.admin, nombre: 'Administrador', permisos: sin(m.roles.admin) }),
-      rol(x, { id: jefes, nombre: 'Jefes', permisos: sin(jefes) }),
+      role(y, { id: m.roles.admin, name: 'Administrador', permissions: without(m.roles.admin) }),
+      role(x, { id: jefes, name: 'Jefes', permissions: without(jefes) }),
     ])
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 403])
     expect(administradores(m.db, m.restauranteId)).toHaveLength(1)
@@ -139,178 +139,178 @@ describe('dos solicitudes a la vez', () => {
     const { m, x, y, jefa, persona } = await conDosAdmins()
     const [a, b] = await Promise.all([
       persona(x, {
-        id: jefa.usuarioId,
-        nombre: 'Jefa',
-        rol_id: m.db.prepare('SELECT rol_id FROM usuario WHERE id = ?').get(jefa.usuarioId)
-          ?.rol_id as string,
-        activo: false,
+        id: jefa.userId,
+        name: 'Jefa',
+        role_id: m.db.prepare('SELECT role_id FROM users WHERE id = ?').get(jefa.userId)
+          ?.role_id as string,
+        active: false,
       }),
       persona(y, {
-        id: m.personas.admin.usuarioId,
-        nombre: 'Administrador',
-        rol_id: m.roles.admin,
-        activo: false,
+        id: m.people.admin.userId,
+        name: 'Administrador',
+        role_id: m.roles.admin,
+        active: false,
       }),
     ])
-    const estados = [a.statusCode, b.statusCode].sort()
+    const statuses = [a.statusCode, b.statusCode].sort()
     // El primero archiva al otro (200); el segundo ya no tiene sesión (401), o le queda ella sola.
-    expect(estados[0]).toBe(200)
-    expect([400, 401, 403]).toContain(estados[1])
+    expect(statuses[0]).toBe(200)
+    expect([400, 401, 403]).toContain(statuses[1])
     expect(administradores(m.db, m.restauranteId)).toHaveLength(1)
   })
 
   it('cada camino por separado para dejar a nadie administrando se rechaza y no deja nada a medias', async () => {
     const m = montarHub()
     const api = montarApi(m)
-    const { token, sesion } = await api.entrarAdmin()
-    const adminId = m.personas.admin.usuarioId
+    const { token, session } = await api.signInAdmin()
+    const adminId = m.people.admin.userId
     const persona = (p: object) =>
-      api.post('/api/personal/personas', { ...sesion, persona: p }, { token })
-    const rol = (p: object) => api.post('/api/personal/roles', { ...sesion, rol: p }, { token })
-    const antes = foto(m)
+      api.post('/api/staff/people', { ...session, persona: p }, { token })
+    const role = (p: object) => api.post('/api/staff/roles', { ...session, role: p }, { token })
+    const before = photo(m)
     const caminos = {
       archivarla: () =>
-        persona({ id: adminId, nombre: 'Administrador', rol_id: m.roles.admin, activo: false }),
+        persona({ id: adminId, name: 'Administrador', role_id: m.roles.admin, active: false }),
       pasarla_a_mesero: () =>
-        persona({ id: adminId, nombre: 'Administrador', rol_id: m.roles.mesero }),
+        persona({ id: adminId, name: 'Administrador', role_id: m.roles.waiter }),
       quitarle_la_contrasena: () =>
         persona({
           id: adminId,
-          nombre: 'Administrador',
-          rol_id: m.roles.admin,
-          acceso: { tipo: 'pin' },
+          name: 'Administrador',
+          role_id: m.roles.admin,
+          access: { type: 'pin' },
         }),
       quitarle_el_permiso_al_rol: () =>
-        rol({ id: m.roles.admin, nombre: 'Administrador', permisos: ['tomar_pedido'] }),
+        role({ id: m.roles.admin, name: 'Administrador', permissions: ['take_order'] }),
     }
     for (const [camino, hacer] of Object.entries(caminos)) {
       const r = await hacer()
       expect(r.statusCode, camino).toBe(400)
-      expect(foto(m), camino).toBe(antes)
+      expect(photo(m), camino).toBe(before)
     }
     // Y sigue pudiendo administrar.
-    expect((await api.post('/api/personal/leer', sesion, { token })).statusCode).toBe(200)
+    expect((await api.post('/api/staff/read', session, { token })).statusCode).toBe(200)
   })
 })
 
 describe('fallos a mitad de una operación (transacciones anidadas)', () => {
   it('crear a alguien con usuario inválido falla después de insertarlo: no queda persona, credencial ni versión gastada', () => {
     const m = montarHub()
-    const antes = foto(m)
+    const before = photo(m)
     expect(() =>
-      m.acceso.crearUsuario({
-        nombre: 'Rosa',
-        rolId: m.roles.cajero,
-        usuario: 'x',
-        contrasena: 'clave-correcta-1',
+      m.access.crearUsuario({
+        name: 'Rosa',
+        rolId: m.roles.cashier,
+        user: 'x',
+        password: 'clave-correcta-1',
       }),
     ).toThrow()
     expect(() =>
-      m.acceso.crearUsuario({
-        nombre: 'Rosa',
-        rolId: m.roles.cajero,
-        usuario: 'rosa',
-        contrasena: 'corta',
+      m.access.crearUsuario({
+        name: 'Rosa',
+        rolId: m.roles.cashier,
+        user: 'rosa',
+        password: 'corta',
       }),
     ).toThrow()
-    expect(foto(m)).toBe(antes)
+    expect(photo(m)).toBe(before)
   })
 
   it('cambiar rol y usuario de alguien falla en el usuario (tomado): el rol tampoco cambia ni se cierran sus sesiones', async () => {
     const m = montarHub()
     const api = montarApi(m)
-    const { token, sesion } = await api.entrarAdmin()
-    const enCaja = m.acceso.entrar(
-      { usuario: 'carlos', contrasena: 'clave-de-carlos' },
+    const { token, session } = await api.signInAdmin()
+    const enCaja = m.access.entrar(
+      { user: 'carlos', password: 'clave-de-carlos' },
       null,
       '10.0.0.5',
     )
     expect(enCaja).toMatchObject({ ok: true })
-    const antes = foto(m)
+    const before = photo(m)
     const r = await api.post(
-      '/api/personal/personas',
+      '/api/staff/people',
       {
-        ...sesion,
+        ...session,
         persona: {
-          id: m.personas.cajero.usuarioId,
-          nombre: 'Carlos Cambiado',
-          rol_id: m.roles.reportes,
-          acceso: {
-            tipo: 'contrasena',
-            usuario: m.personas.admin.usuario,
-            contrasena: 'otra-clave-larga',
+          id: m.people.cashier.userId,
+          name: 'Carlos Cambiado',
+          role_id: m.roles.reports,
+          access: {
+            type: 'password',
+            user: m.people.admin.user,
+            password: 'otra-clave-larga',
           },
         },
       },
       { token },
     )
     expect(r.statusCode).toBe(400)
-    expect(foto(m)).toBe(antes)
+    expect(photo(m)).toBe(before)
   })
 
   it('un rol cuyo cambio de permisos deja al restaurante sin administrador no archiva ni reactiva permisos a medias', () => {
     const m = montarHub()
-    const antes = foto(m)
+    const before = photo(m)
     expect(() =>
       guardarRol(
         m.db,
         m.restauranteId,
-        m.acceso,
-        { id: m.roles.admin, nombre: 'Administrador', permisos: ['tomar_pedido', 'cortesia'] },
+        m.access,
+        { id: m.roles.admin, name: 'Administrador', permissions: ['take_order', 'comp'] },
         SISTEMA,
-        m.reloj(),
+        m.clock(),
       ),
     ).toThrow()
-    expect(foto(m)).toBe(antes)
+    expect(photo(m)).toBe(before)
   })
 
   it('entrar sin token y fallar al abrir la sesión: el navegador no queda registrado como equipo', () => {
     const m = montarHub()
     m.db.exec(
-      "CREATE TRIGGER sesion_falla BEFORE INSERT ON sesion BEGIN SELECT RAISE(ABORT, 'disco lleno'); END",
+      "CREATE TRIGGER sesion_falla BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'disco lleno'); END",
     )
-    const antes = foto(m)
-    expect(() => m.acceso.entrar({ pin: m.personas.mesero.pin }, null, '10.0.0.6')).toThrow(
+    const before = photo(m)
+    expect(() => m.access.entrar({ pin: m.people.waiter.pin }, null, '10.0.0.6')).toThrow(
       /disco lleno/,
     )
-    expect(foto(m)).toBe(antes)
-    expect(contar(m, 'SELECT count(*) AS n FROM dispositivo_credencial')).toBe(0)
+    expect(photo(m)).toBe(before)
+    expect(contar(m, 'SELECT count(*) AS n FROM device_credentials')).toBe(0)
     m.db.exec('DROP TRIGGER sesion_falla')
     // Ya sin la falla, entra normal: la base quedó utilizable.
-    expect(m.acceso.entrar({ pin: m.personas.mesero.pin }, null, '10.0.0.7')).toMatchObject({
+    expect(m.access.entrar({ pin: m.people.waiter.pin }, null, '10.0.0.7')).toMatchObject({
       ok: true,
     })
   })
 
   it('subir un equipo de mesero a caja y fallar al abrir la sesión: el equipo sigue siendo de mesero', () => {
     const m = montarHub()
-    const celular = m.acceso.entrar({ pin: m.personas.mesero.pin }, null, '10.0.0.8')
-    if (!celular.ok || !celular.equipo) throw new Error('no entró')
-    const conexion = m.acceso.autenticar(celular.equipo.token)
-    if (!conexion) throw new Error('sin conexión')
+    const phone = m.access.entrar({ pin: m.people.waiter.pin }, null, '10.0.0.8')
+    if (!phone.ok || !phone.device) throw new Error('no entró')
+    const connection = m.access.authenticate(phone.device.token)
+    if (!connection) throw new Error('sin conexión')
     m.db.exec(
-      "CREATE TRIGGER sesion_falla BEFORE INSERT ON sesion BEGIN SELECT RAISE(ABORT, 'falla'); END",
+      "CREATE TRIGGER sesion_falla BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'falla'); END",
     )
-    const antes = foto(m)
+    const before = photo(m)
     expect(() =>
-      m.acceso.entrar({ usuario: 'carlos', contrasena: 'clave-de-carlos' }, conexion, '10.0.0.9'),
+      m.access.entrar({ user: 'carlos', password: 'clave-de-carlos' }, connection, '10.0.0.9'),
     ).toThrow(/falla/)
-    expect(foto(m)).toBe(antes)
+    expect(photo(m)).toBe(before)
     expect(
-      m.db.prepare('SELECT tipo FROM dispositivo WHERE id = ?').get(conexion.dispositivoId),
-    ).toEqual({ tipo: 'mesero' })
+      m.db.prepare('SELECT type FROM devices WHERE id = ?').get(connection.dispositivoId),
+    ).toEqual({ type: 'waiter' })
   })
 
   // Lo encontró qa-pruebas en la 1.3b y ya está corregido: sin un manejador de errores propio, Fastify devuelve en un 500 el mensaje de la excepción:
-  // aquí llegan textos de SQLite («UNIQUE constraint failed: usuario_credencial…», nombres de tablas
+  // aquí llegan textos de SQLite («UNIQUE constraint failed: user_credentials…», nombres de tablas
   // y columnas) a cualquier navegador de la red. Esperaba un mensaje genérico, sin detalles.
   it('un 500 no muestra el mensaje interno de la excepción', async () => {
     const m = montarHub()
     const api = montarApi(m)
     m.db.exec(
-      "CREATE TRIGGER sesion_falla BEFORE INSERT ON sesion BEGIN SELECT RAISE(ABORT, 'secreto-interno'); END",
+      "CREATE TRIGGER sesion_falla BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'secreto-interno'); END",
     )
-    const r = await api.post('/api/entrar', { pin: m.personas.mesero.pin })
+    const r = await api.post('/api/sign-in', { pin: m.people.waiter.pin })
     expect(r.statusCode).toBe(500)
     expect(r.body).not.toContain('secreto-interno')
   })
@@ -319,183 +319,188 @@ describe('fallos a mitad de una operación (transacciones anidadas)', () => {
     const m = montarHub()
     const api = montarApi(m)
     m.db.exec(
-      "CREATE TRIGGER sesion_falla BEFORE INSERT ON sesion BEGIN SELECT RAISE(ABORT, 'falla'); END",
+      "CREATE TRIGGER sesion_falla BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'falla'); END",
     )
-    const antes = foto(m)
-    expect((await api.post('/api/entrar', { pin: m.personas.mesero.pin })).statusCode).toBe(500)
-    expect(foto(m)).toBe(antes)
+    const before = photo(m)
+    expect((await api.post('/api/sign-in', { pin: m.people.waiter.pin })).statusCode).toBe(500)
+    expect(photo(m)).toBe(before)
     m.db.exec('DROP TRIGGER sesion_falla')
     expect(
-      (await api.post('/api/entrar', { pin: m.personas.mesero.pin }, { ip: '10.0.0.30' }))
+      (await api.post('/api/sign-in', { pin: m.people.waiter.pin }, { ip: '10.0.0.30' }))
         .statusCode,
     ).toBe(201)
   })
 })
 
 describe('equipo autorregistrado y revocación', () => {
-  function celular() {
+  function phone() {
     const m = montarHub()
-    const e = m.acceso.entrar({ pin: m.personas.mesero.pin }, null, '10.0.5.1')
-    if (!e.ok || !e.equipo) throw new Error('no entró')
-    const conexion = m.acceso.autenticar(e.equipo.token)
-    if (!conexion) throw new Error('sin conexión')
-    const caja = m.acceso.entrar(
+    const e = m.access.entrar({ pin: m.people.waiter.pin }, null, '10.0.5.1')
+    if (!e.ok || !e.device) throw new Error('no entró')
+    const connection = m.access.authenticate(e.device.token)
+    if (!connection) throw new Error('sin conexión')
+    const register = m.access.entrar(
       {
-        usuario: m.personas.admin.usuario as string,
-        contrasena: m.personas.admin.contrasena as string,
+        user: m.people.admin.user as string,
+        password: m.people.admin.password as string,
       },
       null,
       '10.0.5.2',
     )
-    if (!caja.ok || !caja.equipo) throw new Error('no entró la caja')
-    const conexionCaja = m.acceso.autenticar(caja.equipo.token)
+    if (!register.ok || !register.device) throw new Error('no entró la caja')
+    const conexionCaja = m.access.authenticate(register.device.token)
     if (!conexionCaja) throw new Error('sin conexión')
-    const abrir = (hora: string) =>
-      m.evento(conexion, e, 'PedidoAbierto', ABRIR, {
-        hora_dispositivo: hora,
-        hora_estimada_hub: hora,
+    const open = (time: string) =>
+      m.event(connection, e, 'OrderOpened', ABRIR, {
+        device_time: time,
+        hub_estimated_time: time,
       })
-    const revocar = () => {
-      const r = m.acceso.revocarDispositivo(conexionCaja, {
-        sesionId: caja.sesionId,
-        secreto: caja.secreto,
-        dispositivoId: conexion.dispositivoId,
+    const revoke = () => {
+      const r = m.access.revocarDispositivo(conexionCaja, {
+        sesionId: register.sesionId,
+        secret: register.secret,
+        dispositivoId: connection.dispositivoId,
       })
-      if (!r.ok) throw new Error(r.mensaje)
+      if (!r.ok) throw new Error(r.message)
       return r.revocadoEn
     }
-    return { m, e, conexion, caja, conexionCaja, abrir, revocar }
+    return { m, e, connection, register, conexionCaja, open, revoke }
   }
 
   it('revocarlo corta su token en todas las rutas de entrada y su sesión; avisa a la sala', () => {
-    const c = celular()
-    c.revocar()
-    expect(c.m.revocados).toContain(c.conexion.dispositivoId)
-    const revocada = c.m.acceso.autenticar(c.e.equipo?.token as string)
+    const c = phone()
+    c.revoke()
+    expect(c.m.revocados).toContain(c.connection.dispositivoId)
+    const revocada = c.m.access.authenticate(c.e.device?.token as string)
     expect(revocada?.revocadoEn).not.toBeNull()
-    expect(
-      c.m.acceso.entrar({ pin: c.m.personas.mesero2.pin }, revocada, '10.0.5.3'),
-    ).toMatchObject({ ok: false, codigo: 'dispositivo_revocado' })
-    expect(c.m.acceso.iniciarSesion(revocada as never, c.m.personas.mesero2.pin)).toMatchObject({
+    expect(c.m.access.entrar({ pin: c.m.people.waiter2.pin }, revocada, '10.0.5.3')).toMatchObject({
       ok: false,
-      codigo: 'dispositivo_revocado',
+      code: 'revoked_device',
     })
-    expect(c.m.acceso.cerrarSesion(revocada as never, c.e)).toMatchObject({ ok: false })
+    expect(c.m.access.startSession(revocada as never, c.m.people.waiter2.pin)).toMatchObject({
+      ok: false,
+      code: 'revoked_device',
+    })
+    expect(c.m.access.cerrarSesion(revocada as never, c.e)).toMatchObject({ ok: false })
   })
 
   it('lo que el celular creó antes de la revocación va a cuarentena; lo posterior, rechazado', () => {
-    const c = celular()
-    const antes = c.abrir(c.m.reloj())
+    const c = phone()
+    const before = c.open(c.m.clock())
     c.m.avanzar(5000)
-    const revocadoEn = c.revocar()
-    const despues = c.abrir(sumar(revocadoEn, 1000))
+    const revocadoEn = c.revoke()
+    const after = c.open(add(revocadoEn, 1000))
     // La conexión que arma la sala al llegar el lote ya trae la revocación.
-    const conexion = c.m.acceso.autenticar(c.e.equipo?.token as string) as never
-    const r = c.m.hub.recibirLote(conexion, [antes, despues])
-    expect(r.resultados.map((x) => x.estado)).toEqual(['cuarentena', 'rechazado'])
+    const connection = c.m.access.authenticate(c.e.device?.token as string) as never
+    const r = c.m.hub.recibirLote(connection, [before, after])
+    expect(r.resultados.map((x) => x.status)).toEqual(['quarantine', 'rejected'])
   })
 
   it('no se puede retirar el equipo desde el que se está entrando, ni uno ya retirado dos veces con fechas distintas', () => {
-    const c = celular()
+    const c = phone()
     expect(
-      c.m.acceso.revocarDispositivo(c.conexionCaja, {
-        sesionId: c.caja.sesionId,
-        secreto: c.caja.secreto,
+      c.m.access.revocarDispositivo(c.conexionCaja, {
+        sesionId: c.register.sesionId,
+        secret: c.register.secret,
         dispositivoId: c.conexionCaja.dispositivoId,
       }),
-    ).toMatchObject({ ok: false, codigo: 'datos_invalidos' })
-    const primera = c.revocar()
+    ).toMatchObject({ ok: false, code: 'invalid_data' })
+    const first = c.revoke()
     c.m.avanzar(60_000)
-    expect(c.revocar()).toBe(primera)
+    expect(c.revoke()).toBe(first)
   })
 
   it('un mesero no puede retirar equipos: su sesión no tiene administrar_dispositivos', () => {
-    const c = celular()
-    const otro = c.m.acceso.entrar({ pin: c.m.personas.mesero2.pin }, null, '10.0.5.4')
-    if (!otro.ok || !otro.equipo) throw new Error('no entró')
-    const conexion = c.m.acceso.autenticar(otro.equipo.token) as never
+    const c = phone()
+    const other = c.m.access.entrar({ pin: c.m.people.waiter2.pin }, null, '10.0.5.4')
+    if (!other.ok || !other.device) throw new Error('no entró')
+    const connection = c.m.access.authenticate(other.device.token) as never
     expect(
-      c.m.acceso.revocarDispositivo(conexion, {
-        sesionId: otro.sesionId,
-        secreto: otro.secreto,
-        dispositivoId: c.conexion.dispositivoId,
+      c.m.access.revocarDispositivo(connection, {
+        sesionId: other.sesionId,
+        secret: other.secret,
+        dispositivoId: c.connection.dispositivoId,
       }),
-    ).toMatchObject({ ok: false, codigo: 'sin_permiso' })
+    ).toMatchObject({ ok: false, code: 'no_permission' })
   })
 
   it('el aparato retirado puede volver a registrarse si borra su token (la revocación es del token, no del aparato): riesgo aceptado', () => {
-    const c = celular()
-    c.revocar()
-    const de_nuevo = c.m.acceso.entrar({ pin: c.m.personas.mesero.pin }, null, '10.0.5.1')
+    const c = phone()
+    c.revoke()
+    const de_nuevo = c.m.access.entrar({ pin: c.m.people.waiter.pin }, null, '10.0.5.1')
     expect(de_nuevo).toMatchObject({ ok: true })
-    if (de_nuevo.ok) expect(de_nuevo.equipo?.dispositivoId).not.toBe(c.conexion.dispositivoId)
+    if (de_nuevo.ok) expect(de_nuevo.device?.dispositivoId).not.toBe(c.connection.dispositivoId)
   })
 })
 
 describe('sesión abierta mientras cambian los permisos de su rol', () => {
   it('quitarle administrar_usuarios al rol de una sesión abierta corta la API de personal al instante', async () => {
     const { m, api, y, jefes, persona } = await conDosAdmins()
-    expect((await api.post('/api/personal/leer', y.sesion, { token: y.token })).statusCode).toBe(
-      200,
-    )
+    expect((await api.post('/api/staff/read', y.session, { token: y.token })).statusCode).toBe(200)
     guardarRol(
       m.db,
       m.restauranteId,
-      m.acceso,
-      { id: jefes, nombre: 'Jefes', permisos: ['tomar_pedido'] },
+      m.access,
+      { id: jefes, name: 'Jefes', permissions: ['take_order'] },
       SISTEMA,
-      m.reloj(),
+      m.clock(),
     )
-    for (const url of ['/api/personal/leer'])
-      expect((await api.post(url, y.sesion, { token: y.token })).statusCode).toBe(403)
-    expect((await persona(y, { nombre: 'Intruso', rol_id: m.roles.mesero })).statusCode).toBe(403)
+    for (const url of ['/api/staff/read'])
+      expect((await api.post(url, y.session, { token: y.token })).statusCode).toBe(403)
+    expect((await persona(y, { name: 'Intruso', role_id: m.roles.waiter })).statusCode).toBe(403)
   })
 
   it('al mesero le quitan «tomar_pedido» con la sesión abierta: lo anterior va a cuarentena, lo posterior se rechaza', () => {
     const m = montarHub()
-    const e = m.acceso.entrar({ pin: m.personas.mesero.pin }, null, '10.0.6.1')
-    if (!e.ok || !e.equipo) throw new Error('no entró')
+    const e = m.access.entrar({ pin: m.people.waiter.pin }, null, '10.0.6.1')
+    if (!e.ok || !e.device) throw new Error('no entró')
     // El login trajo los permisos de ese momento; el hub juzga con los de ahora.
-    expect(e.permisos).toContain('tomar_pedido')
-    const conexion = m.acceso.autenticar(e.equipo.token) as never
-    const antes = m.evento(conexion, e, 'PedidoAbierto', ABRIR)
+    expect(e.permissions).toContain('take_order')
+    const connection = m.access.authenticate(e.device.token) as never
+    const before = m.event(connection, e, 'OrderOpened', ABRIR)
     m.avanzar(10 * 60_000)
     guardarRol(
       m.db,
       m.restauranteId,
-      m.acceso,
-      { id: m.roles.mesero, nombre: 'Mesero', permisos: ['ver_reportes_propios'] },
+      m.access,
+      { id: m.roles.waiter, name: 'Mesero', permissions: ['view_own_reports'] },
       SISTEMA,
-      m.reloj(),
+      m.clock(),
     )
-    const cambio = m.reloj()
+    const change = m.clock()
     m.avanzar(1000)
-    const despues = m.evento(conexion, e, 'PedidoAbierto', ABRIR, {
-      hora_dispositivo: sumar(cambio, 500),
-      hora_estimada_hub: sumar(cambio, 500),
+    const after = m.event(connection, e, 'OrderOpened', ABRIR, {
+      device_time: add(change, 500),
+      hub_estimated_time: add(change, 500),
     })
-    const r = m.hub.recibirLote(conexion, [antes, despues])
-    expect(r.resultados.map((x) => x.estado)).toEqual(['cuarentena', 'rechazado'])
-    expect(r.resultados[1]).toMatchObject({ motivo: 'sin_permiso' })
+    const r = m.hub.recibirLote(connection, [before, after])
+    expect(r.resultados.map((x) => x.status)).toEqual(['quarantine', 'rejected'])
+    expect(r.resultados[1]).toMatchObject({ reason: 'no_permission' })
   })
 
   it('al darle un permiso nuevo al rol, la sesión abierta lo usa sin volver a entrar', () => {
     const m = montarHub()
-    const e = m.acceso.entrar({ pin: m.personas.mesero.pin }, null, '10.0.6.2')
-    if (!e.ok || !e.equipo) throw new Error('no entró')
-    const conexion = m.acceso.autenticar(e.equipo.token) as never
-    expect(e.permisos).not.toContain('agotar_producto')
-    const antes = m.acceso.usuarioConPermiso(conexion, e, 'agotar_producto')
-    expect(antes).toMatchObject({ ok: false, codigo: 'sin_permiso' })
+    const e = m.access.entrar({ pin: m.people.waiter.pin }, null, '10.0.6.2')
+    if (!e.ok || !e.device) throw new Error('no entró')
+    const connection = m.access.authenticate(e.device.token) as never
+    expect(e.permissions).not.toContain('mark_product_sold_out')
+    const before = m.access.usuarioConPermiso(connection, e, 'mark_product_sold_out')
+    expect(before).toMatchObject({ ok: false, code: 'no_permission' })
     guardarRol(
       m.db,
       m.restauranteId,
-      m.acceso,
-      { id: m.roles.mesero, nombre: 'Mesero', permisos: [...e.permisos, 'agotar_producto'] },
+      m.access,
+      {
+        id: m.roles.waiter,
+        name: 'Mesero',
+        permissions: [...e.permissions, 'mark_product_sold_out'],
+      },
       SISTEMA,
-      m.reloj(),
+      m.clock(),
     )
-    expect(m.acceso.usuarioConPermiso(conexion, e, 'agotar_producto')).toMatchObject({ ok: true })
+    expect(m.access.usuarioConPermiso(connection, e, 'mark_product_sold_out')).toMatchObject({
+      ok: true,
+    })
   })
 })
 
@@ -503,87 +508,87 @@ describe('un mesero que pasa a tener contraseña con su sesión abierta', () => 
   it('su sesión se cierra, su PIN ya no entra pero sí autoriza, y entra con su contraseña', async () => {
     const { m, api, x } = await conDosAdmins()
     // Ana (PIN) con una sesión abierta en su celular y un evento hecho sin conexión.
-    const e = m.acceso.entrar({ pin: m.personas.mesero.pin }, null, '10.0.7.1')
-    if (!e.ok || !e.equipo) throw new Error('no entró')
-    const conexion = m.acceso.autenticar(e.equipo.token) as never
-    const hechoAntes = m.evento(conexion, e, 'PedidoAbierto', ABRIR)
+    const e = m.access.entrar({ pin: m.people.waiter.pin }, null, '10.0.7.1')
+    if (!e.ok || !e.device) throw new Error('no entró')
+    const connection = m.access.authenticate(e.device.token) as never
+    const hechoAntes = m.event(connection, e, 'OrderOpened', ABRIR)
     m.avanzar(60_000)
     const r = await api.post(
-      '/api/personal/personas',
+      '/api/staff/people',
       {
-        ...x.sesion,
+        ...x.session,
         persona: {
-          id: m.personas.mesero.usuarioId,
-          nombre: 'Ana',
-          rol_id: m.roles.cajero,
-          acceso: { tipo: 'contrasena', usuario: 'ana', contrasena: 'clave-de-ana-1' },
+          id: m.people.waiter.userId,
+          name: 'Ana',
+          role_id: m.roles.cashier,
+          access: { type: 'password', user: 'ana', password: 'clave-de-ana-1' },
         },
       },
       { token: x.token },
     )
     expect(r.statusCode).toBe(200)
     // Sesión cerrada: el celular debe volver a entrar.
-    expect(m.acceso.cerrarSesion(conexion, e)).toMatchObject({
+    expect(m.access.cerrarSesion(connection, e)).toMatchObject({
       ok: false,
-      codigo: 'sesion_invalida',
+      code: 'invalid_session',
     })
     // Con el PIN ya no entra (ni sin token, ni con el token de su celular).
-    expect(m.acceso.entrar({ pin: m.personas.mesero.pin }, conexion, '10.0.7.2')).toMatchObject({
+    expect(m.access.entrar({ pin: m.people.waiter.pin }, connection, '10.0.7.2')).toMatchObject({
       ok: false,
-      codigo: 'pin_incorrecto',
+      code: 'wrong_pin',
     })
     // Con la contraseña sí, y el celular pasa a ser de caja (su rol cobra).
-    const luego = m.acceso.entrar(
-      { usuario: 'ANA', contrasena: 'clave-de-ana-1' },
-      conexion,
+    const luego = m.access.entrar(
+      { user: 'ANA', password: 'clave-de-ana-1' },
+      connection,
       '10.0.7.3',
     )
-    expect(luego).toMatchObject({ ok: true, tipo: 'caja', usuario: { nombre: 'Ana' } })
+    expect(luego).toMatchObject({ ok: true, type: 'register', user: { name: 'Ana' } })
     // Lo que hizo antes de cambiar, con la sesión de entonces, el hub lo aprueba.
-    expect(m.hub.recibirLote(conexion, [hechoAntes]).resultados[0]?.estado).toBe('confirmado')
+    expect(m.hub.recibirLote(connection, [hechoAntes]).resultados[0]?.status).toBe('confirmed')
   })
 
   it('un evento firmado con la sesión cerrada, creado después del cambio, se rechaza', async () => {
     const { m, api, x } = await conDosAdmins()
-    const e = m.acceso.entrar({ pin: m.personas.mesero.pin }, null, '10.0.7.4')
-    if (!e.ok || !e.equipo) throw new Error('no entró')
-    const conexion = m.acceso.autenticar(e.equipo.token) as never
+    const e = m.access.entrar({ pin: m.people.waiter.pin }, null, '10.0.7.4')
+    if (!e.ok || !e.device) throw new Error('no entró')
+    const connection = m.access.authenticate(e.device.token) as never
     await api.post(
-      '/api/personal/personas',
+      '/api/staff/people',
       {
-        ...x.sesion,
+        ...x.session,
         persona: {
-          id: m.personas.mesero.usuarioId,
-          nombre: 'Ana',
-          rol_id: m.roles.mesero,
-          acceso: { tipo: 'contrasena', usuario: 'ana', contrasena: 'clave-de-ana-1' },
+          id: m.people.waiter.userId,
+          name: 'Ana',
+          role_id: m.roles.waiter,
+          access: { type: 'password', user: 'ana', password: 'clave-de-ana-1' },
         },
       },
       { token: x.token },
     )
     m.avanzar(5 * 60_000)
-    const despues = m.evento(conexion, e, 'PedidoAbierto', ABRIR)
-    expect(m.hub.recibirLote(conexion, [despues]).resultados[0]).toMatchObject({
-      estado: 'rechazado',
-      motivo: 'sesion_cerrada',
+    const after = m.event(connection, e, 'OrderOpened', ABRIR)
+    expect(m.hub.recibirLote(connection, [after]).resultados[0]).toMatchObject({
+      status: 'rejected',
+      reason: 'session_closed',
     })
   })
 
   it('el PIN de autorización de quien tiene contraseña sigue autorizando en el celular del mesero', () => {
     const m = montarHub()
-    const e = m.acceso.entrar({ pin: m.personas.mesero.pin }, null, '10.0.7.5')
-    if (!e.ok || !e.equipo) throw new Error('no entró')
-    const conexion = m.acceso.autenticar(e.equipo.token) as never
-    const r = m.acceso.autorizar(conexion, {
+    const e = m.access.entrar({ pin: m.people.waiter.pin }, null, '10.0.7.5')
+    if (!e.ok || !e.device) throw new Error('no entró')
+    const connection = m.access.authenticate(e.device.token) as never
+    const r = m.access.autorizar(connection, {
       sesionId: e.sesionId,
-      secreto: e.secreto,
-      pin: m.personas.cajero.pin,
-      accion: 'anular_item_enviado',
+      secret: e.secret,
+      pin: m.people.cashier.pin,
+      action: 'void_sent_item',
       agregadoId: '0'.repeat(26),
-      eventoId: '1'.repeat(26),
-      huella: 'a'.repeat(64),
+      eventId: '1'.repeat(26),
+      fingerprint: 'a'.repeat(64),
     })
-    expect(r).toMatchObject({ ok: true, supervisor: { nombre: 'Carlos' } })
+    expect(r).toMatchObject({ ok: true, supervisor: { name: 'Carlos' } })
   })
 })
 
@@ -592,60 +597,60 @@ describe('reactivar a quien se archivó', () => {
     const { m, api, x, persona } = await conDosAdmins()
     const carla = (
       await persona(x, {
-        nombre: 'Carla',
-        rol_id: m.roles.cajero,
-        acceso: { tipo: 'contrasena', usuario: 'carla', contrasena: 'clave-de-carla-1' },
+        name: 'Carla',
+        role_id: m.roles.cashier,
+        access: { type: 'password', user: 'carla', password: 'clave-de-carla-1' },
       })
     ).json()
-    await persona(x, { id: carla.id, nombre: 'Carla', rol_id: m.roles.cajero, activo: false })
+    await persona(x, { id: carla.id, name: 'Carla', role_id: m.roles.cashier, active: false })
     await persona(x, {
-      nombre: 'Carla II',
-      rol_id: m.roles.cajero,
-      acceso: { tipo: 'contrasena', usuario: 'carla', contrasena: 'clave-de-carla-2' },
+      name: 'Carla II',
+      role_id: m.roles.cashier,
+      access: { type: 'password', user: 'carla', password: 'clave-de-carla-2' },
     })
-    const antes = foto(m)
+    const before = photo(m)
     const r = await persona(x, {
       id: carla.id,
-      nombre: 'Carla',
-      rol_id: m.roles.cajero,
-      activo: true,
+      name: 'Carla',
+      role_id: m.roles.cashier,
+      active: true,
     })
     expect(r.statusCode).toBe(400)
-    expect(r.json().mensaje).toMatch(/ya lo tiene otra persona/)
-    expect(foto(m)).toBe(antes)
+    expect(r.json().message).toMatch(/ya lo tiene otra persona/)
+    expect(photo(m)).toBe(before)
     // Dándole otro usuario con contraseña, sí.
-    const bien = await persona(x, {
+    const fine = await persona(x, {
       id: carla.id,
-      nombre: 'Carla',
-      rol_id: m.roles.cajero,
-      activo: true,
-      acceso: { tipo: 'contrasena', usuario: 'carla.vieja', contrasena: 'clave-de-carla-3' },
+      name: 'Carla',
+      role_id: m.roles.cashier,
+      active: true,
+      access: { type: 'password', user: 'carla.vieja', password: 'clave-de-carla-3' },
     })
-    expect(bien.statusCode).toBe(200)
+    expect(fine.statusCode).toBe(200)
     void api
   })
 
   it('si su PIN lo tomó otra persona mientras estaba archivada, al activarla recibe un PIN nuevo', async () => {
     const { m, x, persona } = await conDosAdmins()
-    const bea = (await persona(x, { nombre: 'Bea', rol_id: m.roles.mesero })).json()
-    await persona(x, { id: bea.id, nombre: 'Bea', rol_id: m.roles.mesero, activo: false })
+    const bea = (await persona(x, { name: 'Bea', role_id: m.roles.waiter })).json()
+    await persona(x, { id: bea.id, name: 'Bea', role_id: m.roles.waiter, active: false })
     // Otra persona recibe, por azar, el mismo PIN (se fuerza en la base).
-    const cora = (await persona(x, { nombre: 'Cora', rol_id: m.roles.mesero })).json()
+    const cora = (await persona(x, { name: 'Cora', role_id: m.roles.waiter })).json()
     m.db
-      .prepare('UPDATE usuario_credencial SET pin_huella = ? WHERE usuario_id = ?')
+      .prepare('UPDATE user_credentials SET pin_hash = ? WHERE user_id = ?')
       .run(huellaPin(Buffer.alloc(32, 7), m.restauranteId, bea.pin), cora.id)
-    const r = await persona(x, { id: bea.id, nombre: 'Bea', rol_id: m.roles.mesero, activo: true })
+    const r = await persona(x, { id: bea.id, name: 'Bea', role_id: m.roles.waiter, active: true })
     expect(r.statusCode).toBe(200)
     expect(r.json().pin).toMatch(/^\d{4}$/)
     expect(r.json().pin).not.toBe(bea.pin)
     // Cada una entra con el suyo.
-    expect(m.acceso.entrar({ pin: bea.pin }, null, '10.0.8.1')).toMatchObject({
+    expect(m.access.entrar({ pin: bea.pin }, null, '10.0.8.1')).toMatchObject({
       ok: true,
-      usuario: { nombre: 'Cora' },
+      user: { name: 'Cora' },
     })
-    expect(m.acceso.entrar({ pin: r.json().pin }, null, '10.0.8.2')).toMatchObject({
+    expect(m.access.entrar({ pin: r.json().pin }, null, '10.0.8.2')).toMatchObject({
       ok: true,
-      usuario: { nombre: 'Bea' },
+      user: { name: 'Bea' },
     })
   })
 })

@@ -29,8 +29,8 @@ export default {
     try {
       return await atender(req, { sql, tokenAdmin: entorno.TOKEN_ADMIN })
     } finally {
-      const abierto = cliente as Client | null
-      if (abierto) contexto.waitUntil(abierto.end().catch(() => {}))
+      const opened = cliente as Client | null
+      if (opened) contexto.waitUntil(opened.end().catch(() => {}))
     }
   },
 }

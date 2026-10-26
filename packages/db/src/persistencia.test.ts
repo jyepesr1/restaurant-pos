@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { MIGRACIONES } from './migraciones'
 import { aplicarMigraciones, versionActual } from './migrar'
@@ -22,7 +22,7 @@ describe('base en archivo', () => {
   let ruta: string
   const abiertas: BaseSqlite[] = []
 
-  const abrir = () => {
+  const open = () => {
     const db = abrirBase(ruta)
     abiertas.push(db)
     return db
@@ -39,7 +39,7 @@ describe('base en archivo', () => {
   })
 
   it('se abre en modo WAL con claves foráneas y sincronía completa', () => {
-    const db = abrir()
+    const db = open()
 
     expect(db.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal')
     expect(db.prepare('PRAGMA foreign_keys').get()?.foreign_keys).toBe(1)
@@ -47,100 +47,100 @@ describe('base en archivo', () => {
   })
 
   it('reabrir un archivo ya migrado no repite migraciones y conserva los datos', () => {
-    const primera = abrir()
-    expect(aplicarMigraciones(primera, undefined, () => '2026-10-24T10:00:00.000Z')).toEqual(TODAS)
-    const { restaurante } = sembrar(primera)
-    const evento = insertarEvento(primera, restaurante)
-    ;(primera as unknown as { close(): void }).close()
+    const first = open()
+    expect(aplicarMigraciones(first, undefined, () => '2026-10-24T10:00:00.000Z')).toEqual(TODAS)
+    const { restaurant } = sembrar(first)
+    const event = insertarEvento(first, restaurant)
+    ;(first as unknown as { close(): void }).close()
     abiertas.length = 0
 
-    const segunda = abrir()
+    const segunda = open()
     expect(aplicarMigraciones(segunda, undefined, () => '2030-01-01T00:00:00.000Z')).toEqual([])
 
     expect(versionActual(segunda)).toBe(ULTIMA)
-    expect(segunda.prepare('SELECT version, aplicada_en FROM migracion').all()).toEqual(
-      TODAS.map((version) => ({ version, aplicada_en: '2026-10-24T10:00:00.000Z' })),
+    expect(segunda.prepare('SELECT version, applied_at FROM migrations').all()).toEqual(
+      TODAS.map((version) => ({ version, applied_at: '2026-10-24T10:00:00.000Z' })),
     )
     expect(
-      segunda.prepare('SELECT id, datos FROM evento WHERE restaurante_id = ?').all(restaurante),
-    ).toEqual([{ id: evento.id, datos: '{"canal":"salon"}' }])
-    expect(segunda.prepare('SELECT nombre FROM producto').all()).toEqual([{ nombre: 'Margarita' }])
+      segunda.prepare('SELECT id, data FROM events WHERE restaurant_id = ?').all(restaurant),
+    ).toEqual([{ id: event.id, data: '{"channel":"salon"}' }])
+    expect(segunda.prepare('SELECT name FROM products').all()).toEqual([{ name: 'Margarita' }])
   })
 
   it('una base migrada y reabierta sigue rechazando UPDATE de eventos', () => {
-    const primera = abrir()
-    aplicarMigraciones(primera)
-    const { restaurante } = sembrar(primera)
-    insertarEvento(primera, restaurante)
-    ;(primera as unknown as { close(): void }).close()
+    const first = open()
+    aplicarMigraciones(first)
+    const { restaurant } = sembrar(first)
+    insertarEvento(first, restaurant)
+    ;(first as unknown as { close(): void }).close()
     abiertas.length = 0
 
-    expect(() => abrir().exec("UPDATE evento SET datos = '{}'")).toThrow(/no se modifican/)
+    expect(() => open().exec("UPDATE events SET data = '{}'")).toThrow(/no se modifican/)
   })
 
   it('si el proceso muere a mitad de una transacción no queda nada a medias', async () => {
-    const inicial = abrir()
-    aplicarMigraciones(inicial)
-    const { restaurante } = sembrar(inicial)
-    const confirmado = insertarEvento(inicial, restaurante, { secuencia: 1 })
-    const pendiente = nuevoId()
+    const initial = open()
+    aplicarMigraciones(initial)
+    const { restaurant } = sembrar(initial)
+    const confirmed = insertarEvento(initial, restaurant, { sequence: 1 })
+    const pending = newId()
 
-    const hijo = spawn(
+    const child = spawn(
       process.execPath,
-      ['--disable-warning=ExperimentalWarning', HIJO, ruta, restaurante, pendiente],
+      ['--disable-warning=ExperimentalWarning', HIJO, ruta, restaurant, pending],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
-    let errores = ''
-    hijo.stderr.on('data', (trozo) => {
-      errores += String(trozo)
+    let errors = ''
+    child.stderr.on('data', (trozo) => {
+      errors += String(trozo)
     })
     const salio = new Promise<NodeJS.Signals | null>((resolver) =>
-      hijo.on('exit', (_codigo, senal) => resolver(senal)),
+      child.on('exit', (_codigo, senal) => resolver(senal)),
     )
 
     // El hijo avisa cuando ya hizo el INSERT dentro de BEGIN y todavía no confirma.
-    await new Promise<void>((resolver, rechazar) => {
-      let salida = ''
-      hijo.stdout.on('data', (trozo) => {
-        salida += String(trozo)
-        if (salida.includes('en-transaccion')) resolver()
+    await new Promise<void>((resolver, reject) => {
+      let output = ''
+      child.stdout.on('data', (trozo) => {
+        output += String(trozo)
+        if (output.includes('en-transaccion')) resolver()
       })
-      hijo.on('exit', () => rechazar(new Error(`El hijo terminó antes de tiempo: ${errores}`)))
+      child.on('exit', () => reject(new Error(`El hijo terminó antes de tiempo: ${errors}`)))
     })
 
     // Mientras la transacción sigue abierta, otro lector solo ve lo confirmado.
-    const eventos = () =>
-      inicial
-        .prepare('SELECT id FROM evento ORDER BY secuencia')
+    const events = () =>
+      initial
+        .prepare('SELECT id FROM events ORDER BY sequence')
         .all()
         .map((fila) => fila.id)
-    expect(eventos()).toEqual([confirmado.id])
+    expect(events()).toEqual([confirmed.id])
 
-    hijo.kill('SIGKILL')
+    child.kill('SIGKILL')
     expect(await salio).toBe('SIGKILL')
-    ;(inicial as unknown as { close(): void }).close()
+    ;(initial as unknown as { close(): void }).close()
     abiertas.length = 0
 
-    const reabierta = abrir()
+    const reabierta = open()
     expect(aplicarMigraciones(reabierta)).toEqual([])
     expect(versionActual(reabierta)).toBe(ULTIMA)
     expect(
       reabierta
-        .prepare('SELECT id FROM evento ORDER BY secuencia')
+        .prepare('SELECT id FROM events ORDER BY sequence')
         .all()
         .map((fila) => fila.id),
-    ).toEqual([confirmado.id])
-    expect(
-      reabierta.prepare('SELECT count(*) AS n FROM evento WHERE id = ?').get(pendiente)?.n,
-    ).toBe(0)
+    ).toEqual([confirmed.id])
+    expect(reabierta.prepare('SELECT count(*) AS n FROM events WHERE id = ?').get(pending)?.n).toBe(
+      0,
+    )
     expect(reabierta.prepare('PRAGMA integrity_check').get()?.integrity_check).toBe('ok')
 
     // La secuencia 2 que usaba el hijo queda libre para el siguiente evento real.
-    expect(() => insertarEvento(reabierta, restaurante, { secuencia: 2 })).not.toThrow()
+    expect(() => insertarEvento(reabierta, restaurant, { sequence: 2 })).not.toThrow()
   })
 
   it('crear la base en una carpeta nueva deja el archivo en la última versión', () => {
-    const db = abrir()
+    const db = open()
     aplicarMigraciones(db)
 
     expect(existsSync(ruta)).toBe(true)

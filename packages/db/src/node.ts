@@ -32,9 +32,9 @@ export function abrirBase(
     db.exec(`PRAGMA busy_timeout = ${Math.trunc(esperaMs)}`)
     if (exclusiva) db.exec('PRAGMA locking_mode = EXCLUSIVE')
 
-    const modo = db.prepare('PRAGMA journal_mode = WAL').get()?.journal_mode
-    if (ruta !== ':memory:' && modo !== 'wal') {
-      throw new Error(`No se pudo activar el modo WAL (quedó en "${String(modo)}")`)
+    const mode = db.prepare('PRAGMA journal_mode = WAL').get()?.journal_mode
+    if (ruta !== ':memory:' && mode !== 'wal') {
+      throw new Error(`No se pudo activar el modo WAL (quedó en "${String(mode)}")`)
     }
     // FULL: sin UPS, un corte de luz no debe perder la última transacción confirmada (ADR-003).
     // recursive_triggers: refuerzo para que un REPLACE dispare los bloqueos de borrado.

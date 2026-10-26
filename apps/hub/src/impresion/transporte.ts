@@ -5,12 +5,12 @@ import { Socket } from 'node:net'
 // llega con el instalador (tarea 1.10).
 
 export interface Destino {
-  conexion: 'red' | 'usb'
-  direccion: string
-  puerto: number | null
+  connection: 'network' | 'usb'
+  address: string
+  port: number | null
 }
 
-export type Enviar = (destino: Destino, bytes: Uint8Array) => Promise<void>
+export type Enviar = (target: Destino, bytes: Uint8Array) => Promise<void>
 
 export const PUERTO_IMPRESORA = 9100
 const ESPERA_MS = 5000
@@ -29,21 +29,21 @@ const MENSAJES: Record<string, string> = {
 }
 
 /** Envía por TCP. Falla con `ErrorImpresora` si no conecta o no termina en 5 s. */
-export const enviarPorRed: Enviar = (destino, bytes) => {
-  if (destino.conexion === 'usb')
+export const enviarPorRed: Enviar = (target, bytes) => {
+  if (target.connection === 'usb')
     return Promise.reject(
       new ErrorImpresora(
         'Las impresoras USB llegan con el programa de instalación para Windows: por ahora, conéctala con cable de red.',
       ),
     )
-  return new Promise((resolver, rechazar) => {
+  return new Promise((resolver, reject) => {
     const socket = new Socket()
     let terminado = false
     const fin = (error?: Error) => {
       if (terminado) return
       terminado = true
       socket.destroy()
-      if (error) rechazar(error)
+      if (error) reject(error)
       else resolver()
     }
     socket.setTimeout(ESPERA_MS, () => fin(new ErrorImpresora(MENSAJES.ETIMEDOUT)))
@@ -54,7 +54,7 @@ export const enviarPorRed: Enviar = (destino, bytes) => {
         ),
       ),
     )
-    socket.connect(destino.puerto ?? PUERTO_IMPRESORA, destino.direccion, () => {
+    socket.connect(target.port ?? PUERTO_IMPRESORA, target.address, () => {
       // Se cierra al terminar de escribir: la impresora imprime lo que recibió.
       socket.end(Buffer.from(bytes), () => fin())
     })

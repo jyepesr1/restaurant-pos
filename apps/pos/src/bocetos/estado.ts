@@ -7,22 +7,22 @@ import { type Mesa, mesasIniciales } from './datos'
 // ve igual en el plano, en cocina y en la caja. Recargar la página lo reinicia.
 
 export interface Simulacion {
-  conexion: EstadoConexion
-  pendientes: number
+  connection: EstadoConexion
+  pendingList: number
   impresorasConFalla: number
 }
 
 interface Estado {
-  mesas: Mesa[]
+  tables: Mesa[]
   simulacion: Simulacion
 }
 
-const inicial = (): Estado => ({
-  mesas: mesasIniciales(),
-  simulacion: { conexion: 'solo_local', pendientes: 0, impresorasConFalla: 0 },
+const initial = (): Estado => ({
+  tables: mesasIniciales(),
+  simulacion: { connection: 'local_only', pendingList: 0, impresorasConFalla: 0 },
 })
 
-let estado = inicial()
+let status = initial()
 const suscritos = new Set<() => void>()
 const suscribir = (s: () => void) => {
   suscritos.add(s)
@@ -30,28 +30,28 @@ const suscribir = (s: () => void) => {
     suscritos.delete(s)
   }
 }
-const cambiar = (nuevo: Estado) => {
-  estado = nuevo
+const patch = (fresh: Estado) => {
+  status = fresh
   for (const s of suscritos) s()
 }
 
-export const useMesas = (): Mesa[] => useSyncExternalStore(suscribir, () => estado.mesas)
+export const useMesas = (): Mesa[] => useSyncExternalStore(suscribir, () => status.tables)
 export const useSimulacion = (): Simulacion =>
-  useSyncExternalStore(suscribir, () => estado.simulacion)
+  useSyncExternalStore(suscribir, () => status.simulacion)
 
-export function cambiarMesa(numero: number, cambio: (mesa: Mesa) => Mesa) {
-  cambiar({ ...estado, mesas: estado.mesas.map((m) => (m.numero === numero ? cambio(m) : m)) })
+export function cambiarMesa(numero: number, change: (table: Mesa) => Mesa) {
+  patch({ ...status, tables: status.tables.map((m) => (m.numero === numero ? change(m) : m)) })
 }
 
-export function simular(cambios: Partial<Simulacion>) {
-  cambiar({ ...estado, simulacion: { ...estado.simulacion, ...cambios } })
+export function simular(changes: Partial<Simulacion>) {
+  patch({ ...status, simulacion: { ...status.simulacion, ...changes } })
 }
 
-export const reiniciarBocetos = () => cambiar(inicial())
+export const reiniciarBocetos = () => patch(initial())
 
 /** El número de mesa de la dirección (`?mesa=12`), o el valor por defecto. */
 export function useMesaDeLaRuta(porDefecto: number): number {
-  const n = Number(useRuta().parametros.get('mesa'))
+  const n = Number(useRuta().parametros.get('table'))
   return Number.isInteger(n) && n >= 1 && n <= 25 ? n : porDefecto
 }
 

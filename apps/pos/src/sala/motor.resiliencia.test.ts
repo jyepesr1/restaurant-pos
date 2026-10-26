@@ -1,9 +1,9 @@
 import 'fake-indexeddb/auto'
-import { type EventoNuevo, firmarEvento, nuevoId, validarEventoNuevo } from '@pos/core'
+import { type NewEvent, newId, signEvent, validateNewEvent } from '@pos/core'
 import {
   AlmacenMemoria,
-  type Canal,
   type Catalogo,
+  type Channel,
   type ControlAcceso,
   HubSync,
   type Manejadores,
@@ -26,10 +26,10 @@ const MIN = 60_000
 const secretoDe = (sesionId: string) => `secreto-${sesionId}`
 
 const accesoConFirma: ControlAcceso = {
-  verificar: (_c, evento) =>
-    evento.sesion_id && evento.firma === firmarEvento(evento, secretoDe(evento.sesion_id))
-      ? { ok: true, autorizadoPorId: null, autorizacionId: null }
-      : { ok: false, motivo: 'firma_invalida' },
+  verify: (_c, event) =>
+    event.session_id && event.signature === signEvent(event, secretoDe(event.session_id))
+      ? { ok: true, authorizedById: null, autorizacionId: null }
+      : { ok: false, reason: 'invalid_signature' },
   registrarUso: () => {},
 }
 
@@ -61,7 +61,7 @@ async function avanzar(ms: number) {
 }
 
 /** Avanza hasta que se cumpla la condición; falla si no pasa en `maxMs` de reloj simulado. */
-async function hasta(condicion: () => Promise<boolean> | boolean, maxMs = 20_000) {
+async function until(condicion: () => Promise<boolean> | boolean, maxMs = 20_000) {
   for (let t = 0; t <= maxMs; t += 100) {
     if (await condicion()) return
     await avanzar(100)
@@ -75,23 +75,23 @@ interface EquipoHub extends Equipo {
   revocadoEn: string | null
 }
 
-function montarHub(opciones: { desfaseHubMs?: number } = {}) {
+function montarHub(options: { desfaseHubMs?: number } = {}) {
   const tokens = new Map<string, EquipoHub>()
   const almacen = new AlmacenMemoria()
   const hub = new HubSync(almacen, {
-    restauranteId: nuevoId(),
-    zonaHoraria: 'America/Bogota',
+    restauranteId: newId(),
+    timeZone: 'America/Bogota',
     inicioDiaOperativo: '06:00',
-    instancia: 'hub-prueba',
-    reloj: () => new Date(Date.now() + (opciones.desfaseHubMs ?? 0)).toISOString(),
-    acceso: accesoConFirma,
+    instancia: 'hub-test',
+    clock: () => new Date(Date.now() + (options.desfaseHubMs ?? 0)).toISOString(),
+    access: accesoConFirma,
   })
   const salaHub = new SalaSync(hub, (token) => {
     const e = tokens.get(token)
-    return e ? { dispositivoId: e.dispositivoId, tipo: e.tipo, revocadoEn: e.revocadoEn } : null
+    return e ? { dispositivoId: e.dispositivoId, type: e.type, revocadoEn: e.revocadoEn } : null
   })
 
-  const canales = new Set<{ cortar: () => void }>()
+  const canales = new Set<{ cut: () => void }>()
   const h = {
     hub,
     tokens,
@@ -104,49 +104,49 @@ function montarHub(opciones: { desfaseHubMs?: number } = {}) {
     /** Si devuelve true para un mensaje que ya llegó al hub, el canal se corta justo después. */
     cortarTras: null as ((m: MensajeDispositivo) => boolean) | null,
     cortarTodo() {
-      for (const c of [...canales]) c.cortar()
+      for (const c of [...canales]) c.cut()
     },
-    abrir(m: Manejadores): Canal {
+    open(m: Manejadores): Channel {
       h.aperturas += 1
-      let enlace: ReturnType<SalaSync['conectar']> | null = null
-      let cerrado = false
-      const canal = {
-        cortar: () => {
-          if (cerrado) return
-          cerrado = true
-          canales.delete(canal)
-          enlace?.cerrar()
+      let enlace: ReturnType<SalaSync['connect']> | null = null
+      let closed = false
+      const channel = {
+        cut: () => {
+          if (closed) return
+          closed = true
+          canales.delete(channel)
+          enlace?.close()
           enlace = null
           m.alCerrar()
         },
       }
-      canales.add(canal)
+      canales.add(channel)
       setTimeout(() => {
-        if (cerrado) return
+        if (closed) return
         if (h.caido) {
-          canal.cortar()
+          channel.cut()
           return
         }
-        enlace = salaHub.conectar((msg) => {
-          const copia = JSON.parse(JSON.stringify(msg))
+        enlace = salaHub.connect((msg) => {
+          const copy = JSON.parse(JSON.stringify(msg))
           setTimeout(() => {
-            if (!cerrado) m.alMensaje(copia)
+            if (!closed) m.alMensaje(copy)
           })
         })
         m.alAbrir()
       })
       return {
-        enviar: (msg) => {
-          if (!enlace || cerrado) return
-          const copia = JSON.parse(JSON.stringify(msg)) as MensajeDispositivo
-          h.recibidos.push(copia)
-          enlace.recibir(copia)
-          if (h.cortarTras?.(copia)) canal.cortar()
+        send: (msg) => {
+          if (!enlace || closed) return
+          const copy = JSON.parse(JSON.stringify(msg)) as MensajeDispositivo
+          h.recibidos.push(copy)
+          enlace.recibir(copy)
+          if (h.cortarTras?.(copy)) channel.cut()
         },
-        cerrar: () => {
-          cerrado = true
-          canales.delete(canal)
-          enlace?.cerrar()
+        close: () => {
+          closed = true
+          canales.delete(channel)
+          enlace?.close()
           enlace = null
         },
       }
@@ -170,72 +170,72 @@ afterEach(async () => {
 interface OpcionesEquipo {
   /** Hace `ultimoUso` más viejo o más nuevo que ahora (ms). */
   haceMs?: number
-  catalogo?: Catalogo | null
+  catalog?: Catalogo | null
   /** El token no está en el hub (equipo retirado o hub reinstalado). */
   sinToken?: boolean
   /** Secreto distinto al que conoce el hub. */
-  secreto?: string
+  secret?: string
   /** Empezar sin conexión (el usuario apagó la conexión antes de arrancar). */
   sinConexion?: boolean
   db?: BaseDispositivo
 }
 
-async function equipo(h: Hub, nombre: string, o: OpcionesEquipo = {}) {
-  const db = o.db ?? new BaseDispositivo(`resiliencia-${nuevoId()}`)
+async function device(h: Hub, name: string, o: OpcionesEquipo = {}) {
+  const db = o.db ?? new BaseDispositivo(`resiliencia-${newId()}`)
   if (!o.db) bases.push(db)
   const e: EquipoHub = {
-    dispositivoId: nuevoId(),
-    token: nuevoId(),
-    nombre,
-    tipo: 'mesero',
+    dispositivoId: newId(),
+    token: newId(),
+    name,
+    type: 'waiter',
     revocadoEn: null,
   }
   if (!o.sinToken) h.tokens.set(e.token, e)
-  const sesionId = nuevoId()
-  const sesion: Sesion = {
+  const sesionId = newId()
+  const session: Sesion = {
     sesionId,
-    secreto: o.secreto ?? secretoDe(sesionId),
-    usuario: { id: nuevoId(), nombre, rol: 'Mesero' },
-    permisos: ['tomar_pedido'],
+    secret: o.secret ?? secretoDe(sesionId),
+    user: { id: newId(), name, role: 'Mesero' },
+    permissions: ['take_order'],
     ultimoUso: Date.now() - (o.haceMs ?? 0),
   }
-  await db.guardarAjuste('equipo', {
+  await db.saveSetting('device', {
     dispositivoId: e.dispositivoId,
     token: e.token,
-    nombre: e.nombre,
-    tipo: e.tipo,
+    name: e.name,
+    type: e.type,
   } satisfies Equipo)
-  await db.guardarAjuste('sesion', sesion)
-  if (o.catalogo !== null) await db.guardarAjuste('catalogo', o.catalogo ?? catalogoDePrueba())
-  const sala = new Sala({ db, abrir: (m) => h.abrir(m) })
+  await db.saveSetting('session', session)
+  if (o.catalog !== null) await db.saveSetting('catalog', o.catalog ?? catalogoDePrueba())
+  const sala = new Sala({ db, open: (m) => h.open(m) })
   salas.push(sala)
   if (o.sinConexion) sala.simularSinConexion(true)
   await sala.cargar()
-  return { sala, db, e, sesion }
+  return { sala, db, e, session }
 }
 
-const item = (precio = 1_000) => ({
-  item_id: nuevoId(),
-  producto_id: nuevoId(),
-  variante_id: null,
-  nombre: 'Limonada',
-  precio_unitario: precio,
-  impuesto_tipo: 'inc' as const,
-  tarifa: 800,
-  cantidad: 1,
-  comensal: null,
-  curso: null,
-  modificadores: [],
-  notas: null,
-  catalogo_version: 4,
-  precio_canal_id: null,
+const item = (price = 1_000) => ({
+  item_id: newId(),
+  product_id: newId(),
+  variant_id: null,
+  name: 'Limonada',
+  unit_price: price,
+  tax_type: 'inc' as const,
+  rate: 800,
+  quantity: 1,
+  guest: null,
+  course: null,
+  modifiers: [],
+  notes: null,
+  catalog_version: 4,
+  price_channel_id: null,
 })
 
-const abrirPedido = (s: Sala, id = nuevoId()) =>
-  s.registrar('PedidoAbierto', id, { canal: 'salon', mesa_id: null, comensales: 1 }).then(() => id)
+const abrirPedido = (s: Sala, id = newId()) =>
+  s.record('OrderOpened', id, { channel: 'dine_in', table_id: null, guests: 1 }).then(() => id)
 
-const conectada = (s: Sala) => s.instantanea().conexion === 'conectado'
-const sinPendientes = (s: Sala) => s.instantanea().pendientes === 0
+const conectada = (s: Sala) => s.instantanea().connection === 'connected'
+const sinPendientes = (s: Sala) => s.instantanea().pendingList === 0
 const locales = async (s: Sala) => (await s.sync?.locales()) ?? []
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -243,64 +243,64 @@ const locales = async (s: Sala) => (await s.sync?.locales()) ?? []
 describe('registrar firma el evento', () => {
   it('lleva la firma de la sesión y el hub la acepta', async () => {
     const h = montarHub()
-    const { sala, sesion, e } = await equipo(h, 'Ana')
-    await hasta(() => conectada(sala))
-    const p = nuevoId()
-    const evento = await sala.registrar('PedidoAbierto', p, {
-      canal: 'salon',
-      mesa_id: null,
-      comensales: 2,
+    const { sala, session, e } = await device(h, 'Ana')
+    await until(() => conectada(sala))
+    const p = newId()
+    const event = await sala.record('OrderOpened', p, {
+      channel: 'dine_in',
+      table_id: null,
+      guests: 2,
     })
 
-    const { firma, ...sinFirma } = evento
-    expect(firma).toBe(firmarEvento(sinFirma as EventoNuevo, sesion.secreto))
-    expect(evento).toMatchObject({
-      sesion_id: sesion.sesionId,
-      usuario_id: sesion.usuario.id,
-      dispositivo_id: e.dispositivoId,
-      agregado_tipo: 'pedido',
-      agregado_id: p,
-      version_esquema: 1,
+    const { signature, ...sinFirma } = event
+    expect(signature).toBe(signEvent(sinFirma as NewEvent, session.secret))
+    expect(event).toMatchObject({
+      session_id: session.sesionId,
+      user_id: session.user.id,
+      device_id: e.dispositivoId,
+      aggregate_type: 'order',
+      aggregate_id: p,
+      schema_version: 1,
     })
-    expect(validarEventoNuevo(evento).ok).toBe(true)
+    expect(validateNewEvent(event).ok).toBe(true)
     // El sobre trae la hora del dispositivo y la estimada del hub.
-    expect(evento.hora_dispositivo).toBe(new Date(Date.now()).toISOString())
+    expect(event.device_time).toBe(new Date(Date.now()).toISOString())
 
-    await hasta(() => sinPendientes(sala))
-    expect(h.hub.pedido(p)).not.toBeNull()
+    await until(() => sinPendientes(sala))
+    expect(h.hub.order(p)).not.toBeNull()
   })
 
   it('con un secreto que el hub no reconoce el evento se rechaza y no se muestra', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana', { secreto: 'secreto-equivocado' })
-    await hasta(() => conectada(sala))
+    const { sala } = await device(h, 'Ana', { secret: 'secreto-equivocado' })
+    await until(() => conectada(sala))
     const p = await abrirPedido(sala)
     // Persistir antes de mostrar: mientras el hub no responde, ya se ve.
-    expect(pedidosAbiertos(await locales(sala)).map((v) => v.estado.id)).toEqual([p])
+    expect(pedidosAbiertos(await locales(sala)).map((v) => v.status.id)).toEqual([p])
 
-    await hasta(() => sinPendientes(sala))
+    await until(() => sinPendientes(sala))
     const [l] = await locales(sala)
-    expect(l?.estado).toBe('rechazado')
-    expect(l?.motivo).toBe('firma_invalida')
+    expect(l?.status).toBe('rejected')
+    expect(l?.reason).toBe('invalid_signature')
     expect(pedidosAbiertos(await locales(sala))).toEqual([])
-    expect(h.hub.pedido(p)).toBeNull()
+    expect(h.hub.order(p)).toBeNull()
   })
 
   it('cada evento firmado cubre sus propios datos: la firma cambia con los datos', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana', { sinConexion: true })
-    const p = nuevoId()
-    const a = await sala.registrar('PedidoAbierto', p, {
-      canal: 'salon',
-      mesa_id: null,
-      comensales: 1,
+    const { sala } = await device(h, 'Ana', { sinConexion: true })
+    const p = newId()
+    const a = await sala.record('OrderOpened', p, {
+      channel: 'dine_in',
+      table_id: null,
+      guests: 1,
     })
-    const b = await sala.registrar('PedidoAbierto', nuevoId(), {
-      canal: 'salon',
-      mesa_id: null,
-      comensales: 1,
+    const b = await sala.record('OrderOpened', newId(), {
+      channel: 'dine_in',
+      table_id: null,
+      guests: 1,
     })
-    expect(a.firma).not.toBe(b.firma)
+    expect(a.signature).not.toBe(b.signature)
     expect(a.id).not.toBe(b.id)
   })
 })
@@ -308,214 +308,214 @@ describe('registrar firma el evento', () => {
 describe('el hub se cae a mitad de una operación', () => {
   it('cae justo después de aceptar un lote, sin que llegue la respuesta: al volver no se duplica nada', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana', { sinConexion: true })
+    const { sala } = await device(h, 'Ana', { sinConexion: true })
     const p = await abrirPedido(sala)
     const ids = []
     for (let i = 0; i < 5; i++) {
       const it = item(2_000)
-      await sala.registrar('ItemAgregado', p, it)
+      await sala.record('ItemAdded', p, it)
       ids.push(it.item_id)
     }
-    expect(sala.instantanea().pendientes).toBe(6)
+    expect(sala.instantanea().pendingList).toBe(6)
 
     // El hub procesa el lote y se corta antes de que la respuesta llegue; sigue caído un rato.
     h.cortarTras = (m) => {
-      if (m.tipo !== 'empujar') return false
+      if (m.type !== 'push') return false
       h.caido = true
       return true
     }
     sala.simularSinConexion(false)
-    await hasta(() => h.recibidos.some((m) => m.tipo === 'empujar'))
+    await until(() => h.recibidos.some((m) => m.type === 'push'))
     await asentar(10)
-    expect(h.hub.pedido(p)?.items).toBeDefined()
-    expect(Object.keys(h.hub.pedido(p)?.items ?? {})).toHaveLength(5)
+    expect(h.hub.order(p)?.items).toBeDefined()
+    expect(Object.keys(h.hub.order(p)?.items ?? {})).toHaveLength(5)
     // El dispositivo no vio la respuesta: sigue creyendo que están pendientes.
-    expect(sala.instantanea().pendientes).toBe(6)
-    expect(sala.instantanea().conexion).not.toBe('conectado')
+    expect(sala.instantanea().pendingList).toBe(6)
+    expect(sala.instantanea().connection).not.toBe('connected')
 
     // Mientras sigue caído hay reintentos, pero espaciados (no un ciclo apretado).
-    const intentos = h.aperturas
+    const attempts = h.aperturas
     await avanzar(10_000)
-    expect(h.aperturas - intentos).toBeLessThanOrEqual(6)
-    expect(sala.instantanea().pendientes).toBe(6)
+    expect(h.aperturas - attempts).toBeLessThanOrEqual(6)
+    expect(sala.instantanea().pendingList).toBe(6)
 
     h.caido = false
     h.cortarTras = null
-    await hasta(() => sinPendientes(sala))
+    await until(() => sinPendientes(sala))
 
-    const confirmados = (await locales(sala)).filter((l) => l.estado === 'confirmado')
-    expect(confirmados.map((l) => l.evento.secuencia)).toEqual([1, 2, 3, 4, 5, 6])
-    expect(Object.keys(h.hub.pedido(p)?.items ?? {}).sort()).toEqual([...ids].sort())
+    const confirmados = (await locales(sala)).filter((l) => l.status === 'confirmed')
+    expect(confirmados.map((l) => l.event.sequence)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(Object.keys(h.hub.order(p)?.items ?? {}).sort()).toEqual([...ids].sort())
     expect(pedidosAbiertos(await locales(sala))[0]?.total).toBe(10_000)
   })
 
   it('cae entre dos lotes de 100: los 150 eventos quedan una sola vez y en orden', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana', { sinConexion: true })
+    const { sala } = await device(h, 'Ana', { sinConexion: true })
     const p = await abrirPedido(sala)
-    for (let i = 0; i < 149; i++) await sala.registrar('ItemAgregado', p, item(1_000))
-    expect(sala.instantanea().pendientes).toBe(150)
+    for (let i = 0; i < 149; i++) await sala.record('ItemAdded', p, item(1_000))
+    expect(sala.instantanea().pendingList).toBe(150)
 
     let lotes = 0
     h.cortarTras = (m) => {
-      if (m.tipo === 'empujar') lotes += 1
+      if (m.type === 'push') lotes += 1
       // El primer lote llega completo y la conexión se corta antes de la respuesta.
-      return m.tipo === 'empujar' && lotes === 1
+      return m.type === 'push' && lotes === 1
     }
     sala.simularSinConexion(false)
-    await hasta(() => sinPendientes(sala), 30_000)
+    await until(() => sinPendientes(sala), 30_000)
 
-    const hubEventos = h.hub.pedido(p)
+    const hubEventos = h.hub.order(p)
     expect(Object.keys(hubEventos?.items ?? {})).toHaveLength(149)
-    const confirmados = (await locales(sala)).filter((l) => l.estado === 'confirmado')
+    const confirmados = (await locales(sala)).filter((l) => l.status === 'confirmed')
     expect(confirmados).toHaveLength(150)
-    expect(confirmados.map((l) => l.evento.secuencia)).toEqual(
+    expect(confirmados.map((l) => l.event.sequence)).toEqual(
       Array.from({ length: 150 }, (_, i) => i + 1),
     )
-    expect(new Set(confirmados.map((l) => l.evento.id)).size).toBe(150)
+    expect(new Set(confirmados.map((l) => l.event.id)).size).toBe(150)
   })
 
   it('el hub está apagado al arrancar: lo registrado se conserva y sube cuando vuelve', async () => {
     const h = montarHub()
     h.caido = true
-    const { sala } = await equipo(h, 'Ana')
+    const { sala } = await device(h, 'Ana')
     await avanzar(3_000)
-    expect(sala.instantanea().conexion).not.toBe('conectado')
+    expect(sala.instantanea().connection).not.toBe('connected')
 
     const p = await abrirPedido(sala)
-    await sala.registrar('ItemAgregado', p, item(5_000))
-    expect(sala.instantanea().pendientes).toBe(2)
+    await sala.record('ItemAdded', p, item(5_000))
+    expect(sala.instantanea().pendingList).toBe(2)
     expect(pedidosAbiertos(await locales(sala))[0]?.total).toBe(5_000)
 
     h.caido = false
     // La espera máxima entre reintentos es de 5 s (docs/SYNC.md).
-    await hasta(() => conectada(sala) && sinPendientes(sala), 8_000)
-    expect(h.hub.pedido(p)).not.toBeNull()
+    await until(() => conectada(sala) && sinPendientes(sala), 8_000)
+    expect(h.hub.order(p)).not.toBeNull()
   })
 
   it('el proceso del hub se reinicia (nueva sala, misma base): el dispositivo reconecta solo', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana')
-    await hasta(() => conectada(sala))
+    const { sala } = await device(h, 'Ana')
+    await until(() => conectada(sala))
     const p = await abrirPedido(sala)
-    await hasta(() => sinPendientes(sala))
+    await until(() => sinPendientes(sala))
 
     h.caido = true
     h.cortarTodo()
-    expect(sala.instantanea().conexion).not.toBe('conectado')
+    expect(sala.instantanea().connection).not.toBe('connected')
     // Sin conexión se sigue tomando el pedido.
-    await sala.registrar('ItemAgregado', p, item(3_000))
-    expect(sala.instantanea().pendientes).toBe(1)
+    await sala.record('ItemAdded', p, item(3_000))
+    expect(sala.instantanea().pendingList).toBe(1)
 
     h.caido = false
-    await hasta(() => conectada(sala) && sinPendientes(sala), 8_000)
-    expect(Object.keys(h.hub.pedido(p)?.items ?? {})).toHaveLength(1)
+    await until(() => conectada(sala) && sinPendientes(sala), 8_000)
+    expect(Object.keys(h.hub.order(p)?.items ?? {})).toHaveLength(1)
   })
 })
 
 describe('token inválido o revocado', () => {
   it('el hub no reconoce el token: queda errorHub, se detiene la conexión y no reintenta', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana', { sinToken: true })
-    await hasta(() => sala.instantanea().errorHub !== null)
+    const { sala } = await device(h, 'Ana', { sinToken: true })
+    await until(() => sala.instantanea().errorHub !== null)
 
-    expect(sala.instantanea().errorHub).toMatchObject({ codigo: 'token_invalido' })
-    expect(sala.instantanea().conexion).toBe('desconectado')
+    expect(sala.instantanea().errorHub).toMatchObject({ code: 'invalid_token' })
+    expect(sala.instantanea().connection).toBe('disconnected')
 
     // Pasa un buen rato y no vuelve a intentarlo (cada intento solo gastaría batería y red).
-    const intentos = h.aperturas
+    const attempts = h.aperturas
     await avanzar(60_000)
-    expect(h.aperturas).toBe(intentos)
-    expect(sala.instantanea().conexion).toBe('desconectado')
+    expect(h.aperturas).toBe(attempts)
+    expect(sala.instantanea().connection).toBe('disconnected')
   })
 
   it('con el token inválido se puede seguir registrando: queda guardado como pendiente', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana', { sinToken: true })
-    await hasta(() => sala.instantanea().errorHub !== null)
+    const { sala } = await device(h, 'Ana', { sinToken: true })
+    await until(() => sala.instantanea().errorHub !== null)
     await abrirPedido(sala)
-    expect(sala.instantanea().pendientes).toBe(1)
+    expect(sala.instantanea().pendingList).toBe(1)
     await avanzar(10_000)
-    expect(sala.instantanea().pendientes).toBe(1)
+    expect(sala.instantanea().pendingList).toBe(1)
   })
 
   it('app_vieja también detiene la conexión', async () => {
     const h = montarHub()
-    const viejo = new Sala({
+    const oldOne = new Sala({
       db: (() => {
-        const db = new BaseDispositivo(`resiliencia-${nuevoId()}`)
+        const db = new BaseDispositivo(`resiliencia-${newId()}`)
         bases.push(db)
         return db
       })(),
-      abrir: (m) => {
+      open: (m) => {
         h.aperturas += 1
         setTimeout(() => m.alAbrir())
         return {
-          enviar: (msg) => {
-            if (msg.tipo === 'hola')
+          send: (msg) => {
+            if (msg.type === 'hello')
               setTimeout(() =>
-                m.alMensaje({ tipo: 'error', codigo: 'app_vieja', mensaje: 'Actualiza la app' }),
+                m.alMensaje({ type: 'error', code: 'outdated_app', message: 'Actualiza la app' }),
               )
           },
-          cerrar: () => {},
+          close: () => {},
         }
       },
     })
-    salas.push(viejo)
-    await viejo.sync // sin equipo todavía
-    const db = (viejo as unknown as { db: BaseDispositivo }).db
-    await db.guardarAjuste('equipo', {
-      dispositivoId: nuevoId(),
+    salas.push(oldOne)
+    await oldOne.sync // sin equipo todavía
+    const db = (oldOne as unknown as { db: BaseDispositivo }).db
+    await db.saveSetting('device', {
+      dispositivoId: newId(),
       token: 't',
-      nombre: 'Viejo',
-      tipo: 'mesero',
+      name: 'Viejo',
+      type: 'waiter',
     })
-    await viejo.cargar()
-    await hasta(() => viejo.instantanea().errorHub !== null)
-    expect(viejo.instantanea().errorHub).toMatchObject({ codigo: 'app_vieja' })
-    const intentos = h.aperturas
+    await oldOne.cargar()
+    await until(() => oldOne.instantanea().errorHub !== null)
+    expect(oldOne.instantanea().errorHub).toMatchObject({ code: 'outdated_app' })
+    const attempts = h.aperturas
     await avanzar(30_000)
-    expect(h.aperturas).toBe(intentos)
+    expect(h.aperturas).toBe(attempts)
   })
 
   it('token revocado con el equipo conectado: avisa, sigue conectado y deja de recibir el salón', async () => {
     const h = montarHub()
-    const ana = await equipo(h, 'Ana')
-    const beto = await equipo(h, 'Beto')
-    await hasta(() => conectada(ana.sala) && conectada(beto.sala))
+    const ana = await device(h, 'Ana')
+    const beto = await device(h, 'Beto')
+    await until(() => conectada(ana.sala) && conectada(beto.sala))
 
     // El gerente retira el equipo de Ana.
     const ahora = new Date().toISOString()
     const fila = h.tokens.get(ana.e.token) as EquipoHub
     fila.revocadoEn = ahora
-    h.salaHub.revocar(ana.e.dispositivoId, ahora)
-    await hasta(() => ana.sala.instantanea().errorHub !== null)
-    expect(ana.sala.instantanea().errorHub?.codigo).toBe('token_revocado')
+    h.salaHub.revoke(ana.e.dispositivoId, ahora)
+    await until(() => ana.sala.instantanea().errorHub !== null)
+    expect(ana.sala.instantanea().errorHub?.code).toBe('revoked_token')
     expect(conectada(ana.sala)).toBe(true)
 
     // Lo que Beto hace después ya no le llega a Ana, pero a Beto sí le funciona.
     const p = await abrirPedido(beto.sala)
-    await hasta(() => sinPendientes(beto.sala))
+    await until(() => sinPendientes(beto.sala))
     await avanzar(2_000)
     expect(pedidosAbiertos(await locales(ana.sala))).toEqual([])
-    expect(pedidosAbiertos(await locales(beto.sala)).map((v) => v.estado.id)).toEqual([p])
+    expect(pedidosAbiertos(await locales(beto.sala)).map((v) => v.status.id)).toEqual([p])
   })
 
   it('lo que el equipo retirado hace después de la revocación no entra al salón', async () => {
     const h = montarHub()
-    const ana = await equipo(h, 'Ana')
-    await hasta(() => conectada(ana.sala))
+    const ana = await device(h, 'Ana')
+    await until(() => conectada(ana.sala))
     const ahora = new Date().toISOString()
     ;(h.tokens.get(ana.e.token) as EquipoHub).revocadoEn = ahora
-    h.salaHub.revocar(ana.e.dispositivoId, ahora)
-    await hasta(() => ana.sala.instantanea().errorHub !== null)
+    h.salaHub.revoke(ana.e.dispositivoId, ahora)
+    await until(() => ana.sala.instantanea().errorHub !== null)
 
     vi.setSystemTime(Date.now() + 5_000)
     const p = await abrirPedido(ana.sala)
-    await hasta(() => sinPendientes(ana.sala))
-    expect(h.hub.pedido(p)).toBeNull()
+    await until(() => sinPendientes(ana.sala))
+    expect(h.hub.order(p)).toBeNull()
     const [l] = await locales(ana.sala)
-    expect(l?.estado).toBe('rechazado')
+    expect(l?.status).toBe('rejected')
     expect(pedidosAbiertos(await locales(ana.sala))).toEqual([])
   })
 })
@@ -523,28 +523,28 @@ describe('token inválido o revocado', () => {
 describe('olvidarEquipo', () => {
   it('borra credenciales y sesión, detiene la conexión y conserva los eventos guardados', async () => {
     const h = montarHub()
-    const { sala, db } = await equipo(h, 'Ana', { sinToken: true })
-    await hasta(() => sala.instantanea().errorHub !== null)
+    const { sala, db } = await device(h, 'Ana', { sinToken: true })
+    await until(() => sala.instantanea().errorHub !== null)
     await abrirPedido(sala)
 
     await sala.olvidarEquipo()
     const i = sala.instantanea()
     expect(i).toMatchObject({
-      equipo: null,
-      sesion: null,
+      device: null,
+      session: null,
       errorHub: null,
-      conexion: 'desconectado',
+      connection: 'disconnected',
     })
-    expect(await db.leerAjuste('equipo')).toBeUndefined()
-    expect(await db.leerAjuste('sesion')).toBeUndefined()
+    expect(await db.leerAjuste('device')).toBeUndefined()
+    expect(await db.leerAjuste('session')).toBeUndefined()
     // El catálogo y los eventos se quedan.
-    expect(await db.leerAjuste('catalogo')).toBeDefined()
-    expect(await db.eventos.count()).toBe(1)
+    expect(await db.leerAjuste('catalog')).toBeDefined()
+    expect(await db.events.count()).toBe(1)
     expect(sala.sync).toBeNull()
 
-    const intentos = h.aperturas
+    const attempts = h.aperturas
     await avanzar(30_000)
-    expect(h.aperturas).toBe(intentos)
+    expect(h.aperturas).toBe(attempts)
 
     // Sin equipo no se puede crear nada ni llamar al hub.
     await expect(abrirPedido(sala)).rejects.toThrow('Sin sesión')
@@ -553,277 +553,274 @@ describe('olvidarEquipo', () => {
 
   it('al volver a abrir la app queda sin equipo (pide emparejar)', async () => {
     const h = montarHub()
-    const { sala, db } = await equipo(h, 'Ana', { sinToken: true })
-    await hasta(() => sala.instantanea().errorHub !== null)
+    const { sala, db } = await device(h, 'Ana', { sinToken: true })
+    await until(() => sala.instantanea().errorHub !== null)
     await sala.olvidarEquipo()
-    const otra = new Sala({ db, abrir: (m) => h.abrir(m) })
-    salas.push(otra)
-    await otra.cargar()
-    expect(otra.instantanea()).toMatchObject({ cargado: true, equipo: null, sesion: null })
-    expect(otra.instantanea().catalogo).not.toBeNull()
+    const another = new Sala({ db, open: (m) => h.open(m) })
+    salas.push(another)
+    await another.cargar()
+    expect(another.instantanea()).toMatchObject({ cargado: true, device: null, session: null })
+    expect(another.instantanea().catalog).not.toBeNull()
   })
 
   it('emparejar de nuevo conecta con el token nuevo', async () => {
     const h = montarHub()
-    const { sala, db } = await equipo(h, 'Ana', { sinToken: true })
-    await hasta(() => sala.instantanea().errorHub !== null)
+    const { sala, db } = await device(h, 'Ana', { sinToken: true })
+    await until(() => sala.instantanea().errorHub !== null)
     await sala.olvidarEquipo()
 
-    const nuevo: EquipoHub = {
-      dispositivoId: nuevoId(),
-      token: nuevoId(),
-      nombre: 'Ana',
-      tipo: 'mesero',
+    const fresh: EquipoHub = {
+      dispositivoId: newId(),
+      token: newId(),
+      name: 'Ana',
+      type: 'waiter',
       revocadoEn: null,
     }
-    h.tokens.set(nuevo.token, nuevo)
+    h.tokens.set(fresh.token, fresh)
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
-        expect(url).toBe('/api/emparejar')
+        expect(url).toBe('/api/pair')
         // El código se normaliza: sin espacios y en mayúsculas.
-        expect(JSON.parse(String(init?.body))).toEqual({ codigo: 'ABC123' })
+        expect(JSON.parse(String(init?.body))).toEqual({ code: 'ABC123' })
         return new Response(
           JSON.stringify({
-            dispositivo_id: nuevo.dispositivoId,
-            token: nuevo.token,
-            nombre: nuevo.nombre,
-            tipo: nuevo.tipo,
+            device_id: fresh.dispositivoId,
+            token: fresh.token,
+            name: fresh.name,
+            type: fresh.type,
           }),
           { status: 200, headers: { 'content-type': 'application/json' } },
         )
       }),
     )
     await sala.emparejar('  abc123 ')
-    await hasta(() => conectada(sala))
-    expect(sala.instantanea().equipo?.token).toBe(nuevo.token)
+    await until(() => conectada(sala))
+    expect(sala.instantanea().device?.token).toBe(fresh.token)
     expect(sala.instantanea().errorHub).toBeNull()
-    expect(await db.leerAjuste<Equipo>('equipo')).toMatchObject({ token: nuevo.token })
+    expect(await db.leerAjuste<Equipo>('device')).toMatchObject({ token: fresh.token })
   })
 
-  // Los eventos guardados llevan el dispositivo_id del emparejamiento anterior, y el hub rechaza
+  // Los eventos guardados llevan el device_id del emparejamiento anterior, y el hub rechaza
   // todo evento cuyo dispositivo no sea el de la conexión. Está documentado en `olvidarEquipo`
   // (la pantalla lo advierte antes): esta prueba fija que no se pierde en silencio, queda
   // rechazado con su motivo.
   it('lo pendiente de antes de olvidar el equipo no entra con el token nuevo: queda rechazado con motivo', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana', { sinToken: true })
-    await hasta(() => sala.instantanea().errorHub !== null)
+    const { sala } = await device(h, 'Ana', { sinToken: true })
+    await until(() => sala.instantanea().errorHub !== null)
     const p = await abrirPedido(sala)
     await sala.olvidarEquipo()
 
-    const nuevo: EquipoHub = {
-      dispositivoId: nuevoId(),
-      token: nuevoId(),
-      nombre: 'Ana',
-      tipo: 'mesero',
+    const fresh: EquipoHub = {
+      dispositivoId: newId(),
+      token: newId(),
+      name: 'Ana',
+      type: 'waiter',
       revocadoEn: null,
     }
-    h.tokens.set(nuevo.token, nuevo)
+    h.tokens.set(fresh.token, fresh)
     vi.stubGlobal(
       'fetch',
       vi.fn(
         async () =>
           new Response(
             JSON.stringify({
-              dispositivo_id: nuevo.dispositivoId,
-              token: nuevo.token,
-              nombre: 'Ana',
-              tipo: 'mesero',
+              device_id: fresh.dispositivoId,
+              token: fresh.token,
+              name: 'Ana',
+              type: 'waiter',
             }),
             { status: 200, headers: { 'content-type': 'application/json' } },
           ),
       ),
     )
     await sala.emparejar('ABC123')
-    await hasta(() => sinPendientes(sala))
-    expect(h.hub.pedido(p)).toBeNull()
+    await until(() => sinPendientes(sala))
+    expect(h.hub.order(p)).toBeNull()
     const [l] = await locales(sala)
-    expect(l).toMatchObject({ estado: 'rechazado', motivo: 'dispositivo_distinto' })
+    expect(l).toMatchObject({ status: 'rejected', reason: 'device_mismatch' })
   })
 })
 
 describe('sesión que vence por inactividad', () => {
   it('se cierra exactamente a los minutos configurados y avisa al hub', async () => {
     const h = montarHub()
-    const { sala, sesion, db } = await equipo(h, 'Ana', {
-      catalogo: catalogoDePrueba({ restaurante: { nombre: 'P', sesionInactividadMin: 10 } }),
+    const { sala, session, db } = await device(h, 'Ana', {
+      catalog: catalogoDePrueba({ restaurant: { name: 'P', sesionInactividadMin: 10 } }),
     })
-    sala.vencerSesionSiToca(sesion.ultimoUso + 10 * MIN - 1)
-    expect(sala.instantanea().sesion).not.toBeNull()
-    sala.vencerSesionSiToca(sesion.ultimoUso + 10 * MIN)
-    expect(sala.instantanea().sesion).toBeNull()
-    expect(sala.instantanea().sesionCerradaPor).toBe('inactividad')
+    sala.vencerSesionSiToca(session.ultimoUso + 10 * MIN - 1)
+    expect(sala.instantanea().session).not.toBeNull()
+    sala.vencerSesionSiToca(session.ultimoUso + 10 * MIN)
+    expect(sala.instantanea().session).toBeNull()
+    expect(sala.instantanea().sessionClosedBy).toBe('inactivity')
 
     await asentar(10)
-    expect(await db.leerAjuste('sesion')).toBeUndefined()
-    const cierre = vi
+    expect(await db.leerAjuste('session')).toBeUndefined()
+    const closeout = vi
       .mocked(fetch)
-      .mock.calls.find(([url]) => String(url) === '/api/sesiones/cerrar')
-    expect(cierre).toBeDefined()
-    expect(JSON.parse(String(cierre?.[1]?.body))).toEqual({
-      sesion_id: sesion.sesionId,
-      secreto: sesion.secreto,
+      .mock.calls.find(([url]) => String(url) === '/api/sessions/close')
+    expect(closeout).toBeDefined()
+    expect(JSON.parse(String(closeout?.[1]?.body))).toEqual({
+      session_id: session.sesionId,
+      secret: session.secret,
     })
   })
 
   it('sin catálogo guardado usa 30 minutos', async () => {
     const h = montarHub()
-    const { sala, sesion } = await equipo(h, 'Ana', { catalogo: null })
-    sala.vencerSesionSiToca(sesion.ultimoUso + 29 * MIN)
-    expect(sala.instantanea().sesion).not.toBeNull()
-    sala.vencerSesionSiToca(sesion.ultimoUso + 30 * MIN)
-    expect(sala.instantanea().sesion).toBeNull()
+    const { sala, session } = await device(h, 'Ana', { catalog: null })
+    sala.vencerSesionSiToca(session.ultimoUso + 29 * MIN)
+    expect(sala.instantanea().session).not.toBeNull()
+    sala.vencerSesionSiToca(session.ultimoUso + 30 * MIN)
+    expect(sala.instantanea().session).toBeNull()
   })
 
   it('al abrir la app con una sesión ya vencida pide el PIN de nuevo', async () => {
     const h = montarHub()
-    const { sala, db } = await equipo(h, 'Ana', { haceMs: 31 * MIN })
-    expect(sala.instantanea().sesion).toBeNull()
+    const { sala, db } = await device(h, 'Ana', { haceMs: 31 * MIN })
+    expect(sala.instantanea().session).toBeNull()
     await asentar(10)
-    expect(await db.leerAjuste('sesion')).toBeUndefined()
+    expect(await db.leerAjuste('session')).toBeUndefined()
     await expect(abrirPedido(sala)).rejects.toThrow('Sin sesión')
   })
 
   it('al volver a la pantalla (desbloquear el celular) revisa el vencimiento', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana')
+    const { sala } = await device(h, 'Ana')
     vi.setSystemTime(Date.now() + 45 * MIN)
-    expect(sala.instantanea().sesion).not.toBeNull()
+    expect(sala.instantanea().session).not.toBeNull()
     sala.cambiarVisibilidad(false)
-    expect(sala.instantanea().sesion).not.toBeNull()
+    expect(sala.instantanea().session).not.toBeNull()
     sala.cambiarVisibilidad(true)
-    expect(sala.instantanea().sesion).toBeNull()
+    expect(sala.instantanea().session).toBeNull()
   })
 
   it('cada toque aplaza el cierre: con toques cada 10 minutos nunca vence', async () => {
     const h = montarHub()
-    const { sala, sesion } = await equipo(h, 'Ana')
-    for (let i = 1; i <= 12; i++) sala.usar(sesion.ultimoUso + i * 10 * MIN)
-    expect(sala.instantanea().sesion).not.toBeNull()
-    expect(sala.instantanea().sesion?.ultimoUso).toBe(sesion.ultimoUso + 120 * MIN)
+    const { sala, session } = await device(h, 'Ana')
+    for (let i = 1; i <= 12; i++) sala.usar(session.ultimoUso + i * 10 * MIN)
+    expect(sala.instantanea().session).not.toBeNull()
+    expect(sala.instantanea().session?.ultimoUso).toBe(session.ultimoUso + 120 * MIN)
     // Y pasados 30 minutos sin toques, sí.
-    sala.vencerSesionSiToca(sesion.ultimoUso + 150 * MIN)
-    expect(sala.instantanea().sesion).toBeNull()
+    sala.vencerSesionSiToca(session.ultimoUso + 150 * MIN)
+    expect(sala.instantanea().session).toBeNull()
   })
 
   it('un toque ya vencido no revive la sesión', async () => {
     const h = montarHub()
-    const { sala, sesion } = await equipo(h, 'Ana')
-    sala.usar(sesion.ultimoUso + 40 * MIN)
-    expect(sala.instantanea().sesion).toBeNull()
-    sala.usar(sesion.ultimoUso + 40 * MIN + 1)
-    sala.usar(sesion.ultimoUso + 41 * MIN)
-    expect(sala.instantanea().sesion).toBeNull()
+    const { sala, session } = await device(h, 'Ana')
+    sala.usar(session.ultimoUso + 40 * MIN)
+    expect(sala.instantanea().session).toBeNull()
+    sala.usar(session.ultimoUso + 40 * MIN + 1)
+    sala.usar(session.ultimoUso + 41 * MIN)
+    expect(sala.instantanea().session).toBeNull()
     await asentar(10)
-    expect(await bases[0]?.leerAjuste('sesion')).toBeUndefined()
+    expect(await bases[0]?.leerAjuste('session')).toBeUndefined()
   })
 
   it('salir sin conexión con el hub igual cierra la sesión aquí', async () => {
     const h = montarHub()
-    const { sala, db } = await equipo(h, 'Ana')
+    const { sala, db } = await device(h, 'Ana')
     vi.mocked(fetch).mockRejectedValue(new TypeError('Failed to fetch'))
-    await sala.salir()
-    expect(sala.instantanea().sesion).toBeNull()
-    expect(await db.leerAjuste('sesion')).toBeUndefined()
+    await sala.exit()
+    expect(sala.instantanea().session).toBeNull()
+    expect(await db.leerAjuste('session')).toBeUndefined()
   })
 
   it('registrar con la sesión ya vencida por inactividad no crea el evento', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana', { sinConexion: true })
+    const { sala } = await device(h, 'Ana', { sinConexion: true })
     // La sesión sigue "abierta" en pantalla (nadie tocó nada), pero pasó más de la inactividad.
     vi.setSystemTime(Date.now() + 31 * MIN)
-    expect(sala.instantanea().sesion).not.toBeNull()
+    expect(sala.instantanea().session).not.toBeNull()
     await expect(abrirPedido(sala)).rejects.toThrow('Sin sesión')
-    expect(sala.instantanea().pendientes).toBe(0)
+    expect(sala.instantanea().pendingList).toBe(0)
   })
 })
 
 describe('toques rápidos', () => {
   it('cientos de toques en un segundo no escriben en IndexedDB', async () => {
     const h = montarHub()
-    const { sala, sesion, db } = await equipo(h, 'Ana')
-    const escribir = vi.spyOn(db, 'guardarAjuste')
-    for (let i = 0; i < 300; i++) sala.usar(sesion.ultimoUso + i * 3)
+    const { sala, session, db } = await device(h, 'Ana')
+    const escribir = vi.spyOn(db, 'saveSetting')
+    for (let i = 0; i < 300; i++) sala.usar(session.ultimoUso + i * 3)
     expect(escribir).not.toHaveBeenCalled()
-    expect(sala.instantanea().sesion?.ultimoUso).toBe(sesion.ultimoUso)
+    expect(sala.instantanea().session?.ultimoUso).toBe(session.ultimoUso)
   })
 
   it('pasados 15 s se escribe una vez, y los toques del mismo instante no repiten la escritura', async () => {
     const h = montarHub()
-    const { sala, sesion, db } = await equipo(h, 'Ana')
-    const escribir = vi.spyOn(db, 'guardarAjuste')
-    const t = sesion.ultimoUso + 15_000
+    const { sala, session, db } = await device(h, 'Ana')
+    const escribir = vi.spyOn(db, 'saveSetting')
+    const t = session.ultimoUso + 15_000
     for (let i = 0; i < 50; i++) sala.usar(t)
     expect(escribir).toHaveBeenCalledTimes(1)
-    expect(escribir).toHaveBeenCalledWith('sesion', expect.objectContaining({ ultimoUso: t }))
+    expect(escribir).toHaveBeenCalledWith('session', expect.objectContaining({ ultimoUso: t }))
     await asentar(5)
-    expect(await db.leerAjuste<Sesion>('sesion')).toMatchObject({ ultimoUso: t })
+    expect(await db.leerAjuste<Sesion>('session')).toMatchObject({ ultimoUso: t })
   })
 
   it('14,9 s no escribe; toques cada 10 s por dos horas mantienen viva la sesión sin escribir en cada uno', async () => {
     const h = montarHub()
-    const { sala, sesion, db } = await equipo(h, 'Ana')
-    sala.usar(sesion.ultimoUso + 14_999)
-    const escribir = vi.spyOn(db, 'guardarAjuste')
+    const { sala, session, db } = await device(h, 'Ana')
+    sala.usar(session.ultimoUso + 14_999)
+    const escribir = vi.spyOn(db, 'saveSetting')
     expect(escribir).not.toHaveBeenCalled()
 
     let toques = 0
     for (let t = 10_000; t <= 120 * MIN; t += 10_000) {
-      sala.usar(sesion.ultimoUso + t)
+      sala.usar(session.ultimoUso + t)
       toques += 1
     }
-    expect(sala.instantanea().sesion).not.toBeNull()
+    expect(sala.instantanea().session).not.toBeNull()
     expect(escribir.mock.calls.length).toBeLessThan(toques / 1.5)
     expect(escribir.mock.calls.length).toBeGreaterThan(0)
   })
 
   it('varios registrar a la vez guardan todo, cada evento una vez, y el hub los confirma', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana')
-    await hasta(() => conectada(sala))
+    const { sala } = await device(h, 'Ana')
+    await until(() => conectada(sala))
     const p = await abrirPedido(sala)
     const its = Array.from({ length: 12 }, () => item(1_500))
-    await Promise.all(its.map((it) => sala.registrar('ItemAgregado', p, it)))
+    await Promise.all(its.map((it) => sala.record('ItemAdded', p, it)))
 
-    const todos = await locales(sala)
-    expect(todos).toHaveLength(13)
-    expect(new Set(todos.map((l) => l.orden)).size).toBe(13)
-    expect(new Set(todos.map((l) => l.evento.id)).size).toBe(13)
+    const all = await locales(sala)
+    expect(all).toHaveLength(13)
+    expect(new Set(all.map((l) => l.position)).size).toBe(13)
+    expect(new Set(all.map((l) => l.event.id)).size).toBe(13)
 
-    await hasta(() => sinPendientes(sala))
-    const hub = h.hub.pedido(p)
+    await until(() => sinPendientes(sala))
+    const hub = h.hub.order(p)
     expect(Object.keys(hub?.items ?? {}).sort()).toEqual(its.map((i) => i.item_id).sort())
     expect(pedidosAbiertos(await locales(sala))[0]?.total).toBe(18_000)
   })
 
   it('doble toque en "enviar a cocina": una sola comanda vale y los dos equipos ven lo mismo', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana')
-    await hasta(() => conectada(sala))
+    const { sala } = await device(h, 'Ana')
+    await until(() => conectada(sala))
     const p = await abrirPedido(sala)
     const it = item(8_000)
-    await sala.registrar('ItemAgregado', p, it)
-    await hasta(() => sinPendientes(sala))
+    await sala.record('ItemAdded', p, it)
+    await until(() => sinPendientes(sala))
 
     const envio = () => ({
-      comandas: [{ comanda_id: nuevoId(), estacion_id: nuevoId(), item_ids: [it.item_id] }],
+      tickets: [{ ticket_id: newId(), station_id: newId(), item_ids: [it.item_id] }],
     })
-    await Promise.all([
-      sala.registrar('ItemsEnviados', p, envio()),
-      sala.registrar('ItemsEnviados', p, envio()),
-    ])
-    await hasta(() => sinPendientes(sala))
+    await Promise.all([sala.record('ItemsSent', p, envio()), sala.record('ItemsSent', p, envio())])
+    await until(() => sinPendientes(sala))
 
-    const enHub = h.hub.pedido(p)
-    expect(enHub?.items[it.item_id]?.estado).toBe('enviado')
+    const enHub = h.hub.order(p)
+    expect(enHub?.items[it.item_id]?.status).toBe('sent')
     const [vista] = pedidosAbiertos(await locales(sala))
-    expect(vista?.estado.items[it.item_id]?.estado).toBe('enviado')
+    expect(vista?.status.items[it.item_id]?.status).toBe('sent')
     expect(vista?.total).toBe(8_000)
     // El segundo envío no se pierde en silencio: o se rechazó o se aceptó como conflicto.
-    const envios = (await locales(sala)).filter((l) => l.evento.tipo === 'ItemsEnviados')
+    const envios = (await locales(sala)).filter((l) => l.event.type === 'ItemsSent')
     expect(envios).toHaveLength(2)
-    expect(envios.every((l) => l.estado !== 'pendiente')).toBe(true)
+    expect(envios.every((l) => l.status !== 'pending')).toBe(true)
   })
 })
 
@@ -835,106 +832,106 @@ describe('reloj del dispositivo desfasado', () => {
     'con el hub %s 2 h respecto al dispositivo, la hora estimada sigue la del hub',
     async (_n, desfase) => {
       const h = montarHub({ desfaseHubMs: desfase })
-      const { sala } = await equipo(h, 'Ana')
-      await hasta(() => conectada(sala))
+      const { sala } = await device(h, 'Ana')
+      await until(() => conectada(sala))
       await avanzar(500)
 
-      const evento = await sala.registrar('PedidoAbierto', nuevoId(), {
-        canal: 'salon',
-        mesa_id: null,
-        comensales: 1,
+      const event = await sala.record('OrderOpened', newId(), {
+        channel: 'dine_in',
+        table_id: null,
+        guests: 1,
       })
-      expect(evento.hora_dispositivo).toBe(new Date(Date.now()).toISOString())
-      const diferencia = Date.parse(evento.hora_estimada_hub) - Date.now()
-      expect(Math.abs(diferencia - desfase)).toBeLessThan(1_000)
+      expect(event.device_time).toBe(new Date(Date.now()).toISOString())
+      const variance = Date.parse(event.hub_estimated_time) - Date.now()
+      expect(Math.abs(variance - desfase)).toBeLessThan(1_000)
 
-      await hasta(() => sinPendientes(sala))
+      await until(() => sinPendientes(sala))
       const [l] = await locales(sala)
-      expect(l?.estado).toBe('confirmado')
+      expect(l?.status).toBe('confirmed')
     },
   )
 
   it('tras reabrir la app sin conexión se acuerda del desfase aprendido', async () => {
     const h = montarHub({ desfaseHubMs: 2 * 60 * MIN })
-    const { sala, db } = await equipo(h, 'Ana')
-    await hasta(() => conectada(sala))
+    const { sala, db } = await device(h, 'Ana')
+    await until(() => conectada(sala))
     await asentar(10)
     sala.simularSinConexion(true)
 
-    const otra = new Sala({ db, abrir: (m) => h.abrir(m) })
-    salas.push(otra)
-    otra.simularSinConexion(true)
-    await otra.cargar()
-    const evento = await otra.registrar('PedidoAbierto', nuevoId(), {
-      canal: 'salon',
-      mesa_id: null,
-      comensales: 1,
+    const another = new Sala({ db, open: (m) => h.open(m) })
+    salas.push(another)
+    another.simularSinConexion(true)
+    await another.cargar()
+    const event = await another.record('OrderOpened', newId(), {
+      channel: 'dine_in',
+      table_id: null,
+      guests: 1,
     })
-    const diferencia = Date.parse(evento.hora_estimada_hub) - Date.now()
-    expect(Math.abs(diferencia - 2 * 60 * MIN)).toBeLessThan(1_000)
+    const variance = Date.parse(event.hub_estimated_time) - Date.now()
+    expect(Math.abs(variance - 2 * 60 * MIN)).toBeLessThan(1_000)
   })
 
   it('sin haber hablado nunca con el hub, la hora estimada es la del dispositivo', async () => {
     const h = montarHub({ desfaseHubMs: 2 * 60 * MIN })
-    const { sala } = await equipo(h, 'Ana', { sinConexion: true })
-    const evento = await sala.registrar('PedidoAbierto', nuevoId(), {
-      canal: 'salon',
-      mesa_id: null,
-      comensales: 1,
+    const { sala } = await device(h, 'Ana', { sinConexion: true })
+    const event = await sala.record('OrderOpened', newId(), {
+      channel: 'dine_in',
+      table_id: null,
+      guests: 1,
     })
-    expect(evento.hora_estimada_hub).toBe(evento.hora_dispositivo)
+    expect(event.hub_estimated_time).toBe(event.device_time)
   })
 })
 
 describe('arranque y corte simulado', () => {
   it('cargar dos veces a la vez conecta una sola vez', async () => {
     const h = montarHub()
-    const { db } = await equipo(h, 'Ana', { sinConexion: true })
-    const otra = new Sala({ db, abrir: (m) => h.abrir(m) })
-    salas.push(otra)
-    const [a, b] = [otra.cargar(), otra.cargar()]
+    const { db } = await device(h, 'Ana', { sinConexion: true })
+    const another = new Sala({ db, open: (m) => h.open(m) })
+    salas.push(another)
+    const [a, b] = [another.cargar(), another.cargar()]
     expect(a).toBe(b)
     await Promise.all([a, b])
-    await hasta(() => conectada(otra))
+    await until(() => conectada(another))
     await avanzar(2_000)
     expect(h.aperturas).toBe(1)
   })
 
   it('con el corte simulado las llamadas HTTP fallan como sin conexión, sin tocar la red', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana')
-    await hasta(() => conectada(sala))
+    const { sala } = await device(h, 'Ana')
+    await until(() => conectada(sala))
     sala.simularSinConexion(true)
     vi.mocked(fetch).mockClear()
-    await expect(sala.actualizarCatalogo()).rejects.toMatchObject({ codigo: 'sin_conexion' })
-    await expect(sala.entrar('1234')).rejects.toMatchObject({ codigo: 'sin_conexion' })
+    await expect(sala.actualizarCatalogo()).rejects.toMatchObject({ code: 'offline' })
+    await expect(sala.entrar('1234')).rejects.toMatchObject({ code: 'offline' })
     expect(fetch).not.toHaveBeenCalled()
-    expect(sala.instantanea().conexion).toBe('desconectado')
+    expect(sala.instantanea().connection).toBe('disconnected')
   })
 
   it('el latido y el pong no hacen releer la pantalla', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana')
-    await hasta(() => conectada(sala))
+    const { sala } = await device(h, 'Ana')
+    await until(() => conectada(sala))
     await avanzar(500)
-    const antes = sala.instantanea().cambios
+    const before = sala.instantanea().changes
     h.salaHub.latir()
     await avanzar(500)
-    expect(sala.instantanea().cambios).toBe(antes)
+    expect(sala.instantanea().changes).toBe(before)
   })
 
   it('apagar y devolver la conexión varias veces seguidas deja una sola conexión viva', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Ana')
-    await hasta(() => conectada(sala))
+    const { sala } = await device(h, 'Ana')
+    await until(() => conectada(sala))
     for (let i = 0; i < 10; i++) {
       sala.simularSinConexion(true)
       sala.simularSinConexion(false)
     }
-    await hasta(() => conectada(sala))
+    await until(() => conectada(sala))
     const p = await abrirPedido(sala)
-    await hasta(() => sinPendientes(sala))
-    expect(Object.keys(h.hub.pedido(p) ?? {})).not.toHaveLength(0)
-    expect((await locales(sala)).filter((l) => l.estado === 'confirmado')).toHaveLength(1)
+    await until(() => sinPendientes(sala))
+    expect(Object.keys(h.hub.order(p) ?? {})).not.toHaveLength(0)
+    expect((await locales(sala)).filter((l) => l.status === 'confirmed')).toHaveLength(1)
   })
 })

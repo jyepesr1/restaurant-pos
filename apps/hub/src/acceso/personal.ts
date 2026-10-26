@@ -1,9 +1,9 @@
 import {
-  DESCRIPCION_PERMISOS,
-  esPermiso,
-  PERMISOS,
-  PERMISOS_CON_CONTRASENA,
-  type Permiso,
+  isPermission,
+  PASSWORD_PERMISSIONS,
+  PERMISSION_DESCRIPTIONS,
+  PERMISSIONS,
+  type Permission,
 } from '@pos/core'
 import { type BaseSqlite, enTransaccion } from '@pos/db'
 import { type Autor, actualizarVersionado, insertarVersionado } from './registros'
@@ -20,28 +20,28 @@ export class ErrorPersonal extends Error {}
 
 export interface RolPersonal {
   id: string
-  nombre: string
+  name: string
   /** De fábrica: no se renombra ni se archiva. */
-  sistema: boolean
-  activo: boolean
-  permisos: Permiso[]
+  system: boolean
+  active: boolean
+  permissions: Permission[]
   /** Cuántas personas activas lo tienen. */
-  personas: number
+  people: number
 }
 
 export interface PersonaPersonal {
   id: string
-  nombre: string
+  name: string
   rolId: string
-  activo: boolean
+  active: boolean
   /** El usuario con que entra a la caja; `null` si entra con su PIN. */
-  usuario: string | null
+  user: string | null
 }
 
 export interface EquipoPersonal {
   id: string
-  nombre: string
-  tipo: string
+  name: string
+  type: string
   registradoEn: string | null
   revocadoEn: string | null
   /** Último uso de una sesión en ese equipo, y de quién. */
@@ -51,8 +51,8 @@ export interface EquipoPersonal {
 
 const LARGO_NOMBRE = 60
 
-function nombreValido(nombre: string, que: string): string {
-  const n = nombre.trim()
+function nombreValido(name: string, que: string): string {
+  const n = name.trim()
   if (n.length === 0 || n.length > LARGO_NOMBRE)
     throw new ErrorPersonal(`El nombre ${que} debe tener entre 1 y ${LARGO_NOMBRE} letras`)
   return n
@@ -62,178 +62,176 @@ function nombreValido(nombre: string, que: string): string {
 export function leerPersonal(
   db: BaseSqlite,
   restauranteId: string,
-  acceso: ServicioAcceso,
-): { roles: RolPersonal[]; personas: PersonaPersonal[]; equipos: EquipoPersonal[] } {
+  access: ServicioAcceso,
+): { roles: RolPersonal[]; people: PersonaPersonal[]; devices: EquipoPersonal[] } {
   const roles = db
     .prepare(
-      `SELECT r.id, r.nombre, r.sistema, r.activo,
-         (SELECT count(*) FROM usuario u WHERE u.rol_id = r.id AND u.activo = 1) AS personas
-       FROM rol r WHERE r.restaurante_id = ? AND r.oculto = 0
-       ORDER BY r.sistema DESC, r.creado_en, r.id`,
+      `SELECT r.id, r.name, r.system, r.active,
+         (SELECT count(*) FROM users u WHERE u.role_id = r.id AND u.active = 1) AS people
+       FROM roles r WHERE r.restaurant_id = ? AND r.hidden = 0
+       ORDER BY r.system DESC, r.created_at, r.id`,
     )
     .all(restauranteId)
     .map((f) => ({
       id: String(f.id),
-      nombre: String(f.nombre),
-      sistema: f.sistema === 1,
-      activo: f.activo === 1,
-      permisos: permisosDelRol(db, String(f.id)),
-      personas: Number(f.personas),
+      name: String(f.name),
+      system: f.system === 1,
+      active: f.active === 1,
+      permissions: permisosDelRol(db, String(f.id)),
+      people: Number(f.people),
     }))
-  const personas = db
+  const people = db
     .prepare(
       // Los usuarios técnicos de las pantallas de cocina no son personas (ADR-015).
-      'SELECT id, nombre, rol_id, activo FROM usuario WHERE restaurante_id = ? AND pantalla = 0 ORDER BY activo DESC, nombre, id',
+      'SELECT id, name, role_id, active FROM users WHERE restaurant_id = ? AND screen = 0 ORDER BY active DESC, name, id',
     )
     .all(restauranteId)
     .map((f) => ({
       id: String(f.id),
-      nombre: String(f.nombre),
-      rolId: String(f.rol_id),
-      activo: f.activo === 1,
-      usuario: acceso.usuarioDe(String(f.id)),
+      name: String(f.name),
+      rolId: String(f.role_id),
+      active: f.active === 1,
+      user: access.usuarioDe(String(f.id)),
     }))
   // Los equipos, con el uso más reciente primero: el que se perdió suele ser uno que no se usa.
-  const equipos = db
+  const devices = db
     .prepare(
-      `SELECT d.id, d.nombre, d.tipo, d.emparejado_en, d.revocado_en, s.ultimo_uso, u.nombre AS persona
-       FROM dispositivo d
-       LEFT JOIN sesion s ON s.id = (
-         SELECT id FROM sesion WHERE dispositivo_id = d.id ORDER BY ultimo_uso DESC LIMIT 1)
-       LEFT JOIN usuario u ON u.id = s.usuario_id
-       WHERE d.restaurante_id = ? AND d.activo = 1
-       ORDER BY d.revocado_en IS NOT NULL, coalesce(s.ultimo_uso, d.emparejado_en) DESC`,
+      `SELECT d.id, d.name, d.type, d.paired_at, d.revoked_at, s.last_used, u.name AS persona
+       FROM devices d
+       LEFT JOIN sessions s ON s.id = (
+         SELECT id FROM sessions WHERE device_id = d.id ORDER BY last_used DESC LIMIT 1)
+       LEFT JOIN users u ON u.id = s.user_id
+       WHERE d.restaurant_id = ? AND d.active = 1
+       ORDER BY d.revoked_at IS NOT NULL, coalesce(s.last_used, d.paired_at) DESC`,
     )
     .all(restauranteId)
     .map((f) => ({
       id: String(f.id),
-      nombre: String(f.nombre),
-      tipo: String(f.tipo),
-      registradoEn: f.emparejado_en === null ? null : String(f.emparejado_en),
-      revocadoEn: f.revocado_en === null ? null : String(f.revocado_en),
-      ultimoUso: f.ultimo_uso === null ? null : String(f.ultimo_uso),
+      name: String(f.name),
+      type: String(f.type),
+      registradoEn: f.paired_at === null ? null : String(f.paired_at),
+      revocadoEn: f.revoked_at === null ? null : String(f.revoked_at),
+      ultimoUso: f.last_used === null ? null : String(f.last_used),
       ultimaPersona: f.persona === null ? null : String(f.persona),
     }))
-  return { roles, personas, equipos }
+  return { roles, people, devices }
 }
 
-function permisosDelRol(db: BaseSqlite, rolId: string): Permiso[] {
+function permisosDelRol(db: BaseSqlite, rolId: string): Permission[] {
   return db
-    .prepare('SELECT permiso FROM rol_permiso WHERE rol_id = ? AND activo = 1 ORDER BY permiso')
+    .prepare(
+      'SELECT permission FROM role_permissions WHERE role_id = ? AND active = 1 ORDER BY permission',
+    )
     .all(rolId)
-    .map((f) => String(f.permiso))
-    .filter(esPermiso)
+    .map((f) => String(f.permission))
+    .filter(isPermission)
 }
 
 /** Crea un rol o cambia su nombre, sus permisos o si está activo. Devuelve su id. */
 export function guardarRol(
   db: BaseSqlite,
   restauranteId: string,
-  acceso: ServicioAcceso,
-  datos: { id?: string; nombre: string; permisos: readonly string[]; activo?: boolean },
+  access: ServicioAcceso,
+  data: { id?: string; name: string; permissions: readonly string[]; active?: boolean },
   autor: Autor,
   ahora: string,
 ): string {
-  const nombre = nombreValido(datos.nombre, 'del rol')
-  const permisos = [...new Set(datos.permisos)]
-  const desconocido = permisos.find((p) => !esPermiso(p))
-  if (desconocido) throw new ErrorPersonal(`Permiso desconocido: ${desconocido}`)
+  const name = nombreValido(data.name, 'del rol')
+  const permissions = [...new Set(data.permissions)]
+  const unknown = permissions.find((p) => !isPermission(p))
+  if (unknown) throw new ErrorPersonal(`Permiso desconocido: ${unknown}`)
 
   return enTransaccion(db, () => {
-    const actual = datos.id
+    const current = data.id
       ? db
-          .prepare('SELECT * FROM rol WHERE restaurante_id = ? AND id = ?')
-          .get(restauranteId, datos.id)
+          .prepare('SELECT * FROM roles WHERE restaurant_id = ? AND id = ?')
+          .get(restauranteId, data.id)
       : undefined
-    if (datos.id && !actual) throw new ErrorPersonal('Ese rol no existe')
-    if (actual?.oculto === 1) throw new ErrorPersonal('Ese rol no existe')
-    const activo = datos.activo ?? (actual ? actual.activo === 1 : true)
-    if (actual?.sistema === 1) {
-      if (nombre !== actual.nombre)
+    if (data.id && !current) throw new ErrorPersonal('Ese rol no existe')
+    if (current?.hidden === 1) throw new ErrorPersonal('Ese rol no existe')
+    const active = data.active ?? (current ? current.active === 1 : true)
+    if (current?.system === 1) {
+      if (name !== current.name)
         throw new ErrorPersonal('Los roles de fábrica no se renombran: crea uno nuevo')
-      if (!activo) throw new ErrorPersonal('Los roles de fábrica no se archivan')
+      if (!active) throw new ErrorPersonal('Los roles de fábrica no se archivan')
     }
-    if (activo) {
+    if (active) {
       const repetido = db
-        .prepare(
-          'SELECT id, nombre FROM rol WHERE restaurante_id = ? AND activo = 1 AND oculto = 0',
-        )
+        .prepare('SELECT id, name FROM roles WHERE restaurant_id = ? AND active = 1 AND hidden = 0')
         .all(restauranteId)
         .find(
           (f) =>
-            f.id !== datos.id &&
-            String(f.nombre).toLocaleLowerCase('es') === nombre.toLocaleLowerCase('es'),
+            f.id !== data.id &&
+            String(f.name).toLocaleLowerCase('es') === name.toLocaleLowerCase('es'),
         )
-      if (repetido) throw new ErrorPersonal(`Ya hay un rol que se llama «${repetido.nombre}»`)
+      if (repetido) throw new ErrorPersonal(`Ya hay un rol que se llama «${repetido.name}»`)
     }
 
     let rolId: string
-    if (actual) {
-      rolId = String(actual.id)
-      if (!activo && actual.activo === 1) {
+    if (current) {
+      rolId = String(current.id)
+      if (!active && current.active === 1) {
         const gente = db
-          .prepare('SELECT count(*) AS n FROM usuario WHERE rol_id = ? AND activo = 1')
+          .prepare('SELECT count(*) AS n FROM users WHERE role_id = ? AND active = 1')
           .get(rolId)
         if (Number(gente?.n) > 0)
           throw new ErrorPersonal('Ese rol tiene personas: pásalas a otro rol antes de archivarlo')
       }
-      if (nombre !== actual.nombre || activo !== (actual.activo === 1))
+      if (name !== current.name || active !== (current.active === 1))
         actualizarVersionado(
           db,
-          'rol',
+          'roles',
           restauranteId,
           rolId,
-          { nombre, activo: activo ? 1 : 0 },
+          { name, active: active ? 1 : 0 },
           autor,
           ahora,
         )
     } else {
-      rolId = insertarVersionado(db, 'rol', restauranteId, { nombre, sistema: 0 }, autor, ahora)
+      rolId = insertarVersionado(db, 'roles', restauranteId, { name, system: 0 }, autor, ahora)
     }
 
     // Un permiso que se quita queda archivado; si se vuelve a dar, se reactiva la misma fila.
-    const filas = db
-      .prepare('SELECT id, permiso, activo FROM rol_permiso WHERE rol_id = ?')
+    const rows = db
+      .prepare('SELECT id, permission, active FROM role_permissions WHERE role_id = ?')
       .all(rolId)
-    for (const permiso of PERMISOS) {
-      const fila = filas.find((f) => f.permiso === permiso)
-      const quiere = permisos.includes(permiso)
+    for (const permission of PERMISSIONS) {
+      const fila = rows.find((f) => f.permission === permission)
+      const quiere = permissions.includes(permission)
       if (!fila) {
         if (quiere)
           insertarVersionado(
             db,
-            'rol_permiso',
+            'role_permissions',
             restauranteId,
-            { rol_id: rolId, permiso },
+            { role_id: rolId, permission },
             autor,
             ahora,
           )
-      } else if (quiere !== (fila.activo === 1)) {
+      } else if (quiere !== (fila.active === 1)) {
         actualizarVersionado(
           db,
-          'rol_permiso',
+          'role_permissions',
           restauranteId,
           String(fila.id),
-          { activo: quiere ? 1 : 0 },
+          { active: quiere ? 1 : 0 },
           autor,
           ahora,
         )
       }
     }
     const delRol = db
-      .prepare('SELECT id FROM usuario WHERE rol_id = ? AND activo = 1')
+      .prepare('SELECT id FROM users WHERE role_id = ? AND active = 1')
       .all(rolId)
       .map((f) => String(f.id))
-    exigirContrasena(db, restauranteId, acceso, delRol)
+    exigirContrasena(db, restauranteId, access, delRol)
     exigirAdministrador(db, restauranteId)
     return rolId
   })
 }
 
 /** Cómo entra una persona: con su PIN, o con usuario y contraseña (y el PIN solo autoriza). */
-export type AccesoPersona =
-  | { tipo: 'pin' }
-  | { tipo: 'contrasena'; usuario: string; contrasena?: string }
+export type AccesoPersona = { type: 'pin' } | { type: 'password'; user: string; password?: string }
 
 /**
  * Crea a una persona o cambia su nombre, su rol, cómo entra o si está activa. Devuelve su id y el
@@ -243,34 +241,34 @@ export type AccesoPersona =
 export function guardarPersona(
   db: BaseSqlite,
   restauranteId: string,
-  acceso: ServicioAcceso,
-  datos: {
+  access: ServicioAcceso,
+  data: {
     id?: string
-    nombre: string
+    name: string
     rolId: string
-    activo?: boolean
-    acceso?: AccesoPersona
+    active?: boolean
+    access?: AccesoPersona
     regenerarPin?: boolean
   },
   autor: Autor,
   ahora: string,
-): { usuarioId: string; pin: string | null } {
-  const nombre = nombreValido(datos.nombre, 'de la persona')
+): { userId: string; pin: string | null } {
+  const name = nombreValido(data.name, 'de la persona')
   return enTransaccion(db, () => {
-    const rol = db
-      .prepare('SELECT activo FROM rol WHERE restaurante_id = ? AND id = ? AND oculto = 0')
-      .get(restauranteId, datos.rolId)
-    if (!rol) throw new ErrorPersonal('Ese rol no existe')
+    const role = db
+      .prepare('SELECT active FROM roles WHERE restaurant_id = ? AND id = ? AND hidden = 0')
+      .get(restauranteId, data.rolId)
+    if (!role) throw new ErrorPersonal('Ese rol no existe')
 
-    const actual = datos.id
+    const current = data.id
       ? db
-          .prepare('SELECT * FROM usuario WHERE restaurante_id = ? AND id = ?')
-          .get(restauranteId, datos.id)
+          .prepare('SELECT * FROM users WHERE restaurant_id = ? AND id = ?')
+          .get(restauranteId, data.id)
       : undefined
-    if (datos.id && (!actual || actual.pantalla === 1))
+    if (data.id && (!current || current.screen === 1))
       throw new ErrorPersonal('Esa persona no existe')
-    const activo = datos.activo ?? (actual ? actual.activo === 1 : true)
-    if (activo && rol.activo !== 1) throw new ErrorPersonal('Ese rol está archivado')
+    const active = data.active ?? (current ? current.active === 1 : true)
+    if (active && role.active !== 1) throw new ErrorPersonal('Ese rol está archivado')
 
     // Solo los errores de datos (usuario tomado, contraseña corta) se muestran tal cual.
     const conError = <T>(trabajo: () => T): T => {
@@ -281,111 +279,108 @@ export function guardarPersona(
       }
     }
 
-    if (!actual) {
-      const entra = datos.acceso ?? { tipo: 'pin' }
-      if (entra.tipo === 'contrasena' && !entra.contrasena)
+    if (!current) {
+      const entra = data.access ?? { type: 'pin' }
+      if (entra.type === 'password' && !entra.password)
         throw new ErrorPersonal('Escribe una contraseña para esta persona')
-      const { usuarioId, pin } = conError(() =>
-        acceso.insertarUsuario(
+      const { userId, pin } = conError(() =>
+        access.insertUser(
           {
-            nombre,
-            rolId: datos.rolId,
-            ...(entra.tipo === 'contrasena'
-              ? { usuario: entra.usuario, contrasena: entra.contrasena }
-              : {}),
+            name,
+            rolId: data.rolId,
+            ...(entra.type === 'password' ? { user: entra.user, password: entra.password } : {}),
           },
           autor,
         ),
       )
-      exigirContrasena(db, restauranteId, acceso, [usuarioId])
+      exigirContrasena(db, restauranteId, access, [userId])
       exigirAdministrador(db, restauranteId)
-      return { usuarioId, pin }
+      return { userId, pin }
     }
 
-    const usuarioId = String(actual.id)
-    const cambiaRol = datos.rolId !== actual.rol_id
+    const userId = String(current.id)
+    const cambiaRol = data.rolId !== current.role_id
 
     // Primero cómo entra: así, al volver a activarla, su usuario ya no choca con el de otra.
-    const entra = datos.acceso
-    if (entra?.tipo === 'pin' && acceso.tieneContrasena(usuarioId))
-      acceso.quitarContrasena(usuarioId)
-    if (entra?.tipo === 'contrasena') {
-      const usuarioActual = acceso.usuarioDe(usuarioId)
-      if (entra.contrasena)
-        conError(() => acceso.fijarContrasena(usuarioId, entra.usuario, entra.contrasena as string))
+    const entra = data.access
+    if (entra?.type === 'pin' && access.tieneContrasena(userId)) access.quitarContrasena(userId)
+    if (entra?.type === 'password') {
+      const usuarioActual = access.usuarioDe(userId)
+      if (entra.password)
+        conError(() => access.fijarContrasena(userId, entra.user, entra.password as string))
       else if (usuarioActual === null)
         throw new ErrorPersonal('Escribe una contraseña para esta persona')
-      else if (entra.usuario.trim().toLowerCase() !== usuarioActual)
+      else if (entra.user.trim().toLowerCase() !== usuarioActual)
         throw new ErrorPersonal('Para cambiar el usuario, escribe también una contraseña')
     }
 
     // Mientras estaba archivada, su PIN o su usuario pudieron quedar en otra persona: el PIN se
     // cambia por uno libre; el usuario lo tiene que cambiar quien la activa.
     let pinNuevo: string | null = null
-    if (activo && actual.activo !== 1) {
-      const choca = (columna: 'pin_huella' | 'nombre_usuario') =>
+    if (active && current.active !== 1) {
+      const choca = (columna: 'pin_hash' | 'username') =>
         db
           .prepare(
-            `SELECT 1 FROM usuario_credencial esta JOIN usuario_credencial otra
-               ON otra.restaurante_id = esta.restaurante_id AND otra.${columna} = esta.${columna}
-             WHERE esta.usuario_id = ? AND otra.vigente = 1 AND otra.usuario_id <> esta.usuario_id`,
+            `SELECT 1 FROM user_credentials esta JOIN user_credentials otra
+               ON otra.restaurant_id = esta.restaurant_id AND otra.${columna} = esta.${columna}
+             WHERE esta.user_id = ? AND otra.current = 1 AND otra.user_id <> esta.user_id`,
           )
-          .get(usuarioId) !== undefined
-      if (choca('nombre_usuario'))
+          .get(userId) !== undefined
+      if (choca('username'))
         throw new ErrorPersonal(
-          `Su usuario «${acceso.usuarioDe(usuarioId)}» ya lo tiene otra persona: ponle otro, con una contraseña`,
+          `Su usuario «${access.usuarioDe(userId)}» ya lo tiene otra persona: ponle otro, con una contraseña`,
         )
-      if (choca('pin_huella')) pinNuevo = acceso.regenerarPin(usuarioId)
+      if (choca('pin_hash')) pinNuevo = access.regenerarPin(userId)
     }
 
-    if (nombre !== actual.nombre || cambiaRol || activo !== (actual.activo === 1))
+    if (name !== current.name || cambiaRol || active !== (current.active === 1))
       actualizarVersionado(
         db,
-        'usuario',
+        'users',
         restauranteId,
-        usuarioId,
-        { nombre, rol_id: datos.rolId, activo: activo ? 1 : 0 },
+        userId,
+        { name, role_id: data.rolId, active: active ? 1 : 0 },
         autor,
         ahora,
       )
-    if (cambiaRol || !activo) cerrarSesionesDe(db, restauranteId, usuarioId, ahora)
+    if (cambiaRol || !active) cerrarSesionesDe(db, restauranteId, userId, ahora)
 
-    const pin = datos.regenerarPin ? acceso.regenerarPin(usuarioId) : pinNuevo
-    exigirContrasena(db, restauranteId, acceso, [usuarioId])
+    const pin = data.regenerarPin ? access.regenerarPin(userId) : pinNuevo
+    exigirContrasena(db, restauranteId, access, [userId])
     exigirAdministrador(db, restauranteId)
-    return { usuarioId, pin }
+    return { userId, pin }
   })
 }
 
-function cerrarSesionesDe(db: BaseSqlite, restauranteId: string, usuarioId: string, ahora: string) {
+function cerrarSesionesDe(db: BaseSqlite, restauranteId: string, userId: string, ahora: string) {
   db.prepare(
-    'UPDATE sesion SET cerrada_en = ? WHERE restaurante_id = ? AND usuario_id = ? AND cerrada_en IS NULL',
-  ).run(ahora, restauranteId, usuarioId)
+    'UPDATE sessions SET closed_at = ? WHERE restaurant_id = ? AND user_id = ? AND closed_at IS NULL',
+  ).run(ahora, restauranteId, userId)
 }
 
 const NOMBRE_PERMISO = new Map(
-  DESCRIPCION_PERMISOS.flatMap((g) => g.permisos.map((p) => [p.permiso, p.nombre] as const)),
+  PERMISSION_DESCRIPTIONS.flatMap((g) => g.permissions.map((p) => [p.permission, p.name] as const)),
 )
 
 /**
- * Quien entra con PIN no puede tener permisos que pidan contraseña (`PERMISOS_CON_CONTRASENA`): un
+ * Quien entra con PIN no puede tener permisos que pidan contraseña (`PASSWORD_PERMISSIONS`): un
  * PIN de 4 dígitos se adivina más fácil. Se revisa al final del cambio, dentro de la transacción.
  */
 function exigirContrasena(
   db: BaseSqlite,
   restauranteId: string,
-  acceso: ServicioAcceso,
+  access: ServicioAcceso,
   usuarioIds: readonly string[],
 ) {
   for (const id of usuarioIds) {
     const f = db
-      .prepare('SELECT nombre, activo FROM usuario WHERE restaurante_id = ? AND id = ?')
+      .prepare('SELECT name, active FROM users WHERE restaurant_id = ? AND id = ?')
       .get(restauranteId, id)
-    if (f?.activo !== 1 || acceso.tieneContrasena(id)) continue
-    const delicado = acceso.permisosDe(id).find((p) => PERMISOS_CON_CONTRASENA.has(p))
+    if (f?.active !== 1 || access.tieneContrasena(id)) continue
+    const delicado = access.permisosDe(id).find((p) => PASSWORD_PERMISSIONS.has(p))
     if (delicado)
       throw new ErrorPersonal(
-        `${f.nombre} entra con PIN y su rol permite «${NOMBRE_PERMISO.get(delicado) ?? delicado}»: dale usuario y contraseña, o quita ese permiso`,
+        `${f.name} entra con PIN y su rol permite «${NOMBRE_PERMISO.get(delicado) ?? delicado}»: dale usuario y contraseña, o quita ese permiso`,
       )
   }
 }
@@ -398,11 +393,11 @@ function exigirContrasena(
 export function administradores(db: BaseSqlite, restauranteId: string): string[] {
   return db
     .prepare(
-      `SELECT u.id FROM usuario u
-       JOIN rol r ON r.id = u.rol_id AND r.activo = 1
-       JOIN rol_permiso rp ON rp.rol_id = r.id AND rp.activo = 1 AND rp.permiso = 'administrar_usuarios'
-       JOIN usuario_credencial c ON c.usuario_id = u.id AND c.nombre_usuario IS NOT NULL
-       WHERE u.restaurante_id = ? AND u.activo = 1 ORDER BY u.creado_en, u.id`,
+      `SELECT u.id FROM users u
+       JOIN roles r ON r.id = u.role_id AND r.active = 1
+       JOIN role_permissions rp ON rp.role_id = r.id AND rp.active = 1 AND rp.permission = 'manage_users'
+       JOIN user_credentials c ON c.user_id = u.id AND c.username IS NOT NULL
+       WHERE u.restaurant_id = ? AND u.active = 1 ORDER BY u.created_at, u.id`,
     )
     .all(restauranteId)
     .map((f) => String(f.id))

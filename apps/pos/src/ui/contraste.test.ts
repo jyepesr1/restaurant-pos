@@ -16,12 +16,12 @@ const bloques = [...sinComentarios.matchAll(/([^{};]+)\{([^{}]*)\}/g)].map((m) =
 }))
 
 /** Los colores que quedan con esa marca y ese modo, aplicando la cascada en el orden de la hoja. */
-function variables(marca: string | null, oscuro: boolean): Record<string, string> {
+function variables(brand: string | null, dark: boolean): Record<string, string> {
   const aplican = [
     ':root',
-    ...(oscuro ? [':root.oscuro'] : []),
-    ...(marca ? [`:root[data-marca="${marca}"]`] : []),
-    ...(marca && oscuro ? [`:root[data-marca="${marca}"].oscuro`] : []),
+    ...(dark ? [':root.oscuro'] : []),
+    ...(brand ? [`:root[data-marca="${brand}"]`] : []),
+    ...(brand && dark ? [`:root[data-marca="${brand}"].oscuro`] : []),
   ]
   const v: Record<string, string> = {}
   for (const b of bloques)
@@ -30,11 +30,11 @@ function variables(marca: string | null, oscuro: boolean): Record<string, string
 }
 
 function luminancia(hex: string): number {
-  const canal = (i: number) => {
+  const channel = (i: number) => {
     const c = Number.parseInt(hex.slice(i, i + 2), 16) / 255
     return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
   }
-  return 0.2126 * canal(1) + 0.7152 * canal(3) + 0.0722 * canal(5)
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
 }
 
 function contraste(a: string, b: string): number {
@@ -49,11 +49,11 @@ describe.each([
   ['Faro oscuro', null, true],
   ['La Spritzzería de día', 'la-spritzzeria', false],
   ['La Spritzzería de noche', 'la-spritzzeria', true],
-] as const)('contraste AA: %s', (_nombre, marca, oscuro) => {
-  const v = variables(marca, oscuro)
+] as const)('contraste AA: %s', (_nombre, brand, dark) => {
+  const v = variables(brand, dark)
 
   it('define todos los colores', () => {
-    for (const nombre of [
+    for (const name of [
       'fondo',
       'superficie',
       'superficie-2',
@@ -62,18 +62,18 @@ describe.each([
       'texto-suave',
       'foco',
     ])
-      expect(v[nombre], nombre).toBeDefined()
+      expect(v[name], name).toBeDefined()
     for (const tono of TONOS)
-      for (const variante of ['fuerte', 'suave', 'texto'])
-        expect(v[`${tono}-${variante}`], `${tono}-${variante}`).toBeDefined()
+      for (const variant of ['fuerte', 'suave', 'texto'])
+        expect(v[`${tono}-${variant}`], `${tono}-${variant}`).toBeDefined()
   })
 
   it('el texto se lee sobre el fondo y las superficies', () => {
     for (const fondo of ['fondo', 'superficie', 'superficie-2'])
-      for (const texto of ['texto', 'texto-suave'])
+      for (const text of ['texto', 'texto-suave'])
         expect(
-          contraste(v[texto] as string, v[fondo] as string),
-          `${texto} sobre ${fondo}`,
+          contraste(v[text] as string, v[fondo] as string),
+          `${text} sobre ${fondo}`,
         ).toBeGreaterThanOrEqual(4.5)
   })
 
@@ -112,10 +112,10 @@ describe('los colores de estado no cambian con la marca (ADR-014)', () => {
   const ESTADO = ['libre', 'proceso', 'alerta'].flatMap((t) =>
     ['fuerte', 'suave', 'texto'].map((n) => `${t}-${n}`),
   )
-  it.each([false, true])('La Spritzzería tiene los de Faro (oscuro: %s)', (oscuro) => {
-    const faro = variables(null, oscuro)
-    const marca = variables('la-spritzzeria', oscuro)
-    for (const nombre of ESTADO) expect(marca[nombre], nombre).toBe(faro[nombre])
+  it.each([false, true])('La Spritzzería tiene los de Faro (oscuro: %s)', (dark) => {
+    const faro = variables(null, dark)
+    const brand = variables('la-spritzzeria', dark)
+    for (const name of ESTADO) expect(brand[name], name).toBe(faro[name])
   })
 
   it.each([
@@ -123,12 +123,9 @@ describe('los colores de estado no cambian con la marca (ADR-014)', () => {
     [null, true],
     ['la-spritzzeria', false],
     ['la-spritzzeria', true],
-  ] as const)(
-    'texto y texto suave se leen sobre la barra lateral (%s, oscuro: %s)',
-    (m, oscuro) => {
-      const v = variables(m, oscuro)
-      expect(contraste(v.texto as string, v.lateral as string)).toBeGreaterThanOrEqual(4.5)
-      expect(contraste(v['texto-suave'] as string, v.lateral as string)).toBeGreaterThanOrEqual(4.5)
-    },
-  )
+  ] as const)('texto y texto suave se leen sobre la barra lateral (%s, oscuro: %s)', (m, dark) => {
+    const v = variables(m, dark)
+    expect(contraste(v.texto as string, v.lateral as string)).toBeGreaterThanOrEqual(4.5)
+    expect(contraste(v['texto-suave'] as string, v.lateral as string)).toBeGreaterThanOrEqual(4.5)
+  })
 })

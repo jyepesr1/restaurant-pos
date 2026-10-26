@@ -17,14 +17,14 @@ export const DIGITOS_PIN = 4
 /** Ni todos iguales ni seguidos (0000, 1234, 9876): son los primeros que alguien probaría. */
 export function esPinTrivial(pin: string): boolean {
   const d = [...pin].map(Number)
-  const pasos = d.slice(1).map((x, i) => x - (d[i] as number))
-  return pasos.every((p) => p === 0) || pasos.every((p) => p === 1) || pasos.every((p) => p === -1)
+  const steps = d.slice(1).map((x, i) => x - (d[i] as number))
+  return steps.every((p) => p === 0) || steps.every((p) => p === 1) || steps.every((p) => p === -1)
 }
 
 /** PIN al azar con el generador criptográfico; el administrador no lo escoge. */
-export function generarPin(azar: (max: number) => number = (max) => randomInt(max)): string {
+export function generarPin(random: (max: number) => number = (max) => randomInt(max)): string {
   for (;;) {
-    const pin = String(azar(10 ** DIGITOS_PIN)).padStart(DIGITOS_PIN, '0')
+    const pin = String(random(10 ** DIGITOS_PIN)).padStart(DIGITOS_PIN, '0')
     if (!esPinTrivial(pin)) return pin
   }
 }
@@ -33,8 +33,8 @@ export const esPinConFormato = (pin: unknown): pin is string =>
   typeof pin === 'string' && new RegExp(`^\\d{${DIGITOS_PIN}}$`).test(pin)
 
 /** Huella del PIN: HMAC-SHA256 con la clave del hub. Sin la clave, la huella no sirve de nada. */
-export const huellaPin = (clave: Buffer, restauranteId: string, pin: string) =>
-  createHmac('sha256', clave).update(`${restauranteId}:${pin}`).digest('hex')
+export const huellaPin = (key: Buffer, restauranteId: string, pin: string) =>
+  createHmac('sha256', key).update(`${restauranteId}:${pin}`).digest('hex')
 
 /** Token del dispositivo: 256 bits al azar. */
 export const nuevoSecreto = () => randomBytes(32).toString('base64url')
@@ -43,11 +43,11 @@ export const nuevoSecreto = () => randomBytes(32).toString('base64url')
  * Secreto de una sesión: se deriva de la clave del hub, así el hub puede comprobar la firma de
  * los eventos sin guardar el secreto. Quien no tiene la clave no puede calcularlo.
  */
-export const secretoDeSesion = (clave: Buffer, restauranteId: string, sesionId: string) =>
-  createHmac('sha256', clave).update(`sesion:${restauranteId}:${sesionId}`).digest('base64url')
+export const secretoDeSesion = (key: Buffer, restauranteId: string, sesionId: string) =>
+  createHmac('sha256', key).update(`sesion:${restauranteId}:${sesionId}`).digest('base64url')
 
 /** Basta SHA-256: un secreto de 256 bits al azar no se puede adivinar por fuerza bruta. */
-export const huellaSecreto = (secreto: string) => createHash('sha256').update(secreto).digest('hex')
+export const huellaSecreto = (secret: string) => createHash('sha256').update(secret).digest('hex')
 
 export function mismaHuella(a: string, b: string): boolean {
   const x = Buffer.from(a)
@@ -76,8 +76,8 @@ export const esContrasenaValida = (c: string) => {
  * El usuario como se guarda: sin espacios a los lados, en minúsculas y sin tildes («María» es
  * «maria»); solo letras, números, punto, guion y guion bajo, de 3 a 40. `null` si no sirve.
  */
-export function normalizarUsuario(usuario: string): string | null {
-  const u = usuario
+export function normalizarUsuario(user: string): string | null {
+  const u = user
     .trim()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -86,26 +86,28 @@ export function normalizarUsuario(usuario: string): string | null {
 }
 
 /** Huella lenta con sal: `scrypt$costo$r$p$sal$huella`, todo lo que hace falta para comprobarla. */
-export function huellaContrasena(contrasena: string, costo = COSTO_CONTRASENA): string {
+export function huellaContrasena(password: string, costo = COSTO_CONTRASENA): string {
   const sal = randomBytes(16)
-  const huella = scryptSync(contrasena.normalize('NFC'), sal, 32, opcionesScrypt(costo))
-  return ['scrypt', costo, 8, 1, sal.toString('base64url'), huella.toString('base64url')].join('$')
+  const fingerprint = scryptSync(password.normalize('NFC'), sal, 32, opcionesScrypt(costo))
+  return ['scrypt', costo, 8, 1, sal.toString('base64url'), fingerprint.toString('base64url')].join(
+    '$',
+  )
 }
 
 /** Si la contraseña da esa huella, comparando en tiempo constante. */
-export function contrasenaCoincide(contrasena: string, guardada: string): boolean {
-  const [esquema, costo, r, p, sal, huella] = guardada.split('$')
-  if (esquema !== 'scrypt' || !sal || !huella || r !== '8' || p !== '1') return false
+export function contrasenaCoincide(password: string, guardada: string): boolean {
+  const [esquema, costo, r, p, sal, fingerprint] = guardada.split('$')
+  if (esquema !== 'scrypt' || !sal || !fingerprint || r !== '8' || p !== '1') return false
   const n = Number(costo)
   if (!Number.isInteger(n) || n < 1 || n > 20) return false
-  const esperada = Buffer.from(huella, 'base64url')
+  const expected = Buffer.from(fingerprint, 'base64url')
   const calculada = scryptSync(
-    contrasena.normalize('NFC'),
+    password.normalize('NFC'),
     Buffer.from(sal, 'base64url'),
-    esperada.length,
+    expected.length,
     opcionesScrypt(n),
   )
-  return calculada.length === esperada.length && timingSafeEqual(calculada, esperada)
+  return calculada.length === expected.length && timingSafeEqual(calculada, expected)
 }
 
 const opcionesScrypt = (costo: number) => ({
@@ -121,12 +123,12 @@ const ALFABETO_CONTRASENA = 'abcdefghjkmnpqrstuvwxyz23456789'
 
 /** Tres grupos de cuatro (`k7mp-x9rt-4hwa`): unos 59 bits, fácil de copiar a mano. */
 export function generarContrasena(): string {
-  const grupo = () =>
+  const group = () =>
     Array.from(
       { length: 4 },
       () => ALFABETO_CONTRASENA[randomInt(ALFABETO_CONTRASENA.length)],
     ).join('')
-  return [grupo(), grupo(), grupo()].join('-')
+  return [group(), group(), group()].join('-')
 }
 
 /** Sin letras que se confundan (0/O, 1/I/L): el código se puede dictar si el QR no lee. */
@@ -138,25 +140,25 @@ export function nuevoCodigoEmparejamiento(): string {
   )
 }
 
-export const ARCHIVO_CLAVE = 'clave-pin'
+export const ARCHIVO_CLAVE = 'pin-key'
 
 /**
  * Lee la clave HMAC de la carpeta de datos o la crea (solo legible por el usuario del hub). Va
  * en el respaldo junto con la base: sin ella, ningún PIN guardado sirve.
  */
 export function cargarClave(dirDatos: string): {
-  clave: Buffer
-  nueva: boolean
+  key: Buffer
+  newOne: boolean
   /** Desde cuándo existe esta clave: las sesiones anteriores se firmaron con otra. */
   creadaEn: string
 } {
   const ruta = join(dirDatos, ARCHIVO_CLAVE)
   if (existsSync(ruta)) {
-    const clave = readFileSync(ruta)
-    if (clave.length !== 32) throw new Error(`La clave de los PIN (${ruta}) está dañada.`)
-    return { clave, nueva: false, creadaEn: statSync(ruta).mtime.toISOString() }
+    const key = readFileSync(ruta)
+    if (key.length !== 32) throw new Error(`La clave de los PIN (${ruta}) está dañada.`)
+    return { key, newOne: false, creadaEn: statSync(ruta).mtime.toISOString() }
   }
-  const clave = randomBytes(32)
-  writeFileSync(ruta, clave, { mode: 0o600, flag: 'wx' })
-  return { clave, nueva: true, creadaEn: statSync(ruta).mtime.toISOString() }
+  const key = randomBytes(32)
+  writeFileSync(ruta, key, { mode: 0o600, flag: 'wx' })
+  return { key, newOne: true, creadaEn: statSync(ruta).mtime.toISOString() }
 }

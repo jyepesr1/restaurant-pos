@@ -6,8 +6,8 @@ import { contrasenaCoincide, huellaContrasena, normalizarUsuario } from './secre
 // Contraseñas y usuarios con textos difíciles: Unicode (NFC/NFD), muy largos, vacíos, con espacios
 // y mayúsculas. Lo que se guarda y lo que se escribe al entrar deben coincidir sin sorpresas.
 
-const entrar = (m: ReturnType<typeof montarAcceso>, usuario: string, contrasena: string, n = 1) =>
-  m.acceso.entrar({ usuario, contrasena }, null, `10.0.0.${n}`)
+const entrar = (m: ReturnType<typeof montarAcceso>, user: string, password: string, n = 1) =>
+  m.access.entrar({ user, password }, null, `10.0.0.${n}`)
 
 describe('contraseñas con Unicode', () => {
   const NFC = 'contraseña-ñandú-ñ'
@@ -22,11 +22,11 @@ describe('contraseñas con Unicode', () => {
       [NFD, NFD],
     ] as const) {
       const m = montarAcceso()
-      m.acceso.crearUsuario({
-        nombre: 'Rosa',
-        rolId: m.roles.cajero,
-        usuario: 'rosa',
-        contrasena: guardada,
+      m.access.crearUsuario({
+        name: 'Rosa',
+        rolId: m.roles.cashier,
+        user: 'rosa',
+        password: guardada,
       })
       expect(entrar(m, 'rosa', escrita), `${guardada.length} -> ${escrita.length}`).toMatchObject({
         ok: true,
@@ -36,11 +36,11 @@ describe('contraseñas con Unicode', () => {
 
   it('mayúsculas y minúsculas en la contraseña SÍ se distinguen', () => {
     const m = montarAcceso()
-    m.acceso.crearUsuario({
-      nombre: 'Rosa',
-      rolId: m.roles.cajero,
-      usuario: 'rosa',
-      contrasena: 'ClaveSecreta1',
+    m.access.crearUsuario({
+      name: 'Rosa',
+      rolId: m.roles.cashier,
+      user: 'rosa',
+      password: 'ClaveSecreta1',
     })
     expect(entrar(m, 'rosa', 'clavesecreta1')).toMatchObject({ ok: false })
     expect(entrar(m, 'rosa', 'CLAVESECRETA1', 2)).toMatchObject({ ok: false })
@@ -58,29 +58,28 @@ describe('contraseñas con Unicode', () => {
       '​cero​ancho​1',
       'a'.repeat(8),
     ]
-    for (const [i, clave] of raras.entries()) {
+    for (const [i, key] of raras.entries()) {
       const m = montarAcceso()
-      m.acceso.crearUsuario({
-        nombre: 'Rosa',
-        rolId: m.roles.cajero,
-        usuario: 'rosa',
-        contrasena: clave,
+      m.access.crearUsuario({
+        name: 'Rosa',
+        rolId: m.roles.cashier,
+        user: 'rosa',
+        password: key,
       })
-      expect(entrar(m, 'rosa', clave, i + 1), JSON.stringify(clave)).toMatchObject({ ok: true })
+      expect(entrar(m, 'rosa', key, i + 1), JSON.stringify(key)).toMatchObject({ ok: true })
       // Sin los espacios de los lados NO es la misma contraseña: no se recorta.
-      if (clave !== clave.trim())
-        expect(entrar(m, 'rosa', clave.trim(), 99)).toMatchObject({ ok: false })
+      if (key !== key.trim()) expect(entrar(m, 'rosa', key.trim(), 99)).toMatchObject({ ok: false })
     }
   })
 
   it('«ﬁ» (ligadura), «Å» (angstrom) y «Ⅷ» no se confunden con sus parecidos: NFC no los une', () => {
     // NFC, no NFKC: «ﬁlete-seguro» y «filete-seguro» son contraseñas distintas.
     const m = montarAcceso()
-    m.acceso.crearUsuario({
-      nombre: 'Rosa',
-      rolId: m.roles.cajero,
-      usuario: 'rosa',
-      contrasena: 'ﬁlete-seguro',
+    m.access.crearUsuario({
+      name: 'Rosa',
+      rolId: m.roles.cashier,
+      user: 'rosa',
+      password: 'ﬁlete-seguro',
     })
     expect(entrar(m, 'rosa', 'filete-seguro')).toMatchObject({ ok: false })
     expect(entrar(m, 'rosa', 'ﬁlete-seguro', 2)).toMatchObject({ ok: true })
@@ -90,11 +89,11 @@ describe('contraseñas con Unicode', () => {
     const m = montarAcceso()
     const suelta = 'clave-\ud83d-suelta'
     expect(() =>
-      m.acceso.crearUsuario({
-        nombre: 'Rosa',
-        rolId: m.roles.cajero,
-        usuario: 'rosa',
-        contrasena: suelta,
+      m.access.crearUsuario({
+        name: 'Rosa',
+        rolId: m.roles.cashier,
+        user: 'rosa',
+        password: suelta,
       }),
     ).not.toThrow()
     expect(() => entrar(m, 'rosa', suelta)).not.toThrow()
@@ -108,16 +107,16 @@ describe('contraseñas con Unicode', () => {
   it('el mínimo de 8 caracteres es el mismo para NFC y NFD', () => {
     const m = montarAcceso()
     const siete = 'ñññññññ'
-    const crear = (c: string, usuario: string) => () =>
-      m.acceso.crearUsuario({ nombre: 'Rosa', rolId: m.roles.cajero, usuario, contrasena: c })
+    const crear = (c: string, user: string) => () =>
+      m.access.crearUsuario({ name: 'Rosa', rolId: m.roles.cashier, user, password: c })
     expect(crear(siete, 'rosa1')).toThrow(/al menos 8/)
     expect(crear(siete.normalize('NFD'), 'rosa2')).toThrow(/al menos 8/)
   })
 
   it('el mínimo y el máximo exactos: 7 no, 8 sí; 200 sí, 201 no', () => {
     const m = montarAcceso()
-    const crear = (c: string, usuario: string) => () =>
-      m.acceso.crearUsuario({ nombre: 'Rosa', rolId: m.roles.cajero, usuario, contrasena: c })
+    const crear = (c: string, user: string) => () =>
+      m.access.crearUsuario({ name: 'Rosa', rolId: m.roles.cashier, user, password: c })
     expect(crear('1234567', 'uno')).toThrow(/al menos 8/)
     expect(crear('12345678', 'dos')).not.toThrow()
     expect(crear('x'.repeat(200), 'tres')).not.toThrow()
@@ -127,21 +126,19 @@ describe('contraseñas con Unicode', () => {
 
   it('un fallo al fijar la contraseña no deja a la persona creada a medias', () => {
     const m = montarAcceso()
-    const antes = Number(m.db.prepare('SELECT count(*) AS n FROM usuario').get()?.n)
+    const before = Number(m.db.prepare('SELECT count(*) AS n FROM users').get()?.n)
     expect(() =>
-      m.acceso.crearUsuario({
-        nombre: 'Rosa',
-        rolId: m.roles.cajero,
-        usuario: 'rosa',
-        contrasena: 'corta',
+      m.access.crearUsuario({
+        name: 'Rosa',
+        rolId: m.roles.cashier,
+        user: 'rosa',
+        password: 'corta',
       }),
     ).toThrow()
-    expect(Number(m.db.prepare('SELECT count(*) AS n FROM usuario').get()?.n)).toBe(antes)
+    expect(Number(m.db.prepare('SELECT count(*) AS n FROM users').get()?.n)).toBe(before)
     expect(
       Number(
-        m.db
-          .prepare("SELECT count(*) AS n FROM usuario_credencial WHERE nombre_usuario = 'rosa'")
-          .get()?.n,
+        m.db.prepare("SELECT count(*) AS n FROM user_credentials WHERE username = 'rosa'").get()?.n,
       ),
     ).toBe(0)
   })
@@ -150,11 +147,11 @@ describe('contraseñas con Unicode', () => {
 describe('contraseñas muy largas o vacías al entrar', () => {
   function conRosa() {
     const m = montarAcceso()
-    m.acceso.crearUsuario({
-      nombre: 'Rosa',
-      rolId: m.roles.cajero,
-      usuario: 'rosa',
-      contrasena: 'clave-correcta-1',
+    m.access.crearUsuario({
+      name: 'Rosa',
+      rolId: m.roles.cashier,
+      user: 'rosa',
+      password: 'clave-correcta-1',
     })
     return m
   }
@@ -164,28 +161,28 @@ describe('contraseñas muy largas o vacías al entrar', () => {
     for (let i = 1; i <= 3; i++)
       expect(entrar(m, 'rosa', '', i)).toMatchObject({
         ok: false,
-        codigo: 'credenciales_incorrectas',
+        code: 'invalid_credentials',
       })
-    expect(entrar(m, 'rosa', 'clave-correcta-1', 9)).toMatchObject({ ok: false, codigo: 'espera' })
+    expect(entrar(m, 'rosa', 'clave-correcta-1', 9)).toMatchObject({ ok: false, code: 'wait' })
   })
 
   it('de un megabyte: falla sin colgar al hub ni lanzar', () => {
     const m = conRosa()
     const r = entrar(m, 'rosa', 'a'.repeat(1_000_000))
-    expect(r).toMatchObject({ ok: false, codigo: 'credenciales_incorrectas' })
+    expect(r).toMatchObject({ ok: false, code: 'invalid_credentials' })
   })
 
   it('la API corta lo que pasa de 200 con 400, sin contar como fallo ni tocar la cuenta', async () => {
     const api = montarApi()
-    for (const largo of [201, 1000, 100_000]) {
-      const r = await api.post('/api/entrar', {
-        usuario: api.admin().usuario,
-        contrasena: 'a'.repeat(largo),
+    for (const length of [201, 1000, 100_000]) {
+      const r = await api.post('/api/sign-in', {
+        user: api.admin().user,
+        password: 'a'.repeat(length),
       })
       expect(r.statusCode).toBe(400)
     }
     // Ni un fallo anotado: la contraseña buena entra de inmediato.
-    expect((await api.post('/api/entrar', api.admin())).statusCode).toBe(201)
+    expect((await api.post('/api/sign-in', api.admin())).statusCode).toBe(201)
   })
 
   // Lo encontró qa-pruebas en la 1.3b y ya está corregido: `conContrasena` (servicio.ts) recorta lo escrito a 200 caracteres antes de
@@ -194,25 +191,25 @@ describe('contraseñas muy largas o vacías al entrar', () => {
   // cola. Esperaba rechazarla: una contraseña más larga que el máximo no puede ser la guardada.
   it('contraseña de 200 caracteres más una cola no entra', () => {
     const m = montarAcceso()
-    const clave = 'k'.repeat(200)
-    m.acceso.crearUsuario({
-      nombre: 'Rosa',
-      rolId: m.roles.cajero,
-      usuario: 'rosa',
-      contrasena: clave,
+    const key = 'k'.repeat(200)
+    m.access.crearUsuario({
+      name: 'Rosa',
+      rolId: m.roles.cashier,
+      user: 'rosa',
+      password: key,
     })
-    expect(entrar(m, 'rosa', clave)).toMatchObject({ ok: true })
-    expect(entrar(m, 'rosa', `${clave}-cola-que-no-es-parte`, 2)).toMatchObject({ ok: false })
+    expect(entrar(m, 'rosa', key)).toMatchObject({ ok: true })
+    expect(entrar(m, 'rosa', `${key}-cola-que-no-es-parte`, 2)).toMatchObject({ ok: false })
   })
 
   it('la huella de una contraseña vacía nunca coincide con una guardada ni lanza', () => {
-    const huella = huellaContrasena('algo-correcto', 1)
-    expect(contrasenaCoincide('', huella)).toBe(false)
+    const fingerprint = huellaContrasena('algo-correcto', 1)
+    expect(contrasenaCoincide('', fingerprint)).toBe(false)
     expect(contrasenaCoincide('algo-correcto', '')).toBe(false)
     expect(contrasenaCoincide('algo-correcto', 'scrypt$1$8$1$$')).toBe(false)
     expect(contrasenaCoincide('algo-correcto', 'scrypt$99$8$1$AAAA$AAAA')).toBe(false)
     expect(contrasenaCoincide('algo-correcto', 'md5$1$8$1$AAAA$AAAA')).toBe(false)
-    expect(contrasenaCoincide('algo-correcto', huella.replace(/\$\d+\$/, '$0$'))).toBe(false)
+    expect(contrasenaCoincide('algo-correcto', fingerprint.replace(/\$\d+\$/, '$0$'))).toBe(false)
   })
 
   it('dos huellas de la misma contraseña son distintas (sal), y ambas la aceptan', () => {
@@ -225,16 +222,13 @@ describe('contraseñas muy largas o vacías al entrar', () => {
 
   it('en la base queda solo la huella: la contraseña no está en ningún lugar', () => {
     const m = conRosa()
-    for (const t of ['usuario_credencial', 'usuario', 'sesion']) {
-      const filas = JSON.stringify(m.db.prepare(`SELECT * FROM ${t}`).all())
-      expect(filas).not.toContain('clave-correcta-1')
+    for (const t of ['user_credentials', 'users', 'sessions']) {
+      const rows = JSON.stringify(m.db.prepare(`SELECT * FROM ${t}`).all())
+      expect(rows).not.toContain('clave-correcta-1')
     }
     expect(
-      m.db
-        .prepare(
-          "SELECT contrasena_huella AS h FROM usuario_credencial WHERE nombre_usuario = 'rosa'",
-        )
-        .get()?.h,
+      m.db.prepare("SELECT password_hash AS h FROM user_credentials WHERE username = 'rosa'").get()
+        ?.h,
     ).toMatch(/^scrypt\$1\$8\$1\$/)
   })
 })
@@ -242,18 +236,15 @@ describe('contraseñas muy largas o vacías al entrar', () => {
 describe('usuario con mayúsculas, espacios y otros disfraces', () => {
   it('el usuario se guarda en minúsculas y sin espacios a los lados, y entra con cualquier forma', () => {
     const m = montarAcceso()
-    m.acceso.crearUsuario({
-      nombre: 'Rosa',
-      rolId: m.roles.cajero,
-      usuario: '  RoSa.Perez  ',
-      contrasena: 'clave-correcta-1',
+    m.access.crearUsuario({
+      name: 'Rosa',
+      rolId: m.roles.cashier,
+      user: '  RoSa.Perez  ',
+      password: 'clave-correcta-1',
     })
     expect(
-      m.db
-        .prepare(
-          "SELECT nombre_usuario AS u FROM usuario_credencial WHERE nombre_usuario LIKE 'rosa%'",
-        )
-        .get()?.u,
+      m.db.prepare("SELECT username AS u FROM user_credentials WHERE username LIKE 'rosa%'").get()
+        ?.u,
     ).toBe('rosa.perez')
     let n = 0
     for (const escrito of [
@@ -272,7 +263,7 @@ describe('usuario con mayúsculas, espacios y otros disfraces', () => {
   })
 
   it('espacios o puntos en el medio, tildes y caracteres raros no son un usuario válido (ni al crear ni al entrar)', () => {
-    for (const malo of [
+    for (const badCase of [
       'ro sa',
       'rosa!',
       'ro/sa',
@@ -287,14 +278,14 @@ describe('usuario con mayúsculas, espacios y otros disfraces', () => {
       "ro'sa",
       'rosa;--',
     ]) {
-      expect(normalizarUsuario(malo), JSON.stringify(malo)).toBeNull()
+      expect(normalizarUsuario(badCase), JSON.stringify(badCase)).toBeNull()
       const m = montarAcceso()
       expect(() =>
-        m.acceso.crearUsuario({
-          nombre: 'Rosa',
-          rolId: m.roles.cajero,
-          usuario: malo,
-          contrasena: 'clave-correcta-1',
+        m.access.crearUsuario({
+          name: 'Rosa',
+          rolId: m.roles.cashier,
+          user: badCase,
+          password: 'clave-correcta-1',
         }),
       ).toThrow(/3 a 40/)
     }
@@ -302,61 +293,61 @@ describe('usuario con mayúsculas, espacios y otros disfraces', () => {
 
   it('la mayúscula no crea un segundo usuario: «Rosa» y «rosa» chocan', () => {
     const m = montarAcceso()
-    m.acceso.crearUsuario({
-      nombre: 'Rosa',
-      rolId: m.roles.cajero,
-      usuario: 'rosa',
-      contrasena: 'clave-correcta-1',
+    m.access.crearUsuario({
+      name: 'Rosa',
+      rolId: m.roles.cashier,
+      user: 'rosa',
+      password: 'clave-correcta-1',
     })
     expect(() =>
-      m.acceso.crearUsuario({
-        nombre: 'Otra',
-        rolId: m.roles.cajero,
-        usuario: ' ROSA ',
-        contrasena: 'clave-correcta-2',
+      m.access.crearUsuario({
+        name: 'Otra',
+        rolId: m.roles.cashier,
+        user: ' ROSA ',
+        password: 'clave-correcta-2',
       }),
     ).toThrow(/Ya hay alguien con el usuario «rosa»/)
   })
 
   it('la espera por cuenta es la misma escriban «ADMIN», «admin» o « Admin »', () => {
     const m = montarAcceso()
-    const usuario = m.personas.admin.usuario as string
-    const escritos = [usuario.toUpperCase(), usuario, ` ${usuario} `]
+    const user = m.people.admin.user as string
+    const escritos = [user.toUpperCase(), user, ` ${user} `]
     for (const [i, u] of escritos.entries())
       expect(entrar(m, u, 'mala-clave-xx', i + 1)).toMatchObject({
-        codigo: 'credenciales_incorrectas',
+        code: 'invalid_credentials',
       })
-    expect(entrar(m, usuario, 'mala-clave-xx', 9)).toMatchObject({ codigo: 'espera' })
+    expect(entrar(m, user, 'mala-clave-xx', 9)).toMatchObject({ code: 'wait' })
   })
 
   it('el signo Kelvin (K) se pliega a «k» al normalizar: entra igual que la letra normal, sin abrir otra cuenta', () => {
     const m = montarAcceso()
-    m.acceso.crearUsuario({
-      nombre: 'Kira',
-      rolId: m.roles.cajero,
-      usuario: 'kira',
-      contrasena: 'clave-correcta-1',
+    m.access.crearUsuario({
+      name: 'Kira',
+      rolId: m.roles.cashier,
+      user: 'kira',
+      password: 'clave-correcta-1',
     })
     expect(normalizarUsuario('Kira')).toBe('kira')
     expect(entrar(m, 'Kira', 'clave-correcta-1')).toMatchObject({ ok: true })
     // Y crear «Kira» con el signo Kelvin choca con la existente en vez de duplicarla.
     expect(() =>
-      m.acceso.crearUsuario({
-        nombre: 'Falsa',
-        rolId: m.roles.cajero,
-        usuario: 'Kira',
-        contrasena: 'clave-correcta-2',
+      m.access.crearUsuario({
+        name: 'Falsa',
+        rolId: m.roles.cashier,
+        user: 'Kira',
+        password: 'clave-correcta-2',
       }),
     ).toThrow(/Ya hay alguien/)
   })
 
   it('las tildes se pliegan: «José», «JOSÉ» y «jose» (en NFC o NFD) son el mismo usuario', () => {
     const m = montarAcceso()
-    m.acceso.crearUsuario({
-      nombre: 'José',
-      rolId: m.roles.cajero,
-      usuario: 'José',
-      contrasena: 'clave-correcta-1',
+    m.access.crearUsuario({
+      name: 'José',
+      rolId: m.roles.cashier,
+      user: 'José',
+      password: 'clave-correcta-1',
     })
     expect(normalizarUsuario('Ñandú')).toBe('nandu')
     let n = 0
@@ -365,11 +356,11 @@ describe('usuario con mayúsculas, espacios y otros disfraces', () => {
         ok: true,
       })
     expect(() =>
-      m.acceso.crearUsuario({
-        nombre: 'Otro',
-        rolId: m.roles.cajero,
-        usuario: 'jose',
-        contrasena: 'clave-correcta-2',
+      m.access.crearUsuario({
+        name: 'Otro',
+        rolId: m.roles.cashier,
+        user: 'jose',
+        password: 'clave-correcta-2',
       }),
     ).toThrow(/Ya hay alguien/)
   })
@@ -384,11 +375,11 @@ describe('usuario con mayúsculas, espacios y otros disfraces', () => {
 
   it('por la API, el usuario con mayúsculas y espacios entra y la respuesta trae el nombre real', async () => {
     const api = montarApi()
-    const r = await api.post('/api/entrar', {
-      usuario: `  ${(api.personas.admin.usuario as string).toUpperCase()}  `,
-      contrasena: api.admin().contrasena,
+    const r = await api.post('/api/sign-in', {
+      user: `  ${(api.people.admin.user as string).toUpperCase()}  `,
+      password: api.admin().password,
     })
     expect(r.statusCode).toBe(201)
-    expect(r.json().usuario.nombre).toBe('Administrador')
+    expect(r.json().user.name).toBe('Administrador')
   })
 })

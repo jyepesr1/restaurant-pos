@@ -50,20 +50,20 @@ export function TecladoPin({
   const tocar = useCallback(
     (digito: string) => {
       if (bloqueado || enCurso.current.length >= DIGITOS) return
-      const nuevo = enCurso.current + digito
-      if (nuevo.length === DIGITOS) {
+      const fresh = enCurso.current + digito
+      if (fresh.length === DIGITOS) {
         // Se envía y queda listo para el próximo intento.
         enCurso.current = ''
         setPin('')
-        alCompletar(nuevo)
+        alCompletar(fresh)
         return
       }
-      enCurso.current = nuevo
-      setPin(nuevo)
+      enCurso.current = fresh
+      setPin(fresh)
     },
     [alCompletar, bloqueado],
   )
-  const borrar = useCallback(() => {
+  const erase = useCallback(() => {
     if (bloqueado) return
     enCurso.current = enCurso.current.slice(0, -1)
     setPin(enCurso.current)
@@ -72,14 +72,14 @@ export function TecladoPin({
   useEffect(() => {
     const alTeclear = (e: KeyboardEvent) => {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
-      const destino = e.target as HTMLElement | null
-      if (destino?.closest('input, textarea, [contenteditable="true"]')) return
+      const target = e.target as HTMLElement | null
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return
       if (/^[0-9]$/.test(e.key)) tocar(e.key)
-      else if (e.key === 'Backspace') borrar()
+      else if (e.key === 'Backspace') erase()
     }
     window.addEventListener('keydown', alTeclear)
     return () => window.removeEventListener('keydown', alTeclear)
-  }, [tocar, borrar])
+  }, [tocar, erase])
 
   const tecla =
     'flex h-16 items-center justify-center rounded-2xl bg-superficie-2 text-2xl font-semibold text-texto active:scale-95 transition disabled:opacity-45 focus-visible:outline-3 focus-visible:outline-foco'
@@ -128,10 +128,10 @@ export function TecladoPin({
           type="button"
           className={tecla}
           disabled={bloqueado || pin.length === 0}
-          onClick={borrar}
+          onClick={erase}
           aria-label="Borrar el último dígito"
         >
-          <Icono nombre="borrar" />
+          <Icono name="erase" />
         </button>
       </div>
     </div>

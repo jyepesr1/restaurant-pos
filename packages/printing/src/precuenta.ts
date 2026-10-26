@@ -6,36 +6,36 @@ import { aLosLados, type Formato, type Linea, parrafo } from './documento'
 // por `@pos/core`; aquí solo se decide el orden y el estilo.
 
 export interface LineaPrecuenta {
-  cantidad: number
-  nombre: string
+  quantity: number
+  name: string
   /** Opciones elegidas (término, adicionales). */
-  opciones: string[]
+  options: string[]
   /** Neto de la línea en pesos: con impuesto, sin lo anulado ni los descuentos. */
-  valor: number
+  value: number
 }
 
 export interface Precuenta {
-  restaurante: string
+  restaurant: string
   /** «Mesa 6», «Mesa 5 + 6», «Para llevar». */
-  destino: string
-  pedido: number | null
-  mesero: string
+  target: string
+  order: number | null
+  waiter: string
   /** Ya formateada en la zona horaria del restaurante. */
-  hora: string
-  comensales: number | null
-  lineas: LineaPrecuenta[]
+  time: string
+  guests: number | null
+  lines: LineaPrecuenta[]
   /**
    * El impuesto discriminado, por tipo y tarifa («INC 8 %»): base sin impuesto e impuesto en
    * pesos. Los exentos van con impuesto 0. Un hub de antes no lo manda.
    */
-  impuestos?: { nombre: string; base: number; valor: number }[]
+  taxes?: { name: string; base: number; value: number }[]
   total: number
-  pagado: number
+  paid: number
   /** En una cuenta dividida, cuál y cuánto le toca. */
-  cuenta: { nombre: string; monto: number } | null
+  check: { name: string; amount: number } | null
   /** Lo que se cobra sin propina: el saldo, o lo de la cuenta. */
   subtotal: number
-  propina: number
+  tip: number
   /** Puntos básicos (1000 = 10 %) si es la sugerida; null si el cliente pidió otra. */
   tasaPropina: number | null
 }
@@ -44,78 +44,75 @@ export interface Precuenta {
 export const pesos = (n: number) =>
   `${n < 0 ? '-' : ''}$${String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`
 
-const porcentaje = (bp: number) => `${bp / 100}`.replace('.', ',')
+const percent = (bp: number) => `${bp / 100}`.replace('.', ',')
 
 /** La precuenta partida en líneas para una impresora de ese ancho y esa tabla de caracteres. */
 export function lineasPrecuenta(
   p: Precuenta,
-  formato: { columnas: number; pagina: PaginaCodigos },
+  format: { columnas: number; pagina: PaginaCodigos },
 ): Linea[] {
-  const f: Formato = formato
-  const datos = [
-    p.pedido ? `Pedido ${p.pedido}` : null,
-    p.mesero || null,
-    p.hora,
-    p.comensales ? `${p.comensales} pers.` : null,
+  const f: Formato = format
+  const data = [
+    p.order ? `Pedido ${p.order}` : null,
+    p.waiter || null,
+    p.time,
+    p.guests ? `${p.guests} pers.` : null,
   ].filter((d): d is string => !!d)
 
-  const lineas: Linea[] = [
-    ...parrafo(p.restaurante, f, { grande: true, centro: true }),
-    ...parrafo('PRECUENTA', f, { invertido: true, centro: true, negrita: true }),
-    { espacio: true },
-    ...parrafo(p.destino, f, { grande: true }),
-    ...parrafo(datos.join(' · '), f),
-    { separador: true },
+  const lines: Linea[] = [
+    ...parrafo(p.restaurant, f, { large: true, centro: true }),
+    ...parrafo('PRECUENTA', f, { reversed: true, centro: true, negrita: true }),
+    { space: true },
+    ...parrafo(p.target, f, { large: true }),
+    ...parrafo(data.join(' · '), f),
+    { separator: true },
   ]
-  for (const l of p.lineas) {
-    lineas.push(...aLosLados(`${l.cantidad} x ${l.nombre}`, pesos(l.valor), f))
+  for (const l of p.lines) {
+    lines.push(...aLosLados(`${l.quantity} x ${l.name}`, pesos(l.value), f))
     // Las opciones van sangradas bajo su plato (`partir` quita los espacios del comienzo).
-    for (const opcion of l.opciones)
-      for (const linea of parrafo(opcion, { ...f, columnas: f.columnas - 2 }))
-        if ('texto' in linea) lineas.push({ ...linea, texto: `  ${linea.texto}` })
+    for (const opcion of l.options)
+      for (const line of parrafo(opcion, { ...f, columnas: f.columnas - 2 }))
+        if ('text' in line) lines.push({ ...line, text: `  ${line.text}` })
   }
-  lineas.push({ separador: true })
-  const impuestos = p.impuestos ?? []
-  if (impuestos.length > 0) {
-    lineas.push(
-      ...aLosLados('Base sin impuestos', pesos(impuestos.reduce((a, i) => a + i.base, 0)), f),
-    )
-    for (const i of impuestos)
-      if (i.valor > 0) lineas.push(...aLosLados(i.nombre, pesos(i.valor), f))
+  lines.push({ separator: true })
+  const taxes = p.taxes ?? []
+  if (taxes.length > 0) {
+    lines.push(...aLosLados('Base sin impuestos', pesos(taxes.reduce((a, i) => a + i.base, 0)), f))
+    for (const i of taxes) if (i.value > 0) lines.push(...aLosLados(i.name, pesos(i.value), f))
   }
-  lineas.push(...aLosLados('Total', pesos(p.total), f, { negrita: true }))
-  if (p.pagado > 0) {
-    lineas.push(...aLosLados('Ya pagado', `-${pesos(p.pagado)}`, f))
-    lineas.push(...aLosLados('Saldo', pesos(p.total - p.pagado), f, { negrita: true }))
+  lines.push(...aLosLados('Total', pesos(p.total), f, { negrita: true }))
+  if (p.paid > 0) {
+    lines.push(...aLosLados('Ya pagado', `-${pesos(p.paid)}`, f))
+    lines.push(...aLosLados('Saldo', pesos(p.total - p.paid), f, { negrita: true }))
   }
-  if (p.cuenta) {
-    lineas.push({ separador: true })
-    lineas.push(...aLosLados(p.cuenta.nombre, pesos(p.cuenta.monto), f, { negrita: true }))
+  if (p.check) {
+    lines.push({ separator: true })
+    lines.push(...aLosLados(p.check.name, pesos(p.check.amount), f, { negrita: true }))
   }
-  if (p.propina > 0) {
-    lineas.push(
+  if (p.tip > 0) {
+    lines.push(
       ...aLosLados(
-        p.tasaPropina === null ? 'Propina' : `Propina sugerida (${porcentaje(p.tasaPropina)} %)`,
-        pesos(p.propina),
+        p.tasaPropina === null ? 'Propina' : `Propina sugerida (${percent(p.tasaPropina)} %)`,
+        pesos(p.tip),
         f,
       ),
-      ...aLosLados('Total con propina', pesos(p.subtotal + p.propina), f, {
-        grande: true,
+      ...aLosLados('Total con propina', pesos(p.subtotal + p.tip), f, {
+        large: true,
       }),
     )
   } else {
-    lineas.push(...aLosLados('A pagar', pesos(p.subtotal), f, { grande: true }))
+    lines.push(...aLosLados('A pagar', pesos(p.subtotal), f, { large: true }))
   }
-  lineas.push(
-    { separador: true },
+  lines.push(
+    { separator: true },
     ...parrafo('La propina es voluntaria.', f, { centro: true }),
     ...parrafo('Esta precuenta no es una factura.', f, { centro: true }),
   )
-  return lineas
+  return lines
 }
 
 /** «INC 8 %», «IVA 19 %», «Exento». */
-export function nombreImpuesto(tipo: 'inc' | 'iva' | 'exento', tarifa: number): string {
-  if (tipo === 'exento' || tarifa === 0) return 'Exento'
-  return `${tipo.toUpperCase()} ${porcentaje(tarifa)} %`
+export function nombreImpuesto(type: 'inc' | 'iva' | 'exempt', rate: number): string {
+  if (type === 'exempt' || rate === 0) return 'Exento'
+  return `${type.toUpperCase()} ${percent(rate)} %`
 }

@@ -7,21 +7,21 @@ import type { CodigoAcceso, ErrorAcceso, ServicioAcceso } from './servicio'
 // registra los cuerpos en el log: ni el PIN ni la contraseña quedan escritos en ninguna parte.
 
 export interface OpcionesRutasAcceso {
-  acceso: ServicioAcceso
+  access: ServicioAcceso
 }
 
 const ESTADO: Record<CodigoAcceso, number> = {
-  pin_incorrecto: 401,
-  credenciales_incorrectas: 401,
-  sesion_invalida: 401,
-  equipo_no_emparejado: 401,
-  codigo_invalido: 400,
-  datos_invalidos: 400,
-  espera: 429,
-  sin_permiso: 403,
-  autoautorizacion: 403,
-  dispositivo_revocado: 403,
-  ya_autorizado: 409,
+  wrong_pin: 401,
+  invalid_credentials: 401,
+  invalid_session: 401,
+  unpaired_device: 401,
+  invalid_code: 400,
+  invalid_data: 400,
+  wait: 429,
+  no_permission: 403,
+  self_authorization: 403,
+  revoked_device: 403,
+  already_authorized: 409,
 }
 
 const Id = z.string().length(26)
@@ -31,33 +31,33 @@ const Secreto = z.string().min(1).max(100)
 const Cuerpos = {
   emparejamiento: z.strictObject({
     pin: Pin,
-    nombre: z.string().max(100),
-    tipo: z.string().max(20),
+    name: z.string().max(100),
+    type: z.string().max(20),
   }),
-  emparejar: z.strictObject({ codigo: z.string().max(20) }),
-  sesion: z.strictObject({ pin: Pin }),
+  emparejar: z.strictObject({ code: z.string().max(20) }),
+  session: z.strictObject({ pin: Pin }),
   entrar: z.union([
     z.strictObject({ pin: Pin }),
-    z.strictObject({ usuario: z.string().max(100), contrasena: z.string().max(200) }),
+    z.strictObject({ user: z.string().max(100), password: z.string().max(200) }),
   ]),
-  cerrar: z.strictObject({ sesion_id: Id, secreto: Secreto }),
-  autorizacion: z.strictObject({
-    sesion_id: Id,
-    secreto: Secreto,
+  close: z.strictObject({ session_id: Id, secret: Secreto }),
+  authorization: z.strictObject({
+    session_id: Id,
+    secret: Secreto,
     pin: Pin,
-    accion: z.string().max(50),
-    agregado_id: Id,
-    evento_id: Id,
-    huella: z.string().max(64),
+    action: z.string().max(50),
+    aggregate_id: Id,
+    event_id: Id,
+    fingerprint: z.string().max(64),
   }),
-  revocar: z.strictObject({ sesion_id: Id, secreto: Secreto }),
+  revoke: z.strictObject({ session_id: Id, secret: Secreto }),
 }
 
 function enviarError(reply: FastifyReply, e: ErrorAcceso) {
   if (e.esperaMs) reply.header('retry-after', Math.ceil(e.esperaMs / 1000))
-  return reply.code(ESTADO[e.codigo]).send({
-    error: e.codigo,
-    mensaje: e.mensaje,
+  return reply.code(ESTADO[e.code]).send({
+    error: e.code,
+    message: e.message,
     ...(e.esperaMs ? { espera_ms: e.esperaMs } : {}),
   })
 }
@@ -65,133 +65,136 @@ function enviarError(reply: FastifyReply, e: ErrorAcceso) {
 function leer<T>(esquema: z.ZodType<T>, req: FastifyRequest, reply: FastifyReply): T | null {
   const r = esquema.safeParse(req.body)
   if (r.success) return r.data
-  reply.code(400).send({ error: 'datos_invalidos', mensaje: 'Datos con formato inesperado' })
+  reply.code(400).send({ error: 'invalid_data', message: 'Datos con formato inesperado' })
   return null
 }
 
-export async function rutasAcceso(app: FastifyInstance, { acceso }: OpcionesRutasAcceso) {
+export async function rutasAcceso(app: FastifyInstance, { access }: OpcionesRutasAcceso) {
   const delToken = (req: FastifyRequest): Conexion | null => {
     const [esquema, token] = (req.headers.authorization ?? '').split(' ')
-    return esquema === 'Bearer' && token ? acceso.autenticar(token) : null
+    return esquema === 'Bearer' && token ? access.authenticate(token) : null
   }
 
   /** El dispositivo del token, o responde 401. */
-  const dispositivo = (req: FastifyRequest, reply: FastifyReply): Conexion | null => {
-    const conexion = delToken(req)
-    if (!conexion)
+  const device = (req: FastifyRequest, reply: FastifyReply): Conexion | null => {
+    const connection = delToken(req)
+    if (!connection)
       reply.code(401).send({
-        error: 'token_invalido',
-        mensaje: 'Este equipo ya no tiene acceso: vuelve a entrar',
+        error: 'invalid_token',
+        message: 'Este equipo ya no tiene acceso: vuelve a entrar',
       })
-    return conexion
+    return connection
   }
 
-  app.post('/api/emparejamientos', async (req, reply) => {
+  app.post('/api/pairings', async (req, reply) => {
     const cuerpo = leer(Cuerpos.emparejamiento, req, reply)
     if (!cuerpo) return reply
     // Desde ADR-013 los celulares y la caja entran sin emparejar (`/api/entrar`): esto queda solo
     // para la pantalla de cocina (tarea 1.4), aprobado desde un equipo que ya está registrado.
-    const conexion = dispositivo(req, reply)
-    if (!conexion) return reply
-    if (cuerpo.tipo !== 'kds')
+    const connection = device(req, reply)
+    if (!connection) return reply
+    if (cuerpo.type !== 'kds')
       return reply.code(400).send({
-        error: 'datos_invalidos',
-        mensaje: 'Celulares y cajas no se emparejan: entran con PIN o con usuario y contraseña',
+        error: 'invalid_data',
+        message: 'Celulares y cajas no se emparejan: entran con PIN o con usuario y contraseña',
       })
-    const r = acceso.crearEmparejamiento(cuerpo, conexion)
+    const r = access.crearEmparejamiento(cuerpo, connection)
     if (!r.ok) return enviarError(reply, r)
-    return reply.code(201).send({ codigo: r.codigo, vence_en: r.venceEn })
+    return reply.code(201).send({ code: r.code, expires_at: r.venceEn })
   })
 
-  app.post('/api/emparejar', async (req, reply) => {
+  app.post('/api/pair', async (req, reply) => {
     const cuerpo = leer(Cuerpos.emparejar, req, reply)
     if (!cuerpo) return reply
-    const r = acceso.emparejar(cuerpo.codigo, req.ip)
+    const r = access.emparejar(cuerpo.code, req.ip)
     if (!r.ok) return enviarError(reply, r)
     return reply
       .code(201)
-      .send({ dispositivo_id: r.dispositivoId, token: r.token, nombre: r.nombre, tipo: r.tipo })
+      .send({ device_id: r.dispositivoId, token: r.token, name: r.name, type: r.type })
   })
 
   // Entrar desde cualquier navegador de la red (ADR-013). Sin token, con el acierto el hub
   // registra el navegador como equipo y devuelve su token, que se ve solo esta vez.
-  app.post('/api/entrar', async (req, reply) => {
-    const autorizacion = req.headers.authorization
-    const conexion = autorizacion ? dispositivo(req, reply) : null
-    if (autorizacion && !conexion) return reply
+  app.post('/api/sign-in', async (req, reply) => {
+    const authorization = req.headers.authorization
+    const connection = authorization ? device(req, reply) : null
+    if (authorization && !connection) return reply
     const cuerpo = leer(Cuerpos.entrar, req, reply)
     if (!cuerpo) return reply
-    const r = acceso.entrar(cuerpo, conexion, req.ip)
+    const r = access.entrar(cuerpo, connection, req.ip)
     if (!r.ok) return enviarError(reply, r)
     return reply.code(201).send({
-      equipo: r.equipo && {
-        dispositivo_id: r.equipo.dispositivoId,
-        token: r.equipo.token,
-        nombre: r.equipo.nombre,
-        tipo: r.equipo.tipo,
+      device: r.device && {
+        device_id: r.device.dispositivoId,
+        token: r.device.token,
+        name: r.device.name,
+        type: r.device.type,
       },
-      tipo: r.tipo,
-      sesion_id: r.sesionId,
-      secreto: r.secreto,
-      usuario: r.usuario,
-      permisos: r.permisos,
+      type: r.type,
+      session_id: r.sesionId,
+      secret: r.secret,
+      user: r.user,
+      permissions: r.permissions,
     })
   })
 
-  app.post('/api/sesiones', async (req, reply) => {
-    const conexion = dispositivo(req, reply)
-    if (!conexion) return reply
-    const cuerpo = leer(Cuerpos.sesion, req, reply)
+  app.post('/api/sessions', async (req, reply) => {
+    const connection = device(req, reply)
+    if (!connection) return reply
+    const cuerpo = leer(Cuerpos.session, req, reply)
     if (!cuerpo) return reply
-    const r = acceso.iniciarSesion(conexion, cuerpo.pin)
+    const r = access.startSession(connection, cuerpo.pin)
     if (!r.ok) return enviarError(reply, r)
     return reply.code(201).send({
-      sesion_id: r.sesionId,
-      secreto: r.secreto,
-      usuario: r.usuario,
-      permisos: r.permisos,
+      session_id: r.sesionId,
+      secret: r.secret,
+      user: r.user,
+      permissions: r.permissions,
     })
   })
 
-  app.post('/api/sesiones/cerrar', async (req, reply) => {
-    const conexion = dispositivo(req, reply)
-    if (!conexion) return reply
-    const cuerpo = leer(Cuerpos.cerrar, req, reply)
+  app.post('/api/sessions/close', async (req, reply) => {
+    const connection = device(req, reply)
+    if (!connection) return reply
+    const cuerpo = leer(Cuerpos.close, req, reply)
     if (!cuerpo) return reply
-    const r = acceso.cerrarSesion(conexion, { sesionId: cuerpo.sesion_id, secreto: cuerpo.secreto })
+    const r = access.cerrarSesion(connection, {
+      sesionId: cuerpo.session_id,
+      secret: cuerpo.secret,
+    })
     if (!r.ok) return enviarError(reply, r)
     return reply.code(204).send()
   })
 
-  app.post('/api/autorizaciones', async (req, reply) => {
-    const conexion = dispositivo(req, reply)
-    if (!conexion) return reply
-    const c = leer(Cuerpos.autorizacion, req, reply)
+  app.post('/api/authorizations', async (req, reply) => {
+    const connection = device(req, reply)
+    if (!connection) return reply
+    const c = leer(Cuerpos.authorization, req, reply)
     if (!c) return reply
-    const r = acceso.autorizar(conexion, {
-      sesionId: c.sesion_id,
-      secreto: c.secreto,
+    const r = access.autorizar(connection, {
+      sesionId: c.session_id,
+      secret: c.secret,
       pin: c.pin,
-      accion: c.accion,
-      agregadoId: c.agregado_id,
-      eventoId: c.evento_id,
-      huella: c.huella,
+      action: c.action,
+      agregadoId: c.aggregate_id,
+      eventId: c.event_id,
+      fingerprint: c.fingerprint,
     })
     if (!r.ok) return enviarError(reply, r)
-    return reply.code(201).send({ autorizacion_id: r.autorizacionId, supervisor: r.supervisor })
+    return reply.code(201).send({ authorization_id: r.autorizacionId, supervisor: r.supervisor })
   })
 
-  app.post<{ Params: { id: string } }>('/api/dispositivos/:id/revocar', async (req, reply) => {
-    const conexion = dispositivo(req, reply)
-    if (!conexion) return reply
-    const cuerpo = leer(Cuerpos.revocar, req, reply)
+  app.post<{ Params: { id: string } }>('/api/devices/:id/revoke', async (req, reply) => {
+    const connection = device(req, reply)
+    if (!connection) return reply
+    const cuerpo = leer(Cuerpos.revoke, req, reply)
     if (!cuerpo) return reply
-    const r = acceso.revocarDispositivo(conexion, {
-      sesionId: cuerpo.sesion_id,
-      secreto: cuerpo.secreto,
+    const r = access.revocarDispositivo(connection, {
+      sesionId: cuerpo.session_id,
+      secret: cuerpo.secret,
       dispositivoId: req.params.id,
     })
     if (!r.ok) return enviarError(reply, r)
-    return reply.send({ revocado_en: r.revocadoEn })
+    return reply.send({ revoked_at: r.revocadoEn })
   })
 }

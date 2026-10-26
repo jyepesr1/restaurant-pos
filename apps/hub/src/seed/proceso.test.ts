@@ -14,9 +14,9 @@ const seed = (dirDatos: string) => {
   const r = spawnSync(
     process.execPath,
     ['--disable-warning=ExperimentalWarning', '--import', 'tsx', 'src/seed/main.ts'],
-    { cwd: DIR_HUB, env: { ...process.env, DIR_DATOS: dirDatos }, encoding: 'utf8' },
+    { cwd: DIR_HUB, env: { ...process.env, DATA_DIR: dirDatos }, encoding: 'utf8' },
   )
-  return { codigo: r.status, salida: `${r.stdout}${r.stderr}` }
+  return { code: r.status, output: `${r.stdout}${r.stderr}` }
 }
 
 describe('pnpm seed (proceso real)', { timeout: 60_000 }, () => {
@@ -25,21 +25,21 @@ describe('pnpm seed (proceso real)', { timeout: 60_000 }, () => {
 
   it('la primera vez crea todo y deja los PIN en un archivo; la segunda no cambia nada', () => {
     carpeta = mkdtempSync(join(tmpdir(), 'pos-seed-'))
-    const primera = seed(carpeta)
-    expect(primera.codigo).toBe(0)
-    expect(primera.salida).toMatch(/producto\s+98 nuevos/)
+    const first = seed(carpeta)
+    expect(first.code).toBe(0)
+    expect(first.output).toMatch(/products\s+98 nuevos/)
     // Sin ventana, los PIN no salen en la consola: van a un archivo.
-    expect(primera.salida).not.toMatch(/Mesero 1\s+PIN \d{4}/)
+    expect(first.output).not.toMatch(/Mesero 1\s+PIN \d{4}/)
     // Un archivo por corrida: primero el del administrador, luego el del personal.
     const archivos = readdirSync(carpeta).filter((f) => /^pines-.*\.txt$/.test(f))
-    const pines = archivos.map((f) => readFileSync(join(carpeta, f), 'utf8')).join('')
-    expect(pines).toMatch(/Contraseña:\s+\S+[\s\S]*PIN para autorizar:\s+\d{4}/)
-    expect(pines).toMatch(/Mesero 3\s+PIN \d{4}/)
+    const pins = archivos.map((f) => readFileSync(join(carpeta, f), 'utf8')).join('')
+    expect(pins).toMatch(/Contraseña:\s+\S+[\s\S]*PIN para autorizar:\s+\d{4}/)
+    expect(pins).toMatch(/Mesero 3\s+PIN \d{4}/)
 
     const segunda = seed(carpeta)
-    expect(segunda.codigo).toBe(0)
-    expect(segunda.salida).toMatch(/producto\s+0 nuevos, 0 cambiados, 98 iguales/)
-    expect(segunda.salida).toContain('No se creó personal nuevo')
+    expect(segunda.code).toBe(0)
+    expect(segunda.output).toMatch(/products\s+0 nuevos, 0 cambiados, 98 iguales/)
+    expect(segunda.output).toContain('No se creó personal nuevo')
   })
 
   it('con el hub abierto no toca nada y lo dice', () => {
@@ -47,8 +47,8 @@ describe('pnpm seed (proceso real)', { timeout: 60_000 }, () => {
     const hubAbierto = abrirBase(join(carpeta, 'pos.sqlite'), { exclusiva: true })
     try {
       const r = seed(carpeta)
-      expect(r.codigo).toBe(1)
-      expect(r.salida).toContain('el hub está abierto')
+      expect(r.code).toBe(1)
+      expect(r.output).toContain('el hub está abierto')
     } finally {
       ;(hubAbierto as unknown as { close(): void }).close()
     }

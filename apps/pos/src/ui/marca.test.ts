@@ -1,19 +1,19 @@
 import { readFileSync } from 'node:fs'
-import { MARCAS as MARCAS_DEL_HUB } from '@pos/core'
+import { BRANDS as MARCAS_DEL_HUB } from '@pos/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { aplicarMarca, esMarca, MARCA_POR_DEFECTO, MARCAS } from './marca'
+import { aplicarMarca, BRANDS, esMarca, MARCA_POR_DEFECTO } from './marca'
 
 // La marca del restaurante en el navegador (tarea 1.3c): qué valores vale, cómo se aplica a la
 // página y cómo se recuerda en el equipo. Sin navegador real: `document` y `localStorage` son
 // simulados (el entorno de pruebas es Node).
 
-const CLAVE = 'pos-marca'
+const CLAVE = 'pos-brand'
 
-function simularNavegador(opciones: { guardado?: string | null; sinAlmacen?: boolean } = {}) {
+function simularNavegador(options: { saved?: string | null; sinAlmacen?: boolean } = {}) {
   const dataset: Record<string, string | undefined> = {}
   const almacen = new Map<string, string>()
-  if (opciones.guardado != null) almacen.set(CLAVE, opciones.guardado)
-  const localStorage = opciones.sinAlmacen
+  if (options.saved != null) almacen.set(CLAVE, options.saved)
+  const localStorage = options.sinAlmacen
     ? {
         getItem: () => {
           throw new DOMException('Acceso denegado', 'SecurityError')
@@ -40,7 +40,7 @@ describe('esMarca', () => {
   })
 
   it('rechaza cualquier otra cosa, incluidas las marcas de pruebas anteriores', () => {
-    for (const valor of [
+    for (const value of [
       'bagno',
       'taller',
       'noche',
@@ -59,12 +59,12 @@ describe('esMarca', () => {
       {},
       [],
       ['faro'],
-      { marca: 'faro' },
+      { brand: 'faro' },
       'toString',
       '__proto__',
       'constructor',
     ])
-      expect(esMarca(valor), JSON.stringify(valor)).toBe(false)
+      expect(esMarca(value), JSON.stringify(value)).toBe(false)
   })
 
   it('la marca por defecto es una marca válida y es Faro', () => {
@@ -75,28 +75,28 @@ describe('esMarca', () => {
 
 describe('las marcas de la app y las del hub dicen lo mismo', () => {
   it('la lista de la app y la del núcleo (la que valida el hub) son iguales', () => {
-    expect(MARCAS.map((m) => m.marca).sort()).toEqual([...MARCAS_DEL_HUB].sort())
+    expect(BRANDS.map((m) => m.brand).sort()).toEqual([...MARCAS_DEL_HUB].sort())
   })
 
   it('cada marca tiene nombre y descripción para mostrarla, sin repetirse', () => {
-    for (const m of MARCAS) {
-      expect(m.nombre.trim().length).toBeGreaterThan(0)
-      expect(m.descripcion.trim().length).toBeGreaterThan(0)
+    for (const m of BRANDS) {
+      expect(m.name.trim().length).toBeGreaterThan(0)
+      expect(m.description.trim().length).toBeGreaterThan(0)
     }
-    expect(new Set(MARCAS.map((m) => m.marca)).size).toBe(MARCAS.length)
-    expect(new Set(MARCAS.map((m) => m.nombre)).size).toBe(MARCAS.length)
+    expect(new Set(BRANDS.map((m) => m.brand)).size).toBe(BRANDS.length)
+    expect(new Set(BRANDS.map((m) => m.name)).size).toBe(BRANDS.length)
   })
 
   it('cada marca que no es Faro tiene su bloque de colores en estilos.css, en claro y en oscuro', () => {
     const css = readFileSync(new URL('../estilos.css', import.meta.url), 'utf8')
-    for (const { marca } of MARCAS) {
-      if (marca === MARCA_POR_DEFECTO) continue
-      expect(css, marca).toContain(`:root[data-marca="${marca}"] {`)
-      expect(css, marca).toContain(`:root[data-marca="${marca}"].oscuro {`)
+    for (const { brand } of BRANDS) {
+      if (brand === MARCA_POR_DEFECTO) continue
+      expect(css, brand).toContain(`:root[data-marca="${brand}"] {`)
+      expect(css, brand).toContain(`:root[data-marca="${brand}"].oscuro {`)
     }
     // Y no hay bloques de marcas que la app ya no ofrezca.
     const enLaHoja = [...css.matchAll(/data-marca="([^"]+)"/g)].map((m) => m[1])
-    for (const nombre of enLaHoja) expect(esMarca(nombre), nombre).toBe(true)
+    for (const name of enLaHoja) expect(esMarca(name), name).toBe(true)
   })
 })
 
@@ -128,7 +128,7 @@ describe('aplicarMarca', () => {
   })
 
   it('sin argumento aplica la guardada en el equipo', () => {
-    const { dataset } = simularNavegador({ guardado: 'la-spritzzeria' })
+    const { dataset } = simularNavegador({ saved: 'la-spritzzeria' })
     aplicarMarca()
     expect(dataset.marca).toBe('la-spritzzeria')
   })
@@ -141,7 +141,7 @@ describe('aplicarMarca', () => {
   })
 
   it('si lo guardado es una marca vieja o inventada (de una versión anterior), vuelve a Faro y lo corrige', () => {
-    for (const viejo of [
+    for (const oldOne of [
       'bagno',
       'taller',
       'noche',
@@ -151,10 +151,10 @@ describe('aplicarMarca', () => {
       'null',
       '{"x":1}',
     ]) {
-      const { dataset, almacen } = simularNavegador({ guardado: viejo })
+      const { dataset, almacen } = simularNavegador({ saved: oldOne })
       aplicarMarca()
-      expect('marca' in dataset, viejo).toBe(false)
-      expect(almacen.get(CLAVE), viejo).toBe('faro')
+      expect('marca' in dataset, oldOne).toBe(false)
+      expect(almacen.get(CLAVE), oldOne).toBe('faro')
     }
   })
 
@@ -167,10 +167,10 @@ describe('aplicarMarca', () => {
   })
 
   it('después de recargar (otra "página" con el mismo almacén) la marca sigue', () => {
-    const primera = simularNavegador()
+    const first = simularNavegador()
     aplicarMarca('la-spritzzeria')
-    const guardado = primera.almacen.get(CLAVE)
-    const segunda = simularNavegador({ guardado })
+    const saved = first.almacen.get(CLAVE)
+    const segunda = simularNavegador({ saved })
     aplicarMarca()
     expect(segunda.dataset.marca).toBe('la-spritzzeria')
   })
@@ -181,9 +181,9 @@ describe('el script de index.html que pinta antes de cargar', () => {
   const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
   const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1] ?? ''
 
-  function correrScript(guardado: string | null | 'falla') {
-    const navegador = simularNavegador({ sinAlmacen: guardado === 'falla' })
-    if (guardado !== null && guardado !== 'falla') navegador.almacen.set(CLAVE, guardado)
+  function correrScript(saved: string | null | 'failed') {
+    const navegador = simularNavegador({ sinAlmacen: saved === 'failed' })
+    if (saved !== null && saved !== 'failed') navegador.almacen.set(CLAVE, saved)
     const clases = new Set<string>()
     const documentElement = {
       dataset: navegador.dataset,
@@ -216,7 +216,7 @@ describe('el script de index.html que pinta antes de cargar', () => {
   })
 
   it('si el almacenamiento falla, no rompe la página', () => {
-    expect(() => correrScript('falla')).not.toThrow()
+    expect(() => correrScript('failed')).not.toThrow()
   })
 
   it('una marca guardada que ya no existe se corrige en cuanto arranca la app', () => {

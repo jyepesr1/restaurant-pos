@@ -15,7 +15,7 @@ const TIEMPO_MAXIMO_CONEXION_MS = 4000
 const ESPERA_COMPROBACION_MS = 3000
 const MAXIMO_MUESTRAS = 200
 
-export type EstadoCanal = 'conectando' | 'conectado' | 'sin-respuesta' | 'desconectado'
+export type EstadoCanal = 'connecting' | 'connected' | 'no-response' | 'disconnected'
 
 export interface Latencia {
   ultimaMs: number
@@ -25,7 +25,7 @@ export interface Latencia {
 }
 
 export interface EstadoWs {
-  canal: EstadoCanal
+  channel: EstadoCanal
   latencia: Latencia | null
 }
 
@@ -47,15 +47,15 @@ function calcularLatencia(muestras: number[]): Latencia | null {
  * conexión sobrevivió: eso es lo que queremos medir en cada celular.
  */
 export function useConexionWs(): EstadoWs {
-  const [estado, setEstado] = useState<EstadoWs>({ canal: 'conectando', latencia: null })
+  const [status, setEstado] = useState<EstadoWs>({ channel: 'connecting', latencia: null })
 
   useEffect(() => {
-    let activo = true
+    let active = true
     let socket: WebSocket | undefined
     let reintento: ReturnType<typeof setTimeout> | undefined
-    let intentos = 0
+    let attempts = 0
     let aperturas = 0
-    let cierres = 0
+    let closings = 0
     let ultimoMensajeEn = Date.now()
     // Cada ocultamiento invalida los pings en vuelo: su latencia incluiría el tiempo dormido.
     let generacion = 0
@@ -66,85 +66,85 @@ export function useConexionWs(): EstadoWs {
     let cierresAlOcultar = 0
     let comprobacion: { recibioMensaje: boolean; terminar: () => void } | undefined
 
-    const cambiarCanal = (canal: EstadoCanal) =>
-      setEstado((previo) => (previo.canal === canal ? previo : { ...previo, canal }))
+    const cambiarCanal = (channel: EstadoCanal) =>
+      setEstado((previous) => (previous.channel === channel ? previous : { ...previous, channel }))
 
-    function conectar() {
+    function connect() {
       const protocolo = location.protocol === 'https:' ? 'wss' : 'ws'
-      const nuevo = new WebSocket(`${protocolo}://${location.host}/api/diagnostico/ws`)
-      socket = nuevo
+      const fresh = new WebSocket(`${protocolo}://${location.host}/api/diagnostics/ws`)
+      socket = fresh
       const limiteConexion = setTimeout(() => {
-        if (nuevo.readyState === WebSocket.CONNECTING) {
-          descartar(nuevo, { motivo: 'tiempo-agotado' }, 'desconectado')
+        if (fresh.readyState === WebSocket.CONNECTING) {
+          descartar(fresh, { reason: 'timed-out' }, 'disconnected')
         }
       }, TIEMPO_MAXIMO_CONEXION_MS)
 
-      nuevo.onopen = () => {
+      fresh.onopen = () => {
         clearTimeout(limiteConexion)
-        intentos = 0
+        attempts = 0
         ultimoMensajeEn = Date.now()
         // Cuánto tardó en recuperarse la conexión desde que el usuario volvió a la pantalla.
         const recuperacion =
           visibleDesde === null ? {} : { msDesdeVisible: Date.now() - visibleDesde }
         visibleDesde = null
-        registrarEvento('ws-abierto', { reconexiones: aperturas, ...recuperacion })
+        registrarEvento('ws-open', { reconexiones: aperturas, ...recuperacion })
         aperturas += 1
-        cambiarCanal('conectado')
+        cambiarCanal('connected')
       }
 
-      nuevo.onmessage = ({ data }) => {
+      fresh.onmessage = ({ data }) => {
         ultimoMensajeEn = Date.now()
         if (comprobacion) comprobacion.recibioMensaje = true
-        cambiarCanal('conectado')
+        cambiarCanal('connected')
 
-        const texto = String(data)
-        if (!texto.startsWith('pong:')) return
-        const [gen, enviado] = texto.slice('pong:'.length).split(':').map(Number)
-        if (gen !== generacion || document.hidden || enviado === undefined) return
-        muestras.push(Math.round(performance.now() - enviado))
+        const text = String(data)
+        if (!text.startsWith('pong:')) return
+        const [gen, sent] = text.slice('pong:'.length).split(':').map(Number)
+        if (gen !== generacion || document.hidden || sent === undefined) return
+        muestras.push(Math.round(performance.now() - sent))
         if (muestras.length > MAXIMO_MUESTRAS) muestras.shift()
-        setEstado((previo) => ({ ...previo, latencia: calcularLatencia(muestras) }))
+        setEstado((previous) => ({ ...previous, latencia: calcularLatencia(muestras) }))
       }
 
-      nuevo.onclose = ({ code }) => {
+      fresh.onclose = ({ code }) => {
         clearTimeout(limiteConexion)
-        alCerrar(nuevo, { codigo: code })
+        alCerrar(fresh, { code: code })
       }
     }
 
     /** Suelta un socket que ya no se usa: sus eventos tardíos no deben afectar el estado. */
-    function soltar(viejo: WebSocket) {
-      viejo.onopen = null
-      viejo.onmessage = null
-      viejo.onclose = null
-      viejo.close()
+    function soltar(oldOne: WebSocket) {
+      oldOne.onopen = null
+      oldOne.onmessage = null
+      oldOne.onclose = null
+      oldOne.close()
     }
 
     /** Abandona un socket colgado o muerto sin esperar a que el navegador lo cierre. */
-    function descartar(viejo: WebSocket, detalle: Record<string, unknown>, canal: EstadoCanal) {
-      alCerrar(viejo, detalle, canal)
-      soltar(viejo)
+    function descartar(oldOne: WebSocket, detalle: Record<string, unknown>, channel: EstadoCanal) {
+      alCerrar(oldOne, detalle, channel)
+      soltar(oldOne)
     }
 
     /** Conecta ya, sin esperar el reintento programado (que el navegador pudo congelar). */
     function reconectarAhora() {
       clearTimeout(reintento)
-      intentos = 0
-      conectar()
+      attempts = 0
+      connect()
     }
 
     function alCerrar(
-      cerrado: WebSocket,
+      closed: WebSocket,
       detalle: Record<string, unknown>,
-      canal: EstadoCanal = 'desconectado',
+      channel: EstadoCanal = 'disconnected',
     ) {
       // Un socket viejo que ya se reemplazó no cuenta.
-      if (!activo || cerrado !== socket) return
-      cierres += 1
-      registrarEvento('ws-cerrado', detalle)
-      cambiarCanal(canal)
-      intentos += 1
-      reintento = setTimeout(conectar, Math.min(1000 * intentos, ESPERA_MAXIMA_RECONEXION_MS))
+      if (!active || closed !== socket) return
+      closings += 1
+      registrarEvento('ws-closed', detalle)
+      cambiarCanal(channel)
+      attempts += 1
+      reintento = setTimeout(connect, Math.min(1000 * attempts, ESPERA_MAXIMA_RECONEXION_MS))
     }
 
     const ping = setInterval(() => {
@@ -158,7 +158,7 @@ export function useConexionWs(): EstadoWs {
     const vigilancia = setInterval(() => {
       if (document.hidden || socket?.readyState !== WebSocket.OPEN) return
       if (Date.now() - ultimoMensajeEn < SIN_RESPUESTA_MS) return
-      descartar(socket, { motivo: 'sin-respuesta' }, 'sin-respuesta')
+      descartar(socket, { reason: 'no-response' }, 'no-response')
     }, INTERVALO_VIGILANCIA_MS)
 
     function alCambiarVisibilidad() {
@@ -167,8 +167,8 @@ export function useConexionWs(): EstadoWs {
         generacion += 1
         visibleDesde = null
         ocultaDesde = Date.now()
-        cierresAlOcultar = cierres
-        registrarEvento('oculta')
+        cierresAlOcultar = closings
+        registrarEvento('hidden')
         return
       }
 
@@ -189,21 +189,21 @@ export function useConexionWs(): EstadoWs {
       } else {
         // Sin conexión al volver: no esperar el reintento ni un intento colgado mientras dormía.
         if (socket?.readyState === WebSocket.CONNECTING) {
-          descartar(socket, { motivo: 'reintento-al-volver' }, 'conectando')
+          descartar(socket, { reason: 'retry-on-return' }, 'connecting')
         } else if (socket) {
           soltar(socket)
         }
         reconectarAhora()
       }
 
-      const actual = {
+      const current = {
         recibioMensaje: false,
         terminar: () => {
           clearTimeout(limite)
-          if (comprobacion !== actual) return
+          if (comprobacion !== current) return
           comprobacion = undefined
           const conexionMantenida =
-            abiertoAlVolver && actual.recibioMensaje && cierres === cierresAlOcultar
+            abiertoAlVolver && current.recibioMensaje && closings === cierresAlOcultar
           registrarEvento('visible', { duracionMs, conexionMantenida, abiertoAlVolver })
           if (conexionMantenida) {
             visibleDesde = null
@@ -213,22 +213,22 @@ export function useConexionWs(): EstadoWs {
           const mudo =
             socket === socketAlVolver &&
             socket?.readyState === WebSocket.OPEN &&
-            !actual.recibioMensaje
+            !current.recibioMensaje
           if (!document.hidden && socket && mudo) {
-            descartar(socket, { motivo: 'sin-respuesta-al-volver' }, 'sin-respuesta')
+            descartar(socket, { reason: 'no-response-on-return' }, 'no-response')
             reconectarAhora()
           }
         },
       }
-      const limite = setTimeout(() => actual.terminar(), ESPERA_COMPROBACION_MS)
-      comprobacion = actual
+      const limite = setTimeout(() => current.terminar(), ESPERA_COMPROBACION_MS)
+      comprobacion = current
     }
 
     document.addEventListener('visibilitychange', alCambiarVisibilidad)
-    conectar()
+    connect()
 
     return () => {
-      activo = false
+      active = false
       document.removeEventListener('visibilitychange', alCambiarVisibilidad)
       clearInterval(ping)
       clearInterval(vigilancia)
@@ -237,5 +237,5 @@ export function useConexionWs(): EstadoWs {
     }
   }, [])
 
-  return estado
+  return status
 }

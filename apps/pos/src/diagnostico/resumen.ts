@@ -25,10 +25,10 @@ export interface ResumenDiagnostico {
 }
 
 const porOrdenDeRegistro = (a: EventoDiagnostico, b: EventoDiagnostico) =>
-  a.hora - b.hora || (a.id ?? 0) - (b.id ?? 0)
+  a.time - b.time || (a.id ?? 0) - (b.id ?? 0)
 
 /** Resume el registro de eventos (en cualquier orden) para el informe de la prueba de conexión. */
-export function resumirEventos(eventos: EventoDiagnostico[]): ResumenDiagnostico {
+export function resumirEventos(events: EventoDiagnostico[]): ResumenDiagnostico {
   const ocultamientos: Ocultamiento[] = []
   let cargas = 0
   let descartes = 0
@@ -39,26 +39,26 @@ export function resumirEventos(eventos: EventoDiagnostico[]): ResumenDiagnostico
   let recuperacionPendiente: number | null = null
   let cargaTrasRecarga: number | null = null
 
-  for (const { tipo, hora, detalle } of [...eventos].sort(porOrdenDeRegistro)) {
-    switch (tipo) {
-      case 'carga': {
+  for (const { type, time, detalle } of [...events].sort(porOrdenDeRegistro)) {
+    switch (type) {
+      case 'load': {
         cargas += 1
-        const trasOcultar = ocultaDesde !== null && hora - ocultaDesde > UMBRAL_RECARGA_FORZADA_MS
+        const trasOcultar = ocultaDesde !== null && time - ocultaDesde > UMBRAL_RECARGA_FORZADA_MS
         if (ocultaDesde !== null && trasOcultar) {
           ocultamientos.push({
-            duracionMs: hora - ocultaDesde,
+            duracionMs: time - ocultaDesde,
             conexionPerdida: true,
             recargada: true,
             recuperacionMs: null,
           })
-          cargaTrasRecarga = hora
+          cargaTrasRecarga = time
         }
         if (trasOcultar || detalle?.descartada === true) descartes += 1
         ocultaDesde = null
         break
       }
-      case 'oculta':
-        ocultaDesde = hora
+      case 'hidden':
+        ocultaDesde = time
         perdidaMientrasOculta = false
         recuperacionPendiente = null
         break
@@ -66,7 +66,7 @@ export function resumirEventos(eventos: EventoDiagnostico[]): ResumenDiagnostico
         if (ocultaDesde !== null) {
           // El evento se registra tras comprobar la conexión: la duración real viene en el detalle.
           const duracionMs =
-            typeof detalle?.duracionMs === 'number' ? detalle.duracionMs : hora - ocultaDesde
+            typeof detalle?.duracionMs === 'number' ? detalle.duracionMs : time - ocultaDesde
           const conexionPerdida = perdidaMientrasOculta || detalle?.conexionMantenida === false
           ocultamientos.push({
             duracionMs,
@@ -78,14 +78,14 @@ export function resumirEventos(eventos: EventoDiagnostico[]): ResumenDiagnostico
         ocultaDesde = null
         recuperacionPendiente = null
         break
-      case 'ws-cerrado':
+      case 'ws-closed':
         if (ocultaDesde !== null) perdidaMientrasOculta = true
         break
-      case 'ws-abierto': {
+      case 'ws-open': {
         if (typeof detalle?.reconexiones === 'number' && detalle.reconexiones > 0) reconexiones += 1
         const ultimo = ocultamientos.at(-1)
         if (cargaTrasRecarga !== null && ultimo?.recargada) {
-          ultimo.recuperacionMs = hora - cargaTrasRecarga
+          ultimo.recuperacionMs = time - cargaTrasRecarga
           cargaTrasRecarga = null
         } else if (typeof detalle?.msDesdeVisible === 'number') {
           if (ocultaDesde !== null) {

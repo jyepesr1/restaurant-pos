@@ -16,7 +16,7 @@ export const esperaTras = (fallos: number) =>
 
 interface Registro {
   fallos: number
-  hasta: number
+  until: number
   ultimo: number
 }
 
@@ -31,9 +31,9 @@ export class Intentos {
   private readonly registros = new Map<string, Registro>()
   private recientes: number[] = []
   private readonly ahora: () => number
-  private readonly alAvisar: (aviso: string) => void
+  private readonly alAvisar: (alert: string) => void
 
-  constructor(ahora: () => number = Date.now, alAvisar: (aviso: string) => void = () => {}) {
+  constructor(ahora: () => number = Date.now, alAvisar: (alert: string) => void = () => {}) {
     this.ahora = ahora
     this.alAvisar = alAvisar
   }
@@ -41,7 +41,7 @@ export class Intentos {
   /** Cuánto falta para poder intentar de nuevo (0 si ya se puede). */
   esperaMs(quien: string): number {
     const r = this.registros.get(quien)
-    return r ? Math.max(0, r.hasta - this.ahora()) : 0
+    return r ? Math.max(0, r.until - this.ahora()) : 0
   }
 
   /**
@@ -54,11 +54,11 @@ export class Intentos {
     { contar = true, tope = ESPERA_MAXIMA_MS }: { contar?: boolean; tope?: number } = {},
   ): number {
     const ahora = this.ahora()
-    const previo = this.registros.get(quien)
+    const previous = this.registros.get(quien)
     // Tras una ventana sin fallos, se empieza de cero.
-    const fallos = previo && ahora - previo.ultimo < VENTANA_AVISO_MS ? previo.fallos + 1 : 1
-    const espera = Math.min(tope, esperaTras(fallos))
-    this.registros.set(quien, { fallos, hasta: ahora + espera, ultimo: ahora })
+    const fallos = previous && ahora - previous.ultimo < VENTANA_AVISO_MS ? previous.fallos + 1 : 1
+    const delay = Math.min(tope, esperaTras(fallos))
+    this.registros.set(quien, { fallos, until: ahora + delay, ultimo: ahora })
     this.limpiar(ahora)
 
     if (contar) this.recientes.push(ahora)
@@ -67,7 +67,7 @@ export class Intentos {
       this.alAvisar(`${FALLOS_PARA_AVISO} PIN o códigos errados en 10 minutos en el restaurante`)
     if (fallos === FALLOS_DE_UN_EQUIPO_PARA_AVISO)
       this.alAvisar(`${fallos} PIN o códigos errados seguidos desde ${quien}`)
-    return espera
+    return delay
   }
 
   /** Que una IP que prueba sin parar no haga crecer la memoria sin límite. */

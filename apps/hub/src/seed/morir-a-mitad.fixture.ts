@@ -15,29 +15,29 @@ const morir = () => process.kill(process.pid, 'SIGKILL')
 
 const dirDatos = dirDatosDe()
 const { db } = abrirDatos(dirDatos)
-const { acceso, restauranteId, roles } = prepararAcceso(db, dirDatos)
+const { access, restauranteId, roles } = prepararAcceso(db, dirDatos)
 
-let cuenta = 0
+let check = 0
 const trampa: BaseSqlite = {
   exec: (sql) => db.exec(sql),
   prepare: (sql) => {
-    if (sql.startsWith(`INSERT INTO ${tabla} `) && ++cuenta === limite) morir()
+    if (sql.startsWith(`INSERT INTO ${tabla} `) && ++check === limite) morir()
     return db.prepare(sql)
   },
   close: () => db.close(),
 }
-const insertarUsuario = acceso.insertarUsuario.bind(acceso)
-let personas = 0
-acceso.insertarUsuario = (...args) => {
-  if (tabla === 'usuario' && ++personas === limite) morir()
-  return insertarUsuario(...args)
+const insertUser = access.insertUser.bind(access)
+let people = 0
+access.insertUser = (...args) => {
+  if (tabla === 'users' && ++people === limite) morir()
+  return insertUser(...args)
 }
 
-const carta = leerCarta(
+const menu = leerCarta(
   readFileSync(
     fileURLToPath(new URL('../../../../docs/datos/carta-la-spritzzeria.yaml', import.meta.url)),
     'utf8',
   ),
 )
-sembrar(trampa, acceso, { restauranteId, roles, carta }, new Date().toISOString())
+sembrar(trampa, access, { restauranteId, roles, menu }, new Date().toISOString())
 db.close()

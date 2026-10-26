@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
@@ -14,14 +14,14 @@ import {
   cambiosDeZona,
   type ElementoPlano,
   FORMAS,
-  girar,
   limites,
   type MesaPlano,
-  medir,
-  mover,
+  measure,
+  move,
   nuevaMesa,
   nuevoElemento,
   problemasDeZona,
+  rotate,
   siguienteNombre,
   TIPOS_ELEMENTO,
   variasMesas,
@@ -34,18 +34,18 @@ import {
 // teclado: las flechas mueven 10 cm (con Mayúsculas, 50) y R gira 15°. Los cambios se guardan
 // juntos con "Guardar"; mientras tanto se pueden descartar.
 
-type Seleccion = { tipo: 'mesa' | 'elemento'; id: string } | null
+type Seleccion = { type: 'table' | 'element'; id: string } | null
 type Arrastre = {
   /** El dedo o el mouse que arrastra: un segundo dedo no lo interrumpe. */
   puntero: number
   id: string
-  tipo: 'mesa' | 'elemento'
-  modo: 'mover' | 'medir'
-  inicio: { x: number; y: number }
-  original: { x: number; y: number; ancho: number; alto: number; rotacion: number }
+  type: 'table' | 'element'
+  mode: 'move' | 'measure'
+  start: { x: number; y: number }
+  original: { x: number; y: number; width: number; height: number; rotation: number }
 }
 
-const campo =
+const field =
   'min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 text-lg focus-visible:outline-3 focus-visible:outline-foco'
 
 export function PlanoEditor() {
@@ -55,20 +55,20 @@ export function PlanoEditor() {
   const [b, setB] = useState<BorradorZona | null>(null)
   const [seleccion, setSeleccion] = useState<Seleccion>(null)
   const [guardando, setGuardando] = useState(false)
-  const [salir, setSalir] = useState<null | (() => void)>(null)
+  const [exit, setSalir] = useState<null | (() => void)>(null)
   // "Agregar varias mesas a la vez": abierto o no, y lo elegido.
   const [varias, setVarias] = useState<{
-    forma: FormaMesa
-    cantidad: number
+    shape: FormaMesa
+    quantity: number
     porFila: number
   } | null>(null)
 
   // Una zona nueva que no se ha tocado no cuenta como cambio: su nombre inicial queda aquí.
   const [nombreInicial, setNombreInicial] = useState('')
   const abrirZona = useCallback((x: CatalogoEdicion, id?: string) => {
-    const zona = x.zonas.find((z) => z.id === id && z.activo) ?? x.zonas.find((z) => z.activo)
-    setB(zona ? borradorDeZona(x, zona.id) : { ...zonaNueva(x), nombre: 'Salón' })
-    setNombreInicial(zona ? '' : 'Salón')
+    const zone = x.zones.find((z) => z.id === id && z.active) ?? x.zones.find((z) => z.active)
+    setB(zone ? borradorDeZona(x, zone.id) : { ...zonaNueva(x), name: 'Salón' })
+    setNombreInicial(zone ? '' : 'Salón')
     setSeleccion(null)
     setHistorial([])
   }, [])
@@ -94,28 +94,28 @@ export function PlanoEditor() {
   const [historial, setHistorial] = useState<BorradorZona[]>([])
   const ultimoCambio = useRef(0)
   // Un error del hub se limpia en cuanto se vuelve a editar.
-  const editar = (nuevo: BorradorZona) => {
+  const editar = (fresh: BorradorZona) => {
     setError(null)
     if (b && Date.now() - ultimoCambio.current > 500) setHistorial((h) => [...h.slice(-49), b])
     ultimoCambio.current = Date.now()
-    setB(nuevo)
+    setB(fresh)
   }
-  const deshacer = () => {
-    const anterior = historial.at(-1)
-    if (!anterior) return
+  const undo = () => {
+    const previous = historial.at(-1)
+    if (!previous) return
     setHistorial((h) => h.slice(0, -1))
-    setB(anterior)
+    setB(previous)
     setSeleccion(null)
   }
   // El foco va a lo que se acaba de agregar o duplicar (si no, queda lejos en el orden de Tab).
   const [enfocar, setEnfocar] = useState<string | null>(null)
-  const cambios = c && b ? cambiosDeZona(c, b) : []
-  const problemas = c && b ? problemasDeZona(c, b) : []
-  const sucio = b?.nuevo
-    ? b.mesas.some((m) => m.activo) ||
-      b.elementos.some((e) => e.activo) ||
-      b.nombre.trim() !== nombreInicial
-    : cambios.length > 0
+  const changes = c && b ? cambiosDeZona(c, b) : []
+  const issues = c && b ? problemasDeZona(c, b) : []
+  const sucio = b?.fresh
+    ? b.tables.some((m) => m.active) ||
+      b.elements.some((e) => e.active) ||
+      b.name.trim() !== nombreInicial
+    : changes.length > 0
 
   // Recargar o cerrar la pestaña con cambios: el navegador pregunta.
   useEffect(() => {
@@ -136,19 +136,19 @@ export function PlanoEditor() {
     window.addEventListener('keydown', alTeclear)
     return () => window.removeEventListener('keydown', alTeclear)
   }, [])
-  const deshacerRef = useRef(deshacer)
-  deshacerRef.current = deshacer
+  const deshacerRef = useRef(undo)
+  deshacerRef.current = undo
 
   /** Antes de dejar la zona con cambios, pregunta. */
-  const siSePuede = (accion: () => void) => (sucio ? setSalir(() => accion) : accion())
+  const siSePuede = (action: () => void) => (sucio ? setSalir(() => action) : action())
 
   const guardar = async (): Promise<boolean> => {
     if (!b || !c) return false
     setGuardando(true)
     try {
-      await sala.editarCatalogo(cambios)
-      avisar(b.activo ? `Guardaste ${b.nombre.trim()}` : `Archivaste ${b.nombre.trim()}`)
-      await cargar(b.activo ? b.id : undefined)
+      await sala.editarCatalogo(changes)
+      avisar(b.active ? `Guardaste ${b.name.trim()}` : `Archivaste ${b.name.trim()}`)
+      await cargar(b.active ? b.id : undefined)
       return true
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar')
@@ -160,61 +160,61 @@ export function PlanoEditor() {
 
   if (!c || !b)
     return (
-      <MarcoSala titulo="Plano" volver="/">
+      <MarcoSala titulo="Plano" back="/">
         <p className="p-6 text-texto-suave" role={error ? 'alert' : undefined}>
           {error ?? 'Cargando el plano…'}
         </p>
       </MarcoSala>
     )
 
-  const zonas = c.zonas.filter((z) => z.activo)
-  const pisosDistintos = new Set(zonas.map((z) => z.piso)).size > 1
+  const zones = c.zones.filter((z) => z.active)
+  const pisosDistintos = new Set(zones.map((z) => z.level)).size > 1
   const nombresUsados = [
-    ...c.mesas.filter((m) => m.activo && m.zona_id !== b.id).map((m) => m.nombre),
-    ...b.mesas.filter((m) => m.activo).map((m) => m.nombre),
+    ...c.tables.filter((m) => m.active && m.zone_id !== b.id).map((m) => m.name),
+    ...b.tables.filter((m) => m.active).map((m) => m.name),
   ]
-  const agregarMesa = (forma: FormaMesa) => {
-    const m = nuevaMesa(b, forma, nombresUsados)
-    editar({ ...b, mesas: [...b.mesas, m] })
-    setSeleccion({ tipo: 'mesa', id: m.id })
+  const agregarMesa = (shape: FormaMesa) => {
+    const m = nuevaMesa(b, shape, nombresUsados)
+    editar({ ...b, tables: [...b.tables, m] })
+    setSeleccion({ type: 'table', id: m.id })
     setEnfocar(m.id)
   }
   const agregarVarias = () => {
     if (!varias) return
-    const nuevas = variasMesas(b, varias.forma, varias.cantidad, varias.porFila, nombresUsados)
-    editar({ ...b, mesas: [...b.mesas, ...nuevas] })
+    const newOnes = variasMesas(b, varias.shape, varias.quantity, varias.porFila, nombresUsados)
+    editar({ ...b, tables: [...b.tables, ...newOnes] })
     setVarias(null)
     avisar(
-      `Agregaste ${nuevas.length} mesas: de la ${nuevas[0]?.nombre} a la ${nuevas.at(-1)?.nombre}`,
+      `Agregaste ${newOnes.length} mesas: de la ${newOnes[0]?.name} a la ${newOnes.at(-1)?.name}`,
     )
   }
-  const agregarElemento = (tipo: TipoElemento) => {
-    const e = nuevoElemento(b, tipo)
-    editar({ ...b, elementos: [...b.elementos, e] })
-    setSeleccion({ tipo: 'elemento', id: e.id })
+  const agregarElemento = (type: TipoElemento) => {
+    const e = nuevoElemento(b, type)
+    editar({ ...b, elements: [...b.elements, e] })
+    setSeleccion({ type: 'element', id: e.id })
     setEnfocar(e.id)
   }
 
   return (
-    <MarcoSala titulo="Plano" volver="/" protegerSalida={siSePuede}>
+    <MarcoSala titulo="Plano" back="/" protegerSalida={siSePuede}>
       <div className="mx-auto flex max-w-7xl flex-col gap-3 p-3">
         <Grupo etiqueta="Zona" className="flex flex-wrap gap-2">
-          {zonas.map((z) => (
+          {zones.map((z) => (
             <Opcion
               key={z.id}
               elegida={z.id === b.id}
               alElegir={() => z.id !== b.id && siSePuede(() => abrirZona(c, z.id))}
             >
-              {pisosDistintos ? `${z.nombre} · piso ${z.piso}` : z.nombre}
+              {pisosDistintos ? `${z.name} · piso ${z.level}` : z.name}
             </Opcion>
           ))}
-          {b.nuevo && (
+          {b.fresh && (
             <Opcion elegida alElegir={() => {}}>
-              {b.nombre || 'Zona nueva'}
+              {b.name || 'Zona nueva'}
             </Opcion>
           )}
           <Boton
-            icono="mas"
+            icono="more"
             onClick={() =>
               siSePuede(() => {
                 setB(zonaNueva(c))
@@ -225,7 +225,7 @@ export function PlanoEditor() {
           >
             Nueva zona
           </Boton>
-          <Boton icono="deshacer" disabled={historial.length === 0} onClick={deshacer}>
+          <Boton icono="undo" disabled={historial.length === 0} onClick={undo}>
             Deshacer
           </Boton>
         </Grupo>
@@ -235,19 +235,17 @@ export function PlanoEditor() {
           {(Object.keys(FORMAS) as FormaMesa[]).map((f, i) => (
             <Boton
               key={f}
-              id={i === 0 ? 'agregar-mesa' : undefined}
-              icono="mas"
+              id={i === 0 ? 'add-table' : undefined}
+              icono="more"
               onClick={() => agregarMesa(f)}
             >
-              {FORMAS[f].nombre}
+              {FORMAS[f].name}
             </Boton>
           ))}
           <Boton
-            variante={varias ? 'principal' : 'secundario'}
+            variant={varias ? 'main' : 'secondary'}
             aria-expanded={varias !== null}
-            onClick={() =>
-              setVarias(varias ? null : { forma: 'cuadrada', cantidad: 10, porFila: 5 })
-            }
+            onClick={() => setVarias(varias ? null : { shape: 'square', quantity: 10, porFila: 5 })}
           >
             Varias a la vez…
           </Boton>
@@ -259,41 +257,41 @@ export function PlanoEditor() {
               {(Object.keys(FORMAS) as FormaMesa[]).map((f) => (
                 <Opcion
                   key={f}
-                  elegida={varias.forma === f}
-                  alElegir={() => setVarias({ ...varias, forma: f })}
+                  elegida={varias.shape === f}
+                  alElegir={() => setVarias({ ...varias, shape: f })}
                 >
-                  {FORMAS[f].nombre}
+                  {FORMAS[f].name}
                 </Opcion>
               ))}
             </Grupo>
             <span className="w-28">
               <Numero
                 etiqueta="Cuántas"
-                valor={varias.cantidad}
+                value={varias.quantity}
                 min={1}
                 max={60}
-                alCambiar={(cantidad) => setVarias({ ...varias, cantidad })}
+                onChange={(quantity) => setVarias({ ...varias, quantity })}
               />
             </span>
             <span className="w-28">
               <Numero
                 etiqueta="Por fila"
-                valor={varias.porFila}
+                value={varias.porFila}
                 min={1}
                 max={20}
-                alCambiar={(porFila) => setVarias({ ...varias, porFila })}
+                onChange={(porFila) => setVarias({ ...varias, porFila })}
               />
             </span>
-            <Boton variante="principal" onClick={agregarVarias}>
-              {`Agregar ${varias.cantidad}`}
+            <Boton variant="main" onClick={agregarVarias}>
+              {`Agregar ${varias.quantity}`}
             </Boton>
           </fieldset>
         )}
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold">Agregar al plano:</span>
           {(Object.keys(TIPOS_ELEMENTO) as TipoElemento[]).map((t) => (
-            <Boton key={t} icono="mas" onClick={() => agregarElemento(t)}>
-              {TIPOS_ELEMENTO[t].nombre}
+            <Boton key={t} icono="more" onClick={() => agregarElemento(t)}>
+              {TIPOS_ELEMENTO[t].name}
             </Boton>
           ))}
         </div>
@@ -304,7 +302,7 @@ export function PlanoEditor() {
               b={b}
               seleccion={seleccion}
               alElegir={setSeleccion}
-              alCambiar={editar}
+              onChange={editar}
               enfocar={enfocar}
               alEnfocar={() => setEnfocar(null)}
             />
@@ -318,19 +316,19 @@ export function PlanoEditor() {
               <Propiedades
                 b={b}
                 seleccion={seleccion}
-                alCambiar={editar}
+                onChange={editar}
                 alElegir={(s) => {
                   setSeleccion(s)
                   if (s) setEnfocar(s.id)
                 }}
                 alSoltar={() => {
                   setSeleccion(null)
-                  document.getElementById('agregar-mesa')?.focus()
+                  document.getElementById('add-table')?.focus()
                 }}
                 nombresUsados={nombresUsados}
               />
             ) : (
-              <PropiedadesZona c={c} b={b} alCambiar={editar} />
+              <PropiedadesZona c={c} b={b} onChange={editar} />
             )}
           </aside>
         </div>
@@ -341,34 +339,34 @@ export function PlanoEditor() {
             role={error ? 'alert' : undefined}
             aria-live="polite"
           >
-            {salir ? 'Tienes cambios sin guardar en esta zona.' : (error ?? problemas[0] ?? '')}
+            {exit ? 'Tienes cambios sin guardar en esta zona.' : (error ?? issues[0] ?? '')}
           </p>
-          {salir ? (
+          {exit ? (
             <>
               <Boton
                 onClick={() => {
-                  const accion = salir
+                  const action = exit
                   setSalir(null)
                   setError(null)
-                  accion()
+                  action()
                 }}
               >
                 Descartar los cambios
               </Boton>
-              {problemas.length === 0 && (
+              {issues.length === 0 && (
                 <Boton
                   disabled={guardando}
                   onClick={async () => {
-                    const accion = salir
+                    const action = exit
                     setSalir(null)
-                    if (await guardar()) accion()
+                    if (await guardar()) action()
                   }}
                 >
                   Guardar y seguir
                 </Boton>
               )}
               {/* El foco va a la opción segura. */}
-              <Boton variante="principal" autoFocus onClick={() => setSalir(null)}>
+              <Boton variant="main" autoFocus onClick={() => setSalir(null)}>
                 Seguir editando
               </Boton>
             </>
@@ -376,14 +374,14 @@ export function PlanoEditor() {
             <>
               <Boton
                 disabled={!sucio || guardando}
-                onClick={() => siSePuede(() => abrirZona(c, b.nuevo ? undefined : b.id))}
+                onClick={() => siSePuede(() => abrirZona(c, b.fresh ? undefined : b.id))}
               >
                 Descartar
               </Boton>
               <Boton
-                variante="principal"
-                grande
-                disabled={!sucio || problemas.length > 0 || guardando}
+                variant="main"
+                large
+                disabled={!sucio || issues.length > 0 || guardando}
                 onClick={() => void guardar()}
               >
                 {guardando ? 'Guardando…' : sucio ? 'Guardar' : 'Sin cambios'}
@@ -401,76 +399,76 @@ function LienzoEditable({
   b,
   seleccion,
   alElegir,
-  alCambiar,
+  onChange,
   enfocar,
   alEnfocar,
 }: {
   b: BorradorZona
   seleccion: Seleccion
   alElegir: (s: Seleccion) => void
-  alCambiar: (b: BorradorZona) => void
+  onChange: (b: BorradorZona) => void
   enfocar: string | null
   alEnfocar: () => void
 }) {
   useEffect(() => {
     if (!enfocar) return
-    document.getElementById(`figura-${enfocar}`)?.focus()
+    document.getElementById(`shape-${enfocar}`)?.focus()
     alEnfocar()
   })
-  const mesas = b.mesas.filter((m) => m.activo)
-  const elementos = b.elementos.filter((e) => e.activo)
+  const tables = b.tables.filter((m) => m.active)
+  const elements = b.elements.filter((e) => e.active)
   const arrastre = useRef<Arrastre | null>(null)
   // Mientras se arrastra, el lienzo no cambia de tamaño ni de escala (si no, todo "salta").
   const [fija, setFija] = useState<Caja | null>(null)
-  const caja = fija ?? limites([...mesas, ...elementos], 120)
-  const { ref, escala } = useEscala(caja, 1)
+  const register = fija ?? limites([...tables, ...elements], 120)
+  const { ref, escala } = useEscala(register, 1)
 
   const actualizar = (
-    tipo: 'mesa' | 'elemento',
+    type: 'table' | 'element',
     id: string,
     f: <T extends MesaPlano | ElementoPlano>(x: T) => T,
   ) =>
-    alCambiar(
-      tipo === 'mesa'
-        ? { ...b, mesas: b.mesas.map((m) => (m.id === id ? f(m) : m)) }
-        : { ...b, elementos: b.elementos.map((e) => (e.id === id ? f(e) : e)) },
+    onChange(
+      type === 'table'
+        ? { ...b, tables: b.tables.map((m) => (m.id === id ? f(m) : m)) }
+        : { ...b, elements: b.elements.map((e) => (e.id === id ? f(e) : e)) },
     )
 
   const empezar = (
     e: React.PointerEvent,
-    tipo: 'mesa' | 'elemento',
+    type: 'table' | 'element',
     g: MesaPlano | ElementoPlano,
-    modo: Arrastre['modo'],
+    mode: Arrastre['mode'],
   ) => {
     e.stopPropagation()
     if (arrastre.current) return
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    alElegir({ tipo, id: g.id })
+    alElegir({ type, id: g.id })
     arrastre.current = {
       puntero: e.pointerId,
       id: g.id,
-      tipo,
-      modo,
-      inicio: { x: e.clientX, y: e.clientY },
-      original: { x: g.x, y: g.y, ancho: g.ancho, alto: g.alto, rotacion: g.rotacion },
+      type,
+      mode,
+      start: { x: e.clientX, y: e.clientY },
+      original: { x: g.x, y: g.y, width: g.width, height: g.height, rotation: g.rotation },
     }
-    setFija(caja)
+    setFija(register)
   }
   const seguir = (e: React.PointerEvent) => {
     const a = arrastre.current
     if (!a || a.puntero !== e.pointerId || escala === 0) return
-    const dx = (e.clientX - a.inicio.x) / escala
-    const dy = (e.clientY - a.inicio.y) / escala
-    if (a.modo === 'mover') {
-      actualizar(a.tipo, a.id, (x) => mover(x, a.original.x + dx, a.original.y + dy))
+    const dx = (e.clientX - a.start.x) / escala
+    const dy = (e.clientY - a.start.y) / escala
+    if (a.mode === 'move') {
+      actualizar(a.type, a.id, (x) => move(x, a.original.x + dx, a.original.y + dy))
       return
     }
     // El ancho y el largo van en los ejes de la figura: si está girada, el movimiento de la
     // pantalla se pasa a sus ejes.
-    const rad = (a.original.rotacion * Math.PI) / 180
+    const rad = (a.original.rotation * Math.PI) / 180
     const lx = dx * Math.cos(rad) + dy * Math.sin(rad)
     const ly = -dx * Math.sin(rad) + dy * Math.cos(rad)
-    actualizar(a.tipo, a.id, (x) => medir(x, a.original.ancho + lx, a.original.alto + ly))
+    actualizar(a.type, a.id, (x) => measure(x, a.original.width + lx, a.original.height + ly))
   }
   const terminar = (e: React.PointerEvent) => {
     if (arrastre.current?.puntero !== e.pointerId) return
@@ -479,55 +477,58 @@ function LienzoEditable({
   }
   const teclear = (
     e: React.KeyboardEvent,
-    tipo: 'mesa' | 'elemento',
+    type: 'table' | 'element',
     g: MesaPlano | ElementoPlano,
   ) => {
-    const paso = e.shiftKey ? 50 : CUADRICULA
+    const step = e.shiftKey ? 50 : CUADRICULA
     const flechas: Record<string, [number, number]> = {
-      ArrowLeft: [-paso, 0],
-      ArrowRight: [paso, 0],
-      ArrowUp: [0, -paso],
-      ArrowDown: [0, paso],
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
     }
     const d = flechas[e.key]
     if (d) {
       e.preventDefault()
-      actualizar(tipo, g.id, (x) => mover(x, x.x + d[0], x.y + d[1]))
+      actualizar(type, g.id, (x) => move(x, x.x + d[0], x.y + d[1]))
     } else if (e.key === 'r' || e.key === 'R') {
       e.preventDefault()
-      actualizar(tipo, g.id, (x) => girar(x, 15))
+      actualizar(type, g.id, (x) => rotate(x, 15))
     } else if (e.key === 'Escape') alElegir(null)
   }
 
   const figura = (
-    tipo: 'mesa' | 'elemento',
+    type: 'table' | 'element',
     g: MesaPlano | ElementoPlano,
-    contenido: React.ReactNode,
+    content: React.ReactNode,
     etiqueta: string,
-    redonda: boolean,
+    isRound: boolean,
   ) => {
     const elegida = seleccion?.id === g.id
     return (
-      <div key={g.id} style={{ ...posicion(g, caja, escala), zIndex: elegida ? 10 : undefined }}>
+      <div
+        key={g.id}
+        style={{ ...posicion(g, register, escala), zIndex: elegida ? 10 : undefined }}
+      >
         <button
-          id={`figura-${g.id}`}
+          id={`shape-${g.id}`}
           type="button"
           aria-label={etiqueta}
           aria-pressed={elegida}
-          onPointerDown={(e) => empezar(e, tipo, g, 'mover')}
+          onPointerDown={(e) => empezar(e, type, g, 'move')}
           onPointerMove={seguir}
           onPointerUp={terminar}
           onPointerCancel={terminar}
-          onKeyDown={(e) => teclear(e, tipo, g)}
-          onClick={() => alElegir({ tipo, id: g.id })}
-          className={`h-full w-full touch-none cursor-move focus-visible:outline-3 focus-visible:outline-foco ${redonda ? 'rounded-full' : 'rounded-lg'} ${elegida ? 'ring-4 ring-accion-fuerte' : ''}`}
+          onKeyDown={(e) => teclear(e, type, g)}
+          onClick={() => alElegir({ type, id: g.id })}
+          className={`h-full w-full touch-none cursor-move focus-visible:outline-3 focus-visible:outline-foco ${isRound ? 'rounded-full' : 'rounded-lg'} ${elegida ? 'ring-4 ring-accion-fuerte' : ''}`}
         >
-          {contenido}
+          {content}
         </button>
         {elegida && (
           <span
             aria-hidden="true"
-            onPointerDown={(e) => empezar(e, tipo, g, 'medir')}
+            onPointerDown={(e) => empezar(e, type, g, 'measure')}
             onPointerMove={seguir}
             onPointerUp={terminar}
             onPointerCancel={terminar}
@@ -543,34 +544,34 @@ function LienzoEditable({
 
   return (
     <Lienzo
-      caja={caja}
+      register={register}
       escala={escala}
       refContenedor={ref}
-      etiqueta={`Plano de ${b.nombre || 'la zona nueva'}`}
+      etiqueta={`Plano de ${b.name || 'la zona nueva'}`}
       alTocarFondo={() => alElegir(null)}
     >
-      {elementos.map((e) =>
+      {elements.map((e) =>
         figura(
-          'elemento',
+          'element',
           e,
-          <FiguraElemento tipo={e.tipo} texto={e.texto} escala={escala} />,
-          `${TIPOS_ELEMENTO[e.tipo].nombre}${e.texto ? ` «${e.texto}»` : ''}`,
-          e.tipo === 'planta',
+          <FiguraElemento type={e.type} text={e.text} escala={escala} />,
+          `${TIPOS_ELEMENTO[e.type].name}${e.text ? ` «${e.text}»` : ''}`,
+          e.type === 'plant',
         ),
       )}
-      {mesas.map((m) =>
+      {tables.map((m) =>
         figura(
-          'mesa',
+          'table',
           m,
           <span
-            className={`flex h-full w-full items-center justify-center border-2 border-libre-fuerte bg-superficie font-titulo text-xl font-bold text-libre-texto ${m.forma === 'redonda' ? 'rounded-full' : 'rounded-lg'}`}
+            className={`flex h-full w-full items-center justify-center border-2 border-libre-fuerte bg-superficie font-titulo text-xl font-bold text-libre-texto ${m.shape === 'round' ? 'rounded-full' : 'rounded-lg'}`}
           >
-            <span style={m.rotacion ? { transform: `rotate(${-m.rotacion}deg)` } : undefined}>
-              {m.nombre}
+            <span style={m.rotation ? { transform: `rotate(${-m.rotation}deg)` } : undefined}>
+              {m.name}
             </span>
           </span>,
-          `Mesa ${m.nombre}, ${FORMAS[m.forma].nombre.toLowerCase()}, ${m.capacidad} puestos`,
-          m.forma === 'redonda',
+          `Mesa ${m.name}, ${FORMAS[m.shape].name.toLowerCase()}, ${m.capacity} puestos`,
+          m.shape === 'round',
         ),
       )}
     </Lienzo>
@@ -579,30 +580,30 @@ function LienzoEditable({
 
 function Numero({
   etiqueta,
-  valor,
-  alCambiar,
+  value,
+  onChange,
   min,
   max,
-  paso = 1,
+  step = 1,
 }: {
   etiqueta: string
-  valor: number
-  alCambiar: (n: number) => void
+  value: number
+  onChange: (n: number) => void
   min: number
   max: number
-  paso?: number
+  step?: number
 }) {
   // Lo escrito se guarda tal cual mientras se teclea ("1" camino a "150", "-" camino a "-1"); el
   // número se confirma al salir del campo o con Enter. Si no vale, vuelve al que había.
-  const [texto, setTexto] = useState(String(valor))
+  const [text, setTexto] = useState(String(value))
   const [editando, setEditando] = useState(false)
   const vale = (t: string) => {
     const n = Number(t)
     return t.trim() !== '' && Number.isInteger(n) && n >= min && n <= max
   }
-  const confirmar = () => {
+  const confirm = () => {
     setEditando(false)
-    if (vale(texto)) alCambiar(Number(texto))
+    if (vale(text)) onChange(Number(text))
   }
   return (
     <label className="flex flex-col gap-1">
@@ -610,23 +611,23 @@ function Numero({
       <input
         type="number"
         inputMode="numeric"
-        className={`${campo} cifras`}
-        value={editando ? texto : String(valor)}
+        className={`${field} cifras`}
+        value={editando ? text : String(value)}
         min={min}
         max={max}
-        step={paso}
+        step={step}
         onFocus={() => {
-          setTexto(String(valor))
+          setTexto(String(value))
           setEditando(true)
         }}
         onChange={(e) => {
           setTexto(e.target.value)
           // Las flechitas del campo dan números válidos: se aplican de una vez.
-          if (vale(e.target.value)) alCambiar(Number(e.target.value))
+          if (vale(e.target.value)) onChange(Number(e.target.value))
         }}
-        onBlur={confirmar}
+        onBlur={confirm}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') confirmar()
+          if (e.key === 'Enter') confirm()
         }}
       />
     </label>
@@ -636,52 +637,52 @@ function Numero({
 function Propiedades({
   b,
   seleccion,
-  alCambiar,
+  onChange,
   alElegir,
   alSoltar,
   nombresUsados,
 }: {
   b: BorradorZona
   seleccion: NonNullable<Seleccion>
-  alCambiar: (b: BorradorZona) => void
+  onChange: (b: BorradorZona) => void
   alElegir: (s: Seleccion) => void
   alSoltar: () => void
   nombresUsados: string[]
 }) {
-  const mesa = seleccion.tipo === 'mesa' ? b.mesas.find((m) => m.id === seleccion.id) : undefined
-  const elemento =
-    seleccion.tipo === 'elemento' ? b.elementos.find((e) => e.id === seleccion.id) : undefined
-  const g = mesa ?? elemento
+  const table = seleccion.type === 'table' ? b.tables.find((m) => m.id === seleccion.id) : undefined
+  const element =
+    seleccion.type === 'element' ? b.elements.find((e) => e.id === seleccion.id) : undefined
+  const g = table ?? element
   if (!g) return null
-  const cambiarMesa = (parcial: Partial<MesaPlano>) =>
-    alCambiar({ ...b, mesas: b.mesas.map((m) => (m.id === g.id ? { ...m, ...parcial } : m)) })
-  const cambiarElemento = (parcial: Partial<ElementoPlano>) =>
-    alCambiar({
+  const cambiarMesa = (partial: Partial<MesaPlano>) =>
+    onChange({ ...b, tables: b.tables.map((m) => (m.id === g.id ? { ...m, ...partial } : m)) })
+  const cambiarElemento = (partial: Partial<ElementoPlano>) =>
+    onChange({
       ...b,
-      elementos: b.elementos.map((e) => (e.id === g.id ? { ...e, ...parcial } : e)),
+      elements: b.elements.map((e) => (e.id === g.id ? { ...e, ...partial } : e)),
     })
-  const cambiar = (parcial: Partial<MesaPlano & ElementoPlano>) =>
-    mesa ? cambiarMesa(parcial) : cambiarElemento(parcial)
+  const patch = (partial: Partial<MesaPlano & ElementoPlano>) =>
+    table ? cambiarMesa(partial) : cambiarElemento(partial)
   // La copia queda al lado del original, con lo mismo, y elegida (así se ve dónde quedó).
-  const duplicar = () => {
-    const lado = { x: g.x + g.ancho + CUADRICULA * 2, y: g.y }
-    if (mesa) {
-      const copia: MesaPlano = {
-        ...mover(mesa, lado.x, lado.y),
-        id: nuevoId(),
-        nuevo: true,
-        nombre: siguienteNombre(nombresUsados),
+  const duplicateSelected = () => {
+    const lado = { x: g.x + g.width + CUADRICULA * 2, y: g.y }
+    if (table) {
+      const copy: MesaPlano = {
+        ...move(table, lado.x, lado.y),
+        id: newId(),
+        fresh: true,
+        name: siguienteNombre(nombresUsados),
       }
-      alCambiar({ ...b, mesas: [...b.mesas, copia] })
-      alElegir({ tipo: 'mesa', id: copia.id })
-    } else if (elemento) {
-      const copia: ElementoPlano = {
-        ...mover(elemento, lado.x, lado.y),
-        id: nuevoId(),
-        nuevo: true,
+      onChange({ ...b, tables: [...b.tables, copy] })
+      alElegir({ type: 'table', id: copy.id })
+    } else if (element) {
+      const copy: ElementoPlano = {
+        ...move(element, lado.x, lado.y),
+        id: newId(),
+        fresh: true,
       }
-      alCambiar({ ...b, elementos: [...b.elementos, copia] })
-      alElegir({ tipo: 'elemento', id: copia.id })
+      onChange({ ...b, elements: [...b.elements, copy] })
+      alElegir({ type: 'element', id: copy.id })
     }
   }
 
@@ -689,82 +690,86 @@ function Propiedades({
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">
-          {mesa ? `Mesa ${mesa.nombre}` : TIPOS_ELEMENTO[(elemento as ElementoPlano).tipo].nombre}
+          {table ? `Mesa ${table.name}` : TIPOS_ELEMENTO[(element as ElementoPlano).type].name}
         </h2>
-        <Boton variante="fantasma" onClick={alSoltar}>
+        <Boton variant="ghost" onClick={alSoltar}>
           Listo
         </Boton>
       </div>
-      {mesa && (
+      {table && (
         <>
           <label className="flex flex-col gap-1">
             <span className="font-semibold">Nombre o número</span>
             <input
-              className={campo}
-              value={mesa.nombre}
+              className={field}
+              value={table.name}
               maxLength={20}
-              onChange={(e) => cambiarMesa({ nombre: e.target.value })}
+              onChange={(e) => cambiarMesa({ name: e.target.value })}
             />
           </label>
           <Grupo etiqueta="Forma" className="flex flex-wrap gap-2">
             {(Object.keys(FORMAS) as FormaMesa[]).map((f) => (
-              <Opcion key={f} elegida={mesa.forma === f} alElegir={() => cambiarMesa({ forma: f })}>
-                {FORMAS[f].nombre}
+              <Opcion
+                key={f}
+                elegida={table.shape === f}
+                alElegir={() => cambiarMesa({ shape: f })}
+              >
+                {FORMAS[f].name}
               </Opcion>
             ))}
           </Grupo>
           <Numero
             etiqueta="Puestos"
-            valor={mesa.capacidad}
+            value={table.capacity}
             min={1}
             max={100}
-            alCambiar={(capacidad) => cambiarMesa({ capacidad })}
+            onChange={(capacity) => cambiarMesa({ capacity })}
           />
         </>
       )}
-      {elemento?.tipo === 'texto' && (
+      {element?.type === 'text' && (
         <label className="flex flex-col gap-1">
           <span className="font-semibold">Texto</span>
           <input
-            className={campo}
-            value={elemento.texto ?? ''}
+            className={field}
+            value={element.text ?? ''}
             maxLength={60}
-            onChange={(e) => cambiarElemento({ texto: e.target.value })}
+            onChange={(e) => cambiarElemento({ text: e.target.value })}
           />
         </label>
       )}
       <div className="grid grid-cols-2 gap-2">
         <Numero
           etiqueta="Ancho (cm)"
-          valor={g.ancho}
+          value={g.width}
           min={20}
           max={10_000}
-          paso={CUADRICULA}
-          alCambiar={(ancho) => cambiar(medir(g, ancho, g.alto))}
+          step={CUADRICULA}
+          onChange={(width) => patch(measure(g, width, g.height))}
         />
         <Numero
           etiqueta="Largo (cm)"
-          valor={g.alto}
+          value={g.height}
           min={20}
           max={10_000}
-          paso={CUADRICULA}
-          alCambiar={(alto) => cambiar(medir(g, g.ancho, alto))}
+          step={CUADRICULA}
+          onChange={(height) => patch(measure(g, g.width, height))}
         />
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">Girar:</span>
-        <Boton onClick={() => cambiar(girar(g, -15))}>−15°</Boton>
-        <Boton onClick={() => cambiar(girar(g, 15))}>+15°</Boton>
-        <Boton onClick={() => cambiar(girar(g, 90))}>90°</Boton>
-        <span className="cifras text-texto-suave">{`${g.rotacion}°`}</span>
+        <Boton onClick={() => patch(rotate(g, -15))}>−15°</Boton>
+        <Boton onClick={() => patch(rotate(g, 15))}>+15°</Boton>
+        <Boton onClick={() => patch(rotate(g, 90))}>90°</Boton>
+        <span className="cifras text-texto-suave">{`${g.rotation}°`}</span>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Boton icono="mas" onClick={duplicar}>
+        <Boton icono="more" onClick={duplicateSelected}>
           Duplicar
         </Boton>
         <Boton
           onClick={() => {
-            cambiar({ activo: false })
+            patch({ active: false })
             alSoltar()
           }}
         >
@@ -778,62 +783,62 @@ function Propiedades({
 function PropiedadesZona({
   c,
   b,
-  alCambiar,
+  onChange,
 }: {
   c: CatalogoEdicion
   b: BorradorZona
-  alCambiar: (b: BorradorZona) => void
+  onChange: (b: BorradorZona) => void
 }) {
-  const mesas = b.mesas.filter((m) => m.activo).length
+  const tables = b.tables.filter((m) => m.active).length
   // Lo archivado se puede volver a poner (con su nombre y su lugar).
-  const enBorrador = new Set(b.mesas.filter((m) => m.activo).map((m) => m.id))
-  const archivadas = c.mesas.filter((m) => m.zona_id === b.id && !enBorrador.has(m.id))
-  const volver = (id: string) => {
-    const m = c.mesas.find((x) => x.id === id)
+  const enBorrador = new Set(b.tables.filter((m) => m.active).map((m) => m.id))
+  const archivadas = c.tables.filter((m) => m.zone_id === b.id && !enBorrador.has(m.id))
+  const back = (id: string) => {
+    const m = c.tables.find((x) => x.id === id)
     if (!m) return
-    const resto = b.mesas.filter((x) => x.id !== id)
-    alCambiar({
+    const rest = b.tables.filter((x) => x.id !== id)
+    onChange({
       ...b,
-      mesas: [
-        ...resto,
+      tables: [
+        ...rest,
         {
           id: m.id,
-          nuevo: false,
-          nombre: m.nombre,
-          forma: m.forma,
-          capacidad: m.capacidad,
-          activo: true,
+          fresh: false,
+          name: m.name,
+          shape: m.shape,
+          capacity: m.capacity,
+          active: true,
           x: m.x,
           y: m.y,
-          ancho: m.ancho,
-          alto: m.alto,
-          rotacion: m.rotacion,
+          width: m.width,
+          height: m.height,
+          rotation: m.rotation,
         },
       ],
     })
   }
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">{b.nuevo ? 'Zona nueva' : 'Esta zona'}</h2>
+      <h2 className="text-lg font-semibold">{b.fresh ? 'Zona nueva' : 'Esta zona'}</h2>
       <label className="flex flex-col gap-1">
         <span className="font-semibold">Nombre</span>
         <input
-          className={campo}
-          value={b.nombre}
+          className={field}
+          value={b.name}
           placeholder="Terraza"
           maxLength={80}
-          onChange={(e) => alCambiar({ ...b, nombre: e.target.value })}
+          onChange={(e) => onChange({ ...b, name: e.target.value })}
         />
       </label>
       <Numero
         etiqueta="Piso"
-        valor={b.piso}
+        value={b.level}
         min={-5}
         max={100}
-        alCambiar={(piso) => alCambiar({ ...b, piso })}
+        onChange={(level) => onChange({ ...b, level })}
       />
       <p className="text-texto-suave">
-        {`${mesas === 1 ? '1 mesa' : `${mesas} mesas`}. Toca una mesa o un elemento para cambiarlo.`}
+        {`${tables === 1 ? '1 mesa' : `${tables} mesas`}. Toca una mesa o un elemento para cambiarlo.`}
       </p>
       {archivadas.length > 0 && (
         <details>
@@ -843,19 +848,19 @@ function PropiedadesZona({
           <ul className="flex flex-col gap-1">
             {archivadas.map((m) => (
               <li key={m.id} className="flex items-center justify-between gap-2">
-                <span>{`Mesa ${m.nombre}`}</span>
-                <Boton onClick={() => volver(m.id)}>Volver a ponerla</Boton>
+                <span>{`Mesa ${m.name}`}</span>
+                <Boton onClick={() => back(m.id)}>Volver a ponerla</Boton>
               </li>
             ))}
           </ul>
         </details>
       )}
-      {!b.nuevo && (
-        <Boton onClick={() => alCambiar({ ...b, activo: !b.activo })}>
-          {b.activo ? 'Archivar esta zona (y sus mesas)' : 'Mejor no archivarla'}
+      {!b.fresh && (
+        <Boton onClick={() => onChange({ ...b, active: !b.active })}>
+          {b.active ? 'Archivar esta zona (y sus mesas)' : 'Mejor no archivarla'}
         </Boton>
       )}
-      {!b.activo && (
+      {!b.active && (
         <p className="rounded-xl bg-neutro-suave p-3 text-neutro-texto">
           Al guardar, la zona y sus mesas dejan de verse en el salón. Una mesa con un pedido abierto
           no se puede archivar.

@@ -2,23 +2,23 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    // Las pruebas de propiedades recorren miles de casos al azar; con la cobertura activa y en el
-    // servidor de CI pasan de los 5 s por defecto.
+    // Property tests run through thousands of random cases; with coverage on and on the CI
+    // server they exceed the default 5 s.
     testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       include: [
-        'src/dinero/**',
-        'src/pedido/**',
-        'src/eventos/**',
-        'src/acceso/**',
-        'src/catalogo/**',
-        'src/canonico.ts',
+        'src/money/**',
+        'src/order/**',
+        'src/events/**',
+        'src/access/**',
+        'src/catalog/**',
+        'src/canonical.ts',
         'src/config.ts',
-        'src/tiempo.ts',
+        'src/time.ts',
       ],
       exclude: ['**/*.test.ts', 'src/**/index.ts'],
-      // Plan de la Fase 0: al menos 90 % en dinero y en el reductor del pedido.
+      // Phase 0 plan: at least 90 % in money and in the order reducer.
       thresholds: { lines: 90, branches: 90, functions: 90, statements: 90 },
     },
   },

@@ -9,13 +9,13 @@ import {
 import { type ResumenDiagnostico, resumirEventos } from './resumen'
 import { type EstadoCanal, useConexionWs } from './useConexionWs'
 
-const CLAVE_NOMBRE = 'pos-diagnostico-nombre'
+const CLAVE_NOMBRE = 'pos-diagnostics-name'
 const INTERVALO_RESUMEN_MS = 3000
 const LATENCIA_IDEAL_MS = 200
 const RECUPERACION_IDEAL_MS = 3000
 
-type EstadoEnvio = 'listo' | 'enviando' | 'enviado' | 'error' | 'falta-nombre'
-type Nivel = 'ok' | 'error' | 'aviso' | 'midiendo' | 'info'
+type EstadoEnvio = 'ready' | 'enviando' | 'sent' | 'error' | 'missing-name'
+type Nivel = 'ok' | 'error' | 'alert' | 'measuring' | 'info'
 
 function detectarCapacidades() {
   return {
@@ -37,8 +37,8 @@ function registrarCarga() {
   const navegacion = performance.getEntriesByType('navigation')[0] as
     | PerformanceNavigationTiming
     | undefined
-  registrarEvento('carga', {
-    tipoNavegacion: navegacion?.type ?? 'desconocido',
+  registrarEvento('load', {
+    tipoNavegacion: navegacion?.type ?? 'unknown',
     descartada: (document as Document & { wasDiscarded?: boolean }).wasDiscarded === true,
   })
 }
@@ -72,50 +72,50 @@ function formatearDuracion(ms: number): string {
 const plural = (n: number, singular: string, varios: string) =>
   `${n} ${n === 1 ? singular : varios}`
 
-const estilosNivel: Record<Nivel, { icono: string; clase: string }> = {
-  ok: { icono: '✓', clase: 'text-green-700 dark:text-green-400' },
-  error: { icono: '✕', clase: 'text-red-700 dark:text-red-400' },
-  aviso: { icono: '⚠', clase: 'text-amber-700 dark:text-amber-400' },
-  midiendo: { icono: '…', clase: 'text-amber-700 dark:text-amber-400' },
-  info: { icono: '', clase: 'text-slate-700 dark:text-slate-300' },
+const estilosNivel: Record<Nivel, { icono: string; cssClass: string }> = {
+  ok: { icono: '✓', cssClass: 'text-green-700 dark:text-green-400' },
+  error: { icono: '✕', cssClass: 'text-red-700 dark:text-red-400' },
+  alert: { icono: '⚠', cssClass: 'text-amber-700 dark:text-amber-400' },
+  measuring: { icono: '…', cssClass: 'text-amber-700 dark:text-amber-400' },
+  info: { icono: '', cssClass: 'text-slate-700 dark:text-slate-300' },
 }
 
-function Fila({ titulo, nivel, texto }: { titulo: string; nivel: Nivel; texto: string }) {
-  const { icono, clase } = estilosNivel[nivel]
+function Fila({ titulo, severity, text }: { titulo: string; severity: Nivel; text: string }) {
+  const { icono, cssClass } = estilosNivel[severity]
   return (
     <li className="flex items-start justify-between gap-4 border-b border-slate-200 py-3 dark:border-slate-800">
       <span className="font-medium">{titulo}</span>
-      <span className={`text-right ${clase}`}>
+      <span className={`text-right ${cssClass}`}>
         {icono && <span aria-hidden="true">{icono} </span>}
-        {texto}
+        {text}
       </span>
     </li>
   )
 }
 
-const textoCanal: Record<EstadoCanal, { nivel: Nivel; texto: string }> = {
-  conectando: { nivel: 'midiendo', texto: 'Conectando' },
-  conectado: { nivel: 'ok', texto: 'Conectado' },
-  'sin-respuesta': { nivel: 'error', texto: 'Sin respuesta, reconectando' },
-  desconectado: { nivel: 'error', texto: 'Desconectado, reintentando' },
+const textoCanal: Record<EstadoCanal, { severity: Nivel; text: string }> = {
+  connecting: { severity: 'measuring', text: 'Conectando' },
+  connected: { severity: 'ok', text: 'Conectado' },
+  'no-response': { severity: 'error', text: 'Sin respuesta, reconectando' },
+  disconnected: { severity: 'error', text: 'Desconectado, reintentando' },
 }
 
 interface Veredicto {
-  nivel: 'ok' | 'aviso' | 'error'
+  severity: 'ok' | 'alert' | 'error'
   titulo: string
   puntos: string[]
 }
 
 function calcularVeredicto(
-  canal: EstadoCanal,
+  channel: EstadoCanal,
   indexedDb: boolean | null,
   medianaMs: number | null,
   resumen: ResumenDiagnostico,
 ): Veredicto {
-  const errores: string[] = []
+  const errors: string[] = []
   const avisos: string[] = []
-  if (canal !== 'conectado') errores.push('No hay conexión en tiempo real con el hub.')
-  if (indexedDb === false) errores.push('Este navegador no puede guardar datos locales.')
+  if (channel !== 'connected') errors.push('No hay conexión en tiempo real con el hub.')
+  if (indexedDb === false) errors.push('Este navegador no puede guardar datos locales.')
   if (resumen.descartes > 0) avisos.push('El navegador recargó la página solo al volver.')
   if (resumen.ocultamientos.some((o) => o.conexionPerdida)) {
     avisos.push('En segundo plano se pierde la conexión (se recupera al volver).')
@@ -127,28 +127,28 @@ function calcularVeredicto(
     avisos.push('El tiempo de respuesta es alto: revisa la señal del Wi-Fi.')
   }
 
-  if (errores.length > 0) {
+  if (errors.length > 0) {
     return {
-      nivel: 'error',
-      titulo: `Revisar: ${plural(errores.length, 'punto', 'puntos')}`,
-      puntos: errores,
+      severity: 'error',
+      titulo: `Revisar: ${plural(errors.length, 'punto', 'puntos')}`,
+      puntos: errors,
     }
   }
   if (indexedDb === null || medianaMs === null || resumen.ocultamientos.length === 0) {
-    return { nivel: 'aviso', titulo: 'Prueba en curso: sigue los pasos', puntos: avisos }
+    return { severity: 'alert', titulo: 'Prueba en curso: sigue los pasos', puntos: avisos }
   }
   if (avisos.length > 0) {
-    return { nivel: 'aviso', titulo: 'Funciona, con avisos', puntos: avisos }
+    return { severity: 'alert', titulo: 'Funciona, con avisos', puntos: avisos }
   }
-  return { nivel: 'ok', titulo: 'Listo para operar', puntos: [] }
+  return { severity: 'ok', titulo: 'Listo para operar', puntos: [] }
 }
 
-const claseVeredicto: Record<Veredicto['nivel'], string> = {
+const claseVeredicto: Record<Veredicto['severity'], string> = {
   ok: 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200',
-  aviso: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
+  alert: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
   error: 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200',
 }
-const iconoVeredicto: Record<Veredicto['nivel'], string> = { ok: '✓', aviso: '⚠', error: '✕' }
+const iconoVeredicto: Record<Veredicto['severity'], string> = { ok: '✓', alert: '⚠', error: '✕' }
 
 const claseBoton =
   'min-h-12 rounded-lg px-4 font-semibold transition active:scale-[0.98] disabled:opacity-50'
@@ -156,11 +156,11 @@ const claseSecundario = `${claseBoton} bg-slate-200 dark:bg-slate-800`
 
 export function Diagnostico() {
   const capacidades = detectarCapacidades()
-  const { canal, latencia } = useConexionWs()
+  const { channel, latencia } = useConexionWs()
   const [indexedDb, setIndexedDb] = useState<boolean | null>(null)
   const [resumen, setResumen] = useState<ResumenDiagnostico>(() => resumirEventos([]))
-  const [nombre, setNombre] = useState(leerNombre)
-  const [envio, setEnvio] = useState<EstadoEnvio>('listo')
+  const [name, setNombre] = useState(leerNombre)
+  const [envio, setEnvio] = useState<EstadoEnvio>('ready')
   const [confirmarBorrado, setConfirmarBorrado] = useState(false)
   const campoNombre = useRef<HTMLInputElement>(null)
 
@@ -169,60 +169,60 @@ export function Diagnostico() {
     purgarEventosAntiguos()
     probarIndexedDb().then(setIndexedDb)
 
-    const actualizar = () => leerEventos().then((eventos) => setResumen(resumirEventos(eventos)))
+    const actualizar = () => leerEventos().then((events) => setResumen(resumirEventos(events)))
     actualizar()
     const intervalo = setInterval(actualizar, INTERVALO_RESUMEN_MS)
     return () => clearInterval(intervalo)
   }, [])
 
-  function cambiarNombre(valor: string) {
-    setNombre(valor)
-    if (envio === 'falta-nombre') setEnvio('listo')
+  function cambiarNombre(value: string) {
+    setNombre(value)
+    if (envio === 'missing-name') setEnvio('ready')
     try {
-      localStorage.setItem(CLAVE_NOMBRE, valor)
+      localStorage.setItem(CLAVE_NOMBRE, value)
     } catch {
       // Sin almacenamiento local el nombre solo vive en esta pantalla.
     }
   }
 
-  async function enviar() {
-    if (nombre.trim() === '') {
-      setEnvio('falta-nombre')
+  async function send() {
+    if (name.trim() === '') {
+      setEnvio('missing-name')
       campoNombre.current?.focus()
       return
     }
     setEnvio('enviando')
     try {
-      const eventos = await leerEventos()
-      const res = await fetch('/api/diagnostico', {
+      const events = await leerEventos()
+      const res = await fetch('/api/diagnostics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          nombre: nombre.trim(),
+          name: name.trim(),
           navegador: navigator.userAgent,
-          pantalla: `${screen.width}x${screen.height}`,
+          screen: `${screen.width}x${screen.height}`,
           capacidades,
           indexedDb,
           latencia,
-          resumen: resumirEventos(eventos),
-          eventos,
+          resumen: resumirEventos(events),
+          events,
         }),
       })
-      setEnvio(res.ok ? 'enviado' : 'error')
+      setEnvio(res.ok ? 'sent' : 'error')
       if (res.ok) navigator.vibrate?.(100)
     } catch {
       setEnvio('error')
     }
   }
 
-  async function borrar() {
+  async function erase() {
     await borrarEventos()
     setResumen(resumirEventos([]))
-    setEnvio('listo')
+    setEnvio('ready')
     setConfirmarBorrado(false)
   }
 
-  const veredicto = calcularVeredicto(canal, indexedDb, latencia?.medianaMs ?? null, resumen)
+  const veredicto = calcularVeredicto(channel, indexedDb, latencia?.medianaMs ?? null, resumen)
   const ultimo = resumen.ocultamientos.at(-1)
 
   return (
@@ -239,11 +239,11 @@ export function Diagnostico() {
         </header>
 
         <section
-          className={`mb-4 rounded-lg p-4 ${claseVeredicto[veredicto.nivel]}`}
+          className={`mb-4 rounded-lg p-4 ${claseVeredicto[veredicto.severity]}`}
           aria-live="polite"
         >
           <p className="text-lg font-semibold">
-            <span aria-hidden="true">{iconoVeredicto[veredicto.nivel]} </span>
+            <span aria-hidden="true">{iconoVeredicto[veredicto.severity]} </span>
             {veredicto.titulo}
           </p>
           {veredicto.puntos.length > 0 && (
@@ -266,10 +266,10 @@ export function Diagnostico() {
           <span className="mb-1 block font-medium">Nombre de este equipo</span>
           <input
             ref={campoNombre}
-            value={nombre}
+            value={name}
             onChange={(e) => cambiarNombre(e.target.value)}
             placeholder="Ej.: iPhone de caja, Android mesero 1"
-            aria-invalid={envio === 'falta-nombre'}
+            aria-invalid={envio === 'missing-name'}
             className="min-h-12 w-full rounded-lg border border-slate-400 bg-white px-3 placeholder:text-slate-500 dark:border-slate-600 dark:bg-slate-900"
           />
         </label>
@@ -278,27 +278,31 @@ export function Diagnostico() {
           Conexión con el hub
         </h2>
         <ul>
-          <Fila titulo="Canal en tiempo real" {...textoCanal[canal]} />
+          <Fila titulo="Canal en tiempo real" {...textoCanal[channel]} />
           <Fila
             titulo="Tiempo de respuesta"
-            nivel={
+            severity={
               latencia === null
-                ? 'midiendo'
+                ? 'measuring'
                 : latencia.medianaMs < LATENCIA_IDEAL_MS
                   ? 'ok'
-                  : 'aviso'
+                  : 'alert'
             }
-            texto={
+            text={
               latencia === null
                 ? 'Midiendo'
                 : `${latencia.medianaMs} ms (ideal: menos de ${LATENCIA_IDEAL_MS} ms)`
             }
           />
-          <Fila titulo="Veces que se reconectó" nivel="info" texto={String(resumen.reconexiones)} />
+          <Fila
+            titulo="Veces que se reconectó"
+            severity="info"
+            text={String(resumen.reconexiones)}
+          />
           <Fila
             titulo="Última vez en segundo plano"
-            nivel={ultimo ? (ultimo.conexionPerdida ? 'aviso' : 'ok') : 'info'}
-            texto={
+            severity={ultimo ? (ultimo.conexionPerdida ? 'alert' : 'ok') : 'info'}
+            text={
               ultimo
                 ? `${formatearDuracion(ultimo.duracionMs)}, ${
                     ultimo.recargada
@@ -318,8 +322,8 @@ export function Diagnostico() {
           />
           <Fila
             titulo="El navegador recargó la página solo"
-            nivel={resumen.descartes === 0 ? 'ok' : 'aviso'}
-            texto={`${plural(resumen.descartes, 'vez', 'veces')} en ${plural(resumen.cargas, 'carga', 'cargas')}`}
+            severity={resumen.descartes === 0 ? 'ok' : 'alert'}
+            text={`${plural(resumen.descartes, 'vez', 'veces')} en ${plural(resumen.cargas, 'carga', 'cargas')}`}
           />
         </ul>
 
@@ -329,13 +333,13 @@ export function Diagnostico() {
         <ul>
           <Fila
             titulo="Datos locales (IndexedDB)"
-            nivel={indexedDb === null ? 'midiendo' : indexedDb ? 'ok' : 'error'}
-            texto={indexedDb === null ? 'Probando' : indexedDb ? 'Funciona' : 'No funciona'}
+            severity={indexedDb === null ? 'measuring' : indexedDb ? 'ok' : 'error'}
+            text={indexedDb === null ? 'Probando' : indexedDb ? 'Funciona' : 'No funciona'}
           />
           <Fila
             titulo="Dirección segura (HTTPS)"
-            nivel={capacidades.contextoSeguro ? 'ok' : 'info'}
-            texto={
+            severity={capacidades.contextoSeguro ? 'ok' : 'info'}
+            text={
               capacidades.contextoSeguro
                 ? 'Sí'
                 : 'No: normal al abrir por IP; algunas funciones no estarán'
@@ -343,18 +347,18 @@ export function Diagnostico() {
           />
           <Fila
             titulo="Vibración"
-            nivel={capacidades.vibracion ? 'ok' : 'info'}
-            texto={capacidades.vibracion ? 'Disponible' : 'No disponible en este equipo'}
+            severity={capacidades.vibracion ? 'ok' : 'info'}
+            text={capacidades.vibracion ? 'Disponible' : 'No disponible en este equipo'}
           />
           <Fila
             titulo="Mantener pantalla encendida"
-            nivel={capacidades.pantallaEncendida ? 'ok' : 'info'}
-            texto={capacidades.pantallaEncendida ? 'Disponible' : 'Se configura en el equipo'}
+            severity={capacidades.pantallaEncendida ? 'ok' : 'info'}
+            text={capacidades.pantallaEncendida ? 'Disponible' : 'Se configura en el equipo'}
           />
           <Fila
             titulo="Notificaciones del sistema"
-            nivel={capacidades.notificaciones ? 'ok' : 'info'}
-            texto={capacidades.notificaciones ? 'Disponible' : 'No disponible (requiere HTTPS)'}
+            severity={capacidades.notificaciones ? 'ok' : 'info'}
+            text={capacidades.notificaciones ? 'Disponible' : 'No disponible (requiere HTTPS)'}
           />
         </ul>
 
@@ -391,7 +395,7 @@ export function Diagnostico() {
                 </button>
                 <button
                   type="button"
-                  onClick={borrar}
+                  onClick={erase}
                   className={`${claseBoton} bg-red-700 text-white`}
                 >
                   Borrar
@@ -414,17 +418,17 @@ export function Diagnostico() {
         <div className="mx-auto max-w-xl">
           <button
             type="button"
-            onClick={enviar}
+            onClick={send}
             disabled={envio === 'enviando'}
             className={`${claseBoton} w-full bg-blue-700 text-white`}
           >
             {envio === 'enviando' ? 'Enviando…' : 'Enviar resultados al hub'}
           </button>
           <p role="status" className="mt-2 min-h-6 text-center">
-            {envio === 'enviado' && '✓ Resultados enviados'}
+            {envio === 'sent' && '✓ Resultados enviados'}
             {envio === 'error' &&
               '✕ No llegó al hub. Revisa que el equipo esté en el Wi-Fi del local.'}
-            {envio === 'falta-nombre' && 'Escribe un nombre para identificar este equipo.'}
+            {envio === 'missing-name' && 'Escribe un nombre para identificar este equipo.'}
           </p>
         </div>
       </footer>

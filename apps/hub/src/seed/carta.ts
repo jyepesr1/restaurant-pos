@@ -1,19 +1,19 @@
-import { type CategoriaCarta, convertirCarta } from '@pos/core'
+import { convertMenu, type MenuCategory } from '@pos/core'
 import { parse } from 'yaml'
 
 // La conversión de la carta vive en `@pos/core` (la usan también los bocetos de la app); aquí
 // solo se lee el texto YAML.
 
 export {
-  type CategoriaCarta,
-  CON_SABOR,
-  CON_TERMINO,
-  type Estacion,
-  type GrupoCarta,
-  type ProductoCarta,
-  reglasSinPlato,
-  TERMINO,
+  DONENESS,
+  type MenuCategory,
+  type MenuGroup,
+  type MenuProduct,
+  rulesWithoutDish,
+  type Station,
+  WITH_DONENESS,
+  WITH_FLAVOR,
 } from '@pos/core'
 
 /** Lee la carta exportada (texto YAML) y la convierte en categorías y productos. */
-export const leerCarta = (texto: string): CategoriaCarta[] => convertirCarta(parse(texto))
+export const leerCarta = (text: string): MenuCategory[] => convertMenu(parse(text))

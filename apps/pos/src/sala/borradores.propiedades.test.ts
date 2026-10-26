@@ -1,4 +1,4 @@
-import { LIMITE_PRECIO } from '@pos/core'
+import { PRICE_LIMIT } from '@pos/core'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import {
@@ -26,163 +26,163 @@ const CORRIDAS = 300
 
 // ── Hub de referencia ────────────────────────────────────────────────────────────────────────
 
-type Entidad = CambioCatalogo['entidad']
+type Entidad = CambioCatalogo['entity']
 type Registro = Record<string, string | number | boolean | null>
 
 const TABLA: Record<Entidad, keyof Omit<CatalogoEdicion, 'version'>> = {
-  zona: 'zonas',
-  mesa: 'mesas',
-  elemento_plano: 'elementos',
-  impuesto: 'impuestos',
-  estacion: 'estaciones',
-  categoria: 'categorias',
-  producto: 'productos',
-  variante: 'variantes',
-  grupo_modificador: 'grupos',
-  producto_grupo_modificador: 'enlaces',
-  modificador: 'modificadores',
+  zones: 'zones',
+  dining_tables: 'tables',
+  floor_plan_elements: 'elements',
+  taxes: 'taxes',
+  stations: 'stations',
+  categories: 'categories',
+  products: 'products',
+  variants: 'variants',
+  modifier_groups: 'groups',
+  product_modifier_groups: 'links',
+  modifiers: 'modifiers',
 }
 
 const CAMPOS: Record<Entidad, string[]> = {
-  zona: ['nombre', 'orden', 'piso', 'activo'],
-  mesa: [
-    'zona_id',
-    'nombre',
-    'forma',
+  zones: ['name', 'position', 'level', 'active'],
+  dining_tables: [
+    'zone_id',
+    'name',
+    'shape',
     'x',
     'y',
-    'ancho',
-    'alto',
-    'rotacion',
-    'capacidad',
-    'activo',
+    'width',
+    'height',
+    'rotation',
+    'capacity',
+    'active',
   ],
-  elemento_plano: ['zona_id', 'tipo', 'texto', 'x', 'y', 'ancho', 'alto', 'rotacion', 'activo'],
-  impuesto: ['nombre', 'tipo', 'tarifa', 'activo'],
-  estacion: ['nombre', 'orden', 'activo'],
-  categoria: ['nombre', 'orden', 'estacion_id', 'activo'],
-  producto: [
-    'categoria_id',
-    'nombre',
-    'descripcion',
-    'precio',
-    'impuesto_id',
-    'favorito',
-    'activo',
+  floor_plan_elements: [
+    'zone_id',
+    'type',
+    'text',
+    'x',
+    'y',
+    'width',
+    'height',
+    'rotation',
+    'active',
   ],
-  variante: ['producto_id', 'nombre', 'precio', 'orden', 'activo'],
-  grupo_modificador: ['nombre', 'minimo', 'maximo', 'activo'],
-  producto_grupo_modificador: ['producto_id', 'grupo_id', 'orden', 'activo'],
-  modificador: ['grupo_id', 'nombre', 'precio_extra', 'orden', 'activo'],
+  taxes: ['name', 'type', 'rate', 'active'],
+  stations: ['name', 'position', 'active'],
+  categories: ['name', 'position', 'station_id', 'active'],
+  products: ['category_id', 'name', 'description', 'price', 'tax_id', 'favorite', 'active'],
+  variants: ['product_id', 'name', 'price', 'position', 'active'],
+  modifier_groups: ['name', 'minimum', 'maximum', 'active'],
+  product_modifier_groups: ['product_id', 'group_id', 'position', 'active'],
+  modifiers: ['group_id', 'name', 'extra_price', 'position', 'active'],
 }
 
 const PADRES: Partial<Record<Entidad, string[]>> = {
-  variante: ['producto_id'],
-  modificador: ['grupo_id'],
-  producto_grupo_modificador: ['producto_id', 'grupo_id'],
+  variants: ['product_id'],
+  modifiers: ['group_id'],
+  product_modifier_groups: ['product_id', 'group_id'],
 }
 
 const REFERENCIAS: Record<string, keyof Omit<CatalogoEdicion, 'version'>> = {
-  estacion_id: 'estaciones',
-  categoria_id: 'categorias',
-  impuesto_id: 'impuestos',
-  producto_id: 'productos',
-  grupo_id: 'grupos',
+  station_id: 'stations',
+  category_id: 'categories',
+  tax_id: 'taxes',
+  product_id: 'products',
+  group_id: 'groups',
 }
 
 const entero = (v: unknown, min: number, max: number) =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 
-function validar(entidad: Entidad, r: Registro, donde: string) {
-  const malo = (campo: string) => {
-    throw new Error(`${donde}: ${campo} inválido (${String(r[campo])})`)
+function validar(entity: Entidad, r: Registro, donde: string) {
+  const badCase = (field: string) => {
+    throw new Error(`${donde}: ${field} inválido (${String(r[field])})`)
   }
-  if ('nombre' in r) {
-    const n = String(r.nombre)
-    if (n !== n.trim() || n.length < 1 || n.length > 80) malo('nombre')
+  if ('name' in r) {
+    const n = String(r.name)
+    if (n !== n.trim() || n.length < 1 || n.length > 80) badCase('name')
   }
-  for (const campo of ['precio', 'precio_extra'])
-    if (campo in r && !entero(r[campo], 0, LIMITE_PRECIO)) malo(campo)
-  if ('orden' in r && !entero(r.orden, 0, 10_000)) malo('orden')
+  for (const field of ['price', 'extra_price'])
+    if (field in r && !entero(r[field], 0, PRICE_LIMIT)) badCase(field)
+  if ('position' in r && !entero(r.position, 0, 10_000)) badCase('position')
   if (
-    typeof r.descripcion === 'string' &&
-    (r.descripcion !== r.descripcion.trim() || r.descripcion.length > 300)
+    typeof r.description === 'string' &&
+    (r.description !== r.description.trim() || r.description.length > 300)
   )
-    malo('descripcion')
-  if (typeof r.activo !== 'boolean') malo('activo')
-  if (entidad === 'grupo_modificador') {
-    if (!entero(r.minimo, 0, 20)) malo('minimo')
-    if (!entero(r.maximo, 1, 20) || (r.maximo as number) < (r.minimo as number)) malo('maximo')
+    badCase('description')
+  if (typeof r.active !== 'boolean') badCase('active')
+  if (entity === 'modifier_groups') {
+    if (!entero(r.minimum, 0, 20)) badCase('minimum')
+    if (!entero(r.maximum, 1, 20) || (r.maximum as number) < (r.minimum as number))
+      badCase('maximum')
   }
 }
 
 /** Aplica los cambios como lo haría el hub; lanza si el hub los rechazaría (o si sobra algo). */
-function aplicar(origen: CatalogoEdicion, cambios: CambioCatalogo[]): CatalogoEdicion {
-  const c = structuredClone(origen)
+function apply(source: CatalogoEdicion, changes: CambioCatalogo[]): CatalogoEdicion {
+  const c = structuredClone(source)
   let version = c.version
-  const tocados: { entidad: Entidad; id: string; donde: string }[] = []
+  const tocados: { entity: Entidad; id: string; donde: string }[] = []
   const tabla = (e: Entidad) => c[TABLA[e]] as unknown as (Registro & { id: string })[]
 
-  for (const [i, cambio] of cambios.entries()) {
-    const donde = `Cambio ${i + 1} (${cambio.entidad})`
-    const claves = Object.keys(cambio.datos)
-    if (claves.length === 0) throw new Error(`${donde}: no cambia nada`)
-    for (const k of claves)
-      if (!CAMPOS[cambio.entidad].includes(k)) throw new Error(`${donde}: campo ${k} no existe`)
-    for (const [campo, destino] of Object.entries(REFERENCIAS)) {
-      const valor = cambio.datos[campo]
-      if (
-        typeof valor === 'string' &&
-        !(c[destino] as { id: string }[]).some((x) => x.id === valor)
-      )
-        throw new Error(`${donde}: ${campo} no existe`)
+  for (const [i, change] of changes.entries()) {
+    const donde = `Cambio ${i + 1} (${change.entity})`
+    const keys = Object.keys(change.data)
+    if (keys.length === 0) throw new Error(`${donde}: no cambia nada`)
+    for (const k of keys)
+      if (!CAMPOS[change.entity].includes(k)) throw new Error(`${donde}: campo ${k} no existe`)
+    for (const [field, target] of Object.entries(REFERENCIAS)) {
+      const value = change.data[field]
+      if (typeof value === 'string' && !(c[target] as { id: string }[]).some((x) => x.id === value))
+        throw new Error(`${donde}: ${field} no existe`)
     }
-    const filas = tabla(cambio.entidad)
-    const actual = filas.find((f) => f.id === cambio.id)
-    if (!actual) {
-      for (const k of CAMPOS[cambio.entidad])
-        if (!(k in cambio.datos)) throw new Error(`${donde}: falta ${k} al crear`)
-      const nueva = { id: cambio.id, version: ++version, ...cambio.datos } as Registro & {
+    const rows = tabla(change.entity)
+    const current = rows.find((f) => f.id === change.id)
+    if (!current) {
+      for (const k of CAMPOS[change.entity])
+        if (!(k in change.data)) throw new Error(`${donde}: falta ${k} al crear`)
+      const newOne = { id: change.id, version: ++version, ...change.data } as Registro & {
         id: string
       }
-      validar(cambio.entidad, nueva, donde)
-      filas.push(nueva)
+      validar(change.entity, newOne, donde)
+      rows.push(newOne)
     } else {
-      for (const k of PADRES[cambio.entidad] ?? [])
-        if (k in cambio.datos && cambio.datos[k] !== actual[k])
+      for (const k of PADRES[change.entity] ?? [])
+        if (k in change.data && change.data[k] !== current[k])
           throw new Error(`${donde}: no se puede cambiar ${k}`)
-      const cambia = Object.entries(cambio.datos).filter(([k, v]) => actual[k] !== v)
+      const cambia = Object.entries(change.data).filter(([k, v]) => current[k] !== v)
       // El hub lo toleraría, pero un borrador no debe mandar campos que no cambiaron.
-      if (cambia.length !== claves.length) throw new Error(`${donde}: manda campos sin cambio`)
-      Object.assign(actual, cambio.datos, { version: ++version })
-      validar(cambio.entidad, actual, donde)
+      if (cambia.length !== keys.length) throw new Error(`${donde}: manda campos sin cambio`)
+      Object.assign(current, change.data, { version: ++version })
+      validar(change.entity, current, donde)
     }
-    if (cambio.entidad === 'producto_grupo_modificador') {
-      const par = (f: Registro) => `${f.producto_id}|${f.grupo_id}`
-      const mismos = tabla('producto_grupo_modificador').filter(
+    if (change.entity === 'product_modifier_groups') {
+      const pair = (f: Registro) => `${f.product_id}|${f.group_id}`
+      const mismos = tabla('product_modifier_groups').filter(
         (f) =>
-          par(f) ===
-          par(tabla('producto_grupo_modificador').find((x) => x.id === cambio.id) as Registro),
+          pair(f) ===
+          pair(tabla('product_modifier_groups').find((x) => x.id === change.id) as Registro),
       )
       if (mismos.length > 1) throw new Error(`${donde}: ese producto ya tiene ese grupo`)
     }
-    tocados.push({ entidad: cambio.entidad, id: cambio.id, donde })
+    tocados.push({ entity: change.entity, id: change.id, donde })
   }
 
   for (const t of tocados) {
-    const fila = tabla(t.entidad).find((f) => f.id === t.id) as Registro
-    if (fila.activo === true) {
-      for (const [campo, destino] of Object.entries(REFERENCIAS)) {
-        const ref = fila[campo]
-        const padre =
+    const fila = tabla(t.entity).find((f) => f.id === t.id) as Registro
+    if (fila.active === true) {
+      for (const [field, target] of Object.entries(REFERENCIAS)) {
+        const ref = fila[field]
+        const parent =
           typeof ref === 'string'
-            ? (c[destino] as unknown as Registro[]).find((x) => x.id === ref)
+            ? (c[target] as unknown as Registro[]).find((x) => x.id === ref)
             : null
-        if (typeof ref === 'string' && padre?.activo !== true)
-          throw new Error(`${t.donde}: ${campo.replace('_id', '')} está archivado`)
+        if (typeof ref === 'string' && parent?.active !== true)
+          throw new Error(`${t.donde}: ${field.replace('_id', '')} está archivado`)
       }
-    } else if (t.entidad === 'grupo_modificador') {
-      for (const e of c.enlaces) if (e.grupo_id === t.id && e.activo) e.activo = false
+    } else if (t.entity === 'modifier_groups') {
+      for (const e of c.links) if (e.group_id === t.id && e.active) e.active = false
     }
   }
   c.version = version
@@ -202,54 +202,54 @@ const arbDescripcion = fc.oneof(
 )
 const arbPrecio = fc.integer({ min: 0, max: 400_000 })
 const arbPrecioPositivo = fc.integer({ min: 1, max: 400_000 })
-const reg = (id: string, activo: boolean) => ({ id, version: 1, activo })
+const reg = (id: string, active: boolean) => ({ id, version: 1, active })
 
 interface SemillaEdicion {
   activosImp: boolean[]
   activasCat: boolean[]
-  productos: {
-    activo: boolean
-    precio: number
+  products: {
+    active: boolean
+    price: number
     desc: string | null
-    variantes: { precio: number; activa: boolean }[]
+    variants: { price: number; activa: boolean }[]
   }[]
-  grupos: {
-    activo: boolean
+  groups: {
+    active: boolean
     min: number
     max: number
-    opciones: { activa: boolean; extra: number }[]
+    options: { activa: boolean; extra: number }[]
   }[]
-  enlaces: { activo: boolean; usa: boolean }[][]
+  links: { active: boolean; usa: boolean }[][]
 }
 
 const arbSemilla: fc.Arbitrary<SemillaEdicion> = fc.record({
   activosImp: fc.array(fc.boolean(), { minLength: 3, maxLength: 3 }),
   activasCat: fc.array(fc.boolean(), { minLength: 3, maxLength: 3 }),
-  productos: fc.array(
+  products: fc.array(
     fc.record({
-      activo: fc.boolean(),
-      precio: arbPrecio,
+      active: fc.boolean(),
+      price: arbPrecio,
       desc: fc.option(fc.stringMatching(/^[A-Za-z]{1,10}$/), { nil: null }),
-      variantes: fc.array(fc.record({ precio: arbPrecioPositivo, activa: fc.boolean() }), {
+      variants: fc.array(fc.record({ price: arbPrecioPositivo, activa: fc.boolean() }), {
         maxLength: 4,
       }),
     }),
     { minLength: 4, maxLength: 4 },
   ),
-  grupos: fc.array(
+  groups: fc.array(
     fc.record({
-      activo: fc.boolean(),
+      active: fc.boolean(),
       min: fc.integer({ min: 0, max: 2 }),
       max: fc.integer({ min: 2, max: 5 }),
-      opciones: fc.array(fc.record({ activa: fc.boolean(), extra: arbPrecio }), {
+      options: fc.array(fc.record({ activa: fc.boolean(), extra: arbPrecio }), {
         minLength: 1,
         maxLength: 5,
       }),
     }),
     { minLength: 3, maxLength: 3 },
   ),
-  enlaces: fc.array(
-    fc.array(fc.record({ activo: fc.boolean(), usa: fc.boolean() }), {
+  links: fc.array(
+    fc.array(fc.record({ active: fc.boolean(), usa: fc.boolean() }), {
       minLength: 3,
       maxLength: 3,
     }),
@@ -263,89 +263,89 @@ const arbSemilla: fc.Arbitrary<SemillaEdicion> = fc.record({
  * final; sin él, lo archivado queda en su lugar (como tras archivar un tamaño del medio).
  */
 function edicionDe(s: SemillaEdicion, contiguo = true): CatalogoEdicion {
-  const acomodar = <T extends { activa: boolean }>(lista: T[]) =>
-    contiguo ? [...lista.filter((x) => x.activa), ...lista.filter((x) => !x.activa)] : lista
-  const impuestos = s.activosImp.map((a, i) => ({
+  const acomodar = <T extends { activa: boolean }>(list: T[]) =>
+    contiguo ? [...list.filter((x) => x.activa), ...list.filter((x) => !x.activa)] : list
+  const taxes = s.activosImp.map((a, i) => ({
     ...reg(`IMP${i}`, i === 0 || a),
-    nombre: `INC ${i}`,
-    tipo: 'inc' as const,
-    tarifa: 800,
+    name: `INC ${i}`,
+    type: 'inc' as const,
+    rate: 800,
   }))
-  const categorias = s.activasCat.map((a, i) => ({
+  const categories = s.activasCat.map((a, i) => ({
     ...reg(`CAT${i}`, i === 0 || a),
-    nombre: `Cat ${i}`,
-    orden: i,
-    estacion_id: null,
+    name: `Cat ${i}`,
+    position: i,
+    station_id: null,
   }))
-  const grupos = s.grupos.map((g, i) => ({
-    ...reg(`GRP${i}`, i === 0 || g.activo),
-    nombre: `Grupo ${i}`,
-    minimo: 0,
-    maximo: Math.max(g.max, g.min, 1),
+  const groups = s.groups.map((g, i) => ({
+    ...reg(`GRP${i}`, i === 0 || g.active),
+    name: `Grupo ${i}`,
+    minimum: 0,
+    maximum: Math.max(g.max, g.min, 1),
   }))
-  const modificadores = s.grupos.flatMap((g, gi) =>
-    acomodar(g.opciones).map((o, oi) => ({
-      ...reg(`MOD${gi}_${oi}`, o.activa && grupos[gi]?.activo === true),
-      grupo_id: `GRP${gi}`,
-      nombre: `Opción ${gi}.${oi}`,
-      precio_extra: o.extra,
-      orden: oi,
+  const modifiers = s.groups.flatMap((g, gi) =>
+    acomodar(g.options).map((o, oi) => ({
+      ...reg(`MOD${gi}_${oi}`, o.activa && groups[gi]?.active === true),
+      group_id: `GRP${gi}`,
+      name: `Opción ${gi}.${oi}`,
+      extra_price: o.extra,
+      position: oi,
     })),
   )
-  const productos = s.productos.map((p, i) => {
-    const activos = impuestos.filter((x) => x.activo)
-    const cats = categorias.filter((x) => x.activo)
-    const activo = p.activo
+  const products = s.products.map((p, i) => {
+    const activeRows = taxes.filter((x) => x.active)
+    const cats = categories.filter((x) => x.active)
+    const active = p.active
     // Con tamaños activos, el precio del producto es el del más barato (docs/DINERO.md).
-    const desde = p.variantes.filter((v) => v.activa && activo).map((v) => v.precio)
+    const from = p.variants.filter((v) => v.activa && active).map((v) => v.price)
     return {
-      ...reg(`PRO${i}`, activo),
-      categoria_id: (cats[i % cats.length] ?? categorias[0])?.id as string,
-      nombre: `Producto ${i}`,
-      descripcion: p.desc,
-      precio: desde.length > 0 ? Math.min(...desde) : p.precio,
-      impuesto_id: (activos[i % activos.length] ?? impuestos[0])?.id as string,
-      favorito: false,
+      ...reg(`PRO${i}`, active),
+      category_id: (cats[i % cats.length] ?? categories[0])?.id as string,
+      name: `Producto ${i}`,
+      description: p.desc,
+      price: from.length > 0 ? Math.min(...from) : p.price,
+      tax_id: (activeRows[i % activeRows.length] ?? taxes[0])?.id as string,
+      favorite: false,
     }
   })
-  const variantes = s.productos.flatMap((p, pi) =>
-    acomodar(p.variantes).map((v, vi) => ({
-      ...reg(`VAR${pi}_${vi}`, v.activa && productos[pi]?.activo === true),
-      producto_id: `PRO${pi}`,
-      nombre: `Tamaño ${vi}`,
-      precio: v.precio,
-      orden: vi,
+  const variants = s.products.flatMap((p, pi) =>
+    acomodar(p.variants).map((v, vi) => ({
+      ...reg(`VAR${pi}_${vi}`, v.activa && products[pi]?.active === true),
+      product_id: `PRO${pi}`,
+      name: `Tamaño ${vi}`,
+      price: v.price,
+      position: vi,
     })),
   )
-  const enlaces = s.enlaces.flatMap((fila, pi) =>
+  const links = s.links.flatMap((fila, pi) =>
     acomodar(
       fila
         .map((e, gi) => ({
           e,
           gi,
-          activa: e.activo && productos[pi]?.activo === true && grupos[gi]?.activo === true,
+          activa: e.active && products[pi]?.active === true && groups[gi]?.active === true,
         }))
         .filter(({ e }) => e.usa),
-    ).map(({ gi, activa }, orden) => ({
+    ).map(({ gi, activa }, position) => ({
       ...reg(`ENL${pi}_${gi}`, activa),
-      producto_id: `PRO${pi}`,
-      grupo_id: `GRP${gi}`,
-      orden,
+      product_id: `PRO${pi}`,
+      group_id: `GRP${gi}`,
+      position,
     })),
   )
   return {
     version: 100,
-    zonas: [],
-    mesas: [],
-    elementos: [],
-    impuestos,
-    estaciones: [],
-    categorias,
-    productos,
-    variantes,
-    grupos,
-    enlaces,
-    modificadores,
+    zones: [],
+    tables: [],
+    elements: [],
+    taxes,
+    stations: [],
+    categories,
+    products,
+    variants,
+    groups,
+    links,
+    modifiers,
   }
 }
 
@@ -353,51 +353,51 @@ function edicionDe(s: SemillaEdicion, contiguo = true): CatalogoEdicion {
 
 /** El borrador tal como se vuelve a leer tras guardar: recortado, sin lo archivado, con el precio "desde". */
 function comoQuedaProducto(b: BorradorProducto): BorradorProducto {
-  const activas = b.variantes.filter((v) => v.activo)
+  const activas = b.variants.filter((v) => v.active)
   return {
     id: b.id,
-    nuevo: false,
-    nombre: b.nombre.trim(),
-    descripcion: b.descripcion.trim(),
+    fresh: false,
+    name: b.name.trim(),
+    description: b.description.trim(),
     categoriaId: b.categoriaId,
-    precio: activas.length > 0 ? Math.min(...activas.map((v) => v.precio)) : b.precio,
+    price: activas.length > 0 ? Math.min(...activas.map((v) => v.price)) : b.price,
     impuestoId: b.impuestoId,
-    favorito: b.favorito,
-    activo: b.activo,
-    variantes: activas.map((v) => ({
+    favorite: b.favorite,
+    active: b.active,
+    variants: activas.map((v) => ({
       id: v.id,
-      nuevo: false,
-      nombre: v.nombre.trim(),
-      precio: v.precio,
-      activo: true,
+      fresh: false,
+      name: v.name.trim(),
+      price: v.price,
+      active: true,
     })),
-    grupos: [...b.grupos],
+    groups: [...b.groups],
   }
 }
 
 function comoQuedaGrupo(g: BorradorGrupo): BorradorGrupo {
   return {
     id: g.id,
-    nuevo: false,
-    nombre: g.nombre.trim(),
-    minimo: g.minimo,
-    maximo: g.maximo,
-    activo: g.activo,
-    opciones: g.opciones
-      .filter((o) => o.activo)
+    fresh: false,
+    name: g.name.trim(),
+    minimum: g.minimum,
+    maximum: g.maximum,
+    active: g.active,
+    options: g.options
+      .filter((o) => o.active)
       .map((o) => ({
         id: o.id,
-        nuevo: false,
-        nombre: o.nombre.trim(),
-        precioExtra: o.precioExtra,
-        activo: true,
+        fresh: false,
+        name: o.name.trim(),
+        extraPrice: o.extraPrice,
+        active: true,
       })),
   }
 }
 
-const ordenar = <T>(lista: T[], claves: number[]): T[] =>
-  lista
-    .map((x, i) => ({ x, k: claves[i % Math.max(claves.length, 1)] ?? 0, i }))
+const ordenar = <T>(list: T[], keys: number[]): T[] =>
+  list
+    .map((x, i) => ({ x, k: keys[i % Math.max(keys.length, 1)] ?? 0, i }))
     .sort((a, b) => a.k - b.k || a.i - b.i)
     .map(({ x }) => x)
 
@@ -405,84 +405,83 @@ const ordenar = <T>(lista: T[], claves: number[]): T[] =>
 
 interface EdicionProducto {
   indice: number
-  nombre: string | null
-  descripcion: string | null
-  precio: number | null
-  categoria: number | null
-  impuesto: number | null
-  activo: boolean | null
-  variantes: { nombre: string | null; precio: number | null; activo: boolean | null }[]
-  nuevas: { precio: number; activo: boolean }[]
+  name: string | null
+  description: string | null
+  price: number | null
+  categories: number | null
+  taxes: number | null
+  active: boolean | null
+  variants: { name: string | null; price: number | null; active: boolean | null }[]
+  newOnes: { price: number; active: boolean }[]
   clavesVariantes: number[]
-  grupos: boolean[]
+  groups: boolean[]
   clavesGrupos: number[]
 }
 
 const arbEdicionProducto: fc.Arbitrary<EdicionProducto> = fc.record({
   indice: fc.integer({ min: 0, max: 3 }),
-  nombre: fc.option(arbNombre, { nil: null }),
-  descripcion: fc.option(arbDescripcion, { nil: null }),
-  precio: fc.option(arbPrecio, { nil: null }),
-  categoria: fc.option(fc.nat(5), { nil: null }),
-  impuesto: fc.option(fc.nat(5), { nil: null }),
-  activo: fc.option(fc.boolean(), { nil: null }),
-  variantes: fc.array(
+  name: fc.option(arbNombre, { nil: null }),
+  description: fc.option(arbDescripcion, { nil: null }),
+  price: fc.option(arbPrecio, { nil: null }),
+  categories: fc.option(fc.nat(5), { nil: null }),
+  taxes: fc.option(fc.nat(5), { nil: null }),
+  active: fc.option(fc.boolean(), { nil: null }),
+  variants: fc.array(
     fc.record({
-      nombre: fc.option(arbBase, { nil: null }),
-      precio: fc.option(arbPrecioPositivo, { nil: null }),
-      activo: fc.option(fc.boolean(), { nil: null }),
+      name: fc.option(arbBase, { nil: null }),
+      price: fc.option(arbPrecioPositivo, { nil: null }),
+      active: fc.option(fc.boolean(), { nil: null }),
     }),
     { maxLength: 4 },
   ),
-  nuevas: fc.array(fc.record({ precio: arbPrecioPositivo, activo: fc.boolean() }), {
+  newOnes: fc.array(fc.record({ price: arbPrecioPositivo, active: fc.boolean() }), {
     maxLength: 3,
   }),
   clavesVariantes: fc.array(fc.nat(3), { maxLength: 8 }),
-  grupos: fc.array(fc.boolean(), { minLength: 3, maxLength: 3 }),
+  groups: fc.array(fc.boolean(), { minLength: 3, maxLength: 3 }),
   clavesGrupos: fc.array(fc.nat(3), { maxLength: 3 }),
 })
 
 /** Edita el borrador de un producto existente como lo haría la persona en pantalla. */
 function editarProducto(c: CatalogoEdicion, e: EdicionProducto): BorradorProducto {
   const b = borradorDeProducto(c, `PRO${e.indice}`)
-  const impuestos = c.impuestos.filter((x) => x.activo)
-  const categorias = c.categorias.filter((x) => x.activo)
-  if (e.nombre !== null) b.nombre = e.nombre
-  if (e.descripcion !== null) b.descripcion = e.descripcion
-  if (e.precio !== null) b.precio = e.precio
-  if (e.categoria !== null)
-    b.categoriaId = categorias[e.categoria % categorias.length]?.id ?? b.categoriaId
-  if (e.impuesto !== null)
-    b.impuestoId = impuestos[e.impuesto % impuestos.length]?.id ?? b.impuestoId
-  if (e.activo !== null) b.activo = e.activo
-  b.variantes.forEach((v, i) => {
-    const ed = e.variantes[i]
+  const taxes = c.taxes.filter((x) => x.active)
+  const categories = c.categories.filter((x) => x.active)
+  if (e.name !== null) b.name = e.name
+  if (e.description !== null) b.description = e.description
+  if (e.price !== null) b.price = e.price
+  if (e.categories !== null)
+    b.categoriaId = categories[e.categories % categories.length]?.id ?? b.categoriaId
+  if (e.taxes !== null) b.impuestoId = taxes[e.taxes % taxes.length]?.id ?? b.impuestoId
+  if (e.active !== null) b.active = e.active
+  b.variants.forEach((v, i) => {
+    const ed = e.variants[i]
     if (!ed) return
     // Nombres distintos por tamaño: el borrador no deja guardar dos iguales.
-    if (ed.nombre !== null) v.nombre = `${ed.nombre} ${i}`
-    if (ed.precio !== null) v.precio = ed.precio
-    if (ed.activo !== null) v.activo = ed.activo
+    if (ed.name !== null) v.name = `${ed.name} ${i}`
+    if (ed.price !== null) v.price = ed.price
+    if (ed.active !== null) v.active = ed.active
   })
-  for (const [i, n] of e.nuevas.entries())
-    b.variantes.push({
+  for (const [i, n] of e.newOnes.entries())
+    b.variants.push({
       id: `NUEVA${i}`,
-      nuevo: true,
-      nombre: `Nueva ${i}`,
-      precio: n.precio,
-      activo: n.activo,
+      fresh: true,
+      name: `Nueva ${i}`,
+      price: n.price,
+      active: n.active,
     })
-  b.variantes = ordenar(b.variantes, e.clavesVariantes)
-  const grupos = c.grupos.filter((g) => g.activo)
-  b.grupos = ordenar(
-    grupos.filter((_, i) => e.grupos[i]).map((g) => g.id),
+  b.variants = ordenar(b.variants, e.clavesVariantes)
+  const groups = c.groups.filter((g) => g.active)
+  b.groups = ordenar(
+    groups.filter((_, i) => e.groups[i]).map((g) => g.id),
     e.clavesGrupos,
   )
   // Un producto archivado no se toca por dentro (el hub no deja cambiar lo activo bajo algo
   // archivado): ver «archivar y cambiar un tamaño a la vez» en los tests del hub.
-  if (!b.activo) {
+  if (!b.active) {
     const original = borradorDeProducto(c, b.id)
-    b.variantes = original.variantes
-    b.grupos = original.grupos
+    b.variants = original.variants
+    b.groups = original.groups
   }
   return b
 }
@@ -490,14 +489,14 @@ function editarProducto(c: CatalogoEdicion, e: EdicionProducto): BorradorProduct
 describe('producto: lo que se guarda es lo que se editó', () => {
   it('aplicar los cambios deja un borrador igual al editado', () => {
     fc.assert(
-      fc.property(arbSemilla, arbEdicionProducto, (semilla, edicion) => {
-        const c = edicionDe(semilla)
+      fc.property(arbSemilla, arbEdicionProducto, (seedValue, edicion) => {
+        const c = edicionDe(seedValue)
         const b = editarProducto(c, edicion)
         fc.pre(problemasDeProducto(b).length === 0)
 
-        const despues = aplicar(c, cambiosDeProducto(c, b))
+        const after = apply(c, cambiosDeProducto(c, b))
 
-        expect(borradorDeProducto(despues, b.id)).toEqual(comoQuedaProducto(b))
+        expect(borradorDeProducto(after, b.id)).toEqual(comoQuedaProducto(b))
       }),
       { seed: SEMILLA, numRuns: CORRIDAS },
     )
@@ -505,8 +504,8 @@ describe('producto: lo que se guarda es lo que se editó', () => {
 
   it('sin tocar nada no hay cambios, en cualquier catálogo', () => {
     fc.assert(
-      fc.property(arbSemilla, fc.integer({ min: 0, max: 3 }), (semilla, i) => {
-        const c = edicionDe(semilla)
+      fc.property(arbSemilla, fc.integer({ min: 0, max: 3 }), (seedValue, i) => {
+        const c = edicionDe(seedValue)
         expect(cambiosDeProducto(c, borradorDeProducto(c, `PRO${i}`))).toEqual([])
       }),
       { seed: SEMILLA, numRuns: CORRIDAS },
@@ -515,31 +514,28 @@ describe('producto: lo que se guarda es lo que se editó', () => {
 
   it('un producto no queda con dos enlaces al mismo grupo ni toca lo que no es suyo', () => {
     fc.assert(
-      fc.property(arbSemilla, arbEdicionProducto, (semilla, edicion) => {
-        const c = edicionDe(semilla)
+      fc.property(arbSemilla, arbEdicionProducto, (seedValue, edicion) => {
+        const c = edicionDe(seedValue)
         const b = editarProducto(c, edicion)
         fc.pre(problemasDeProducto(b).length === 0)
-        const cambios = cambiosDeProducto(c, b)
-        const despues = aplicar(c, cambios)
+        const changes = cambiosDeProducto(c, b)
+        const after = apply(c, changes)
 
-        const pares = despues.enlaces.map((e) => `${e.producto_id}|${e.grupo_id}`)
+        const pares = after.links.map((e) => `${e.product_id}|${e.group_id}`)
         expect(new Set(pares).size).toBe(pares.length)
         // Los cambios solo tocan este producto, sus variantes y sus enlaces.
-        for (const cambio of cambios) {
-          if (cambio.entidad === 'producto') expect(cambio.id).toBe(b.id)
-          else if (
-            cambio.entidad === 'variante' ||
-            cambio.entidad === 'producto_grupo_modificador'
-          ) {
-            const fila = (cambio.entidad === 'variante' ? despues.variantes : despues.enlaces).find(
-              (x) => x.id === cambio.id,
+        for (const change of changes) {
+          if (change.entity === 'products') expect(change.id).toBe(b.id)
+          else if (change.entity === 'variants' || change.entity === 'product_modifier_groups') {
+            const fila = (change.entity === 'variants' ? after.variants : after.links).find(
+              (x) => x.id === change.id,
             )
-            expect(fila?.producto_id).toBe(b.id)
-          } else throw new Error(`Cambio inesperado: ${cambio.entidad}`)
+            expect(fila?.product_id).toBe(b.id)
+          } else throw new Error(`Cambio inesperado: ${change.entity}`)
         }
         // Los demás productos quedan igual.
-        for (const p of c.productos.filter((x) => x.id !== b.id))
-          expect(borradorDeProducto(despues, p.id).nombre).toBe(borradorDeProducto(c, p.id).nombre)
+        for (const p of c.products.filter((x) => x.id !== b.id))
+          expect(borradorDeProducto(after, p.id).name).toBe(borradorDeProducto(c, p.id).name)
       }),
       { seed: SEMILLA, numRuns: CORRIDAS },
     )
@@ -552,34 +548,34 @@ describe('producto: lo que se guarda es lo que se editó', () => {
         arbNombre,
         arbDescripcion,
         arbPrecioPositivo,
-        fc.array(fc.record({ precio: arbPrecioPositivo, activa: fc.boolean() }), { maxLength: 3 }),
+        fc.array(fc.record({ price: arbPrecioPositivo, activa: fc.boolean() }), { maxLength: 3 }),
         fc.array(fc.boolean(), { minLength: 3, maxLength: 3 }),
-        (semilla, nombre, descripcion, precio, tamanos, grupos) => {
-          const c = edicionDe(semilla)
-          const categoria = c.categorias.find((x) => x.activo)?.id as string
-          const b = productoNuevo(c, categoria)
-          b.nombre = nombre
-          b.descripcion = descripcion
-          b.precio = precio
-          b.variantes = tamanos.map((t, i) => ({
+        (seedValue, name, description, price, sizes, groups) => {
+          const c = edicionDe(seedValue)
+          const category = c.categories.find((x) => x.active)?.id as string
+          const b = productoNuevo(c, category)
+          b.name = name
+          b.description = description
+          b.price = price
+          b.variants = sizes.map((t, i) => ({
             id: `NV${i}`,
-            nuevo: true,
-            nombre: `Tamaño nuevo ${i}`,
-            precio: t.precio,
-            activo: t.activa,
+            fresh: true,
+            name: `Tamaño nuevo ${i}`,
+            price: t.price,
+            active: t.activa,
           }))
-          b.grupos = c.grupos.filter((g, i) => g.activo && grupos[i]).map((g) => g.id)
+          b.groups = c.groups.filter((g, i) => g.active && groups[i]).map((g) => g.id)
           expect(problemasDeProducto(b)).toEqual([])
 
-          const cambios = cambiosDeProducto(c, b)
-          const despues = aplicar(c, cambios)
+          const changes = cambiosDeProducto(c, b)
+          const after = apply(c, changes)
 
-          expect(borradorDeProducto(despues, b.id)).toEqual(comoQuedaProducto(b))
+          expect(borradorDeProducto(after, b.id)).toEqual(comoQuedaProducto(b))
           // Lo primero es el producto: sus variantes y enlaces lo necesitan.
-          expect(cambios[0]).toMatchObject({ entidad: 'producto', id: b.id })
+          expect(changes[0]).toMatchObject({ entity: 'products', id: b.id })
           // Una variante nueva que se quitó antes de guardar no viaja.
-          const quitadas = b.variantes.filter((v) => !v.activo).map((v) => v.id)
-          expect(cambios.some((x) => quitadas.includes(x.id))).toBe(false)
+          const quitadas = b.variants.filter((v) => !v.active).map((v) => v.id)
+          expect(changes.some((x) => quitadas.includes(x.id))).toBe(false)
         },
       ),
       { seed: SEMILLA, numRuns: CORRIDAS },
@@ -588,18 +584,18 @@ describe('producto: lo que se guarda es lo que se editó', () => {
 
   it('volver a poner un grupo que se había quitado reactiva su enlace, no crea otro', () => {
     fc.assert(
-      fc.property(arbSemilla, fc.integer({ min: 0, max: 3 }), (semilla, i) => {
-        const c = edicionDe(semilla)
+      fc.property(arbSemilla, fc.integer({ min: 0, max: 3 }), (seedValue, i) => {
+        const c = edicionDe(seedValue)
         const id = `PRO${i}`
-        const antes = borradorDeProducto(c, id)
+        const before = borradorDeProducto(c, id)
         // Se quitan todos los grupos y se guarda; luego se vuelven a poner los mismos.
-        const sin = { ...antes, grupos: [] }
-        const c2 = aplicar(c, cambiosDeProducto(c, sin))
-        const de_nuevo = { ...borradorDeProducto(c2, id), grupos: antes.grupos }
-        const c3 = aplicar(c2, cambiosDeProducto(c2, de_nuevo))
+        const without = { ...before, groups: [] }
+        const c2 = apply(c, cambiosDeProducto(c, without))
+        const de_nuevo = { ...borradorDeProducto(c2, id), groups: before.groups }
+        const c3 = apply(c2, cambiosDeProducto(c2, de_nuevo))
 
-        expect(borradorDeProducto(c3, id).grupos).toEqual(antes.grupos)
-        expect(c3.enlaces.length).toBe(c.enlaces.length)
+        expect(borradorDeProducto(c3, id).groups).toEqual(before.groups)
+        expect(c3.links.length).toBe(c.links.length)
       }),
       { seed: SEMILLA, numRuns: CORRIDAS },
     )
@@ -610,71 +606,71 @@ describe('producto: lo que se guarda es lo que se editó', () => {
 
 interface EdicionGrupo {
   indice: number
-  nombre: string | null
-  minimo: number | null
-  maximo: number | null
-  activo: boolean | null
-  opciones: { nombre: string | null; extra: number | null; activa: boolean | null }[]
-  nuevas: { extra: number; activa: boolean }[]
-  claves: number[]
+  name: string | null
+  minimum: number | null
+  maximum: number | null
+  active: boolean | null
+  options: { name: string | null; extra: number | null; activa: boolean | null }[]
+  newOnes: { extra: number; activa: boolean }[]
+  keys: number[]
 }
 
 const arbEdicionGrupo: fc.Arbitrary<EdicionGrupo> = fc.record({
   indice: fc.integer({ min: 0, max: 2 }),
-  nombre: fc.option(arbNombre, { nil: null }),
-  minimo: fc.option(fc.integer({ min: 0, max: 3 }), { nil: null }),
-  maximo: fc.option(fc.integer({ min: 1, max: 8 }), { nil: null }),
-  activo: fc.option(fc.boolean(), { nil: null }),
-  opciones: fc.array(
+  name: fc.option(arbNombre, { nil: null }),
+  minimum: fc.option(fc.integer({ min: 0, max: 3 }), { nil: null }),
+  maximum: fc.option(fc.integer({ min: 1, max: 8 }), { nil: null }),
+  active: fc.option(fc.boolean(), { nil: null }),
+  options: fc.array(
     fc.record({
-      nombre: fc.option(arbBase, { nil: null }),
+      name: fc.option(arbBase, { nil: null }),
       extra: fc.option(arbPrecio, { nil: null }),
       activa: fc.option(fc.boolean(), { nil: null }),
     }),
     { maxLength: 5 },
   ),
-  nuevas: fc.array(fc.record({ extra: arbPrecio, activa: fc.boolean() }), { maxLength: 3 }),
-  claves: fc.array(fc.nat(3), { maxLength: 8 }),
+  newOnes: fc.array(fc.record({ extra: arbPrecio, activa: fc.boolean() }), { maxLength: 3 }),
+  keys: fc.array(fc.nat(3), { maxLength: 8 }),
 })
 
 function editarGrupo(c: CatalogoEdicion, e: EdicionGrupo): BorradorGrupo {
   const g = borradorDeGrupo(c, `GRP${e.indice}`)
-  if (e.nombre !== null) g.nombre = e.nombre
-  if (e.minimo !== null) g.minimo = e.minimo
-  if (e.maximo !== null) g.maximo = e.maximo
-  if (e.activo !== null) g.activo = e.activo
-  g.opciones.forEach((o, i) => {
-    const ed = e.opciones[i]
+  if (e.name !== null) g.name = e.name
+  if (e.minimum !== null) g.minimum = e.minimum
+  if (e.maximum !== null) g.maximum = e.maximum
+  if (e.active !== null) g.active = e.active
+  g.options.forEach((o, i) => {
+    const ed = e.options[i]
     if (!ed) return
-    if (ed.nombre !== null) o.nombre = `${ed.nombre} ${i}`
-    if (ed.extra !== null) o.precioExtra = ed.extra
-    if (ed.activa !== null) o.activo = ed.activa
+    if (ed.name !== null) o.name = `${ed.name} ${i}`
+    if (ed.extra !== null) o.extraPrice = ed.extra
+    if (ed.activa !== null) o.active = ed.activa
   })
-  for (const [i, n] of e.nuevas.entries())
-    g.opciones.push({
+  for (const [i, n] of e.newOnes.entries())
+    g.options.push({
       id: `NUEVAOP${i}`,
-      nuevo: true,
-      nombre: `Nueva ${i}`,
-      precioExtra: n.extra,
-      activo: n.activa,
+      fresh: true,
+      name: `Nueva ${i}`,
+      extraPrice: n.extra,
+      active: n.activa,
     })
-  g.opciones = ordenar(g.opciones, e.claves)
+  g.options = ordenar(g.options, e.keys)
   // Un grupo archivado no se toca por dentro (ver «archivar y cambiar a la vez» más abajo).
-  if (!g.activo) g.opciones = borradorDeGrupo(c, g.id).opciones
+  if (!g.active) g.options = borradorDeGrupo(c, g.id).options
   return g
 }
 
 describe('grupo de opciones: lo que se guarda es lo que se editó', () => {
   it('aplicar los cambios deja un borrador igual al editado', () => {
     fc.assert(
-      fc.property(arbSemilla, arbEdicionGrupo, (semilla, edicion) => {
-        const c = edicionDe(semilla)
+      fc.property(arbSemilla, arbEdicionGrupo, (seedValue, edicion) => {
+        const c = edicionDe(seedValue)
         const g = editarGrupo(c, edicion)
         fc.pre(problemasDeGrupo(g).length === 0)
 
-        const despues = aplicar(c, cambiosDeGrupo(c, g))
+        const after = apply(c, cambiosDeGrupo(c, g))
 
-        expect(borradorDeGrupo(despues, g.id)).toEqual(comoQuedaGrupo(g))
+        expect(borradorDeGrupo(after, g.id)).toEqual(comoQuedaGrupo(g))
       }),
       { seed: SEMILLA, numRuns: CORRIDAS },
     )
@@ -682,8 +678,8 @@ describe('grupo de opciones: lo que se guarda es lo que se editó', () => {
 
   it('sin tocar nada no hay cambios', () => {
     fc.assert(
-      fc.property(arbSemilla, fc.integer({ min: 0, max: 2 }), (semilla, i) => {
-        const c = edicionDe(semilla)
+      fc.property(arbSemilla, fc.integer({ min: 0, max: 2 }), (seedValue, i) => {
+        const c = edicionDe(seedValue)
         expect(cambiosDeGrupo(c, borradorDeGrupo(c, `GRP${i}`))).toEqual([])
       }),
       { seed: SEMILLA, numRuns: CORRIDAS },
@@ -701,28 +697,28 @@ describe('grupo de opciones: lo que se guarda es lo que se editó', () => {
         }),
         fc.integer({ min: 0, max: 2 }),
         fc.integer({ min: 1, max: 5 }),
-        (semilla, nombre, opciones, minimo, maximo) => {
-          const c = edicionDe(semilla)
+        (seedValue, name, options, minimum, maximum) => {
+          const c = edicionDe(seedValue)
           const g = grupoNuevo()
-          g.nombre = nombre
-          g.opciones = opciones.map((o, i) => ({
+          g.name = name
+          g.options = options.map((o, i) => ({
             id: `OP${i}`,
-            nuevo: true,
-            nombre: `Opción ${i}`,
-            precioExtra: o.extra,
-            activo: o.activa,
+            fresh: true,
+            name: `Opción ${i}`,
+            extraPrice: o.extra,
+            active: o.activa,
           }))
-          g.minimo = minimo
-          g.maximo = Math.max(maximo, minimo, 1)
+          g.minimum = minimum
+          g.maximum = Math.max(maximum, minimum, 1)
           fc.pre(problemasDeGrupo(g).length === 0)
 
-          const cambios = cambiosDeGrupo(c, g)
-          const despues = aplicar(c, cambios)
+          const changes = cambiosDeGrupo(c, g)
+          const after = apply(c, changes)
 
-          expect(borradorDeGrupo(despues, g.id)).toEqual(comoQuedaGrupo(g))
-          expect(cambios[0]).toMatchObject({ entidad: 'grupo_modificador', id: g.id })
-          const quitadas = g.opciones.filter((o) => !o.activo).map((o) => o.id)
-          expect(cambios.some((x) => quitadas.includes(x.id))).toBe(false)
+          expect(borradorDeGrupo(after, g.id)).toEqual(comoQuedaGrupo(g))
+          expect(changes[0]).toMatchObject({ entity: 'modifier_groups', id: g.id })
+          const quitadas = g.options.filter((o) => !o.active).map((o) => o.id)
+          expect(changes.some((x) => quitadas.includes(x.id))).toBe(false)
         },
       ),
       { seed: SEMILLA, numRuns: CORRIDAS },
@@ -734,13 +730,13 @@ describe('grupo de opciones: lo que se guarda es lo que se editó', () => {
       fc.property(
         arbSemilla,
         fc.array(fc.nat(9), { minLength: 1, maxLength: 8 }),
-        (semilla, claves) => {
-          const c = edicionDe(semilla)
+        (seedValue, keys) => {
+          const c = edicionDe(seedValue)
           const g = borradorDeGrupo(c, 'GRP0')
-          g.opciones = ordenar(g.opciones, claves)
-          const despues = aplicar(c, cambiosDeGrupo(c, g))
-          expect(borradorDeGrupo(despues, g.id).opciones.map((o) => o.id)).toEqual(
-            g.opciones.map((o) => o.id),
+          g.options = ordenar(g.options, keys)
+          const after = apply(c, cambiosDeGrupo(c, g))
+          expect(borradorDeGrupo(after, g.id).options.map((o) => o.id)).toEqual(
+            g.options.map((o) => o.id),
           )
         },
       ),
@@ -759,16 +755,16 @@ describe('orden de tamaños y opciones cuando hay archivados en medio', () => {
       fc.sample(arbSemilla, { seed: SEMILLA, numRuns: 1 })[0] as SemillaEdicion,
       false,
     )
-    c.variantes = c.variantes.filter((v) => v.producto_id !== 'PRO0')
-    c.variantes.push(
-      { ...reg('V0', true), producto_id: 'PRO0', nombre: 'Copa', precio: 10, orden: 0 },
-      { ...reg('V1', false), producto_id: 'PRO0', nombre: 'Media', precio: 20, orden: 1 },
-      { ...reg('V2', true), producto_id: 'PRO0', nombre: 'Botella', precio: 30, orden: 2 },
+    c.variants = c.variants.filter((v) => v.product_id !== 'PRO0')
+    c.variants.push(
+      { ...reg('V0', true), product_id: 'PRO0', name: 'Copa', price: 10, position: 0 },
+      { ...reg('V1', false), product_id: 'PRO0', name: 'Media', price: 20, position: 1 },
+      { ...reg('V2', true), product_id: 'PRO0', name: 'Botella', price: 30, position: 2 },
     )
-    const p = c.productos.find((x) => x.id === 'PRO0')
+    const p = c.products.find((x) => x.id === 'PRO0')
     if (p) {
-      p.activo = true
-      p.precio = 10
+      p.active = true
+      p.price = 10
     }
     return c
   }
@@ -781,54 +777,54 @@ describe('orden de tamaños y opciones cuando hay archivados en medio', () => {
   it('archivar ese producto no toca sus tamaños (el hub no deja tocar lo activo bajo algo archivado)', () => {
     const c = conTamanoArchivado()
     const b = borradorDeProducto(c, 'PRO0')
-    b.activo = false
-    const cambios = cambiosDeProducto(c, b)
-    expect(cambios.map((x) => x.entidad)).toEqual(['producto'])
-    expect(() => aplicar(c, cambios)).not.toThrow()
+    b.active = false
+    const changes = cambiosDeProducto(c, b)
+    expect(changes.map((x) => x.entity)).toEqual(['products'])
+    expect(() => apply(c, changes)).not.toThrow()
   })
 
   it('archivar un producto y cambiar el precio de un tamaño a la vez no manda lo que el hub rechaza', () => {
     const c = edicionDe(fc.sample(arbSemilla, { seed: SEMILLA, numRuns: 1 })[0] as SemillaEdicion)
-    c.variantes = c.variantes.filter((v) => v.producto_id !== 'PRO0')
-    c.variantes.push({
+    c.variants = c.variants.filter((v) => v.product_id !== 'PRO0')
+    c.variants.push({
       ...reg('V0', true),
-      producto_id: 'PRO0',
-      nombre: 'Copa',
-      precio: 10,
-      orden: 0,
+      product_id: 'PRO0',
+      name: 'Copa',
+      price: 10,
+      position: 0,
     })
-    const p = c.productos.find((x) => x.id === 'PRO0')
+    const p = c.products.find((x) => x.id === 'PRO0')
     if (p) {
-      p.activo = true
-      p.precio = 10
+      p.active = true
+      p.price = 10
     }
     const b = borradorDeProducto(c, 'PRO0')
-    b.activo = false
-    const copa = b.variantes[0]
-    if (!copa) throw new Error('falta')
-    copa.precio = 12
-    expect(() => aplicar(c, cambiosDeProducto(c, b))).not.toThrow()
+    b.active = false
+    const glass = b.variants[0]
+    if (!glass) throw new Error('falta')
+    glass.price = 12
+    expect(() => apply(c, cambiosDeProducto(c, b))).not.toThrow()
   })
 
   it('archivar un grupo y cambiar el precio de una opción a la vez no manda lo que el hub rechaza', () => {
     const c = edicionDe(fc.sample(arbSemilla, { seed: SEMILLA, numRuns: 1 })[0] as SemillaEdicion)
     const g = borradorDeGrupo(c, 'GRP0')
-    g.activo = false
-    const opcion = g.opciones[0]
+    g.active = false
+    const opcion = g.options[0]
     if (!opcion) throw new Error('falta')
-    opcion.precioExtra += 500
-    expect(() => aplicar(c, cambiosDeGrupo(c, g))).not.toThrow()
+    opcion.extraPrice += 500
+    expect(() => apply(c, cambiosDeGrupo(c, g))).not.toThrow()
   })
 
   it('guardar dos veces: la segunda no manda nada, aunque se haya archivado un tamaño del medio', () => {
     fc.assert(
-      fc.property(arbSemilla, arbEdicionProducto, (semilla, edicion) => {
-        const c = edicionDe(semilla)
+      fc.property(arbSemilla, arbEdicionProducto, (seedValue, edicion) => {
+        const c = edicionDe(seedValue)
         const b = editarProducto(c, edicion)
         fc.pre(problemasDeProducto(b).length === 0)
-        const despues = aplicar(c, cambiosDeProducto(c, b))
+        const after = apply(c, cambiosDeProducto(c, b))
 
-        expect(cambiosDeProducto(despues, borradorDeProducto(despues, b.id))).toEqual([])
+        expect(cambiosDeProducto(after, borradorDeProducto(after, b.id))).toEqual([])
       }),
       { seed: SEMILLA, numRuns: CORRIDAS },
     )
@@ -836,13 +832,13 @@ describe('orden de tamaños y opciones cuando hay archivados en medio', () => {
 
   it('lo mismo con las opciones de un grupo', () => {
     fc.assert(
-      fc.property(arbSemilla, arbEdicionGrupo, (semilla, edicion) => {
-        const c = edicionDe(semilla)
+      fc.property(arbSemilla, arbEdicionGrupo, (seedValue, edicion) => {
+        const c = edicionDe(seedValue)
         const g = editarGrupo(c, edicion)
         fc.pre(problemasDeGrupo(g).length === 0)
-        const despues = aplicar(c, cambiosDeGrupo(c, g))
+        const after = apply(c, cambiosDeGrupo(c, g))
 
-        expect(cambiosDeGrupo(despues, borradorDeGrupo(despues, g.id))).toEqual([])
+        expect(cambiosDeGrupo(after, borradorDeGrupo(after, g.id))).toEqual([])
       }),
       { seed: SEMILLA, numRuns: CORRIDAS },
     )
@@ -854,7 +850,7 @@ describe('leerPesos', () => {
 
   it('lee lo que escribe la persona: el número con puntos de miles, con $ o con espacios', () => {
     fc.assert(
-      fc.property(fc.integer({ min: 0, max: LIMITE_PRECIO }), (n) => {
+      fc.property(fc.integer({ min: 0, max: PRICE_LIMIT }), (n) => {
         const base = conPuntos(n)
         expect(leerPesos(base)).toBe(n)
         expect(leerPesos(`$ ${base}`)).toBe(n)
@@ -867,12 +863,12 @@ describe('leerPesos', () => {
 
   it('nunca devuelve algo que no sea un monto entero válido', () => {
     fc.assert(
-      fc.property(fc.string({ maxLength: 20 }), (texto) => {
-        const v = leerPesos(texto)
+      fc.property(fc.string({ maxLength: 20 }), (text) => {
+        const v = leerPesos(text)
         if (v === null) return
         expect(Number.isInteger(v)).toBe(true)
         expect(v).toBeGreaterThanOrEqual(0)
-        expect(v).toBeLessThanOrEqual(LIMITE_PRECIO)
+        expect(v).toBeLessThanOrEqual(PRICE_LIMIT)
       }),
       { seed: SEMILLA, numRuns: 1_000 },
     )
@@ -900,14 +896,14 @@ describe('leerPesos', () => {
 describe('el generador y el hub de referencia', () => {
   it('rechaza lo que el hub rechazaría: crear sin todos los campos y cambiar el padre', () => {
     const c = edicionDe(fc.sample(arbSemilla, { seed: SEMILLA, numRuns: 1 })[0] as SemillaEdicion)
+    expect(() => apply(c, [{ entity: 'variants', id: 'X', data: { product_id: 'PRO0' } }])).toThrow(
+      /falta/,
+    )
     expect(() =>
-      aplicar(c, [{ entidad: 'variante', id: 'X', datos: { producto_id: 'PRO0' } }]),
-    ).toThrow(/falta/)
-    expect(() =>
-      aplicar(c, [{ entidad: 'variante', id: 'VAR0_0', datos: { producto_id: 'PRO1' } }]),
+      apply(c, [{ entity: 'variants', id: 'VAR0_0', data: { product_id: 'PRO1' } }]),
     ).toThrow()
-    expect(() =>
-      aplicar(c, [{ entidad: 'producto', id: 'PRO0', datos: { nombre: ' x' } }]),
-    ).toThrow(/nombre inválido/)
+    expect(() => apply(c, [{ entity: 'products', id: 'PRO0', data: { name: ' x' } }])).toThrow(
+      /name inválido/,
+    )
   })
 })

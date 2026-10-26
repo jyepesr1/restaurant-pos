@@ -9,7 +9,7 @@ import {
   mostrarPines,
   prepararAcceso,
 } from '../arranque'
-import { leerCarta, reglasSinPlato } from './carta'
+import { leerCarta, rulesWithoutDish } from './carta'
 import { sembrar } from './sembrar'
 
 // `pnpm seed`: carga en la base del hub los datos de La Spritzzería. Es para instalar el piloto:
@@ -21,55 +21,48 @@ const dirDatos = dirDatosDe()
 const rutaCarta =
   process.env.RUTA_CARTA ||
   fileURLToPath(new URL('../../../../docs/datos/carta-la-spritzzeria.yaml', import.meta.url))
-const sinPersonal = process.argv.includes('--sin-personal')
+const sinPersonal = process.argv.includes('--no-staff')
 
-const mensaje = (error: unknown) => (error instanceof Error ? error.message : String(error))
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 /** Un PIN o una contraseña se muestra en cuanto existe: si algo falla después, no se pierde. */
-function anunciar(quienes: string, lineas: readonly string[]) {
-  if (lineas.length === 0) return
+function anunciar(quienes: string, lines: readonly string[]) {
+  if (lines.length === 0) return
   // Un archivo por corrida: así una corrida nueva no pisa PIN que nadie ha leído.
   const archivo = `pines-${new Date().toISOString().replace(/[:.]/g, '-')}-${quienes}.txt`
   mostrarPines(dirDatos, {
     ventana: [
       '\nPIN y contraseñas nuevos:',
-      ...lineas,
+      ...lines,
       'Anótalos en un lugar seguro: no se vuelven a mostrar.',
     ],
     archivo,
-    contenido: `${lineas.join('\n')}\n`,
-    aviso: (ruta) =>
+    content: `${lines.join('\n')}\n`,
+    alert: (ruta) =>
       `\nLos PIN y contraseñas nuevos quedaron en ${ruta}: anótalos y borra ese archivo.`,
   })
 }
 
 /** Una persona por línea: nombre, PIN y, si entra a la caja, usuario y contraseña. */
-const lineaDe = (p: {
-  nombre: string
-  pin: string | null
-  usuario?: string
-  contrasena?: string
-}) =>
+const lineaDe = (p: { name: string; pin: string | null; user?: string; password?: string }) =>
   [
-    `  ${p.nombre.padEnd(14)}`,
-    p.usuario ? `usuario ${p.usuario}  contraseña ${p.contrasena}` : '',
-    p.pin ? (p.usuario ? `PIN para autorizar ${p.pin}` : `PIN ${p.pin}`) : '',
+    `  ${p.name.padEnd(14)}`,
+    p.user ? `usuario ${p.user}  contraseña ${p.password}` : '',
+    p.pin ? (p.user ? `PIN para autorizar ${p.pin}` : `PIN ${p.pin}`) : '',
   ]
     .filter(Boolean)
     .join('  ')
 
 function correr(): number {
-  let carta: ReturnType<typeof leerCarta>
+  let menu: ReturnType<typeof leerCarta>
   try {
-    carta = leerCarta(readFileSync(rutaCarta, 'utf8'))
+    menu = leerCarta(readFileSync(rutaCarta, 'utf8'))
   } catch (error) {
-    console.error(`No se cargaron los datos: la carta (${rutaCarta}) no sirve: ${mensaje(error)}`)
+    console.error(`No se cargaron los datos: la carta (${rutaCarta}) no sirve: ${message(error)}`)
     return 1
   }
-  for (const nombre of reglasSinPlato(carta))
-    console.warn(
-      `⚠ La carta ya no tiene «${nombre}»: revisa las reglas del seed (término o sabor).`,
-    )
+  for (const name of rulesWithoutDish(menu))
+    console.warn(`⚠ La carta ya no tiene «${name}»: revisa las reglas del seed (término o sabor).`)
 
   let db: BaseSqlite
   try {
@@ -78,39 +71,39 @@ function correr(): number {
     console.error(
       error instanceof BaseOcupadaError
         ? 'No se cargaron los datos: el hub está abierto. Ciérralo y vuelve a correr esto.'
-        : `No se cargaron los datos: ${mensaje(error)}`,
+        : `No se cargaron los datos: ${message(error)}`,
     )
     return 1
   }
 
   try {
-    const { acceso, restauranteId, roles, admin, avisos } = prepararAcceso(db, dirDatos)
-    for (const aviso of avisos) console.warn(`⚠ ${aviso}`)
+    const { access, restauranteId, roles, admin, avisos } = prepararAcceso(db, dirDatos)
+    for (const alert of avisos) console.warn(`⚠ ${alert}`)
     anunciar('administrador', lineasAdministrador(admin))
 
-    const { tablas, pines } = sembrar(
+    const { sqlTables, pins } = sembrar(
       db,
-      acceso,
-      { restauranteId, roles, carta, sinPersonal },
+      access,
+      { restauranteId, roles, menu, sinPersonal },
       new Date().toISOString(),
     )
     console.log(`Datos de La Spritzzería cargados en ${dirDatos}`)
-    for (const [tabla, c] of Object.entries(tablas)) {
-      const partes = [
-        `${c.creado} nuevos`,
-        `${c.actualizado} cambiados`,
-        `${c.igual} iguales`,
-        ...(c.respetado ? [`${c.respetado} respetados`] : []),
-        ...(c.archivado ? [`${c.archivado} archivados`] : []),
+    for (const [tabla, c] of Object.entries(sqlTables)) {
+      const parts = [
+        `${c.created} nuevos`,
+        `${c.updated} cambiados`,
+        `${c.equal} iguales`,
+        ...(c.respected ? [`${c.respected} respetados`] : []),
+        ...(c.archived ? [`${c.archived} archivados`] : []),
       ]
-      console.log(`  ${tabla.padEnd(28)} ${partes.join(', ')}`)
+      console.log(`  ${tabla.padEnd(28)} ${parts.join(', ')}`)
     }
-    if (pines.length > 0) anunciar('personal', pines.map(lineaDe))
+    if (pins.length > 0) anunciar('personal', pins.map(lineaDe))
     else if (sinPersonal) console.log('\nSin personal de ejemplo (--sin-personal).')
     else console.log('\nNo se creó personal nuevo: cada quien conserva su PIN.')
     return 0
   } catch (error) {
-    console.error(`No se cargaron los datos: ${mensaje(error)}`)
+    console.error(`No se cargaron los datos: ${message(error)}`)
     return 1
   } finally {
     db.close()

@@ -1,4 +1,4 @@
-import { claveDeMedio } from '@pos/core'
+import { methodKeyOf } from '@pos/core'
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
@@ -8,7 +8,7 @@ import { Grupo, Opcion } from '../ui/Opciones'
 import { navegar } from '../ui/ruta'
 import { Diferencia } from './Caja'
 import { sala, useSala } from './contexto'
-import { nombreDeMedio, nombreImpuesto, reglasDe } from './cuentas'
+import { methodName, nombreImpuesto, reglasDe } from './cuentas'
 import { claseCampo } from './Entrar'
 import { MarcoSala } from './MarcoSala'
 import type { CierreReporte, Reporte } from './motor'
@@ -19,9 +19,9 @@ import {
   MAX_DIAS,
   nombreCsv,
   type Periodo,
+  percent,
   periodoDe,
   periodoEnPalabras,
-  porcentaje,
   puntosEnPorcentaje,
 } from './periodos'
 
@@ -29,31 +29,31 @@ import {
 // anulaciones y cierres de caja de un día o de un período. Solo para quien tiene «Ver todos los
 // reportes». Todo sale del hub, calculado con @pos/core; aquí solo se muestra.
 
-const ATAJOS: { valor: Atajo | 'rango'; nombre: string }[] = [
-  { valor: 'hoy', nombre: 'Hoy' },
-  { valor: 'ayer', nombre: 'Ayer' },
-  { valor: 'semana', nombre: 'Últimos 7 días' },
-  { valor: 'mes', nombre: 'Este mes' },
-  { valor: 'mesPasado', nombre: 'Mes pasado' },
-  { valor: 'rango', nombre: 'Otras fechas' },
+const ATAJOS: { value: Atajo | 'range'; name: string }[] = [
+  { value: 'today', name: 'Hoy' },
+  { value: 'yesterday', name: 'Ayer' },
+  { value: 'week', name: 'Últimos 7 días' },
+  { value: 'month', name: 'Este mes' },
+  { value: 'lastMonth', name: 'Mes pasado' },
+  { value: 'range', name: 'Otras fechas' },
 ]
 
 /** Cuántos productos se ven antes de «Ver todos». */
 const PRODUCTOS_VISIBLES = 10
 
 /** Lo que se resta, con su signo («-$30.900»); en cero, «$0». */
-const menos = (n: number) => (n === 0 ? pesos(0) : `-${pesos(n)}`)
+const minus = (n: number) => (n === 0 ? pesos(0) : `-${pesos(n)}`)
 
-const mensaje = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
+const message = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
 
 export function Reportes() {
   const avisar = useAvisar()
-  const { catalogo, sesion } = useSala()
-  const reglas = reglasDe(catalogo)
-  const [atajo, setAtajo] = useState<Atajo | 'rango'>('hoy')
+  const { catalog, session } = useSala()
+  const reglas = reglasDe(catalog)
+  const [atajo, setAtajo] = useState<Atajo | 'range'>('today')
   /** El período que se pidió (puede no haber llegado todavía) y el que se está mostrando. */
-  const [pedido, setPedido] = useState<Periodo | null>(null)
-  const [mostrado, setMostrado] = useState<{ reporte: Reporte; periodo: Periodo } | null>(null)
+  const [order, setPedido] = useState<Periodo | null>(null)
+  const [mostrado, setMostrado] = useState<{ report: Reporte; period: Periodo } | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // Solo cuenta la respuesta del último pedido: una lenta de antes no pisa la nueva.
@@ -65,13 +65,13 @@ export function Reportes() {
     setCargando(true)
     setError(null)
     sala
-      .reporte(p)
+      .report(p)
       .then((r) => {
         if (numero !== ultimo.current) return
-        setMostrado({ reporte: r, periodo: p ?? { desde: r.hoy, hasta: r.hoy } })
+        setMostrado({ report: r, period: p ?? { from: r.today, until: r.today } })
       })
       .catch((e) => {
-        if (numero === ultimo.current) setError(mensaje(e))
+        if (numero === ultimo.current) setError(message(e))
       })
       .finally(() => {
         if (numero === ultimo.current) setCargando(false)
@@ -79,31 +79,31 @@ export function Reportes() {
   }, [])
   useEffect(() => cargar(null), [cargar])
 
-  const hoy = mostrado?.reporte.hoy ?? null
-  const elegir = (valor: Atajo | 'rango') => {
-    setAtajo(valor)
-    if (valor !== 'rango' && hoy) cargar(periodoDe(valor, hoy))
+  const today = mostrado?.report.today ?? null
+  const select = (value: Atajo | 'range') => {
+    setAtajo(value)
+    if (value !== 'range' && today) cargar(periodoDe(value, today))
   }
 
   const descargar = () => {
     if (!mostrado) return
-    const { reporte, periodo } = mostrado
-    const csv = csvDeReporte(reporte, periodo, reglas, catalogo?.restaurante.nombre ?? '')
+    const { report, period } = mostrado
+    const csv = csvDeReporte(report, period, reglas, catalog?.restaurant.name ?? '')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
     const enlace = document.createElement('a')
     enlace.href = url
-    enlace.download = nombreCsv(periodo)
+    enlace.download = nombreCsv(period)
     enlace.click()
     URL.revokeObjectURL(url)
-    avisar(`Descargaste ${nombreCsv(periodo)}`)
+    avisar(`Descargaste ${nombreCsv(period)}`)
   }
 
   return (
     <MarcoSala
       titulo="Reportes"
-      acciones={
+      actions={
         mostrado && (
-          <Boton icono="recibo" onClick={descargar}>
+          <Boton icono="receipt" onClick={descargar}>
             Descargar CSV
           </Boton>
         )
@@ -112,13 +112,13 @@ export function Reportes() {
       <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 md:p-6">
         <Grupo etiqueta="Período" className="flex flex-wrap gap-2">
           {ATAJOS.map((a) => (
-            <Opcion key={a.valor} elegida={atajo === a.valor} alElegir={() => elegir(a.valor)}>
-              {a.nombre}
+            <Opcion key={a.value} elegida={atajo === a.value} alElegir={() => select(a.value)}>
+              {a.name}
             </Opcion>
           ))}
         </Grupo>
-        {atajo === 'rango' && hoy && (
-          <Rango hoy={hoy} inicial={mostrado?.periodo ?? null} alVer={(p) => cargar(p)} />
+        {atajo === 'range' && today && (
+          <Rango today={today} initial={mostrado?.period ?? null} alVer={(p) => cargar(p)} />
         )}
 
         {error && (
@@ -128,20 +128,20 @@ export function Reportes() {
           >
             <p className="text-alerta-texto">
               {mostrado
-                ? `${error} Abajo sigue lo de ${periodoEnPalabras(mostrado.periodo)}.`
+                ? `${error} Abajo sigue lo de ${periodoEnPalabras(mostrado.period)}.`
                 : error}
             </p>
-            <Boton onClick={() => cargar(pedido)}>Intentar de nuevo</Boton>
+            <Boton onClick={() => cargar(order)}>Intentar de nuevo</Boton>
           </div>
         )}
         {!mostrado && !error && <p className="text-texto-suave">Leyendo las ventas…</p>}
         {mostrado && (
           <Contenido
-            reporte={mostrado.reporte}
-            periodo={mostrado.periodo}
+            report={mostrado.report}
+            period={mostrado.period}
             cargando={cargando}
             reglas={reglas}
-            puedeElegirImpresora={!!sesion?.permisos.includes('administrar_dispositivos')}
+            puedeElegirImpresora={!!session?.permissions.includes('manage_devices')}
           />
         )}
       </div>
@@ -151,22 +151,22 @@ export function Reportes() {
 
 /** Desde y hasta: carga sola al cambiar una fecha (las dos deben estar escritas). */
 function Rango({
-  hoy,
-  inicial,
+  today,
+  initial,
   alVer,
 }: {
-  hoy: string
-  inicial: Periodo | null
+  today: string
+  initial: Periodo | null
   alVer: (p: Periodo) => void
 }) {
-  const [desde, setDesde] = useState(inicial?.desde ?? hoy)
-  const [hasta, setHasta] = useState(inicial?.hasta ?? hoy)
+  const [from, setDesde] = useState(initial?.from ?? today)
+  const [until, setHasta] = useState(initial?.until ?? today)
   const ver = (d: string, h: string) => {
-    if (d && h) alVer(d <= h ? { desde: d, hasta: h } : { desde: h, hasta: d })
+    if (d && h) alVer(d <= h ? { from: d, until: h } : { from: h, until: d })
   }
   const al = (e: FormEvent) => {
     e.preventDefault()
-    ver(desde, hasta)
+    ver(from, until)
   }
   return (
     <form onSubmit={al} className="flex flex-wrap items-end gap-3">
@@ -175,12 +175,12 @@ function Rango({
         <input
           type="date"
           className={`${claseCampo} w-auto`}
-          value={desde}
-          max={hoy}
+          value={from}
+          max={today}
           required
           onChange={(e) => {
             setDesde(e.target.value)
-            ver(e.target.value, hasta)
+            ver(e.target.value, until)
           }}
         />
       </label>
@@ -189,12 +189,12 @@ function Rango({
         <input
           type="date"
           className={`${claseCampo} w-auto`}
-          value={hasta}
-          max={hoy}
+          value={until}
+          max={today}
           required
           onChange={(e) => {
             setHasta(e.target.value)
-            ver(desde, e.target.value)
+            ver(from, e.target.value)
           }}
         />
       </label>
@@ -204,22 +204,22 @@ function Rango({
 }
 
 function Contenido({
-  reporte,
-  periodo,
+  report,
+  period,
   cargando,
   reglas,
   puedeElegirImpresora,
 }: {
-  reporte: Reporte
-  periodo: Periodo
+  report: Reporte
+  period: Periodo
   cargando: boolean
   reglas: ReturnType<typeof reglasDe>
   puedeElegirImpresora: boolean
 }) {
-  const { informe: inf, usuarios } = reporte
-  const v = inf.ventas
+  const { report: inf, usuarios } = report
+  const v = inf.sales
   const quien = (id: string | null) => (id ? (usuarios[id] ?? 'Alguien') : '')
-  const sinVentas = v.neto === 0 && v.cuentas === 0 && inf.porMedio.length === 0
+  const sinVentas = v.net === 0 && v.checks === 0 && inf.byMethod.length === 0
   return (
     <div
       aria-busy={cargando}
@@ -227,21 +227,21 @@ function Contenido({
     >
       <div className="flex flex-wrap items-baseline gap-x-3">
         <h2 className="font-titulo text-2xl font-bold tracking-tight first-letter:uppercase">
-          {periodoEnPalabras(periodo)}
+          {periodoEnPalabras(period)}
         </h2>
         {cargando && <p className="text-sm text-texto-suave">Actualizando…</p>}
       </div>
 
       <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-        <Cifra nombre="Ventas" valor={pesos(v.neto)} destacada />
-        <Cifra nombre="Cuentas" valor={String(v.cuentas)} />
-        <Cifra nombre="Ticket promedio" valor={pesos(v.ticketPromedio)} />
+        <Cifra name="Ventas" value={pesos(v.net)} destacada />
+        <Cifra name="Cuentas" value={String(v.checks)} />
+        <Cifra name="Ticket promedio" value={pesos(v.averageTicket)} />
         <Cifra
-          nombre="Comensales"
-          valor={String(v.comensales)}
-          detalle={v.comensales > 0 ? `${pesos(v.gastoPorComensal)} por persona` : undefined}
+          name="Comensales"
+          value={String(v.guests)}
+          detalle={v.guests > 0 ? `${pesos(v.spendPerGuest)} por persona` : undefined}
         />
-        <Cifra nombre="Propinas" valor={pesos(v.propinas)} />
+        <Cifra name="Propinas" value={pesos(v.tips)} />
       </dl>
 
       {sinVentas && (
@@ -251,18 +251,18 @@ function Contenido({
       )}
 
       <Tarjeta titulo="Cierres de caja">
-        {reporte.cierres.length === 0 ? (
-          <Vacio>Ninguna caja se cerró en este período.</Vacio>
+        {report.closings.length === 0 ? (
+          <EmptyState>Ninguna caja se cerró en este período.</EmptyState>
         ) : (
           <ul className="flex flex-col gap-3">
-            {reporte.cierres.map((c) => (
+            {report.closings.map((c) => (
               <Cierre
-                key={c.turnoId}
-                cierre={c}
-                varios={periodo.desde !== periodo.hasta}
+                key={c.shiftId}
+                closeout={c}
+                varios={period.from !== period.until}
                 quien={quien}
                 reglas={reglas}
-                impresora={reporte.impresora}
+                printer={report.printer}
                 puedeElegirImpresora={puedeElegirImpresora}
               />
             ))}
@@ -273,26 +273,26 @@ function Contenido({
       <div className="grid gap-4 lg:grid-cols-2">
         <Tarjeta titulo="Ventas">
           <Filas>
-            <Fila nombre="Bruto" valor={pesos(v.bruto)} />
-            {v.anulado > 0 && <Fila nombre="Productos anulados" valor={menos(v.anulado)} />}
-            {v.descuentos > 0 && <Fila nombre="Descuentos" valor={menos(v.descuentos)} />}
-            <Fila nombre="Ventas" valor={pesos(v.neto)} fuerte />
-            {v.ajustes !== 0 && (
-              <Fila nombre="Ajuste por redondeo del efectivo" valor={pesos(v.ajustes)} />
+            <Fila name="Bruto" value={pesos(v.gross)} />
+            {v.voided > 0 && <Fila name="Productos anulados" value={minus(v.voided)} />}
+            {v.discounts > 0 && <Fila name="Descuentos" value={minus(v.discounts)} />}
+            <Fila name="Ventas" value={pesos(v.net)} main />
+            {v.settings !== 0 && (
+              <Fila name="Ajuste por redondeo del efectivo" value={pesos(v.settings)} />
             )}
-            {v.impuestos.length > 0 && (
+            {v.taxes.length > 0 && (
               <Fila
-                nombre="Base sin impuestos"
-                valor={pesos(v.impuestos.reduce((a, i) => a + i.base, 0))}
+                name="Base sin impuestos"
+                value={pesos(v.taxes.reduce((a, i) => a + i.base, 0))}
               />
             )}
-            {v.impuestos
-              .filter((i) => i.impuesto > 0)
+            {v.taxes
+              .filter((i) => i.tax > 0)
               .map((i) => (
                 <Fila
-                  key={`${i.tipo}${i.tarifa}`}
-                  nombre={nombreImpuesto(i.tipo, i.tarifa)}
-                  valor={pesos(i.impuesto)}
+                  key={`${i.type}${i.rate}`}
+                  name={nombreImpuesto(i.type, i.rate)}
+                  value={pesos(i.tax)}
                 />
               ))}
           </Filas>
@@ -300,16 +300,16 @@ function Contenido({
         </Tarjeta>
 
         <Tarjeta titulo="Por medio de pago">
-          {inf.porMedio.length === 0 ? (
-            <Vacio>Sin pagos en este período.</Vacio>
+          {inf.byMethod.length === 0 ? (
+            <EmptyState>Sin pagos en este período.</EmptyState>
           ) : (
             <Filas>
-              {inf.porMedio.map((m) => (
+              {inf.byMethod.map((m) => (
                 <Fila
-                  key={claveDeMedio(m)}
-                  nombre={`${nombreDeMedio(m.medio, m.medioPropioId, reglas)}${m.pagos > 0 ? ` · ${m.pagos} ${m.pagos === 1 ? 'pago' : 'pagos'}` : ''}`}
-                  valor={pesos(m.venta)}
-                  detalle={m.propina !== 0 ? `+ propina ${pesos(m.propina)}` : undefined}
+                  key={methodKeyOf(m)}
+                  name={`${methodName(m.method, m.customMethodId, reglas)}${m.payments > 0 ? ` · ${m.payments} ${m.payments === 1 ? 'pago' : 'pagos'}` : ''}`}
+                  value={pesos(m.sale)}
+                  detalle={m.tip !== 0 ? `+ propina ${pesos(m.tip)}` : undefined}
                 />
               ))}
             </Filas>
@@ -318,66 +318,59 @@ function Contenido({
         </Tarjeta>
 
         <Tarjeta titulo="Por mesero">
-          {inf.porMesero.length === 0 ? (
-            <Vacio>Sin ventas en este período.</Vacio>
+          {inf.byWaiter.length === 0 ? (
+            <EmptyState>Sin ventas en este período.</EmptyState>
           ) : (
             <Tabla
               columnas={['Mesero', 'Ventas', 'Cuentas', 'Ticket']}
-              filas={inf.porMesero.map((m) => ({
-                clave: m.usuarioId,
-                celdas: [
-                  quien(m.usuarioId),
-                  pesos(m.neto),
-                  String(m.cuentas),
-                  pesos(m.ticketPromedio),
-                ],
+              rows={inf.byWaiter.map((m) => ({
+                key: m.userId,
+                celdas: [quien(m.userId), pesos(m.net), String(m.checks), pesos(m.averageTicket)],
               }))}
             />
           )}
           <Nota>Las propinas van al fondo común: no se reparten por mesero.</Nota>
         </Tarjeta>
 
-        <Productos reporte={reporte} />
+        <Productos report={report} />
 
         <Tarjeta titulo="Anulaciones y cancelaciones">
-          {inf.anulaciones.length === 0 && inf.cancelaciones.length === 0 ? (
-            <Vacio>Nada anulado ni cancelado.</Vacio>
+          {inf.voids.length === 0 && inf.cancellations.length === 0 ? (
+            <EmptyState>Nada anulado ni cancelado.</EmptyState>
           ) : (
             <ul className="flex flex-col divide-y divide-linea">
-              {inf.anulaciones.map((a) => (
+              {inf.voids.map((a) => (
                 <Evento
-                  key={a.eventoId}
-                  titulo={`${a.unidades} × ${a.nombre}`}
-                  valor={pesos(a.valor)}
-                  motivo={a.motivo}
+                  key={a.eventId}
+                  titulo={`${a.units} × ${a.name}`}
+                  value={pesos(a.value)}
+                  reason={a.reason}
                   detalle={[
-                    a.pedidoNumero ? `Pedido ${a.pedidoNumero}` : null,
-                    quien(a.usuarioId),
-                    a.autorizadoPorId && a.autorizadoPorId !== a.usuarioId
-                      ? `autorizó ${quien(a.autorizadoPorId)}`
+                    a.orderNumber ? `Pedido ${a.orderNumber}` : null,
+                    quien(a.userId),
+                    a.authorizedById && a.authorizedById !== a.userId
+                      ? `autorizó ${quien(a.authorizedById)}`
                       : null,
                   ]}
                   etiqueta={
-                    a.yaPreparado ? (
-                      <Etiqueta tono="alerta" icono="fuego">
+                    a.alreadyPrepared ? (
+                      <Etiqueta tono="warning" icono="fire">
                         Ya preparado (merma)
                       </Etiqueta>
                     ) : null
                   }
                 />
               ))}
-              {inf.cancelaciones.map((c) => (
+              {inf.cancellations.map((c) => (
                 <Evento
-                  key={c.eventoId}
-                  titulo={
-                    c.pedidoNumero ? `Pedido ${c.pedidoNumero} cancelado` : 'Pedido cancelado'
-                  }
-                  valor={pesos(c.valor)}
-                  motivo={c.motivo}
+                  key={c.eventId}
+                  titulo={c.orderNumber ? `Pedido ${c.orderNumber} cancelado` : 'Pedido cancelado'}
+                  value={pesos(c.value)}
+                  reason={c.reason}
                   detalle={[
-                    quien(c.usuarioId),
-                    c.autorizadoPorId && c.autorizadoPorId !== c.usuarioId
-                      ? `autorizó ${quien(c.autorizadoPorId)}`
+                    quien(c.userId),
+                    c.authorizedById && c.authorizedById !== c.userId
+                      ? `autorizó ${quien(c.authorizedById)}`
                       : null,
                   ]}
                   etiqueta={null}
@@ -389,24 +382,24 @@ function Contenido({
         </Tarjeta>
 
         <Tarjeta titulo="Descuentos y cortesías">
-          {inf.descuentos.length === 0 ? (
-            <Vacio>Sin descuentos en este período.</Vacio>
+          {inf.discounts.length === 0 ? (
+            <EmptyState>Sin descuentos en este período.</EmptyState>
           ) : (
             <ul className="flex flex-col divide-y divide-linea">
-              {inf.descuentos.map((d, i) => (
+              {inf.discounts.map((d, i) => (
                 <Evento
                   // biome-ignore lint/suspicious/noArrayIndexKey: un pedido puede tener varios descuentos iguales
-                  key={`${d.pedidoId}${i}`}
+                  key={`${d.orderId}${i}`}
                   titulo={
-                    d.regla === 'cortesia'
+                    d.rule === 'comp'
                       ? 'Cortesía'
-                      : d.regla === 'porcentaje'
-                        ? `Descuento del ${puntosEnPorcentaje(d.valor)}`
+                      : d.rule === 'percent'
+                        ? `Descuento del ${puntosEnPorcentaje(d.value)}`
                         : 'Descuento por valor'
                   }
-                  valor={pesos(d.monto)}
-                  motivo={d.motivo}
-                  detalle={[d.pedidoNumero ? `Pedido ${d.pedidoNumero}` : null]}
+                  value={pesos(d.amount)}
+                  reason={d.reason}
+                  detalle={[d.orderNumber ? `Pedido ${d.orderNumber}` : null]}
                   etiqueta={null}
                 />
               ))}
@@ -416,9 +409,9 @@ function Contenido({
 
         <Tarjeta titulo="Fondo de propinas">
           <Filas>
-            <Fila nombre="Propinas cobradas" valor={pesos(inf.fondoPropinas.propinas)} />
-            <Fila nombre="Pagadas desde la caja" valor={menos(inf.fondoPropinas.pagadas)} />
-            <Fila nombre="Saldo del período" valor={pesos(inf.fondoPropinas.saldo)} fuerte />
+            <Fila name="Propinas cobradas" value={pesos(inf.tipPool.tips)} />
+            <Fila name="Pagadas desde la caja" value={minus(inf.tipPool.paidOut)} />
+            <Fila name="Saldo del período" value={pesos(inf.tipPool.balance)} main />
           </Filas>
           <Nota>
             Entra la propina de cada pago cobrado en el período y sale lo que se entregó al equipo
@@ -430,27 +423,27 @@ function Contenido({
   )
 }
 
-function Productos({ reporte }: { reporte: Reporte }) {
-  const [todos, setTodos] = useState(false)
-  const { porProducto } = reporte.informe
-  const neto = reporte.informe.ventas.neto
-  const visibles = todos ? porProducto : porProducto.slice(0, PRODUCTOS_VISIBLES)
+function Productos({ report }: { report: Reporte }) {
+  const [all, setTodos] = useState(false)
+  const { byProduct } = report.report
+  const net = report.report.sales.net
+  const visibles = all ? byProduct : byProduct.slice(0, PRODUCTOS_VISIBLES)
   return (
     <Tarjeta titulo="Por producto">
-      {porProducto.length === 0 ? (
-        <Vacio>Sin productos vendidos.</Vacio>
+      {byProduct.length === 0 ? (
+        <EmptyState>Sin productos vendidos.</EmptyState>
       ) : (
         <>
           <Tabla
             columnas={['Producto', 'Unidades', 'Ventas', '% de ventas']}
-            filas={visibles.map((p) => ({
-              clave: `${p.productoId}${p.varianteId ?? ''}`,
-              celdas: [p.nombre, String(p.unidades), pesos(p.neto), porcentaje(p.neto, neto)],
+            rows={visibles.map((p) => ({
+              key: `${p.productId}${p.variantId ?? ''}`,
+              celdas: [p.name, String(p.units), pesos(p.net), percent(p.net, net)],
             }))}
           />
-          {porProducto.length > PRODUCTOS_VISIBLES && (
-            <Boton variante="fantasma" className="mt-2 self-start" onClick={() => setTodos(!todos)}>
-              {todos ? 'Ver menos' : `Ver los ${porProducto.length} productos`}
+          {byProduct.length > PRODUCTOS_VISIBLES && (
+            <Boton variant="ghost" className="mt-2 self-start" onClick={() => setTodos(!all)}>
+              {all ? 'Ver menos' : `Ver los ${byProduct.length} productos`}
             </Boton>
           )}
         </>
@@ -460,18 +453,18 @@ function Productos({ reporte }: { reporte: Reporte }) {
 }
 
 function Cierre({
-  cierre: c,
+  closeout: c,
   varios,
   quien,
   reglas,
-  impresora,
+  printer,
   puedeElegirImpresora,
 }: {
-  cierre: CierreReporte
+  closeout: CierreReporte
   varios: boolean
   quien: (id: string) => string
   reglas: ReturnType<typeof reglasDe>
-  impresora: boolean
+  printer: boolean
   puedeElegirImpresora: boolean
 }) {
   const avisar = useAvisar()
@@ -481,65 +474,65 @@ function Cierre({
     setImprimiendo(true)
     setFallo(null)
     try {
-      await sala.reimprimirCierre(c.turnoId)
+      await sala.reimprimirCierre(c.shiftId)
       avisar('El cierre de caja salió a la impresora')
     } catch (e) {
-      setFallo(mensaje(e))
+      setFallo(message(e))
     } finally {
       setImprimiendo(false)
     }
   }
-  const cerrado = c.cerrado
-  const hora = (iso: string) =>
+  const closed = c.closed
+  const time = (iso: string) =>
     new Intl.DateTimeFormat('es-CO', {
       hour: 'numeric',
       minute: '2-digit',
-      timeZone: reglas?.zonaHoraria ?? 'America/Bogota',
+      timeZone: reglas?.timeZone ?? 'America/Bogota',
     }).format(new Date(iso))
   return (
     <li className="flex flex-col gap-3 rounded-xl border border-linea bg-superficie-2 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-semibold">
-          {`${varios ? `${diaCorto(c.diaOperativo)} · ` : ''}Abrió ${quien(c.abiertoPor)} ${hora(c.abiertoEn)} · Cerró ${quien(c.cerradoPor)} ${hora(cerrado.hora)}`}
+          {`${varios ? `${diaCorto(c.businessDay)} · ` : ''}Abrió ${quien(c.abiertoPor)} ${time(c.openedAt)} · Cerró ${quien(c.cerradoPor)} ${time(closed.time)}`}
         </p>
         <span className="flex items-center gap-2">
           <span className="text-sm text-texto-suave">Efectivo</span>
-          <Diferencia valor={cerrado.diferencia} />
+          <Diferencia value={closed.variance} />
         </span>
       </div>
       <dl className="cifras grid grid-cols-3 gap-x-4 gap-y-1">
-        <Dato nombre="Base" valor={pesos(c.base)} />
-        <Dato nombre="Efectivo esperado" valor={pesos(cerrado.esperado)} />
-        <Dato nombre="Contado" valor={pesos(cerrado.contado)} />
+        <Dato name="Base" value={pesos(c.base)} />
+        <Dato name="Efectivo esperado" value={pesos(closed.expected)} />
+        <Dato name="Contado" value={pesos(closed.counted)} />
       </dl>
-      {cerrado.otrosMedios.length > 0 && (
+      {closed.otherMethods.length > 0 && (
         <ul className="flex flex-col gap-1 text-sm">
-          {cerrado.otrosMedios.map((m) => (
-            <li key={claveDeMedio(m)} className="cifras flex flex-wrap justify-between gap-x-3">
-              <span>{nombreDeMedio(m.medio, m.medioPropioId, reglas)}</span>
+          {closed.otherMethods.map((m) => (
+            <li key={methodKeyOf(m)} className="cifras flex flex-wrap justify-between gap-x-3">
+              <span>{methodName(m.method, m.customMethodId, reglas)}</span>
               <span className="text-texto-suave">
-                {`Según el sistema ${pesos(m.esperado)} · Según su cierre ${pesos(m.reportado)}`}
-                {m.diferencia !== 0 &&
-                  ` · ${m.diferencia > 0 ? 'Sobran' : 'Faltan'} ${pesos(Math.abs(m.diferencia))}`}
+                {`Según el sistema ${pesos(m.expected)} · Según su cierre ${pesos(m.reported)}`}
+                {m.variance !== 0 &&
+                  ` · ${m.variance > 0 ? 'Sobran' : 'Faltan'} ${pesos(Math.abs(m.variance))}`}
               </span>
             </li>
           ))}
         </ul>
       )}
-      {cerrado.justificacion && (
+      {closed.justification && (
         <p className="text-sm">
           <span className="font-semibold">Justificación: </span>
-          {cerrado.justificacion}
+          {closed.justification}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3">
-        {impresora ? (
-          <Boton icono="impresora" onClick={reimprimir} disabled={imprimiendo}>
+        {printer ? (
+          <Boton icono="printer" onClick={reimprimir} disabled={imprimiendo}>
             {imprimiendo ? 'Imprimiendo…' : 'Reimprimir cierre'}
           </Boton>
         ) : puedeElegirImpresora ? (
           <>
-            <Boton icono="impresora" onClick={() => navegar('/caja/ajustes')}>
+            <Boton icono="printer" onClick={() => navegar('/register/settings')}>
               Elegir impresora
             </Boton>
             <p className="text-sm text-texto-suave">Para imprimir el cierre hace falta una.</p>
@@ -562,13 +555,13 @@ function Cierre({
 // ── Piezas ─────────────────────────────────────────────────────────────
 
 function Cifra({
-  nombre,
-  valor,
+  name,
+  value,
   detalle,
   destacada = false,
 }: {
-  nombre: string
-  valor: string
+  name: string
+  value: string
   detalle?: string
   destacada?: boolean
 }) {
@@ -580,10 +573,8 @@ function Cifra({
           : 'border-linea bg-superficie'
       }`}
     >
-      <dt className={`text-sm ${destacada ? 'text-accion-texto' : 'text-texto-suave'}`}>
-        {nombre}
-      </dt>
-      <dd className="cifras text-3xl font-bold tracking-tight">{valor}</dd>
+      <dt className={`text-sm ${destacada ? 'text-accion-texto' : 'text-texto-suave'}`}>{name}</dt>
+      <dd className="cifras text-3xl font-bold tracking-tight">{value}</dd>
       {detalle && <dd className="cifras text-sm text-texto-suave">{detalle}</dd>}
     </div>
   )
@@ -614,40 +605,40 @@ const Filas = ({ children }: { children: ReactNode }) => (
 )
 
 function Fila({
-  nombre,
-  valor,
+  name,
+  value,
   detalle,
-  fuerte = false,
+  main = false,
 }: {
-  nombre: string
-  valor: string
+  name: string
+  value: string
   detalle?: string
-  fuerte?: boolean
+  main?: boolean
 }) {
   return (
     <div className="contents">
-      <dt className={fuerte ? 'font-semibold' : ''}>{nombre}</dt>
-      <dd className={`text-right ${fuerte ? 'font-semibold' : ''}`}>
-        {valor}
+      <dt className={main ? 'font-semibold' : ''}>{name}</dt>
+      <dd className={`text-right ${main ? 'font-semibold' : ''}`}>
+        {value}
         {detalle && <span className="block text-sm text-texto-suave">{detalle}</span>}
       </dd>
     </div>
   )
 }
 
-const Dato = ({ nombre, valor }: { nombre: string; valor: string }) => (
+const Dato = ({ name, value }: { name: string; value: string }) => (
   <div>
-    <dt className="text-sm text-texto-suave">{nombre}</dt>
-    <dd className="font-semibold">{valor}</dd>
+    <dt className="text-sm text-texto-suave">{name}</dt>
+    <dd className="font-semibold">{value}</dd>
   </div>
 )
 
 function Tabla({
   columnas,
-  filas,
+  rows,
 }: {
   columnas: string[]
-  filas: { clave: string; celdas: string[] }[]
+  rows: { key: string; celdas: string[] }[]
 }) {
   return (
     <div className="-mx-1 overflow-x-auto">
@@ -666,8 +657,8 @@ function Tabla({
           </tr>
         </thead>
         <tbody className="divide-y divide-linea">
-          {filas.map((f) => (
-            <tr key={f.clave}>
+          {rows.map((f) => (
+            <tr key={f.key}>
               {f.celdas.map((c, i) => (
                 <td
                   // biome-ignore lint/suspicious/noArrayIndexKey: las columnas son fijas
@@ -687,14 +678,14 @@ function Tabla({
 
 function Evento({
   titulo,
-  valor,
-  motivo,
+  value,
+  reason,
   detalle,
   etiqueta,
 }: {
   titulo: string
-  valor: string
-  motivo: string | null
+  value: string
+  reason: string | null
   detalle: (string | null)[]
   etiqueta: ReactNode
 }) {
@@ -703,9 +694,9 @@ function Evento({
     <li className="flex flex-col gap-1 py-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <span className="font-semibold">{titulo}</span>
-        <span className="cifras">{valor}</span>
+        <span className="cifras">{value}</span>
       </div>
-      {motivo && <p>{motivo}</p>}
+      {reason && <p>{reason}</p>}
       {(extra || etiqueta) && (
         <div className="flex flex-wrap items-center gap-2 text-sm text-texto-suave">
           {etiqueta}
@@ -716,7 +707,7 @@ function Evento({
   )
 }
 
-const Vacio = ({ children }: { children: ReactNode }) => (
+const EmptyState = ({ children }: { children: ReactNode }) => (
   <p className="text-texto-suave">{children}</p>
 )
 const Nota = ({ children }: { children: ReactNode }) => (

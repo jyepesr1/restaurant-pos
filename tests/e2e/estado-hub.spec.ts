@@ -5,12 +5,12 @@ import { expect, test } from '@playwright/test'
 // nuevo junto con el escenario 14, en la corrida e2e del final (docs/ROADMAP.md).
 test.skip(true, 'Se reescribe con el escenario 14 en la corrida e2e del final')
 
-const SALUD = '**/api/salud'
+const SALUD = '**/api/health'
 
 test('al arrancar muestra "Buscando el hub" hasta que el hub responde', async ({ page }) => {
-  let liberar: () => void = () => {}
+  let release: () => void = () => {}
   const retenida = new Promise<void>((resolver) => {
-    liberar = resolver
+    release = resolver
   })
   await page.route(SALUD, async (ruta) => {
     await retenida
@@ -22,7 +22,7 @@ test('al arrancar muestra "Buscando el hub" hasta que el hub responde', async ({
   await expect(page.getByText('Conectado al hub')).toBeHidden()
   await expect(page.getByText('Sin conexión con el hub')).toBeHidden()
 
-  liberar()
+  release()
   await expect(page.getByText('Conectado al hub')).toBeVisible()
 })
 
@@ -69,8 +69,8 @@ test('el hub sirve los assets de la app con su tipo de contenido', async ({ page
   for (const ruta of rutas) {
     const res = await request.get(ruta)
     expect(res.status()).toBe(200)
-    const tipo = res.headers()['content-type'] ?? ''
-    expect(tipo).toMatch(ruta.endsWith('.js') ? /javascript/ : /text\/css/)
+    const type = res.headers()['content-type'] ?? ''
+    expect(type).toMatch(ruta.endsWith('.js') ? /javascript/ : /text\/css/)
   }
 })
 

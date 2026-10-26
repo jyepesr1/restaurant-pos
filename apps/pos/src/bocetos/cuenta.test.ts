@@ -1,4 +1,4 @@
-import { cuadraEfectivo } from '@pos/core'
+import { cashBalances } from '@pos/core'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import {
@@ -14,10 +14,10 @@ import {
   totalCuenta,
 } from './cuenta'
 
-const l = (id: string, cantidad: number, precioUnitario: number, extras: number[] = []) => ({
+const l = (id: string, quantity: number, unitPrice: number, extras: number[] = []) => ({
   id,
-  cantidad,
-  precioUnitario,
+  quantity,
+  unitPrice,
   extras,
 })
 
@@ -25,7 +25,7 @@ describe('total, saldo y propina (con @pos/core)', () => {
   it('total con cantidades y extras; saldo después de pagos', () => {
     expect(totalCuenta([])).toBe(0)
     expect(totalCuenta([l('a', 2, 30_000, [2_000]), l('b', 1, 40_000)])).toBe(104_000)
-    expect(saldoDe(100_000, [{ monto: 40_000 }])).toBe(60_000)
+    expect(saldoDe(100_000, [{ amount: 40_000 }])).toBe(60_000)
   })
 
   it('propina sobre la base sin INC, como en DINERO.md', () => {
@@ -48,28 +48,28 @@ describe('división', () => {
   })
 
   it('con pagos previos se divide el saldo y la propina de cada cuenta sale de él (DINERO.md)', () => {
-    const montos = enPartesIguales(saldoDe(100_000, [{ monto: 40_000 }]), 2)
-    expect(montos).toEqual([30_000, 30_000])
-    expect(propinasDeCuentas(montos)).toEqual([2_778, 2_778])
+    const amounts = enPartesIguales(saldoDe(100_000, [{ amount: 40_000 }]), 2)
+    expect(amounts).toEqual([30_000, 30_000])
+    expect(propinasDeCuentas(amounts)).toEqual([2_778, 2_778])
   })
 
   it('por ítems, con uno compartido entre dos y lo no tomado en "sin asignar"', () => {
-    const lineas = [l('pizza', 1, 44_900), l('vino', 1, 129_900), l('te', 1, 13_900)]
+    const lines = [l('pizza', 1, 44_900), l('vino', 1, 129_900), l('te', 1, 13_900)]
     const r = porItems(
-      lineas,
+      lines,
       new Map([
         ['pizza', [0]],
         ['vino', [0, 1]],
       ]),
       2,
     )
-    expect(r.montos).toEqual([44_900 + 64_950, 64_950])
-    expect(r.sinAsignar).toBe(13_900)
+    expect(r.amounts).toEqual([44_900 + 64_950, 64_950])
+    expect(r.unassigned).toBe(13_900)
   })
 
   it('un ítem entre tres reparte el residuo: 44.900 → 14.967 + 14.967 + 14.966', () => {
     const r = porItems([l('pizza', 1, 44_900)], new Map([['pizza', [0, 1, 2]]]), 3)
-    expect(r.montos).toEqual([14_967, 14_967, 14_966])
+    expect(r.amounts).toEqual([14_967, 14_967, 14_966])
   })
 
   it('quitar una cuenta devuelve a "sin asignar" lo suyo, sin romper la división', () => {
@@ -80,7 +80,7 @@ describe('división', () => {
     const recortadas = recortarAsignaciones(asignadas, 2)
     expect([...recortadas]).toEqual([['pizza', [0]]])
     const r = porItems([l('pizza', 1, 44_900), l('vino', 1, 129_900)], recortadas, 2)
-    expect(r).toEqual({ montos: [44_900, 0], sinAsignar: 129_900 })
+    expect(r).toEqual({ amounts: [44_900, 0], unassigned: 129_900 })
   })
 
   it('las cuentas más lo no asignado suman siempre el total', () => {
@@ -89,16 +89,16 @@ describe('división', () => {
         fc.array(fc.integer({ min: 1, max: 200_000 }), { minLength: 1, maxLength: 8 }),
         fc.integer({ min: 2, max: 6 }),
         fc.array(fc.array(fc.integer({ min: 0, max: 5 }), { maxLength: 3 }), { maxLength: 8 }),
-        (precios, cuentas, quien) => {
-          const lineas = precios.map((p, i) => l(`i${i}`, 1, p))
+        (prices, checks, quien) => {
+          const lines = prices.map((p, i) => l(`i${i}`, 1, p))
           const asignadas = new Map<string, number[]>()
           quien.forEach((de, i) => {
-            const validas = [...new Set(de.filter((c) => c < cuentas))]
-            if (i < lineas.length && validas.length > 0) asignadas.set(`i${i}`, validas)
+            const validas = [...new Set(de.filter((c) => c < checks))]
+            if (i < lines.length && validas.length > 0) asignadas.set(`i${i}`, validas)
           })
-          const r = porItems(lineas, asignadas, cuentas)
-          const suma = r.montos.reduce((s, m) => s + m, 0) + r.sinAsignar
-          expect(suma).toBe(totalCuenta(lineas))
+          const r = porItems(lines, asignadas, checks)
+          const sum = r.amounts.reduce((s, m) => s + m, 0) + r.unassigned
+          expect(sum).toBe(totalCuenta(lines))
         },
       ),
     )
@@ -106,56 +106,56 @@ describe('división', () => {
 })
 
 describe('pagos', () => {
-  const efectivo = (saldo: number, monto: number, propina: number, recibido: number) =>
-    pagoEnEfectivo({ saldo, monto, propina, recibido })
+  const cash = (balance: number, amount: number, tip: number, tendered: number) =>
+    pagoEnEfectivo({ balance, amount, tip, tendered })
 
   it('el pago que deja el saldo en 0 se redondea a $100, como en DINERO.md', () => {
-    expect(efectivo(36_810, 36_810, 0, 40_000)).toMatchObject({
-      cobrado: 36_800,
-      ajuste: -10,
-      cambio: 3_200,
+    expect(cash(36_810, 36_810, 0, 40_000)).toMatchObject({
+      charged: 36_800,
+      adjustment: -10,
+      change: 3_200,
     })
-    expect(efectivo(36_850, 36_850, 0, 40_000)).toMatchObject({ cobrado: 36_800, ajuste: -50 })
-    expect(efectivo(36_851, 36_851, 0, 40_000)).toMatchObject({
-      cobrado: 36_900,
-      ajuste: 49,
-      cambio: 3_100,
+    expect(cash(36_850, 36_850, 0, 40_000)).toMatchObject({ charged: 36_800, adjustment: -50 })
+    expect(cash(36_851, 36_851, 0, 40_000)).toMatchObject({
+      charged: 36_900,
+      adjustment: 49,
+      change: 3_100,
     })
-    expect(efectivo(36_860, 36_860, 0, 50_000)).toMatchObject({ cambio: 13_100 })
-    expect(efectivo(36_800, 36_800, 0, 36_800)).toMatchObject({ ajuste: 0, cambio: 0, falta: 0 })
+    expect(cash(36_860, 36_860, 0, 50_000)).toMatchObject({ change: 13_100 })
+    expect(cash(36_800, 36_800, 0, 36_800)).toMatchObject({ adjustment: 0, change: 0, missing: 0 })
   })
 
   it('un saldo de $30 o $50 se cobra en $0', () => {
-    expect(efectivo(30, 30, 0, 0)).toMatchObject({ cobrado: 0, ajuste: -30, falta: 0 })
-    expect(efectivo(50, 50, 0, 0)).toMatchObject({ cobrado: 0, ajuste: -50 })
+    expect(cash(30, 30, 0, 0)).toMatchObject({ charged: 0, adjustment: -30, missing: 0 })
+    expect(cash(50, 50, 0, 0)).toMatchObject({ charged: 0, adjustment: -50 })
   })
 
   it('un abono (no deja el saldo en 0) no se redondea', () => {
-    expect(efectivo(257_500, 100_050, 0, 100_050)).toMatchObject({ cobrado: 100_050, ajuste: 0 })
+    expect(cash(257_500, 100_050, 0, 100_050)).toMatchObject({ charged: 100_050, adjustment: 0 })
   })
 
   it('con propina: lo que falta y el cambio cuentan la propina', () => {
-    expect(efectivo(36_800, 36_800, 3_400, 40_000)).toMatchObject({
+    expect(cash(36_800, 36_800, 3_400, 40_000)).toMatchObject({
       aEntregar: 40_200,
-      cambio: 0,
-      falta: 200,
+      change: 0,
+      missing: 200,
     })
-    expect(efectivo(257_500, 257_500, 23_800, 300_000)).toMatchObject({
+    expect(cash(257_500, 257_500, 23_800, 300_000)).toMatchObject({
       aEntregar: 281_300,
-      cambio: 18_700,
+      change: 18_700,
     })
   })
 
   it('rechaza montos fuera del saldo, negativos o con decimales', () => {
-    expect(() => efectivo(10_000, 0, 0, 10_000)).toThrow(RangeError)
-    expect(() => efectivo(10_000, 10_001, 0, 20_000)).toThrow(RangeError)
-    expect(() => efectivo(10_000, 10_000, -500, 10_000)).toThrow()
-    expect(() => efectivo(10_000, 10_000, 0, 10_000.5)).toThrow()
-    expect(() => pagoConTarjeta({ saldo: 10_000, monto: 10_000, propina: 0.5 })).toThrow()
+    expect(() => cash(10_000, 0, 0, 10_000)).toThrow(RangeError)
+    expect(() => cash(10_000, 10_001, 0, 20_000)).toThrow(RangeError)
+    expect(() => cash(10_000, 10_000, -500, 10_000)).toThrow()
+    expect(() => cash(10_000, 10_000, 0, 10_000.5)).toThrow()
+    expect(() => pagoConTarjeta({ balance: 10_000, amount: 10_000, tip: 0.5 })).toThrow()
   })
 
   it('en datáfono se aprueba venta + propina', () => {
-    expect(pagoConTarjeta({ saldo: 257_500, monto: 128_750, propina: 11_922 })).toEqual({
+    expect(pagoConTarjeta({ balance: 257_500, amount: 128_750, tip: 11_922 })).toEqual({
       aprobado: 140_672,
     })
   })
@@ -167,19 +167,19 @@ describe('pagos', () => {
         fc.integer({ min: 0, max: 100 }),
         fc.integer({ min: 0, max: 500_000 }),
         fc.integer({ min: 0, max: 1_000_000 }),
-        (saldo, parte, propina, extra) => {
-          const monto = Math.max(1, Math.floor((saldo * parte) / 100))
-          const base = efectivo(saldo, monto, propina, 0)
-          const recibido = base.aEntregar + extra
-          const r = efectivo(saldo, monto, propina, recibido)
-          expect(r.falta).toBe(0)
+        (balance, share, tip, extra) => {
+          const amount = Math.max(1, Math.floor((balance * share) / 100))
+          const base = cash(balance, amount, tip, 0)
+          const tendered = base.aEntregar + extra
+          const r = cash(balance, amount, tip, tendered)
+          expect(r.missing).toBe(0)
           expect(
-            cuadraEfectivo({
-              monto,
-              ajusteRedondeo: r.ajuste,
-              propina,
-              recibido,
-              cambio: r.cambio,
+            cashBalances({
+              amount,
+              roundingAdjustment: r.adjustment,
+              tip,
+              tendered,
+              change: r.change,
             }),
           ).toBe(true)
         },

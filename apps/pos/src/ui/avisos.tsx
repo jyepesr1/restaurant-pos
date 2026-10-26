@@ -19,11 +19,11 @@ const MAXIMO = 3
 
 interface Aviso {
   id: number
-  texto: string
-  deshacer?: () => void
+  text: string
+  undo?: () => void
 }
 
-type Avisar = (texto: string, deshacer?: () => void) => void
+type Avisar = (text: string, undo?: () => void) => void
 
 const Contexto = createContext<Avisar | null>(null)
 
@@ -36,14 +36,14 @@ export function useAvisar(): Avisar {
 
 export function ProveedorAvisos({ children }: { children: ReactNode }) {
   const [avisos, setAvisos] = useState<Aviso[]>([])
-  const siguiente = useRef(0)
+  const next = useRef(0)
 
-  const avisar = useCallback<Avisar>((texto, deshacer) => {
-    siguiente.current += 1
-    const aviso = { id: siguiente.current, texto, deshacer }
-    setAvisos((a) => [...a, aviso].slice(-MAXIMO))
+  const avisar = useCallback<Avisar>((text, undo) => {
+    next.current += 1
+    const alert = { id: next.current, text, undo }
+    setAvisos((a) => [...a, alert].slice(-MAXIMO))
   }, [])
-  const quitar = useCallback((id: number) => setAvisos((a) => a.filter((x) => x.id !== id)), [])
+  const remove = useCallback((id: number) => setAvisos((a) => a.filter((x) => x.id !== id)), [])
 
   return (
     <Contexto.Provider value={avisar}>
@@ -56,14 +56,14 @@ export function ProveedorAvisos({ children }: { children: ReactNode }) {
         aria-live="polite"
       >
         {avisos.map((a) => (
-          <TarjetaAviso key={a.id} aviso={a} alTerminar={() => quitar(a.id)} />
+          <TarjetaAviso key={a.id} alert={a} alTerminar={() => remove(a.id)} />
         ))}
       </div>
     </Contexto.Provider>
   )
 }
 
-function TarjetaAviso({ aviso, alTerminar }: { aviso: Aviso; alTerminar: () => void }) {
+function TarjetaAviso({ alert, alTerminar }: { alert: Aviso; alTerminar: () => void }) {
   const [pausado, setPausado] = useState(false)
   const restante = useRef(DURACION_AVISO_MS)
   const terminar = useRef(alTerminar)
@@ -71,11 +71,11 @@ function TarjetaAviso({ aviso, alTerminar }: { aviso: Aviso; alTerminar: () => v
 
   useEffect(() => {
     if (pausado) return
-    const inicio = Date.now()
+    const start = Date.now()
     const t = setTimeout(() => terminar.current(), restante.current)
     return () => {
       clearTimeout(t)
-      restante.current -= Date.now() - inicio
+      restante.current -= Date.now() - start
     }
   }, [pausado])
 
@@ -88,18 +88,18 @@ function TarjetaAviso({ aviso, alTerminar }: { aviso: Aviso; alTerminar: () => v
       onFocus={() => setPausado(true)}
       onBlur={() => setPausado(false)}
     >
-      <Icono nombre="check" />
-      <span className="flex-1">{aviso.texto}</span>
-      {aviso.deshacer && (
+      <Icono name="check" />
+      <span className="flex-1">{alert.text}</span>
+      {alert.undo && (
         <button
           type="button"
           className="inline-flex min-h-12 items-center gap-2 rounded-xl px-3 font-bold hover:bg-white/10 focus-visible:outline-3 focus-visible:outline-foco"
           onClick={() => {
-            aviso.deshacer?.()
+            alert.undo?.()
             alTerminar()
           }}
         >
-          <Icono nombre="deshacer" />
+          <Icono name="undo" />
           Deshacer
         </button>
       )}

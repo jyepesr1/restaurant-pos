@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { TABLAS_VERSIONADAS } from './esquema'
 import { MIGRACIONES } from './migraciones'
@@ -31,160 +31,155 @@ describe('archivado del catálogo', () => {
       .all(tabla)
       .map((fila) => String(fila.name))
 
-    expect(disparadores).toContain(`${tabla}_sin_delete`)
+    expect(disparadores).toContain(`${tabla}_no_delete`)
   })
 
   it('borrar un producto falla y archivarlo funciona', () => {
     const db = baseMigrada()
-    const { producto } = sembrar(db)
+    const { product } = sembrar(db)
 
-    expect(() => db.prepare('DELETE FROM producto WHERE id = ?').run(producto)).toThrow(
-      /se archiva/,
-    )
+    expect(() => db.prepare('DELETE FROM products WHERE id = ?').run(product)).toThrow(/se archiva/)
     expect(() =>
-      db.prepare('UPDATE producto SET activo = 0 WHERE id = ?').run(producto),
+      db.prepare('UPDATE products SET active = 0 WHERE id = ?').run(product),
     ).not.toThrow()
   })
 
   it('archivar un usuario libera su PIN y reactivarlo lo vuelve a tomar', () => {
     const db = baseMigrada()
-    const { restaurante } = sembrar(db)
-    const rol = insertarVersionado(db, 'rol', restaurante, { nombre: 'mesero' })
-    const usuario = () =>
-      insertarVersionado(db, 'usuario', restaurante, { nombre: 'X', rol_id: rol })
-    const credencial = (usuarioId: string) =>
-      insertarEnTabla(db, 'usuario_credencial', {
-        usuario_id: usuarioId,
-        restaurante_id: restaurante,
-        pin_huella: 'huella-1',
-        pin_generado_en: AHORA,
+    const { restaurant } = sembrar(db)
+    const role = insertarVersionado(db, 'roles', restaurant, { name: 'mesero' })
+    const user = () => insertarVersionado(db, 'users', restaurant, { name: 'X', role_id: role })
+    const credential = (userId: string) =>
+      insertarEnTabla(db, 'user_credentials', {
+        user_id: userId,
+        restaurant_id: restaurant,
+        pin_hash: 'huella-1',
+        pin_generated_at: AHORA,
       })
 
-    const ana = usuario()
-    credencial(ana)
-    db.prepare('UPDATE usuario SET activo = 0 WHERE id = ?').run(ana)
+    const ana = user()
+    credential(ana)
+    db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(ana)
     expect(
-      db.prepare('SELECT vigente FROM usuario_credencial WHERE usuario_id = ?').get(ana)?.vigente,
+      db.prepare('SELECT current FROM user_credentials WHERE user_id = ?').get(ana)?.current,
     ).toBe(0)
 
-    const luis = usuario()
-    expect(() => credencial(luis)).not.toThrow()
+    const luis = user()
+    expect(() => credential(luis)).not.toThrow()
     // Ana no puede volver con el mismo PIN mientras Luis lo tenga.
-    expect(() => db.prepare('UPDATE usuario SET activo = 1 WHERE id = ?').run(ana)).toThrow(
-      /UNIQUE/,
-    )
+    expect(() => db.prepare('UPDATE users SET active = 1 WHERE id = ?').run(ana)).toThrow(/UNIQUE/)
   })
 })
 
 describe('dinero en todas las columnas', () => {
   let db: BaseSqlite
   let base: ReturnType<typeof sembrar>
-  let pedido: string
+  let order: string
 
   beforeEach(() => {
     db = baseMigrada()
     base = sembrar(db)
-    pedido = insertarPedido(db, base.restaurante)
+    order = insertarPedido(db, base.restaurant)
   })
 
-  const grupo = () =>
-    insertarVersionado(db, 'grupo_modificador', base.restaurante, {
-      nombre: 'Adicionales',
-      maximo: 3,
+  const group = () =>
+    insertarVersionado(db, 'modifier_groups', base.restaurant, {
+      name: 'Adicionales',
+      maximum: 3,
     })
 
   // Cada columna con la forma de insertar un valor en ella.
-  const columnas: Record<string, (valor: ValorSql) => unknown> = {
-    'producto.precio': (precio) =>
-      insertarVersionado(db, 'producto', base.restaurante, {
-        categoria_id: base.categoria,
-        nombre: 'P',
-        precio,
-        impuesto_id: base.impuesto,
+  const columnas: Record<string, (value: ValorSql) => unknown> = {
+    'products.price': (price) =>
+      insertarVersionado(db, 'products', base.restaurant, {
+        category_id: base.category,
+        name: 'P',
+        price,
+        tax_id: base.tax,
       }),
-    'variante.precio': (precio) =>
-      insertarVersionado(db, 'variante', base.restaurante, {
-        producto_id: base.producto,
-        nombre: 'Copa',
-        precio,
+    'variants.price': (price) =>
+      insertarVersionado(db, 'variants', base.restaurant, {
+        product_id: base.product,
+        name: 'Copa',
+        price,
       }),
-    'modificador.precio_extra': (precio_extra) =>
-      insertarVersionado(db, 'modificador', base.restaurante, {
-        grupo_id: grupo(),
-        nombre: 'Extra burrata',
-        precio_extra,
+    'modifiers.extra_price': (extra_price) =>
+      insertarVersionado(db, 'modifiers', base.restaurant, {
+        group_id: group(),
+        name: 'Extra burrata',
+        extra_price,
       }),
-    'pedido_item.precio_unitario': (precio_unitario) =>
-      insertarItem(db, base.restaurante, pedido, { precio_unitario }),
-    'pedido_item_modificador.precio_extra': (precio_extra) =>
-      insertarEnTabla(db, 'pedido_item_modificador', {
-        pedido_item_id: insertarItem(db, base.restaurante, pedido),
-        modificador_id: nuevoId(),
-        nombre: 'Extra',
-        precio_extra,
+    'order_items.unit_price': (unit_price) =>
+      insertarItem(db, base.restaurant, order, { unit_price }),
+    'order_item_modifiers.extra_price': (extra_price) =>
+      insertarEnTabla(db, 'order_item_modifiers', {
+        order_item_id: insertarItem(db, base.restaurant, order),
+        modifier_id: newId(),
+        name: 'Extra',
+        extra_price,
       }),
   }
 
   describe.each(Object.entries(columnas))('%s', (_columna, insertar) => {
-    it.each([0, 40900, 100_000_000])('acepta %d', (valor) => {
-      expect(() => insertar(valor)).not.toThrow()
+    it.each([0, 40900, 100_000_000])('acepta %d', (value) => {
+      expect(() => insertar(value)).not.toThrow()
     })
     it('rechaza decimales', () => {
       expect(() => insertar(40900.5)).toThrow(/REAL/)
     })
-    it.each([-1, 100_000_001])('rechaza %d', (valor) => {
-      expect(() => insertar(valor)).toThrow(/CHECK/)
+    it.each([-1, 100_000_001])('rechaza %d', (value) => {
+      expect(() => insertar(value)).toThrow(/CHECK/)
     })
   })
 
-  it.each([0, 800, 10_000])('acepta la tarifa %d en un ítem', (tarifa) => {
-    expect(() => insertarItem(db, base.restaurante, pedido, { tarifa })).not.toThrow()
+  it.each([0, 800, 10_000])('acepta la tarifa %d en un ítem', (rate) => {
+    expect(() => insertarItem(db, base.restaurant, order, { rate })).not.toThrow()
   })
 
   it.each([
     [-1, /CHECK/],
     [10_001, /CHECK/],
     [8.5, /REAL/],
-  ] as const)('rechaza la tarifa %d en un ítem y en el catálogo', (tarifa, error) => {
-    expect(() => insertarItem(db, base.restaurante, pedido, { tarifa })).toThrow(error)
+  ] as const)('rechaza la tarifa %d en un ítem y en el catálogo', (rate, error) => {
+    expect(() => insertarItem(db, base.restaurant, order, { rate })).toThrow(error)
     expect(() =>
-      insertarVersionado(db, 'impuesto', base.restaurante, { nombre: 'X', tipo: 'iva', tarifa }),
+      insertarVersionado(db, 'taxes', base.restaurant, { name: 'X', type: 'iva', rate }),
     ).toThrow(error)
   })
 
-  it.each([1, 999])('acepta la cantidad %d', (cantidad) => {
-    expect(() => insertarItem(db, base.restaurante, pedido, { cantidad })).not.toThrow()
+  it.each([1, 999])('acepta la cantidad %d', (quantity) => {
+    expect(() => insertarItem(db, base.restaurant, order, { quantity })).not.toThrow()
   })
 
   it.each([
     [-1, /CHECK/],
     [1.5, /REAL/],
-  ] as const)('rechaza la cantidad %d', (cantidad, error) => {
-    expect(() => insertarItem(db, base.restaurante, pedido, { cantidad })).toThrow(error)
+  ] as const)('rechaza la cantidad %d', (quantity, error) => {
+    expect(() => insertarItem(db, base.restaurant, order, { quantity })).toThrow(error)
   })
 
   it('la cantidad anulada va de 0 a la cantidad del ítem', () => {
     expect(() =>
-      insertarItem(db, base.restaurante, pedido, { cantidad: 3, cantidad_anulada: 1 }),
+      insertarItem(db, base.restaurant, order, { quantity: 3, voided_quantity: 1 }),
     ).not.toThrow()
     expect(() =>
-      insertarItem(db, base.restaurante, pedido, { cantidad: 3, cantidad_anulada: 4 }),
+      insertarItem(db, base.restaurant, order, { quantity: 3, voided_quantity: 4 }),
     ).toThrow(/CHECK/)
   })
 
   it('un impuesto exento no puede tener tarifa', () => {
     expect(() =>
-      insertarVersionado(db, 'impuesto', base.restaurante, {
-        nombre: 'E',
-        tipo: 'exento',
-        tarifa: 800,
+      insertarVersionado(db, 'taxes', base.restaurant, {
+        name: 'E',
+        type: 'exempt',
+        rate: 800,
       }),
     ).toThrow(/CHECK/)
     expect(() =>
-      insertarItem(db, base.restaurante, pedido, { impuesto_tipo: 'exento', tarifa: 800 }),
+      insertarItem(db, base.restaurant, order, { tax_type: 'exempt', rate: 800 }),
     ).toThrow(/CHECK/)
     expect(() =>
-      insertarItem(db, base.restaurante, pedido, { impuesto_tipo: 'exento', tarifa: 0 }),
+      insertarItem(db, base.restaurant, order, { tax_type: 'exempt', rate: 0 }),
     ).not.toThrow()
   })
 })
@@ -203,19 +198,19 @@ describe('runner de migraciones', () => {
     const migraciones = [
       {
         version: 1,
-        nombre: 'tablas',
-        sql: `CREATE TABLE padre (id INTEGER PRIMARY KEY) STRICT;
-              CREATE TABLE hijo (id INTEGER PRIMARY KEY, padre_id INTEGER REFERENCES padre (id)) STRICT;
-              INSERT INTO padre VALUES (1); INSERT INTO hijo VALUES (1, 1);`,
+        name: 'tablas',
+        sql: `CREATE TABLE parent (id INTEGER PRIMARY KEY) STRICT;
+              CREATE TABLE hijo (id INTEGER PRIMARY KEY, padre_id INTEGER REFERENCES parent (id)) STRICT;
+              INSERT INTO parent VALUES (1); INSERT INTO hijo VALUES (1, 1);`,
       },
       {
         version: 2,
-        nombre: 'reconstruir padre',
+        name: 'reconstruir padre',
         sinClavesForaneas: true,
-        sql: `CREATE TABLE padre_nueva (id INTEGER PRIMARY KEY, nombre TEXT) STRICT;
-              INSERT INTO padre_nueva (id) SELECT id FROM padre;
-              DROP TABLE padre;
-              ALTER TABLE padre_nueva RENAME TO padre;`,
+        sql: `CREATE TABLE parent_new (id INTEGER PRIMARY KEY, name TEXT) STRICT;
+              INSERT INTO parent_new (id) SELECT id FROM parent;
+              DROP TABLE parent;
+              ALTER TABLE parent_new RENAME TO parent;`,
       },
     ]
 
@@ -229,16 +224,16 @@ describe('runner de migraciones', () => {
     const migraciones = [
       {
         version: 1,
-        nombre: 'tablas',
-        sql: `CREATE TABLE padre (id INTEGER PRIMARY KEY) STRICT;
-              CREATE TABLE hijo (id INTEGER PRIMARY KEY, padre_id INTEGER REFERENCES padre (id)) STRICT;
-              INSERT INTO padre VALUES (1); INSERT INTO hijo VALUES (1, 1);`,
+        name: 'tablas',
+        sql: `CREATE TABLE parent (id INTEGER PRIMARY KEY) STRICT;
+              CREATE TABLE hijo (id INTEGER PRIMARY KEY, padre_id INTEGER REFERENCES parent (id)) STRICT;
+              INSERT INTO parent VALUES (1); INSERT INTO hijo VALUES (1, 1);`,
       },
-      { version: 2, nombre: 'rompe', sinClavesForaneas: true, sql: 'DELETE FROM padre;' },
+      { version: 2, name: 'rompe', sinClavesForaneas: true, sql: 'DELETE FROM parent;' },
     ]
 
     expect(() => aplicarMigraciones(db, migraciones)).toThrow(/referencias rotas/)
-    expect(db.prepare('SELECT count(*) AS n FROM padre').get()?.n).toBe(1)
+    expect(db.prepare('SELECT count(*) AS n FROM parent').get()?.n).toBe(1)
   })
 })
 
@@ -284,10 +279,10 @@ describe('transacciones', () => {
 describe('apertura exclusiva', () => {
   it('un segundo hub no puede abrir la misma base', () => {
     const ruta = join(mkdtempSync(join(tmpdir(), 'pos-exclusiva-')), 'pos.sqlite')
-    const primera = abrirBase(ruta, { exclusiva: true })
+    const first = abrirBase(ruta, { exclusiva: true })
 
     expect(() => abrirBase(ruta, { exclusiva: true, esperaMs: 50 })).toThrow(BaseOcupadaError)
-    primera.close()
+    first.close()
     expect(() => abrirBase(ruta, { exclusiva: true, esperaMs: 50 }).close()).not.toThrow()
   })
 })

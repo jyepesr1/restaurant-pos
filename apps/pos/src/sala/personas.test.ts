@@ -15,33 +15,33 @@ import {
 
 const ana: PersonaPersonal = {
   id: 'A',
-  nombre: 'Ana',
+  name: 'Ana',
   rolId: 'MESERO',
-  activo: true,
-  usuario: null,
+  active: true,
+  user: null,
 }
 const carla: PersonaPersonal = {
   id: 'C',
-  nombre: 'Carla',
+  name: 'Carla',
   rolId: 'CAJERO',
-  activo: true,
-  usuario: 'carla',
+  active: true,
+  user: 'carla',
 }
 
 describe('borrador de una persona', () => {
   it('una nueva entra con PIN y con el rol sugerido; una existente, como está', () => {
     expect(borradorDe(null, 'MESERO')).toEqual({
-      nombre: '',
+      name: '',
       rolId: 'MESERO',
       entra: 'pin',
-      usuario: '',
-      contrasena: '',
+      user: '',
+      password: '',
     })
     expect(borradorDe(carla, 'MESERO')).toMatchObject({
       id: 'C',
-      entra: 'contrasena',
-      usuario: 'carla',
-      contrasena: '',
+      entra: 'password',
+      user: 'carla',
+      password: '',
     })
   })
 
@@ -53,122 +53,122 @@ describe('borrador de una persona', () => {
 })
 
 describe('qué falta para guardar', () => {
-  const personas = [ana, carla]
+  const people = [ana, carla]
 
   it('nombre y, con contraseña, un usuario válido y libre y una contraseña de al menos 8', () => {
-    const b = { ...borradorDe(null, 'MESERO'), nombre: 'Luis' }
-    expect(problemasDe(b, null, personas)).toEqual([])
-    expect(problemasDe({ ...b, nombre: ' ' }, null, personas)).toEqual(['Escribe el nombre'])
+    const b = { ...borradorDe(null, 'MESERO'), name: 'Luis' }
+    expect(problemasDe(b, null, people)).toEqual([])
+    expect(problemasDe({ ...b, name: ' ' }, null, people)).toEqual(['Escribe el nombre'])
 
-    const conClave = { ...b, entra: 'contrasena' as const, usuario: 'luis' }
-    expect(problemasDe(conClave, null, personas)).toEqual(['Escribe una contraseña'])
-    expect(problemasDe({ ...conClave, contrasena: 'corta' }, null, personas)).toEqual([
+    const conClave = { ...b, entra: 'password' as const, user: 'luis' }
+    expect(problemasDe(conClave, null, people)).toEqual(['Escribe una contraseña'])
+    expect(problemasDe({ ...conClave, password: 'corta' }, null, people)).toEqual([
       'La contraseña debe tener al menos 8 caracteres',
     ])
-    expect(problemasDe({ ...conClave, contrasena: 'larga-123' }, null, personas)).toEqual([])
+    expect(problemasDe({ ...conClave, password: 'larga-123' }, null, people)).toEqual([])
     expect(
-      problemasDe({ ...conClave, usuario: ' CARLA ', contrasena: 'larga-123' }, null, personas),
+      problemasDe({ ...conClave, user: ' CARLA ', password: 'larga-123' }, null, people),
     ).toEqual(['Ya hay alguien con el usuario «carla»: prueba «carla2»'])
     expect(
-      problemasDe({ ...conClave, usuario: 'con espacio', contrasena: 'larga-123' }, null, personas),
+      problemasDe({ ...conClave, user: 'con espacio', password: 'larga-123' }, null, people),
     ).toHaveLength(1)
   })
 
   it('quien ya tiene contraseña no tiene que escribirla otra vez, salvo si cambia de usuario', () => {
     const b = borradorDe(carla, 'MESERO')
     expect(problemasDe(b, carla, [ana, carla])).toEqual([])
-    expect(problemasDe({ ...b, usuario: 'carla2' }, carla, [ana, carla])).toEqual([
+    expect(problemasDe({ ...b, user: 'carla2' }, carla, [ana, carla])).toEqual([
       'Escribe una contraseña',
     ])
   })
 
   it('un usuario de alguien archivado está libre', () => {
-    const b = { ...borradorDe(null, 'CAJERO'), nombre: 'Otra', entra: 'contrasena' as const }
+    const b = { ...borradorDe(null, 'CAJERO'), name: 'Otra', entra: 'password' as const }
     expect(
-      problemasDe({ ...b, usuario: 'carla', contrasena: 'larga-123' }, null, [
-        { ...carla, activo: false },
+      problemasDe({ ...b, user: 'carla', password: 'larga-123' }, null, [
+        { ...carla, active: false },
       ]),
     ).toEqual([])
   })
 })
 
 describe('rol que pide contraseña y tildes en el usuario', () => {
-  const cajero = {
+  const cashier = {
     id: 'CAJERO',
-    nombre: 'Cajero',
-    sistema: true,
-    activo: true,
-    permisos: ['tomar_pedido', 'registrar_pago'],
-    personas: 1,
+    name: 'Cajero',
+    system: true,
+    active: true,
+    permissions: ['take_order', 'record_payment'],
+    people: 1,
   }
-  const mesero = { ...cajero, id: 'MESERO', nombre: 'Mesero', permisos: ['tomar_pedido'] }
+  const waiter = { ...cashier, id: 'MESERO', name: 'Mesero', permissions: ['take_order'] }
 
   it('con un rol que cobra no se puede entrar con PIN', () => {
-    expect(pideContrasena(cajero)).toBe(true)
-    expect(pideContrasena(mesero)).toBe(false)
-    const b = { ...borradorDe(null, 'CAJERO'), nombre: 'Pía' }
-    expect(problemasDe(b, null, [], [cajero, mesero])).toEqual([
+    expect(pideContrasena(cashier)).toBe(true)
+    expect(pideContrasena(waiter)).toBe(false)
+    const b = { ...borradorDe(null, 'CAJERO'), name: 'Pía' }
+    expect(problemasDe(b, null, [], [cashier, waiter])).toEqual([
       'Con ese rol se entra con usuario y contraseña',
     ])
-    expect(problemasDe({ ...b, rolId: 'MESERO' }, null, [], [cajero, mesero])).toEqual([])
+    expect(problemasDe({ ...b, rolId: 'MESERO' }, null, [], [cashier, waiter])).toEqual([])
   })
 
   it('«María» como usuario se guarda «maria»', () => {
     expect(normalizarUsuario('  María ')).toBe('maria')
     const b = {
       ...borradorDe(null, 'CAJERO'),
-      nombre: 'María',
-      entra: 'contrasena' as const,
-      usuario: 'María',
-      contrasena: 'larga-123',
+      name: 'María',
+      entra: 'password' as const,
+      user: 'María',
+      password: 'larga-123',
     }
-    expect(problemasDe(b, null, [], [cajero])).toEqual([])
-    expect(datosPersona(b).acceso).toMatchObject({ usuario: 'maria' })
+    expect(problemasDe(b, null, [], [cashier])).toEqual([])
+    expect(datosPersona(b).access).toMatchObject({ user: 'maria' })
   })
 
   it('cuenta quiénes pueden administrar: activos, con usuario y con el permiso', () => {
-    const admin = { ...cajero, id: 'ADMIN', permisos: ['administrar_usuarios'] }
-    const personas: PersonaPersonal[] = [
-      { id: '1', nombre: 'A', rolId: 'ADMIN', activo: true, usuario: 'a' },
-      { id: '2', nombre: 'B', rolId: 'ADMIN', activo: false, usuario: 'b' },
-      { id: '3', nombre: 'C', rolId: 'ADMIN', activo: true, usuario: null },
-      { id: '4', nombre: 'D', rolId: 'CAJERO', activo: true, usuario: 'd' },
+    const admin = { ...cashier, id: 'ADMIN', permissions: ['manage_users'] }
+    const people: PersonaPersonal[] = [
+      { id: '1', name: 'A', rolId: 'ADMIN', active: true, user: 'a' },
+      { id: '2', name: 'B', rolId: 'ADMIN', active: false, user: 'b' },
+      { id: '3', name: 'C', rolId: 'ADMIN', active: true, user: null },
+      { id: '4', name: 'D', rolId: 'CAJERO', active: true, user: 'd' },
     ]
-    expect(administradoras({ roles: [admin, cajero], personas }).map((p) => p.id)).toEqual(['1'])
+    expect(administradoras({ roles: [admin, cashier], people }).map((p) => p.id)).toEqual(['1'])
   })
 })
 
 describe('lo que va al hub', () => {
   it('con PIN, o con usuario normalizado y la contraseña solo si se escribió', () => {
-    expect(datosPersona({ ...borradorDe(null, 'MESERO'), nombre: ' Luis ' })).toEqual({
-      nombre: 'Luis',
-      rol_id: 'MESERO',
-      acceso: { tipo: 'pin' },
+    expect(datosPersona({ ...borradorDe(null, 'MESERO'), name: ' Luis ' })).toEqual({
+      name: 'Luis',
+      role_id: 'MESERO',
+      access: { type: 'pin' },
     })
     expect(
-      datosPersona({ ...borradorDe(carla, 'X'), usuario: ' Carla ' }, { regenerarPin: true }),
+      datosPersona({ ...borradorDe(carla, 'X'), user: ' Carla ' }, { regenerarPin: true }),
     ).toEqual({
       id: 'C',
-      nombre: 'Carla',
-      rol_id: 'CAJERO',
-      acceso: { tipo: 'contrasena', usuario: 'carla' },
+      name: 'Carla',
+      role_id: 'CAJERO',
+      access: { type: 'password', user: 'carla' },
       regenerar_pin: true,
     })
     expect(
-      datosPersona({ ...borradorDe(carla, 'X'), contrasena: 'nueva-123' }, { activo: false }),
-    ).toMatchObject({ acceso: { contrasena: 'nueva-123' }, activo: false })
+      datosPersona({ ...borradorDe(carla, 'X'), password: 'nueva-123' }, { active: false }),
+    ).toMatchObject({ access: { password: 'nueva-123' }, active: false })
   })
 
   it('resume un rol con sus personas y permisos', () => {
-    const rol = {
+    const role = {
       id: 'R',
-      nombre: 'Barra',
-      sistema: false,
-      activo: true,
-      permisos: ['a'],
-      personas: 3,
+      name: 'Barra',
+      system: false,
+      active: true,
+      permissions: ['a'],
+      people: 3,
     }
-    expect(resumenRol(rol)).toBe('3 personas · 1 permiso')
-    expect(resumenRol({ ...rol, personas: 1, permisos: [] })).toBe('1 persona · 0 permisos')
+    expect(resumenRol(role)).toBe('3 personas · 1 permiso')
+    expect(resumenRol({ ...role, people: 1, permissions: [] })).toBe('1 persona · 0 permisos')
   })
 })

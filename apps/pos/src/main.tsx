@@ -18,10 +18,10 @@ import { aplicarTema } from './ui/tema'
 aplicarMarca()
 aplicarTema()
 
-const raiz = document.getElementById('raiz')
-if (!raiz) throw new Error('No se encontró el elemento #raiz')
+const root = document.getElementById('root')
+if (!root) throw new Error('No se encontró el elemento #raiz')
 
-createRoot(raiz).render(
+createRoot(root).render(
   <StrictMode>
     <ProveedorAvisos>
       <App />

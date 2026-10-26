@@ -15,15 +15,15 @@ describe('servidor del hub', () => {
 
   it('responde el chequeo de salud', async () => {
     app = crearServidor()
-    const res = await app.inject({ method: 'GET', url: '/api/salud' })
+    const res = await app.inject({ method: 'GET', url: '/api/health' })
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toMatchObject({ estado: 'ok', servicio: 'hub' })
+    expect(res.json()).toMatchObject({ status: 'ok', service: 'hub' })
   })
 
   it('informa la versión de la base en el chequeo de salud', async () => {
     app = crearServidor({ versionBase: 1 })
-    const res = await app.inject({ method: 'GET', url: '/api/salud' })
+    const res = await app.inject({ method: 'GET', url: '/api/health' })
 
     expect(res.json()).toMatchObject({ version_base: 1 })
   })
@@ -33,10 +33,10 @@ describe('servidor del hub', () => {
     writeFileSync(join(dirApp, 'index.html'), '<title>POS</title>')
     app = crearServidor({ dirApp })
 
-    const raiz = await app.inject({ method: 'GET', url: '/' })
-    const rutaApp = await app.inject({ method: 'GET', url: '/mesas/5' })
+    const root = await app.inject({ method: 'GET', url: '/' })
+    const rutaApp = await app.inject({ method: 'GET', url: '/tables/5' })
 
-    expect(raiz.body).toContain('<title>POS</title>')
+    expect(root.body).toContain('<title>POS</title>')
     expect(rutaApp.statusCode).toBe(200)
     expect(rutaApp.body).toContain('<title>POS</title>')
   })
@@ -46,7 +46,7 @@ describe('servidor del hub', () => {
     writeFileSync(join(dirApp, 'index.html'), '<title>POS</title>')
     app = crearServidor({ dirApp })
 
-    const res = await app.inject({ method: 'GET', url: '/api/no-existe' })
+    const res = await app.inject({ method: 'GET', url: '/api/does-not-exist' })
 
     expect(res.statusCode).toBe(404)
   })
@@ -54,13 +54,13 @@ describe('servidor del hub', () => {
   describe('archivos estáticos de la app', () => {
     /** Carpeta de pruebas: `<raiz>/app` es la app y `<raiz>/secreto.txt` queda fuera de ella. */
     function crearCarpetas() {
-      const raiz = mkdtempSync(join(tmpdir(), 'pos-estaticos-'))
-      const dirApp = join(raiz, 'app')
+      const root = mkdtempSync(join(tmpdir(), 'pos-estaticos-'))
+      const dirApp = join(root, 'app')
       mkdirSync(join(dirApp, 'assets'), { recursive: true })
       writeFileSync(join(dirApp, 'index.html'), '<title>POS</title>')
       writeFileSync(join(dirApp, 'assets', 'index-abc.js'), 'console.log("pos")')
       writeFileSync(join(dirApp, 'assets', 'index-abc.css'), 'body{margin:0}')
-      writeFileSync(join(raiz, 'secreto.txt'), 'CONTENIDO-SECRETO')
+      writeFileSync(join(root, 'secreto.txt'), 'CONTENIDO-SECRETO')
       return dirApp
     }
 
@@ -68,7 +68,7 @@ describe('servidor del hub', () => {
     async function pedirCrudo(servidor: ReturnType<typeof crearServidor>, ruta: string) {
       await servidor.listen({ host: '127.0.0.1', port: 0 })
       const { port } = servidor.server.address() as AddressInfo
-      return new Promise<{ status: number; cuerpo: string }>((resolver, rechazar) => {
+      return new Promise<{ status: number; cuerpo: string }>((resolver, reject) => {
         const req = request({ host: '127.0.0.1', port, path: ruta, method: 'GET' }, (res) => {
           let cuerpo = ''
           res.on('data', (trozo) => {
@@ -76,7 +76,7 @@ describe('servidor del hub', () => {
           })
           res.on('end', () => resolver({ status: res.statusCode ?? 0, cuerpo }))
         })
-        req.on('error', rechazar)
+        req.on('error', reject)
         req.end()
       })
     }
@@ -102,7 +102,7 @@ describe('servidor del hub', () => {
       expect(res.headers['content-type']).toMatch(/text\/html/)
     })
 
-    it.each(['/assets/no-existe.js', '/favicon.ico'])(
+    it.each(['/assets/does-not-exist.js', '/favicon.ico'])(
       'un archivo que no existe responde 404 y no HTML: %s',
       async (url) => {
         app = crearServidor({ dirApp: crearCarpetas() })
@@ -127,7 +127,7 @@ describe('servidor del hub', () => {
     it('HEAD a una ruta de la app responde 200', async () => {
       app = crearServidor({ dirApp: crearCarpetas() })
 
-      const res = await app.inject({ method: 'HEAD', url: '/mesas/5' })
+      const res = await app.inject({ method: 'HEAD', url: '/tables/5' })
 
       expect(res.statusCode).toBe(200)
     })
@@ -135,7 +135,7 @@ describe('servidor del hub', () => {
     it('responde 404 a métodos que no son GET fuera de la API', async () => {
       app = crearServidor({ dirApp: crearCarpetas() })
 
-      const res = await app.inject({ method: 'POST', url: '/mesas/5' })
+      const res = await app.inject({ method: 'POST', url: '/tables/5' })
 
       expect(res.statusCode).toBe(404)
     })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buscar, distancia, normalizar } from './busqueda'
+import { distancia, normalizar, search } from './busqueda'
 
-const nombres = (elementos: string[], busqueda: string) => buscar(elementos, busqueda, (x) => x)
+const names = (elements: string[], busqueda: string) => search(elements, busqueda, (x) => x)
 
 describe('búsqueda tolerante: bordes', () => {
   it('normalizar conserva la ñ y quita signos, tildes y espacios repetidos', () => {
@@ -22,39 +22,39 @@ describe('búsqueda tolerante: bordes', () => {
 
   it('la tolerancia crece con el largo: 3 letras exactas, 6 con un error, 7 con dos', () => {
     // 3 letras: sin errores
-    expect(nombres(['Gin Tonic'], 'gon')).toEqual([])
+    expect(names(['Gin Tonic'], 'gon')).toEqual([])
     // 6 letras: un error vale, dos no
-    expect(nombres(['Aperol Spritz'], 'aperal')).toEqual(['Aperol Spritz'])
-    expect(nombres(['Aperol Spritz'], 'apxrxl')).toEqual([])
+    expect(names(['Aperol Spritz'], 'aperal')).toEqual(['Aperol Spritz'])
+    expect(names(['Aperol Spritz'], 'apxrxl')).toEqual([])
     // 7 letras: dos errores valen
-    expect(nombres(['Limonada de Coco'], 'limunadu')).toEqual(['Limonada de Coco'])
+    expect(names(['Limonada de Coco'], 'limunadu')).toEqual(['Limonada de Coco'])
   })
 
   it('el calce exacto va antes que el aproximado, y el empate respeta el orden de la carta', () => {
-    const carta = ['Aperal casero', 'Aperol Spritz', 'Aperol Soda']
-    expect(nombres(carta, 'aperol')).toEqual(['Aperol Spritz', 'Aperol Soda', 'Aperal casero'])
+    const menu = ['Aperal casero', 'Aperol Spritz', 'Aperol Soda']
+    expect(names(menu, 'aperol')).toEqual(['Aperol Spritz', 'Aperol Soda', 'Aperal casero'])
   })
 
   it('un producto con pocas letras iguales no aparece por azar', () => {
-    expect(nombres(['Té Hatsu', 'Tagliata di Manzo'], 'xyz')).toEqual([])
+    expect(names(['Té Hatsu', 'Tagliata di Manzo'], 'xyz')).toEqual([])
   })
 
   it('palabras en cualquier orden y con tildes de la persona', () => {
-    expect(nombres(['Tagliata di Manzo'], 'MANZÓ tagliata')).toEqual(['Tagliata di Manzo'])
+    expect(names(['Tagliata di Manzo'], 'MANZÓ tagliata')).toEqual(['Tagliata di Manzo'])
   })
 
   it('una búsqueda con solo símbolos devuelve todo, como una vacía', () => {
-    expect(nombres(['A', 'B'], '¡¡??')).toEqual(['A', 'B'])
+    expect(names(['A', 'B'], '¡¡??')).toEqual(['A', 'B'])
   })
 
   it('no modifica la lista original', () => {
-    const lista = ['Pinsa', 'Aperol']
-    nombres(lista, 'ape')
-    expect(lista).toEqual(['Pinsa', 'Aperol'])
+    const list = ['Pinsa', 'Aperol']
+    names(list, 'ape')
+    expect(list).toEqual(['Pinsa', 'Aperol'])
   })
 
   it('usa la función de texto, no el elemento: busca por nombre y categoría', () => {
-    const productos = [{ n: 'Spritz Burguer', c: 'Hamburguesas' }]
-    expect(buscar(productos, 'hamburgesa', (p) => `${p.n} ${p.c}`)).toEqual(productos)
+    const products = [{ n: 'Spritz Burguer', c: 'Hamburguesas' }]
+    expect(search(products, 'hamburgesa', (p) => `${p.n} ${p.c}`)).toEqual(products)
   })
 })

@@ -13,21 +13,21 @@ export interface Respuesta {
   body: string
 }
 
-export type Sesion = { sesion_id: string; secreto: string }
+export type Sesion = { session_id: string; secret: string }
 
 export interface Api extends MontajeAcceso {
   app: FastifyInstance
   cambiosCatalogo: number[]
-  post: (url: string, cuerpo: unknown, opciones?: OpcionesPost) => Promise<Respuesta>
+  post: (url: string, cuerpo: unknown, options?: OpcionesPost) => Promise<Respuesta>
   /** Entra con usuario y contraseña y devuelve lo necesario para llamar a la API de personal. */
-  entrarAdmin: (
-    quien?: 'admin' | 'cajero',
+  signInAdmin: (
+    quien?: 'admin' | 'cashier',
     // biome-ignore lint/suspicious/noExplicitAny: respuesta JSON de prueba, sin tipo
-  ) => Promise<{ token: string; sesion: Sesion; cuerpo: any }>
+  ) => Promise<{ token: string; session: Sesion; cuerpo: any }>
   /** Cuerpo de `/api/personal/*` con la sesión incluida. */
   conSesion: (s: Sesion, extra: object) => object
   /** Usuario y contraseña del administrador de fábrica. */
-  admin: () => { usuario: string; contrasena: string }
+  admin: () => { user: string; password: string }
 }
 
 export interface OpcionesPost {
@@ -39,13 +39,13 @@ export interface OpcionesPost {
 export function montarApi(m: MontajeAcceso = montarAcceso()): Api {
   const cambiosCatalogo: number[] = []
   const app = crearServidor({
-    acceso: m.acceso,
-    catalogo: {
+    access: m.access,
+    catalog: {
       db: m.db,
       restauranteId: m.restauranteId,
-      acceso: m.acceso,
-      reloj: m.reloj,
-      alCambiar: (v) => cambiosCatalogo.push(v),
+      access: m.access,
+      clock: m.clock,
+      onChange: (v) => cambiosCatalogo.push(v),
     },
   })
   const post: Api['post'] = (url, cuerpo, { token, ip = '10.0.0.20', cabeceras = {} } = {}) =>
@@ -56,14 +56,14 @@ export function montarApi(m: MontajeAcceso = montarAcceso()): Api {
       remoteAddress: ip,
       headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...cabeceras },
     }) as unknown as Promise<Respuesta>
-  const entrarAdmin: Api['entrarAdmin'] = async (quien = 'admin') => {
-    const p = m.personas[quien]
-    const r = await post('/api/entrar', { usuario: p.usuario, contrasena: p.contrasena })
+  const signInAdmin: Api['signInAdmin'] = async (quien = 'admin') => {
+    const p = m.people[quien]
+    const r = await post('/api/sign-in', { user: p.user, password: p.password })
     if (r.statusCode !== 201) throw new Error(`No entró: ${r.body}`)
     const cuerpo = r.json()
     return {
-      token: cuerpo.equipo.token,
-      sesion: { sesion_id: cuerpo.sesion_id, secreto: cuerpo.secreto },
+      token: cuerpo.device.token,
+      session: { session_id: cuerpo.session_id, secret: cuerpo.secret },
       cuerpo,
     }
   }
@@ -72,11 +72,11 @@ export function montarApi(m: MontajeAcceso = montarAcceso()): Api {
     app,
     cambiosCatalogo,
     post,
-    entrarAdmin,
+    signInAdmin,
     conSesion: (s, extra) => ({ ...s, ...extra }),
     admin: () => ({
-      usuario: m.personas.admin.usuario as string,
-      contrasena: m.personas.admin.contrasena as string,
+      user: m.people.admin.user as string,
+      password: m.people.admin.password as string,
     }),
   }
 }

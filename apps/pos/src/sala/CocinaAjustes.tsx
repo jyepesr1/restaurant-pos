@@ -16,49 +16,49 @@ import { Confirmar } from './Personal'
 // las dos), las impresoras con su página de prueba, las pantallas de cocina, convertir este equipo
 // en una y los minutos del ámbar y el rojo. Para quien administra los equipos.
 
-const PAGINAS: { valor: ImpresoraCocina['pagina_codigos']; nombre: string; detalle: string }[] = [
+const PAGINAS: { value: ImpresoraCocina['code_page']; name: string; detalle: string }[] = [
   {
-    valor: 'pc850',
-    nombre: 'Con tildes (recomendada)',
+    value: 'pc850',
+    name: 'Con tildes (recomendada)',
     detalle: 'La de casi todas: Jaltech, Epson, Xprinter',
   },
   {
-    valor: 'wpc1252',
-    nombre: 'Con tildes de Windows',
+    value: 'wpc1252',
+    name: 'Con tildes de Windows',
     detalle: 'Si con la recomendada salen símbolos raros',
   },
-  { valor: 'sin_tildes', nombre: 'Sin tildes', detalle: 'Si ninguna imprime bien la ñ' },
+  { value: 'no_accents', name: 'Sin tildes', detalle: 'Si ninguna imprime bien la ñ' },
 ]
 
 const NUEVA: ImpresoraCocina = {
-  nombre: '',
-  conexion: 'red',
-  direccion: '',
-  puerto: 9100,
-  ancho: 80,
-  pagina_codigos: 'pc850',
-  respaldo_id: null,
-  estacion_ids: [],
-  activo: true,
+  name: '',
+  connection: 'network',
+  address: '',
+  port: 9100,
+  width: 80,
+  code_page: 'pc850',
+  fallback_id: null,
+  station_ids: [],
+  active: true,
 }
 
-const mensaje = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
+const message = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
 
 export function CocinaAjustes() {
   const avisar = useAvisar()
-  const { impresoras: estados } = useSala()
+  const { printers: statuses } = useSala()
   const [config, setConfig] = useState<ConfiguracionCocina | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editando, setEditando] = useState<ImpresoraCocina | null>(null)
 
   const cargar = useCallback(() => {
     sala
-      .configuracionCocina()
+      .kitchenConfig()
       .then((c) => {
         setConfig(c)
         setError(null)
       })
-      .catch((e) => setError(mensaje(e)))
+      .catch((e) => setError(message(e)))
   }, [])
   useEffect(cargar, [cargar])
 
@@ -78,60 +78,60 @@ export function CocinaAjustes() {
       </MarcoSala>
     )
 
-  const estadoDe = (id: string) =>
-    estados.find((e) => e.id === id) ?? config.estados.find((e) => e.id === id)
-  const activas = config.impresoras.filter((i) => i.activo)
+  const stateOf = (id: string) =>
+    statuses.find((e) => e.id === id) ?? config.statuses.find((e) => e.id === id)
+  const activas = config.printers.filter((i) => i.active)
   const nombreEstacion = (id: string) =>
-    config.estaciones.find((e) => e.id === id)?.nombre ?? 'Estación'
+    config.stations.find((e) => e.id === id)?.name ?? 'Estación'
 
-  const probar = async (id: string, nombre: string) => {
+  const probar = async (id: string, name: string) => {
     try {
-      await sala.probarImpresora(id)
-      avisar(`Prueba enviada a ${nombre}: revisa que salga el papel`)
+      await sala.testPrinter(id)
+      avisar(`Prueba enviada a ${name}: revisa que salga el papel`)
     } catch (e) {
-      avisar(mensaje(e))
+      avisar(message(e))
     }
   }
 
   return (
     <MarcoSala
       titulo="Cocina e impresoras"
-      acciones={
-        <Boton variante="principal" icono="mas" onClick={() => setEditando({ ...NUEVA })}>
+      actions={
+        <Boton variant="main" icono="more" onClick={() => setEditando({ ...NUEVA })}>
           Agregar impresora
         </Boton>
       }
     >
       <div className="mx-auto flex max-w-4xl flex-col gap-8 p-4 md:p-6">
-        <section aria-labelledby="titulo-estaciones" className="flex flex-col gap-3">
-          <h2 id="titulo-estaciones" className="text-xl font-bold tracking-tight">
+        <section aria-labelledby="title-stations" className="flex flex-col gap-3">
+          <h2 id="title-stations" className="text-xl font-bold tracking-tight">
             Cómo recibe cada estación
           </h2>
           <ul className="grid gap-3 sm:grid-cols-2">
-            {config.estaciones.map((e) => {
-              const imp = activas.filter((i) => i.estacion_ids.includes(e.id))
-              const pan = config.pantallas.filter((p) => p.estacion_ids.includes(e.id))
-              const nada = imp.length === 0 && pan.length === 0
+            {config.stations.map((e) => {
+              const imp = activas.filter((i) => i.station_ids.includes(e.id))
+              const pan = config.pantallas.filter((p) => p.station_ids.includes(e.id))
+              const nothing = imp.length === 0 && pan.length === 0
               return (
                 <li
                   key={e.id}
                   className="flex flex-col gap-2 rounded-2xl border border-linea bg-superficie p-4"
                 >
-                  <span className="text-lg font-semibold">{e.nombre}</span>
+                  <span className="text-lg font-semibold">{e.name}</span>
                   {imp.map((i) => (
                     <span key={i.id} className="flex items-center gap-2">
-                      <Icono nombre="impresora" className="size-5" />
-                      {i.nombre}
+                      <Icono name="printer" className="size-5" />
+                      {i.name}
                     </span>
                   ))}
                   {pan.map((p) => (
-                    <span key={p.dispositivo_id} className="flex items-center gap-2">
-                      <Icono nombre="plano" className="size-5" />
-                      {p.nombre}
+                    <span key={p.device_id} className="flex items-center gap-2">
+                      <Icono name="floorPlan" className="size-5" />
+                      {p.name}
                     </span>
                   ))}
-                  {nada && (
-                    <Etiqueta tono="proceso" icono="alerta">
+                  {nothing && (
+                    <Etiqueta tono="progress" icono="warning">
                       No le llega nada: ponle una impresora o una pantalla
                     </Etiqueta>
                   )}
@@ -145,19 +145,19 @@ export function CocinaAjustes() {
           </p>
         </section>
 
-        <section aria-labelledby="titulo-impresoras" className="flex flex-col gap-3">
-          <h2 id="titulo-impresoras" className="text-xl font-bold tracking-tight">
+        <section aria-labelledby="title-printers" className="flex flex-col gap-3">
+          <h2 id="title-printers" className="text-xl font-bold tracking-tight">
             Impresoras de comandas
           </h2>
-          {config.impresoras.length === 0 && (
+          {config.printers.length === 0 && (
             <div className="rounded-2xl border border-dashed border-borde p-6 text-center">
               <p className="text-texto-suave">
                 Todavía no hay impresoras. Agrega la de cocina y la de barra con su dirección de
                 red.
               </p>
               <Boton
-                variante="principal"
-                icono="mas"
+                variant="main"
+                icono="more"
                 className="mt-3"
                 onClick={() => setEditando({ ...NUEVA })}
               >
@@ -166,45 +166,45 @@ export function CocinaAjustes() {
             </div>
           )}
           <ul className="flex flex-col gap-3">
-            {config.impresoras.map((i) => {
-              const estado = estadoDe(i.id)
+            {config.printers.map((i) => {
+              const status = stateOf(i.id)
               return (
                 <li
                   key={i.id}
-                  className={`flex flex-wrap items-center gap-3 rounded-2xl border border-linea bg-superficie p-4 ${i.activo ? '' : 'opacity-60'}`}
+                  className={`flex flex-wrap items-center gap-3 rounded-2xl border border-linea bg-superficie p-4 ${i.active ? '' : 'opacity-60'}`}
                 >
-                  <Icono nombre="impresora" className="size-6" />
+                  <Icono name="printer" className="size-6" />
                   <div className="flex min-w-48 flex-1 flex-col items-start gap-1">
-                    <span className="text-lg font-semibold">{i.nombre}</span>
+                    <span className="text-lg font-semibold">{i.name}</span>
                     <span className="cifras text-sm text-texto-suave">
-                      {i.conexion === 'red'
-                        ? `${i.direccion}:${i.puerto ?? 9100} · ${i.ancho} mm`
-                        : `USB · ${i.ancho} mm`}
-                      {i.estacion_ids.length > 0 &&
-                        ` · ${i.estacion_ids.map(nombreEstacion).join(', ')}`}
+                      {i.connection === 'network'
+                        ? `${i.address}:${i.port ?? 9100} · ${i.width} mm`
+                        : `USB · ${i.width} mm`}
+                      {i.station_ids.length > 0 &&
+                        ` · ${i.station_ids.map(nombreEstacion).join(', ')}`}
                     </span>
-                    {!i.activo ? (
-                      <Etiqueta tono="neutro" icono="cerrar">
+                    {!i.active ? (
+                      <Etiqueta tono="neutral" icono="close">
                         Archivada
                       </Etiqueta>
-                    ) : estado?.estado === 'falla' ? (
+                    ) : status?.status === 'failed' ? (
                       <span className="text-sm font-semibold text-alerta-texto">
-                        <Icono nombre="alerta" className="mr-1 inline size-4" />
-                        {estado.error}
-                        {estado.pendientes > 0 && ` (${estado.pendientes} esperando)`}
+                        <Icono name="warning" className="mr-1 inline size-4" />
+                        {status.error}
+                        {status.pendingList > 0 && ` (${status.pendingList} esperando)`}
                       </span>
                     ) : (
-                      <Etiqueta tono="libre" icono="check">
-                        {estado?.pendientes ? `Imprimiendo (${estado.pendientes})` : 'Lista'}
+                      <Etiqueta tono="free" icono="check">
+                        {status?.pendingList ? `Imprimiendo (${status.pendingList})` : 'Lista'}
                       </Etiqueta>
                     )}
                   </div>
-                  {i.activo && (
-                    <Boton icono="impresora" onClick={() => probar(i.id, i.nombre)}>
+                  {i.active && (
+                    <Boton icono="printer" onClick={() => probar(i.id, i.name)}>
                       Imprimir prueba
                     </Boton>
                   )}
-                  <Boton variante="fantasma" icono="lapiz" onClick={() => setEditando({ ...i })}>
+                  <Boton variant="ghost" icono="pencil" onClick={() => setEditando({ ...i })}>
                     Editar
                   </Boton>
                 </li>
@@ -213,17 +213,17 @@ export function CocinaAjustes() {
           </ul>
         </section>
 
-        <Pantallas config={config} alCambiar={cargar} />
-        <Tiempos config={config} alCambiar={cargar} />
-        <Cursos config={config} alCambiar={cargar} />
+        <Pantallas config={config} onChange={cargar} />
+        <Tiempos config={config} onChange={cargar} />
+        <Cursos config={config} onChange={cargar} />
       </div>
 
       {editando && (
         <EditarImpresora
-          inicial={editando}
+          initial={editando}
           config={config}
           alCerrar={() => setEditando(null)}
-          alGuardar={() => {
+          onSave={() => {
             setEditando(null)
             cargar()
           }}
@@ -236,25 +236,25 @@ export function CocinaAjustes() {
 function Estaciones({
   config,
   elegidas,
-  alCambiar,
+  onChange,
 }: {
   config: ConfiguracionCocina
   elegidas: string[]
-  alCambiar: (ids: string[]) => void
+  onChange: (ids: string[]) => void
 }) {
   return (
     <Grupo etiqueta="Estaciones" className="flex flex-wrap gap-2">
-      {config.estaciones.map((e) => (
+      {config.stations.map((e) => (
         <Opcion
           key={e.id}
           elegida={elegidas.includes(e.id)}
           alElegir={() =>
-            alCambiar(
+            onChange(
               elegidas.includes(e.id) ? elegidas.filter((x) => x !== e.id) : [...elegidas, e.id],
             )
           }
         >
-          {e.nombre}
+          {e.name}
         </Opcion>
       ))}
     </Grupo>
@@ -262,50 +262,48 @@ function Estaciones({
 }
 
 function EditarImpresora({
-  inicial,
+  initial,
   config,
   alCerrar,
-  alGuardar,
+  onSave,
 }: {
-  inicial: ImpresoraCocina
+  initial: ImpresoraCocina
   config: ConfiguracionCocina
   alCerrar: () => void
-  alGuardar: () => void
+  onSave: () => void
 }) {
   const avisar = useAvisar()
-  const [b, setB] = useState(inicial)
+  const [b, setB] = useState(initial)
   const [error, setError] = useState<string | null>(null)
   const [ocupado, setOcupado] = useState(false)
   const [archivando, setArchivando] = useState(false)
-  const cambiar = (parcial: Partial<ImpresoraCocina>) => setB((x) => ({ ...x, ...parcial }))
-  const otras = config.impresoras.filter((i) => i.activo && i.id !== b.id)
+  const patch = (partial: Partial<ImpresoraCocina>) => setB((x) => ({ ...x, ...partial }))
+  const otras = config.printers.filter((i) => i.active && i.id !== b.id)
 
-  const guardar = async (cambios: Partial<ImpresoraCocina> = {}) => {
-    const datos = { ...b, ...cambios }
-    if (!datos.nombre.trim()) return setError('Ponle un nombre, por ejemplo «Cocina»')
-    if (datos.conexion === 'red' && !datos.direccion.trim())
+  const guardar = async (changes: Partial<ImpresoraCocina> = {}) => {
+    const data = { ...b, ...changes }
+    if (!data.name.trim()) return setError('Ponle un nombre, por ejemplo «Cocina»')
+    if (data.connection === 'network' && !data.address.trim())
       return setError('Escribe la IP de la impresora (sale en su hoja de configuración)')
     setOcupado(true)
     try {
-      await sala.guardarImpresora({
-        ...datos,
-        nombre: datos.nombre.trim(),
-        direccion: datos.direccion.trim(),
+      await sala.savePrinter({
+        ...data,
+        name: data.name.trim(),
+        address: data.address.trim(),
       })
-      avisar(
-        datos.activo ? `Guardaste ${datos.nombre.trim()}` : `Archivaste ${datos.nombre.trim()}`,
-      )
-      alGuardar()
+      avisar(data.active ? `Guardaste ${data.name.trim()}` : `Archivaste ${data.name.trim()}`)
+      onSave()
     } catch (e) {
-      setError(mensaje(e))
+      setError(message(e))
       setOcupado(false)
     }
   }
 
   return (
     <PanelLateral
-      abierto
-      titulo={inicial.id ? `Editar ${inicial.nombre}` : 'Impresora nueva'}
+      opened
+      titulo={initial.id ? `Editar ${initial.name}` : 'Impresora nueva'}
       alCerrar={alCerrar}
       pie={
         <div className="flex flex-col gap-2">
@@ -317,33 +315,33 @@ function EditarImpresora({
           {archivando ? (
             <Confirmar
               pregunta={
-                b.respaldo_id
-                  ? `¿Archivar ${b.nombre}? Lo que esté esperando sale por la de respaldo. No se borra: se puede volver a usar.`
-                  : `¿Archivar ${b.nombre}? No tiene respaldo: lo que esté esperando no saldrá y la caja lo verá en «Pedidos en cocina» para descartarlo o reimprimirlo. No se borra: se puede volver a usar.`
+                b.fallback_id
+                  ? `¿Archivar ${b.name}? Lo que esté esperando sale por la de respaldo. No se borra: se puede volver a usar.`
+                  : `¿Archivar ${b.name}? No tiene respaldo: lo que esté esperando no saldrá y la caja lo verá en «Pedidos en cocina» para descartarlo o reimprimirlo. No se borra: se puede volver a usar.`
               }
-              si="Archivar"
+              yes="Archivar"
               ocupado={ocupado}
-              alConfirmar={() => guardar({ activo: false })}
+              alConfirmar={() => guardar({ active: false })}
               alCancelar={() => setArchivando(false)}
             />
           ) : (
             <div className="flex gap-2">
               <Boton
-                variante="principal"
-                grande
+                variant="main"
+                large
                 className="flex-1"
                 disabled={ocupado}
                 onClick={() => guardar()}
               >
                 Guardar
               </Boton>
-              {inicial.id && inicial.activo && (
-                <Boton variante="fantasma" onClick={() => setArchivando(true)}>
+              {initial.id && initial.active && (
+                <Boton variant="ghost" onClick={() => setArchivando(true)}>
                   Archivar
                 </Boton>
               )}
-              {inicial.id && !inicial.activo && (
-                <Boton disabled={ocupado} onClick={() => guardar({ activo: true })}>
+              {initial.id && !initial.active && (
+                <Boton disabled={ocupado} onClick={() => guardar({ active: true })}>
                   Volver a usar
                 </Boton>
               )}
@@ -357,10 +355,10 @@ function EditarImpresora({
           <span className="font-semibold">Nombre</span>
           <input
             className={claseCampo}
-            value={b.nombre}
+            value={b.name}
             maxLength={60}
             placeholder="Cocina"
-            onChange={(e) => cambiar({ nombre: e.target.value })}
+            onChange={(e) => patch({ name: e.target.value })}
           />
         </label>
 
@@ -368,10 +366,10 @@ function EditarImpresora({
           <span className="font-semibold">Qué imprime</span>
           <Estaciones
             config={config}
-            elegidas={b.estacion_ids}
-            alCambiar={(ids) => cambiar({ estacion_ids: ids })}
+            elegidas={b.station_ids}
+            onChange={(ids) => patch({ station_ids: ids })}
           />
-          {b.estacion_ids.length === 0 && (
+          {b.station_ids.length === 0 && (
             <span className="text-sm text-texto-suave">
               Sin cocina ni barra: solo imprime cuando otra impresora no responde.
             </span>
@@ -381,7 +379,10 @@ function EditarImpresora({
         <div className="flex flex-col gap-2">
           <span className="font-semibold">Conexión</span>
           <Grupo etiqueta="Conexión" className="flex flex-wrap gap-2">
-            <Opcion elegida={b.conexion === 'red'} alElegir={() => cambiar({ conexion: 'red' })}>
+            <Opcion
+              elegida={b.connection === 'network'}
+              alElegir={() => patch({ connection: 'network' })}
+            >
               Cable de red
             </Opcion>
           </Grupo>
@@ -391,30 +392,30 @@ function EditarImpresora({
           </span>
         </div>
 
-        {b.conexion === 'red' ? (
+        {b.connection === 'network' ? (
           <div className="flex gap-3">
             <label className="flex flex-1 flex-col gap-1">
               <span className="font-semibold">Dirección de red (IP)</span>
               <input
                 className={`${claseCampo} cifras`}
-                value={b.direccion}
+                value={b.address}
                 inputMode="decimal"
                 autoCapitalize="off"
                 autoCorrect="off"
                 spellCheck={false}
                 placeholder="192.168.1.50"
-                onChange={(e) => cambiar({ direccion: e.target.value })}
+                onChange={(e) => patch({ address: e.target.value })}
               />
             </label>
             <label className="flex w-28 flex-col gap-1">
               <span className="font-semibold">Puerto</span>
               <input
                 className={`${claseCampo} cifras`}
-                value={b.puerto ?? ''}
+                value={b.port ?? ''}
                 inputMode="numeric"
                 onChange={(e) => {
                   const n = Number(e.target.value.replace(/\D/g, ''))
-                  cambiar({ puerto: n > 0 ? Math.min(n, 65535) : null })
+                  patch({ port: n > 0 ? Math.min(n, 65535) : null })
                 }}
               />
             </label>
@@ -424,8 +425,8 @@ function EditarImpresora({
             <span className="font-semibold">Nombre de la impresora en Windows</span>
             <input
               className={claseCampo}
-              value={b.direccion}
-              onChange={(e) => cambiar({ direccion: e.target.value })}
+              value={b.address}
+              onChange={(e) => patch({ address: e.target.value })}
             />
           </label>
         )}
@@ -438,7 +439,7 @@ function EditarImpresora({
           <span className="font-semibold">Ancho del papel</span>
           <Grupo etiqueta="Ancho del papel" className="flex flex-wrap gap-2">
             {([80, 58] as const).map((a) => (
-              <Opcion key={a} elegida={b.ancho === a} alElegir={() => cambiar({ ancho: a })}>
+              <Opcion key={a} elegida={b.width === a} alElegir={() => patch({ width: a })}>
                 {`${a} mm`}
               </Opcion>
             ))}
@@ -450,13 +451,13 @@ function EditarImpresora({
           <Grupo etiqueta="Tabla de caracteres" className="flex flex-col gap-2">
             {PAGINAS.map((p) => (
               <Opcion
-                key={p.valor}
-                forma="tarjeta"
+                key={p.value}
+                shape="card"
                 detalle={p.detalle}
-                elegida={b.pagina_codigos === p.valor}
-                alElegir={() => cambiar({ pagina_codigos: p.valor })}
+                elegida={b.code_page === p.value}
+                alElegir={() => patch({ code_page: p.value })}
               >
-                {p.nombre}
+                {p.name}
               </Opcion>
             ))}
           </Grupo>
@@ -468,19 +469,16 @@ function EditarImpresora({
         <div className="flex flex-col gap-2">
           <span className="font-semibold">Si no responde, imprimir en</span>
           <Grupo etiqueta="Impresora de respaldo" className="flex flex-wrap gap-2">
-            <Opcion
-              elegida={b.respaldo_id === null}
-              alElegir={() => cambiar({ respaldo_id: null })}
-            >
+            <Opcion elegida={b.fallback_id === null} alElegir={() => patch({ fallback_id: null })}>
               Ninguna
             </Opcion>
             {otras.map((i) => (
               <Opcion
                 key={i.id}
-                elegida={b.respaldo_id === i.id}
-                alElegir={() => cambiar({ respaldo_id: i.id })}
+                elegida={b.fallback_id === i.id}
+                alElegir={() => patch({ fallback_id: i.id })}
               >
-                {i.nombre}
+                {i.name}
               </Opcion>
             ))}
           </Grupo>
@@ -493,11 +491,11 @@ function EditarImpresora({
   )
 }
 
-function Pantallas({ config, alCambiar }: { config: ConfiguracionCocina; alCambiar: () => void }) {
+function Pantallas({ config, onChange }: { config: ConfiguracionCocina; onChange: () => void }) {
   const avisar = useAvisar()
-  const { equipo } = useSala()
-  const [nombre, setNombre] = useState('Pantalla cocina')
-  const [estaciones, setEstaciones] = useState<string[]>([])
+  const { device } = useSala()
+  const [name, setNombre] = useState('Pantalla cocina')
+  const [stations, setEstaciones] = useState<string[]>([])
   const [confirmando, setConfirmando] = useState(false)
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -505,27 +503,27 @@ function Pantallas({ config, alCambiar }: { config: ConfiguracionCocina; alCambi
   const cambiarEstaciones = async (dispositivoId: string, ids: string[]) => {
     if (ids.length === 0) return avisar('Una pantalla muestra al menos una estación')
     try {
-      await sala.estacionesDePantalla(dispositivoId, ids)
-      alCambiar()
+      await sala.screenStations(dispositivoId, ids)
+      onChange()
     } catch (e) {
-      avisar(mensaje(e))
+      avisar(message(e))
     }
   }
   const convertir = async () => {
     setOcupado(true)
     try {
-      await sala.convertirEnPantalla(nombre.trim(), estaciones)
+      await sala.convertirEnPantalla(name.trim(), stations)
       navegar('/')
     } catch (e) {
-      setError(mensaje(e))
+      setError(message(e))
       setOcupado(false)
       setConfirmando(false)
     }
   }
 
   return (
-    <section aria-labelledby="titulo-pantallas" className="flex flex-col gap-3">
-      <h2 id="titulo-pantallas" className="text-xl font-bold tracking-tight">
+    <section aria-labelledby="title-screens" className="flex flex-col gap-3">
+      <h2 id="title-screens" className="text-xl font-bold tracking-tight">
         Pantallas de cocina
       </h2>
       <p className="text-texto-suave">
@@ -536,22 +534,22 @@ function Pantallas({ config, alCambiar }: { config: ConfiguracionCocina; alCambi
         <ul className="flex flex-col gap-3">
           {config.pantallas.map((p) => (
             <li
-              key={p.dispositivo_id}
+              key={p.device_id}
               className="flex flex-col gap-2 rounded-2xl border border-linea bg-superficie p-4"
             >
               <span className="flex flex-wrap items-baseline justify-between gap-2">
-                <span className="text-lg font-semibold">{p.nombre}</span>
+                <span className="text-lg font-semibold">{p.name}</span>
                 <span className="text-sm text-texto-suave">
-                  {p.ultimo_uso
-                    ? `Última señal: ${new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(p.ultimo_uso))}`
+                  {p.last_used
+                    ? `Última señal: ${new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(p.last_used))}`
                     : 'Sin señal todavía'}
                 </span>
               </span>
               <span className="text-sm font-semibold">Qué estaciones muestra</span>
               <Estaciones
                 config={config}
-                elegidas={p.estacion_ids}
-                alCambiar={(ids) => cambiarEstaciones(p.dispositivo_id, ids)}
+                elegidas={p.station_ids}
+                onChange={(ids) => cambiarEstaciones(p.device_id, ids)}
               />
             </li>
           ))}
@@ -565,20 +563,20 @@ function Pantallas({ config, alCambiar }: { config: ConfiguracionCocina; alCambi
           Ese equipo ya no servirá para tomar pedidos ni para la caja. Para deshacerlo, desde la
           caja ve a Personal y roles, Equipos, y toca «Retirar» en la pantalla; luego en la tablet
           toca «Entrar de nuevo».
-          {equipo?.tipo === 'mesero' && ' Este es un celular de mesero.'}
+          {device?.type === 'waiter' && ' Este es un celular de mesero.'}
         </p>
         <label className="flex flex-col gap-1">
           <span className="font-semibold">Nombre de la pantalla</span>
           <input
             className={claseCampo}
-            value={nombre}
+            value={name}
             maxLength={60}
             onChange={(e) => setNombre(e.target.value)}
           />
         </label>
         <span className="font-semibold">Qué estaciones muestra</span>
-        <Estaciones config={config} elegidas={estaciones} alCambiar={setEstaciones} />
-        {estaciones.length === 0 && (
+        <Estaciones config={config} elegidas={stations} onChange={setEstaciones} />
+        {stations.length === 0 && (
           <span className="text-sm text-texto-suave">Elige al menos una estación.</span>
         )}
         {error && (
@@ -589,16 +587,16 @@ function Pantallas({ config, alCambiar }: { config: ConfiguracionCocina; alCambi
         {confirmando ? (
           <Confirmar
             pregunta="Este equipo quedará siempre en la pantalla de cocina, sin pedir PIN, y tu sesión se cierra aquí. Para deshacerlo: desde la caja, Personal y roles, Equipos, «Retirar». ¿Seguimos?"
-            si="Convertir"
+            yes="Convertir"
             ocupado={ocupado}
             alConfirmar={convertir}
             alCancelar={() => setConfirmando(false)}
           />
         ) : (
           <Boton
-            variante="principal"
+            variant="main"
             icono="check"
-            disabled={estaciones.length === 0 || !nombre.trim()}
+            disabled={stations.length === 0 || !name.trim()}
             onClick={() => {
               setError(null)
               setConfirmando(true)
@@ -612,26 +610,26 @@ function Pantallas({ config, alCambiar }: { config: ConfiguracionCocina; alCambi
   )
 }
 
-function Tiempos({ config, alCambiar }: { config: ConfiguracionCocina; alCambiar: () => void }) {
+function Tiempos({ config, onChange }: { config: ConfiguracionCocina; onChange: () => void }) {
   const avisar = useAvisar()
   const [amarillo, setAmarillo] = useState(String(config.tiempos.amarillo))
   const [rojo, setRojo] = useState(String(config.tiempos.rojo))
   const a = Number(amarillo)
   const r = Number(rojo)
-  const valido = Number.isInteger(a) && Number.isInteger(r) && a >= 1 && r > a && r <= 240
-  const cambio = a !== config.tiempos.amarillo || r !== config.tiempos.rojo
+  const valid = Number.isInteger(a) && Number.isInteger(r) && a >= 1 && r > a && r <= 240
+  const change = a !== config.tiempos.amarillo || r !== config.tiempos.rojo
   const guardar = async () => {
     try {
-      await sala.tiemposCocina(a, r)
+      await sala.kitchenTimers(a, r)
       avisar('Guardaste los tiempos de cocina')
-      alCambiar()
+      onChange()
     } catch (e) {
-      avisar(mensaje(e))
+      avisar(message(e))
     }
   }
   return (
-    <section aria-labelledby="titulo-tiempos" className="flex flex-col gap-3">
-      <h2 id="titulo-tiempos" className="text-xl font-bold tracking-tight">
+    <section aria-labelledby="title-times" className="flex flex-col gap-3">
+      <h2 id="title-times" className="text-xl font-bold tracking-tight">
         Cuándo se ve demorado
       </h2>
       <div className="flex flex-wrap items-end gap-3">
@@ -659,11 +657,11 @@ function Tiempos({ config, alCambiar }: { config: ConfiguracionCocina; alCambiar
             min
           </span>
         </label>
-        <Boton variante="principal" disabled={!valido || !cambio} onClick={guardar}>
+        <Boton variant="main" disabled={!valid || !change} onClick={guardar}>
           Guardar
         </Boton>
       </div>
-      {!valido && (
+      {!valid && (
         <p className="text-sm text-alerta-texto">
           Escribe minutos enteros: «muy demorada» debe llegar después de «demorada», hasta 240.
         </p>
@@ -676,21 +674,21 @@ function Tiempos({ config, alCambiar }: { config: ConfiguracionCocina; alCambiar
  * Cursos (entrada, fuerte, postre; retener y marchar): casi no se usan en Colombia y vienen
  * apagados. Prenderlos muestra «Curso» al tomar el pedido.
  */
-function Cursos({ config, alCambiar }: { config: ConfiguracionCocina; alCambiar: () => void }) {
+function Cursos({ config, onChange }: { config: ConfiguracionCocina; onChange: () => void }) {
   const avisar = useAvisar()
-  const activo = config.usar_cursos ?? false
-  const cambiar = async () => {
+  const active = config.courses_enabled ?? false
+  const patch = async () => {
     try {
-      await sala.usarCursos(!activo)
-      avisar(activo ? 'Apagaste los cursos' : 'Prendiste los cursos')
-      alCambiar()
+      await sala.usarCursos(!active)
+      avisar(active ? 'Apagaste los cursos' : 'Prendiste los cursos')
+      onChange()
     } catch (e) {
-      avisar(mensaje(e))
+      avisar(message(e))
     }
   }
   return (
-    <section aria-labelledby="titulo-cursos" className="flex flex-col gap-3">
-      <h2 id="titulo-cursos" className="text-xl font-bold tracking-tight">
+    <section aria-labelledby="title-courses" className="flex flex-col gap-3">
+      <h2 id="title-courses" className="text-xl font-bold tracking-tight">
         Cursos
       </h2>
       <p className="text-texto-suave">
@@ -700,19 +698,19 @@ function Cursos({ config, alCambiar }: { config: ConfiguracionCocina; alCambiar:
       <button
         type="button"
         role="switch"
-        aria-checked={activo}
-        onClick={cambiar}
+        aria-checked={active}
+        onClick={patch}
         className="inline-flex min-h-12 w-max items-center gap-3 rounded-xl border border-borde bg-superficie px-4 font-semibold focus-visible:outline-3 focus-visible:outline-foco"
       >
         <span
           aria-hidden="true"
-          className={`relative h-7 w-12 rounded-full transition-colors ${activo ? 'bg-accion-fuerte' : 'bg-borde'}`}
+          className={`relative h-7 w-12 rounded-full transition-colors ${active ? 'bg-accion-fuerte' : 'bg-borde'}`}
         >
           <span
-            className={`absolute top-1 size-5 rounded-full bg-white transition-all ${activo ? 'left-6' : 'left-1'}`}
+            className={`absolute top-1 size-5 rounded-full bg-white transition-all ${active ? 'left-6' : 'left-1'}`}
           />
         </span>
-        {`Usar cursos: ${activo ? 'sí' : 'no'}`}
+        {`Usar cursos: ${active ? 'sí' : 'no'}`}
       </button>
     </section>
   )

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buscar, distancia, normalizar } from './busqueda'
+import { distancia, normalizar, search } from './busqueda'
 
-const carta = [
+const menu = [
   'Spritz Burguer',
   'Hamburguesa clásica',
   'Aperol Spritz',
@@ -10,34 +10,34 @@ const carta = [
   'Tagliata di Manzo',
   'Quattro Formaggi',
 ]
-const nombres = (busqueda: string) => buscar(carta, busqueda, (x) => x)
+const names = (busqueda: string) => search(menu, busqueda, (x) => x)
 
 describe('búsqueda tolerante', () => {
   it('ignora tildes y mayúsculas', () => {
     expect(normalizar('  Té   HATSU! ')).toBe('te hatsu')
-    expect(nombres('te')).toContain('Té Hatsu')
-    expect(nombres('CLASICA')).toEqual(['Hamburguesa clásica'])
+    expect(names('te')).toContain('Té Hatsu')
+    expect(names('CLASICA')).toEqual(['Hamburguesa clásica'])
   })
 
   it('perdona errores de escritura comunes', () => {
-    expect(nombres('hamburgesa')).toEqual(['Hamburguesa clásica'])
-    expect(nombres('apreol')[0]).toBe('Aperol Spritz')
-    expect(nombres('quatro formagi')).toEqual(['Quattro Formaggi'])
-    expect(nombres('tagliatta')).toEqual(['Tagliata di Manzo'])
+    expect(names('hamburgesa')).toEqual(['Hamburguesa clásica'])
+    expect(names('apreol')[0]).toBe('Aperol Spritz')
+    expect(names('quatro formagi')).toEqual(['Quattro Formaggi'])
+    expect(names('tagliatta')).toEqual(['Tagliata di Manzo'])
   })
 
   it('busca por el comienzo de cualquier palabra y exige todas las palabras', () => {
-    expect(nombres('spritz')).toEqual(['Spritz Burguer', 'Aperol Spritz'])
-    expect(nombres('coco lim')).toEqual(['Limonada de Coco'])
-    expect(nombres('spritz coco')).toEqual([])
+    expect(names('spritz')).toEqual(['Spritz Burguer', 'Aperol Spritz'])
+    expect(names('coco lim')).toEqual(['Limonada de Coco'])
+    expect(names('spritz coco')).toEqual([])
   })
 
   it('en palabras cortas no adivina: "tex" no es "te"', () => {
-    expect(nombres('tex')).toEqual([])
+    expect(names('tex')).toEqual([])
   })
 
   it('sin búsqueda devuelve todo en su orden', () => {
-    expect(nombres('  ')).toEqual(carta)
+    expect(names('  ')).toEqual(menu)
   })
 
   it('distancia de edición con letras vecinas intercambiadas', () => {

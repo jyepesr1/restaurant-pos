@@ -23,44 +23,48 @@ import {
 
 type Filtro = 'todas' | 'cocina' | 'barra'
 
-export function tiempoDeComanda(m: number): { tono: Tono; icono: NombreIcono; texto: string } {
-  if (m >= MINUTOS_DEMORA) return { tono: 'alerta', icono: 'alerta', texto: 'demora' }
-  if (m >= MINUTOS_ATENCION) return { tono: 'proceso', icono: 'reloj', texto: 'atención' }
-  return { tono: 'neutro', icono: 'reloj', texto: 'a tiempo' }
+export function tiempoDeComanda(m: number): { tono: Tono; icono: NombreIcono; text: string } {
+  if (m >= MINUTOS_DEMORA) return { tono: 'warning', icono: 'warning', text: 'demora' }
+  if (m >= MINUTOS_ATENCION) return { tono: 'progress', icono: 'clock', text: 'atención' }
+  return { tono: 'neutral', icono: 'clock', text: 'a tiempo' }
 }
 
 /** Despachar marca los ítems de esa estación; si ya no queda nada en preparación, la mesa está lista. */
-function despachar(mesa: Mesa, ids: ReadonlySet<string>): Mesa {
-  const items = mesa.items.map((i) => (ids.has(i.id) ? { ...i, despachado: true } : i))
-  const queda = items.some((i) => !i.anulado && i.enviadoEn !== null && !i.despachado)
-  return { ...mesa, items, estado: queda || mesa.estado !== 'en_cocina' ? mesa.estado : 'listo' }
+function despachar(table: Mesa, ids: ReadonlySet<string>): Mesa {
+  const items = table.items.map((i) => (ids.has(i.id) ? { ...i, despachado: true } : i))
+  const queda = items.some((i) => !i.voided && i.enviadoEn !== null && !i.despachado)
+  return {
+    ...table,
+    items,
+    status: queda || table.status !== 'in_kitchen' ? table.status : 'ready',
+  }
 }
 
 export function Kds() {
-  const mesas = useMesas()
+  const tables = useMesas()
   const ahora = useAhora(5000)
   const avisar = useAvisar()
   const [filtro, setFiltro] = useState<Filtro>('todas')
   const [listos, setListos] = useState<Set<string>>(new Set())
 
-  const comandas = useMemo(
+  const tickets = useMemo(
     () =>
-      mesas
+      tables
         // Una mesa ya cerrada (por limpiar o libre) no tiene nada que preparar.
-        .filter((mesa) => mesa.estado !== 'sucia' && mesa.estado !== 'libre')
-        .flatMap((mesa) =>
-          (['cocina', 'barra'] as const).map((estacion) => {
-            const items = enPreparacion(mesa).filter(
-              (i) => estacionDe.get(i.producto.clave) === estacion,
+        .filter((table) => table.status !== 'dirty' && table.status !== 'free')
+        .flatMap((table) =>
+          (['cocina', 'barra'] as const).map((station) => {
+            const items = enPreparacion(table).filter(
+              (i) => estacionDe.get(i.product.key) === station,
             )
-            const desde = Math.min(...items.map((i) => i.enviadoEn as number))
-            return { clave: `${mesa.numero}-${estacion}`, mesa, estacion, items, desde }
+            const from = Math.min(...items.map((i) => i.enviadoEn as number))
+            return { key: `${table.numero}-${station}`, table, station, items, from }
           }),
         )
         .filter((c) => c.items.length > 0)
-        .filter((c) => filtro === 'todas' || c.estacion === filtro)
-        .sort((a, b) => a.desde - b.desde),
-    [mesas, filtro],
+        .filter((c) => filtro === 'todas' || c.station === filtro)
+        .sort((a, b) => a.from - b.from),
+    [tables, filtro],
   )
 
   const alternar = (id: string) =>
@@ -72,7 +76,7 @@ export function Kds() {
     })
 
   return (
-    <Marco titulo="Cocina y barra" usuario="Cocina">
+    <Marco titulo="Cocina y barra" user="Cocina">
       <div className="p-3">
         <Grupo etiqueta="Estación" className="mb-3 flex flex-wrap gap-2">
           {(['todas', 'cocina', 'barra'] as const).map((f) => (
@@ -81,63 +85,61 @@ export function Kds() {
             </Opcion>
           ))}
         </Grupo>
-        {comandas.length === 0 && (
+        {tickets.length === 0 && (
           <p className="p-10 text-center text-xl text-texto-suave">No hay comandas pendientes.</p>
         )}
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {comandas.map((c) => {
-            const m = minutosDesde(c.desde, ahora)
+          {tickets.map((c) => {
+            const m = minutosDesde(c.from, ahora)
             const t = tiempoDeComanda(m)
-            const todos = c.items.every((i) => listos.has(i.id))
+            const all = c.items.every((i) => listos.has(i.id))
             return (
               <li
-                key={c.clave}
+                key={c.key}
                 className="flex flex-col rounded-2xl border border-borde bg-superficie"
               >
                 <div className="flex items-center justify-between gap-2 border-b border-borde p-3">
                   <div>
-                    <p className="font-titulo text-3xl font-bold">Mesa {c.mesa.numero}</p>
+                    <p className="font-titulo text-3xl font-bold">Mesa {c.table.numero}</p>
                     <p className="text-texto-suave">
-                      {c.mesa.mesero} · <span className="capitalize">{c.estacion}</span>
+                      {c.table.waiter} · <span className="capitalize">{c.station}</span>
                     </p>
                   </div>
-                  <Etiqueta tono={t.tono} icono={t.icono} fuerte>
+                  <Etiqueta tono={t.tono} icono={t.icono} main>
                     <span className="cifras text-lg">{minutos(m)}</span>
-                    <span className="text-sm">{t.texto}</span>
+                    <span className="text-sm">{t.text}</span>
                   </Etiqueta>
                 </div>
                 <ul className="flex-1">
                   {c.items.map((i) => {
-                    const listo = listos.has(i.id)
+                    const ready = listos.has(i.id)
                     return (
                       <li key={i.id}>
                         <button
                           type="button"
-                          aria-pressed={listo}
+                          aria-pressed={ready}
                           onClick={() => alternar(i.id)}
-                          className={`flex min-h-14 w-full items-start gap-3 border-b border-borde px-3 py-2 text-left text-lg ${listo ? 'bg-libre-suave text-libre-texto' : ''}`}
+                          className={`flex min-h-14 w-full items-start gap-3 border-b border-borde px-3 py-2 text-left text-lg ${ready ? 'bg-libre-suave text-libre-texto' : ''}`}
                         >
-                          <span className="cifras w-8 font-bold">{i.cantidad}×</span>
+                          <span className="cifras w-8 font-bold">{i.quantity}×</span>
                           <span className="flex-1">
-                            <span className={`font-semibold ${listo ? 'line-through' : ''}`}>
+                            <span className={`font-semibold ${ready ? 'line-through' : ''}`}>
                               {nombreItem(i)}
                             </span>
-                            {i.opciones.length > 0 && (
+                            {i.options.length > 0 && (
                               <span className="block rounded bg-proceso-suave px-1 font-bold text-proceso-texto">
-                                {i.opciones.map((o) => o.nombre).join(' · ')}
+                                {i.options.map((o) => o.name).join(' · ')}
                               </span>
                             )}
-                            {i.notas && (
-                              <span className="block font-bold text-alerta-texto">¡{i.notas}!</span>
+                            {i.notes && (
+                              <span className="block font-bold text-alerta-texto">¡{i.notes}!</span>
                             )}
-                            {i.comensal && (
-                              <span className="block text-base text-texto-suave">
-                                P{i.comensal}
-                              </span>
+                            {i.guest && (
+                              <span className="block text-base text-texto-suave">P{i.guest}</span>
                             )}
                           </span>
-                          {listo && <Icono nombre="check" />}
-                          <span className="sr-only">{listo ? 'listo' : 'pendiente'}</span>
+                          {ready && <Icono name="check" />}
+                          <span className="sr-only">{ready ? 'listo' : 'pendiente'}</span>
                         </button>
                       </li>
                     )
@@ -145,18 +147,18 @@ export function Kds() {
                 </ul>
                 <div className="p-3">
                   <Boton
-                    variante={todos ? 'exito' : 'secundario'}
-                    grande
+                    variant={all ? 'success' : 'secondary'}
+                    large
                     icono="check"
                     className="w-full"
                     onClick={() => {
                       const ids = new Set(c.items.map((i) => i.id))
-                      cambiarMesa(c.mesa.numero, (mesa) => despachar(mesa, ids))
-                      avisar(`Mesa ${c.mesa.numero} despachada (${c.estacion})`, () =>
-                        cambiarMesa(c.mesa.numero, (mesa) => ({
-                          ...mesa,
-                          estado: mesa.estado === 'listo' ? 'en_cocina' : mesa.estado,
-                          items: mesa.items.map((i) =>
+                      cambiarMesa(c.table.numero, (table) => despachar(table, ids))
+                      avisar(`Mesa ${c.table.numero} despachada (${c.station})`, () =>
+                        cambiarMesa(c.table.numero, (table) => ({
+                          ...table,
+                          status: table.status === 'ready' ? 'in_kitchen' : table.status,
+                          items: table.items.map((i) =>
                             ids.has(i.id) ? { ...i, despachado: false } : i,
                           ),
                         })),

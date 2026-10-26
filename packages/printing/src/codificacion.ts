@@ -2,14 +2,14 @@
 // imprimen con una tabla de un byte por carácter que se elige con `ESC t n`. Cuál trae cada marca
 // varía, así que se configura por impresora y la página de prueba muestra las tildes (ADR-015).
 
-export const PAGINAS_CODIGOS = ['pc850', 'wpc1252', 'sin_tildes'] as const
+export const PAGINAS_CODIGOS = ['pc850', 'wpc1252', 'no_accents'] as const
 export type PaginaCodigos = (typeof PAGINAS_CODIGOS)[number]
 
 /** Número de la tabla para `ESC t n` (Epson ESC/POS). Sin tildes se queda en la de fábrica. */
 export const NUMERO_PAGINA: Record<PaginaCodigos, number | null> = {
   pc850: 2,
   wpc1252: 16,
-  sin_tildes: null,
+  no_accents: null,
 }
 
 // Solo lo que se escribe en una carta en español (y algo de portugués para Latam).
@@ -88,14 +88,14 @@ function sinTilde(caracter: string): string {
  * Deja solo caracteres imprimibles: un nombre con un byte de control (ESC, GS) le daría órdenes
  * a la impresora (cortar, abrir el cajón). Saltos de línea y tabuladores pasan a espacios.
  */
-export function limpiar(texto: string): string {
-  let salida = ''
-  for (const c of texto) {
+export function limpiar(text: string): string {
+  let output = ''
+  for (const c of text) {
     const n = c.codePointAt(0) ?? 0
-    if (n === 0x09 || n === 0x0a || n === 0x0b || n === 0x0c || n === 0x0d) salida += ' '
-    else if (!invisible(n)) salida += c
+    if (n === 0x09 || n === 0x0a || n === 0x0b || n === 0x0c || n === 0x0d) output += ' '
+    else if (!invisible(n)) output += c
   }
-  return salida
+  return output
 }
 
 /** Control, formato y direccionalidad: no se ven y algunos son órdenes para la impresora. */
@@ -111,21 +111,21 @@ const invisible = (n: number) =>
  * Cada carácter, ya como lo imprime esa tabla (uno por byte). Sirve para medir el ancho real de
  * una línea antes de partirla.
  */
-export function caracteres(texto: string, pagina: PaginaCodigos): string[] {
-  const salida: string[] = []
-  for (const c of limpiar(texto)) {
-    if (c >= ' ' && c <= '~') salida.push(c)
-    else if (pagina === 'pc850' && PC850[c] !== undefined) salida.push(c)
+export function caracteres(text: string, pagina: PaginaCodigos): string[] {
+  const output: string[] = []
+  for (const c of limpiar(text)) {
+    if (c >= ' ' && c <= '~') output.push(c)
+    else if (pagina === 'pc850' && PC850[c] !== undefined) output.push(c)
     else if (pagina === 'wpc1252' && c.charCodeAt(0) >= 0xa1 && c.charCodeAt(0) <= 0xff)
-      salida.push(c)
-    else salida.push(...sinTilde(c))
+      output.push(c)
+    else output.push(...sinTilde(c))
   }
-  return salida
+  return output
 }
 
 /** Bytes de un texto en esa tabla. Nunca produce un byte de control. */
-export function codificar(texto: string, pagina: PaginaCodigos): number[] {
-  return caracteres(texto, pagina).map((c) => {
+export function codificar(text: string, pagina: PaginaCodigos): number[] {
+  return caracteres(text, pagina).map((c) => {
     if (pagina === 'pc850') return PC850[c] ?? c.charCodeAt(0)
     return c.charCodeAt(0)
   })
@@ -135,11 +135,11 @@ const DESDE_PC850 = new Map(Object.entries(PC850).map(([c, b]) => [b, c]))
 
 /** Lo contrario de `codificar`: para leer en pantalla lo que recibió una impresora de prueba. */
 export function decodificar(bytes: Iterable<number>, pagina: PaginaCodigos): string {
-  let texto = ''
+  let text = ''
   for (const b of bytes) {
-    if (b < 0x80) texto += String.fromCharCode(b)
-    else if (pagina === 'pc850') texto += DESDE_PC850.get(b) ?? '?'
-    else texto += String.fromCharCode(b)
+    if (b < 0x80) text += String.fromCharCode(b)
+    else if (pagina === 'pc850') text += DESDE_PC850.get(b) ?? '?'
+    else text += String.fromCharCode(b)
   }
-  return texto
+  return text
 }

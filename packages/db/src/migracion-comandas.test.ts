@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { COLUMNAS_COMUNES, TABLAS_LOCALES, TABLAS_VERSIONADAS } from './esquema'
 import { MIGRACIONES } from './migraciones'
@@ -17,36 +17,36 @@ function baseVersion5() {
   const db = abrirBase(':memory:')
   aplicarMigraciones(db, HASTA_5)
   const s = sembrar(db)
-  const rol = insertarVersionado(db, 'rol', s.restaurante, { nombre: 'Mesero', sistema: 1 })
-  const rolCocina = insertarVersionado(db, 'rol', s.restaurante, { nombre: 'Cocina' })
-  const ana = insertarVersionado(db, 'usuario', s.restaurante, { nombre: 'Ana', rol_id: rol })
-  const luis = insertarVersionado(db, 'usuario', s.restaurante, {
-    nombre: 'Luis',
-    rol_id: rolCocina,
-    activo: 0,
+  const role = insertarVersionado(db, 'roles', s.restaurant, { name: 'Mesero', system: 1 })
+  const rolCocina = insertarVersionado(db, 'roles', s.restaurant, { name: 'Cocina' })
+  const ana = insertarVersionado(db, 'users', s.restaurant, { name: 'Ana', role_id: role })
+  const luis = insertarVersionado(db, 'users', s.restaurant, {
+    name: 'Luis',
+    role_id: rolCocina,
+    active: 0,
   })
-  const equipo = insertarVersionado(db, 'dispositivo', s.restaurante, {
-    sede_id: s.sede,
-    nombre: 'Celular de Ana',
-    tipo: 'mesero',
+  const device = insertarVersionado(db, 'devices', s.restaurant, {
+    location_id: s.location,
+    name: 'Celular de Ana',
+    type: 'waiter',
   })
-  const pantalla = insertarVersionado(db, 'dispositivo', s.restaurante, {
-    sede_id: s.sede,
-    nombre: 'Tablet vieja',
-    tipo: 'kds',
-    revocado_en: AHORA,
+  const screen = insertarVersionado(db, 'devices', s.restaurant, {
+    location_id: s.location,
+    name: 'Tablet vieja',
+    type: 'kds',
+    revoked_at: AHORA,
   })
-  const estacion = insertarVersionado(db, 'estacion', s.restaurante, { nombre: 'Cocina' })
-  insertarEnTabla(db, 'sesion', {
-    id: nuevoId(),
-    restaurante_id: s.restaurante,
-    usuario_id: ana,
-    dispositivo_id: equipo,
-    secreto_hash: 'h',
-    inicio: AHORA,
-    ultimo_uso: AHORA,
+  const station = insertarVersionado(db, 'stations', s.restaurant, { name: 'Cocina' })
+  insertarEnTabla(db, 'sessions', {
+    id: newId(),
+    restaurant_id: s.restaurant,
+    user_id: ana,
+    device_id: device,
+    secret_hash: 'h',
+    start: AHORA,
+    last_used: AHORA,
   })
-  return { db, ...s, rol, rolCocina, ana, luis, equipo, pantalla, estacion }
+  return { db, ...s, role, rolCocina, ana, luis, device, screen, station }
 }
 
 const migrada = () => {
@@ -59,39 +59,39 @@ const contar = (db: BaseSqlite, tabla: string) =>
   Number(db.prepare(`SELECT count(*) AS n FROM ${tabla}`).get()?.n)
 
 const TABLAS_ANTES = [
-  'restaurante',
-  'sede',
-  'zona',
-  'impuesto',
-  'categoria',
-  'producto',
-  'rol',
-  'usuario',
-  'dispositivo',
-  'estacion',
-  'sesion',
-  'contador',
-  'migracion',
+  'restaurants',
+  'locations',
+  'zones',
+  'taxes',
+  'categories',
+  'products',
+  'roles',
+  'users',
+  'devices',
+  'stations',
+  'sessions',
+  'counters',
+  'migrations',
 ] as const
 
 /** Una impresora de red con todo en regla; `campos` cambia lo que se quiera probar. */
-function impresora(
+function printer(
   db: BaseSqlite,
-  restaurante: string,
-  campos: Record<string, ValorSql> = {},
-  id: string = nuevoId(),
+  restaurant: string,
+  fields: Record<string, ValorSql> = {},
+  id: string = newId(),
 ) {
   return insertarVersionado(
     db,
-    'impresora',
-    restaurante,
+    'printers',
+    restaurant,
     {
-      nombre: 'Cocina',
-      conexion: 'red',
-      direccion: '192.168.1.50',
-      puerto: 9100,
-      ancho: 80,
-      ...campos,
+      name: 'Cocina',
+      connection: 'network',
+      address: '192.168.1.50',
+      port: 9100,
+      width: 80,
+      ...fields,
     },
     id,
   )
@@ -99,19 +99,19 @@ function impresora(
 
 function trabajo(
   db: BaseSqlite,
-  restaurante: string,
+  restaurant: string,
   impresoraId: string,
-  campos: Record<string, ValorSql> = {},
+  fields: Record<string, ValorSql> = {},
 ) {
-  const id = nuevoId()
-  insertarEnTabla(db, 'trabajo_impresion', {
+  const id = newId()
+  insertarEnTabla(db, 'print_jobs', {
     id,
-    restaurante_id: restaurante,
-    impresora_id: impresoraId,
-    tipo: 'comanda',
-    contenido: '{"estacion":"Cocina"}',
-    creado_en: AHORA,
-    ...campos,
+    restaurant_id: restaurant,
+    printer_id: impresoraId,
+    type: 'ticket',
+    content: '{"station":"Cocina"}',
+    created_at: AHORA,
+    ...fields,
   })
   return id
 }
@@ -119,13 +119,13 @@ function trabajo(
 describe('migración 6: ficha', () => {
   it('es la 6, se llama comandas y aplica sobre la 5 sin tocar nada más', () => {
     const { db } = baseVersion5()
-    expect(MIGRACIONES.find((m) => m.version === 6)?.nombre).toBe('comandas')
+    expect(MIGRACIONES.find((m) => m.version === 6)?.name).toBe('tickets')
     expect(versionActual(db)).toBe(5)
     expect(aplicarMigraciones(db, HASTA_6)).toEqual([6])
     expect(versionActual(db)).toBe(6)
-    const registro = db.prepare('SELECT * FROM migracion WHERE version = 6').get()
+    const registro = db.prepare('SELECT * FROM migrations WHERE version = 6').get()
     expect(registro).toMatchObject({
-      nombre: 'comandas',
+      name: 'tickets',
       hash: huellaSql(MIGRACIONES[5]?.sql as string),
     })
   })
@@ -142,56 +142,54 @@ describe('migración 6: ficha', () => {
 
   it('las dos tablas nuevas son STRICT y quedan en su categoría', () => {
     const { db } = migrada()
-    const tablas = db.prepare('PRAGMA table_list').all()
-    for (const nombre of ['impresora', 'trabajo_impresion'])
-      expect(tablas.find((t) => t.name === nombre)).toMatchObject({ strict: 1 })
-    expect(TABLAS_VERSIONADAS).toContain('impresora')
-    expect(TABLAS_LOCALES).toContain('trabajo_impresion')
+    const sqlTables = db.prepare('PRAGMA table_list').all()
+    for (const name of ['printers', 'print_jobs'])
+      expect(sqlTables.find((t) => t.name === name)).toMatchObject({ strict: 1 })
+    expect(TABLAS_VERSIONADAS).toContain('printers')
+    expect(TABLAS_LOCALES).toContain('print_jobs')
     const columnas = db
-      .prepare("SELECT name FROM pragma_table_info('impresora')")
+      .prepare("SELECT name FROM pragma_table_info('printers')")
       .all()
       .map((c) => c.name)
-    for (const comun of COLUMNAS_COMUNES) expect(columnas).toContain(comun)
+    for (const common of COLUMNAS_COMUNES) expect(columnas).toContain(common)
   })
 })
 
 describe('migración 6: no se pierde nada', () => {
   it('ninguna fila de las tablas anteriores desaparece ni cambia', () => {
     const base = baseVersion5()
-    const antes = Object.fromEntries(TABLAS_ANTES.map((t) => [t, contar(base.db, t)]))
-    const filasAntes = base.db.prepare('SELECT * FROM usuario ORDER BY id').all()
-    const dispositivosAntes = base.db.prepare('SELECT * FROM dispositivo ORDER BY id').all()
-    const rolesAntes = base.db.prepare('SELECT * FROM rol ORDER BY id').all()
-    expect(antes.usuario).toBe(2)
-    expect(antes.dispositivo).toBe(2)
+    const before = Object.fromEntries(TABLAS_ANTES.map((t) => [t, contar(base.db, t)]))
+    const filasAntes = base.db.prepare('SELECT * FROM users ORDER BY id').all()
+    const dispositivosAntes = base.db.prepare('SELECT * FROM devices ORDER BY id').all()
+    const rolesAntes = base.db.prepare('SELECT * FROM roles ORDER BY id').all()
+    expect(before.users).toBe(2)
+    expect(before.devices).toBe(2)
     aplicarMigraciones(base.db, HASTA_6)
     // `migracion` crece en una fila (la 6); el resto queda igual.
-    for (const t of TABLAS_ANTES) expect(contar(base.db, t)).toBe(t === 'migracion' ? 6 : antes[t])
-    const sinColumnaNueva = (filas: Record<string, ValorSql>[], nueva: string) =>
-      filas.map(({ [nueva]: _, ...resto }) => resto)
+    for (const t of TABLAS_ANTES)
+      expect(contar(base.db, t)).toBe(t === 'migrations' ? 6 : before[t])
+    const sinColumnaNueva = (rows: Record<string, ValorSql>[], newOne: string) =>
+      rows.map(({ [newOne]: _, ...rest }) => rest)
     expect(
-      sinColumnaNueva(base.db.prepare('SELECT * FROM usuario ORDER BY id').all(), 'pantalla'),
+      sinColumnaNueva(base.db.prepare('SELECT * FROM users ORDER BY id').all(), 'screen'),
     ).toEqual(filasAntes)
     expect(
-      sinColumnaNueva(
-        base.db.prepare('SELECT * FROM dispositivo ORDER BY id').all(),
-        'estacion_ids',
-      ),
+      sinColumnaNueva(base.db.prepare('SELECT * FROM devices ORDER BY id').all(), 'station_ids'),
     ).toEqual(dispositivosAntes)
     expect(
-      sinColumnaNueva(base.db.prepare('SELECT * FROM rol ORDER BY id').all(), 'oculto'),
+      sinColumnaNueva(base.db.prepare('SELECT * FROM roles ORDER BY id').all(), 'hidden'),
     ).toEqual(rolesAntes)
   })
 
   it('lo que ya existía queda como antes: personas reales, roles visibles, equipos sin estaciones', () => {
     const { db } = migrada()
-    expect(db.prepare('SELECT DISTINCT pantalla FROM usuario').all()).toEqual([{ pantalla: 0 }])
-    expect(db.prepare('SELECT DISTINCT oculto FROM rol').all()).toEqual([{ oculto: 0 }])
-    expect(db.prepare('SELECT DISTINCT estacion_ids FROM dispositivo').all()).toEqual([
-      { estacion_ids: null },
+    expect(db.prepare('SELECT DISTINCT screen FROM users').all()).toEqual([{ screen: 0 }])
+    expect(db.prepare('SELECT DISTINCT hidden FROM roles').all()).toEqual([{ hidden: 0 }])
+    expect(db.prepare('SELECT DISTINCT station_ids FROM devices').all()).toEqual([
+      { station_ids: null },
     ])
-    expect(contar(db, 'impresora')).toBe(0)
-    expect(contar(db, 'trabajo_impresion')).toBe(0)
+    expect(contar(db, 'printers')).toBe(0)
+    expect(contar(db, 'print_jobs')).toBe(0)
   })
 
   it('la base queda íntegra: sin referencias rotas', () => {
@@ -201,63 +199,64 @@ describe('migración 6: no se pierde nada', () => {
   })
 
   it('un equipo que ya era pantalla (kds) sigue siendo kds y puede recibir estaciones', () => {
-    const { db, pantalla, estacion } = migrada()
-    expect(db.prepare('SELECT tipo FROM dispositivo WHERE id = ?').get(pantalla)).toEqual({
-      tipo: 'kds',
+    const { db, screen, station } = migrada()
+    expect(db.prepare('SELECT type FROM devices WHERE id = ?').get(screen)).toEqual({
+      type: 'kds',
     })
-    db.prepare('UPDATE dispositivo SET estacion_ids = ? WHERE id = ?').run(
-      JSON.stringify([estacion]),
-      pantalla,
+    db.prepare('UPDATE devices SET station_ids = ? WHERE id = ?').run(
+      JSON.stringify([station]),
+      screen,
     )
-    expect(db.prepare('SELECT estacion_ids FROM dispositivo WHERE id = ?').get(pantalla)).toEqual({
-      estacion_ids: JSON.stringify([estacion]),
+    expect(db.prepare('SELECT station_ids FROM devices WHERE id = ?').get(screen)).toEqual({
+      station_ids: JSON.stringify([station]),
     })
   })
 
   it('una migración que falla a medias deja la base en la 5 (todo o nada)', () => {
     const { db } = baseVersion5()
-    const rota = {
+    const broken = {
       version: 6,
-      nombre: 'comandas',
-      sql: `${MIGRACIONES[5]?.sql}\nCREATE TABLE impresora (x TEXT) STRICT;`,
+      name: 'tickets',
+      sql: `${MIGRACIONES[5]?.sql}
+CREATE TABLE printers (x TEXT) STRICT;`,
     }
-    expect(() => aplicarMigraciones(db, [...HASTA_5, rota])).toThrow()
+    expect(() => aplicarMigraciones(db, [...HASTA_5, broken])).toThrow()
     expect(versionActual(db)).toBe(5)
-    const nombres = db
+    const names = db
       .prepare("SELECT name FROM sqlite_schema WHERE type = 'table'")
       .all()
       .map((t) => t.name)
-    expect(nombres).not.toContain('impresora')
-    expect(nombres).not.toContain('trabajo_impresion')
-    const columnas = db.prepare("SELECT name FROM pragma_table_info('usuario')").all()
-    expect(columnas.map((c) => c.name)).not.toContain('pantalla')
+    expect(names).not.toContain('printers')
+    expect(names).not.toContain('print_jobs')
+    const columnas = db.prepare("SELECT name FROM pragma_table_info('users')").all()
+    expect(columnas.map((c) => c.name)).not.toContain('screen')
   })
 })
 
 describe('migración 6: columnas nuevas de equipo, persona y rol', () => {
   it.each([
-    ['usuario', 'pantalla'],
-    ['rol', 'oculto'],
+    ['users', 'screen'],
+    ['roles', 'hidden'],
   ])('%s.%s solo acepta 0 y 1', (tabla, columna) => {
-    const { db, ana, rol } = migrada()
-    const id = tabla === 'usuario' ? ana : rol
+    const { db, ana, role } = migrada()
+    const id = tabla === 'users' ? ana : role
     expect(() =>
       db.prepare(`UPDATE ${tabla} SET ${columna} = 1 WHERE id = ?`).run(id),
     ).not.toThrow()
     expect(() =>
       db.prepare(`UPDATE ${tabla} SET ${columna} = 0 WHERE id = ?`).run(id),
     ).not.toThrow()
-    for (const malo of [2, -1])
+    for (const badCase of [2, -1])
       expect(() =>
-        db.prepare(`UPDATE ${tabla} SET ${columna} = ? WHERE id = ?`).run(malo, id),
+        db.prepare(`UPDATE ${tabla} SET ${columna} = ? WHERE id = ?`).run(badCase, id),
       ).toThrow(/CHECK/)
     expect(() => db.prepare(`UPDATE ${tabla} SET ${columna} = NULL WHERE id = ?`).run(id)).toThrow()
   })
 
   it('dispositivo.estacion_ids acepta NULL y JSON, y rechaza texto que no es JSON', () => {
-    const { db, equipo } = migrada()
+    const { db, device } = migrada()
     const poner = (v: string | null) =>
-      db.prepare('UPDATE dispositivo SET estacion_ids = ? WHERE id = ?').run(v, equipo)
+      db.prepare('UPDATE devices SET station_ids = ? WHERE id = ?').run(v, device)
     expect(() => poner(null)).not.toThrow()
     expect(() => poner('[]')).not.toThrow()
     expect(() => poner('["a","b"]')).not.toThrow()
@@ -268,315 +267,304 @@ describe('migración 6: columnas nuevas de equipo, persona y rol', () => {
 
 describe('migración 6: tabla impresora', () => {
   it('una impresora de red con sus valores de fábrica', () => {
-    const { db, restaurante } = migrada()
-    const id = impresora(db, restaurante)
-    expect(db.prepare('SELECT * FROM impresora WHERE id = ?').get(id)).toMatchObject({
-      activo: 1,
-      pagina_codigos: 'pc850',
-      estacion_ids: '[]',
-      respaldo_id: null,
-      puerto: 9100,
+    const { db, restaurant } = migrada()
+    const id = printer(db, restaurant)
+    expect(db.prepare('SELECT * FROM printers WHERE id = ?').get(id)).toMatchObject({
+      active: 1,
+      code_page: 'pc850',
+      station_ids: '[]',
+      fallback_id: null,
+      port: 9100,
     })
   })
 
   it('una impresora USB no lleva puerto', () => {
-    const { db, restaurante } = migrada()
+    const { db, restaurant } = migrada()
     expect(() =>
-      impresora(db, restaurante, { conexion: 'usb', direccion: 'POS-80', puerto: null }),
+      printer(db, restaurant, { connection: 'usb', address: 'POS-80', port: null }),
     ).not.toThrow()
   })
 
   it.each([
-    ['conexión desconocida', { conexion: 'bluetooth' }],
-    ['ancho 57', { ancho: 57 }],
-    ['ancho 0', { ancho: 0 }],
-    ['página de códigos inventada', { pagina_codigos: 'utf8' }],
-    ['nombre vacío', { nombre: '' }],
-    ['nombre de 61', { nombre: 'a'.repeat(61) }],
-    ['dirección vacía', { direccion: '' }],
-    ['dirección de 256', { direccion: 'a'.repeat(256) }],
-    ['puerto 0', { puerto: 0 }],
-    ['puerto 65536', { puerto: 65536 }],
-    ['puerto negativo', { puerto: -1 }],
-    ['estaciones que no son JSON', { estacion_ids: '[Cocina' }],
-    ['activo 2', { activo: 2 }],
+    ['conexión desconocida', { connection: 'bluetooth' }],
+    ['ancho 57', { width: 57 }],
+    ['ancho 0', { width: 0 }],
+    ['página de códigos inventada', { code_page: 'utf8' }],
+    ['nombre vacío', { name: '' }],
+    ['nombre de 61', { name: 'a'.repeat(61) }],
+    ['dirección vacía', { address: '' }],
+    ['dirección de 256', { address: 'a'.repeat(256) }],
+    ['puerto 0', { port: 0 }],
+    ['puerto 65536', { port: 65536 }],
+    ['puerto negativo', { port: -1 }],
+    ['estaciones que no son JSON', { station_ids: '[Cocina' }],
+    ['activo 2', { active: 2 }],
     ['versión negativa', { version: -1 }],
-  ])('rechaza %s', (_, campos) => {
-    const { db, restaurante } = migrada()
-    expect(() => impresora(db, restaurante, campos as Record<string, ValorSql>)).toThrow()
+  ])('rechaza %s', (_, fields) => {
+    const { db, restaurant } = migrada()
+    expect(() => printer(db, restaurant, fields as Record<string, ValorSql>)).toThrow()
   })
 
   it.each([
-    ['nombre de 1', { nombre: 'a' }],
-    ['nombre de 60', { nombre: 'a'.repeat(60) }],
-    ['dirección de 255', { direccion: 'a'.repeat(255) }],
-    ['puerto 1', { puerto: 1 }],
-    ['puerto 65535', { puerto: 65535 }],
-    ['ancho 58', { ancho: 58 }],
-    ['página wpc1252', { pagina_codigos: 'wpc1252' }],
-    ['página sin_tildes', { pagina_codigos: 'sin_tildes' }],
-    ['sin puerto', { puerto: null }],
-  ])('acepta %s', (_, campos) => {
-    const { db, restaurante } = migrada()
-    expect(() => impresora(db, restaurante, campos as Record<string, ValorSql>)).not.toThrow()
+    ['nombre de 1', { name: 'a' }],
+    ['nombre de 60', { name: 'a'.repeat(60) }],
+    ['dirección de 255', { address: 'a'.repeat(255) }],
+    ['puerto 1', { port: 1 }],
+    ['puerto 65535', { port: 65535 }],
+    ['ancho 58', { width: 58 }],
+    ['página wpc1252', { code_page: 'wpc1252' }],
+    ['página no_accents', { code_page: 'no_accents' }],
+    ['sin puerto', { port: null }],
+  ])('acepta %s', (_, fields) => {
+    const { db, restaurant } = migrada()
+    expect(() => printer(db, restaurant, fields as Record<string, ValorSql>)).not.toThrow()
   })
 
   it('el id debe ser un ULID de 26 caracteres', () => {
-    const { db, restaurante } = migrada()
-    expect(() => impresora(db, restaurante, {}, 'corto')).toThrow(/CHECK/)
+    const { db, restaurant } = migrada()
+    expect(() => printer(db, restaurant, {}, 'corto')).toThrow(/CHECK/)
   })
 
   it('una impresora no puede ser su propio respaldo, ni apuntar a una que no existe', () => {
-    const { db, restaurante } = migrada()
-    const id = nuevoId()
-    expect(() => impresora(db, restaurante, { respaldo_id: id }, id)).toThrow(/CHECK/)
-    expect(() => impresora(db, restaurante, { respaldo_id: nuevoId() })).toThrow(/FOREIGN KEY/)
-    const otra = impresora(db, restaurante)
-    expect(() => impresora(db, restaurante, { respaldo_id: otra })).not.toThrow()
+    const { db, restaurant } = migrada()
+    const id = newId()
+    expect(() => printer(db, restaurant, { fallback_id: id }, id)).toThrow(/CHECK/)
+    expect(() => printer(db, restaurant, { fallback_id: newId() })).toThrow(/FOREIGN KEY/)
+    const another = printer(db, restaurant)
+    expect(() => printer(db, restaurant, { fallback_id: another })).not.toThrow()
     // Cambiarse a sí misma como respaldo después tampoco.
     expect(() =>
-      db.prepare('UPDATE impresora SET respaldo_id = id WHERE id = ?').run(otra),
+      db.prepare('UPDATE printers SET fallback_id = id WHERE id = ?').run(another),
     ).toThrow(/CHECK/)
   })
 
   it('no se borra: se archiva', () => {
-    const { db, restaurante } = migrada()
-    const id = impresora(db, restaurante)
-    expect(() => db.prepare('DELETE FROM impresora WHERE id = ?').run(id)).toThrow(/se archiva/)
-    expect(() => db.prepare('UPDATE impresora SET activo = 0 WHERE id = ?').run(id)).not.toThrow()
-    expect(contar(db, 'impresora')).toBe(1)
+    const { db, restaurant } = migrada()
+    const id = printer(db, restaurant)
+    expect(() => db.prepare('DELETE FROM printers WHERE id = ?').run(id)).toThrow(/se archiva/)
+    expect(() => db.prepare('UPDATE printers SET active = 0 WHERE id = ?').run(id)).not.toThrow()
+    expect(contar(db, 'printers')).toBe(1)
   })
 
   it('exige un restaurante que exista', () => {
     const { db } = migrada()
-    expect(() => impresora(db, nuevoId())).toThrow(/FOREIGN KEY/)
+    expect(() => printer(db, newId())).toThrow(/FOREIGN KEY/)
   })
 })
 
 describe('migración 6: cola de impresión (trabajo_impresion)', () => {
   it('un trabajo nuevo nace pendiente, sin intentos y sin hora de fin', () => {
-    const { db, restaurante } = migrada()
-    const p = impresora(db, restaurante)
-    const id = trabajo(db, restaurante, p)
-    expect(db.prepare('SELECT * FROM trabajo_impresion WHERE id = ?').get(id)).toMatchObject({
-      estado: 'pendiente',
-      intentos: 0,
-      terminado_en: null,
-      ultimo_error: null,
-      impreso_en_id: null,
-      descartado_por_id: null,
+    const { db, restaurant } = migrada()
+    const p = printer(db, restaurant)
+    const id = trabajo(db, restaurant, p)
+    expect(db.prepare('SELECT * FROM print_jobs WHERE id = ?').get(id)).toMatchObject({
+      status: 'pending',
+      attempts: 0,
+      finished_at: null,
+      last_error: null,
+      printed_on_id: null,
+      discarded_by_id: null,
     })
   })
 
   it.each([
-    ['tipo desconocido', { tipo: 'factura' }],
-    ['estado desconocido', { estado: 'enviado' }],
-    ['intentos negativos', { intentos: -1 }],
-    ['contenido que no es JSON', { contenido: 'comanda' }],
-    ['pendiente con hora de fin', { terminado_en: AHORA }],
-    ['impreso sin hora de fin', { estado: 'impreso', impreso_en_id: 'x' }],
-    ['descartado sin hora de fin', { estado: 'descartado' }],
+    ['tipo desconocido', { type: 'factura' }],
+    ['estado desconocido', { status: 'sent' }],
+    ['intentos negativos', { attempts: -1 }],
+    ['contenido que no es JSON', { content: 'comanda' }],
+    ['pendiente con hora de fin', { finished_at: AHORA }],
+    ['impreso sin hora de fin', { status: 'printed', printed_on_id: 'x' }],
+    ['descartado sin hora de fin', { status: 'discarded' }],
     ['id corto', { id: 'corto' }],
-  ])('rechaza %s', (_, campos) => {
-    const { db, restaurante } = migrada()
-    const p = impresora(db, restaurante)
-    expect(() => trabajo(db, restaurante, p, campos as Record<string, ValorSql>)).toThrow()
+  ])('rechaza %s', (_, fields) => {
+    const { db, restaurant } = migrada()
+    const p = printer(db, restaurant)
+    expect(() => trabajo(db, restaurant, p, fields as Record<string, ValorSql>)).toThrow()
   })
 
   it('impreso exige decir en qué impresora salió', () => {
-    const { db, restaurante } = migrada()
-    const p = impresora(db, restaurante)
-    expect(() => trabajo(db, restaurante, p, { estado: 'impreso', terminado_en: AHORA })).toThrow(
+    const { db, restaurant } = migrada()
+    const p = printer(db, restaurant)
+    expect(() => trabajo(db, restaurant, p, { status: 'printed', finished_at: AHORA })).toThrow(
       /CHECK/,
     )
     expect(() =>
-      trabajo(db, restaurante, p, { estado: 'impreso', terminado_en: AHORA, impreso_en_id: p }),
+      trabajo(db, restaurant, p, { status: 'printed', finished_at: AHORA, printed_on_id: p }),
     ).not.toThrow()
   })
 
   it('descartado puede ser por una persona o por el hub (sin persona)', () => {
-    const { db, restaurante, ana } = migrada()
-    const p = impresora(db, restaurante)
+    const { db, restaurant, ana } = migrada()
+    const p = printer(db, restaurant)
     expect(() =>
-      trabajo(db, restaurante, p, {
-        estado: 'descartado',
-        terminado_en: AHORA,
-        descartado_por_id: ana,
+      trabajo(db, restaurant, p, {
+        status: 'discarded',
+        finished_at: AHORA,
+        discarded_by_id: ana,
       }),
     ).not.toThrow()
     expect(() =>
-      trabajo(db, restaurante, p, { estado: 'descartado', terminado_en: AHORA }),
+      trabajo(db, restaurant, p, { status: 'discarded', finished_at: AHORA }),
     ).not.toThrow()
     expect(() =>
-      trabajo(db, restaurante, p, {
-        estado: 'descartado',
-        terminado_en: AHORA,
-        descartado_por_id: nuevoId(),
+      trabajo(db, restaurant, p, {
+        status: 'discarded',
+        finished_at: AHORA,
+        discarded_by_id: newId(),
       }),
     ).toThrow(/FOREIGN KEY/)
   })
 
   it('un trabajo pasa de pendiente a impreso, pero no vuelve a pendiente sin hora de fin', () => {
-    const { db, restaurante } = migrada()
-    const p = impresora(db, restaurante)
-    const id = trabajo(db, restaurante, p)
+    const { db, restaurant } = migrada()
+    const p = printer(db, restaurant)
+    const id = trabajo(db, restaurant, p)
     db.prepare(
-      "UPDATE trabajo_impresion SET estado = 'impreso', terminado_en = ?, impreso_en_id = ? WHERE id = ?",
+      "UPDATE print_jobs SET status = 'printed', finished_at = ?, printed_on_id = ? WHERE id = ?",
     ).run(AHORA, p, id)
     expect(() =>
-      db.prepare("UPDATE trabajo_impresion SET estado = 'pendiente' WHERE id = ?").run(id),
+      db.prepare("UPDATE print_jobs SET status = 'pending' WHERE id = ?").run(id),
     ).toThrow(/CHECK/)
   })
 
   it('apunta a impresoras que existen', () => {
-    const { db, restaurante } = migrada()
-    expect(() => trabajo(db, restaurante, nuevoId())).toThrow(/FOREIGN KEY/)
-    const p = impresora(db, restaurante)
+    const { db, restaurant } = migrada()
+    expect(() => trabajo(db, restaurant, newId())).toThrow(/FOREIGN KEY/)
+    const p = printer(db, restaurant)
     expect(() =>
-      trabajo(db, restaurante, p, {
-        estado: 'impreso',
-        terminado_en: AHORA,
-        impreso_en_id: nuevoId(),
+      trabajo(db, restaurant, p, {
+        status: 'printed',
+        finished_at: AHORA,
+        printed_on_id: newId(),
       }),
     ).toThrow(/FOREIGN KEY/)
   })
 
   it('no se borra nunca: ni siquiera el impreso', () => {
-    const { db, restaurante } = migrada()
-    const p = impresora(db, restaurante)
-    const id = trabajo(db, restaurante, p, {
-      estado: 'impreso',
-      terminado_en: AHORA,
-      impreso_en_id: p,
+    const { db, restaurant } = migrada()
+    const p = printer(db, restaurant)
+    const id = trabajo(db, restaurant, p, {
+      status: 'printed',
+      finished_at: AHORA,
+      printed_on_id: p,
     })
-    expect(() => db.prepare('DELETE FROM trabajo_impresion WHERE id = ?').run(id)).toThrow(
-      /no se borra/,
-    )
-    expect(() => db.prepare('DELETE FROM trabajo_impresion').run()).toThrow(/no se borra/)
-    expect(contar(db, 'trabajo_impresion')).toBe(1)
+    expect(() => db.prepare('DELETE FROM print_jobs WHERE id = ?').run(id)).toThrow(/no se borra/)
+    expect(() => db.prepare('DELETE FROM print_jobs').run()).toThrow(/no se borra/)
+    expect(contar(db, 'print_jobs')).toBe(1)
   })
 
   it('archivar una impresora con trabajos no borra ni toca sus trabajos', () => {
-    const { db, restaurante } = migrada()
-    const p = impresora(db, restaurante)
-    trabajo(db, restaurante, p)
-    trabajo(db, restaurante, p)
-    db.prepare('UPDATE impresora SET activo = 0 WHERE id = ?').run(p)
-    expect(contar(db, 'trabajo_impresion')).toBe(2)
+    const { db, restaurant } = migrada()
+    const p = printer(db, restaurant)
+    trabajo(db, restaurant, p)
+    trabajo(db, restaurant, p)
+    db.prepare('UPDATE printers SET active = 0 WHERE id = ?').run(p)
+    expect(contar(db, 'print_jobs')).toBe(2)
     expect(
-      db.prepare("SELECT count(*) AS n FROM trabajo_impresion WHERE estado = 'pendiente'").get(),
+      db.prepare("SELECT count(*) AS n FROM print_jobs WHERE status = 'pending'").get(),
     ).toEqual({ n: 2 })
   })
 })
 
 describe('migración 6: el índice único impide duplicar la comanda', () => {
-  const evento = nuevoId()
-  const comanda = nuevoId()
+  const event = newId()
+  const ticket = newId()
 
   it('el mismo evento, la misma comanda y la misma impresora no se guardan dos veces', () => {
-    const { db, restaurante } = migrada()
-    const p = impresora(db, restaurante)
-    trabajo(db, restaurante, p, { evento_id: evento, comanda_id: comanda })
-    expect(() => trabajo(db, restaurante, p, { evento_id: evento, comanda_id: comanda })).toThrow(
+    const { db, restaurant } = migrada()
+    const p = printer(db, restaurant)
+    trabajo(db, restaurant, p, { event_id: event, ticket_id: ticket })
+    expect(() => trabajo(db, restaurant, p, { event_id: event, ticket_id: ticket })).toThrow(
       /UNIQUE/,
     )
-    expect(contar(db, 'trabajo_impresion')).toBe(1)
+    expect(contar(db, 'print_jobs')).toBe(1)
   })
 
   it('con ON CONFLICT DO NOTHING (como lo usa el hub) el reintento se ignora sin error', () => {
-    const { db, restaurante } = migrada()
-    const p = impresora(db, restaurante)
+    const { db, restaurant } = migrada()
+    const p = printer(db, restaurant)
     const insertar = () =>
       db
         .prepare(
-          `INSERT INTO trabajo_impresion (id, restaurante_id, impresora_id, tipo, evento_id, comanda_id, contenido, creado_en)
-           VALUES (?, ?, ?, 'comanda', ?, ?, '{}', ?) ON CONFLICT DO NOTHING`,
+          `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, event_id, ticket_id, content, created_at)
+           VALUES (?, ?, ?, 'ticket', ?, ?, '{}', ?) ON CONFLICT DO NOTHING`,
         )
-        .run(nuevoId(), restaurante, p, evento, comanda, AHORA)
+        .run(newId(), restaurant, p, event, ticket, AHORA)
     expect(Number(insertar().changes)).toBe(1)
     expect(Number(insertar().changes)).toBe(0)
-    expect(contar(db, 'trabajo_impresion')).toBe(1)
+    expect(contar(db, 'print_jobs')).toBe(1)
   })
 
   it('también cuenta aunque el primero ya se imprimió o se descartó', () => {
-    const { db, restaurante } = migrada()
-    const p = impresora(db, restaurante)
-    trabajo(db, restaurante, p, {
-      evento_id: evento,
-      comanda_id: comanda,
-      estado: 'impreso',
-      terminado_en: AHORA,
-      impreso_en_id: p,
+    const { db, restaurant } = migrada()
+    const p = printer(db, restaurant)
+    trabajo(db, restaurant, p, {
+      event_id: event,
+      ticket_id: ticket,
+      status: 'printed',
+      finished_at: AHORA,
+      printed_on_id: p,
     })
-    expect(() => trabajo(db, restaurante, p, { evento_id: evento, comanda_id: comanda })).toThrow(
+    expect(() => trabajo(db, restaurant, p, { event_id: event, ticket_id: ticket })).toThrow(
       /UNIQUE/,
     )
   })
 
   it('la misma comanda en otra impresora, u otra comanda del mismo evento, sí se guarda', () => {
-    const { db, restaurante } = migrada()
-    const p1 = impresora(db, restaurante)
-    const p2 = impresora(db, restaurante, { nombre: 'Barra' })
-    trabajo(db, restaurante, p1, { evento_id: evento, comanda_id: comanda })
+    const { db, restaurant } = migrada()
+    const p1 = printer(db, restaurant)
+    const p2 = printer(db, restaurant, { name: 'Barra' })
+    trabajo(db, restaurant, p1, { event_id: event, ticket_id: ticket })
+    expect(() => trabajo(db, restaurant, p2, { event_id: event, ticket_id: ticket })).not.toThrow()
+    expect(() => trabajo(db, restaurant, p1, { event_id: event, ticket_id: newId() })).not.toThrow()
     expect(() =>
-      trabajo(db, restaurante, p2, { evento_id: evento, comanda_id: comanda }),
+      trabajo(db, restaurant, p1, { event_id: newId(), ticket_id: ticket }),
     ).not.toThrow()
-    expect(() =>
-      trabajo(db, restaurante, p1, { evento_id: evento, comanda_id: nuevoId() }),
-    ).not.toThrow()
-    expect(() =>
-      trabajo(db, restaurante, p1, { evento_id: nuevoId(), comanda_id: comanda }),
-    ).not.toThrow()
-    expect(contar(db, 'trabajo_impresion')).toBe(4)
+    expect(contar(db, 'print_jobs')).toBe(4)
   })
 
   it('las páginas de prueba (sin evento) pueden repetirse todas las veces que se quiera', () => {
-    const { db, restaurante } = migrada()
-    const p = impresora(db, restaurante)
-    for (let i = 0; i < 3; i++) trabajo(db, restaurante, p, { tipo: 'prueba' })
-    expect(contar(db, 'trabajo_impresion')).toBe(3)
+    const { db, restaurant } = migrada()
+    const p = printer(db, restaurant)
+    for (let i = 0; i < 3; i++) trabajo(db, restaurant, p, { type: 'test' })
+    expect(contar(db, 'print_jobs')).toBe(3)
   })
 
   it('un trabajo sin comanda (comanda_id NULL) de un mismo evento no queda cubierto por el índice', () => {
     // Documenta el límite del índice: SQLite no compara NULL con NULL. El hub siempre manda
-    // `comanda_id`, así que esto no pasa en uso normal.
-    const { db, restaurante } = migrada()
-    const p = impresora(db, restaurante)
-    trabajo(db, restaurante, p, { evento_id: evento })
-    expect(() => trabajo(db, restaurante, p, { evento_id: evento })).not.toThrow()
+    // `ticket_id`, así que esto no pasa en uso normal.
+    const { db, restaurant } = migrada()
+    const p = printer(db, restaurant)
+    trabajo(db, restaurant, p, { event_id: event })
+    expect(() => trabajo(db, restaurant, p, { event_id: event })).not.toThrow()
   })
 
   it('el índice es parcial: existe con ese nombre y solo cubre trabajos con evento', () => {
     const { db } = migrada()
     const indice = db
-      .prepare(
-        "SELECT sql FROM sqlite_schema WHERE type = 'index' AND name = 'trabajo_impresion_unico'",
-      )
+      .prepare("SELECT sql FROM sqlite_schema WHERE type = 'index' AND name = 'print_jobs_unique'")
       .get()
     expect(String(indice?.sql)).toMatch(/UNIQUE/i)
-    expect(String(indice?.sql)).toMatch(/WHERE evento_id IS NOT NULL/i)
+    expect(String(indice?.sql)).toMatch(/WHERE event_id IS NOT NULL/i)
   })
 })
 
 describe('migración 6: varios restaurantes en la misma base', () => {
   it('cada restaurante tiene sus impresoras y su cola; los conteos no se cruzan', () => {
-    const { db, restaurante } = migrada()
-    const otro = sembrar(db).restaurante
-    const p1 = impresora(db, restaurante)
-    const p2 = impresora(db, otro)
-    trabajo(db, restaurante, p1)
-    trabajo(db, otro, p2)
-    trabajo(db, otro, p2)
-    const por = (r: string) =>
-      Number(
-        db.prepare('SELECT count(*) AS n FROM trabajo_impresion WHERE restaurante_id = ?').get(r)
-          ?.n,
-      )
-    expect(por(restaurante)).toBe(1)
-    expect(por(otro)).toBe(2)
+    const { db, restaurant } = migrada()
+    const other = sembrar(db).restaurant
+    const p1 = printer(db, restaurant)
+    const p2 = printer(db, other)
+    trabajo(db, restaurant, p1)
+    trabajo(db, other, p2)
+    trabajo(db, other, p2)
+    const lookup = (r: string) =>
+      Number(db.prepare('SELECT count(*) AS n FROM print_jobs WHERE restaurant_id = ?').get(r)?.n)
+    expect(lookup(restaurant)).toBe(1)
+    expect(lookup(other)).toBe(2)
     expect(
       Number(
-        db.prepare('SELECT count(*) AS n FROM impresora WHERE restaurante_id = ?').get(otro)?.n,
+        db.prepare('SELECT count(*) AS n FROM printers WHERE restaurant_id = ?').get(other)?.n,
       ),
     ).toBe(1)
   })

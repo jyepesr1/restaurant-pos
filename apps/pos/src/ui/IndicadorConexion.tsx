@@ -4,25 +4,25 @@ import type { NombreIcono } from './iconos'
 // Indicador permanente de conexión y de impresoras (brief §5, regla 7). "Solo red local" es lo
 // normal sin internet: el salón sigue operando con el hub (ADR-001).
 
-export type EstadoConexion = 'en_linea' | 'solo_local' | 'conectando' | 'sin_conexion'
+export type EstadoConexion = 'online' | 'local_only' | 'connecting' | 'offline'
 
-const ESTADOS: Record<EstadoConexion, { tono: Tono; icono: NombreIcono; texto: string }> = {
-  en_linea: { tono: 'libre', icono: 'wifi', texto: 'En línea' },
+const ESTADOS: Record<EstadoConexion, { tono: Tono; icono: NombreIcono; text: string }> = {
+  online: { tono: 'free', icono: 'wifi', text: 'En línea' },
   // Lo normal sin internet: neutro, no ámbar (ámbar es "en espera").
-  solo_local: { tono: 'neutro', icono: 'local', texto: 'Solo red local' },
-  conectando: { tono: 'neutro', icono: 'reloj', texto: 'Conectando…' },
-  sin_conexion: { tono: 'alerta', icono: 'sinWifi', texto: 'Sin conexión' },
+  local_only: { tono: 'neutral', icono: 'local', text: 'Solo red local' },
+  connecting: { tono: 'neutral', icono: 'clock', text: 'Conectando…' },
+  offline: { tono: 'warning', icono: 'noWifi', text: 'Sin conexión' },
 }
 
 export function IndicadorConexion({
-  estado,
-  pendientes = 0,
+  status,
+  pendingList = 0,
   impresorasConFalla = 0,
   compacto = false,
 }: {
-  estado: EstadoConexion
+  status: EstadoConexion
   /** Eventos guardados aquí que el hub aún no confirma. */
-  pendientes?: number
+  pendingList?: number
   impresorasConFalla?: number
   /**
    * En el celular, lo normal («Solo red local») se abrevia «Local», para que el encabezado quepa
@@ -30,26 +30,26 @@ export function IndicadorConexion({
    */
   compacto?: boolean
 }) {
-  const e = ESTADOS[estado]
+  const e = ESTADOS[status]
   return (
     <div className="flex flex-wrap items-center gap-2" role="status">
       <Etiqueta tono={e.tono} icono={e.icono}>
-        {compacto && estado === 'solo_local' ? (
+        {compacto && status === 'local_only' ? (
           <>
             <span className="sm:hidden" aria-hidden="true">
               Local
             </span>
-            <span className="max-sm:sr-only">{e.texto}</span>
+            <span className="max-sm:sr-only">{e.text}</span>
           </>
         ) : (
-          e.texto
+          e.text
         )}
       </Etiqueta>
-      {pendientes > 0 && (
-        <Etiqueta tono="proceso" icono="reloj">{`${pendientes} sin confirmar`}</Etiqueta>
+      {pendingList > 0 && (
+        <Etiqueta tono="progress" icono="clock">{`${pendingList} sin confirmar`}</Etiqueta>
       )}
       {impresorasConFalla > 0 && (
-        <Etiqueta tono="alerta" icono="impresora">
+        <Etiqueta tono="warning" icono="printer">
           {impresorasConFalla === 1
             ? 'Una impresora no responde'
             : `${impresorasConFalla} impresoras no responden`}

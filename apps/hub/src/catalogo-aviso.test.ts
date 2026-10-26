@@ -25,28 +25,28 @@ async function montar() {
   carpeta = mkdtempSync(join(tmpdir(), 'pos-aviso-'))
   const { db } = abrirDatos(carpeta)
   let sala: ReturnType<typeof prepararSincronizacion> | null = null
-  const acceso = prepararAcceso(
+  const access = prepararAcceso(
     db,
     carpeta,
     () => {},
-    (id, en) => sala?.revocar(id, en),
+    (id, en) => sala?.revoke(id, en),
   )
-  const { pines } = sembrar(
+  const { pins } = sembrar(
     db,
-    acceso.acceso,
-    { restauranteId: acceso.restauranteId, roles: acceso.roles, carta: leerCarta(CARTA) },
+    access.access,
+    { restauranteId: access.restauranteId, roles: access.roles, menu: leerCarta(CARTA) },
     new Date().toISOString(),
   )
-  sala = prepararSincronizacion(db, carpeta, acceso.restauranteId, acceso.acceso)
+  sala = prepararSincronizacion(db, carpeta, access.restauranteId, access.access)
   const salaFija = sala
   const app = crearServidor({
-    acceso: acceso.acceso,
+    access: access.access,
     sincronizacion: { sala, intervaloLatidoMs: 600_000 },
-    catalogo: {
+    catalog: {
       db,
-      restauranteId: acceso.restauranteId,
-      acceso: acceso.acceso,
-      alCambiar: (version) => salaFija.avisarCatalogo(version),
+      restauranteId: access.restauranteId,
+      access: access.access,
+      onChange: (version) => salaFija.avisarCatalogo(version),
     },
   })
   await app.ready()
@@ -60,72 +60,68 @@ async function montar() {
       })
     ).json()
 
-  let caja: string | undefined
+  let register: string | undefined
   /**
    * Un equipo como en el restaurante (ADR-013): la caja y el celular entran sin emparejar (el hub
    * los registra); la pantalla de cocina se empareja desde la caja.
    */
-  async function equipo(tipo: 'mesero' | 'caja' | 'kds', nombre: string) {
-    if (tipo === 'kds') {
-      const { codigo } = await post(
-        '/api/emparejamientos',
-        { pin: acceso.admin.pin, nombre, tipo },
-        caja,
-      )
-      return (await post('/api/emparejar', { codigo })) as { token: string; dispositivo_id: string }
+  async function device(type: 'waiter' | 'register' | 'kds', name: string) {
+    if (type === 'kds') {
+      const { code } = await post('/api/pairings', { pin: access.admin.pin, name, type }, register)
+      return (await post('/api/pair', { code })) as { token: string; device_id: string }
     }
     const r = await post(
-      '/api/entrar',
-      tipo === 'caja'
-        ? { usuario: acceso.admin.usuario, contrasena: acceso.admin.contrasena }
-        : { pin: pines.find((p) => p.nombre === 'Mesero 1')?.pin },
+      '/api/sign-in',
+      type === 'register'
+        ? { user: access.admin.user, password: access.admin.password }
+        : { pin: pins.find((p) => p.name === 'Mesero 1')?.pin },
     )
-    if (tipo === 'caja') caja ??= r.equipo.token
-    return { token: r.equipo.token as string, dispositivo_id: r.equipo.dispositivo_id as string }
+    if (type === 'register') register ??= r.device.token
+    return { token: r.device.token as string, device_id: r.device.device_id as string }
   }
 
-  async function conectar(token: string | null) {
+  async function connect(token: string | null) {
     const recibidos: MensajeHub[] = []
     const ws: WebSocket = await app.injectWS('/api/sync/ws')
     ws.on('message', (d) => recibidos.push(JSON.parse(d.toString())))
-    const enviar = (m: object) => ws.send(JSON.stringify(m))
-    if (token) enviar({ tipo: 'hola', token, hub_instancia: null, hasta: 0, version_app: 'prueba' })
-    const esperar = (tipo: string) =>
-      esperarA(() => recibidos.find((m) => m.tipo === tipo) as MensajeHub)
+    const send = (m: object) => ws.send(JSON.stringify(m))
+    if (token) send({ type: 'hello', token, hub_instancia: null, until: 0, version_app: 'prueba' })
+    const esperar = (type: string) =>
+      esperarA(() => recibidos.find((m) => m.type === type) as MensajeHub)
     /** Un ping a modo de barrera: cuando vuelve el pong, todo lo anterior ya llegó. */
     const barrera = async () => {
-      const marca = `b${recibidos.length}`
-      enviar({ tipo: 'ping', marca })
-      await esperarA(() => recibidos.find((m) => m.tipo === 'pong' && m.marca === marca))
+      const brand = `b${recibidos.length}`
+      send({ type: 'ping', brand })
+      await esperarA(() => recibidos.find((m) => m.type === 'pong' && m.brand === brand))
     }
-    const catalogos = () => recibidos.filter((m) => m.tipo === 'catalogo')
-    return { ws, recibidos, enviar, esperar, barrera, catalogos }
+    const catalogos = () => recibidos.filter((m) => m.type === 'catalog')
+    return { ws, recibidos, send, esperar, barrera, catalogos }
   }
 
-  const admin = async (caja: { token: string }) => {
+  const admin = async (register: { token: string }) => {
     const r = await post(
-      '/api/entrar',
-      { usuario: acceso.admin.usuario, contrasena: acceso.admin.contrasena },
-      caja.token,
+      '/api/sign-in',
+      { user: access.admin.user, password: access.admin.password },
+      register.token,
     )
-    return { sesion_id: String(r.sesion_id), secreto: String(r.secreto) }
+    return { session_id: String(r.session_id), secret: String(r.secret) }
   }
-  const cambiar = async (caja: { token: string }, sesion: object, cambios: unknown[]) => {
+  const patch = async (register: { token: string }, session: object, changes: unknown[]) => {
     const r = await app.inject({
       method: 'POST',
-      url: '/api/catalogo/cambios',
-      payload: { ...sesion, cambios },
-      headers: { authorization: `Bearer ${caja.token}` },
+      url: '/api/catalog/changes',
+      payload: { ...session, changes },
+      headers: { authorization: `Bearer ${register.token}` },
     })
-    return { codigo: r.statusCode, cuerpo: r.json() }
+    return { code: r.statusCode, cuerpo: r.json() }
   }
-  const producto = () => {
+  const product = () => {
     const f = db
-      .prepare('SELECT id, precio FROM producto WHERE activo = 1 ORDER BY nombre LIMIT 1')
+      .prepare('SELECT id, price FROM products WHERE active = 1 ORDER BY name LIMIT 1')
       .get()
-    return { id: String(f?.id), precio: Number(f?.precio) }
+    return { id: String(f?.id), price: Number(f?.price) }
   }
-  return { app, db, acceso, post, equipo, conectar, admin, cambiar, producto }
+  return { app, db, access, post, device, connect, admin, patch, product }
 }
 
 const esperarA = <T>(fn: () => T | undefined) =>
@@ -138,34 +134,34 @@ const esperarA = <T>(fn: () => T | undefined) =>
 describe('aviso de catálogo por WebSocket', () => {
   it('al editar, todos los conectados reciben la versión nueva, también quien editó', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular')
-    const cocina = await m.equipo('kds', 'Cocina')
+    const register = await m.device('register', 'Caja')
+    const phone = await m.device('waiter', 'Celular')
+    const kitchen = await m.device('kds', 'Cocina')
     const [enCaja, enCelular, enCocina] = await Promise.all([
-      m.conectar(caja.token),
-      m.conectar(celular.token),
-      m.conectar(cocina.token),
+      m.connect(register.token),
+      m.connect(phone.token),
+      m.connect(kitchen.token),
     ])
-    for (const c of [enCaja, enCelular, enCocina]) await c.esperar('bienvenido')
+    for (const c of [enCaja, enCelular, enCocina]) await c.esperar('welcome')
 
-    const sesion = await m.admin(caja)
-    const p = m.producto()
-    const r = await m.cambiar(caja, sesion, [
-      { entidad: 'producto', id: p.id, datos: { precio: p.precio + 1_000 } },
+    const session = await m.admin(register)
+    const p = m.product()
+    const r = await m.patch(register, session, [
+      { entity: 'products', id: p.id, data: { price: p.price + 1_000 } },
     ])
-    expect(r.codigo).toBe(200)
+    expect(r.code).toBe(200)
 
     for (const c of [enCaja, enCelular, enCocina]) {
       await c.barrera()
-      expect(c.catalogos()).toEqual([{ tipo: 'catalogo', version: r.cuerpo.version }])
+      expect(c.catalogos()).toEqual([{ type: 'catalog', version: r.cuerpo.version }])
     }
     // Y la carta que piden ya trae esa versión.
-    const carta = await m.app.inject({
+    const menu = await m.app.inject({
       method: 'GET',
-      url: '/api/catalogo',
-      headers: { authorization: `Bearer ${celular.token}` },
+      url: '/api/catalog',
+      headers: { authorization: `Bearer ${phone.token}` },
     })
-    expect(carta.json().version).toBe(r.cuerpo.version)
+    expect(menu.json().version).toBe(r.cuerpo.version)
 
     for (const c of [enCaja, enCelular, enCocina]) c.ws.terminate()
     await m.app.close()
@@ -173,15 +169,15 @@ describe('aviso de catálogo por WebSocket', () => {
 
   it('cada edición manda su propio aviso, en orden y sin repetir versiones', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const c = await m.conectar(caja.token)
-    await c.esperar('bienvenido')
-    const sesion = await m.admin(caja)
-    const p = m.producto()
+    const register = await m.device('register', 'Caja')
+    const c = await m.connect(register.token)
+    await c.esperar('welcome')
+    const session = await m.admin(register)
+    const p = m.product()
     const versiones: number[] = []
     for (let i = 1; i <= 5; i++) {
-      const r = await m.cambiar(caja, sesion, [
-        { entidad: 'producto', id: p.id, datos: { precio: p.precio + i } },
+      const r = await m.patch(register, session, [
+        { entity: 'products', id: p.id, data: { price: p.price + i } },
       ])
       versiones.push(r.cuerpo.version)
     }
@@ -194,28 +190,28 @@ describe('aviso de catálogo por WebSocket', () => {
 
   it('un equipo retirado estando conectado no recibe el aviso, y los demás sí', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular')
-    const enCaja = await m.conectar(caja.token)
-    const enCelular = await m.conectar(celular.token)
-    await enCaja.esperar('bienvenido')
-    await enCelular.esperar('bienvenido')
-    const sesion = await m.admin(caja)
+    const register = await m.device('register', 'Caja')
+    const phone = await m.device('waiter', 'Celular')
+    const enCaja = await m.connect(register.token)
+    const enCelular = await m.connect(phone.token)
+    await enCaja.esperar('welcome')
+    await enCelular.esperar('welcome')
+    const session = await m.admin(register)
 
-    const retiro = await m.app.inject({
+    const withdrawal = await m.app.inject({
       method: 'POST',
-      url: `/api/dispositivos/${celular.dispositivo_id}/revocar`,
-      payload: sesion,
-      headers: { authorization: `Bearer ${caja.token}` },
+      url: `/api/devices/${phone.device_id}/revoke`,
+      payload: session,
+      headers: { authorization: `Bearer ${register.token}` },
     })
-    expect(retiro.statusCode).toBe(200)
-    await esperarA(() => enCelular.recibidos.find((x) => x.tipo === 'error'))
+    expect(withdrawal.statusCode).toBe(200)
+    await esperarA(() => enCelular.recibidos.find((x) => x.type === 'error'))
 
-    const p = m.producto()
-    const r = await m.cambiar(caja, sesion, [
-      { entidad: 'producto', id: p.id, datos: { precio: p.precio + 1_000 } },
+    const p = m.product()
+    const r = await m.patch(register, session, [
+      { entity: 'products', id: p.id, data: { price: p.price + 1_000 } },
     ])
-    expect(r.codigo).toBe(200)
+    expect(r.code).toBe(200)
     await enCaja.barrera()
     await enCelular.barrera()
     expect(enCaja.catalogos()).toHaveLength(1)
@@ -228,20 +224,20 @@ describe('aviso de catálogo por WebSocket', () => {
 
   it('quien se conecta con un token ya retirado tampoco recibe avisos', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular')
-    const sesion = await m.admin(caja)
+    const register = await m.device('register', 'Caja')
+    const phone = await m.device('waiter', 'Celular')
+    const session = await m.admin(register)
     await m.app.inject({
       method: 'POST',
-      url: `/api/dispositivos/${celular.dispositivo_id}/revocar`,
-      payload: sesion,
-      headers: { authorization: `Bearer ${caja.token}` },
+      url: `/api/devices/${phone.device_id}/revoke`,
+      payload: session,
+      headers: { authorization: `Bearer ${register.token}` },
     })
-    const enCelular = await m.conectar(celular.token)
-    await enCelular.esperar('bienvenido')
-    const p = m.producto()
-    await m.cambiar(caja, sesion, [
-      { entidad: 'producto', id: p.id, datos: { precio: p.precio + 1_000 } },
+    const enCelular = await m.connect(phone.token)
+    await enCelular.esperar('welcome')
+    const p = m.product()
+    await m.patch(register, session, [
+      { entity: 'products', id: p.id, data: { price: p.price + 1_000 } },
     ])
     await enCelular.barrera()
     expect(enCelular.catalogos()).toEqual([])
@@ -251,14 +247,14 @@ describe('aviso de catálogo por WebSocket', () => {
 
   it('una conexión que no saludó, o con un token inventado, no recibe nada', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const sinSaludar = await m.conectar(null)
-    const inventado = await m.conectar('token-que-no-existe')
-    await esperarA(() => inventado.recibidos.find((x) => x.tipo === 'error'))
-    const sesion = await m.admin(caja)
-    const p = m.producto()
-    await m.cambiar(caja, sesion, [
-      { entidad: 'producto', id: p.id, datos: { precio: p.precio + 1_000 } },
+    const register = await m.device('register', 'Caja')
+    const sinSaludar = await m.connect(null)
+    const inventado = await m.connect('token-que-no-existe')
+    await esperarA(() => inventado.recibidos.find((x) => x.type === 'error'))
+    const session = await m.admin(register)
+    const p = m.product()
+    await m.patch(register, session, [
+      { entity: 'products', id: p.id, data: { price: p.price + 1_000 } },
     ])
     await sinSaludar.barrera()
     await inventado.barrera()
@@ -271,31 +267,31 @@ describe('aviso de catálogo por WebSocket', () => {
 
   it('una edición rechazada, sin permiso o que no cambia nada no avisa a nadie', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const c = await m.conectar(caja.token)
-    await c.esperar('bienvenido')
-    const sesion = await m.admin(caja)
-    const p = m.producto()
+    const register = await m.device('register', 'Caja')
+    const c = await m.connect(register.token)
+    await c.esperar('welcome')
+    const session = await m.admin(register)
+    const p = m.product()
 
     // Inválida.
     expect(
-      (await m.cambiar(caja, sesion, [{ entidad: 'producto', id: p.id, datos: { precio: -5 } }]))
-        .codigo,
+      (await m.patch(register, session, [{ entity: 'products', id: p.id, data: { price: -5 } }]))
+        .code,
     ).toBe(400)
     // Sin sesión válida.
     expect(
       (
-        await m.cambiar(caja, { ...sesion, secreto: 'x' }, [
-          { entidad: 'producto', id: p.id, datos: { precio: p.precio + 1 } },
+        await m.patch(register, { ...session, secret: 'x' }, [
+          { entity: 'products', id: p.id, data: { price: p.price + 1 } },
         ])
-      ).codigo,
+      ).code,
     ).toBe(401)
     // El mismo valor que ya tiene.
-    const igual = await m.cambiar(caja, sesion, [
-      { entidad: 'producto', id: p.id, datos: { precio: p.precio } },
+    const equal = await m.patch(register, session, [
+      { entity: 'products', id: p.id, data: { price: p.price } },
     ])
-    expect(igual.codigo).toBe(200)
-    expect(igual.cuerpo.cambiados).toBe(0)
+    expect(equal.code).toBe(200)
+    expect(equal.cuerpo.cambiados).toBe(0)
 
     await c.barrera()
     expect(c.catalogos()).toEqual([])
@@ -305,20 +301,20 @@ describe('aviso de catálogo por WebSocket', () => {
 
   it('una conexión rota en medio no impide que las demás reciban el aviso', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular')
-    const enCaja = await m.conectar(caja.token)
-    const enCelular = await m.conectar(celular.token)
-    await enCaja.esperar('bienvenido')
-    await enCelular.esperar('bienvenido')
+    const register = await m.device('register', 'Caja')
+    const phone = await m.device('waiter', 'Celular')
+    const enCaja = await m.connect(register.token)
+    const enCelular = await m.connect(phone.token)
+    await enCaja.esperar('welcome')
+    await enCelular.esperar('welcome')
     // El celular pierde la red (corte sin cierre limpio).
     enCelular.ws.terminate()
-    const sesion = await m.admin(caja)
-    const p = m.producto()
-    const r = await m.cambiar(caja, sesion, [
-      { entidad: 'producto', id: p.id, datos: { precio: p.precio + 1_000 } },
+    const session = await m.admin(register)
+    const p = m.product()
+    const r = await m.patch(register, session, [
+      { entity: 'products', id: p.id, data: { price: p.price + 1_000 } },
     ])
-    expect(r.codigo).toBe(200)
+    expect(r.code).toBe(200)
     await enCaja.barrera()
     expect(enCaja.catalogos()).toHaveLength(1)
     enCaja.ws.terminate()

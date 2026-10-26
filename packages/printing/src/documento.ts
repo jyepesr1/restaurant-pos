@@ -10,14 +10,14 @@ export const COLUMNAS: Record<Ancho, number> = { 58: 32, 80: 48 }
 
 export interface Estilo {
   /** Doble de alto y de ancho: cabe la mitad de caracteres. */
-  grande?: boolean
+  large?: boolean
   negrita?: boolean
   /** Blanco sobre negro: lo que la cocina no puede pasar por alto. */
-  invertido?: boolean
+  reversed?: boolean
   centro?: boolean
 }
 
-export type Linea = ({ texto: string } & Estilo) | { separador: true } | { espacio: true }
+export type Linea = ({ text: string } & Estilo) | { separator: true } | { space: true }
 
 export interface Formato {
   columnas: number
@@ -25,42 +25,42 @@ export interface Formato {
 }
 
 /** Caracteres que caben en una línea con ese estilo. */
-export const anchoDe = (formato: Formato, estilo: Estilo) =>
-  estilo.grande ? Math.floor(formato.columnas / 2) : formato.columnas
+export const anchoDe = (format: Formato, estilo: Estilo) =>
+  estilo.large ? Math.floor(format.columnas / 2) : format.columnas
 
 /**
  * Parte un texto en líneas de ese ancho, por palabras; una palabra más larga que la línea se
  * corta. Mide con los caracteres ya convertidos a la tabla de la impresora.
  */
-export function partir(texto: string, ancho: number, formato: Formato): string[] {
-  const palabras = caracteres(texto, formato.pagina).join('').split(' ').filter(Boolean)
-  const lineas: string[] = []
-  let actual = ''
+export function partir(text: string, width: number, format: Formato): string[] {
+  const palabras = caracteres(text, format.pagina).join('').split(' ').filter(Boolean)
+  const lines: string[] = []
+  let current = ''
   for (const palabra of palabras) {
-    let resto = palabra
-    while (resto.length > ancho) {
-      if (actual) {
-        lineas.push(actual)
-        actual = ''
+    let rest = palabra
+    while (rest.length > width) {
+      if (current) {
+        lines.push(current)
+        current = ''
       }
-      lineas.push(resto.slice(0, ancho))
-      resto = resto.slice(ancho)
+      lines.push(rest.slice(0, width))
+      rest = rest.slice(width)
     }
-    if (!resto) continue
-    if (!actual) actual = resto
-    else if (actual.length + 1 + resto.length <= ancho) actual = `${actual} ${resto}`
+    if (!rest) continue
+    if (!current) current = rest
+    else if (current.length + 1 + rest.length <= width) current = `${current} ${rest}`
     else {
-      lineas.push(actual)
-      actual = resto
+      lines.push(current)
+      current = rest
     }
   }
-  if (actual) lineas.push(actual)
-  return lineas.length > 0 ? lineas : ['']
+  if (current) lines.push(current)
+  return lines.length > 0 ? lines : ['']
 }
 
 /** Un texto con estilo, partido en las líneas que hagan falta. */
-export function parrafo(texto: string, formato: Formato, estilo: Estilo = {}): Linea[] {
-  return partir(texto, anchoDe(formato, estilo), formato).map((t) => ({ texto: t, ...estilo }))
+export function parrafo(text: string, format: Formato, estilo: Estilo = {}): Linea[] {
+  return partir(text, anchoDe(format, estilo), format).map((t) => ({ text: t, ...estilo }))
 }
 
 /**
@@ -70,21 +70,21 @@ export function parrafo(texto: string, formato: Formato, estilo: Estilo = {}): L
 export function aLosLados(
   izquierda: string,
   derecha: string,
-  formato: Formato,
+  format: Formato,
   estilo: Estilo = {},
 ): Linea[] {
-  const ancho = anchoDe(formato, estilo)
-  const izq = partir(izquierda, ancho, formato)
-  const der = caracteres(derecha, formato.pagina).join('')
-  if (!der) return izq.map((t) => ({ texto: t, ...estilo }))
-  const ultima = izq.at(-1) ?? ''
-  if (ultima.length + 1 + der.length <= ancho) {
-    izq[izq.length - 1] = ultima + ' '.repeat(ancho - ultima.length - der.length) + der
-    return izq.map((t) => ({ texto: t, ...estilo }))
+  const width = anchoDe(format, estilo)
+  const izq = partir(izquierda, width, format)
+  const der = caracteres(derecha, format.pagina).join('')
+  if (!der) return izq.map((t) => ({ text: t, ...estilo }))
+  const last = izq.at(-1) ?? ''
+  if (last.length + 1 + der.length <= width) {
+    izq[izq.length - 1] = last + ' '.repeat(width - last.length - der.length) + der
+    return izq.map((t) => ({ text: t, ...estilo }))
   }
   return [
-    ...izq.map((t) => ({ texto: t, ...estilo })),
-    ...parrafo(derecha, formato, { ...estilo, centro: false }),
+    ...izq.map((t) => ({ text: t, ...estilo })),
+    ...parrafo(derecha, format, { ...estilo, centro: false }),
   ]
 }
 
@@ -92,16 +92,16 @@ export function aLosLados(
  * El documento como texto, para verlo en pantalla o en una prueba: lo grande va en mayúsculas,
  * lo invertido entre corchetes y el separador como guiones.
  */
-export function comoTexto(lineas: readonly Linea[], columnas: number): string {
-  return lineas
+export function comoTexto(lines: readonly Linea[], columnas: number): string {
+  return lines
     .map((l) => {
-      if ('separador' in l) return '-'.repeat(columnas)
-      if ('espacio' in l) return ''
-      let t = l.grande ? l.texto.toUpperCase() : l.texto
-      if (l.invertido) t = `[${t}]`
+      if ('separator' in l) return '-'.repeat(columnas)
+      if ('space' in l) return ''
+      let t = l.large ? l.text.toUpperCase() : l.text
+      if (l.reversed) t = `[${t}]`
       if (l.centro) {
-        const ancho = l.grande ? Math.floor(columnas / 2) : columnas
-        t = ' '.repeat(Math.max(0, Math.floor((ancho - t.length) / 2))) + t
+        const width = l.large ? Math.floor(columnas / 2) : columnas
+        t = ' '.repeat(Math.max(0, Math.floor((width - t.length) / 2))) + t
       }
       return t.trimEnd()
     })

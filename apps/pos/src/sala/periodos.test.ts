@@ -5,9 +5,9 @@ import {
   csvDeReporte,
   fechaHoraCsv,
   nombreCsv,
+  percent,
   periodoDe,
   periodoEnPalabras,
-  porcentaje,
   sumarDias,
 } from './periodos'
 
@@ -22,22 +22,25 @@ describe('períodos', () => {
   })
 
   it('hoy, ayer y los últimos 7 días contados desde el día operativo del hub', () => {
-    expect(periodoDe('hoy', '2026-10-24')).toEqual({ desde: '2026-10-24', hasta: '2026-10-24' })
-    expect(periodoDe('ayer', '2026-10-24')).toEqual({ desde: '2026-10-23', hasta: '2026-10-23' })
-    expect(periodoDe('semana', '2026-10-24')).toEqual({ desde: '2026-10-18', hasta: '2026-10-24' })
+    expect(periodoDe('today', '2026-10-24')).toEqual({ from: '2026-10-24', until: '2026-10-24' })
+    expect(periodoDe('yesterday', '2026-10-24')).toEqual({
+      from: '2026-10-23',
+      until: '2026-10-23',
+    })
+    expect(periodoDe('week', '2026-10-24')).toEqual({ from: '2026-10-18', until: '2026-10-24' })
   })
 
   it('en palabras', () => {
-    expect(periodoEnPalabras({ desde: '2026-10-24', hasta: '2026-10-24' })).toMatch(
+    expect(periodoEnPalabras({ from: '2026-10-24', until: '2026-10-24' })).toMatch(
       /sábado,? 24 de octubre de 2026/,
     )
-    expect(periodoEnPalabras({ desde: '2026-10-18', hasta: '2026-10-24' })).toMatch(/^del 18/)
+    expect(periodoEnPalabras({ from: '2026-10-18', until: '2026-10-24' })).toMatch(/^del 18/)
   })
 
   it('porcentaje con un decimal y 0 sin total', () => {
-    expect(porcentaje(1, 3)).toBe('33,3 %')
-    expect(porcentaje(0, 0)).toBe('0 %')
-    expect(porcentaje(5, 5)).toBe('100 %')
+    expect(percent(1, 3)).toBe('33,3 %')
+    expect(percent(0, 0)).toBe('0 %')
+    expect(percent(5, 5)).toBe('100 %')
   })
 
   it('fecha y hora en la zona del restaurante', () => {
@@ -55,45 +58,43 @@ describe('CSV', () => {
     expect(celda('@usuario')).toBe("'@usuario")
   })
 
-  const vacio: Reporte = {
-    hoy: '2026-10-24',
+  const empty: Reporte = {
+    today: '2026-10-24',
     usuarios: { ana: 'Ana' },
-    impresora: false,
-    cierres: [],
-    informe: {
-      desde: '2026-10-24',
-      hasta: '2026-10-24',
-      ventas: {
-        bruto: 50_000,
-        anulado: 0,
-        descuentos: 0,
-        neto: 50_000,
-        ajustes: 0,
-        impuestos: [{ tipo: 'inc', tarifa: 800, base: 46_296, impuesto: 3_704 }],
-        propinas: 5_000,
-        cuentas: 1,
-        comensales: 2,
-        ticketPromedio: 50_000,
-        gastoPorComensal: 25_000,
+    printer: false,
+    closings: [],
+    report: {
+      from: '2026-10-24',
+      until: '2026-10-24',
+      sales: {
+        gross: 50_000,
+        voided: 0,
+        discounts: 0,
+        net: 50_000,
+        settings: 0,
+        taxes: [{ type: 'inc', rate: 800, base: 46_296, tax: 3_704 }],
+        tips: 5_000,
+        checks: 1,
+        guests: 2,
+        averageTicket: 50_000,
+        spendPerGuest: 25_000,
       },
-      porMedio: [
-        { medio: 'efectivo', medioPropioId: null, venta: 50_000, propina: 5_000, pagos: 1 },
+      byMethod: [{ method: 'cash', customMethodId: null, sale: 50_000, tip: 5_000, payments: 1 }],
+      byWaiter: [{ userId: 'ana', net: 50_000, checks: 1, averageTicket: 50_000 }],
+      byProduct: [
+        { productId: 'p', variantId: null, name: 'Pizza; grande', units: 2, net: 50_000 },
       ],
-      porMesero: [{ usuarioId: 'ana', neto: 50_000, cuentas: 1, ticketPromedio: 50_000 }],
-      porProducto: [
-        { productoId: 'p', varianteId: null, nombre: 'Pizza; grande', unidades: 2, neto: 50_000 },
-      ],
-      anulaciones: [],
-      cancelaciones: [],
-      descuentos: [],
-      fondoPropinas: { propinas: 5_000, pagadas: 0, saldo: 5_000 },
+      voids: [],
+      cancellations: [],
+      discounts: [],
+      tipPool: { tips: 5_000, paidOut: 0, balance: 5_000 },
     },
   }
 
   it('UTF-8 con BOM, punto y coma, montos enteros y una sección tras otra', () => {
     const csv = csvDeReporte(
-      vacio,
-      { desde: '2026-10-24', hasta: '2026-10-24' },
+      empty,
+      { from: '2026-10-24', until: '2026-10-24' },
       null,
       'La Spritzzería',
     )
@@ -109,8 +110,8 @@ describe('CSV', () => {
   })
 
   it('nombre del archivo', () => {
-    expect(nombreCsv({ desde: '2026-10-24', hasta: '2026-10-24' })).toBe('reporte-2026-10-24.csv')
-    expect(nombreCsv({ desde: '2026-10-18', hasta: '2026-10-24' })).toBe(
+    expect(nombreCsv({ from: '2026-10-24', until: '2026-10-24' })).toBe('reporte-2026-10-24.csv')
+    expect(nombreCsv({ from: '2026-10-18', until: '2026-10-24' })).toBe(
       'reporte-2026-10-18-a-2026-10-24.csv',
     )
   })

@@ -8,11 +8,11 @@ type Conexion = PGlite | Transaction
 
 export function envolver(db: Conexion): Sql {
   return {
-    async query<T extends Fila = Fila>(texto: string, parametros: readonly unknown[] = []) {
-      const r = await db.query<T>(texto, [...parametros])
+    async query<T extends Fila = Fila>(text: string, parametros: readonly unknown[] = []) {
+      const r = await db.query<T>(text, [...parametros])
       return r.rows
     },
-    async ejecutar(guion: string) {
+    async execute(guion: string) {
       await db.exec(guion)
     },
     async transaccion<T>(trabajo: (sql: Sql) => Promise<T>) {

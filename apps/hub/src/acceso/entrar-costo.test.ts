@@ -29,30 +29,30 @@ function hub() {
   const restauranteId = asegurarRestaurante(db, ahora)
   const roles = asegurarRoles(db, restauranteId, ahora)
   // El costo real de producción: así se ve la diferencia que habría en una instalación.
-  const acceso = new ServicioAcceso({
+  const access = new ServicioAcceso({
     db,
     restauranteId,
-    clave: Buffer.alloc(32, 9),
-    reloj: () => ahora,
+    key: Buffer.alloc(32, 9),
+    clock: () => ahora,
   })
-  acceso.crearUsuario({
-    nombre: 'Caja',
-    rolId: roles.cajero,
-    usuario: 'caja',
-    contrasena: 'clave-de-la-caja',
+  access.crearUsuario({
+    name: 'Caja',
+    rolId: roles.cashier,
+    user: 'caja',
+    password: 'clave-de-la-caja',
   })
   // Calienta el relleno (se calcula en el primer intento con un usuario que no existe).
-  acceso.entrar({ usuario: 'calentar', contrasena: 'no-importa-xx' }, null, '10.9.0.1')
+  access.entrar({ user: 'calentar', password: 'no-importa-xx' }, null, '10.9.0.1')
   llamadas.length = 0
-  return acceso
+  return access
 }
 
 /** El trabajo de scrypt que hizo un intento fallido (cada intento, desde una IP nueva). */
 let n = 0
-function trabajoDe(acceso: ReturnType<typeof hub>, usuario: string, contrasena: string) {
+function trabajoDe(access: ReturnType<typeof hub>, user: string, password: string) {
   llamadas.length = 0
-  const r = acceso.entrar({ usuario, contrasena }, null, `10.0.0.${++n}`)
-  expect(r).toMatchObject({ ok: false, codigo: 'credenciales_incorrectas' })
+  const r = access.entrar({ user, password }, null, `10.0.0.${++n}`)
+  expect(r).toMatchObject({ ok: false, code: 'invalid_credentials' })
   return [...llamadas]
 }
 
@@ -62,53 +62,53 @@ describe('el costo de comprobar una contraseña no delata si el usuario existe',
   })
 
   it('un usuario real con la contraseña errada hace un scrypt de costo completo', () => {
-    const acceso = hub()
-    expect(trabajoDe(acceso, 'caja', 'no-es-la-clave')).toEqual([2 ** COSTO_CONTRASENA])
+    const access = hub()
+    expect(trabajoDe(access, 'caja', 'no-es-la-clave')).toEqual([2 ** COSTO_CONTRASENA])
   })
 
   // Antes era un BUG: el relleno se calculaba con costo 1 y delataba qué usuarios existen.
   it('un usuario inexistente hace el mismo trabajo de scrypt que uno real', () => {
-    const acceso = hub()
-    const real = trabajoDe(acceso, 'caja', 'no-es-la-clave')
-    const inexistente = trabajoDe(acceso, 'fantasma', 'no-es-la-clave')
-    expect(inexistente).toEqual(real)
+    const access = hub()
+    const real = trabajoDe(access, 'caja', 'no-es-la-clave')
+    const nonexistent = trabajoDe(access, 'fantasma', 'no-es-la-clave')
+    expect(nonexistent).toEqual(real)
   })
 
   it('un usuario con formato inválido, o archivado, tampoco hace menos trabajo', () => {
-    const acceso = hub()
-    const real = trabajoDe(acceso, 'caja', 'no-es-la-clave')
-    expect(trabajoDe(acceso, 'con espacio', 'no-es-la-clave')).toEqual(real)
-    expect(trabajoDe(acceso, '', '')).toEqual(real)
-    const vieja = acceso.crearUsuario({
-      nombre: 'Vieja',
+    const access = hub()
+    const real = trabajoDe(access, 'caja', 'no-es-la-clave')
+    expect(trabajoDe(access, 'con espacio', 'no-es-la-clave')).toEqual(real)
+    expect(trabajoDe(access, '', '')).toEqual(real)
+    const vieja = access.crearUsuario({
+      name: 'Vieja',
       // biome-ignore lint/suspicious/noExplicitAny: respuesta JSON de prueba, sin tipo
-      rolId: (acceso as any).db.prepare("SELECT id FROM rol WHERE nombre = 'Cajero'").get().id,
-      usuario: 'vieja',
-      contrasena: 'clave-de-la-vieja',
+      rolId: (access as any).db.prepare("SELECT id FROM roles WHERE name = 'Cajero'").get().id,
+      user: 'vieja',
+      password: 'clave-de-la-vieja',
     })
-    acceso.archivarUsuario(vieja.usuarioId)
-    expect(trabajoDe(acceso, 'vieja', 'clave-de-la-vieja')).toEqual(real)
+    access.archivarUsuario(vieja.userId)
+    expect(trabajoDe(access, 'vieja', 'clave-de-la-vieja')).toEqual(real)
   })
 
   it('en todos los casos se hace exactamente un scrypt por intento (nunca cero ni dos)', () => {
-    const acceso = hub()
-    for (const usuario of ['caja', 'fantasma', 'con espacio', '', 'x'.repeat(100)])
-      expect(trabajoDe(acceso, usuario, 'no-es-la-clave')).toHaveLength(1)
+    const access = hub()
+    for (const user of ['caja', 'fantasma', 'con espacio', '', 'x'.repeat(100)])
+      expect(trabajoDe(access, user, 'no-es-la-clave')).toHaveLength(1)
   })
 
   it('la contraseña vacía, o larguísima, también hace un solo scrypt y falla', () => {
-    const acceso = hub()
-    expect(trabajoDe(acceso, 'caja', '')).toHaveLength(1)
-    expect(trabajoDe(acceso, 'caja', 'z'.repeat(100_000))).toHaveLength(1)
+    const access = hub()
+    expect(trabajoDe(access, 'caja', '')).toHaveLength(1)
+    expect(trabajoDe(access, 'caja', 'z'.repeat(100_000))).toHaveLength(1)
   })
 
   it('durante la espera por fallos no se hace ningún scrypt: el atacante no gasta el CPU del hub', () => {
-    const acceso = hub()
-    for (let i = 0; i < 3; i++) trabajoDe(acceso, 'caja', `mala-${i}-xxxxxxx`)
+    const access = hub()
+    for (let i = 0; i < 3; i++) trabajoDe(access, 'caja', `mala-${i}-xxxxxxx`)
     llamadas.length = 0
     for (let i = 0; i < 50; i++) {
-      const r = acceso.entrar({ usuario: 'caja', contrasena: 'otra-mala-xx' }, null, `10.9.9.${i}`)
-      expect(r).toMatchObject({ ok: false, codigo: 'espera' })
+      const r = access.entrar({ user: 'caja', password: 'otra-mala-xx' }, null, `10.9.9.${i}`)
+      expect(r).toMatchObject({ ok: false, code: 'wait' })
     }
     expect(llamadas).toEqual([])
   })

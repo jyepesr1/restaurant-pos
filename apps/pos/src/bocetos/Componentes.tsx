@@ -10,20 +10,20 @@ import { Marco } from './Marco'
 // El design system a la vista: colores con significado, botones, etiquetas, indicador de
 // conexión, teclado del PIN, panel lateral y aviso con Deshacer.
 
-const TONOS: { tono: Tono; nombre: string; uso: string }[] = [
-  { tono: 'libre', nombre: 'Verde', uso: 'Libre, listo, pagado' },
-  { tono: 'proceso', nombre: 'Ámbar', uso: 'En proceso, en espera' },
-  { tono: 'alerta', nombre: 'Rojo', uso: 'Demora, error, quitar' },
-  { tono: 'accion', nombre: 'Azul', uso: 'La acción principal' },
-  { tono: 'neutro', nombre: 'Gris', uso: 'Lo demás' },
+const TONOS: { tono: Tono; name: string; uso: string }[] = [
+  { tono: 'free', name: 'Verde', uso: 'Libre, listo, pagado' },
+  { tono: 'progress', name: 'Ámbar', uso: 'En proceso, en espera' },
+  { tono: 'warning', name: 'Rojo', uso: 'Demora, error, quitar' },
+  { tono: 'action', name: 'Azul', uso: 'La acción principal' },
+  { tono: 'neutral', name: 'Gris', uso: 'Lo demás' },
 ]
 
 export function Componentes() {
   const avisar = useAvisar()
   const [panel, setPanel] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [espera, setEspera] = useState(0)
-  const [intentos, setIntentos] = useState(0)
+  const [delay, setEspera] = useState(0)
+  const [attempts, setIntentos] = useState(0)
 
   return (
     <Marco titulo="Design system">
@@ -36,8 +36,8 @@ export function Componentes() {
                 key={t.tono}
                 className="flex items-center gap-3 rounded-xl border border-borde bg-superficie p-3"
               >
-                <Etiqueta tono={t.tono} fuerte>
-                  {t.nombre}
+                <Etiqueta tono={t.tono} main>
+                  {t.name}
                 </Etiqueta>
                 <Etiqueta tono={t.tono}>{t.uso}</Etiqueta>
               </li>
@@ -52,18 +52,18 @@ export function Componentes() {
         <section>
           <h2 className="font-titulo mb-3 text-2xl font-semibold">Botones (mínimo 48 px)</h2>
           <div className="flex flex-wrap gap-2">
-            <Boton variante="principal" icono="enviar">
+            <Boton variant="main" icono="send">
               Enviar
             </Boton>
-            <Boton variante="secundario">Secundario</Boton>
-            <Boton variante="exito" icono="check">
+            <Boton variant="secondary">Secundario</Boton>
+            <Boton variant="success" icono="check">
               Cerrar mesa
             </Boton>
-            <Boton variante="peligro" icono="cerrar">
+            <Boton variant="danger" icono="close">
               Anular
             </Boton>
-            <Boton variante="fantasma" icono="mas" aria-label="Agregar" />
-            <Boton variante="principal" grande>
+            <Boton variant="ghost" icono="more" aria-label="Agregar" />
+            <Boton variant="main" large>
               Grande · 56 px
             </Boton>
             <Boton disabled>Deshabilitado</Boton>
@@ -73,9 +73,9 @@ export function Componentes() {
         <section>
           <h2 className="font-titulo mb-3 text-2xl font-semibold">Estado de conexión</h2>
           <div className="flex flex-col gap-2">
-            <IndicadorConexion estado="en_linea" />
-            <IndicadorConexion estado="solo_local" />
-            <IndicadorConexion estado="sin_conexion" pendientes={3} impresorasConFalla={1} />
+            <IndicadorConexion status="online" />
+            <IndicadorConexion status="local_only" />
+            <IndicadorConexion status="offline" pendingList={3} impresorasConFalla={1} />
           </div>
         </section>
 
@@ -92,11 +92,11 @@ export function Componentes() {
             <Boton onClick={() => setPanel(true)}>Abrir panel lateral</Boton>
           </div>
           <PanelLateral
-            abierto={panel}
+            opened={panel}
             titulo="Panel lateral"
             alCerrar={() => setPanel(false)}
             pie={
-              <Boton variante="principal" className="w-full" onClick={() => setPanel(false)}>
+              <Boton variant="main" className="w-full" onClick={() => setPanel(false)}>
                 Listo
               </Boton>
             }
@@ -113,8 +113,8 @@ export function Componentes() {
           <div className="rounded-2xl border border-borde bg-superficie p-4">
             <TecladoPin
               error={error}
-              intento={intentos}
-              esperaMs={espera}
+              intento={attempts}
+              esperaMs={delay}
               alCompletar={(pin) => {
                 if (pin === '2468') {
                   setError(null)
@@ -122,7 +122,7 @@ export function Componentes() {
                   avisar('Hola, Mesero 1')
                   return
                 }
-                const n = intentos + 1
+                const n = attempts + 1
                 setIntentos(n)
                 setError('PIN incorrecto')
                 setEspera(n >= 3 ? 2000 * 2 ** (n - 3) : 0)

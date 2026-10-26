@@ -17,11 +17,11 @@ export interface OpcionesServidor {
   /** Sin esta opción no se exponen las rutas de diagnóstico. */
   diagnostico?: OpcionesDiagnostico
   /** Sin esta opción no se exponen emparejamiento, sesiones ni autorizaciones. */
-  acceso?: ServicioAcceso
+  access?: ServicioAcceso
   /** Sin esta opción no hay WebSocket de sincronización. */
   sincronizacion?: OpcionesSincronizacion
   /** Sin esta opción no se entrega el catálogo ni se administra el personal. */
-  catalogo?: OpcionesCatalogo
+  catalog?: OpcionesCatalogo
   /** Sin esta opción no hay impresoras, cola de comandas ni pantallas de cocina (ADR-015). */
   impresion?: OpcionesImpresion
   /** Versión de la base, para mostrarla en el chequeo de salud. */
@@ -32,9 +32,9 @@ export interface OpcionesServidor {
 export function crearServidor({
   dirApp,
   diagnostico,
-  acceso,
+  access,
   sincronizacion,
-  catalogo,
+  catalog,
   impresion,
   versionBase,
   logger = false,
@@ -46,15 +46,15 @@ export function crearServidor({
   if (diagnostico) {
     app.register(rutasDiagnostico, diagnostico)
   }
-  if (acceso) {
-    app.register(rutasAcceso, { acceso })
+  if (access) {
+    app.register(rutasAcceso, { access })
   }
   if (sincronizacion) {
     app.register(rutasSincronizacion, sincronizacion)
   }
-  if (catalogo) {
-    app.register(rutasCatalogo, catalogo)
-    app.register(rutasPersonal, catalogo)
+  if (catalog) {
+    app.register(rutasCatalogo, catalog)
+    app.register(rutasPersonal, catalog)
   }
   if (impresion) {
     app.register(rutasImpresion, impresion)
@@ -65,19 +65,19 @@ export function crearServidor({
   // log del hub y el equipo recibe un mensaje claro. Los errores de la petición (400, 413) siguen
   // con su respuesta de siempre.
   app.setErrorHandler((error, req, reply) => {
-    const estado = (error as { statusCode?: number }).statusCode ?? 500
-    if (estado < 500) return reply.send(error)
+    const status = (error as { statusCode?: number }).statusCode ?? 500
+    if (status < 500) return reply.send(error)
     req.log.error(error)
     return reply
       .code(500)
-      .send({ error: 'interno', mensaje: 'Algo falló en la caja. Intenta de nuevo.' })
+      .send({ error: 'internal', message: 'Algo falló en la caja. Intenta de nuevo.' })
   })
 
   // Cada dispositivo consulta la salud cada pocos segundos: no llenar el log con eso.
-  app.get('/api/salud', { logLevel: 'silent' }, async () => ({
-    estado: 'ok',
-    servicio: 'hub',
-    hora: new Date().toISOString(),
+  app.get('/api/health', { logLevel: 'silent' }, async () => ({
+    status: 'ok',
+    service: 'hub',
+    time: new Date().toISOString(),
     ...(versionBase === undefined ? {} : { version_base: versionBase }),
   }))
 

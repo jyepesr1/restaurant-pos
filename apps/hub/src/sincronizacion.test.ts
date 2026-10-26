@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { firmarEvento, nuevoId } from '@pos/core'
+import { newId, signEvent } from '@pos/core'
 import type { MensajeHub, SalaSync } from '@pos/sync'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type WebSocket from 'ws'
@@ -23,41 +23,39 @@ let carpeta = ''
 afterEach(() => rmSync(carpeta, { recursive: true, force: true }))
 
 async function montar(
-  opciones: { esperaSaludoMs?: number; alFallo?: (error: unknown) => void } = {},
+  options: { esperaSaludoMs?: number; onFailure?: (error: unknown) => void } = {},
 ) {
   carpeta = mkdtempSync(join(tmpdir(), 'pos-sync-'))
   const { db } = abrirDatos(carpeta)
   let sala: ReturnType<typeof prepararSincronizacion> | null = null
-  const acceso = prepararAcceso(
+  const access = prepararAcceso(
     db,
     carpeta,
     () => {},
-    (id, en) => sala?.revocar(id, en),
+    (id, en) => sala?.revoke(id, en),
   )
-  const { pines } = sembrar(
+  const { pins } = sembrar(
     db,
-    acceso.acceso,
-    { restauranteId: acceso.restauranteId, roles: acceso.roles, carta: leerCarta(CARTA) },
+    access.access,
+    { restauranteId: access.restauranteId, roles: access.roles, menu: leerCarta(CARTA) },
     new Date().toISOString(),
   )
-  sala = prepararSincronizacion(db, carpeta, acceso.restauranteId, acceso.acceso)
+  sala = prepararSincronizacion(db, carpeta, access.restauranteId, access.access)
   const app = crearServidor({
-    acceso: acceso.acceso,
-    sincronizacion: { sala, intervaloLatidoMs: 60_000, ...opciones },
-    catalogo: { db, restauranteId: acceso.restauranteId, acceso: acceso.acceso },
+    access: access.access,
+    sincronizacion: { sala, intervaloLatidoMs: 60_000, ...options },
+    catalog: { db, restauranteId: access.restauranteId, access: access.access },
   })
   await app.ready()
   /** Con qué entra cada quien: usuario y contraseña si los tiene (ADR-013), si no su PIN. */
-  const credencialesDe = (nombre: string) => {
-    if (nombre === 'Administrador')
+  const credencialesDe = (name: string) => {
+    if (name === 'Administrador')
       return {
-        usuario: acceso.admin.usuario as string,
-        contrasena: acceso.admin.contrasena as string,
+        user: access.admin.user as string,
+        password: access.admin.password as string,
       }
-    const p = pines.find((x) => x.nombre === nombre)
-    return p?.usuario
-      ? { usuario: p.usuario, contrasena: p.contrasena as string }
-      : { pin: p?.pin as string }
+    const p = pins.find((x) => x.name === name)
+    return p?.user ? { user: p.user, password: p.password as string } : { pin: p?.pin as string }
   }
   const post = async (url: string, cuerpo: object, token?: string) =>
     (
@@ -73,73 +71,73 @@ async function montar(
    * Un equipo como en el restaurante (ADR-013): entra sin emparejar y el hub lo registra. La caja
    * entra con la contraseña del administrador; el celular, con el PIN de un mesero.
    */
-  async function equipo(tipo: 'mesero' | 'caja', _nombre: string) {
+  async function device(type: 'waiter' | 'register', _nombre: string) {
     const r = await post(
-      '/api/entrar',
-      credencialesDe(tipo === 'caja' ? 'Administrador' : 'Mesero 2'),
+      '/api/sign-in',
+      credencialesDe(type === 'register' ? 'Administrador' : 'Mesero 2'),
     )
-    return { token: r.equipo.token as string, dispositivo_id: r.equipo.dispositivo_id as string }
+    return { token: r.device.token as string, device_id: r.device.device_id as string }
   }
 
   /** Abre el WebSocket y junta lo que llega. */
-  async function conectar(token: string) {
+  async function connect(token: string) {
     const recibidos: MensajeHub[] = []
     const ws: WebSocket = await app.injectWS('/api/sync/ws')
     ws.on('message', (d) => recibidos.push(JSON.parse(d.toString())))
-    const enviar = (m: object) => ws.send(JSON.stringify(m))
-    enviar({ tipo: 'hola', token, hub_instancia: null, hasta: 0, version_app: 'prueba' })
-    const esperar = async (tipo: string) => {
-      for (let i = 0; i < 100 && !recibidos.some((m) => m.tipo === tipo); i++)
+    const send = (m: object) => ws.send(JSON.stringify(m))
+    send({ type: 'hello', token, hub_instancia: null, until: 0, version_app: 'prueba' })
+    const esperar = async (type: string) => {
+      for (let i = 0; i < 100 && !recibidos.some((m) => m.type === type); i++)
         await new Promise((r) => setTimeout(r, 10))
-      return recibidos.find((m) => m.tipo === tipo)
+      return recibidos.find((m) => m.type === type)
     }
-    return { ws, recibidos, enviar, esperar }
+    return { ws, recibidos, send, esperar }
   }
 
-  return { app, db, acceso, credencialesDe, post, equipo, conectar }
+  return { app, db, access, credencialesDe, post, device, connect }
 }
 
 describe('WebSocket de sincronización', () => {
   it('un pedido firmado de un mesero llega confirmado y el otro equipo lo recibe', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular Ana')
-    const sesion = await m.post('/api/entrar', m.credencialesDe('Mesero 1'), celular.token)
+    const register = await m.device('register', 'Caja')
+    const phone = await m.device('waiter', 'Celular Ana')
+    const session = await m.post('/api/sign-in', m.credencialesDe('Mesero 1'), phone.token)
 
-    const enCaja = await m.conectar(caja.token)
-    const enCelular = await m.conectar(celular.token)
-    const bienvenido = await enCelular.esperar('bienvenido')
-    expect(bienvenido).toMatchObject({ tipo: 'bienvenido', secuencia_max: 0 })
-    expect(typeof (bienvenido as { hub_instancia: string }).hub_instancia).toBe('string')
+    const enCaja = await m.connect(register.token)
+    const enCelular = await m.connect(phone.token)
+    const welcome = await enCelular.esperar('welcome')
+    expect(welcome).toMatchObject({ type: 'welcome', secuencia_max: 0 })
+    expect(typeof (welcome as { hub_instancia: string }).hub_instancia).toBe('string')
 
     const ahora = new Date().toISOString()
-    const evento = {
-      id: nuevoId(),
-      tipo: 'PedidoAbierto',
-      version_esquema: 1,
-      agregado_tipo: 'pedido',
-      agregado_id: nuevoId(),
-      relacionados: [],
-      datos: { canal: 'salon', mesa_id: null, comensales: 2 },
-      sesion_id: sesion.sesion_id,
-      usuario_id: sesion.usuario.id,
-      dispositivo_id: celular.dispositivo_id,
-      autorizacion_id: null,
-      motivo: null,
-      hora_dispositivo: ahora,
-      hora_estimada_hub: ahora,
-      secuencia_base: 0,
+    const event = {
+      id: newId(),
+      type: 'OrderOpened',
+      schema_version: 1,
+      aggregate_type: 'order',
+      aggregate_id: newId(),
+      related: [],
+      data: { channel: 'dine_in', table_id: null, guests: 2 },
+      session_id: session.session_id,
+      user_id: session.user.id,
+      device_id: phone.device_id,
+      authorization_id: null,
+      reason: null,
+      device_time: ahora,
+      hub_estimated_time: ahora,
+      base_sequence: 0,
     }
-    const firmado = { ...evento, firma: firmarEvento(evento as never, sesion.secreto) }
-    enCelular.enviar({ tipo: 'empujar', lote_id: 'l1', eventos: [firmado] })
+    const firmado = { ...event, signature: signEvent(event as never, session.secret) }
+    enCelular.send({ type: 'push', lote_id: 'l1', events: [firmado] })
 
-    const resultado = await enCelular.esperar('resultado')
-    expect(resultado).toMatchObject({
+    const result = await enCelular.esperar('result')
+    expect(result).toMatchObject({
       lote_id: 'l1',
-      resultados: [{ id: evento.id, estado: 'confirmado' }],
+      resultados: [{ id: event.id, status: 'confirmed' }],
     })
-    const nuevo = await enCaja.esperar('nuevo')
-    expect(nuevo).toMatchObject({ evento: { id: evento.id, secuencia: 1, sesion_id: null } })
+    const fresh = await enCaja.esperar('new')
+    expect(fresh).toMatchObject({ event: { id: event.id, sequence: 1, session_id: null } })
 
     enCaja.ws.terminate()
     enCelular.ws.terminate()
@@ -148,14 +146,14 @@ describe('WebSocket de sincronización', () => {
 
   it('lo que no es JSON o no es un mensaje se responde con error sin cortar', async () => {
     const m = await montar()
-    const equipo = await m.equipo('caja', 'Caja')
-    const c = await m.conectar(equipo.token)
-    await c.esperar('bienvenido')
+    const device = await m.device('register', 'Caja')
+    const c = await m.connect(device.token)
+    await c.esperar('welcome')
     c.ws.send('esto no es json')
     const error = await c.esperar('error')
-    expect(error).toMatchObject({ codigo: 'mensaje_invalido' })
-    c.enviar({ tipo: 'ping', marca: 'x' })
-    expect(await c.esperar('pong')).toMatchObject({ marca: 'x' })
+    expect(error).toMatchObject({ code: 'invalid_message' })
+    c.send({ type: 'ping', brand: 'x' })
+    expect(await c.esperar('pong')).toMatchObject({ brand: 'x' })
     c.ws.terminate()
     await m.app.close()
   })
@@ -164,27 +162,24 @@ describe('WebSocket de sincronización', () => {
 describe('catálogo para los equipos', () => {
   it('entrega mesas, estaciones y la carta sembrada, solo con token', async () => {
     const m = await montar()
-    const equipo = await m.equipo('mesero', 'Celular')
-    const sin = await m.app.inject({ method: 'GET', url: '/api/catalogo' })
-    expect(sin.statusCode).toBe(401)
+    const device = await m.device('waiter', 'Celular')
+    const without = await m.app.inject({ method: 'GET', url: '/api/catalog' })
+    expect(without.statusCode).toBe(401)
 
     const r = await m.app.inject({
       method: 'GET',
-      url: '/api/catalogo',
-      headers: { authorization: `Bearer ${equipo.token}` },
+      url: '/api/catalog',
+      headers: { authorization: `Bearer ${device.token}` },
     })
-    const catalogo = r.json()
-    expect(catalogo.mesas).toHaveLength(25)
-    expect(catalogo.estaciones.map((e: { nombre: string }) => e.nombre)).toEqual([
-      'Cocina',
-      'Barra',
-    ])
-    const productos = catalogo.categorias.flatMap((c: { productos: unknown[] }) => c.productos)
-    expect(productos).toHaveLength(98)
-    const vino = productos.find((p: { nombre: string }) => p.nombre === 'Ramón Bilbao Crianza')
-    expect(vino.variantes.map((v: { nombre: string }) => v.nombre)).toEqual(['Copa', 'Botella'])
-    expect(vino.impuesto).toEqual({ tipo: 'inc', tarifa: 800 })
-    expect(catalogo.version).toBeGreaterThan(0)
+    const catalog = r.json()
+    expect(catalog.tables).toHaveLength(25)
+    expect(catalog.stations.map((e: { name: string }) => e.name)).toEqual(['Cocina', 'Barra'])
+    const products = catalog.categories.flatMap((c: { products: unknown[] }) => c.products)
+    expect(products).toHaveLength(98)
+    const vino = products.find((p: { name: string }) => p.name === 'Ramón Bilbao Crianza')
+    expect(vino.variants.map((v: { name: string }) => v.name)).toEqual(['Copa', 'Botella'])
+    expect(vino.tax).toEqual({ type: 'inc', rate: 800 })
+    expect(catalog.version).toBeGreaterThan(0)
     await m.app.close()
   })
 })
@@ -200,73 +195,73 @@ describe('instancia del hub', () => {
 // ── Fallas del WebSocket ─────────────────────────────────────────────────────────────────────
 
 /** Espera a que el socket se cierre y devuelve el código con que lo cerró el hub. */
-const cierre = (ws: WebSocket) =>
-  new Promise<number>((resolver) => ws.once('close', (codigo) => resolver(codigo)))
+const closeout = (ws: WebSocket) =>
+  new Promise<number>((resolver) => ws.once('close', (code) => resolver(code)))
 
 function eventoPedido(
-  sesion: { sesion_id: string; secreto: string; usuario: { id: string } },
+  session: { session_id: string; secret: string; user: { id: string } },
   dispositivoId: string,
 ) {
   const ahora = new Date().toISOString()
-  const evento = {
-    id: nuevoId(),
-    tipo: 'PedidoAbierto',
-    version_esquema: 1,
-    agregado_tipo: 'pedido',
-    agregado_id: nuevoId(),
-    relacionados: [],
-    datos: { canal: 'salon', mesa_id: null, comensales: 1 },
-    sesion_id: sesion.sesion_id,
-    usuario_id: sesion.usuario.id,
-    dispositivo_id: dispositivoId,
-    autorizacion_id: null,
-    motivo: null,
-    hora_dispositivo: ahora,
-    hora_estimada_hub: ahora,
-    secuencia_base: 0,
+  const event = {
+    id: newId(),
+    type: 'OrderOpened',
+    schema_version: 1,
+    aggregate_type: 'order',
+    aggregate_id: newId(),
+    related: [],
+    data: { channel: 'dine_in', table_id: null, guests: 1 },
+    session_id: session.session_id,
+    user_id: session.user.id,
+    device_id: dispositivoId,
+    authorization_id: null,
+    reason: null,
+    device_time: ahora,
+    hub_estimated_time: ahora,
+    base_sequence: 0,
   }
-  return { ...evento, firma: firmarEvento(evento as never, sesion.secreto) }
+  return { ...event, signature: signEvent(event as never, session.secret) }
 }
 
 describe('WebSocket: mensajes enormes', () => {
   it('un mensaje de más de 1 MB cierra esa conexión (1009) y el hub sigue atendiendo a los demás', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular')
-    const malo = await m.conectar(celular.token)
-    await malo.esperar('bienvenido')
-    const cerrado = cierre(malo.ws)
-    malo.ws.send(JSON.stringify({ tipo: 'ping', marca: 'x'.repeat(1024 * 1024 + 1) }))
-    expect(await cerrado).toBe(1009)
+    const register = await m.device('register', 'Caja')
+    const phone = await m.device('waiter', 'Celular')
+    const badCase = await m.connect(phone.token)
+    await badCase.esperar('welcome')
+    const closed = closeout(badCase.ws)
+    badCase.ws.send(JSON.stringify({ type: 'ping', brand: 'x'.repeat(1024 * 1024 + 1) }))
+    expect(await closed).toBe(1009)
 
-    const otro = await m.conectar(caja.token)
-    expect(await otro.esperar('bienvenido')).toBeDefined()
-    otro.enviar({ tipo: 'ping', marca: 'vivo' })
-    expect(await otro.esperar('pong')).toMatchObject({ marca: 'vivo' })
-    otro.ws.terminate()
+    const other = await m.connect(register.token)
+    expect(await other.esperar('welcome')).toBeDefined()
+    other.send({ type: 'ping', brand: 'vivo' })
+    expect(await other.esperar('pong')).toMatchObject({ brand: 'vivo' })
+    other.ws.terminate()
     await m.app.close()
   })
 
   it('un mensaje grande pero bajo el límite se responde con error y no corta la conexión', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const c = await m.conectar(caja.token)
-    await c.esperar('bienvenido')
-    c.ws.send(JSON.stringify({ tipo: 'ping', marca: 'x'.repeat(900 * 1024) }))
-    expect(await c.esperar('error')).toMatchObject({ codigo: 'mensaje_invalido' })
-    c.enviar({ tipo: 'ping', marca: 'sigue' })
-    expect(await c.esperar('pong')).toMatchObject({ marca: 'sigue' })
+    const register = await m.device('register', 'Caja')
+    const c = await m.connect(register.token)
+    await c.esperar('welcome')
+    c.ws.send(JSON.stringify({ type: 'ping', brand: 'x'.repeat(900 * 1024) }))
+    expect(await c.esperar('error')).toMatchObject({ code: 'invalid_message' })
+    c.send({ type: 'ping', brand: 'sigue' })
+    expect(await c.esperar('pong')).toMatchObject({ brand: 'sigue' })
     c.ws.terminate()
     await m.app.close()
   })
 
   it('un lote de más de 100 eventos se responde con error de formato', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const c = await m.conectar(caja.token)
-    await c.esperar('bienvenido')
-    c.enviar({ tipo: 'empujar', lote_id: 'l', eventos: Array.from({ length: 101 }, () => ({})) })
-    expect(await c.esperar('error')).toMatchObject({ codigo: 'mensaje_invalido' })
+    const register = await m.device('register', 'Caja')
+    const c = await m.connect(register.token)
+    await c.esperar('welcome')
+    c.send({ type: 'push', lote_id: 'l', events: Array.from({ length: 101 }, () => ({})) })
+    expect(await c.esperar('error')).toMatchObject({ code: 'invalid_message' })
     c.ws.terminate()
     await m.app.close()
   })
@@ -275,60 +270,60 @@ describe('WebSocket: mensajes enormes', () => {
 describe('WebSocket: el socket se cierra a mitad', () => {
   it('si el dispositivo se corta justo tras empujar, el evento queda guardado y al reenviar no se duplica', async () => {
     const fallos: unknown[] = []
-    const m = await montar({ alFallo: (e) => fallos.push(e) })
-    const caja = await m.equipo('caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular')
-    const sesion = await m.post('/api/entrar', m.credencialesDe('Mesero 1'), celular.token)
-    const evento = eventoPedido(sesion, celular.dispositivo_id)
+    const m = await montar({ onFailure: (e) => fallos.push(e) })
+    const register = await m.device('register', 'Caja')
+    const phone = await m.device('waiter', 'Celular')
+    const session = await m.post('/api/sign-in', m.credencialesDe('Mesero 1'), phone.token)
+    const event = eventoPedido(session, phone.device_id)
 
-    const primero = await m.conectar(celular.token)
-    await primero.esperar('bienvenido')
-    primero.enviar({ tipo: 'empujar', lote_id: 'a', eventos: [evento] })
-    const cerrado = cierre(primero.ws)
-    primero.ws.terminate() // sin respuesta: el celular perdió la señal
-    await cerrado
+    const firstOne = await m.connect(phone.token)
+    await firstOne.esperar('welcome')
+    firstOne.send({ type: 'push', lote_id: 'a', events: [event] })
+    const closed = closeout(firstOne.ws)
+    firstOne.ws.terminate() // sin respuesta: el celular perdió la señal
+    await closed
 
     // Reconecta y reenvía el mismo lote: el hub reconoce el evento, no lo guarda dos veces.
-    const segundo = await m.conectar(celular.token)
-    await segundo.esperar('bienvenido')
-    segundo.enviar({ tipo: 'empujar', lote_id: 'b', eventos: [evento] })
-    expect(await segundo.esperar('resultado')).toMatchObject({
+    const secondOne = await m.connect(phone.token)
+    await secondOne.esperar('welcome')
+    secondOne.send({ type: 'push', lote_id: 'b', events: [event] })
+    expect(await secondOne.esperar('result')).toMatchObject({
       lote_id: 'b',
-      resultados: [{ id: evento.id, estado: 'confirmado' }],
+      resultados: [{ id: event.id, status: 'confirmed' }],
     })
 
-    const enCaja = await m.conectar(caja.token)
-    await enCaja.esperar('bienvenido')
-    enCaja.enviar({ tipo: 'traer', desde: 0 })
-    const traido = await enCaja.esperar('eventos')
-    expect(traido).toMatchObject({ hasta: 1, hay_mas: false })
-    expect((traido as { eventos: unknown[] }).eventos).toHaveLength(1)
+    const enCaja = await m.connect(register.token)
+    await enCaja.esperar('welcome')
+    enCaja.send({ type: 'pull', from: 0 })
+    const traido = await enCaja.esperar('events')
+    expect(traido).toMatchObject({ until: 1, hay_mas: false })
+    expect((traido as { events: unknown[] }).events).toHaveLength(1)
     expect(fallos).toEqual([])
 
-    segundo.ws.terminate()
+    secondOne.ws.terminate()
     enCaja.ws.terminate()
     await m.app.close()
   })
 
   it('un equipo que se fue sin avisar no estorba al difundir lo que hace otro', async () => {
     const fallos: unknown[] = []
-    const m = await montar({ alFallo: (e) => fallos.push(e) })
-    const caja = await m.equipo('caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular')
-    const sesion = await m.post('/api/entrar', m.credencialesDe('Mesero 1'), celular.token)
+    const m = await montar({ onFailure: (e) => fallos.push(e) })
+    const register = await m.device('register', 'Caja')
+    const phone = await m.device('waiter', 'Celular')
+    const session = await m.post('/api/sign-in', m.credencialesDe('Mesero 1'), phone.token)
 
-    const enCaja = await m.conectar(caja.token)
-    await enCaja.esperar('bienvenido')
-    const cerrado = cierre(enCaja.ws)
+    const enCaja = await m.connect(register.token)
+    await enCaja.esperar('welcome')
+    const closed = closeout(enCaja.ws)
     enCaja.ws.terminate()
-    await cerrado
+    await closed
 
-    const enCelular = await m.conectar(celular.token)
-    await enCelular.esperar('bienvenido')
-    const evento = eventoPedido(sesion, celular.dispositivo_id)
-    enCelular.enviar({ tipo: 'empujar', lote_id: 'l', eventos: [evento] })
-    expect(await enCelular.esperar('resultado')).toMatchObject({
-      resultados: [{ id: evento.id, estado: 'confirmado' }],
+    const enCelular = await m.connect(phone.token)
+    await enCelular.esperar('welcome')
+    const event = eventoPedido(session, phone.device_id)
+    enCelular.send({ type: 'push', lote_id: 'l', events: [event] })
+    expect(await enCelular.esperar('result')).toMatchObject({
+      resultados: [{ id: event.id, status: 'confirmed' }],
     })
     expect(fallos).toEqual([])
     enCelular.ws.terminate()
@@ -336,31 +331,31 @@ describe('WebSocket: el socket se cierra a mitad', () => {
   })
 
   it('si el hub falla al procesar un mensaje, corta esa conexión (1011) y lo registra', async () => {
-    const falla = new Error('el almacén no responde')
+    const failing = new Error('el almacén no responde')
     const sala = {
-      conectar: () => ({
+      connect: () => ({
         recibir: () => {
-          throw falla
+          throw failing
         },
-        cerrar: vi.fn(),
+        close: vi.fn(),
       }),
       latir: () => {},
     } as unknown as SalaSync
     const fallos: unknown[] = []
-    const app = crearServidor({ sincronizacion: { sala, alFallo: (e) => fallos.push(e) } })
+    const app = crearServidor({ sincronizacion: { sala, onFailure: (e) => fallos.push(e) } })
     await app.ready()
     const ws: WebSocket = await app.injectWS('/api/sync/ws')
-    const cerrado = cierre(ws)
-    ws.send(JSON.stringify({ tipo: 'ping', marca: 'x' }))
-    expect(await cerrado).toBe(1011)
-    expect(fallos).toEqual([falla])
+    const closed = closeout(ws)
+    ws.send(JSON.stringify({ type: 'ping', brand: 'x' }))
+    expect(await closed).toBe(1011)
+    expect(fallos).toEqual([failing])
     await app.close()
   })
 
   it('una conexión que nunca saluda se cierra (1008) y se libera su lugar en la sala', async () => {
-    const cerrar = vi.fn()
+    const close = vi.fn()
     const sala = {
-      conectar: () => ({ recibir: () => {}, cerrar }),
+      connect: () => ({ recibir: () => {}, close }),
       latir: () => {},
     } as unknown as SalaSync
     const app = crearServidor({ sincronizacion: { sala, esperaSaludoMs: 20 } })
@@ -368,11 +363,11 @@ describe('WebSocket: el socket se cierra a mitad', () => {
     await app.listen({ port: 0, host: '127.0.0.1' })
     const { port } = app.server.address() as { port: number }
     const ws = new globalThis.WebSocket(`ws://127.0.0.1:${port}/api/sync/ws`)
-    const codigo = await new Promise<number>((resolver) =>
+    const code = await new Promise<number>((resolver) =>
       ws.addEventListener('close', (e) => resolver(e.code)),
     )
-    expect(codigo).toBe(1008)
-    await vi.waitFor(() => expect(cerrar).toHaveBeenCalledTimes(1))
+    expect(code).toBe(1008)
+    await vi.waitFor(() => expect(close).toHaveBeenCalledTimes(1))
     await app.close()
   })
 })
@@ -380,51 +375,51 @@ describe('WebSocket: el socket se cierra a mitad', () => {
 describe('WebSocket: token revocado con el equipo conectado', () => {
   it('avisa al equipo retirado, deja de mandarle el salón y lo que haga después no entra', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular')
+    const register = await m.device('register', 'Caja')
+    const phone = await m.device('waiter', 'Celular')
     const admin = await m.post(
-      '/api/entrar',
-      { usuario: m.acceso.admin.usuario, contrasena: m.acceso.admin.contrasena },
-      caja.token,
+      '/api/sign-in',
+      { user: m.access.admin.user, password: m.access.admin.password },
+      register.token,
     )
-    expect(admin.sesion_id).toBeDefined()
-    const sesionMesero = await m.post('/api/entrar', m.credencialesDe('Mesero 1'), celular.token)
+    expect(admin.session_id).toBeDefined()
+    const sesionMesero = await m.post('/api/sign-in', m.credencialesDe('Mesero 1'), phone.token)
 
-    const enCaja = await m.conectar(caja.token)
-    const enCelular = await m.conectar(celular.token)
-    await enCaja.esperar('bienvenido')
-    await enCelular.esperar('bienvenido')
+    const enCaja = await m.connect(register.token)
+    const enCelular = await m.connect(phone.token)
+    await enCaja.esperar('welcome')
+    await enCelular.esperar('welcome')
 
     // Estando conectado, la caja retira el celular.
     const r = await m.app.inject({
       method: 'POST',
-      url: `/api/dispositivos/${celular.dispositivo_id}/revocar`,
-      payload: { sesion_id: admin.sesion_id, secreto: admin.secreto },
-      headers: { authorization: `Bearer ${caja.token}` },
+      url: `/api/devices/${phone.device_id}/revoke`,
+      payload: { session_id: admin.session_id, secret: admin.secret },
+      headers: { authorization: `Bearer ${register.token}` },
     })
     expect(r.statusCode).toBe(200)
-    expect(await enCelular.esperar('error')).toMatchObject({ codigo: 'token_revocado' })
+    expect(await enCelular.esperar('error')).toMatchObject({ code: 'revoked_token' })
 
     // Ya no lee el salón: ni lo nuevo ni lo que pide con `traer`.
-    const delCaja = eventoPedido(admin, caja.dispositivo_id)
-    enCaja.enviar({ tipo: 'empujar', lote_id: 'c', eventos: [delCaja] })
-    await enCaja.esperar('resultado')
-    enCelular.enviar({ tipo: 'traer', desde: 0 })
+    const delCaja = eventoPedido(admin, register.device_id)
+    enCaja.send({ type: 'push', lote_id: 'c', events: [delCaja] })
+    await enCaja.esperar('result')
+    enCelular.send({ type: 'pull', from: 0 })
     await vi.waitFor(() =>
-      expect(enCelular.recibidos.filter((x) => x.tipo === 'error')).toHaveLength(2),
+      expect(enCelular.recibidos.filter((x) => x.type === 'error')).toHaveLength(2),
     )
-    expect(enCelular.recibidos.filter((x) => x.tipo === 'error')).toHaveLength(2)
-    expect(enCelular.recibidos.some((x) => x.tipo === 'nuevo' || x.tipo === 'eventos')).toBe(false)
+    expect(enCelular.recibidos.filter((x) => x.type === 'error')).toHaveLength(2)
+    expect(enCelular.recibidos.some((x) => x.type === 'new' || x.type === 'events')).toBe(false)
 
     // Lo que intente entregar después de la revocación no entra al salón.
-    const tarde = eventoPedido(sesionMesero, celular.dispositivo_id)
-    enCelular.enviar({ tipo: 'empujar', lote_id: 't', eventos: [tarde] })
-    const resultado = await enCelular.esperar('resultado')
-    expect(resultado).toMatchObject({ resultados: [{ id: tarde.id }] })
-    expect((resultado as { resultados: { estado: string }[] }).resultados[0]?.estado).not.toBe(
-      'confirmado',
+    const tarde = eventoPedido(sesionMesero, phone.device_id)
+    enCelular.send({ type: 'push', lote_id: 't', events: [tarde] })
+    const result = await enCelular.esperar('result')
+    expect(result).toMatchObject({ resultados: [{ id: tarde.id }] })
+    expect((result as { resultados: { status: string }[] }).resultados[0]?.status).not.toBe(
+      'confirmed',
     )
-    expect(enCaja.recibidos.some((x) => x.tipo === 'nuevo' && x.evento.id === tarde.id)).toBe(false)
+    expect(enCaja.recibidos.some((x) => x.type === 'new' && x.event.id === tarde.id)).toBe(false)
 
     enCaja.ws.terminate()
     enCelular.ws.terminate()
@@ -433,24 +428,24 @@ describe('WebSocket: token revocado con el equipo conectado', () => {
 
   it('con un token que ya estaba revocado al conectar no se le entrega el salón', async () => {
     const m = await montar()
-    const caja = await m.equipo('caja', 'Caja')
-    const celular = await m.equipo('mesero', 'Celular')
+    const register = await m.device('register', 'Caja')
+    const phone = await m.device('waiter', 'Celular')
     const admin = await m.post(
-      '/api/entrar',
-      { usuario: m.acceso.admin.usuario, contrasena: m.acceso.admin.contrasena },
-      caja.token,
+      '/api/sign-in',
+      { user: m.access.admin.user, password: m.access.admin.password },
+      register.token,
     )
     await m.app.inject({
       method: 'POST',
-      url: `/api/dispositivos/${celular.dispositivo_id}/revocar`,
-      payload: { sesion_id: admin.sesion_id, secreto: admin.secreto },
-      headers: { authorization: `Bearer ${caja.token}` },
+      url: `/api/devices/${phone.device_id}/revoke`,
+      payload: { session_id: admin.session_id, secret: admin.secret },
+      headers: { authorization: `Bearer ${register.token}` },
     })
-    const c = await m.conectar(celular.token)
-    await c.esperar('bienvenido')
-    c.enviar({ tipo: 'traer', desde: 0 })
-    expect(await c.esperar('error')).toMatchObject({ codigo: 'token_revocado' })
-    expect(c.recibidos.some((x) => x.tipo === 'eventos')).toBe(false)
+    const c = await m.connect(phone.token)
+    await c.esperar('welcome')
+    c.send({ type: 'pull', from: 0 })
+    expect(await c.esperar('error')).toMatchObject({ code: 'revoked_token' })
+    expect(c.recibidos.some((x) => x.type === 'events')).toBe(false)
     c.ws.terminate()
     await m.app.close()
   })

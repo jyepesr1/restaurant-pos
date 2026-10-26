@@ -28,20 +28,20 @@ export function enTransaccion<T>(db: BaseSqlite, trabajo: () => T): T {
   // savepoint: quien atrape el error de una transacción de adentro sin volver a lanzarlo deja su
   // trabajo a medias dentro de la de afuera. Por eso el error siempre se deja subir.
   if (enCurso.has(db)) {
-    const resultado = trabajo()
-    if (typeof (resultado as { then?: unknown } | undefined)?.then === 'function')
+    const result = trabajo()
+    if (typeof (result as { then?: unknown } | undefined)?.then === 'function')
       throw new Error('enTransaccion no admite funciones asíncronas')
-    return resultado
+    return result
   }
   db.exec('BEGIN IMMEDIATE')
   enCurso.add(db)
   try {
-    const resultado = trabajo()
-    if (typeof (resultado as { then?: unknown } | undefined)?.then === 'function') {
+    const result = trabajo()
+    if (typeof (result as { then?: unknown } | undefined)?.then === 'function') {
       throw new Error('enTransaccion no admite funciones asíncronas')
     }
     db.exec('COMMIT')
-    return resultado
+    return result
   } catch (error) {
     try {
       db.exec('ROLLBACK')

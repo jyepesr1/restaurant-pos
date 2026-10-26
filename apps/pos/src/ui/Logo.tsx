@@ -15,16 +15,16 @@ export function MarcaFaro({ className = 'size-9' }: { className?: string }) {
 
 /** Logo con nombre: el de Faro o, con su marca puesta, el del restaurante. */
 export function Logo({
-  nombre,
-  marca,
+  name,
+  brand,
   soloMarca = false,
 }: {
-  nombre?: string
-  marca?: string | null
+  name?: string
+  brand?: string | null
   /** Solo el dibujo, sin nombre (la barra lateral angosta de la tablet). */
   soloMarca?: boolean
 }) {
-  const conMarca = marca === 'la-spritzzeria'
+  const conMarca = brand === 'la-spritzzeria'
   return (
     <span className="flex items-center gap-2.5">
       {conMarca ? (
@@ -38,8 +38,8 @@ export function Logo({
         <MarcaFaro />
       )}
       <span className={`flex flex-col leading-tight ${soloMarca ? 'sr-only' : ''}`}>
-        <span className="font-titulo text-xl font-bold tracking-tight">{nombre ?? 'Faro'}</span>
-        {nombre && !conMarca && (
+        <span className="font-titulo text-xl font-bold tracking-tight">{name ?? 'Faro'}</span>
+        {name && !conMarca && (
           <span className="text-sm font-medium text-texto-suave">con Faro</span>
         )}
       </span>

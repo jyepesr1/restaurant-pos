@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { configCompleta, nuevoId } from '@pos/core'
+import { fullConfig, newId } from '@pos/core'
 import { aplicarMigraciones, type BaseSqlite } from '@pos/db'
 import { abrirBase } from '@pos/db/node'
 import { type ConfigHub, HubSync, SalaSync } from '@pos/sync'
@@ -20,9 +20,9 @@ import { revisorPrecios } from './precios'
 // Lo que hacen al arrancar el hub y el seed: abrir la base de la carpeta de datos y preparar el
 // acceso. Una sola carpeta, un solo proceso: la base se abre en exclusiva.
 
-/** Carpeta de datos: `DIR_DATOS` o `apps/hub/datos`. */
+/** Carpeta de datos: `DATA_DIR` o `apps/hub/datos`. */
 export const dirDatosDe = (entorno: NodeJS.ProcessEnv = process.env) =>
-  entorno.DIR_DATOS || fileURLToPath(new URL('../datos', import.meta.url))
+  entorno.DATA_DIR || fileURLToPath(new URL('../datos', import.meta.url))
 
 /** Abre la base en exclusiva y la lleva a la última versión. Devuelve las migraciones aplicadas. */
 export function abrirDatos(dirDatos: string): { db: BaseSqlite; aplicadas: number[] } {
@@ -35,31 +35,31 @@ export function abrirDatos(dirDatos: string): { db: BaseSqlite; aplicadas: numbe
 export function prepararAcceso(
   db: BaseSqlite,
   dirDatos: string,
-  alAvisar: (aviso: string) => void = () => {},
-  alRevocar?: (dispositivoId: string, revocadoEn: string) => void,
+  alAvisar: (alert: string) => void = () => {},
+  onRevoke?: (dispositivoId: string, revocadoEn: string) => void,
 ) {
-  const { clave, nueva, creadaEn } = cargarClave(dirDatos)
+  const { key, newOne, creadaEn } = cargarClave(dirDatos)
   const ahora = new Date().toISOString()
   const restauranteId = asegurarRestaurante(db, ahora)
   const roles = asegurarRoles(db, restauranteId, ahora)
-  const intentos = new Intentos(Date.now, alAvisar)
-  const acceso = new ServicioAcceso({
+  const attempts = new Intentos(Date.now, alAvisar)
+  const access = new ServicioAcceso({
     db,
     restauranteId,
-    clave,
-    intentos,
+    key,
+    attempts,
     claveDesde: creadaEn,
-    alRevocar,
+    onRevoke,
   })
-  const admin = asegurarAdministrador(db, acceso, roles.admin, nueva)
-  return { acceso, restauranteId, roles, admin, avisos: admin.avisos }
+  const admin = asegurarAdministrador(db, access, roles.admin, newOne)
+  return { access, restauranteId, roles, admin, avisos: admin.avisos }
 }
 
 /** Lo nuevo del administrador para mostrarlo una vez; vacío si no hay nada nuevo. */
 export function lineasAdministrador(admin: Administrador): string[] {
   return [
-    ...(admin.usuario ? [`  Usuario:          ${admin.usuario}`] : []),
-    ...(admin.contrasena ? [`  Contraseña:       ${admin.contrasena}`] : []),
+    ...(admin.user ? [`  Usuario:          ${admin.user}`] : []),
+    ...(admin.password ? [`  Contraseña:       ${admin.password}`] : []),
     ...(admin.pin ? [`  PIN para autorizar: ${admin.pin}`] : []),
   ]
 }
@@ -71,28 +71,28 @@ export function lineasAdministrador(admin: Administrador): string[] {
  */
 export function mostrarPines(
   dirDatos: string,
-  pines: {
+  pins: {
     /** Lo que se escribe en la ventana. */
     ventana: readonly string[]
     archivo: string
-    contenido: string
+    content: string
     /** Qué decir en el log si van al archivo. */
-    aviso: (ruta: string) => string
+    alert: (ruta: string) => string
   },
   enVentana = process.stdout.isTTY === true,
 ) {
   if (enVentana) {
-    for (const linea of pines.ventana) console.log(linea)
+    for (const line of pins.ventana) console.log(line)
     return
   }
-  const ruta = join(dirDatos, pines.archivo)
-  writeFileSync(ruta, pines.contenido, { mode: 0o600 })
+  const ruta = join(dirDatos, pins.archivo)
+  writeFileSync(ruta, pins.content, { mode: 0o600 })
   // `mode` solo vale al crear el archivo: si ya existía con otros permisos, se ajustan.
   chmodSync(ruta, 0o600)
-  console.log(pines.aviso(ruta))
+  console.log(pins.alert(ruta))
 }
 
-export const ARCHIVO_INSTANCIA = 'hub-instancia'
+export const ARCHIVO_INSTANCIA = 'hub-instance'
 
 /**
  * La identidad de esta instalación del hub (docs/SYNC.md#fallas-y-qué-pasa). Cambia al reinstalar
@@ -105,19 +105,19 @@ export function instanciaDelHub(dirDatos: string): string {
     const guardada = readFileSync(ruta, 'utf8').trim()
     if (guardada) return guardada
   }
-  const nueva = nuevoId()
-  writeFileSync(ruta, `${nueva}\n`)
-  return nueva
+  const newOne = newId()
+  writeFileSync(ruta, `${newOne}\n`)
+  return newOne
 }
 
 /** La zona horaria de la sede principal: la de las horas de las comandas y del día operativo. */
 export function zonaHorariaDe(db: BaseSqlite, restauranteId: string): string {
-  const sede = db
+  const location = db
     .prepare(
-      'SELECT zona_horaria FROM sede WHERE restaurante_id = ? AND activo = 1 ORDER BY creado_en LIMIT 1',
+      'SELECT time_zone FROM locations WHERE restaurant_id = ? AND active = 1 ORDER BY created_at LIMIT 1',
     )
     .get(restauranteId)
-  return String(sede?.zona_horaria ?? 'America/Bogota')
+  return String(location?.time_zone ?? 'America/Bogota')
 }
 
 /**
@@ -128,38 +128,38 @@ export function prepararSincronizacion(
   db: BaseSqlite,
   dirDatos: string,
   restauranteId: string,
-  acceso: ServicioAcceso,
-  alErrorInterno?: (error: unknown, eventoId: string) => void,
-  extra: Pick<ConfigHub, 'alGuardar' | 'alFalloAlGuardar'> = {},
+  access: ServicioAcceso,
+  alErrorInterno?: (error: unknown, eventId: string) => void,
+  extra: Pick<ConfigHub, 'onSave' | 'onSaveFailure'> = {},
 ): SalaSync {
-  const restaurante = db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)
-  const config = configCompleta(JSON.parse(String(restaurante?.config ?? '{}')))
+  const restaurant = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)
+  const config = fullConfig(JSON.parse(String(restaurant?.config ?? '{}')))
   const hub = new HubSync(new AlmacenSqlite(db, restauranteId), {
     restauranteId,
-    zonaHoraria: zonaHorariaDe(db, restauranteId),
-    inicioDiaOperativo: config.inicio_dia_operativo,
+    timeZone: zonaHorariaDe(db, restauranteId),
+    inicioDiaOperativo: config.business_day_start,
     instancia: instanciaDelHub(dirDatos),
-    reloj: () => new Date().toISOString(),
-    acceso,
+    clock: () => new Date().toISOString(),
+    access,
     alErrorInterno,
-    precios: revisorPrecios(db, restauranteId),
+    prices: revisorPrecios(db, restauranteId),
     // Se leen en cada pago: el administrador puede cambiarlas con el hub andando.
     reglasCobro: () => {
-      const fila = db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)
-      const actual = configCompleta(JSON.parse(String(fila?.config ?? '{}')))
+      const fila = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)
+      const current = fullConfig(JSON.parse(String(fila?.config ?? '{}')))
       return {
-        multiplo: actual.redondeo_efectivo,
-        modo: actual.redondeo_efectivo_modo,
-        medios: actual.medios_pago,
-        mediosPropios: actual.medios_propios.filter((m) => m.activo).map((m) => m.id),
-        umbralDiferencia: actual.umbral_diferencia_caja,
-        datafonos: db
-          .prepare('SELECT id FROM datafono WHERE restaurante_id = ? AND activo = 1')
+        multiple: current.cash_rounding,
+        mode: current.cash_rounding_mode,
+        medios: current.payment_methods,
+        mediosPropios: current.custom_methods.filter((m) => m.active).map((m) => m.id),
+        umbralDiferencia: current.register_variance_threshold,
+        cardTerminals: db
+          .prepare('SELECT id FROM card_terminals WHERE restaurant_id = ? AND active = 1')
           .all(restauranteId)
           .map((f) => String(f.id)),
       }
     },
     ...extra,
   })
-  return new SalaSync(hub, acceso.autenticar)
+  return new SalaSync(hub, access.authenticate)
 }

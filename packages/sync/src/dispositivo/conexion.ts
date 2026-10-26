@@ -12,14 +12,14 @@ export const TIEMPOS = {
 }
 
 /** Un canal abierto con el hub (un WebSocket en el navegador). */
-export interface Canal {
-  enviar(mensaje: MensajeDispositivo): void
-  cerrar(): void
+export interface Channel {
+  send(message: MensajeDispositivo): void
+  close(): void
 }
 
 export interface Manejadores {
   alAbrir(): void
-  alMensaje(mensaje: MensajeHub): void
+  alMensaje(message: MensajeHub): void
   alCerrar(): void
 }
 
@@ -39,15 +39,15 @@ const temporizadoresGlobales: Temporizadores = {
   clearInterval: (id) => clearInterval(id as ReturnType<typeof setInterval>),
 }
 
-export type EstadoConexion = 'conectando' | 'conectado' | 'sin_respuesta' | 'desconectado'
+export type EstadoConexion = 'connecting' | 'connected' | 'no_response' | 'disconnected'
 
 export interface OpcionesGestor {
   /** Abre un canal nuevo; los manejadores se llaman cuando pasa cada cosa. */
-  abrir(manejadores: Manejadores): Canal
-  alConectar(canal: Canal): void
+  open(manejadores: Manejadores): Channel
+  alConectar(channel: Channel): void
   alDesconectar(): void
-  alMensaje(mensaje: MensajeHub): void
-  alCambiarEstado?(estado: EstadoConexion): void
+  alMensaje(message: MensajeHub): void
+  alCambiarEstado?(status: EstadoConexion): void
   temporizadores?: Temporizadores
 }
 
@@ -59,11 +59,11 @@ export interface OpcionesGestor {
 export class GestorConexion {
   private readonly o: OpcionesGestor
   private readonly t: Temporizadores
-  private canal: Canal | null = null
-  private abierto = false
-  private activo = false
+  private channel: Channel | null = null
+  private opened = false
+  private active = false
   private visible = true
-  private intentos = 0
+  private attempts = 0
   private ultimoMensajeEn = 0
   /** Al volver a la pantalla, el primer reintento sale sin esperar; los siguientes, no. */
   private reintentoInmediato = false
@@ -75,86 +75,86 @@ export class GestorConexion {
   private comprobacion: unknown = null
   private vigilancia: unknown = null
 
-  constructor(opciones: OpcionesGestor) {
-    this.o = opciones
-    this.t = opciones.temporizadores ?? temporizadoresGlobales
+  constructor(options: OpcionesGestor) {
+    this.o = options
+    this.t = options.temporizadores ?? temporizadoresGlobales
   }
 
   iniciar() {
-    if (this.activo) return
-    this.activo = true
+    if (this.active) return
+    this.active = true
     this.vigilancia = this.t.setInterval(() => this.vigilar(), TIEMPOS.vigilanciaMs)
-    this.conectar()
+    this.connect()
   }
 
   detener() {
-    if (!this.activo) return
-    this.activo = false
+    if (!this.active) return
+    this.active = false
     this.t.clearInterval(this.vigilancia)
     this.t.clearTimeout(this.reintento)
     this.t.clearTimeout(this.limiteApertura)
     this.t.clearTimeout(this.comprobacion)
     this.soltar()
-    this.cambiar('desconectado')
+    this.patch('disconnected')
   }
 
   /** La pantalla se ocultó (bloqueo, otra app) o volvió. */
   cambiarVisibilidad(visible: boolean) {
     this.visible = visible
-    if (!visible || !this.activo) return
+    if (!visible || !this.active) return
     this.reintentoInmediato = true
     this.volvioEn = this.t.ahora()
     // Tras dormir, el vigilante no debe matar la conexión antes de que lleguen mensajes.
     this.ultimoMensajeEn = this.t.ahora()
-    if (!this.abierto) {
+    if (!this.opened) {
       this.reconectarYa()
       return
     }
     // Parece abierto: comprobar con un ping que responda pronto.
-    const canal = this.canal
-    canal?.enviar({ tipo: 'ping', marca: String(this.t.ahora()) })
-    const desde = this.ultimoMensajeEn
+    const channel = this.channel
+    channel?.send({ type: 'ping', brand: String(this.t.ahora()) })
+    const from = this.ultimoMensajeEn
     this.t.clearTimeout(this.comprobacion)
     this.comprobacion = this.t.setTimeout(() => {
-      if (this.canal === canal && this.abierto && this.ultimoMensajeEn <= desde)
-        this.descartar('sin_respuesta')
+      if (this.channel === channel && this.opened && this.ultimoMensajeEn <= from)
+        this.descartar('no_response')
     }, TIEMPOS.comprobacionAlVolverMs)
   }
 
-  private conectar() {
-    if (!this.activo) return
-    this.cambiar('conectando')
+  private connect() {
+    if (!this.active) return
+    this.patch('connecting')
     const intento = {}
     this.intento = intento
     const esEste = () => this.intento === intento
     // Si `abrir` avisa algo antes de devolver el canal, se atiende en cuanto lo devuelve.
     let enEspera: (() => void)[] | null = []
     const cuando = (trabajo: () => void) => (enEspera ? enEspera.push(trabajo) : trabajo())
-    const canal = this.o.abrir({
+    const channel = this.o.open({
       alAbrir: () =>
         cuando(() => {
-          if (!esEste() || this.abierto) return
+          if (!esEste() || this.opened) return
           this.t.clearTimeout(this.limiteApertura)
-          this.abierto = true
-          this.intentos = 0
+          this.opened = true
+          this.attempts = 0
           this.ultimoMensajeEn = this.t.ahora()
-          this.cambiar('conectado')
-          this.o.alConectar(canal)
+          this.patch('connected')
+          this.o.alConectar(channel)
         }),
-      alMensaje: (mensaje) =>
+      alMensaje: (message) =>
         cuando(() => {
           if (!esEste()) return
           this.ultimoMensajeEn = this.t.ahora()
-          this.o.alMensaje(mensaje)
+          this.o.alMensaje(message)
         }),
       alCerrar: () =>
         cuando(() => {
-          if (esEste()) this.alPerder('desconectado')
+          if (esEste()) this.alPerder('disconnected')
         }),
     })
-    this.canal = canal
+    this.channel = channel
     this.limiteApertura = this.t.setTimeout(() => {
-      if (esEste() && !this.abierto) this.descartar('desconectado')
+      if (esEste() && !this.opened) this.descartar('disconnected')
     }, TIEMPOS.maximoAbrirMs)
     const avisos = enEspera
     enEspera = null
@@ -162,57 +162,57 @@ export class GestorConexion {
   }
 
   private vigilar() {
-    if (!this.visible || !this.abierto) return
+    if (!this.visible || !this.opened) return
     if (this.t.ahora() - this.ultimoMensajeEn >= TIEMPOS.sinRespuestaMs)
-      this.descartar('sin_respuesta')
+      this.descartar('no_response')
   }
 
   /** Abandona el canal actual sin esperar a que el navegador lo cierre y programa otro. */
-  private descartar(estado: EstadoConexion) {
+  private descartar(status: EstadoConexion) {
     this.soltar()
-    this.alPerder(estado)
+    this.alPerder(status)
   }
 
-  private alPerder(estado: EstadoConexion) {
-    const estaba = this.abierto
-    this.abierto = false
-    this.canal = null
+  private alPerder(status: EstadoConexion) {
+    const estaba = this.opened
+    this.opened = false
+    this.channel = null
     this.intento = null
     this.t.clearTimeout(this.limiteApertura)
     if (estaba) this.o.alDesconectar()
-    this.cambiar(estado)
-    if (!this.activo) return
+    this.patch(status)
+    if (!this.active) return
     const inmediato =
       this.reintentoInmediato &&
       this.visible &&
       this.t.ahora() - this.volvioEn < TIEMPOS.ventanaTrasVolverMs
     this.reintentoInmediato = false
-    this.intentos += 1
-    const espera = inmediato ? 0 : Math.min(1000 * this.intentos, TIEMPOS.esperaMaximaMs)
+    this.attempts += 1
+    const delay = inmediato ? 0 : Math.min(1000 * this.attempts, TIEMPOS.esperaMaximaMs)
     this.t.clearTimeout(this.reintento)
-    this.reintento = this.t.setTimeout(() => this.conectar(), espera)
+    this.reintento = this.t.setTimeout(() => this.connect(), delay)
   }
 
   private reconectarYa() {
     this.t.clearTimeout(this.reintento)
-    this.intentos = 0
+    this.attempts = 0
     this.reintentoInmediato = false
     this.soltar()
-    this.conectar()
+    this.connect()
   }
 
   private soltar() {
-    const canal = this.canal
-    this.canal = null
+    const channel = this.channel
+    this.channel = null
     this.intento = null
-    if (this.abierto) {
-      this.abierto = false
+    if (this.opened) {
+      this.opened = false
       this.o.alDesconectar()
     }
-    canal?.cerrar()
+    channel?.close()
   }
 
-  private cambiar(estado: EstadoConexion) {
-    this.o.alCambiarEstado?.(estado)
+  private patch(status: EstadoConexion) {
+    this.o.alCambiarEstado?.(status)
   }
 }

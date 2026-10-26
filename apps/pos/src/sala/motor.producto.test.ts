@@ -1,9 +1,9 @@
 import 'fake-indexeddb/auto'
-import { firmarEvento, nuevoId } from '@pos/core'
+import { newId, signEvent } from '@pos/core'
 import {
   AlmacenMemoria,
-  type Canal,
   type Catalogo,
+  type Channel,
   type ControlAcceso,
   HubSync,
   type Manejadores,
@@ -19,34 +19,34 @@ import { agotados, claveAgotado, pedidosAbiertos } from './proyeccion'
 
 const secretoDe = (sesionId: string) => `secreto-${sesionId}`
 
-const firmaValida = (evento: Parameters<ControlAcceso['verificar']>[1]) =>
-  evento.sesion_id !== null && evento.firma === firmarEvento(evento, secretoDe(evento.sesion_id))
+const firmaValida = (event: Parameters<ControlAcceso['verify']>[1]) =>
+  event.session_id !== null && event.signature === signEvent(event, secretoDe(event.session_id))
 
 const accesoConFirma: ControlAcceso = {
-  verificar: (_c, evento) =>
-    firmaValida(evento)
-      ? { ok: true, autorizadoPorId: null, autorizacionId: null }
-      : { ok: false, motivo: 'firma_invalida' },
+  verify: (_c, event) =>
+    firmaValida(event)
+      ? { ok: true, authorizedById: null, autorizacionId: null }
+      : { ok: false, reason: 'invalid_signature' },
   registrarUso: () => {},
 }
 /** Como el real: el agotado exige permiso, y este usuario no lo tiene. */
 const accesoSinPermisoDeAgotar: ControlAcceso = {
-  verificar: (c, evento, pedido) =>
-    evento.tipo === 'ProductoAgotado' || evento.tipo === 'ProductoDisponible'
-      ? { ok: false, motivo: 'sin_permiso' }
-      : accesoConFirma.verificar(c, evento, pedido),
+  verify: (c, event, order) =>
+    event.type === 'ProductSoldOut' || event.type === 'ProductAvailable'
+      ? { ok: false, reason: 'no_permission' }
+      : accesoConFirma.verify(c, event, order),
   registrarUso: () => {},
 }
 
-const catalogo: Catalogo = {
+const catalog: Catalogo = {
   version: 3,
-  restaurante: { nombre: 'Prueba', sesionInactividadMin: 30 },
-  zonas: [{ id: nuevoId(), nombre: 'Salón', piso: 1 }],
-  mesas: [],
-  elementos: [],
-  personal: [],
-  estaciones: [{ id: nuevoId(), nombre: 'Cocina' }],
-  categorias: [],
+  restaurant: { name: 'Prueba', sesionInactividadMin: 30 },
+  zones: [{ id: newId(), name: 'Salón', level: 1 }],
+  tables: [],
+  elements: [],
+  staff: [],
+  stations: [{ id: newId(), name: 'Cocina' }],
+  categories: [],
 }
 
 const salas: Sala[] = []
@@ -57,60 +57,60 @@ afterEach(async () => {
   for (const b of bases.splice(0)) await b.delete()
 })
 
-function montarHub(acceso: ControlAcceso = accesoConFirma) {
+function montarHub(access: ControlAcceso = accesoConFirma) {
   const tokens = new Map<string, Equipo>()
   const hub = new HubSync(new AlmacenMemoria(), {
-    restauranteId: nuevoId(),
-    zonaHoraria: 'America/Bogota',
+    restauranteId: newId(),
+    timeZone: 'America/Bogota',
     inicioDiaOperativo: '06:00',
-    instancia: 'hub-prueba',
-    reloj: () => new Date().toISOString(),
-    acceso,
+    instancia: 'hub-test',
+    clock: () => new Date().toISOString(),
+    access,
   })
   const salaHub = new SalaSync(hub, (token) => {
     const e = tokens.get(token)
-    return e ? { dispositivoId: e.dispositivoId, tipo: e.tipo, revocadoEn: null } : null
+    return e ? { dispositivoId: e.dispositivoId, type: e.type, revocadoEn: null } : null
   })
-  const abrir = (m: Manejadores): Canal => {
-    let enlace: ReturnType<SalaSync['conectar']> | null = null
+  const open = (m: Manejadores): Channel => {
+    let enlace: ReturnType<SalaSync['connect']> | null = null
     setTimeout(() => {
-      enlace = salaHub.conectar((msg) => {
-        const copia = JSON.parse(JSON.stringify(msg))
-        setTimeout(() => enlace && m.alMensaje(copia))
+      enlace = salaHub.connect((msg) => {
+        const copy = JSON.parse(JSON.stringify(msg))
+        setTimeout(() => enlace && m.alMensaje(copy))
       })
       m.alAbrir()
     })
     return {
-      enviar: (msg) => enlace?.recibir(JSON.parse(JSON.stringify(msg))),
-      cerrar: () => {
-        enlace?.cerrar()
+      send: (msg) => enlace?.recibir(JSON.parse(JSON.stringify(msg))),
+      close: () => {
+        enlace?.close()
         enlace = null
       },
     }
   }
-  return { hub, tokens, abrir }
+  return { hub, tokens, open }
 }
 
-async function equipo(h: ReturnType<typeof montarHub>, nombre: string) {
-  const db = new BaseDispositivo(`prueba-${nuevoId()}`)
+async function device(h: ReturnType<typeof montarHub>, name: string) {
+  const db = new BaseDispositivo(`prueba-${newId()}`)
   bases.push(db)
-  const e: Equipo = { dispositivoId: nuevoId(), token: nuevoId(), nombre, tipo: 'caja' }
+  const e: Equipo = { dispositivoId: newId(), token: newId(), name, type: 'register' }
   h.tokens.set(e.token, e)
-  const sesionId = nuevoId()
-  const sesion: Sesion = {
+  const sesionId = newId()
+  const session: Sesion = {
     sesionId,
-    secreto: secretoDe(sesionId),
-    usuario: { id: nuevoId(), nombre, rol: 'Cajero' },
-    permisos: ['tomar_pedido', 'agotar_producto'],
+    secret: secretoDe(sesionId),
+    user: { id: newId(), name, role: 'Cajero' },
+    permissions: ['take_order', 'mark_product_sold_out'],
     ultimoUso: Date.now(),
   }
-  await db.guardarAjuste('equipo', e)
-  await db.guardarAjuste('sesion', sesion)
-  await db.guardarAjuste('catalogo', catalogo)
-  const sala = new Sala({ db, abrir: h.abrir })
+  await db.saveSetting('device', e)
+  await db.saveSetting('session', session)
+  await db.saveSetting('catalog', catalog)
+  const sala = new Sala({ db, open: h.open })
   salas.push(sala)
   await sala.cargar()
-  return { sala, sesion, equipo: e }
+  return { sala, session, device: e }
 }
 
 async function esperar(condicion: () => Promise<boolean> | boolean, ms = 3000) {
@@ -122,162 +122,162 @@ async function esperar(condicion: () => Promise<boolean> | boolean, ms = 3000) {
 }
 
 const locales = async (s: Sala) => (await s.sync?.locales()) ?? []
-const enLinea = (s: Sala) => esperar(() => s.instantanea().conexion === 'conectado')
+const enLinea = (s: Sala) => esperar(() => s.instantanea().connection === 'connected')
 
 describe('Sala.registrar con eventos de producto', () => {
   it('arma el sobre del producto: agregado_tipo producto, su id, firmado y sin pedido', async () => {
     const h = montarHub()
-    const { sala, sesion, equipo: e } = await equipo(h, 'Caja')
-    const producto = nuevoId()
+    const { sala, session, device: e } = await device(h, 'Caja')
+    const product = newId()
 
-    const creado = await sala.registrar('ProductoAgotado', producto, {
-      producto_id: producto,
-      variante_id: null,
+    const created = await sala.record('ProductSoldOut', product, {
+      product_id: product,
+      variant_id: null,
     })
 
-    expect(creado).toMatchObject({
-      tipo: 'ProductoAgotado',
-      agregado_tipo: 'producto',
-      agregado_id: producto,
-      relacionados: [],
-      sesion_id: sesion.sesionId,
-      usuario_id: sesion.usuario.id,
-      dispositivo_id: e.dispositivoId,
-      motivo: null,
-      autorizacion_id: null,
+    expect(created).toMatchObject({
+      type: 'ProductSoldOut',
+      aggregate_type: 'product',
+      aggregate_id: product,
+      related: [],
+      session_id: session.sesionId,
+      user_id: session.user.id,
+      device_id: e.dispositivoId,
+      reason: null,
+      authorization_id: null,
     })
-    expect(creado.firma).toBe(
-      firmarEvento({ ...creado, firma: undefined } as never, sesion.secreto),
+    expect(created.signature).toBe(
+      signEvent({ ...created, signature: undefined } as never, session.secret),
     )
     const guardados = await locales(sala)
     expect(guardados).toHaveLength(1)
-    expect(guardados[0]?.estado).toBe('pendiente')
+    expect(guardados[0]?.status).toBe('pending')
     // Persistir antes de mostrar: ya se ve agotado, y ningún pedido nació.
-    expect(agotados(guardados)).toEqual(new Set([producto]))
+    expect(agotados(guardados)).toEqual(new Set([product]))
     expect(pedidosAbiertos(guardados)).toEqual([])
   })
 
   it('un evento de pedido sigue armándose como pedido', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Caja')
-    const pedido = nuevoId()
-    const creado = await sala.registrar('PedidoAbierto', pedido, {
-      canal: 'para_llevar',
-      mesa_id: null,
-      comensales: 1,
+    const { sala } = await device(h, 'Caja')
+    const order = newId()
+    const created = await sala.record('OrderOpened', order, {
+      channel: 'takeout',
+      table_id: null,
+      guests: 1,
     })
-    expect(creado.agregado_tipo).toBe('pedido')
+    expect(created.aggregate_type).toBe('order')
     expect(pedidosAbiertos(await locales(sala))).toHaveLength(1)
   })
 
   it('el hub de prueba lo acepta con su secuencia y el otro equipo lo recibe', async () => {
     const h = montarHub()
-    const caja = await equipo(h, 'Caja')
-    const mesero = await equipo(h, 'Ana')
-    await enLinea(caja.sala)
-    await enLinea(mesero.sala)
-    const producto = nuevoId()
-    const botella = nuevoId()
+    const register = await device(h, 'Caja')
+    const waiter = await device(h, 'Ana')
+    await enLinea(register.sala)
+    await enLinea(waiter.sala)
+    const product = newId()
+    const bottle = newId()
 
-    await caja.sala.registrar('ProductoAgotado', producto, {
-      producto_id: producto,
-      variante_id: botella,
+    await register.sala.record('ProductSoldOut', product, {
+      product_id: product,
+      variant_id: bottle,
     })
-    await esperar(async () => (await locales(mesero.sala)).length === 1)
-    await esperar(() => caja.sala.instantanea().pendientes === 0)
+    await esperar(async () => (await locales(waiter.sala)).length === 1)
+    await esperar(() => register.sala.instantanea().pendingList === 0)
 
-    for (const s of [caja.sala, mesero.sala]) {
+    for (const s of [register.sala, waiter.sala]) {
       const l = await locales(s)
-      expect(l[0]).toMatchObject({ estado: 'confirmado' })
-      expect(l[0]?.evento.secuencia).toBe(1)
-      expect(agotados(l)).toEqual(new Set([claveAgotado(producto, botella)]))
+      expect(l[0]).toMatchObject({ status: 'confirmed' })
+      expect(l[0]?.event.sequence).toBe(1)
+      expect(agotados(l)).toEqual(new Set([claveAgotado(product, bottle)]))
     }
-    expect(h.hub.pedido(producto)).toBeNull()
+    expect(h.hub.order(product)).toBeNull()
 
     // Y la reposición también les llega a los dos.
-    await caja.sala.registrar('ProductoDisponible', producto, {
-      producto_id: producto,
-      variante_id: botella,
+    await register.sala.record('ProductAvailable', product, {
+      product_id: product,
+      variant_id: bottle,
     })
-    await esperar(async () => agotados(await locales(mesero.sala)).size === 0)
-    expect(agotados(await locales(caja.sala))).toEqual(new Set())
+    await esperar(async () => agotados(await locales(waiter.sala)).size === 0)
+    expect(agotados(await locales(register.sala))).toEqual(new Set())
   })
 
   it('sin conexión se ve agotado al instante y al volver se confirma sin duplicarse', async () => {
     const h = montarHub()
-    const caja = await equipo(h, 'Caja')
-    const mesero = await equipo(h, 'Ana')
-    await enLinea(caja.sala)
-    await enLinea(mesero.sala)
-    caja.sala.simularSinConexion(true)
-    const producto = nuevoId()
+    const register = await device(h, 'Caja')
+    const waiter = await device(h, 'Ana')
+    await enLinea(register.sala)
+    await enLinea(waiter.sala)
+    register.sala.simularSinConexion(true)
+    const product = newId()
 
-    await caja.sala.registrar('ProductoAgotado', producto, {
-      producto_id: producto,
-      variante_id: null,
+    await register.sala.record('ProductSoldOut', product, {
+      product_id: product,
+      variant_id: null,
     })
-    expect(caja.sala.instantanea().pendientes).toBe(1)
-    expect(agotados(await locales(caja.sala))).toEqual(new Set([producto]))
+    expect(register.sala.instantanea().pendingList).toBe(1)
+    expect(agotados(await locales(register.sala))).toEqual(new Set([product]))
     // El mesero todavía no lo sabe.
-    expect(agotados(await locales(mesero.sala))).toEqual(new Set())
+    expect(agotados(await locales(waiter.sala))).toEqual(new Set())
 
-    caja.sala.simularSinConexion(false)
-    await esperar(async () => agotados(await locales(mesero.sala)).has(producto))
-    await esperar(() => caja.sala.instantanea().pendientes === 0)
-    expect(await locales(caja.sala)).toHaveLength(1)
-    expect(await locales(mesero.sala)).toHaveLength(1)
+    register.sala.simularSinConexion(false)
+    await esperar(async () => agotados(await locales(waiter.sala)).has(product))
+    await esperar(() => register.sala.instantanea().pendingList === 0)
+    expect(await locales(register.sala)).toHaveLength(1)
+    expect(await locales(waiter.sala)).toHaveLength(1)
   })
 
   it('si el hub lo rechaza (sin permiso), deja de verse agotado en el equipo', async () => {
     const h = montarHub(accesoSinPermisoDeAgotar)
-    const caja = await equipo(h, 'Caja')
-    caja.sala.simularSinConexion(true)
-    const producto = nuevoId()
-    await caja.sala.registrar('ProductoAgotado', producto, {
-      producto_id: producto,
-      variante_id: null,
+    const register = await device(h, 'Caja')
+    register.sala.simularSinConexion(true)
+    const product = newId()
+    await register.sala.record('ProductSoldOut', product, {
+      product_id: product,
+      variant_id: null,
     })
-    expect(agotados(await locales(caja.sala))).toEqual(new Set([producto]))
+    expect(agotados(await locales(register.sala))).toEqual(new Set([product]))
 
-    caja.sala.simularSinConexion(false)
-    await esperar(async () => (await locales(caja.sala))[0]?.estado === 'rechazado')
-    const [l] = await locales(caja.sala)
-    expect(l?.motivo).toBe('sin_permiso')
-    expect(agotados(await locales(caja.sala))).toEqual(new Set())
+    register.sala.simularSinConexion(false)
+    await esperar(async () => (await locales(register.sala))[0]?.status === 'rejected')
+    const [l] = await locales(register.sala)
+    expect(l?.reason).toBe('no_permission')
+    expect(agotados(await locales(register.sala))).toEqual(new Set())
   })
 
   it('un agotado con datos inválidos no se guarda', async () => {
     const h = montarHub()
-    const { sala } = await equipo(h, 'Caja')
+    const { sala } = await device(h, 'Caja')
     await expect(
-      sala.registrar('ProductoAgotado', nuevoId(), {
-        producto_id: 'no-es-ulid',
-        variante_id: null,
+      sala.record('ProductSoldOut', newId(), {
+        product_id: 'no-es-ulid',
+        variant_id: null,
       }),
     ).rejects.toThrow('Evento inválido')
     // El agregado y el producto deben ser el mismo.
     await expect(
-      sala.registrar('ProductoAgotado', nuevoId(), { producto_id: nuevoId(), variante_id: null }),
+      sala.record('ProductSoldOut', newId(), { product_id: newId(), variant_id: null }),
     ).rejects.toThrow('Evento inválido')
-    expect(sala.instantanea().pendientes).toBe(0)
+    expect(sala.instantanea().pendingList).toBe(0)
     expect(await locales(sala)).toEqual([])
   })
 
   it('un hub que se reinicia y vuelve: el agotado propio ya confirmado sigue visible', async () => {
     const h = montarHub()
-    const caja = await equipo(h, 'Caja')
-    await enLinea(caja.sala)
-    const producto = nuevoId()
-    await caja.sala.registrar('ProductoAgotado', producto, {
-      producto_id: producto,
-      variante_id: null,
+    const register = await device(h, 'Caja')
+    await enLinea(register.sala)
+    const product = newId()
+    await register.sala.record('ProductSoldOut', product, {
+      product_id: product,
+      variant_id: null,
     })
-    await esperar(() => caja.sala.instantanea().pendientes === 0)
+    await esperar(() => register.sala.instantanea().pendingList === 0)
 
-    caja.sala.simularSinConexion(true)
-    caja.sala.simularSinConexion(false)
-    await enLinea(caja.sala)
-    expect(agotados(await locales(caja.sala))).toEqual(new Set([producto]))
-    expect(await locales(caja.sala)).toHaveLength(1)
+    register.sala.simularSinConexion(true)
+    register.sala.simularSinConexion(false)
+    await enLinea(register.sala)
+    expect(agotados(await locales(register.sala))).toEqual(new Set([product]))
+    expect(await locales(register.sala)).toHaveLength(1)
   })
 })

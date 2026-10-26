@@ -11,12 +11,12 @@
       try {
         // Marca del restaurante (src/ui/marca.ts, que solo guarda marcas que existen): Faro salvo
         // que el restaurante tenga la suya.
-        const m = localStorage.getItem('pos-marca') || 'faro'
+        const m = localStorage.getItem('pos-brand') || 'faro'
         if (m !== 'faro') document.documentElement.dataset.marca = m
       } catch {}
       try {
-        const t = localStorage.getItem('pos-tema')
-        if (t === 'oscuro' || (t !== 'claro' && matchMedia('(prefers-color-scheme: dark)').matches))
+        const t = localStorage.getItem('pos-theme')
+        if (t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches))
           document.documentElement.classList.add('oscuro')
       } catch {}
     </script>

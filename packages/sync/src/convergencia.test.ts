@@ -1,4 +1,4 @@
-import { type EventoNuevo, nuevoId, type TipoEventoPedido } from '@pos/core'
+import { type NewEvent, newId, type OrderEventType } from '@pos/core'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { type AlmacenQueSeCae, eventosDe, item, montar } from './pruebas/montaje'
@@ -11,77 +11,77 @@ import type { Nodo } from './pruebas/red'
 const SEMILLA = Number(process.env.FC_SEMILLA ?? 20_261_024)
 const CORRIDAS = Number(process.env.FC_CORRIDAS ?? 150)
 
-type Direccion = 'al_hub' | 'al_dispositivo'
+type Direccion = 'to_hub' | 'to_device'
 
-type Accion =
-  | { t: 'abrir'; nodo: number; mesa: number }
-  | { t: 'agregar'; nodo: number; pedido: number; precio: number }
-  | { t: 'enviar'; nodo: number; pedido: number }
-  | { t: 'quitar'; nodo: number; pedido: number; item: number }
-  | { t: 'desconectar'; nodo: number }
-  | { t: 'conectar'; nodo: number }
-  | { t: 'perder'; nodo: number; direccion: Direccion; tipo: number }
-  | { t: 'duplicar'; nodo: number; direccion: Direccion; tipo: number }
-  | { t: 'entregar'; nodo: number; direccion: Direccion; indice: number }
-  | { t: 'estabilizar' }
-  | { t: 'caerHub' }
-  | { t: 'caerAlGuardar'; en: number }
+type Action =
+  | { t: 'open'; node: number; table: number }
+  | { t: 'add'; node: number; order: number; price: number }
+  | { t: 'send'; node: number; order: number }
+  | { t: 'remove'; node: number; order: number; item: number }
+  | { t: 'disconnect'; node: number }
+  | { t: 'connect'; node: number }
+  | { t: 'drop'; node: number; direction: Direccion; type: number }
+  | { t: 'duplicate'; node: number; direction: Direccion; type: number }
+  | { t: 'serve'; node: number; direction: Direccion; indice: number }
+  | { t: 'settle' }
+  | { t: 'crashHub' }
+  | { t: 'crashOnSave'; en: number }
 
 const TIPOS_MENSAJE: Record<Direccion, string[]> = {
-  al_hub: ['empujar', 'traer', 'hola'],
-  al_dispositivo: ['resultado', 'nuevo', 'eventos', 'bienvenido'],
+  to_hub: ['push', 'pull', 'hello'],
+  to_device: ['result', 'new', 'events', 'welcome'],
 }
 
 const sel = fc.nat({ max: 9 })
-const direccion = fc.constantFrom<Direccion>('al_hub', 'al_dispositivo')
+const direction = fc.constantFrom<Direccion>('to_hub', 'to_device')
 
-const arbAccion: fc.Arbitrary<Accion> = fc.oneof(
+const arbAccion: fc.Arbitrary<Action> = fc.oneof(
   {
     weight: 5,
-    arbitrary: fc.record({ t: fc.constant('abrir' as const), nodo: sel, mesa: fc.nat({ max: 3 }) }),
+    arbitrary: fc.record({ t: fc.constant('open' as const), node: sel, table: fc.nat({ max: 3 }) }),
   },
   {
     weight: 8,
     arbitrary: fc.record({
-      t: fc.constant('agregar' as const),
-      nodo: sel,
-      pedido: sel,
-      precio: fc.integer({ min: 1000, max: 90_000 }),
+      t: fc.constant('add' as const),
+      node: sel,
+      order: sel,
+      price: fc.integer({ min: 1000, max: 90_000 }),
     }),
   },
   {
     weight: 3,
-    arbitrary: fc.record({ t: fc.constant('enviar' as const), nodo: sel, pedido: sel }),
+    arbitrary: fc.record({ t: fc.constant('send' as const), node: sel, order: sel }),
   },
   {
     weight: 3,
-    arbitrary: fc.record({ t: fc.constant('quitar' as const), nodo: sel, pedido: sel, item: sel }),
+    arbitrary: fc.record({ t: fc.constant('remove' as const), node: sel, order: sel, item: sel }),
   },
-  { weight: 4, arbitrary: fc.record({ t: fc.constant('desconectar' as const), nodo: sel }) },
-  { weight: 5, arbitrary: fc.record({ t: fc.constant('conectar' as const), nodo: sel }) },
+  { weight: 4, arbitrary: fc.record({ t: fc.constant('disconnect' as const), node: sel }) },
+  { weight: 5, arbitrary: fc.record({ t: fc.constant('connect' as const), node: sel }) },
   {
     weight: 3,
-    arbitrary: fc.record({ t: fc.constant('perder' as const), nodo: sel, direccion, tipo: sel }),
+    arbitrary: fc.record({ t: fc.constant('drop' as const), node: sel, direction, type: sel }),
   },
   {
     weight: 3,
-    arbitrary: fc.record({ t: fc.constant('duplicar' as const), nodo: sel, direccion, tipo: sel }),
+    arbitrary: fc.record({ t: fc.constant('duplicate' as const), node: sel, direction, type: sel }),
   },
   {
     weight: 8,
     arbitrary: fc.record({
-      t: fc.constant('entregar' as const),
-      nodo: sel,
-      direccion,
+      t: fc.constant('serve' as const),
+      node: sel,
+      direction,
       indice: sel,
     }),
   },
-  { weight: 4, arbitrary: fc.constant({ t: 'estabilizar' as const }) },
-  { weight: 1, arbitrary: fc.constant({ t: 'caerHub' as const }) },
+  { weight: 4, arbitrary: fc.constant({ t: 'settle' as const }) },
+  { weight: 1, arbitrary: fc.constant({ t: 'crashHub' as const }) },
   {
     weight: 1,
     arbitrary: fc.record({
-      t: fc.constant('caerAlGuardar' as const),
+      t: fc.constant('crashOnSave' as const),
       en: fc.integer({ min: 1, max: 4 }),
     }),
   },
@@ -89,111 +89,110 @@ const arbAccion: fc.Arbitrary<Accion> = fc.oneof(
 
 const arbEscenario = fc.record({
   dispositivos: fc.integer({ min: 2, max: 4 }),
-  acciones: fc.array(arbAccion, { minLength: 8, maxLength: 80, size: 'max' }),
+  actions: fc.array(arbAccion, { minLength: 8, maxLength: 80, size: 'max' }),
 })
 
 /** Ejecuta las acciones sobre un hub real (SQLite) y una red simulada. */
-async function ejecutar(dispositivos: number, acciones: Accion[], canalOrdenado = false) {
+async function execute(dispositivos: number, actions: Action[], canalOrdenado = false) {
   const m = montar()
   const almacen = m.almacen as AlmacenQueSeCae
-  const nodos = Array.from({ length: dispositivos }, (_, i) => m.red.dispositivo(`d${i}`))
-  const mesas = Array.from({ length: 4 }, () => nuevoId())
-  const estacion = nuevoId()
+  const nodos = Array.from({ length: dispositivos }, (_, i) => m.network.device(`d${i}`))
+  const tables = Array.from({ length: 4 }, () => newId())
+  const station = newId()
   /** Todo evento que algún dispositivo creó, para comprobar que ninguno se pierde. */
-  const creados: { id: string; nodo: Nodo }[] = []
-  const pedidos: string[] = []
+  const creados: { id: string; node: Nodo }[] = []
+  const orders: string[] = []
 
-  const registrar = async <T extends TipoEventoPedido>(
-    nodo: Nodo,
-    pedido: string,
-    tipo: T,
-    datos: Extract<EventoNuevo, { tipo: T }>['datos'],
+  const record = async <T extends OrderEventType>(
+    node: Nodo,
+    order: string,
+    type: T,
+    data: Extract<NewEvent, { type: T }>['data'],
   ) => {
-    const evento = await nodo.crear(pedido, tipo, datos as never)
-    creados.push({ id: evento.id, nodo })
+    const event = await node.crear(order, type, data as never)
+    creados.push({ id: event.id, node })
   }
 
   /** Pedidos que este dispositivo ve abiertos en su propia copia. */
-  const abiertosDe = async (nodo: Nodo) => {
-    const vistos: string[] = []
-    for (const id of pedidos)
-      if ((await nodo.cliente.pedido(id))?.estado === 'abierto') vistos.push(id)
-    return vistos
+  const abiertosDe = async (node: Nodo) => {
+    const seenSet: string[] = []
+    for (const id of orders) if ((await node.cliente.order(id))?.status === 'open') seenSet.push(id)
+    return seenSet
   }
 
-  for (const accion of acciones) {
+  for (const action of actions) {
     // Canal como un WebSocket sano: sin pérdidas, duplicados ni reordenamientos.
-    if (canalOrdenado && (accion.t === 'perder' || accion.t === 'duplicar')) continue
-    const nodo = nodos[('nodo' in accion ? accion.nodo : 0) % nodos.length] as Nodo
-    switch (accion.t) {
-      case 'abrir': {
-        const pedido = nuevoId()
-        pedidos.push(pedido)
+    if (canalOrdenado && (action.t === 'drop' || action.t === 'duplicate')) continue
+    const node = nodos[('node' in action ? action.node : 0) % nodos.length] as Nodo
+    switch (action.t) {
+      case 'open': {
+        const order = newId()
+        orders.push(order)
         // La mesa 3 es "sin mesa" (barra); las demás se comparten entre dispositivos.
-        const mesa = accion.mesa === 3 ? null : (mesas[accion.mesa] as string)
-        await registrar(nodo, pedido, 'PedidoAbierto', {
-          canal: mesa ? 'salon' : 'barra',
-          mesa_id: mesa,
-          comensales: 2,
+        const table = action.table === 3 ? null : (tables[action.table] as string)
+        await record(node, order, 'OrderOpened', {
+          channel: table ? 'dine_in' : 'bar',
+          table_id: table,
+          guests: 2,
         })
         break
       }
-      case 'agregar': {
-        const abiertos = await abiertosDe(nodo)
-        const pedido = abiertos[accion.pedido % abiertos.length]
-        if (pedido) await registrar(nodo, pedido, 'ItemAgregado', item(accion.precio))
+      case 'add': {
+        const abiertos = await abiertosDe(node)
+        const order = abiertos[action.order % abiertos.length]
+        if (order) await record(node, order, 'ItemAdded', item(action.price))
         break
       }
-      case 'enviar': {
-        const abiertos = await abiertosDe(nodo)
-        const pedido = abiertos[accion.pedido % abiertos.length]
-        const estado = pedido ? await nodo.cliente.pedido(pedido) : null
-        const ids = Object.values(estado?.items ?? {})
-          .filter((i) => i.estado === 'pendiente')
+      case 'send': {
+        const abiertos = await abiertosDe(node)
+        const order = abiertos[action.order % abiertos.length]
+        const status = order ? await node.cliente.order(order) : null
+        const ids = Object.values(status?.items ?? {})
+          .filter((i) => i.status === 'pending')
           .slice(0, 3)
           .map((i) => i.id)
-        if (pedido && ids.length > 0)
-          await registrar(nodo, pedido, 'ItemsEnviados', {
-            comandas: [{ comanda_id: nuevoId(), estacion_id: estacion, item_ids: ids }],
+        if (order && ids.length > 0)
+          await record(node, order, 'ItemsSent', {
+            tickets: [{ ticket_id: newId(), station_id: station, item_ids: ids }],
           })
         break
       }
-      case 'quitar': {
-        const abiertos = await abiertosDe(nodo)
-        const pedido = abiertos[accion.pedido % abiertos.length]
-        const estado = pedido ? await nodo.cliente.pedido(pedido) : null
-        const quitables = Object.values(estado?.items ?? {}).filter((i) => i.estado === 'pendiente')
-        const elegido = quitables[accion.item % quitables.length]
-        if (pedido && elegido) await registrar(nodo, pedido, 'ItemQuitado', { item_id: elegido.id })
+      case 'remove': {
+        const abiertos = await abiertosDe(node)
+        const order = abiertos[action.order % abiertos.length]
+        const status = order ? await node.cliente.order(order) : null
+        const quitables = Object.values(status?.items ?? {}).filter((i) => i.status === 'pending')
+        const elegido = quitables[action.item % quitables.length]
+        if (order && elegido) await record(node, order, 'ItemRemoved', { item_id: elegido.id })
         break
       }
-      case 'desconectar':
-        nodo.desconectar()
+      case 'disconnect':
+        node.disconnect()
         break
-      case 'conectar':
-        if (!nodo.enLinea) await nodo.conectar()
+      case 'connect':
+        if (!node.enLinea) await node.connect()
         break
-      case 'perder':
-      case 'duplicar': {
-        const tipos = TIPOS_MENSAJE[accion.direccion]
-        nodo.regla(
-          accion.direccion,
-          tipos[accion.tipo % tipos.length] as string,
-          accion.t === 'perder' ? 'perder' : 'duplicar',
+      case 'drop':
+      case 'duplicate': {
+        const types = TIPOS_MENSAJE[action.direction]
+        node.rule(
+          action.direction,
+          types[action.type % types.length] as string,
+          action.t === 'drop' ? 'drop' : 'duplicate',
         )
         break
       }
-      case 'entregar':
-        await m.red.entregarUno(nodo, accion.direccion, canalOrdenado ? 0 : accion.indice)
+      case 'serve':
+        await m.network.entregarUno(node, action.direction, canalOrdenado ? 0 : action.indice)
         break
-      case 'estabilizar':
-        await m.red.estabilizar()
+      case 'settle':
+        await m.network.settle()
         break
-      case 'caerHub':
-        m.red.caerHub()
+      case 'crashHub':
+        m.network.crashHub()
         break
-      case 'caerAlGuardar':
-        almacen.caerEn = accion.en
+      case 'crashOnSave':
+        almacen.caerEn = action.en
         break
     }
   }
@@ -205,60 +204,60 @@ async function ejecutar(dispositivos: number, acciones: Accion[], canalOrdenado 
   almacen.caerEn = 0
   for (const n of nodos) {
     n.reglas = []
-    if (!canalOrdenado) n.desconectar()
+    if (!canalOrdenado) n.disconnect()
   }
-  await m.red.conectarTodos()
-  return { m, nodos, creados, pedidos }
+  await m.network.conectarTodos()
+  return { m, nodos, creados, orders }
 }
 
 /** Todo lo que debe cumplirse al final de cualquier secuencia de acciones. */
-async function verificar({ m, nodos, creados, pedidos }: Awaited<ReturnType<typeof ejecutar>>) {
+async function verify({ m, nodos, creados, orders }: Awaited<ReturnType<typeof execute>>) {
   const hub = eventosDe(m)
 
   // El hub tiene 1..N sin huecos ni ids repetidos.
-  expect(hub.map((e) => e.secuencia)).toEqual(hub.map((_, i) => i + 1))
+  expect(hub.map((e) => e.sequence)).toEqual(hub.map((_, i) => i + 1))
   expect(new Set(hub.map((e) => e.id)).size).toBe(hub.length)
   // Un solo conflicto por evento.
   const conflictos = m.hub().conflictos()
-  expect(new Set(conflictos.map((c) => c.eventoId)).size).toBe(conflictos.length)
+  expect(new Set(conflictos.map((c) => c.eventId)).size).toBe(conflictos.length)
 
   const hubPorId = new Map(hub.map((e) => [e.id, e]))
-  for (const nodo of nodos) {
+  for (const node of nodos) {
     // Ningún pendiente.
-    expect(await nodo.cliente.pendientes()).toBe(0)
-    const locales = await nodo.cliente.locales()
-    expect(locales.filter((l) => l.estado === 'pendiente')).toEqual([])
+    expect(await node.cliente.pendingList()).toBe(0)
+    const locales = await node.cliente.locales()
+    expect(locales.filter((l) => l.status === 'pending')).toEqual([])
 
     // Los mismos eventos confirmados que el hub, idénticos campo por campo.
-    const confirmados = locales.filter((l) => l.estado === 'confirmado')
-    expect(confirmados.map((l) => l.evento.id).sort()).toEqual(hub.map((e) => e.id).sort())
-    for (const l of confirmados) expect(l.evento).toEqual(hubPorId.get(l.evento.id))
-    expect((await nodo.almacen.cursor()).hasta).toBe(hub.length)
+    const confirmados = locales.filter((l) => l.status === 'confirmed')
+    expect(confirmados.map((l) => l.event.id).sort()).toEqual(hub.map((e) => e.id).sort())
+    for (const l of confirmados) expect(l.event).toEqual(hubPorId.get(l.event.id))
+    expect((await node.almacen.cursor()).until).toBe(hub.length)
 
     // Las mismas proyecciones.
-    for (const pedido of pedidos)
-      expect(await nodo.cliente.pedido(pedido), `pedido ${pedido} en ${nodo.nombre}`).toEqual(
-        m.hub().pedido(pedido),
+    for (const order of orders)
+      expect(await node.cliente.order(order), `pedido ${order} en ${node.name}`).toEqual(
+        m.hub().order(order),
       )
   }
 
   // Ningún evento creado se perdió: confirmado, rechazado con motivo o en cuarentena.
-  for (const { id, nodo } of creados) {
-    const local = await nodo.almacen.obtener(id)
-    expect(local, `evento ${id} desapareció de ${nodo.nombre}`).toBeDefined()
-    if (local?.estado === 'confirmado') expect(hubPorId.has(id)).toBe(true)
-    else if (local?.estado === 'rechazado') {
-      expect(local.motivo, `rechazo sin motivo (${id})`).toBeTruthy()
-      expect(hubPorId.has(id), `rechazado en ${nodo.nombre} pero confirmado en el hub`).toBe(false)
-    } else expect(local?.estado).toBe('cuarentena')
+  for (const { id, node } of creados) {
+    const local = await node.almacen.obtener(id)
+    expect(local, `evento ${id} desapareció de ${node.name}`).toBeDefined()
+    if (local?.status === 'confirmed') expect(hubPorId.has(id)).toBe(true)
+    else if (local?.status === 'rejected') {
+      expect(local.reason, `rechazo sin motivo (${id})`).toBeTruthy()
+      expect(hubPorId.has(id), `rechazado en ${node.name} pero confirmado en el hub`).toBe(false)
+    } else expect(local?.status).toBe('quarantine')
   }
 }
 
 describe('convergencia (propiedades)', () => {
   it('con cortes, pérdidas, duplicados y caídas del hub, todos terminan viendo lo mismo', async () => {
     await fc.assert(
-      fc.asyncProperty(arbEscenario, async ({ dispositivos, acciones }) => {
-        await verificar(await ejecutar(dispositivos, acciones))
+      fc.asyncProperty(arbEscenario, async ({ dispositivos, actions }) => {
+        await verify(await execute(dispositivos, actions))
       }),
       { seed: SEMILLA, numRuns: CORRIDAS },
     )
@@ -266,8 +265,8 @@ describe('convergencia (propiedades)', () => {
 
   it('con el canal ordenado y sin pérdidas, las conexiones vivas se ponen al día sin reconectar', async () => {
     await fc.assert(
-      fc.asyncProperty(arbEscenario, async ({ dispositivos, acciones }) => {
-        await verificar(await ejecutar(dispositivos, acciones, true))
+      fc.asyncProperty(arbEscenario, async ({ dispositivos, actions }) => {
+        await verify(await execute(dispositivos, actions, true))
       }),
       { seed: SEMILLA, numRuns: CORRIDAS },
     )

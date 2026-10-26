@@ -4,26 +4,26 @@
 // rotación en grados alrededor del centro.
 
 export const sql = `
-CREATE TABLE elemento_plano (
+CREATE TABLE floor_plan_elements (
   id TEXT NOT NULL PRIMARY KEY CHECK (length(id) = 26),
-  restaurante_id TEXT NOT NULL REFERENCES restaurante (id),
-  creado_en TEXT NOT NULL,
-  actualizado_en TEXT NOT NULL,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants (id),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
   version INTEGER NOT NULL CHECK (version >= 0),
-  usuario_id TEXT,
-  dispositivo_id TEXT,
-  activo INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
-  zona_id TEXT NOT NULL REFERENCES zona (id),
-  tipo TEXT NOT NULL CHECK (tipo IN ('pared', 'puerta', 'planta', 'barra', 'texto')),
-  texto TEXT,
+  user_id TEXT,
+  device_id TEXT,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  zone_id TEXT NOT NULL REFERENCES zones (id),
+  type TEXT NOT NULL CHECK (type IN ('wall', 'door', 'plant', 'bar', 'text')),
+  text TEXT,
   x INTEGER NOT NULL,
   y INTEGER NOT NULL,
-  ancho INTEGER NOT NULL CHECK (ancho > 0),
-  alto INTEGER NOT NULL CHECK (alto > 0),
-  rotacion INTEGER NOT NULL DEFAULT 0 CHECK (rotacion BETWEEN 0 AND 359)
+  width INTEGER NOT NULL CHECK (width > 0),
+  height INTEGER NOT NULL CHECK (height > 0),
+  rotation INTEGER NOT NULL DEFAULT 0 CHECK (rotation BETWEEN 0 AND 359)
 ) STRICT;
-CREATE TRIGGER elemento_plano_sin_delete BEFORE DELETE ON elemento_plano
+CREATE TRIGGER floor_plan_elements_no_delete BEFORE DELETE ON floor_plan_elements
 BEGIN SELECT RAISE(ABORT, 'elemento_plano: se archiva con activo = 0, no se borra'); END;
-CREATE INDEX elemento_plano_por_version ON elemento_plano (restaurante_id, version);
-CREATE INDEX elemento_plano_por_zona ON elemento_plano (zona_id);
+CREATE INDEX floor_plan_elements_by_version ON floor_plan_elements (restaurant_id, version);
+CREATE INDEX floor_plan_elements_by_zone ON floor_plan_elements (zone_id);
 `

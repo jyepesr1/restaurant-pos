@@ -20,67 +20,67 @@ export function montarCarta() {
   const m = montarAcceso()
   sembrar(
     m.db,
-    m.acceso,
-    { restauranteId: m.restauranteId, roles: m.roles, carta: CARTA, sinPersonal: true },
-    m.reloj(),
+    m.access,
+    { restauranteId: m.restauranteId, roles: m.roles, menu: CARTA, sinPersonal: true },
+    m.clock(),
   )
-  const catalogo = () => leerCatalogo(m.db, m.restauranteId)
-  const productos = () => catalogo().categorias.flatMap((c) => c.productos)
-  const producto = (nombre: string) => {
-    const p = productos().find((x) => x.nombre === nombre)
-    if (!p) throw new Error(`No está ${nombre}`)
+  const catalog = () => leerCatalogo(m.db, m.restauranteId)
+  const products = () => catalog().categories.flatMap((c) => c.products)
+  const product = (name: string) => {
+    const p = products().find((x) => x.name === name)
+    if (!p) throw new Error(`No está ${name}`)
     return p
   }
-  return { ...m, catalogo, productos, producto }
+  return { ...m, catalog, products, product }
 }
 
 export async function montarServidor() {
   const m = montarCarta()
   const avisos: number[] = []
   const app = crearServidor({
-    acceso: m.acceso,
-    catalogo: {
+    access: m.access,
+    catalog: {
       db: m.db,
       restauranteId: m.restauranteId,
-      acceso: m.acceso,
-      alCambiar: (v) => avisos.push(v),
-      reloj: m.reloj,
+      access: m.access,
+      onChange: (v) => avisos.push(v),
+      clock: m.clock,
     },
   })
   await app.ready()
-  const caja = m.emparejar('caja')
-  type Sesion = { sesion_id: string; secreto: string }
-  const sesionDe = (quien: keyof typeof m.personas, conexion = caja.conexion): Sesion => {
-    const s = m.entrar(conexion, quien)
-    return { sesion_id: s.sesionId, secreto: s.secreto }
+  const register = m.emparejar('register')
+  type Sesion = { session_id: string; secret: string }
+  const sesionDe = (quien: keyof typeof m.people, connection = register.connection): Sesion => {
+    const s = m.entrar(connection, quien)
+    return { session_id: s.sesionId, secret: s.secret }
   }
-  const enviar = async (sesion: Sesion, cambios: unknown, token = caja.token, extra = {}) => {
+  const send = async (session: Sesion, changes: unknown, token = register.token, extra = {}) => {
     const r = await app.inject({
       method: 'POST',
-      url: '/api/catalogo/cambios',
+      url: '/api/catalog/changes',
       headers: { authorization: `Bearer ${token}` },
-      payload: { ...sesion, cambios, ...extra },
+      payload: { ...session, changes, ...extra },
     })
-    return { codigo: r.statusCode, cuerpo: r.json() }
+    return { code: r.statusCode, cuerpo: r.json() }
   }
-  const editar = (sesion: Sesion, cambios: unknown[]) => enviar(sesion, cambios)
-  const edicion = async (token = caja.token) =>
+  const editar = (session: Sesion, changes: unknown[]) => send(session, changes)
+  const edicion = async (token = register.token) =>
     app.inject({
       method: 'GET',
-      url: '/api/catalogo/edicion',
+      url: '/api/catalog/editing',
       headers: { authorization: `Bearer ${token}` },
     })
-  const impuestoId = String(m.db.prepare('SELECT id FROM impuesto LIMIT 1').get()?.id)
-  const categoriaId = m.catalogo().categorias[0]?.id as string
-  const historial = () => m.db.prepare('SELECT * FROM catalogo_cambio ORDER BY version').all()
+  const impuestoId = String(m.db.prepare('SELECT id FROM taxes LIMIT 1').get()?.id)
+  const categoriaId = m.catalog().categories[0]?.id as string
+  const historial = () => m.db.prepare('SELECT * FROM catalog_changes ORDER BY version').all()
   return {
     ...m,
     app,
     avisos,
-    caja,
+    register,
     sesionDe,
     editar,
-    enviar,
+    send,
     edicion,
     impuestoId,
     categoriaId,

@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { aplicarMigraciones } from './migrar'
 import { abrirBase } from './node'
@@ -24,159 +24,152 @@ describe('restricciones del esquema', () => {
     base = sembrar(db)
   })
 
-  const mesa = (campos: Record<string, string | number> = {}) =>
-    insertarVersionado(db, 'mesa', base.restaurante, {
-      zona_id: base.zona,
-      nombre: '1',
-      forma: 'redonda',
+  const table = (fields: Record<string, string | number> = {}) =>
+    insertarVersionado(db, 'dining_tables', base.restaurant, {
+      zone_id: base.zone,
+      name: '1',
+      shape: 'round',
       x: 0,
       y: 0,
-      ancho: 2,
-      alto: 2,
-      capacidad: 4,
-      ...campos,
+      width: 2,
+      height: 2,
+      capacity: 4,
+      ...fields,
     })
 
   describe('mesa', () => {
     it('acepta una mesa válida y los límites de rotación', () => {
-      expect(() => mesa()).not.toThrow()
-      expect(() => mesa({ rotacion: 0 })).not.toThrow()
-      expect(() => mesa({ rotacion: 359 })).not.toThrow()
-      expect(() => mesa({ capacidad: 1 })).not.toThrow()
+      expect(() => table()).not.toThrow()
+      expect(() => table({ rotation: 0 })).not.toThrow()
+      expect(() => table({ rotation: 359 })).not.toThrow()
+      expect(() => table({ capacity: 1 })).not.toThrow()
     })
 
-    it.each(['hexagonal', '', 'REDONDA'])('rechaza la forma "%s"', (forma) => {
-      expect(() => mesa({ forma })).toThrow(/CHECK/)
+    it.each(['hexagonal', '', 'ROUND'])('rechaza la forma "%s"', (shape) => {
+      expect(() => table({ shape })).toThrow(/CHECK/)
     })
 
-    it.each(['redonda', 'cuadrada', 'rectangular', 'barra'])('acepta la forma %s', (forma) => {
-      expect(() => mesa({ forma })).not.toThrow()
+    it.each(['round', 'square', 'rectangular', 'bar'])('acepta la forma %s', (shape) => {
+      expect(() => table({ shape })).not.toThrow()
     })
 
-    it.each([-1, 360, 720])('rechaza la rotación %d', (rotacion) => {
-      expect(() => mesa({ rotacion })).toThrow(/CHECK/)
+    it.each([-1, 360, 720])('rechaza la rotación %d', (rotation) => {
+      expect(() => table({ rotation })).toThrow(/CHECK/)
     })
 
-    it.each([0, -3])('rechaza la capacidad %d', (capacidad) => {
-      expect(() => mesa({ capacidad })).toThrow(/CHECK/)
+    it.each([0, -3])('rechaza la capacidad %d', (capacity) => {
+      expect(() => table({ capacity })).toThrow(/CHECK/)
     })
 
     it.each([0, -1])('rechaza ancho o alto %d', (medida) => {
-      expect(() => mesa({ ancho: medida })).toThrow(/CHECK/)
-      expect(() => mesa({ alto: medida })).toThrow(/CHECK/)
+      expect(() => table({ width: medida })).toThrow(/CHECK/)
+      expect(() => table({ height: medida })).toThrow(/CHECK/)
     })
 
     it('rechaza una rotación con decimales', () => {
-      expect(() => mesa({ rotacion: 45.5 })).toThrow()
+      expect(() => table({ rotation: 45.5 })).toThrow()
     })
   })
 
   describe('dispositivo', () => {
-    const dispositivo = (tipo: string) =>
-      insertarVersionado(db, 'dispositivo', base.restaurante, {
-        sede_id: base.sede,
-        nombre: 'Celular 1',
-        tipo,
+    const device = (type: string) =>
+      insertarVersionado(db, 'devices', base.restaurant, {
+        location_id: base.location,
+        name: 'Celular 1',
+        type,
       })
 
-    it.each(['mesero', 'caja', 'kds'])('acepta el tipo %s', (tipo) => {
-      expect(() => dispositivo(tipo)).not.toThrow()
+    it.each(['waiter', 'register', 'kds'])('acepta el tipo %s', (type) => {
+      expect(() => device(type)).not.toThrow()
     })
 
-    it.each(['tablet', '', 'Caja'])('rechaza el tipo "%s"', (tipo) => {
-      expect(() => dispositivo(tipo)).toThrow(/CHECK/)
+    it.each(['tablet', '', 'Caja'])('rechaza el tipo "%s"', (type) => {
+      expect(() => device(type)).toThrow(/CHECK/)
     })
   })
 
   describe('pedido e ítems', () => {
-    it.each(['abierto', 'cerrado', 'cancelado'])('acepta el estado de pedido %s', (estado) => {
-      expect(() => insertarPedido(db, base.restaurante, { estado })).not.toThrow()
+    it.each(['open', 'closed', 'canceled'])('acepta el estado de pedido %s', (status) => {
+      expect(() => insertarPedido(db, base.restaurant, { status })).not.toThrow()
     })
 
-    it.each(['anulado', 'pagado', ''])('rechaza el estado de pedido "%s"', (estado) => {
-      expect(() => insertarPedido(db, base.restaurante, { estado })).toThrow(/CHECK/)
+    it.each(['voided', 'pagado', ''])('rechaza el estado de pedido "%s"', (status) => {
+      expect(() => insertarPedido(db, base.restaurant, { status })).toThrow(/CHECK/)
     })
 
     it('rechaza un canal de pedido desconocido', () => {
-      expect(() => insertarPedido(db, base.restaurante, { canal: 'drone' })).toThrow(/CHECK/)
+      expect(() => insertarPedido(db, base.restaurant, { channel: 'drone' })).toThrow(/CHECK/)
     })
 
     it('rechaza un número del día menor que 1', () => {
-      expect(() => insertarPedido(db, base.restaurante, { numero_dia: 0 })).toThrow(/CHECK/)
+      expect(() => insertarPedido(db, base.restaurant, { day_number: 0 })).toThrow(/CHECK/)
     })
 
-    it.each([
-      'retenido',
-      'pendiente',
-      'enviado',
-      'en_preparacion',
-      'listo',
-      'entregado',
-      'anulado',
-    ])('acepta el estado de ítem %s', (estado) => {
-      const pedido = insertarPedido(db, base.restaurante)
-      expect(() => insertarItem(db, base.restaurante, pedido, { estado })).not.toThrow()
-    })
+    it.each(['held', 'pending', 'sent', 'in_preparation', 'ready', 'served', 'voided'])(
+      'acepta el estado de ítem %s',
+      (status) => {
+        const order = insertarPedido(db, base.restaurant)
+        expect(() => insertarItem(db, base.restaurant, order, { status })).not.toThrow()
+      },
+    )
 
-    it.each(['cancelado', 'preparando', ''])('rechaza el estado de ítem "%s"', (estado) => {
-      const pedido = insertarPedido(db, base.restaurante)
-      expect(() => insertarItem(db, base.restaurante, pedido, { estado })).toThrow(/CHECK/)
+    it.each(['canceled', 'preparando', ''])('rechaza el estado de ítem "%s"', (status) => {
+      const order = insertarPedido(db, base.restaurant)
+      expect(() => insertarItem(db, base.restaurant, order, { status })).toThrow(/CHECK/)
     })
 
     it('rechaza un curso o un tipo de impuesto desconocidos', () => {
-      const pedido = insertarPedido(db, base.restaurante)
-      expect(() => insertarItem(db, base.restaurante, pedido, { curso: 'aperitivo' })).toThrow(
+      const order = insertarPedido(db, base.restaurant)
+      expect(() => insertarItem(db, base.restaurant, order, { course: 'aperitivo' })).toThrow(
         /CHECK/,
       )
-      expect(() => insertarItem(db, base.restaurante, pedido, { impuesto_tipo: 'icui' })).toThrow(
-        /CHECK/,
-      )
+      expect(() => insertarItem(db, base.restaurant, order, { tax_type: 'icui' })).toThrow(/CHECK/)
     })
 
     it('rechaza estacion_ids que no es JSON', () => {
-      const pedido = insertarPedido(db, base.restaurante)
-      expect(() => insertarItem(db, base.restaurante, pedido, { estacion_ids: '[1,' })).toThrow(
+      const order = insertarPedido(db, base.restaurant)
+      expect(() => insertarItem(db, base.restaurant, order, { station_ids: '[1,' })).toThrow(
         /CHECK/,
       )
     })
 
     it('rechaza precio_extra negativo o con decimales en el modificador de un ítem', () => {
-      const pedido = insertarPedido(db, base.restaurante)
-      const item = insertarItem(db, base.restaurante, pedido)
-      const modificador = (precio_extra: number) =>
-        insertarEnTabla(db, 'pedido_item_modificador', {
-          pedido_item_id: item,
-          modificador_id: nuevoId(),
-          nombre: 'Extra queso',
-          precio_extra,
+      const order = insertarPedido(db, base.restaurant)
+      const item = insertarItem(db, base.restaurant, order)
+      const modifier = (extra_price: number) =>
+        insertarEnTabla(db, 'order_item_modifiers', {
+          order_item_id: item,
+          modifier_id: newId(),
+          name: 'Extra queso',
+          extra_price,
         })
 
-      expect(() => modificador(3000)).not.toThrow()
-      expect(() => modificador(-1)).toThrow(/CHECK/)
-      expect(() => modificador(100.5)).toThrow()
+      expect(() => modifier(3000)).not.toThrow()
+      expect(() => modifier(-1)).toThrow(/CHECK/)
+      expect(() => modifier(100.5)).toThrow()
     })
 
     it('al borrar un pedido se borran sus ítems (proyección reconstruible)', () => {
-      const pedido = insertarPedido(db, base.restaurante)
-      insertarItem(db, base.restaurante, pedido)
+      const order = insertarPedido(db, base.restaurant)
+      insertarItem(db, base.restaurant, order)
 
-      db.prepare('DELETE FROM pedido WHERE id = ?').run(pedido)
+      db.prepare('DELETE FROM orders WHERE id = ?').run(order)
 
-      expect(db.prepare('SELECT count(*) AS n FROM pedido_item').get()?.n).toBe(0)
+      expect(db.prepare('SELECT count(*) AS n FROM order_items').get()?.n).toBe(0)
     })
   })
 
   describe('grupos y modificadores', () => {
-    const grupo = (minimo: number, maximo: number) =>
-      insertarVersionado(db, 'grupo_modificador', base.restaurante, {
-        nombre: 'Salsas',
-        minimo,
-        maximo,
+    const group = (minimum: number, maximum: number) =>
+      insertarVersionado(db, 'modifier_groups', base.restaurant, {
+        name: 'Salsas',
+        minimum,
+        maximum,
       })
 
     it('acepta mínimo igual al máximo y mínimo cero', () => {
-      expect(() => grupo(0, 1)).not.toThrow()
-      expect(() => grupo(2, 2)).not.toThrow()
+      expect(() => group(0, 1)).not.toThrow()
+      expect(() => group(2, 2)).not.toThrow()
     })
 
     it.each([
@@ -184,30 +177,30 @@ describe('restricciones del esquema', () => {
       [1, 0],
       [-1, 2],
       [0, 0],
-    ])('rechaza el grupo con mínimo %d y máximo %d', (minimo, maximo) => {
-      expect(() => grupo(minimo, maximo)).toThrow(/CHECK/)
+    ])('rechaza el grupo con mínimo %d y máximo %d', (minimum, maximum) => {
+      expect(() => group(minimum, maximum)).toThrow(/CHECK/)
     })
 
     it('rechaza precio_extra negativo y por encima del tope en un modificador', () => {
-      const grupoId = grupo(0, 2)
-      const modificador = (precio_extra: number) =>
-        insertarVersionado(db, 'modificador', base.restaurante, {
-          grupo_id: grupoId,
-          nombre: 'Picante',
-          precio_extra,
+      const grupoId = group(0, 2)
+      const modifier = (extra_price: number) =>
+        insertarVersionado(db, 'modifiers', base.restaurant, {
+          group_id: grupoId,
+          name: 'Picante',
+          extra_price,
         })
 
-      expect(() => modificador(0)).not.toThrow()
-      expect(() => modificador(-500)).toThrow(/CHECK/)
-      expect(() => modificador(100_000_001)).toThrow(/CHECK/)
+      expect(() => modifier(0)).not.toThrow()
+      expect(() => modifier(-500)).toThrow(/CHECK/)
+      expect(() => modifier(100_000_001)).toThrow(/CHECK/)
     })
 
     it('un producto no repite el mismo grupo', () => {
-      const grupoId = grupo(0, 2)
+      const grupoId = group(0, 2)
       const vincular = () =>
-        insertarVersionado(db, 'producto_grupo_modificador', base.restaurante, {
-          producto_id: base.producto,
-          grupo_id: grupoId,
+        insertarVersionado(db, 'product_modifier_groups', base.restaurant, {
+          product_id: base.product,
+          group_id: grupoId,
         })
 
       vincular()
@@ -220,83 +213,83 @@ describe('restricciones del esquema', () => {
       'rechaza el id "%s" que no mide 26',
       (id) => {
         expect(() =>
-          insertarVersionado(db, 'categoria', base.restaurante, { nombre: 'X' }, id),
+          insertarVersionado(db, 'categories', base.restaurant, { name: 'X' }, id),
         ).toThrow(/CHECK/)
-        expect(() => insertarEvento(db, base.restaurante, { id })).toThrow(/CHECK/)
-        expect(() => insertarConflicto(db, base.restaurante, { id })).toThrow(/CHECK/)
+        expect(() => insertarEvento(db, base.restaurant, { id })).toThrow(/CHECK/)
+        expect(() => insertarConflicto(db, base.restaurant, { id })).toThrow(/CHECK/)
       },
     )
 
     it('acepta un id de exactamente 26 caracteres', () => {
       expect(() =>
-        insertarVersionado(db, 'categoria', base.restaurante, { nombre: 'X' }, '0'.repeat(26)),
+        insertarVersionado(db, 'categories', base.restaurant, { name: 'X' }, '0'.repeat(26)),
       ).not.toThrow()
     })
 
     it('rechaza un id de pedido de longitud incorrecta', () => {
-      const pedido = nuevoId().slice(0, 20)
+      const order = newId().slice(0, 20)
       expect(() =>
-        insertarEnTabla(db, 'pedido', {
-          id: pedido,
-          restaurante_id: base.restaurante,
-          canal: 'salon',
-          estado: 'abierto',
-          abierto_en: AHORA,
-          ultima_secuencia: 1,
+        insertarEnTabla(db, 'orders', {
+          id: order,
+          restaurant_id: base.restaurant,
+          channel: 'dine_in',
+          status: 'open',
+          opened_at: AHORA,
+          last_sequence: 1,
         }),
       ).toThrow(/CHECK/)
     })
 
     it('el restaurante debe ser su propio restaurante_id', () => {
-      const id = nuevoId()
+      const id = newId()
       expect(() =>
-        insertarVersionado(db, 'restaurante', nuevoId(), { nombre: 'X', config: '{}' }, id),
+        insertarVersionado(db, 'restaurants', newId(), { name: 'X', config: '{}' }, id),
       ).toThrow(/CHECK/)
     })
   })
 
   describe('JSON', () => {
-    it.each(['relacionados', 'afecta', 'asignaciones', 'datos'])(
+    it.each(['related', 'affects', 'assignments', 'data'])(
       'rechaza JSON inválido en evento.%s',
       (columna) => {
-        expect(() => insertarEvento(db, base.restaurante, { [columna]: '{roto' })).toThrow(/CHECK/)
-        expect(() => insertarEvento(db, base.restaurante, { [columna]: '' })).toThrow(/CHECK/)
+        expect(() => insertarEvento(db, base.restaurant, { [columna]: '{roto' })).toThrow(/CHECK/)
+        expect(() => insertarEvento(db, base.restaurant, { [columna]: '' })).toThrow(/CHECK/)
       },
     )
 
     it.each([
-      ['relacionados', '["01HZX"]'],
-      ['afecta', '[]'],
-      ['asignaciones', '{"numero_dia":4}'],
-    ])('acepta JSON válido en evento.%s', (columna, valor) => {
-      expect(() => insertarEvento(db, base.restaurante, { [columna]: valor })).not.toThrow()
+      ['related', '["01HZX"]'],
+      ['affects', '[]'],
+      ['assignments', '{"day_number":4}'],
+    ])('acepta JSON válido en evento.%s', (columna, value) => {
+      expect(() => insertarEvento(db, base.restaurant, { [columna]: value })).not.toThrow()
     })
 
     it('los valores por defecto de relacionados, afecta y asignaciones son JSON vacío', () => {
-      const evento = insertarEvento(db, base.restaurante)
+      const event = insertarEvento(db, base.restaurant)
       const fila = db
-        .prepare('SELECT relacionados, afecta, asignaciones FROM evento WHERE id = ?')
-        .get(evento.id ?? null)
+        .prepare('SELECT related, affects, assignments FROM events WHERE id = ?')
+        .get(event.id ?? null)
 
-      expect(fila).toEqual({ relacionados: '[]', afecta: '[]', asignaciones: '{}' })
+      expect(fila).toEqual({ related: '[]', affects: '[]', assignments: '{}' })
     })
 
     it('rechaza config del restaurante que no es JSON', () => {
-      const id = nuevoId()
+      const id = newId()
       expect(() =>
-        insertarVersionado(db, 'restaurante', id, { nombre: 'X', config: 'no json' }, id),
+        insertarVersionado(db, 'restaurants', id, { name: 'X', config: 'no json' }, id),
       ).toThrow(/CHECK/)
     })
 
     it('rechaza contenido de cuarentena que no es JSON', () => {
-      const fila = (contenido: string) =>
-        insertarEnTabla(db, 'evento_cuarentena', {
-          restaurante_id: base.restaurante,
-          evento_id: nuevoId(),
-          dispositivo_id: nuevoId(),
-          motivo: 'esquema desconocido',
-          contenido,
-          recibido_en: AHORA,
+      const fila = (content: string) =>
+        insertarEnTabla(db, 'quarantined_events', {
+          restaurant_id: base.restaurant,
+          event_id: newId(),
+          device_id: newId(),
+          reason: 'esquema desconocido',
+          content,
+          received_at: AHORA,
         })
 
       expect(() => fila('{"a":1}')).not.toThrow()
@@ -305,119 +298,117 @@ describe('restricciones del esquema', () => {
   })
 
   describe('eventos', () => {
-    it.each(['pedido', 'mesa', 'producto', 'catalogo', 'turno_caja', 'usuario', 'sistema'])(
+    it.each(['order', 'table', 'product', 'catalog', 'register_shift', 'user', 'system'])(
       'acepta agregado_tipo %s',
-      (agregado_tipo) => {
+      (aggregate_type) => {
         expect(() =>
-          insertarEvento(db, base.restaurante, { agregado_tipo, secuencia: 1 }),
+          insertarEvento(db, base.restaurant, { aggregate_type, sequence: 1 }),
         ).not.toThrow()
       },
     )
 
-    it.each(['cliente', '', 'Pedido'])('rechaza agregado_tipo "%s"', (agregado_tipo) => {
-      expect(() => insertarEvento(db, base.restaurante, { agregado_tipo })).toThrow(/CHECK/)
+    it.each(['cliente', '', 'Order'])('rechaza agregado_tipo "%s"', (aggregate_type) => {
+      expect(() => insertarEvento(db, base.restaurant, { aggregate_type })).toThrow(/CHECK/)
     })
 
     it('rechaza secuencia 0, secuencia_base negativa y version_esquema 0', () => {
-      expect(() => insertarEvento(db, base.restaurante, { secuencia: 0 })).toThrow(
-        /CHECK|siguiente/,
-      )
-      expect(() => insertarEvento(db, base.restaurante, { secuencia_base: -1 })).toThrow(/CHECK/)
-      expect(() => insertarEvento(db, base.restaurante, { version_esquema: 0 })).toThrow(/CHECK/)
+      expect(() => insertarEvento(db, base.restaurant, { sequence: 0 })).toThrow(/CHECK|siguiente/)
+      expect(() => insertarEvento(db, base.restaurant, { base_sequence: -1 })).toThrow(/CHECK/)
+      expect(() => insertarEvento(db, base.restaurant, { schema_version: 0 })).toThrow(/CHECK/)
     })
 
     it('rechaza un evento de un restaurante que no existe', () => {
-      expect(() => insertarEvento(db, nuevoId())).toThrow(/FOREIGN KEY/)
+      expect(() => insertarEvento(db, newId())).toThrow(/FOREIGN KEY/)
     })
 
     it('no admite el mismo evento rechazado dos veces ni modificarlo', () => {
-      const id = nuevoId()
-      const rechazar = () =>
-        insertarEnTabla(db, 'evento_rechazado', {
-          restaurante_id: base.restaurante,
-          evento_id: id,
-          dispositivo_id: nuevoId(),
-          motivo: 'id repetido con otro contenido',
-          contenido: '{}',
-          contenido_hash: 'h',
-          recibido_en: AHORA,
+      const id = newId()
+      const reject = () =>
+        insertarEnTabla(db, 'rejected_events', {
+          restaurant_id: base.restaurant,
+          event_id: id,
+          device_id: newId(),
+          reason: 'id repetido con otro contenido',
+          content: '{}',
+          content_hash: 'h',
+          received_at: AHORA,
         })
 
-      rechazar()
-      expect(() => rechazar()).toThrow(/no se reemplazan|UNIQUE|PRIMARY KEY/)
+      reject()
+      expect(() => reject()).toThrow(/no se reemplazan|UNIQUE|PRIMARY KEY/)
       // El mismo id con otro contenido (id_repetido) sí se registra aparte.
       expect(() =>
-        insertarEnTabla(db, 'evento_rechazado', {
-          restaurante_id: base.restaurante,
-          evento_id: id,
-          dispositivo_id: nuevoId(),
-          motivo: 'id_repetido',
-          contenido: '{"otro":1}',
-          contenido_hash: 'h2',
-          recibido_en: AHORA,
+        insertarEnTabla(db, 'rejected_events', {
+          restaurant_id: base.restaurant,
+          event_id: id,
+          device_id: newId(),
+          reason: 'duplicate_id',
+          content: '{"other":1}',
+          content_hash: 'h2',
+          received_at: AHORA,
         }),
       ).not.toThrow()
-      expect(() => db.exec("UPDATE evento_rechazado SET motivo = 'otro'")).toThrow(
+      expect(() => db.exec("UPDATE rejected_events SET reason = 'other'")).toThrow(
         /no se modifican/,
       )
-      expect(() => db.exec('DELETE FROM evento_rechazado')).toThrow(/no se borran/)
+      expect(() => db.exec('DELETE FROM rejected_events')).toThrow(/no se borran/)
     })
 
     it('rechaza una resolución de cuarentena desconocida', () => {
       expect(() =>
-        insertarEnTabla(db, 'evento_cuarentena', {
-          restaurante_id: base.restaurante,
-          evento_id: nuevoId(),
-          dispositivo_id: nuevoId(),
-          motivo: 'm',
-          contenido: '{}',
-          recibido_en: AHORA,
-          resolucion: 'ignorado',
+        insertarEnTabla(db, 'quarantined_events', {
+          restaurant_id: base.restaurant,
+          event_id: newId(),
+          device_id: newId(),
+          reason: 'm',
+          content: '{}',
+          received_at: AHORA,
+          resolution: 'ignorado',
         }),
       ).toThrow(/CHECK/)
     })
   })
 
   describe('evento_agregado', () => {
-    const indexar = (evento_id: string, agregado_id = nuevoId(), secuencia = 1) =>
-      insertarEnTabla(db, 'evento_agregado', {
-        restaurante_id: base.restaurante,
-        agregado_id,
-        secuencia,
-        evento_id,
+    const indexar = (event_id: string, aggregate_id = newId(), sequence = 1) =>
+      insertarEnTabla(db, 'event_aggregates', {
+        restaurant_id: base.restaurant,
+        aggregate_id,
+        sequence,
+        event_id,
       })
 
     it('indexa un evento existente', () => {
-      const evento = insertarEvento(db, base.restaurante)
+      const event = insertarEvento(db, base.restaurant)
 
-      expect(() => indexar(String(evento.id), String(evento.agregado_id))).not.toThrow()
+      expect(() => indexar(String(event.id), String(event.aggregate_id))).not.toThrow()
     })
 
     it('rechaza apuntar a un evento inexistente', () => {
-      expect(() => indexar(nuevoId())).toThrow(/FOREIGN KEY/)
+      expect(() => indexar(newId())).toThrow(/FOREIGN KEY/)
     })
 
     it('rechaza apuntar a un evento de otro restaurante', () => {
-      const otro = nuevoId()
-      insertarVersionado(db, 'restaurante', otro, { nombre: 'Otro', config: '{}' }, otro)
-      const ajeno = insertarEvento(db, otro)
+      const other = newId()
+      insertarVersionado(db, 'restaurants', other, { name: 'Otro', config: '{}' }, other)
+      const ajeno = insertarEvento(db, other)
 
       expect(() => indexar(String(ajeno.id))).toThrow(/FOREIGN KEY/)
     })
 
     it('no se modifica ni se borra', () => {
-      const evento = insertarEvento(db, base.restaurante)
-      indexar(String(evento.id), String(evento.agregado_id))
+      const event = insertarEvento(db, base.restaurant)
+      indexar(String(event.id), String(event.aggregate_id))
 
-      expect(() => db.exec('UPDATE evento_agregado SET secuencia = 9')).toThrow(/no se modifican/)
-      expect(() => db.exec('DELETE FROM evento_agregado')).toThrow(/no se borran/)
+      expect(() => db.exec('UPDATE event_aggregates SET sequence = 9')).toThrow(/no se modifican/)
+      expect(() => db.exec('DELETE FROM event_aggregates')).toThrow(/no se borran/)
     })
 
     it('un evento no se puede borrar aunque lo referencie el índice', () => {
-      const evento = insertarEvento(db, base.restaurante)
-      indexar(String(evento.id), String(evento.agregado_id))
+      const event = insertarEvento(db, base.restaurant)
+      indexar(String(event.id), String(event.aggregate_id))
 
-      expect(() => db.prepare('DELETE FROM evento WHERE id = ?').run(String(evento.id))).toThrow(
+      expect(() => db.prepare('DELETE FROM events WHERE id = ?').run(String(event.id))).toThrow(
         /no se borran/,
       )
     })
@@ -425,85 +416,85 @@ describe('restricciones del esquema', () => {
 
   describe('conflicto', () => {
     it.each([
-      'mesa_duplicada',
-      'mesa_bloqueada',
-      'item_inexistente',
-      'item_ya_enviado',
-      'item_ya_anulado',
-      'item_movido',
-      'pedido_cerrado',
-      'precio_distinto',
-    ])('acepta el tipo %s', (tipo) => {
-      expect(() => insertarConflicto(db, base.restaurante, { tipo })).not.toThrow()
+      'duplicate_table',
+      'table_locked',
+      'item_not_found',
+      'item_already_sent',
+      'item_already_voided',
+      'item_moved',
+      'order_closed',
+      'price_mismatch',
+    ])('acepta el tipo %s', (type) => {
+      expect(() => insertarConflicto(db, base.restaurant, { type })).not.toThrow()
     })
 
-    it.each(['otro', '', 'Mesa_Duplicada'])('rechaza el tipo "%s"', (tipo) => {
-      expect(() => insertarConflicto(db, base.restaurante, { tipo })).toThrow(/CHECK/)
+    it.each(['other', '', 'Duplicate_Table'])('rechaza el tipo "%s"', (type) => {
+      expect(() => insertarConflicto(db, base.restaurant, { type })).toThrow(/CHECK/)
     })
 
     it('guarda un solo conflicto por evento en un restaurante', () => {
-      const evento_id = nuevoId()
-      insertarConflicto(db, base.restaurante, { evento_id })
+      const event_id = newId()
+      insertarConflicto(db, base.restaurant, { event_id })
 
       expect(() =>
-        insertarConflicto(db, base.restaurante, { evento_id, tipo: 'mesa_bloqueada' }),
+        insertarConflicto(db, base.restaurant, { event_id, type: 'table_locked' }),
       ).toThrow(/UNIQUE/)
     })
 
     it('el mismo evento_id puede tener conflicto en otro restaurante', () => {
-      const otro = nuevoId()
-      insertarVersionado(db, 'restaurante', otro, { nombre: 'Otro', config: '{}' }, otro)
-      const evento_id = nuevoId()
+      const other = newId()
+      insertarVersionado(db, 'restaurants', other, { name: 'Otro', config: '{}' }, other)
+      const event_id = newId()
 
-      insertarConflicto(db, base.restaurante, { evento_id })
-      expect(() => insertarConflicto(db, otro, { evento_id })).not.toThrow()
+      insertarConflicto(db, base.restaurant, { event_id })
+      expect(() => insertarConflicto(db, other, { event_id })).not.toThrow()
     })
   })
 
   describe('otras tablas', () => {
     it('rechaza tipos de impuesto desconocidos', () => {
       expect(() =>
-        insertarVersionado(db, 'impuesto', base.restaurante, {
-          nombre: 'X',
-          tipo: 'icui',
-          tarifa: 0,
+        insertarVersionado(db, 'taxes', base.restaurant, {
+          name: 'X',
+          type: 'icui',
+          rate: 0,
         }),
       ).toThrow(/CHECK/)
     })
 
     it('un contador no puede ser negativo', () => {
       expect(() =>
-        insertarEnTabla(db, 'contador', {
-          restaurante_id: base.restaurante,
-          nombre: 'catalogo',
-          valor: -1,
+        insertarEnTabla(db, 'counters', {
+          restaurant_id: base.restaurant,
+          name: 'catalog',
+          value: -1,
         }),
       ).toThrow(/CHECK/)
     })
 
     it('activo solo admite 0 o 1', () => {
       expect(() =>
-        insertarVersionado(db, 'categoria', base.restaurante, { nombre: 'X', activo: 2 }),
+        insertarVersionado(db, 'categories', base.restaurant, { name: 'X', active: 2 }),
       ).toThrow(/CHECK/)
     })
 
     it('una credencial de dispositivo exige un token único', () => {
-      const dispositivo = (nombre: string) =>
-        insertarVersionado(db, 'dispositivo', base.restaurante, {
-          sede_id: base.sede,
-          nombre,
-          tipo: 'mesero',
+      const device = (name: string) =>
+        insertarVersionado(db, 'devices', base.restaurant, {
+          location_id: base.location,
+          name,
+          type: 'waiter',
         })
-      const credencial = (id: string) =>
-        insertarEnTabla(db, 'dispositivo_credencial', {
-          dispositivo_id: id,
-          restaurante_id: base.restaurante,
+      const credential = (id: string) =>
+        insertarEnTabla(db, 'device_credentials', {
+          device_id: id,
+          restaurant_id: base.restaurant,
           token_hash: 'mismo',
-          creado_en: AHORA,
+          created_at: AHORA,
         })
 
-      credencial(dispositivo('A'))
-      expect(() => credencial(dispositivo('B'))).toThrow(/UNIQUE/)
+      credential(device('A'))
+      expect(() => credential(device('B'))).toThrow(/UNIQUE/)
     })
   })
 })

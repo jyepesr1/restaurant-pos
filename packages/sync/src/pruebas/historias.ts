@@ -1,30 +1,30 @@
-import { type EventoPedido, nuevoId, validarEventoNuevo } from '@pos/core'
+import { newId, type OrderEvent, validateNewEvent } from '@pos/core'
 // El simulador del reductor de @pos/core: dos pedidos y dos turnos con eventos al azar. Solo para
 // pruebas, por eso se importa por ruta y no desde el paquete.
-import { type Accion, Servicio } from '../../../core/src/pruebas/simulador'
+import { type Action, Service } from '../../../core/src/testing/simulator'
 import type { AlmacenHub } from '../hub/almacen'
 
 // Historias al azar para probar lo que el hub lee de la base para los reportes (tarea 1.9): los
 // eventos del simulador, con días operativos repartidos, turnos de caja abiertos y cerrados y los
 // números de secuencia contiguos que exige la base.
 
-export const DIAS = ['2026-10-23', '2026-10-24', '2026-10-25'] as const
+export const DAYS = ['2026-10-23', '2026-10-24', '2026-10-25'] as const
 const DEL_PERIODO = [
-  'PagoRegistrado',
-  'PagoAnulado',
-  'ReembolsoRegistrado',
-  'ItemAnulado',
-  'PedidoCancelado',
+  'PaymentRecorded',
+  'PaymentVoided',
+  'RefundRecorded',
+  'ItemVoided',
+  'OrderCanceled',
 ]
 
 export interface PlanDeHistoria {
-  acciones: Accion[]
+  actions: Action[]
   /** Un día (0..2) por evento, según su posición. */
-  dias: number[]
+  days: number[]
   /** Cuáles de los dos turnos se cierran al final. */
-  cierra: [boolean, boolean]
+  closes: [boolean, boolean]
   /** Con propinas pagadas desde la caja en cada turno. */
-  propinas: [number, number]
+  tips: [number, number]
   /**
    * Días en orden, como en la vida real: los eventos de antes de `cortes[0]` son del primer día,
    * hasta `cortes[1]` del segundo y el resto del tercero (cada uno es una posición entre los
@@ -34,147 +34,147 @@ export interface PlanDeHistoria {
   cortes?: [number, number]
 }
 
-export interface Historia {
-  servicio: Servicio
+export interface Story {
+  service: Service
   /** Todos los eventos aceptados, con su secuencia contigua desde 1. */
-  eventos: EventoPedido[]
-  turnos: readonly [string, string]
+  events: OrderEvent[]
+  shifts: readonly [string, string]
 }
 
-const CAJA = nuevoId()
-const USUARIO = nuevoId()
+const CAJA = newId()
+const USUARIO = newId()
 
 function crudo(
-  tipo: string,
-  agregado: string,
-  datos: unknown,
+  type: string,
+  aggregate: string,
+  data: unknown,
   extras: Record<string, unknown>,
 ): Record<string, unknown> {
   return {
-    id: nuevoId(),
-    tipo,
-    version_esquema: 1,
-    agregado_tipo: 'turno_caja',
-    agregado_id: agregado,
-    relacionados: [],
-    datos,
-    sesion_id: null,
-    usuario_id: USUARIO,
-    dispositivo_id: CAJA,
-    autorizacion_id: null,
-    motivo: null,
-    hora_dispositivo: '2026-10-24T20:00:00.000Z',
-    hora_estimada_hub: '2026-10-24T20:00:00.000Z',
-    secuencia_base: 0,
-    recibido_en: '2026-10-24T20:00:00.000Z',
-    asignaciones: {},
-    afecta: [],
-    autorizado_por_id: null,
+    id: newId(),
+    type,
+    schema_version: 1,
+    aggregate_type: 'register_shift',
+    aggregate_id: aggregate,
+    related: [],
+    data,
+    session_id: null,
+    user_id: USUARIO,
+    device_id: CAJA,
+    authorization_id: null,
+    reason: null,
+    device_time: '2026-10-24T20:00:00.000Z',
+    hub_estimated_time: '2026-10-24T20:00:00.000Z',
+    base_sequence: 0,
+    received_at: '2026-10-24T20:00:00.000Z',
+    assignments: {},
+    affects: [],
+    authorized_by_id: null,
     ...extras,
   }
 }
 
 /** Arma la historia: abre los turnos, corre al simulador, reparte los días y cierra los turnos. */
-export function armarHistoria(plan: PlanDeHistoria): Historia {
-  const servicio = new Servicio()
-  for (const a of plan.acciones) servicio.paso(a)
-  const aplicados = new Set(servicio.aplicados.map((e) => e.id))
-  const dia = (i: number) => DIAS[plan.dias[i % plan.dias.length] ?? 1] as string
+export function armarHistoria(plan: PlanDeHistoria): Story {
+  const service = new Service()
+  for (const a of plan.actions) service.step(a)
+  const appliedEvents = new Set(service.appliedEvents.map((e) => e.id))
+  const day = (i: number) => DAYS[plan.days[i % plan.days.length] ?? 1] as string
 
-  const apertura = servicio.turnos.map((t) =>
-    crudo('TurnoAbierto', t, { caja_id: CAJA, base: 100_000 }, { dia_operativo: DIAS[0] }),
+  const opening = service.shifts.map((t) =>
+    crudo('ShiftOpened', t, { register_id: CAJA, base: 100_000 }, { business_day: DAYS[0] }),
   )
-  const medio = plan.cortes
-    ? servicio.log
-        .filter((e) => aplicados.has(e.id))
+  const method = plan.cortes
+    ? service.log
+        .filter((e) => appliedEvents.has(e.id))
         .map((e, j) => {
           const [c1, c2] = plan.cortes as [number, number]
-          const d = j < c1 ? DIAS[0] : j < c2 ? DIAS[1] : DIAS[2]
-          return { ...e, dia_operativo: d } as EventoPedido
+          const d = j < c1 ? DAYS[0] : j < c2 ? DAYS[1] : DAYS[2]
+          return { ...e, business_day: d } as OrderEvent
         })
-    : servicio.log
+    : service.log
         .map((e, i) =>
-          DEL_PERIODO.includes(e.tipo) ? ({ ...e, dia_operativo: dia(i) } as EventoPedido) : e,
+          DEL_PERIODO.includes(e.type) ? ({ ...e, business_day: day(i) } as OrderEvent) : e,
         )
-        .filter((e) => aplicados.has(e.id))
-  const cierre = servicio.turnos.flatMap((t, n) => {
-    const propinas = plan.propinas[n as 0 | 1]
-    const eventos = []
-    if (propinas > 0)
-      eventos.push(
+        .filter((e) => appliedEvents.has(e.id))
+  const closeout = service.shifts.flatMap((t, n) => {
+    const tips = plan.tips[n as 0 | 1]
+    const events = []
+    if (tips > 0)
+      events.push(
         crudo(
-          'MovimientoCajaRegistrado',
+          'CashMovementRecorded',
           t,
           {
-            movimiento_id: nuevoId(),
-            tipo: 'pago_propinas',
-            monto: propinas,
-            descripcion: 'Propinas',
-            a_quien: 'Equipo',
-            dias: [DIAS[1]],
+            movement_id: newId(),
+            type: 'tip_payout',
+            amount: tips,
+            description: 'Propinas',
+            to_whom: 'Equipo',
+            days: [DAYS[1]],
           },
-          { dia_operativo: DIAS[1] },
+          { business_day: DAYS[1] },
         ),
       )
-    if (plan.cierra[n as 0 | 1]) {
-      const arqueo = nuevoId()
-      eventos.push(
+    if (plan.closes[n as 0 | 1]) {
+      const cashCount = newId()
+      events.push(
         crudo(
-          'ArqueoRegistrado',
+          'CashCountRecorded',
           t,
           {
-            arqueo_id: arqueo,
-            conteo: [{ valor: 1_000, cantidad: 100 }],
-            contado_efectivo: 100_000,
+            cash_count_id: cashCount,
+            tally: [{ value: 1_000, quantity: 100 }],
+            counted_cash: 100_000,
           },
-          { dia_operativo: DIAS[2] },
+          { business_day: DAYS[2] },
         ),
         crudo(
-          'TurnoCerrado',
+          'ShiftClosed',
           t,
           {
-            arqueo_id: arqueo,
-            esperado_efectivo: 100_000,
-            contado_efectivo: 100_000,
-            diferencia: 0,
-            justificacion: null,
-            otros_medios: [],
+            cash_count_id: cashCount,
+            expected_cash: 100_000,
+            counted_cash: 100_000,
+            variance: 0,
+            justification: null,
+            other_methods: [],
           },
-          { dia_operativo: DIAS[2] },
+          { business_day: DAYS[2] },
         ),
       )
     }
-    return eventos
+    return events
   })
 
-  const eventos = [...apertura, ...medio, ...cierre].map((e, i) => ({
+  const events = [...opening, ...method, ...closeout].map((e, i) => ({
     ...e,
-    secuencia: i + 1,
-  })) as unknown as EventoPedido[]
+    sequence: i + 1,
+  })) as unknown as OrderEvent[]
   // Los de caja pasan por el esquema real: la historia nunca trae un evento que el hub rechazaría.
-  for (const e of eventos.filter((x) => x.agregado_tipo === 'turno_caja')) {
+  for (const e of events.filter((x) => x.aggregate_type === 'register_shift')) {
     const {
-      secuencia: _s,
-      recibido_en: _r,
-      dia_operativo: _d,
-      asignaciones: _a,
-      afecta: _f,
-      autorizado_por_id: _p,
-      ...nuevo
+      sequence: _s,
+      received_at: _r,
+      business_day: _d,
+      assignments: _a,
+      affects: _f,
+      authorized_by_id: _p,
+      ...fresh
     } = e as unknown as Record<string, unknown>
-    const v = validarEventoNuevo(nuevo)
-    if (!v.ok) throw new Error(`Evento de caja inválido: ${v.errores.join('; ')}`)
+    const v = validateNewEvent(fresh)
+    if (!v.ok) throw new Error(`Evento de caja inválido: ${v.errors.join('; ')}`)
   }
-  return { servicio, eventos, turnos: servicio.turnos }
+  return { service, events, shifts: service.shifts }
 }
 
-const pedidosDe = (e: EventoPedido) => [...new Set([e.agregado_id, ...e.relacionados])]
+const pedidosDe = (e: OrderEvent) => [...new Set([e.aggregate_id, ...e.related])]
 
 /** Guarda los eventos en un almacén, como los guardaría el hub. */
-export function cargar(almacen: AlmacenHub, eventos: readonly EventoPedido[]) {
-  for (const e of eventos) almacen.guardarEvento(e, e.id, pedidosDe(e))
+export function cargar(almacen: AlmacenHub, events: readonly OrderEvent[]) {
+  for (const e of events) almacen.saveEvent(e, e.id, pedidosDe(e))
 }
 
 /** Les pone a los eventos la secuencia contigua desde 1 que exige la base. */
-export const numerar = (eventos: readonly EventoPedido[]): EventoPedido[] =>
-  eventos.map((e, i) => ({ ...e, secuencia: i + 1 }))
+export const numerar = (events: readonly OrderEvent[]): OrderEvent[] =>
+  events.map((e, i) => ({ ...e, sequence: i + 1 }))

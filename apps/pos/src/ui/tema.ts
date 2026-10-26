@@ -3,22 +3,22 @@ import { useEffect, useState } from 'react'
 // Modo claro u oscuro (brief §5: modo oscuro para bar y noche). Por defecto sigue al sistema; si
 // la persona elige uno, se recuerda en este dispositivo. index.html aplica lo mismo antes de pintar.
 
-export type Tema = 'sistema' | 'claro' | 'oscuro'
+export type Tema = 'system' | 'light' | 'dark'
 
-const CLAVE = 'pos-tema'
+const CLAVE = 'pos-theme'
 const consulta = () => window.matchMedia('(prefers-color-scheme: dark)')
 
 function leer(): Tema {
   try {
-    const guardado = localStorage.getItem(CLAVE)
-    return guardado === 'claro' || guardado === 'oscuro' ? guardado : 'sistema'
+    const saved = localStorage.getItem(CLAVE)
+    return saved === 'light' || saved === 'dark' ? saved : 'system'
   } catch {
-    return 'sistema'
+    return 'system'
   }
 }
 
 const resolver = (tema: Tema, sistemaOscuro: boolean) =>
-  tema === 'oscuro' || (tema === 'sistema' && sistemaOscuro)
+  tema === 'dark' || (tema === 'system' && sistemaOscuro)
 
 /** Pone o quita la clase `oscuro` en <html>. */
 export function aplicarTema(tema: Tema = leer()) {
@@ -26,30 +26,30 @@ export function aplicarTema(tema: Tema = leer()) {
 }
 
 /** El tema elegido, si la pantalla está en oscuro ahora mismo y cómo cambiarlo. */
-export function useTema(): { tema: Tema; oscuro: boolean; elegir: (tema: Tema) => void } {
+export function useTema(): { tema: Tema; dark: boolean; select: (tema: Tema) => void } {
   const [tema, setTema] = useState<Tema>(leer)
   const [sistemaOscuro, setSistemaOscuro] = useState(() => consulta().matches)
 
   useEffect(() => {
     const media = consulta()
-    const cambio = () => setSistemaOscuro(media.matches)
-    media.addEventListener('change', cambio)
-    return () => media.removeEventListener('change', cambio)
+    const change = () => setSistemaOscuro(media.matches)
+    media.addEventListener('change', change)
+    return () => media.removeEventListener('change', change)
   }, [])
 
-  const oscuro = resolver(tema, sistemaOscuro)
+  const dark = resolver(tema, sistemaOscuro)
   useEffect(() => {
-    document.documentElement.classList.toggle('oscuro', oscuro)
-  }, [oscuro])
+    document.documentElement.classList.toggle('oscuro', dark)
+  }, [dark])
 
-  const elegir = (nuevo: Tema) => {
+  const select = (fresh: Tema) => {
     try {
-      if (nuevo === 'sistema') localStorage.removeItem(CLAVE)
-      else localStorage.setItem(CLAVE, nuevo)
+      if (fresh === 'system') localStorage.removeItem(CLAVE)
+      else localStorage.setItem(CLAVE, fresh)
     } catch {
       // Sin almacenamiento (modo privado): vale solo mientras la página esté abierta.
     }
-    setTema(nuevo)
+    setTema(fresh)
   }
-  return { tema, oscuro, elegir }
+  return { tema, dark, select }
 }

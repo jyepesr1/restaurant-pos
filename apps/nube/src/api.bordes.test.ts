@@ -1,22 +1,22 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import fc from 'fast-check'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { atender, MAX_BYTES_CUERPO } from './api'
 import { MAX_EVENTOS_POR_LOTE } from './nube'
-import { ADMIN, AHORA, contar, crearMundo, lote, type Mundo, SEMILLA } from './pruebas/mundo'
+import { ADMIN, AHORA, batch, contar, crearMundo, type Mundo, SEMILLA } from './pruebas/mundo'
 import type { Sql } from './sql'
 
 // Los bordes de la API HTTP: cuerpos malformados, tipos inesperados, métodos y rutas que no son,
 // tamaños, errores internos que no deben mostrar nada, y las cabeceras de toda respuesta.
 
 let m: Mundo
-let credencial: string
+let credential: string
 let restauranteId: string
 let hubId: string
 beforeAll(async () => {
   m = await crearMundo()
   const h = await m.nuevoHub()
-  credencial = h.credencial
+  credential = h.credential
   restauranteId = h.restauranteId
   hubId = h.hub.id
 })
@@ -25,55 +25,55 @@ afterEach(() => {
 })
 
 interface Ruta {
-  nombre: string
+  name: string
   metodo: string
   ruta: string
   token: () => string | undefined
   /** Un cuerpo válido: sirve de base para cambiarle un campo. */
-  valido?: () => Record<string, unknown>
+  valid?: () => Record<string, unknown>
 }
 
 const RUTAS_CON_CUERPO: Ruta[] = [
   {
-    nombre: 'crear restaurante',
+    name: 'crear restaurante',
     metodo: 'POST',
-    ruta: '/v1/admin/restaurantes',
+    ruta: '/v1/admin/restaurants',
     token: () => ADMIN,
-    valido: () => ({ id: nuevoId(), nombre: 'R' }),
+    valid: () => ({ id: newId(), name: 'R' }),
   },
   {
-    nombre: 'crear código',
+    name: 'crear código',
     metodo: 'POST',
-    ruta: '/v1/admin/codigos',
+    ruta: '/v1/admin/codes',
     token: () => ADMIN,
-    valido: () => ({ restaurante_id: restauranteId }),
+    valid: () => ({ restaurant_id: restauranteId }),
   },
   {
-    nombre: 'revocar hub',
+    name: 'revocar hub',
     metodo: 'POST',
-    ruta: '/v1/admin/hubs/revocar',
+    ruta: '/v1/admin/hubs/revoke',
     token: () => ADMIN,
-    valido: () => ({ hub_id: nuevoId() }),
+    valid: () => ({ hub_id: newId() }),
   },
   {
-    nombre: 'registrar hub',
+    name: 'registrar hub',
     metodo: 'POST',
-    ruta: '/v1/hubs/registro',
+    ruta: '/v1/hubs/register',
     token: () => undefined,
-    valido: () => ({
-      codigo: 'ABCD-EFGH-JKMN',
-      hub_id: nuevoId(),
-      sede_id: nuevoId(),
-      nombre: 'Caja',
+    valid: () => ({
+      code: 'ABCD-EFGH-JKMN',
+      hub_id: newId(),
+      location_id: newId(),
+      name: 'Caja',
       instancia: 'i',
     }),
   },
   {
-    nombre: 'subir eventos',
+    name: 'subir eventos',
     metodo: 'POST',
-    ruta: '/v1/eventos',
-    token: () => credencial,
-    valido: () => ({ eventos: lote(1, 1) }),
+    ruta: '/v1/events',
+    token: () => credential,
+    valid: () => ({ events: batch(1, 1) }),
   },
 ]
 
@@ -103,26 +103,26 @@ describe('cuerpos malformados', () => {
     '{"constructor":{"prototype":{}}}',
   ]
   for (const r of RUTAS_CON_CUERPO)
-    it(`${r.nombre}: responde 400 y nunca 500 ante cuerpos que no sirven`, async () => {
+    it(`${r.name}: responde 400 y nunca 500 ante cuerpos que no sirven`, async () => {
       for (const c of cuerpos) {
-        const res = await m.pedir(r.metodo, r.ruta, c, r.token())
+        const res = await m.request(r.metodo, r.ruta, c, r.token())
         expect(res.status, JSON.stringify(c)).toBe(400)
-        expect(await res.json()).toMatchObject({ error: 'datos_invalidos' })
+        expect(await res.json()).toMatchObject({ error: 'invalid_data' })
       }
     })
 
   for (const r of RUTAS_CON_CUERPO)
-    it(`${r.nombre}: sin cuerpo (sin body ni content-type) es 400`, async () => {
-      const res = await m.pedir(r.metodo, r.ruta, undefined, r.token())
+    it(`${r.name}: sin cuerpo (sin body ni content-type) es 400`, async () => {
+      const res = await m.request(r.metodo, r.ruta, undefined, r.token())
       expect(res.status).toBe(400)
     })
 
   it('el tipo de contenido no importa: un JSON válido como text/plain se entiende igual', async () => {
     const res = await atender(
-      new Request('https://nube.faro.test/v1/eventos', {
+      new Request('https://cloud.faro.test/v1/events', {
         method: 'POST',
-        headers: { authorization: `Bearer ${credencial}`, 'content-type': 'text/plain' },
-        body: JSON.stringify({ eventos: lote(900, 1) }),
+        headers: { authorization: `Bearer ${credential}`, 'content-type': 'text/plain' },
+        body: JSON.stringify({ events: batch(900, 1) }),
       }),
       { sql: m.sql },
     )
@@ -131,9 +131,9 @@ describe('cuerpos malformados', () => {
 
   it('un cuerpo que no es UTF-8 válido no rompe: es 400', async () => {
     const res = await atender(
-      new Request('https://nube.faro.test/v1/eventos', {
+      new Request('https://cloud.faro.test/v1/events', {
         method: 'POST',
-        headers: { authorization: `Bearer ${credencial}` },
+        headers: { authorization: `Bearer ${credential}` },
         body: new Uint8Array([0x7b, 0xff, 0xfe, 0x7d]),
       }),
       { sql: m.sql },
@@ -143,8 +143,8 @@ describe('cuerpos malformados', () => {
 
   it('propiedad: cualquier JSON arbitrario en cualquier ruta con cuerpo da 400, nunca 500', async () => {
     await fc.assert(
-      fc.asyncProperty(fc.jsonValue(), fc.constantFrom(...RUTAS_CON_CUERPO), async (valor, r) => {
-        const res = await m.pedir(r.metodo, r.ruta, JSON.stringify(valor), r.token())
+      fc.asyncProperty(fc.jsonValue(), fc.constantFrom(...RUTAS_CON_CUERPO), async (value, r) => {
+        const res = await m.request(r.metodo, r.ruta, JSON.stringify(value), r.token())
         expect(res.status).toBe(400)
       }),
       { seed: SEMILLA, numRuns: 60 },
@@ -156,8 +156,8 @@ describe('cuerpos malformados', () => {
       fc.asyncProperty(
         fc.string({ unit: 'binary', maxLength: 200 }),
         fc.constantFrom(...RUTAS_CON_CUERPO),
-        async (texto, r) => {
-          const res = await m.pedir(r.metodo, r.ruta, texto === '' ? ' ' : texto, r.token())
+        async (text, r) => {
+          const res = await m.request(r.metodo, r.ruta, text === '' ? ' ' : text, r.token())
           expect(res.status).toBeLessThan(500)
         },
       ),
@@ -183,85 +183,90 @@ describe('tipos inesperados en cada campo', () => {
     'x'.repeat(1000),
   ]
   for (const r of RUTAS_CON_CUERPO) {
-    it(`${r.nombre}: cada campo con un valor de otro tipo o fuera de rango es 400`, async () => {
-      const base = r.valido?.() ?? {}
-      for (const campo of Object.keys(base))
-        for (const malo of valoresMalos) {
+    it(`${r.name}: cada campo con un valor de otro tipo o fuera de rango es 400`, async () => {
+      const base = r.valid?.() ?? {}
+      for (const field of Object.keys(base))
+        for (const badCase of valoresMalos) {
           // Una lista con cualquier cosa dentro es un lote válido (cada elemento se juzga solo).
-          if (campo === 'eventos' && Array.isArray(malo) && malo.length > 0) continue
-          const res = await m.pedir(r.metodo, r.ruta, { ...base, [campo]: malo }, r.token())
-          expect(res.status, `${campo}=${JSON.stringify(malo)}`.slice(0, 80)).toBe(400)
+          if (field === 'events' && Array.isArray(badCase) && badCase.length > 0) continue
+          const res = await m.request(r.metodo, r.ruta, { ...base, [field]: badCase }, r.token())
+          expect(res.status, `${field}=${JSON.stringify(badCase)}`.slice(0, 80)).toBe(400)
         }
     })
 
-    it(`${r.nombre}: un campo de más es 400 (los cuerpos son estrictos)`, async () => {
-      const res = await m.pedir(r.metodo, r.ruta, { ...(r.valido?.() ?? {}), de_mas: 1 }, r.token())
+    it(`${r.name}: un campo de más es 400 (los cuerpos son estrictos)`, async () => {
+      const res = await m.request(
+        r.metodo,
+        r.ruta,
+        { ...(r.valid?.() ?? {}), de_mas: 1 },
+        r.token(),
+      )
       expect(res.status).toBe(400)
     })
 
-    it(`${r.nombre}: faltando cada campo es 400`, async () => {
-      const base = r.valido?.() ?? {}
-      for (const campo of Object.keys(base)) {
-        const { [campo]: _quitado, ...resto } = base
-        expect((await m.pedir(r.metodo, r.ruta, resto, r.token())).status, campo).toBe(400)
+    it(`${r.name}: faltando cada campo es 400`, async () => {
+      const base = r.valid?.() ?? {}
+      for (const field of Object.keys(base)) {
+        const { [field]: _removed, ...rest } = base
+        expect((await m.request(r.metodo, r.ruta, rest, r.token())).status, field).toBe(400)
       }
     })
   }
 
   it('el nombre del restaurante se recorta y no puede quedar vacío ni pasar de 120 caracteres', async () => {
-    const pedir = (nombre: string) =>
-      m.pedir('POST', '/v1/admin/restaurantes', { id: nuevoId(), nombre }, ADMIN)
-    expect((await pedir('   ')).status).toBe(400)
-    expect((await pedir('x'.repeat(121))).status).toBe(400)
-    expect((await pedir('x'.repeat(120))).status).toBe(201)
+    const request = (name: string) =>
+      m.request('POST', '/v1/admin/restaurants', { id: newId(), name }, ADMIN)
+    expect((await request('   ')).status).toBe(400)
+    expect((await request('x'.repeat(121))).status).toBe(400)
+    expect((await request('x'.repeat(120))).status).toBe(201)
   })
 
   it('el lote: eventos que no es lista, o lista de más de 500, o vacía', async () => {
-    for (const eventos of ['x', null, {}, 1, true, []])
-      expect((await m.pedir('POST', '/v1/eventos', { eventos }, credencial)).status).toBe(400)
+    for (const events of ['x', null, {}, 1, true, []])
+      expect((await m.request('POST', '/v1/events', { events }, credential)).status).toBe(400)
     const justo = Array.from({ length: MAX_EVENTOS_POR_LOTE }, () => 1)
-    const r = await m.pedir('POST', '/v1/eventos', { eventos: justo }, credencial)
+    const r = await m.request('POST', '/v1/events', { events: justo }, credential)
     expect(r.status).toBe(200)
     expect(((await r.json()) as { resultados: unknown[] }).resultados).toHaveLength(
       MAX_EVENTOS_POR_LOTE,
     )
     expect(
-      (await m.pedir('POST', '/v1/eventos', { eventos: [...justo, 1] }, credencial)).status,
+      (await m.request('POST', '/v1/events', { events: [...justo, 1] }, credential)).status,
     ).toBe(400)
   })
 
   it('un lote con elementos que no son eventos responde 200 con todos inválidos', async () => {
-    const r = await m.pedir('POST', '/v1/eventos', { eventos: [1, 'x', null, [], {}] }, credencial)
+    const r = await m.request('POST', '/v1/events', { events: [1, 'x', null, [], {}] }, credential)
     expect(r.status).toBe(200)
-    const cuerpo = (await r.json()) as { resultados: { estado: string }[] }
-    expect(cuerpo.resultados.map((x) => x.estado)).toEqual(Array(5).fill('invalido'))
+    const cuerpo = (await r.json()) as { resultados: { status: string }[] }
+    expect(cuerpo.resultados.map((x) => x.status)).toEqual(Array(5).fill('invalid'))
   })
 })
 
 describe('tamaño del cuerpo', () => {
-  const envoltura = (relleno: string) => `{"eventos":["${relleno}"]}`
+  const envoltura = (relleno: string) => `{"events":["${relleno}"]}`
   const bytes = (t: string) => new TextEncoder().encode(t).length
 
   it('un content-length falso muy grande se rechaza con 413 sin leer el cuerpo', async () => {
-    for (const largo of [String(MAX_BYTES_CUERPO + 1), '999999999999', '1e9']) {
+    for (const length of [String(MAX_BYTES_CUERPO + 1), '999999999999', '1e9']) {
       const res = await atender(
-        new Request('https://nube.faro.test/v1/eventos', {
+        new Request('https://cloud.faro.test/v1/events', {
           method: 'POST',
-          headers: { authorization: `Bearer ${credencial}`, 'content-length': largo },
-          body: JSON.stringify({ eventos: lote(1, 1) }),
+          headers: { authorization: `Bearer ${credential}`, 'content-length': length },
+          body: JSON.stringify({ events: batch(1, 1) }),
         }),
         { sql: m.sql },
       )
-      expect([200, 413], largo).toContain(res.status)
-      if (largo !== '1e9') expect(res.status, largo).toBe(413)
+      expect([200, 413], length).toContain(res.status)
+      if (length !== '1e9') expect(res.status, length).toBe(413)
     }
   })
 
   it('un content-length falso muy chico no deja pasar un cuerpo que de verdad es grande', async () => {
     const res = await atender(
-      new Request('https://nube.faro.test/v1/eventos', {
+      new Request('https://cloud.faro.test/v1/events', {
         method: 'POST',
-        headers: { authorization: `Bearer ${credencial}`, 'content-length': '10' },
+        headers: { authorization: `Bearer ${credential}`, 'content-length': '10' },
         body: envoltura('x'.repeat(MAX_BYTES_CUERPO)),
       }),
       { sql: m.sql },
@@ -270,34 +275,34 @@ describe('tamaño del cuerpo', () => {
   })
 
   it('un content-length ilegible o negativo no rompe nada', async () => {
-    for (const largo of ['abc', '-5', '', ' ']) {
+    for (const length of ['abc', '-5', '', ' ']) {
       const res = await atender(
-        new Request('https://nube.faro.test/v1/eventos', {
+        new Request('https://cloud.faro.test/v1/events', {
           method: 'POST',
-          headers: { authorization: `Bearer ${credencial}`, 'content-length': largo },
-          body: JSON.stringify({ eventos: lote(950, 1) }),
+          headers: { authorization: `Bearer ${credential}`, 'content-length': length },
+          body: JSON.stringify({ events: batch(950, 1) }),
         }),
         { sql: m.sql },
       )
-      expect(res.status, JSON.stringify(largo)).toBeLessThan(500)
+      expect(res.status, JSON.stringify(length)).toBeLessThan(500)
     }
   })
 
   it('el límite es exacto: MAX_BYTES_CUERPO pasa, un byte más es 413', async () => {
-    const vacio = bytes(envoltura(''))
-    const justo = envoltura('x'.repeat(MAX_BYTES_CUERPO - vacio))
+    const empty = bytes(envoltura(''))
+    const justo = envoltura('x'.repeat(MAX_BYTES_CUERPO - empty))
     expect(bytes(justo)).toBe(MAX_BYTES_CUERPO)
-    expect((await m.pedir('POST', '/v1/eventos', justo, credencial)).status).toBe(200)
-    const demas = envoltura('x'.repeat(MAX_BYTES_CUERPO - vacio + 1))
-    const r = await m.pedir('POST', '/v1/eventos', demas, credencial)
+    expect((await m.request('POST', '/v1/events', justo, credential)).status).toBe(200)
+    const demas = envoltura('x'.repeat(MAX_BYTES_CUERPO - empty + 1))
+    const r = await m.request('POST', '/v1/events', demas, credential)
     expect(r.status).toBe(413)
-    expect(await r.json()).toMatchObject({ error: 'lote_grande' })
+    expect(await r.json()).toMatchObject({ error: 'batch_too_large' })
   })
 
   it('el límite se mide en bytes: caracteres de varios bytes se pasan antes', async () => {
-    const texto = envoltura('ñ'.repeat(MAX_BYTES_CUERPO / 2))
-    expect(texto.length).toBeLessThan(MAX_BYTES_CUERPO)
-    expect((await m.pedir('POST', '/v1/eventos', texto, credencial)).status).toBe(413)
+    const text = envoltura('ñ'.repeat(MAX_BYTES_CUERPO / 2))
+    expect(text.length).toBeLessThan(MAX_BYTES_CUERPO)
+    expect((await m.request('POST', '/v1/events', text, credential)).status).toBe(413)
   })
 
   it('sin content-length (flujo), deja de leer al pasarse del límite', async () => {
@@ -311,9 +316,9 @@ describe('tamaño del cuerpo', () => {
       },
     })
     const res = await atender(
-      new Request('https://nube.faro.test/v1/eventos', {
+      new Request('https://cloud.faro.test/v1/events', {
         method: 'POST',
-        headers: { authorization: `Bearer ${credencial}` },
+        headers: { authorization: `Bearer ${credential}` },
         body: flujo,
         duplex: 'half',
       } as RequestInit),
@@ -333,7 +338,7 @@ describe('tamaño del cuerpo', () => {
       },
     })
     const res = await atender(
-      new Request('https://nube.faro.test/v1/eventos', {
+      new Request('https://cloud.faro.test/v1/events', {
         method: 'POST',
         headers: { authorization: 'Bearer inventada' },
         body: flujo,
@@ -342,115 +347,120 @@ describe('tamaño del cuerpo', () => {
       { sql: m.sql },
     )
     expect(res.status).toBe(401)
-    const admin = await m.pedir('POST', '/v1/admin/restaurantes', 'x'.repeat(MAX_BYTES_CUERPO + 5))
+    const admin = await m.request('POST', '/v1/admin/restaurants', 'x'.repeat(MAX_BYTES_CUERPO + 5))
     expect(admin.status).toBe(401)
   })
 
   it('en las rutas de administración y de registro también hay 413', async () => {
-    const grande = `{"a":"${'x'.repeat(MAX_BYTES_CUERPO)}"}`
-    expect((await m.pedir('POST', '/v1/admin/restaurantes', grande, ADMIN)).status).toBe(413)
-    expect((await m.pedir('POST', '/v1/admin/codigos', grande, ADMIN)).status).toBe(413)
-    expect((await m.pedir('POST', '/v1/admin/hubs/revocar', grande, ADMIN)).status).toBe(413)
-    expect((await m.pedir('POST', '/v1/hubs/registro', grande)).status).toBe(413)
+    const large = `{"a":"${'x'.repeat(MAX_BYTES_CUERPO)}"}`
+    expect((await m.request('POST', '/v1/admin/restaurants', large, ADMIN)).status).toBe(413)
+    expect((await m.request('POST', '/v1/admin/codes', large, ADMIN)).status).toBe(413)
+    expect((await m.request('POST', '/v1/admin/hubs/revoke', large, ADMIN)).status).toBe(413)
+    expect((await m.request('POST', '/v1/hubs/register', large)).status).toBe(413)
   })
 })
 
 describe('método y ruta', () => {
   const equivocados: [string, string][] = [
-    ['GET', '/v1/eventos'],
-    ['PUT', '/v1/eventos'],
-    ['PATCH', '/v1/eventos'],
-    ['DELETE', '/v1/eventos'],
-    ['POST', '/v1/eventos/ultima'],
-    ['DELETE', '/v1/eventos/ultima'],
-    ['GET', '/v1/hubs/registro'],
-    ['PUT', '/v1/hubs/registro'],
-    ['GET', '/v1/admin/restaurantes'],
-    ['DELETE', '/v1/admin/restaurantes'],
-    ['GET', '/v1/admin/codigos'],
-    ['PUT', '/v1/admin/hubs/revocar'],
-    ['DELETE', '/v1/admin/hubs/revocar'],
-    ['POST', '/v1/salud'],
-    ['DELETE', '/v1/salud'],
+    ['GET', '/v1/events'],
+    ['PUT', '/v1/events'],
+    ['PATCH', '/v1/events'],
+    ['DELETE', '/v1/events'],
+    ['POST', '/v1/events/last'],
+    ['DELETE', '/v1/events/last'],
+    ['GET', '/v1/hubs/register'],
+    ['PUT', '/v1/hubs/register'],
+    ['GET', '/v1/admin/restaurants'],
+    ['DELETE', '/v1/admin/restaurants'],
+    ['GET', '/v1/admin/codes'],
+    ['PUT', '/v1/admin/hubs/revoke'],
+    ['DELETE', '/v1/admin/hubs/revoke'],
+    ['POST', '/v1/health'],
+    ['DELETE', '/v1/health'],
   ]
   it.each(equivocados)('%s %s no hace nada (404 o 405) ni cambia datos', async (metodo, ruta) => {
-    const cuerpo = metodo === 'GET' ? undefined : { eventos: lote(700, 3), hub_id: hubId }
-    const antes = [
-      await contar(m.db, 'evento'),
-      await contar(m.db, 'hub'),
-      await contar(m.db, 'restaurante'),
-      await contar(m.db, 'codigo_registro'),
+    const cuerpo = metodo === 'GET' ? undefined : { events: batch(700, 3), hub_id: hubId }
+    const before = [
+      await contar(m.db, 'events'),
+      await contar(m.db, 'hubs'),
+      await contar(m.db, 'restaurants'),
+      await contar(m.db, 'registration_codes'),
     ]
-    for (const token of [credencial, ADMIN, undefined]) {
-      const r = await m.pedir(metodo, ruta, cuerpo, token)
+    for (const token of [credential, ADMIN, undefined]) {
+      const r = await m.request(metodo, ruta, cuerpo, token)
       expect([401, 404, 405], `${metodo} ${ruta}`).toContain(r.status)
     }
     expect([
-      await contar(m.db, 'evento'),
-      await contar(m.db, 'hub'),
-      await contar(m.db, 'restaurante'),
-      await contar(m.db, 'codigo_registro'),
-    ]).toEqual(antes)
+      await contar(m.db, 'events'),
+      await contar(m.db, 'hubs'),
+      await contar(m.db, 'restaurants'),
+      await contar(m.db, 'registration_codes'),
+    ]).toEqual(before)
   })
 
   const inexistentes = [
     '/',
     '/v1',
     '/v1/',
-    '/v2/salud',
-    '/V1/salud',
-    '/v1/salud/',
-    '//v1/salud',
-    '/v1/eventos/',
-    '/v1/eventos/ultima/',
-    '/v1/eventos/ultima/x',
-    '/v1/eventos/otra',
-    '/v1/%65ventos',
-    '/v1/eventos/%2e%2e/salud',
+    '/v2/health',
+    '/V1/health',
+    '/v1/health/',
+    '//v1/health',
+    '/v1/events/',
+    '/v1/events/last/',
+    '/v1/events/last/x',
+    '/v1/events/other',
+    '/v1/%65vents',
+    '/v1/events/%2e%2e/health',
     '/v1/hubs',
-    '/v1/hubs/registro/',
+    '/v1/hubs/register/',
     '/v1/admin',
-    '/v1/administrador',
-    '/v1/nada',
+    '/v1/administrator',
+    '/v1/nothing',
     '/favicon.ico',
     '/.env',
-    '/v1/admin/../salud',
+    '/v1/admin/../health',
   ]
   it.each(inexistentes)(
     '%s no existe: 404 (o 401 si es la zona de administración)',
     async (ruta) => {
       for (const metodo of ['GET', 'POST']) {
-        const r = await m.pedir(metodo, ruta, metodo === 'POST' ? {} : undefined, credencial)
+        const r = await m.request(metodo, ruta, metodo === 'POST' ? {} : undefined, credential)
         // Las rutas que normaliza la URL a una real (por ejemplo /v1/admin/../salud) pueden dar 200.
         expect([200, 400, 401, 404], `${metodo} ${ruta}`).toContain(r.status)
-        if (r.status === 404) expect(await r.json()).toMatchObject({ error: 'no_existe' })
+        if (r.status === 404) expect(await r.json()).toMatchObject({ error: 'not_found' })
       }
     },
   )
 
   it('la zona de administración no revela qué rutas existen: sin token todo es 401', async () => {
-    for (const ruta of ['/v1/admin/', '/v1/admin/nada', '/v1/admin/restaurantes', '/v1/admin/x/y'])
-      expect((await m.pedir('POST', ruta, {})).status, ruta).toBe(401)
-    expect((await m.pedir('POST', '/v1/admin/nada', {}, ADMIN)).status).toBe(404)
+    for (const ruta of [
+      '/v1/admin/',
+      '/v1/admin/nothing',
+      '/v1/admin/restaurants',
+      '/v1/admin/x/y',
+    ])
+      expect((await m.request('POST', ruta, {})).status, ruta).toBe(401)
+    expect((await m.request('POST', '/v1/admin/nothing', {}, ADMIN)).status).toBe(404)
   })
 
   it('la cadena de consulta no cambia la ruta, y la salud no pide nada', async () => {
-    expect((await m.pedir('GET', '/v1/salud?x=1&y=2')).status).toBe(200)
+    expect((await m.request('GET', '/v1/health?x=1&y=2')).status).toBe(200)
     expect(
-      (await m.pedir('GET', '/v1/eventos/ultima?hub=otro', undefined, credencial)).status,
+      (await m.request('GET', '/v1/events/last?hub=other', undefined, credential)).status,
     ).toBe(200)
-    expect(await (await m.pedir('GET', '/v1/salud')).json()).toEqual({ ok: true })
+    expect(await (await m.request('GET', '/v1/health')).json()).toEqual({ ok: true })
   })
 
   it('el resultado de ultima trae solo la secuencia del hub que pregunta', async () => {
-    const r = await m.pedir('GET', '/v1/eventos/ultima', undefined, credencial)
-    expect(Object.keys((await r.json()) as object)).toEqual(['ultima_secuencia'])
+    const r = await m.request('GET', '/v1/events/last', undefined, credential)
+    expect(Object.keys((await r.json()) as object)).toEqual(['last_sequence'])
   })
 })
 
 describe('un error interno nunca devuelve detalles', () => {
   const SECRETO =
-    'password=hunter2 INSERT INTO hub VALUES (secreto-12345) en /srv/faro/src/nube.ts:99'
+    'password=hunter2 INSERT INTO hubs VALUES (secreto-12345) en /srv/faro/src/nube.ts:99'
 
   function sqlQueLanza(quePasa: () => unknown, soloTransacciones = false): Sql {
     const lanzar = async (): Promise<never> => {
@@ -458,12 +468,12 @@ describe('un error interno nunca devuelve detalles', () => {
     }
     return {
       query: soloTransacciones ? m.sql.query.bind(m.sql) : lanzar,
-      ejecutar: lanzar,
+      execute: lanzar,
       transaccion: lanzar,
     }
   }
 
-  const errores: [string, () => unknown][] = [
+  const errors: [string, () => unknown][] = [
     ['un Error con datos', () => new Error(SECRETO)],
     [
       'un error de Postgres con detalle y restricción',
@@ -478,7 +488,7 @@ describe('un error interno nunca devuelve detalles', () => {
         }),
     ],
     ['un texto lanzado', () => SECRETO],
-    ['un objeto cualquiera', () => ({ secreto: SECRETO })],
+    ['un objeto cualquiera', () => ({ secret: SECRETO })],
     ['null', () => null],
     ['undefined', () => undefined],
     [
@@ -493,76 +503,76 @@ describe('un error interno nunca devuelve detalles', () => {
 
   function pedirCon(sql: Sql, metodo: string, ruta: string, cuerpo: unknown, token?: string) {
     return atender(
-      new Request(`https://nube.faro.test${ruta}`, {
+      new Request(`https://cloud.faro.test${ruta}`, {
         method: metodo,
         headers: token ? { authorization: `Bearer ${token}` } : {},
         body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
       }),
-      { sql, tokenAdmin: ADMIN, reloj: () => AHORA },
+      { sql, tokenAdmin: ADMIN, clock: () => AHORA },
     )
   }
 
   const rutasHttp = (): [string, string, string, unknown, string | undefined][] => [
-    ['crear restaurante', 'POST', '/v1/admin/restaurantes', { id: nuevoId(), nombre: 'R' }, ADMIN],
-    ['crear código', 'POST', '/v1/admin/codigos', { restaurante_id: nuevoId() }, ADMIN],
-    ['revocar', 'POST', '/v1/admin/hubs/revocar', { hub_id: nuevoId() }, ADMIN],
+    ['crear restaurante', 'POST', '/v1/admin/restaurants', { id: newId(), name: 'R' }, ADMIN],
+    ['crear código', 'POST', '/v1/admin/codes', { restaurant_id: newId() }, ADMIN],
+    ['revoke', 'POST', '/v1/admin/hubs/revoke', { hub_id: newId() }, ADMIN],
     [
       'registrar',
       'POST',
-      '/v1/hubs/registro',
+      '/v1/hubs/register',
       {
-        codigo: 'ABCD-EFGH-JKMN',
-        hub_id: nuevoId(),
-        sede_id: nuevoId(),
-        nombre: 'C',
+        code: 'ABCD-EFGH-JKMN',
+        hub_id: newId(),
+        location_id: newId(),
+        name: 'C',
         instancia: 'i',
       },
       undefined,
     ],
-    ['subir eventos', 'POST', '/v1/eventos', { eventos: lote(1, 1) }, credencial],
-    ['ultima secuencia', 'GET', '/v1/eventos/ultima', undefined, credencial],
+    ['subir eventos', 'POST', '/v1/events', { events: batch(1, 1) }, credential],
+    ['ultima secuencia', 'GET', '/v1/events/last', undefined, credential],
   ]
 
-  for (const [nombreError, hacer] of errores)
+  for (const [nombreError, hacer] of errors)
     it(`${nombreError}: 500 genérico, sin SQL, rutas, claves ni pila`, async () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-      for (const [nombre, metodo, ruta, cuerpo, token] of rutasHttp()) {
+      for (const [name, metodo, ruta, cuerpo, token] of rutasHttp()) {
         // Las rutas de hub llegan a su consulta de autenticación con el mismo error.
         const r = await pedirCon(sqlQueLanza(hacer), metodo, ruta, cuerpo, token)
-        const texto = await r.text()
-        expect(r.status, nombre).toBe(500)
-        expect(r.headers.get('content-type'), nombre).toContain('application/json')
-        expect(JSON.parse(texto), nombre).toEqual({
-          error: 'error_interno',
-          mensaje: expect.any(String),
+        const text = await r.text()
+        expect(r.status, name).toBe(500)
+        expect(r.headers.get('content-type'), name).toContain('application/json')
+        expect(JSON.parse(text), name).toEqual({
+          error: 'internal_error',
+          message: expect.any(String),
         })
         for (const prohibido of [
           'hunter2',
           'INSERT',
-          'secreto',
+          'secret',
           '/srv/',
           'stack',
           'password',
           'detail',
           'at ',
         ])
-          expect(texto, `${nombre}: ${prohibido}`).not.toContain(prohibido)
+          expect(text, `${name}: ${prohibido}`).not.toContain(prohibido)
       }
       expect(log).toHaveBeenCalled()
     })
 
   it('el registro del error no vuelca el objeto completo (consulta, parámetros, pila)', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const raro = Object.assign(new Error('falló'), {
+    const odd = Object.assign(new Error('falló'), {
       code: '22P02',
       query: 'SELECT secreto',
       parameters: ['clave-super-secreta'],
     })
     await pedirCon(
-      sqlQueLanza(() => raro),
+      sqlQueLanza(() => odd),
       'POST',
-      '/v1/admin/restaurantes',
-      { id: nuevoId(), nombre: 'R' },
+      '/v1/admin/restaurants',
+      { id: newId(), name: 'R' },
       ADMIN,
     )
     const volcado = JSON.stringify(log.mock.calls, (_k, v) =>
@@ -578,23 +588,23 @@ describe('un error interno nunca devuelve detalles', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const sql: Sql = {
       query: m.sql.query.bind(m.sql),
-      ejecutar: m.sql.ejecutar.bind(m.sql),
+      execute: m.sql.execute.bind(m.sql),
       transaccion: async () => {
         throw new Error(SECRETO)
       },
     }
-    const antes = await contar(m.db, 'evento')
-    const r = await pedirCon(sql, 'POST', '/v1/eventos', { eventos: lote(800, 3) }, credencial)
+    const before = await contar(m.db, 'events')
+    const r = await pedirCon(sql, 'POST', '/v1/events', { events: batch(800, 3) }, credential)
     expect(r.status).toBe(500)
     expect(await r.text()).not.toContain('hunter2')
-    expect(await contar(m.db, 'evento')).toBe(antes)
+    expect(await contar(m.db, 'events')).toBe(before)
   })
 
   it('un choque de clave única al registrar (dos registros a la vez) se contesta 409, no 500', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const sql: Sql = {
       query: m.sql.query.bind(m.sql),
-      ejecutar: m.sql.ejecutar.bind(m.sql),
+      execute: m.sql.execute.bind(m.sql),
       transaccion: async () => {
         throw Object.assign(
           new Error('duplicate key value violates unique constraint "hub_pkey"'),
@@ -604,11 +614,11 @@ describe('un error interno nunca devuelve detalles', () => {
         )
       },
     }
-    const r = await pedirCon(sql, 'POST', '/v1/hubs/registro', {
-      codigo: 'ABCD-EFGH-JKMN',
-      hub_id: nuevoId(),
-      sede_id: nuevoId(),
-      nombre: 'C',
+    const r = await pedirCon(sql, 'POST', '/v1/hubs/register', {
+      code: 'ABCD-EFGH-JKMN',
+      hub_id: newId(),
+      location_id: newId(),
+      name: 'C',
       instancia: 'i',
     })
     expect(r.status).toBe(409)
@@ -616,22 +626,22 @@ describe('un error interno nunca devuelve detalles', () => {
 
   it('un error real de Postgres (no simulado) tampoco filtra detalles', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    const r = await m.pedir(
+    const r = await m.request(
       'POST',
-      '/v1/eventos',
-      { eventos: [{ ...lote(1, 1)[0], recibido_en: '0000-01-01T00:00:00Z' }] },
-      credencial,
+      '/v1/events',
+      { events: [{ ...batch(1, 1)[0], received_at: '0000-01-01T00:00:00Z' }] },
+      credential,
     )
-    const texto = await r.text()
+    const text = await r.text()
     for (const prohibido of ['date/time', 'out of range', 'jsonb_to_recordset', 'INSERT'])
-      expect(texto).not.toContain(prohibido)
+      expect(text).not.toContain(prohibido)
   })
 
   it('la salud no toca la base: responde aunque la base esté caída', async () => {
     const r = await pedirCon(
       sqlQueLanza(() => new Error('caída')),
       'GET',
-      '/v1/salud',
+      '/v1/health',
       undefined,
     )
     expect(r.status).toBe(200)
@@ -641,7 +651,7 @@ describe('un error interno nunca devuelve detalles', () => {
     const r = await pedirCon(
       sqlQueLanza(() => new Error('caída')),
       'GET',
-      '/v1/nada',
+      '/v1/nothing',
       undefined,
     )
     // Sin credencial no hay consulta: 404 limpio aunque la base esté caída.
@@ -651,79 +661,73 @@ describe('un error interno nunca devuelve detalles', () => {
 
 describe('forma de toda respuesta', () => {
   it('es JSON con cache-control: no-store en cada código de estado', async () => {
-    const restaurante = nuevoId()
+    const restaurant = newId()
     const matriz: [string, () => Promise<Response>][] = [
-      ['200 salud', () => m.pedir('GET', '/v1/salud')],
+      ['200 salud', () => m.request('GET', '/v1/health')],
       [
         '201 restaurante',
-        () => m.pedir('POST', '/v1/admin/restaurantes', { id: restaurante, nombre: 'R' }, ADMIN),
+        () => m.request('POST', '/v1/admin/restaurants', { id: restaurant, name: 'R' }, ADMIN),
       ],
       [
         '200 restaurante repetido',
-        () => m.pedir('POST', '/v1/admin/restaurantes', { id: restaurante, nombre: 'R' }, ADMIN),
+        () => m.request('POST', '/v1/admin/restaurants', { id: restaurant, name: 'R' }, ADMIN),
       ],
       [
         '201 código',
-        () => m.pedir('POST', '/v1/admin/codigos', { restaurante_id: restaurante }, ADMIN),
+        () => m.request('POST', '/v1/admin/codes', { restaurant_id: restaurant }, ADMIN),
       ],
-      [
-        '404 código',
-        () => m.pedir('POST', '/v1/admin/codigos', { restaurante_id: nuevoId() }, ADMIN),
-      ],
-      [
-        '404 revocar',
-        () => m.pedir('POST', '/v1/admin/hubs/revocar', { hub_id: nuevoId() }, ADMIN),
-      ],
-      ['400', () => m.pedir('POST', '/v1/eventos', '{', credencial)],
-      ['401', () => m.pedir('POST', '/v1/eventos', {}, 'inventada')],
-      ['401 admin', () => m.pedir('POST', '/v1/admin/restaurantes', {})],
+      ['404 código', () => m.request('POST', '/v1/admin/codes', { restaurant_id: newId() }, ADMIN)],
+      ['404 revocar', () => m.request('POST', '/v1/admin/hubs/revoke', { hub_id: newId() }, ADMIN)],
+      ['400', () => m.request('POST', '/v1/events', '{', credential)],
+      ['401', () => m.request('POST', '/v1/events', {}, 'inventada')],
+      ['401 admin', () => m.request('POST', '/v1/admin/restaurants', {})],
       [
         '403 registro',
         () =>
-          m.pedir('POST', '/v1/hubs/registro', {
-            codigo: 'NADA',
-            hub_id: nuevoId(),
-            sede_id: nuevoId(),
-            nombre: 'C',
+          m.request('POST', '/v1/hubs/register', {
+            code: 'NADA',
+            hub_id: newId(),
+            location_id: newId(),
+            name: 'C',
             instancia: 'i',
           }),
       ],
-      ['404 ruta', () => m.pedir('GET', '/v1/nada')],
+      ['404 ruta', () => m.request('GET', '/v1/nothing')],
       [
         '413',
         () =>
-          m.pedir(
+          m.request(
             'POST',
-            '/v1/eventos',
-            `{"eventos":["${'x'.repeat(MAX_BYTES_CUERPO)}"]}`,
-            credencial,
+            '/v1/events',
+            `{"events":["${'x'.repeat(MAX_BYTES_CUERPO)}"]}`,
+            credential,
           ),
       ],
-      ['200 eventos', () => m.pedir('POST', '/v1/eventos', { eventos: lote(1, 1) }, credencial)],
-      ['200 ultima', () => m.pedir('GET', '/v1/eventos/ultima', undefined, credencial)],
+      ['200 eventos', () => m.request('POST', '/v1/events', { events: batch(1, 1) }, credential)],
+      ['200 ultima', () => m.request('GET', '/v1/events/last', undefined, credential)],
     ]
-    for (const [nombre, pedir] of matriz) {
-      const r = await pedir()
-      expect(r.headers.get('content-type'), nombre).toMatch(/^application\/json/)
-      expect(r.headers.get('cache-control'), nombre).toBe('no-store')
-      await expect(r.json(), nombre).resolves.toBeTypeOf('object')
+    for (const [name, request] of matriz) {
+      const r = await request()
+      expect(r.headers.get('content-type'), name).toMatch(/^application\/json/)
+      expect(r.headers.get('cache-control'), name).toBe('no-store')
+      await expect(r.json(), name).resolves.toBeTypeOf('object')
     }
   })
 
   it('el 409 de registro y el 204 de revocar también llevan cache-control: no-store', async () => {
     const h = await m.nuevoHub()
-    const codigo = await m.nube.crearCodigo(h.restauranteId)
-    if (!codigo) throw new Error('sin código')
-    const duplicado = await m.pedir('POST', '/v1/hubs/registro', {
-      codigo: codigo.codigo,
+    const code = await m.nube.crearCodigo(h.restauranteId)
+    if (!code) throw new Error('sin código')
+    const duplicado = await m.request('POST', '/v1/hubs/register', {
+      code: code.code,
       hub_id: h.hub.id,
-      sede_id: nuevoId(),
-      nombre: 'C',
+      location_id: newId(),
+      name: 'C',
       instancia: 'i',
     })
     expect(duplicado.status).toBe(409)
     expect(duplicado.headers.get('cache-control')).toBe('no-store')
-    const revocado = await m.pedir('POST', '/v1/admin/hubs/revocar', { hub_id: h.hub.id }, ADMIN)
+    const revocado = await m.request('POST', '/v1/admin/hubs/revoke', { hub_id: h.hub.id }, ADMIN)
     expect(revocado.status).toBe(204)
     expect(await revocado.text()).toBe('')
     expect(revocado.headers.get('cache-control')).toBe('no-store')
@@ -732,15 +736,15 @@ describe('forma de toda respuesta', () => {
   it('los errores traen solo error y mensaje, en español, y no repiten lo que mandó el cliente', async () => {
     const dato = 'dato-que-mando-el-cliente-98765'
     for (const r of [
-      await m.pedir('POST', '/v1/admin/restaurantes', { id: dato, nombre: dato }, ADMIN),
-      await m.pedir('POST', '/v1/eventos', { eventos: [{ id: dato }], extra: dato }, credencial),
-      await m.pedir('POST', '/v1/eventos', {}, dato),
-      await m.pedir('POST', '/v1/hubs/registro', { codigo: dato, hub_id: dato }),
+      await m.request('POST', '/v1/admin/restaurants', { id: dato, name: dato }, ADMIN),
+      await m.request('POST', '/v1/events', { events: [{ id: dato }], extra: dato }, credential),
+      await m.request('POST', '/v1/events', {}, dato),
+      await m.request('POST', '/v1/hubs/register', { code: dato, hub_id: dato }),
     ]) {
-      const texto = await r.text()
-      expect(texto).not.toContain(dato)
-      const cuerpo = JSON.parse(texto) as Record<string, unknown>
-      if (r.status >= 400) expect(Object.keys(cuerpo).sort()).toEqual(['error', 'mensaje'])
+      const text = await r.text()
+      expect(text).not.toContain(dato)
+      const cuerpo = JSON.parse(text) as Record<string, unknown>
+      if (r.status >= 400) expect(Object.keys(cuerpo).sort()).toEqual(['error', 'message'])
     }
   })
 })

@@ -1,59 +1,59 @@
-import type { MedioPago } from '@pos/core'
+import type { PaymentMethod } from '@pos/core'
 import type { ReglasCobro } from './cuentas'
-import { nombreDeMedio } from './cuentas'
+import { methodName } from './cuentas'
 import type { Reporte } from './motor'
 
 // Lo que calcula la pantalla Reportes (tarea 1.9) sin dibujar nada: los períodos que se eligen
 // con un toque, las fechas en palabras y el CSV para Excel (docs/KPIS.md#exportar).
 
-export type Atajo = 'hoy' | 'ayer' | 'semana' | 'mes' | 'mesPasado'
+export type Atajo = 'today' | 'yesterday' | 'week' | 'month' | 'lastMonth'
 
 /** El período más largo que da el hub (`MAX_DIAS_REPORTE`). */
 export const MAX_DIAS = 62
 
 export interface Periodo {
-  desde: string
-  hasta: string
+  from: string
+  until: string
 }
 
 /** El día operativo `dias` antes o después (AAAA-MM-DD, sin zona horaria). */
-export function sumarDias(dia: string, dias: number): string {
-  const fecha = new Date(`${dia}T12:00:00Z`)
-  fecha.setUTCDate(fecha.getUTCDate() + dias)
-  return fecha.toISOString().slice(0, 10)
+export function sumarDias(day: string, days: number): string {
+  const date = new Date(`${day}T12:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
 }
 
 /** Hoy, ayer, los últimos 7 días, este mes (hasta hoy) o el mes pasado, desde el día operativo de hoy. */
-export function periodoDe(atajo: Atajo, hoy: string): Periodo {
-  if (atajo === 'ayer') return { desde: sumarDias(hoy, -1), hasta: sumarDias(hoy, -1) }
-  if (atajo === 'semana') return { desde: sumarDias(hoy, -6), hasta: hoy }
-  const primero = `${hoy.slice(0, 8)}01`
-  if (atajo === 'mes') return { desde: primero, hasta: hoy }
-  if (atajo === 'mesPasado') {
-    const ultimo = sumarDias(primero, -1)
-    return { desde: `${ultimo.slice(0, 8)}01`, hasta: ultimo }
+export function periodoDe(atajo: Atajo, today: string): Periodo {
+  if (atajo === 'yesterday') return { from: sumarDias(today, -1), until: sumarDias(today, -1) }
+  if (atajo === 'week') return { from: sumarDias(today, -6), until: today }
+  const firstOne = `${today.slice(0, 8)}01`
+  if (atajo === 'month') return { from: firstOne, until: today }
+  if (atajo === 'lastMonth') {
+    const ultimo = sumarDias(firstOne, -1)
+    return { from: `${ultimo.slice(0, 8)}01`, until: ultimo }
   }
-  return { desde: hoy, hasta: hoy }
+  return { from: today, until: today }
 }
 
-const formato = (opciones: Intl.DateTimeFormatOptions) =>
-  new Intl.DateTimeFormat('es-CO', { ...opciones, timeZone: 'UTC' })
-const aFecha = (dia: string) => new Date(`${dia}T12:00:00Z`)
+const format = (options: Intl.DateTimeFormatOptions) =>
+  new Intl.DateTimeFormat('es-CO', { ...options, timeZone: 'UTC' })
+const aFecha = (day: string) => new Date(`${day}T12:00:00Z`)
 
 /** «sábado, 24 de octubre de 2026» o «del 18–24 de octubre de 2026». */
-export function periodoEnPalabras({ desde, hasta }: Periodo): string {
-  if (desde === hasta)
-    return formato({ weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(
-      aFecha(desde),
+export function periodoEnPalabras({ from, until }: Periodo): string {
+  if (from === until)
+    return format({ weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(
+      aFecha(from),
     )
-  return `del ${formato({ day: 'numeric', month: 'long', year: 'numeric' }).formatRange(
-    aFecha(desde),
-    aFecha(hasta),
+  return `del ${format({ day: 'numeric', month: 'long', year: 'numeric' }).formatRange(
+    aFecha(from),
+    aFecha(until),
   )}`
 }
 
 /** «2026-10-24 20:15» en la zona del restaurante: Excel lo lee como fecha y hora. */
-export function fechaHoraCsv(iso: string, zonaHoraria: string): string {
+export function fechaHoraCsv(iso: string, timeZone: string): string {
   const p = Object.fromEntries(
     new Intl.DateTimeFormat('en-CA', {
       year: 'numeric',
@@ -62,7 +62,7 @@ export function fechaHoraCsv(iso: string, zonaHoraria: string): string {
       hour: '2-digit',
       minute: '2-digit',
       hourCycle: 'h23',
-      timeZone: zonaHoraria,
+      timeZone: timeZone,
     })
       .formatToParts(new Date(iso))
       .map((x) => [x.type, x.value]),
@@ -71,16 +71,16 @@ export function fechaHoraCsv(iso: string, zonaHoraria: string): string {
 }
 
 /** «24 oct.», para las filas de un período de varios días. */
-export const diaCorto = (dia: string) =>
-  formato({ day: 'numeric', month: 'short' }).format(aFecha(dia))
+export const diaCorto = (day: string) =>
+  format({ day: 'numeric', month: 'short' }).format(aFecha(day))
 
 /** Puntos básicos en porcentaje con coma: 1250 → «12,5 %». */
 export const puntosEnPorcentaje = (bp: number) => `${(bp / 100).toLocaleString('es-CO')} %`
 
 /** Porcentaje con un decimal, solo para mostrar (KPIS.md#por-producto). */
-export function porcentaje(parte: number, total: number): string {
+export function percent(share: number, total: number): string {
   if (total === 0) return '0 %'
-  return `${(Math.round((parte * 1000) / total) / 10).toLocaleString('es-CO')} %`
+  return `${(Math.round((share * 1000) / total) / 10).toLocaleString('es-CO')} %`
 }
 
 // ── CSV ────────────────────────────────────────────────────────────────
@@ -89,15 +89,15 @@ export function porcentaje(parte: number, total: number): string {
  * Una celda del CSV. El texto que empieza con = + - @ va con un apóstrofo para que Excel no lo
  * tome como fórmula (un producto llamado «=HYPERLINK(…)» no se ejecuta al abrir el archivo).
  */
-export function celda(valor: string | number): string {
-  if (typeof valor === 'number') return String(valor)
-  const seguro = /^[=+\-@\t\r]/.test(valor) ? `'${valor}` : valor
+export function celda(value: string | number): string {
+  if (typeof value === 'number') return String(value)
+  const seguro = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
   return /[;"\n\r]/.test(seguro) ? `"${seguro.replaceAll('"', '""')}"` : seguro
 }
 
-const filaCsv = (valores: (string | number)[]) => valores.map(celda).join(';')
+const filaCsv = (values: (string | number)[]) => values.map(celda).join(';')
 
-const NOMBRE_REGLA = { porcentaje: 'Porcentaje', valor: 'Valor', cortesia: 'Cortesía' } as const
+const NOMBRE_REGLA = { percent: 'Porcentaje', value: 'Valor', comp: 'Cortesía' } as const
 
 /**
  * El reporte en CSV para Excel: separado por punto y coma, UTF-8 con BOM y montos enteros en
@@ -105,52 +105,49 @@ const NOMBRE_REGLA = { porcentaje: 'Porcentaje', valor: 'Valor', cortesia: 'Cort
  */
 export function csvDeReporte(
   r: Reporte,
-  periodo: Periodo,
+  period: Periodo,
   reglas: ReglasCobro | null,
-  restaurante: string,
+  restaurant: string,
 ): string {
-  const { informe: inf } = r
-  const v = inf.ventas
+  const { report: inf } = r
+  const v = inf.sales
   const quien = (id: string | null) => (id ? (r.usuarios[id] ?? '') : '')
-  const hora = (iso: string) => fechaHoraCsv(iso, reglas?.zonaHoraria ?? 'America/Bogota')
-  const pedido = (n: number | null) => (n === null ? '' : n)
-  const medio = (m: { medio: MedioPago; medioPropioId: string | null }) =>
-    nombreDeMedio(m.medio, m.medioPropioId, reglas)
-  const secciones: (string | number)[][][] = [
+  const time = (iso: string) => fechaHoraCsv(iso, reglas?.timeZone ?? 'America/Bogota')
+  const order = (n: number | null) => (n === null ? '' : n)
+  const method = (m: { method: PaymentMethod; customMethodId: string | null }) =>
+    methodName(m.method, m.customMethodId, reglas)
+  const sections: (string | number)[][][] = [
     [
-      ['Reporte', restaurante],
-      ['Desde', periodo.desde],
-      ['Hasta', periodo.hasta],
+      ['Reporte', restaurant],
+      ['Desde', period.from],
+      ['Hasta', period.until],
     ],
     [
       ['Ventas', 'Pesos'],
-      ['Bruto', v.bruto],
-      ['Anulado', v.anulado],
-      ['Descuentos', v.descuentos],
-      ['Neto', v.neto],
-      ['Ajuste por redondeo', v.ajustes],
-      ...v.impuestos.flatMap((i) => [
-        [`Base ${i.tipo.toUpperCase()} ${puntosEnPorcentaje(i.tarifa)}`, i.base],
-        [`Impuesto ${i.tipo.toUpperCase()} ${puntosEnPorcentaje(i.tarifa)}`, i.impuesto],
+      ['Bruto', v.gross],
+      ['Anulado', v.voided],
+      ['Descuentos', v.discounts],
+      ['Neto', v.net],
+      ['Ajuste por redondeo', v.settings],
+      ...v.taxes.flatMap((i) => [
+        [`Base ${i.type.toUpperCase()} ${puntosEnPorcentaje(i.rate)}`, i.base],
+        [`Impuesto ${i.type.toUpperCase()} ${puntosEnPorcentaje(i.rate)}`, i.tax],
       ]),
-      ['Propinas', v.propinas],
-      ['Cuentas', v.cuentas],
-      ['Comensales', v.comensales],
-      ['Ticket promedio', v.ticketPromedio],
-      ['Gasto por comensal', v.gastoPorComensal],
+      ['Propinas', v.tips],
+      ['Cuentas', v.checks],
+      ['Comensales', v.guests],
+      ['Ticket promedio', v.averageTicket],
+      ['Gasto por comensal', v.spendPerGuest],
     ],
     [
       ['Medio de pago', 'Venta', 'Propina', 'Pagos'],
-      ...inf.porMedio.map((m) => [medio(m), m.venta, m.propina, m.pagos]),
+      ...inf.byMethod.map((m) => [method(m), m.sale, m.tip, m.payments]),
     ],
     [
       ['Mesero', 'Neto', 'Cuentas', 'Ticket promedio'],
-      ...inf.porMesero.map((m) => [quien(m.usuarioId), m.neto, m.cuentas, m.ticketPromedio]),
+      ...inf.byWaiter.map((m) => [quien(m.userId), m.net, m.checks, m.averageTicket]),
     ],
-    [
-      ['Producto', 'Unidades', 'Neto'],
-      ...inf.porProducto.map((p) => [p.nombre, p.unidades, p.neto]),
-    ],
+    [['Producto', 'Unidades', 'Neto'], ...inf.byProduct.map((p) => [p.name, p.units, p.net])],
     [
       [
         'Anulación',
@@ -163,37 +160,37 @@ export function csvDeReporte(
         'Autorizó',
         'Hora',
       ],
-      ...inf.anulaciones.map((a) => [
-        a.nombre,
-        pedido(a.pedidoNumero),
-        a.unidades,
-        a.valor,
-        a.motivo ?? '',
-        a.yaPreparado ? 'Sí' : 'No',
-        quien(a.usuarioId),
-        quien(a.autorizadoPorId),
-        hora(a.hora),
+      ...inf.voids.map((a) => [
+        a.name,
+        order(a.orderNumber),
+        a.units,
+        a.value,
+        a.reason ?? '',
+        a.alreadyPrepared ? 'Sí' : 'No',
+        quien(a.userId),
+        quien(a.authorizedById),
+        time(a.time),
       ]),
     ],
     [
       ['Pedido cancelado', 'Valor', 'Motivo', 'Quién', 'Autorizó', 'Hora'],
-      ...inf.cancelaciones.map((c) => [
-        pedido(c.pedidoNumero),
-        c.valor,
-        c.motivo ?? '',
-        quien(c.usuarioId),
-        quien(c.autorizadoPorId),
-        hora(c.hora),
+      ...inf.cancellations.map((c) => [
+        order(c.orderNumber),
+        c.value,
+        c.reason ?? '',
+        quien(c.userId),
+        quien(c.authorizedById),
+        time(c.time),
       ]),
     ],
     [
       ['Descuento', 'Pedido', 'Valor', 'Monto', 'Motivo'],
-      ...inf.descuentos.map((d) => [
-        NOMBRE_REGLA[d.regla],
-        pedido(d.pedidoNumero),
-        d.regla === 'porcentaje' ? puntosEnPorcentaje(d.valor) : d.valor,
-        d.monto,
-        d.motivo ?? '',
+      ...inf.discounts.map((d) => [
+        NOMBRE_REGLA[d.rule],
+        order(d.orderNumber),
+        d.rule === 'percent' ? puntosEnPorcentaje(d.value) : d.value,
+        d.amount,
+        d.reason ?? '',
       ]),
     ],
     [
@@ -207,39 +204,39 @@ export function csvDeReporte(
         'Diferencia',
         'Justificación',
       ],
-      ...r.cierres.map((c) => [
-        c.diaOperativo,
+      ...r.closings.map((c) => [
+        c.businessDay,
         quien(c.abiertoPor),
         quien(c.cerradoPor),
         c.base,
-        c.cerrado.esperado,
-        c.cerrado.contado,
-        c.cerrado.diferencia,
-        c.cerrado.justificacion ?? '',
+        c.closed.expected,
+        c.closed.counted,
+        c.closed.variance,
+        c.closed.justification ?? '',
       ]),
     ],
     [
       ['Cierre de caja', 'Otro medio', 'Según el sistema', 'Según su cierre', 'Diferencia'],
-      ...r.cierres.flatMap((c) =>
-        c.cerrado.otrosMedios.map((m) => [
-          c.diaOperativo,
-          medio(m),
-          m.esperado,
-          m.reportado,
-          m.diferencia,
+      ...r.closings.flatMap((c) =>
+        c.closed.otherMethods.map((m) => [
+          c.businessDay,
+          method(m),
+          m.expected,
+          m.reported,
+          m.variance,
         ]),
       ),
     ],
     [
       ['Fondo de propinas', 'Pesos'],
-      ['Propinas registradas', inf.fondoPropinas.propinas],
-      ['Pagadas desde la caja', inf.fondoPropinas.pagadas],
-      ['Saldo', inf.fondoPropinas.saldo],
+      ['Propinas registradas', inf.tipPool.tips],
+      ['Pagadas desde la caja', inf.tipPool.paidOut],
+      ['Saldo', inf.tipPool.balance],
     ],
   ]
-  return `﻿${secciones.map((s) => s.map(filaCsv).join('\r\n')).join('\r\n\r\n')}\r\n`
+  return `﻿${sections.map((s) => s.map(filaCsv).join('\r\n')).join('\r\n\r\n')}\r\n`
 }
 
 /** El nombre del archivo: «reporte-2026-10-24.csv» o «reporte-2026-10-18-a-2026-10-24.csv». */
-export const nombreCsv = ({ desde, hasta }: Periodo) =>
-  desde === hasta ? `reporte-${desde}.csv` : `reporte-${desde}-a-${hasta}.csv`
+export const nombreCsv = ({ from, until }: Periodo) =>
+  from === until ? `reporte-${from}.csv` : `reporte-${from}-a-${until}.csv`

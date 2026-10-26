@@ -18,25 +18,25 @@ const cuerpoDe = (r: {
 describe('sin pistas sobre qué usuarios existen', () => {
   it('toda una secuencia de intentos sobre una cuenta real y una inventada da respuestas idénticas', async () => {
     const api = montarApi()
-    const real = api.personas.admin.usuario as string
-    const secuencia: unknown[][] = [[], []]
-    for (const [i, usuario] of [real, 'fantasma'].entries()) {
+    const real = api.people.admin.user as string
+    const sequence: unknown[][] = [[], []]
+    for (const [i, user] of [real, 'fantasma'].entries()) {
       for (let n = 0; n < 8; n++) {
         const r = await api.post(
-          '/api/entrar',
-          { usuario, contrasena: 'no-es-la-clave' },
+          '/api/sign-in',
+          { user, password: 'no-es-la-clave' },
           { ip: '10.0.0.40' },
         )
-        secuencia[i]?.push(cuerpoDe(r))
+        sequence[i]?.push(cuerpoDe(r))
         api.avanzar(r.statusCode === 429 ? Number(r.json().espera_ms) : 100)
       }
       // La otra cuenta empieza de cero en tiempo y en IP.
       api.avanzar(11 * 60_000)
     }
-    expect(secuencia[0]).toEqual(secuencia[1])
-    expect(secuencia[0]?.[0]).toEqual({
+    expect(sequence[0]).toEqual(sequence[1])
+    expect(sequence[0]?.[0]).toEqual({
       status: 401,
-      cuerpo: { error: 'credenciales_incorrectas', mensaje: 'Usuario o contraseña incorrectos' },
+      cuerpo: { error: 'invalid_credentials', message: 'Usuario o contraseña incorrectos' },
       retry: null,
     })
   })
@@ -44,30 +44,30 @@ describe('sin pistas sobre qué usuarios existen', () => {
   it('todas las formas de «no existe» responden igual que una contraseña errada', async () => {
     const api = montarApi()
     // Una persona archivada, una que entra con PIN (sin usuario) y nombres que no son usuarios.
-    const archivada = api.acceso.crearUsuario({
-      nombre: 'Archivada',
-      rolId: api.roles.cajero,
-      usuario: 'archivada',
-      contrasena: 'clave-correcta-1',
+    const archivada = api.access.crearUsuario({
+      name: 'Archivada',
+      rolId: api.roles.cashier,
+      user: 'archivada',
+      password: 'clave-correcta-1',
     })
-    api.acceso.archivarUsuario(archivada.usuarioId)
-    const casos: { usuario: string; contrasena: string }[] = [
-      { usuario: api.personas.admin.usuario as string, contrasena: 'clave-equivocada' },
-      { usuario: 'nadie', contrasena: 'clave-equivocada' },
-      { usuario: 'archivada', contrasena: 'clave-correcta-1' },
-      { usuario: 'Ana', contrasena: 'clave-equivocada' },
-      { usuario: '', contrasena: '' },
-      { usuario: ' ', contrasena: 'clave-equivocada' },
-      { usuario: 'a', contrasena: 'clave-equivocada' },
-      { usuario: 'con espacio', contrasena: 'clave-equivocada' },
-      { usuario: 'ñandú', contrasena: 'clave-equivocada' },
-      { usuario: 'x'.repeat(100), contrasena: 'clave-equivocada' },
-      { usuario: "' OR 1=1 --", contrasena: 'clave-equivocada' },
+    api.access.archivarUsuario(archivada.userId)
+    const casos: { user: string; password: string }[] = [
+      { user: api.people.admin.user as string, password: 'clave-equivocada' },
+      { user: 'nadie', password: 'clave-equivocada' },
+      { user: 'archivada', password: 'clave-correcta-1' },
+      { user: 'Ana', password: 'clave-equivocada' },
+      { user: '', password: '' },
+      { user: ' ', password: 'clave-equivocada' },
+      { user: 'a', password: 'clave-equivocada' },
+      { user: 'con espacio', password: 'clave-equivocada' },
+      { user: 'ñandú', password: 'clave-equivocada' },
+      { user: 'x'.repeat(100), password: 'clave-equivocada' },
+      { user: "' OR 1=1 --", password: 'clave-equivocada' },
     ]
     const respuestas = []
     for (const [i, c] of casos.entries()) {
       // IP distinta para cada caso y reloj corrido: cada uno es su primer intento.
-      respuestas.push(cuerpoDe(await api.post('/api/entrar', c, { ip: `10.2.0.${i + 1}` })))
+      respuestas.push(cuerpoDe(await api.post('/api/sign-in', c, { ip: `10.2.0.${i + 1}` })))
       api.avanzar(11 * 60_000)
     }
     for (const r of respuestas) expect(r).toEqual(respuestas[0])
@@ -75,13 +75,13 @@ describe('sin pistas sobre qué usuarios existen', () => {
 
   it('una persona que entra con PIN no se delata: su nombre como usuario falla igual que cualquier otro', async () => {
     const api = montarApi()
-    const aNombre = await api.post('/api/entrar', {
-      usuario: 'ana',
-      contrasena: api.personas.mesero.pin.repeat(2),
+    const aNombre = await api.post('/api/sign-in', {
+      user: 'ana',
+      password: api.people.waiter.pin.repeat(2),
     })
     const aNadie = await api.post(
-      '/api/entrar',
-      { usuario: 'nadie', contrasena: api.personas.mesero.pin.repeat(2) },
+      '/api/sign-in',
+      { user: 'nadie', password: api.people.waiter.pin.repeat(2) },
       { ip: '10.0.0.41' },
     )
     expect(cuerpoDe(aNombre)).toEqual(cuerpoDe(aNadie))
@@ -89,9 +89,9 @@ describe('sin pistas sobre qué usuarios existen', () => {
 
   it('los errores no repiten el usuario ni la contraseña escritos', async () => {
     const api = montarApi()
-    const r = await api.post('/api/entrar', {
-      usuario: 'quien-sea',
-      contrasena: 'la-clave-que-escribi-1',
+    const r = await api.post('/api/sign-in', {
+      user: 'quien-sea',
+      password: 'la-clave-que-escribi-1',
     })
     expect(r.body).not.toContain('quien-sea')
     expect(r.body).not.toContain('la-clave-que-escribi-1')
@@ -100,29 +100,29 @@ describe('sin pistas sobre qué usuarios existen', () => {
   it('el PIN de alguien con contraseña y un PIN que no existe fallan igual', async () => {
     const api = montarApi()
     const conUsuario = await api.post(
-      '/api/entrar',
-      { pin: api.personas.admin.pin },
+      '/api/sign-in',
+      { pin: api.people.admin.pin },
       { ip: '10.0.0.50' },
     )
-    const inexistente = await api.post('/api/entrar', { pin: '0007' }, { ip: '10.0.0.51' })
-    expect(cuerpoDe(conUsuario)).toEqual(cuerpoDe(inexistente))
+    const nonexistent = await api.post('/api/sign-in', { pin: '0007' }, { ip: '10.0.0.51' })
+    expect(cuerpoDe(conUsuario)).toEqual(cuerpoDe(nonexistent))
   })
 
   it('la espera de una cuenta que no existe se anota igual que la de una real: ambas se bloquean a la 3.ª', async () => {
     const api = montarApi()
-    for (const usuario of [api.personas.admin.usuario as string, 'inventado']) {
-      const estados: number[] = []
+    for (const user of [api.people.admin.user as string, 'inventado']) {
+      const statuses: number[] = []
       for (let i = 0; i < 4; i++)
-        estados.push(
+        statuses.push(
           (
             await api.post(
-              '/api/entrar',
-              { usuario, contrasena: 'incorrecta-xx' },
-              { ip: `10.0.${usuario.length}.${i}` },
+              '/api/sign-in',
+              { user, password: 'incorrecta-xx' },
+              { ip: `10.0.${user.length}.${i}` },
             )
           ).statusCode,
         )
-      expect(estados).toEqual([401, 401, 401, 429])
+      expect(statuses).toEqual([401, 401, 401, 429])
       api.avanzar(11 * 60_000)
     }
   })

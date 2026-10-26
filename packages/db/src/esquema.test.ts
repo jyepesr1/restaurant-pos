@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   COLUMNAS_COMUNES,
@@ -26,16 +26,16 @@ function insertarVersionado(
   db: BaseSqlite,
   tabla: string,
   restauranteId: string,
-  campos: Record<string, ValorSql>,
-  id = nuevoId(),
+  fields: Record<string, ValorSql>,
+  id = newId(),
 ): string {
   const fila: Record<string, ValorSql> = {
     id,
-    restaurante_id: restauranteId,
-    creado_en: AHORA,
-    actualizado_en: AHORA,
+    restaurant_id: restauranteId,
+    created_at: AHORA,
+    updated_at: AHORA,
     version: 1,
-    ...campos,
+    ...fields,
   }
   const columnas = Object.keys(fila)
   db.prepare(
@@ -46,50 +46,40 @@ function insertarVersionado(
 
 /** Restaurante con lo mínimo para crear productos. */
 function sembrarMinimo(db: BaseSqlite) {
-  const restaurante = nuevoId()
-  insertarVersionado(
-    db,
-    'restaurante',
-    restaurante,
-    { nombre: 'Prueba', config: '{}' },
-    restaurante,
-  )
-  const impuesto = insertarVersionado(db, 'impuesto', restaurante, {
-    nombre: 'INC 8 %',
-    tipo: 'inc',
-    tarifa: 800,
+  const restaurant = newId()
+  insertarVersionado(db, 'restaurants', restaurant, { name: 'Prueba', config: '{}' }, restaurant)
+  const tax = insertarVersionado(db, 'taxes', restaurant, {
+    name: 'INC 8 %',
+    type: 'inc',
+    rate: 800,
   })
-  const categoria = insertarVersionado(db, 'categoria', restaurante, { nombre: 'Pizzas' })
-  return { restaurante, impuesto, categoria }
+  const category = insertarVersionado(db, 'categories', restaurant, { name: 'Pizzas' })
+  return { restaurant, tax, category }
 }
 
-function insertarEvento(
-  db: BaseSqlite,
-  restaurante: string,
-  campos: Record<string, ValorSql> = {},
-) {
+function insertarEvento(db: BaseSqlite, restaurant: string, fields: Record<string, ValorSql> = {}) {
   const fila: Record<string, ValorSql> = {
-    restaurante_id: restaurante,
-    id: nuevoId(),
-    tipo: 'PedidoAbierto',
-    version_esquema: 1,
-    agregado_tipo: 'pedido',
-    agregado_id: nuevoId(),
-    datos: '{"canal":"salon"}',
-    usuario_id: nuevoId(),
-    dispositivo_id: nuevoId(),
-    hora_dispositivo: AHORA,
-    hora_estimada_hub: AHORA,
-    secuencia_base: 0,
-    secuencia: 1,
-    recibido_en: AHORA,
-    dia_operativo: '2026-10-24',
-    contenido_hash: 'abc',
-    ...campos,
+    restaurant_id: restaurant,
+    id: newId(),
+    type: 'OrderOpened',
+    schema_version: 1,
+    aggregate_type: 'order',
+    aggregate_id: newId(),
+    data: '{"channel":"salon"}',
+    user_id: newId(),
+    device_id: newId(),
+    device_time: AHORA,
+    hub_estimated_time: AHORA,
+    base_sequence: 0,
+    sequence: 1,
+    received_at: AHORA,
+    business_day: '2026-10-24',
+    content_hash: 'abc',
+    ...fields,
   }
   const columnas = Object.keys(fila)
   db.prepare(
-    `INSERT INTO evento (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`,
+    `INSERT INTO events (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`,
   ).run(...Object.values(fila))
   return fila
 }
@@ -106,7 +96,7 @@ describe('migraciones', () => {
     const db = abrirBase(':memory:')
     aplicarMigraciones(db)
     db.prepare(
-      "INSERT INTO migracion (version, nombre, hash, aplicada_en) VALUES (99, 'futura', 'x', ?)",
+      "INSERT INTO migrations (version, name, hash, applied_at) VALUES (99, 'futura', 'x', ?)",
     ).run(AHORA)
 
     expect(() => aplicarMigraciones(db)).toThrow(/más nueva que esta aplicación/)
@@ -115,23 +105,23 @@ describe('migraciones', () => {
   it('si una migración falla, la base queda en la versión anterior', () => {
     const db = abrirBase(':memory:')
     const migraciones = [
-      { version: 1, nombre: 'buena', sql: 'CREATE TABLE a (x INTEGER) STRICT;' },
+      { version: 1, name: 'buena', sql: 'CREATE TABLE a (x INTEGER) STRICT;' },
       {
         version: 2,
-        nombre: 'rota',
-        sql: 'CREATE TABLE b (x INTEGER) STRICT; SELECT * FROM no_existe;',
+        name: 'broken',
+        sql: 'CREATE TABLE b (x INTEGER) STRICT; SELECT * FROM not_found;',
       },
     ]
 
     expect(() => aplicarMigraciones(db, migraciones)).toThrow()
     expect(nombresDeTablas(db)).toContain('a')
     expect(nombresDeTablas(db)).not.toContain('b')
-    expect(db.prepare('SELECT max(version) AS v FROM migracion').get()?.v).toBe(1)
+    expect(db.prepare('SELECT max(version) AS v FROM migrations').get()?.v).toBe(1)
   })
 
   it('exigen numeración consecutiva', () => {
     const db = abrirBase(':memory:')
-    const migraciones = [{ version: 2, nombre: 'salta', sql: 'SELECT 1;' }]
+    const migraciones = [{ version: 2, name: 'salta', sql: 'SELECT 1;' }]
 
     expect(() => aplicarMigraciones(db, migraciones)).toThrow(/numeradas/)
   })
@@ -162,7 +152,7 @@ describe('esquema', () => {
       .prepare("SELECT name FROM pragma_table_list WHERE schema = 'main' AND strict = 0")
       .all()
       .map((fila) => String(fila.name))
-      .filter((nombre) => !nombre.startsWith('sqlite_'))
+      .filter((name) => !name.startsWith('sqlite_'))
 
     expect(noEstrictas).toEqual([])
   })
@@ -177,18 +167,18 @@ describe('esquema', () => {
   })
 
   it('las claves foráneas están activas', () => {
-    const { restaurante } = sembrarMinimo(db)
+    const { restaurant } = sembrarMinimo(db)
 
     expect(() =>
-      insertarVersionado(db, 'mesa', restaurante, {
-        zona_id: nuevoId(),
-        nombre: '1',
-        forma: 'redonda',
+      insertarVersionado(db, 'dining_tables', restaurant, {
+        zone_id: newId(),
+        name: '1',
+        shape: 'round',
         x: 0,
         y: 0,
-        ancho: 2,
-        alto: 2,
-        capacidad: 4,
+        width: 2,
+        height: 2,
+        capacity: 4,
       }),
     ).toThrow(/FOREIGN KEY/)
   })
@@ -204,74 +194,74 @@ describe('dinero en la base', () => {
     base = sembrarMinimo(db)
   })
 
-  const producto = (precio: ValorSql) =>
-    insertarVersionado(db, 'producto', base.restaurante, {
-      categoria_id: base.categoria,
-      nombre: 'Garden Margarita',
-      precio,
-      impuesto_id: base.impuesto,
+  const product = (price: ValorSql) =>
+    insertarVersionado(db, 'products', base.restaurant, {
+      category_id: base.category,
+      name: 'Garden Margarita',
+      price,
+      tax_id: base.tax,
     })
 
   it('acepta precios enteros en pesos', () => {
-    expect(() => producto(40900)).not.toThrow()
-    expect(() => producto(0)).not.toThrow()
+    expect(() => product(40900)).not.toThrow()
+    expect(() => product(0)).not.toThrow()
   })
 
   it('rechaza precios con decimales', () => {
-    expect(() => producto(40900.5)).toThrow(/REAL/)
+    expect(() => product(40900.5)).toThrow(/REAL/)
   })
 
-  it.each([-1, 100_000_001])('rechaza el precio %d (fuera de rango)', (precio) => {
-    expect(() => producto(precio)).toThrow(/CHECK/)
+  it.each([-1, 100_000_001])('rechaza el precio %d (fuera de rango)', (price) => {
+    expect(() => product(price)).toThrow(/CHECK/)
   })
 
-  it.each([-1, 10_001, 8.5])('rechaza la tarifa de impuesto %d', (tarifa) => {
+  it.each([-1, 10_001, 8.5])('rechaza la tarifa de impuesto %d', (rate) => {
     expect(() =>
-      insertarVersionado(db, 'impuesto', base.restaurante, { nombre: 'X', tipo: 'iva', tarifa }),
+      insertarVersionado(db, 'taxes', base.restaurant, { name: 'X', type: 'iva', rate }),
     ).toThrow()
   })
 
-  it.each([0, 1000])('rechaza la cantidad %d en un ítem de pedido', (cantidad) => {
-    const pedido = nuevoId()
+  it.each([0, 1000])('rechaza la cantidad %d en un ítem de pedido', (quantity) => {
+    const order = newId()
     db.prepare(
-      `INSERT INTO pedido (id, restaurante_id, canal, estado, abierto_en, ultima_secuencia)
-       VALUES (?, ?, 'salon', 'abierto', ?, 1)`,
-    ).run(pedido, base.restaurante, AHORA)
+      `INSERT INTO orders (id, restaurant_id, channel, status, opened_at, last_sequence)
+       VALUES (?, ?, 'dine_in', 'open', ?, 1)`,
+    ).run(order, base.restaurant, AHORA)
 
     expect(() =>
       db
         .prepare(
-          `INSERT INTO pedido_item (id, restaurante_id, pedido_id, orden, producto_id, nombre,
-             precio_unitario, impuesto_tipo, tarifa, cantidad, estado, agregado_por)
-           VALUES (?, ?, ?, 1, ?, 'Pinsa', 20900, 'inc', 800, ?, 'pendiente', ?)`,
+          `INSERT INTO order_items (id, restaurant_id, order_id, position, product_id, name,
+             unit_price, tax_type, rate, quantity, status, added_by)
+           VALUES (?, ?, ?, 1, ?, 'Pinsa', 20900, 'inc', 800, ?, 'pending', ?)`,
         )
-        .run(nuevoId(), base.restaurante, pedido, nuevoId(), cantidad, nuevoId()),
+        .run(newId(), base.restaurant, order, newId(), quantity, newId()),
     ).toThrow(/CHECK/)
   })
 })
 
 describe('eventos', () => {
   let db: BaseSqlite
-  let restaurante: string
+  let restaurant: string
 
   beforeEach(() => {
     db = abrirBase(':memory:')
     aplicarMigraciones(db)
-    restaurante = sembrarMinimo(db).restaurante
+    restaurant = sembrarMinimo(db).restaurant
   })
 
   it('no se pueden modificar', () => {
-    const evento = insertarEvento(db, restaurante)
+    const event = insertarEvento(db, restaurant)
 
     expect(() =>
-      db.prepare("UPDATE evento SET datos = '{}' WHERE id = ?").run(evento.id ?? null),
+      db.prepare("UPDATE events SET data = '{}' WHERE id = ?").run(event.id ?? null),
     ).toThrow(/no se modifican/)
   })
 
   it('no se pueden borrar', () => {
-    const evento = insertarEvento(db, restaurante)
+    const event = insertarEvento(db, restaurant)
 
-    expect(() => db.prepare('DELETE FROM evento WHERE id = ?').run(evento.id ?? null)).toThrow(
+    expect(() => db.prepare('DELETE FROM events WHERE id = ?').run(event.id ?? null)).toThrow(
       /no se borran/,
     )
   })
@@ -283,63 +273,59 @@ describe('eventos', () => {
       .map((fila) => String(fila.name))
 
     expect(disparadores).toEqual(
-      expect.arrayContaining([
-        `${tabla}_sin_delete`,
-        `${tabla}_sin_reemplazo`,
-        `${tabla}_sin_update`,
-      ]),
+      expect.arrayContaining([`${tabla}_no_delete`, `${tabla}_no_replace`, `${tabla}_no_update`]),
     )
   })
 
   it('el mismo id no se guarda dos veces en un restaurante', () => {
-    const evento = insertarEvento(db, restaurante)
+    const event = insertarEvento(db, restaurant)
 
-    expect(() => insertarEvento(db, restaurante, { id: evento.id ?? null, secuencia: 2 })).toThrow(
+    expect(() => insertarEvento(db, restaurant, { id: event.id ?? null, sequence: 2 })).toThrow(
       /no se reemplazan/,
     )
   })
 
   it('dos eventos no comparten secuencia', () => {
-    insertarEvento(db, restaurante, { secuencia: 1 })
+    insertarEvento(db, restaurant, { sequence: 1 })
 
-    expect(() => insertarEvento(db, restaurante, { secuencia: 1 })).toThrow(
+    expect(() => insertarEvento(db, restaurant, { sequence: 1 })).toThrow(
       /no se reemplazan|sin huecos/,
     )
   })
 
   it('la secuencia es contigua: no admite huecos', () => {
-    insertarEvento(db, restaurante, { secuencia: 1 })
+    insertarEvento(db, restaurant, { sequence: 1 })
 
-    expect(() => insertarEvento(db, restaurante, { secuencia: 3 })).toThrow(/sin huecos/)
-    expect(() => insertarEvento(db, restaurante, { secuencia: 2 })).not.toThrow()
+    expect(() => insertarEvento(db, restaurant, { sequence: 3 })).toThrow(/sin huecos/)
+    expect(() => insertarEvento(db, restaurant, { sequence: 2 })).not.toThrow()
   })
 
   it('INSERT OR REPLACE no puede reescribir un evento', () => {
-    const evento = insertarEvento(db, restaurante, { datos: '{"a":1}' })
-    const columnas = Object.keys(evento)
+    const event = insertarEvento(db, restaurant, { data: '{"a":1}' })
+    const columnas = Object.keys(event)
     const reemplazar = db.prepare(
-      `INSERT OR REPLACE INTO evento (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`,
+      `INSERT OR REPLACE INTO events (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`,
     )
 
-    expect(() => reemplazar.run(...Object.values({ ...evento, datos: '{"a":2}' }))).toThrow(
+    expect(() => reemplazar.run(...Object.values({ ...event, data: '{"a":2}' }))).toThrow(
       /no se reemplazan|sin huecos/,
     )
-    expect(db.prepare('SELECT datos FROM evento').get()?.datos).toBe('{"a":1}')
+    expect(db.prepare('SELECT data FROM events').get()?.data).toBe('{"a":1}')
   })
 
   it('rechaza datos que no son JSON y días operativos mal formados', () => {
-    expect(() => insertarEvento(db, restaurante, { datos: 'no es json' })).toThrow(/CHECK/)
-    expect(() => insertarEvento(db, restaurante, { dia_operativo: '24/10/2026' })).toThrow(/CHECK/)
+    expect(() => insertarEvento(db, restaurant, { data: 'no es json' })).toThrow(/CHECK/)
+    expect(() => insertarEvento(db, restaurant, { business_day: '24/10/2026' })).toThrow(/CHECK/)
   })
 
   it('las proyecciones sí se pueden borrar para reconstruirlas', () => {
-    const pedido = nuevoId()
+    const order = newId()
     db.prepare(
-      `INSERT INTO pedido (id, restaurante_id, canal, estado, abierto_en, ultima_secuencia)
-       VALUES (?, ?, 'salon', 'abierto', ?, 1)`,
-    ).run(pedido, restaurante, AHORA)
+      `INSERT INTO orders (id, restaurant_id, channel, status, opened_at, last_sequence)
+       VALUES (?, ?, 'dine_in', 'open', ?, 1)`,
+    ).run(order, restaurant, AHORA)
 
-    expect(() => db.exec('DELETE FROM pedido')).not.toThrow()
+    expect(() => db.exec('DELETE FROM orders')).not.toThrow()
   })
 })
 
@@ -347,20 +333,19 @@ describe('credenciales', () => {
   it('un PIN es único entre usuarios vigentes, pero se libera al desactivar', () => {
     const db = abrirBase(':memory:')
     aplicarMigraciones(db)
-    const { restaurante } = sembrarMinimo(db)
-    const rol = insertarVersionado(db, 'rol', restaurante, { nombre: 'mesero' })
-    const usuario = () =>
-      insertarVersionado(db, 'usuario', restaurante, { nombre: 'Ana', rol_id: rol })
-    const credencial = db.prepare(
-      `INSERT INTO usuario_credencial (usuario_id, restaurante_id, pin_huella, pin_generado_en, vigente)
+    const { restaurant } = sembrarMinimo(db)
+    const role = insertarVersionado(db, 'roles', restaurant, { name: 'mesero' })
+    const user = () => insertarVersionado(db, 'users', restaurant, { name: 'Ana', role_id: role })
+    const credential = db.prepare(
+      `INSERT INTO user_credentials (user_id, restaurant_id, pin_hash, pin_generated_at, current)
        VALUES (?, ?, 'huella-1', ?, ?)`,
     )
 
-    const ana = usuario()
-    credencial.run(ana, restaurante, AHORA, 1)
-    expect(() => credencial.run(usuario(), restaurante, AHORA, 1)).toThrow(/UNIQUE/)
+    const ana = user()
+    credential.run(ana, restaurant, AHORA, 1)
+    expect(() => credential.run(user(), restaurant, AHORA, 1)).toThrow(/UNIQUE/)
 
-    db.prepare('UPDATE usuario_credencial SET vigente = 0 WHERE usuario_id = ?').run(ana)
-    expect(() => credencial.run(usuario(), restaurante, AHORA, 1)).not.toThrow()
+    db.prepare('UPDATE user_credentials SET current = 0 WHERE user_id = ?').run(ana)
+    expect(() => credential.run(user(), restaurant, AHORA, 1)).not.toThrow()
   })
 })

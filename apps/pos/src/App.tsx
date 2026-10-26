@@ -9,8 +9,8 @@ const Bocetos = lazy(() => import('./bocetos/Bocetos'))
 
 export function App() {
   const { ruta, parametros } = useRuta()
-  if (ruta === '/diagnostico') return <Diagnostico />
-  if (ruta === '/bocetos' || ruta.startsWith('/bocetos/'))
+  if (ruta === '/diagnostics') return <Diagnostico />
+  if (ruta === '/mockups' || ruta.startsWith('/mockups/'))
     return (
       <Suspense fallback={<p className="p-6 text-texto-suave">Cargando…</p>}>
         <Bocetos ruta={ruta} />

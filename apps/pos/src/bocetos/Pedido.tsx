@@ -1,8 +1,8 @@
-import type { GrupoCarta, ProductoCarta } from '@pos/core'
+import type { MenuGroup, MenuProduct } from '@pos/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
-import { buscar } from '../ui/busqueda'
+import { search } from '../ui/busqueda'
 import { pesos } from '../ui/formato'
 import { Icono } from '../ui/iconos'
 import { Grupo, Opcion } from '../ui/Opciones'
@@ -10,12 +10,12 @@ import { PanelLateral } from '../ui/PanelLateral'
 import { navegar } from '../ui/ruta'
 import { netoLinea } from './cuenta'
 import {
-  carta,
-  type ItemPedido,
   type Mesa,
   MOTIVOS_ANULACION,
+  menu,
   nuevoItemId,
-  productos,
+  type OrderItem,
+  products,
   textoDeBusqueda,
 } from './datos'
 import { cambiarMesa, useMesaDeLaRuta, useMesas } from './estado'
@@ -29,34 +29,34 @@ import { lineaDe, nombreItem, totalMesa } from './totales'
 const RESULTADOS = 30
 
 /** Cuántas elecciones pide el producto: variante y grupos obligatorios. */
-const elecciones = (p: ProductoCarta) =>
-  (p.variantes.length > 0 ? 1 : 0) + p.grupos.filter((g) => g.minimo > 0).length
-const necesitaPanel = (p: ProductoCarta) => p.variantes.length > 0 || p.grupos.length > 0
+const elecciones = (p: MenuProduct) =>
+  (p.variants.length > 0 ? 1 : 0) + p.groups.filter((g) => g.minimum > 0).length
+const necesitaPanel = (p: MenuProduct) => p.variants.length > 0 || p.groups.length > 0
 
 /** Dos ítems son la misma línea si son el mismo producto, igual, para la misma persona, sin enviar. */
-const mismaLinea = (a: ItemPedido, b: ItemPedido) =>
+const mismaLinea = (a: OrderItem, b: OrderItem) =>
   a.enviadoEn === null &&
-  !a.anulado &&
-  a.producto.clave === b.producto.clave &&
-  a.variante === b.variante &&
-  a.comensal === b.comensal &&
-  a.notas === b.notas &&
-  JSON.stringify(a.opciones) === JSON.stringify(b.opciones)
+  !a.voided &&
+  a.product.key === b.product.key &&
+  a.variant === b.variant &&
+  a.guest === b.guest &&
+  a.notes === b.notes &&
+  JSON.stringify(a.options) === JSON.stringify(b.options)
 
 /** Abrir la mesa al agregar el primer producto (no al tocarla en el plano). */
 const ocupar = (m: Mesa): Mesa =>
-  m.estado === 'libre' || m.estado === 'reservada'
-    ? { ...m, estado: 'tomando', abiertaEn: Date.now(), comensales: 2, mesero: 'Mesero 1' }
+  m.status === 'free' || m.status === 'reserved'
+    ? { ...m, status: 'taking', abiertaEn: Date.now(), guests: 2, waiter: 'Mesero 1' }
     : m
 
-export function Pedido() {
+export function Order() {
   const numero = useMesaDeLaRuta(2)
-  const mesa = useMesas().find((m) => m.numero === numero)
+  const table = useMesas().find((m) => m.numero === numero)
   const avisar = useAvisar()
   const [busqueda, setBusqueda] = useState('')
-  const [categoria, setCategoria] = useState(carta[0]?.clave ?? '')
-  const [comensal, setComensal] = useState<number | null>(null)
-  const [elegido, setElegido] = useState<ProductoCarta | null>(null)
+  const [category, setCategoria] = useState(menu[0]?.key ?? '')
+  const [guest, setComensal] = useState<number | null>(null)
+  const [elegido, setElegido] = useState<MenuProduct | null>(null)
   const [editando, setEditando] = useState<string | null>(null)
   const [verPedido, setVerPedido] = useState(false)
   const campoBusqueda = useRef<HTMLInputElement>(null)
@@ -75,113 +75,113 @@ export function Pedido() {
   const encontrados = useMemo(
     () =>
       busqueda.trim()
-        ? buscar(productos, busqueda, (p) => textoDeBusqueda.get(p.clave) ?? p.nombre)
-        : (carta.find((c) => c.clave === categoria)?.productos ?? []),
-    [busqueda, categoria],
+        ? search(products, busqueda, (p) => textoDeBusqueda.get(p.key) ?? p.name)
+        : (menu.find((c) => c.key === category)?.products ?? []),
+    [busqueda, category],
   )
 
   // Si bajan las personas, lo elegido para una que ya no está vuelve a "Mesa".
-  const comensales = mesa?.comensales ?? 0
+  const guests = table?.guests ?? 0
   useEffect(() => {
-    if (comensal !== null && comensal > comensales) setComensal(null)
-  }, [comensal, comensales])
+    if (guest !== null && guest > guests) setComensal(null)
+  }, [guest, guests])
 
-  if (!mesa) return null
-  const items = mesa.items
-  const porEnviar = items.filter((i) => i.enviadoEn === null && !i.anulado)
-  const enPedido = (p: ProductoCarta) =>
-    porEnviar.filter((i) => i.producto.clave === p.clave).reduce((s, i) => s + i.cantidad, 0)
+  if (!table) return null
+  const items = table.items
+  const porEnviar = items.filter((i) => i.enviadoEn === null && !i.voided)
+  const enPedido = (p: MenuProduct) =>
+    porEnviar.filter((i) => i.product.key === p.key).reduce((s, i) => s + i.quantity, 0)
 
-  const agregar = (nuevo: ItemPedido) => {
-    const igual = items.find((i) => mismaLinea(i, nuevo))
-    if (igual) {
+  const add = (fresh: OrderItem) => {
+    const equal = items.find((i) => mismaLinea(i, fresh))
+    if (equal) {
       cambiarMesa(numero, (m) => ({
         ...m,
         items: m.items.map((i) =>
-          i.id === igual.id ? { ...i, cantidad: i.cantidad + nuevo.cantidad } : i,
+          i.id === equal.id ? { ...i, quantity: i.quantity + fresh.quantity } : i,
         ),
       }))
-      avisar(`${nombreItem(nuevo)}: ${igual.cantidad + nuevo.cantidad}`, () =>
+      avisar(`${nombreItem(fresh)}: ${equal.quantity + fresh.quantity}`, () =>
         cambiarMesa(numero, (m) => ({
           ...m,
           items: m.items.map((i) =>
-            i.id === igual.id ? { ...i, cantidad: i.cantidad - nuevo.cantidad } : i,
+            i.id === equal.id ? { ...i, quantity: i.quantity - fresh.quantity } : i,
           ),
         })),
       )
       return
     }
-    const antes = mesa
-    cambiarMesa(numero, (m) => ({ ...ocupar(m), items: [...m.items, nuevo] }))
-    avisar(`Agregaste ${nombreItem(nuevo)}`, () =>
+    const before = table
+    cambiarMesa(numero, (m) => ({ ...ocupar(m), items: [...m.items, fresh] }))
+    avisar(`Agregaste ${nombreItem(fresh)}`, () =>
       cambiarMesa(numero, (m) =>
-        m.items.length === 1 && antes.items.length === 0
-          ? antes
-          : { ...m, items: m.items.filter((i) => i.id !== nuevo.id) },
+        m.items.length === 1 && before.items.length === 0
+          ? before
+          : { ...m, items: m.items.filter((i) => i.id !== fresh.id) },
       ),
     )
   }
 
-  const tocarProducto = (p: ProductoCarta) => {
+  const tocarProducto = (p: MenuProduct) => {
     if (necesitaPanel(p)) setElegido(p)
-    else agregar(nuevo(p, null, [], comensal))
+    else add(fresh(p, null, [], guest))
   }
 
-  const quitar = (item: ItemPedido) => {
+  const remove = (item: OrderItem) => {
     const posicion = items.findIndex((i) => i.id === item.id)
     cambiarMesa(numero, (m) => ({ ...m, items: m.items.filter((i) => i.id !== item.id) }))
     avisar(`Quitaste ${nombreItem(item)}`, () =>
       cambiarMesa(numero, (m) => {
-        const copia = [...m.items]
-        copia.splice(posicion, 0, item)
-        return { ...m, items: copia }
+        const copy = [...m.items]
+        copy.splice(posicion, 0, item)
+        return { ...m, items: copy }
       }),
     )
   }
 
-  const enviar = () => {
+  const send = () => {
     if (porEnviar.length === 0) return
     const ahora = Date.now()
     cambiarMesa(numero, (m) => ({
       ...m,
-      estado: 'en_cocina',
+      status: 'in_kitchen',
       items: m.items.map((i) => (i.enviadoEn === null ? { ...i, enviadoEn: ahora } : i)),
     }))
     navigator.vibrate?.(60)
     avisar(`Enviado a cocina y barra (${porEnviar.length})`)
     setVerPedido(false)
-    navegar('/bocetos/plano')
+    navegar('/mockups/floor-plan')
   }
 
-  const pedirCuenta = () => navegar(`/bocetos/precuenta?mesa=${numero}`)
+  const pedirCuenta = () => navegar(`/mockups/pre-bill?table=${numero}`)
   const itemEditado = items.find((i) => i.id === editando) ?? null
 
   const ticket = (
     <Ticket
-      mesa={mesa}
-      comensal={comensal}
+      table={table}
+      guest={guest}
       alElegirComensal={setComensal}
-      alCambiarComensales={(n) => cambiarMesa(numero, (m) => ({ ...m, comensales: n }))}
+      alCambiarComensales={(n) => cambiarMesa(numero, (m) => ({ ...m, guests: n }))}
       alTocarItem={(i) => setEditando(i.id)}
     />
   )
   const botonEnviar = (
     <Boton
-      variante="principal"
-      grande
-      icono="enviar"
+      variant="main"
+      large
+      icono="send"
       className="w-full"
       disabled={porEnviar.length === 0}
-      onClick={enviar}
+      onClick={send}
     >
       {porEnviar.length === 0 ? 'Enviar' : `Enviar ${porEnviar.length}`}
     </Boton>
   )
   const botonCuenta = (
     <Boton
-      variante="secundario"
-      grande
-      icono="recibo"
+      variant="secondary"
+      large
+      icono="receipt"
       disabled={items.length === 0}
       onClick={pedirCuenta}
     >
@@ -190,13 +190,13 @@ export function Pedido() {
   )
 
   return (
-    <Marco titulo={`Mesa ${numero}`} volver="/bocetos/plano">
+    <Marco titulo={`Mesa ${numero}`} back="/mockups/floor-plan">
       <div className="mx-auto flex max-w-6xl gap-4 p-3 pb-28 md:pb-3">
         <section className="min-w-0 flex-1" aria-label="Carta">
           <label className="relative block">
             <span className="sr-only">Buscar en la carta</span>
             <Icono
-              nombre="buscar"
+              name="search"
               className="absolute top-1/2 left-3 -translate-y-1/2 text-texto-suave"
             />
             <input
@@ -217,37 +217,37 @@ export function Pedido() {
               etiqueta="Categorías"
               className="-mx-3 mt-3 flex gap-2 overflow-x-auto px-3 pb-1"
             >
-              {carta.map((c) => (
+              {menu.map((c) => (
                 <Opcion
-                  key={c.clave}
-                  elegida={c.clave === categoria}
-                  alElegir={() => setCategoria(c.clave)}
+                  key={c.key}
+                  elegida={c.key === category}
+                  alElegir={() => setCategoria(c.key)}
                 >
-                  {c.nombre}
+                  {c.name}
                 </Opcion>
               ))}
             </Grupo>
           )}
           <ul className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-3">
             {encontrados.slice(0, RESULTADOS).map((p) => {
-              const cantidad = enPedido(p)
+              const quantity = enPedido(p)
               return (
-                <li key={p.clave}>
+                <li key={p.key}>
                   <button
                     type="button"
                     onClick={() => tocarProducto(p)}
                     className="relative flex min-h-20 w-full flex-col justify-between rounded-xl border border-borde bg-superficie p-3 text-left hover:bg-superficie-2 active:scale-[0.98] focus-visible:outline-3 focus-visible:outline-foco"
                   >
-                    {cantidad > 0 && (
+                    {quantity > 0 && (
                       <span className="cifras absolute -top-2 -right-2 flex size-7 items-center justify-center rounded-full bg-accion-fuerte text-sm font-bold text-white">
-                        {cantidad}
+                        {quantity}
                         <span className="sr-only"> en el pedido</span>
                       </span>
                     )}
-                    <span className="font-semibold leading-snug">{p.nombre}</span>
+                    <span className="font-semibold leading-snug">{p.name}</span>
                     <span className="cifras mt-1 flex items-center justify-between text-texto-suave">
                       <span className="font-titulo text-lg">
-                        {p.variantes.length > 0 ? `desde ${pesos(p.precio)}` : pesos(p.precio)}
+                        {p.variants.length > 0 ? `desde ${pesos(p.price)}` : pesos(p.price)}
                       </span>
                       {necesitaPanel(p) && (
                         <span className="text-sm whitespace-nowrap">opciones ›</span>
@@ -283,19 +283,19 @@ export function Pedido() {
       {/* Celular: barra fija abajo, al alcance del pulgar. */}
       <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-borde bg-superficie p-3 md:hidden">
         <Boton
-          variante="secundario"
-          grande
+          variant="secondary"
+          large
           onClick={() => setVerPedido(true)}
           className="flex-1 flex-col gap-0! text-base! leading-tight"
         >
-          <span>{`Pedido (${items.filter((i) => !i.anulado).length})`}</span>
-          <span className="cifras font-titulo text-lg">{pesos(totalMesa(mesa))}</span>
+          <span>{`Pedido (${items.filter((i) => !i.voided).length})`}</span>
+          <span className="cifras font-titulo text-lg">{pesos(totalMesa(table))}</span>
         </Boton>
         <div className="flex-1">{botonEnviar}</div>
       </div>
 
       <PanelLateral
-        abierto={verPedido}
+        opened={verPedido}
         titulo={`Pedido · Mesa ${numero}`}
         alCerrar={() => setVerPedido(false)}
         pie={
@@ -309,20 +309,20 @@ export function Pedido() {
       </PanelLateral>
 
       <PanelProducto
-        producto={elegido}
-        comensal={comensal}
+        product={elegido}
+        guest={guest}
         alCerrar={() => setElegido(null)}
         alAgregar={(item) => {
-          agregar(item)
+          add(item)
           setElegido(null)
         }}
       />
 
       <PanelItem
         item={itemEditado}
-        comensales={mesa.comensales}
+        guests={table.guests}
         alCerrar={() => setEditando(null)}
-        alGuardar={(item) => {
+        onSave={(item) => {
           cambiarMesa(numero, (m) => ({
             ...m,
             items: m.items.map((i) => (i.id === item.id ? item : i)),
@@ -330,17 +330,17 @@ export function Pedido() {
           setEditando(null)
         }}
         alQuitar={(item) => {
-          quitar(item)
+          remove(item)
           setEditando(null)
         }}
-        alAnular={(item, motivo, yaPreparado) => {
+        onVoid={(item, reason, alreadyPrepared) => {
           cambiarMesa(numero, (m) => ({
             ...m,
             items: m.items.map((i) =>
-              i.id === item.id ? { ...i, anulado: { motivo, yaPreparado } } : i,
+              i.id === item.id ? { ...i, voided: { reason, alreadyPrepared } } : i,
             ),
           }))
-          avisar(`Anulaste ${nombreItem(item)} (${motivo.toLowerCase()})`)
+          avisar(`Anulaste ${nombreItem(item)} (${reason.toLowerCase()})`)
           setEditando(null)
         }}
       />
@@ -348,70 +348,70 @@ export function Pedido() {
   )
 }
 
-function nuevo(
-  p: ProductoCarta,
-  variante: string | null,
-  opciones: ItemPedido['opciones'],
-  comensal: number | null,
-  cantidad = 1,
-  notas = '',
-): ItemPedido {
+function fresh(
+  p: MenuProduct,
+  variant: string | null,
+  options: OrderItem['options'],
+  guest: number | null,
+  quantity = 1,
+  notes = '',
+): OrderItem {
   return {
     id: nuevoItemId(),
-    producto: p,
-    variante,
-    opciones,
-    precioUnitario: p.variantes.find((v) => v.nombre === variante)?.precio ?? p.precio,
-    cantidad,
-    comensal,
-    notas,
+    product: p,
+    variant,
+    options,
+    unitPrice: p.variants.find((v) => v.name === variant)?.price ?? p.price,
+    quantity,
+    guest,
+    notes,
     enviadoEn: null,
     despachado: false,
-    anulado: null,
+    voided: null,
   }
 }
 
 function Ticket({
-  mesa,
-  comensal,
+  table,
+  guest,
   alElegirComensal,
   alCambiarComensales,
   alTocarItem,
 }: {
-  mesa: Mesa
-  comensal: number | null
+  table: Mesa
+  guest: number | null
   alElegirComensal: (c: number | null) => void
   alCambiarComensales: (n: number) => void
-  alTocarItem: (i: ItemPedido) => void
+  alTocarItem: (i: OrderItem) => void
 }) {
-  const { items, comensales } = mesa
+  const { items, guests } = table
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-borde p-3">
-        <Icono nombre="personas" />
-        <span className="font-semibold">{`${comensales} ${comensales === 1 ? 'persona' : 'personas'}`}</span>
+        <Icono name="people" />
+        <span className="font-semibold">{`${guests} ${guests === 1 ? 'persona' : 'personas'}`}</span>
         <Boton
-          variante="fantasma"
-          icono="menos"
+          variant="ghost"
+          icono="minus"
           aria-label="Una persona menos"
-          disabled={comensales <= 1}
-          onClick={() => alCambiarComensales(comensales - 1)}
+          disabled={guests <= 1}
+          onClick={() => alCambiarComensales(guests - 1)}
         />
         <Boton
-          variante="fantasma"
-          icono="mas"
+          variant="ghost"
+          icono="more"
           aria-label="Una persona más"
-          onClick={() => alCambiarComensales(comensales + 1)}
+          onClick={() => alCambiarComensales(guests + 1)}
         />
       </div>
       <Grupo
         etiqueta="Para quién es lo próximo que agregues"
         className="flex gap-2 overflow-x-auto border-b border-borde p-3"
       >
-        {[null, ...Array.from({ length: comensales }, (_, i) => i + 1)].map((c) => (
+        {[null, ...Array.from({ length: guests }, (_, i) => i + 1)].map((c) => (
           <Opcion
-            key={c ?? 'mesa'}
-            elegida={comensal === c}
+            key={c ?? 'table'}
+            elegida={guest === c}
             alElegir={() => alElegirComensal(c)}
             etiqueta={c === null ? 'Para la mesa' : `Para la persona ${c}`}
           >
@@ -427,32 +427,32 @@ function Ticket({
           <li key={i.id}>
             <button
               type="button"
-              onClick={() => !i.anulado && alTocarItem(i)}
-              className={`flex min-h-14 w-full items-start gap-3 border-b border-borde px-3 py-2 text-left hover:bg-superficie-2 ${i.anulado ? 'text-texto-suave' : ''}`}
+              onClick={() => !i.voided && alTocarItem(i)}
+              className={`flex min-h-14 w-full items-start gap-3 border-b border-borde px-3 py-2 text-left hover:bg-superficie-2 ${i.voided ? 'text-texto-suave' : ''}`}
             >
-              <span className="cifras w-6 font-semibold">{i.cantidad}</span>
+              <span className="cifras w-6 font-semibold">{i.quantity}</span>
               <span className="flex-1">
-                <span className={`font-semibold ${i.anulado ? 'line-through' : ''}`}>
+                <span className={`font-semibold ${i.voided ? 'line-through' : ''}`}>
                   {nombreItem(i)}
                 </span>
-                {i.opciones.length > 0 && (
+                {i.options.length > 0 && (
                   <span className="block text-sm font-semibold text-proceso-texto">
-                    {i.opciones.map((o) => o.nombre).join(' · ')}
+                    {i.options.map((o) => o.name).join(' · ')}
                   </span>
                 )}
-                {i.notas && <span className="block text-sm text-texto-suave">«{i.notas}»</span>}
+                {i.notes && <span className="block text-sm text-texto-suave">«{i.notes}»</span>}
                 <span className="block text-sm text-texto-suave">
                   {[
-                    i.comensal ? `P${i.comensal}` : 'Mesa',
-                    i.anulado
-                      ? `anulado: ${i.anulado.motivo.toLowerCase()}`
+                    i.guest ? `P${i.guest}` : 'Mesa',
+                    i.voided
+                      ? `anulado: ${i.voided.reason.toLowerCase()}`
                       : i.enviadoEn !== null
                         ? 'enviado'
                         : 'sin enviar',
                   ].join(' · ')}
                 </span>
               </span>
-              <span className={`cifras ${i.anulado ? 'line-through' : ''}`}>
+              <span className={`cifras ${i.voided ? 'line-through' : ''}`}>
                 {pesos(netoLinea(lineaDe(i)))}
               </span>
             </button>
@@ -461,7 +461,7 @@ function Ticket({
       </ul>
       <div className="cifras flex justify-between p-3 text-lg font-semibold">
         <span>Total</span>
-        <span>{pesos(totalMesa(mesa))}</span>
+        <span>{pesos(totalMesa(table))}</span>
       </div>
     </div>
   )
@@ -469,111 +469,111 @@ function Ticket({
 
 /** Opciones de un producto: variante, grupos obligatorios, cantidad y notas. */
 function PanelProducto({
-  producto,
-  comensal,
+  product,
+  guest,
   alCerrar,
   alAgregar,
 }: {
-  producto: ProductoCarta | null
-  comensal: number | null
+  product: MenuProduct | null
+  guest: number | null
   alCerrar: () => void
-  alAgregar: (item: ItemPedido) => void
+  alAgregar: (item: OrderItem) => void
 }) {
-  const [variante, setVariante] = useState<string | null>(null)
-  const [opciones, setOpciones] = useState<Record<string, string>>({})
-  const [cantidad, setCantidad] = useState(1)
-  const [notas, setNotas] = useState('')
+  const [variant, setVariante] = useState<string | null>(null)
+  const [options, setOpciones] = useState<Record<string, string>>({})
+  const [quantity, setCantidad] = useState(1)
+  const [notes, setNotas] = useState('')
   const [abiertoPara, setAbiertoPara] = useState<string | null>(null)
 
   // Al abrir con otro producto, todo empieza de cero.
-  if (producto && abiertoPara !== producto.clave) {
-    setAbiertoPara(producto.clave)
+  if (product && abiertoPara !== product.key) {
+    setAbiertoPara(product.key)
     setVariante(null)
     setOpciones({})
     setCantidad(1)
     setNotas('')
   }
-  if (!producto) return null
+  if (!product) return null
 
-  const unaSola = elecciones(producto) === 1
+  const unaSola = elecciones(product) === 1
   const elegidasDe = (o: Record<string, string>) =>
-    producto.grupos.flatMap((g) => {
-      const x = g.opciones.find((op) => op.nombre === o[g.clave])
+    product.groups.flatMap((g) => {
+      const x = g.options.find((op) => op.name === o[g.key])
       return x ? [x] : []
     })
-  const faltan = [
-    ...(producto.variantes.length > 0 && !variante ? ['tamaño'] : []),
-    ...producto.grupos
-      .filter((g) => g.minimo > 0 && !opciones[g.clave])
-      .map((g) => g.nombre.toLowerCase()),
+  const missingOnes = [
+    ...(product.variants.length > 0 && !variant ? ['tamaño'] : []),
+    ...product.groups
+      .filter((g) => g.minimum > 0 && !options[g.key])
+      .map((g) => g.name.toLowerCase()),
   ]
-  const precio = producto.variantes.find((v) => v.nombre === variante)?.precio ?? producto.precio
-  const neto = netoLinea({
+  const price = product.variants.find((v) => v.name === variant)?.price ?? product.price
+  const net = netoLinea({
     id: '',
-    cantidad,
-    precioUnitario: precio,
-    extras: elegidasDe(opciones).map((o) => o.precioExtra),
+    quantity,
+    unitPrice: price,
+    extras: elegidasDe(options).map((o) => o.extraPrice),
   })
 
-  const cerrar = () => {
+  const close = () => {
     setAbiertoPara(null)
     alCerrar()
   }
   const agregarCon = (v: string | null, o: Record<string, string>) => {
     setAbiertoPara(null)
-    alAgregar(nuevo(producto, v, elegidasDe(o), comensal, cantidad, notas.trim()))
+    alAgregar(fresh(product, v, elegidasDe(o), guest, quantity, notes.trim()))
   }
 
   return (
     <PanelLateral
-      abierto
-      titulo={producto.nombre}
-      alCerrar={cerrar}
+      opened
+      titulo={product.name}
+      alCerrar={close}
       pie={
         <Boton
-          variante="principal"
-          grande
+          variant="main"
+          large
           className="w-full"
-          disabled={faltan.length > 0}
-          onClick={() => agregarCon(variante, opciones)}
+          disabled={missingOnes.length > 0}
+          onClick={() => agregarCon(variant, options)}
         >
-          {faltan.length > 0 ? `Elige ${faltan[0]}` : `Agregar · ${pesos(neto)}`}
+          {missingOnes.length > 0 ? `Elige ${missingOnes[0]}` : `Agregar · ${pesos(net)}`}
         </Boton>
       }
     >
-      {producto.descripcion && <p className="mb-4 text-texto-suave">{producto.descripcion}</p>}
+      {product.description && <p className="mb-4 text-texto-suave">{product.description}</p>}
       {unaSola && (
         <p className="mb-3 text-sm text-texto-suave">Toca una opción y queda agregada.</p>
       )}
-      {producto.variantes.length > 0 && (
+      {product.variants.length > 0 && (
         <ListaOpciones
           titulo="Tamaño"
-          opciones={producto.variantes.map((v) => ({ nombre: v.nombre, detalle: pesos(v.precio) }))}
-          elegida={variante}
-          alElegir={(v) => (unaSola ? agregarCon(v, opciones) : setVariante(v))}
+          options={product.variants.map((v) => ({ name: v.name, detalle: pesos(v.price) }))}
+          elegida={variant}
+          alElegir={(v) => (unaSola ? agregarCon(v, options) : setVariante(v))}
         />
       )}
-      {producto.grupos.map((g: GrupoCarta) => (
+      {product.groups.map((g: MenuGroup) => (
         <ListaOpciones
-          key={g.clave}
-          titulo={`${g.nombre}${g.minimo > 0 ? ' (obligatorio)' : ''}`}
-          opciones={g.opciones.map((o) => ({
-            nombre: o.nombre,
-            detalle: o.precioExtra ? `+${pesos(o.precioExtra)}` : '',
+          key={g.key}
+          titulo={`${g.name}${g.minimum > 0 ? ' (obligatorio)' : ''}`}
+          options={g.options.map((o) => ({
+            name: o.name,
+            detalle: o.extraPrice ? `+${pesos(o.extraPrice)}` : '',
           }))}
-          elegida={opciones[g.clave] ?? null}
-          alElegir={(nombre) => {
-            const nuevas = { ...opciones, [g.clave]: nombre }
-            if (unaSola) agregarCon(variante, nuevas)
-            else setOpciones(nuevas)
+          elegida={options[g.key] ?? null}
+          alElegir={(name) => {
+            const newOnes = { ...options, [g.key]: name }
+            if (unaSola) agregarCon(variant, newOnes)
+            else setOpciones(newOnes)
           }}
         />
       ))}
-      <Cantidad valor={cantidad} alCambiar={setCantidad} />
+      <Quantity value={quantity} onChange={setCantidad} />
       <label className="block">
         <span className="font-semibold">Notas para cocina</span>
         <input
-          value={notas}
+          value={notes}
           onChange={(e) => setNotas(e.target.value)}
           placeholder="Sin cebolla, bien caliente…"
           className="mt-2 min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 focus-visible:outline-3 focus-visible:outline-foco"
@@ -585,28 +585,28 @@ function PanelProducto({
 
 function ListaOpciones({
   titulo,
-  opciones,
+  options,
   elegida,
   alElegir,
 }: {
   titulo: string
-  opciones: { nombre: string; detalle: string }[]
+  options: { name: string; detalle: string }[]
   elegida: string | null
-  alElegir: (nombre: string) => void
+  alElegir: (name: string) => void
 }) {
   return (
     <fieldset className="mb-5 min-w-0 border-0 p-0">
       <legend className="mb-2 font-semibold">{titulo}</legend>
       <div className="grid grid-cols-2 gap-2">
-        {opciones.map((o) => (
+        {options.map((o) => (
           <Opcion
-            key={o.nombre}
-            forma="tarjeta"
-            elegida={elegida === o.nombre}
+            key={o.name}
+            shape="card"
+            elegida={elegida === o.name}
             detalle={o.detalle}
-            alElegir={() => alElegir(o.nombre)}
+            alElegir={() => alElegir(o.name)}
           >
-            {o.nombre}
+            {o.name}
           </Opcion>
         ))}
       </div>
@@ -614,18 +614,18 @@ function ListaOpciones({
   )
 }
 
-function Cantidad({ valor, alCambiar }: { valor: number; alCambiar: (n: number) => void }) {
+function Quantity({ value, onChange }: { value: number; onChange: (n: number) => void }) {
   return (
     <div className="mb-5 flex items-center gap-3">
       <span className="font-semibold">Cantidad</span>
       <Boton
-        icono="menos"
+        icono="minus"
         aria-label="Uno menos"
-        disabled={valor <= 1}
-        onClick={() => alCambiar(valor - 1)}
+        disabled={value <= 1}
+        onClick={() => onChange(value - 1)}
       />
-      <span className="cifras w-8 text-center text-xl font-semibold">{valor}</span>
-      <Boton icono="mas" aria-label="Uno más" onClick={() => alCambiar(valor + 1)} />
+      <span className="cifras w-8 text-center text-xl font-semibold">{value}</span>
+      <Boton icono="more" aria-label="Uno más" onClick={() => onChange(value + 1)} />
     </div>
   )
 }
@@ -636,22 +636,22 @@ function Cantidad({ valor, alCambiar }: { valor: number; alCambiar: (n: number) 
  */
 function PanelItem({
   item,
-  comensales,
+  guests,
   alCerrar,
-  alGuardar,
+  onSave,
   alQuitar,
-  alAnular,
+  onVoid,
 }: {
-  item: ItemPedido | null
-  comensales: number
+  item: OrderItem | null
+  guests: number
   alCerrar: () => void
-  alGuardar: (item: ItemPedido) => void
-  alQuitar: (item: ItemPedido) => void
-  alAnular: (item: ItemPedido, motivo: string, yaPreparado: boolean) => void
+  onSave: (item: OrderItem) => void
+  alQuitar: (item: OrderItem) => void
+  onVoid: (item: OrderItem, reason: string, alreadyPrepared: boolean) => void
 }) {
-  const [borrador, setBorrador] = useState<ItemPedido | null>(null)
-  const [motivo, setMotivo] = useState<string | null>(null)
-  const [yaPreparado, setYaPreparado] = useState(false)
+  const [borrador, setBorrador] = useState<OrderItem | null>(null)
+  const [reason, setMotivo] = useState<string | null>(null)
+  const [alreadyPrepared, setYaPreparado] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
   if (item && borrador?.id !== item.id) {
     setBorrador(item)
@@ -660,7 +660,7 @@ function PanelItem({
     setConfirmando(false)
   }
   if (!item || !borrador) return null
-  const cerrar = () => {
+  const close = () => {
     setBorrador(null)
     alCerrar()
   }
@@ -668,9 +668,9 @@ function PanelItem({
   if (item.enviadoEn !== null) {
     return (
       <PanelLateral
-        abierto
+        opened
         titulo={`Anular ${nombreItem(item)}`}
-        alCerrar={cerrar}
+        alCerrar={close}
         pie={
           confirmando ? (
             <div className="flex flex-col gap-2">
@@ -678,11 +678,11 @@ function PanelItem({
               <div className="flex gap-2">
                 <Boton onClick={() => setConfirmando(false)}>Volver</Boton>
                 <Boton
-                  variante="peligro"
+                  variant="danger"
                   className="flex-1"
                   onClick={() => {
                     setBorrador(null)
-                    alAnular(item, motivo as string, yaPreparado)
+                    onVoid(item, reason as string, alreadyPrepared)
                   }}
                 >
                   Sí, anular
@@ -691,13 +691,13 @@ function PanelItem({
             </div>
           ) : (
             <Boton
-              variante="peligro"
-              grande
+              variant="danger"
+              large
               className="w-full"
-              disabled={!motivo}
+              disabled={!reason}
               onClick={() => setConfirmando(true)}
             >
-              {motivo ? 'Anular' : 'Elige el motivo'}
+              {reason ? 'Anular' : 'Elige el motivo'}
             </Boton>
           )
         }
@@ -710,7 +710,7 @@ function PanelItem({
           <legend className="mb-2 font-semibold">Motivo</legend>
           <div className="grid grid-cols-2 gap-2">
             {MOTIVOS_ANULACION.map((m) => (
-              <Opcion key={m} forma="tarjeta" elegida={motivo === m} alElegir={() => setMotivo(m)}>
+              <Opcion key={m} shape="card" elegida={reason === m} alElegir={() => setMotivo(m)}>
                 {m}
               </Opcion>
             ))}
@@ -720,7 +720,7 @@ function PanelItem({
           <input
             type="checkbox"
             className="size-6"
-            checked={yaPreparado}
+            checked={alreadyPrepared}
             onChange={(e) => setYaPreparado(e.target.checked)}
           />
           Ya se había preparado (va como merma)
@@ -731,14 +731,14 @@ function PanelItem({
 
   return (
     <PanelLateral
-      abierto
+      opened
       titulo={nombreItem(item)}
-      alCerrar={cerrar}
+      alCerrar={close}
       pie={
         <div className="flex gap-2">
           <Boton
-            variante="peligro"
-            icono="cerrar"
+            variant="danger"
+            icono="close"
             onClick={() => {
               setBorrador(null)
               alQuitar(item)
@@ -747,11 +747,11 @@ function PanelItem({
             Quitar
           </Boton>
           <Boton
-            variante="principal"
+            variant="main"
             className="flex-1"
             onClick={() => {
               setBorrador(null)
-              alGuardar(borrador)
+              onSave(borrador)
             }}
           >
             Listo
@@ -759,25 +759,26 @@ function PanelItem({
         </div>
       }
     >
-      <Cantidad
-        valor={borrador.cantidad}
-        alCambiar={(cantidad) => setBorrador({ ...borrador, cantidad })}
+      <Quantity
+        value={borrador.quantity}
+        onChange={(quantity) => setBorrador({ ...borrador, quantity })}
       />
       <ListaOpciones
         titulo="Para"
-        opciones={['Mesa', ...Array.from({ length: comensales }, (_, i) => `P${i + 1}`)].map(
-          (nombre) => ({ nombre, detalle: '' }),
-        )}
-        elegida={borrador.comensal ? `P${borrador.comensal}` : 'Mesa'}
+        options={['Mesa', ...Array.from({ length: guests }, (_, i) => `P${i + 1}`)].map((name) => ({
+          name,
+          detalle: '',
+        }))}
+        elegida={borrador.guest ? `P${borrador.guest}` : 'Mesa'}
         alElegir={(n) =>
-          setBorrador({ ...borrador, comensal: n === 'Mesa' ? null : Number(n.slice(1)) })
+          setBorrador({ ...borrador, guest: n === 'Mesa' ? null : Number(n.slice(1)) })
         }
       />
       <label className="block">
         <span className="font-semibold">Notas para cocina</span>
         <input
-          value={borrador.notas}
-          onChange={(e) => setBorrador({ ...borrador, notas: e.target.value })}
+          value={borrador.notes}
+          onChange={(e) => setBorrador({ ...borrador, notes: e.target.value })}
           className="mt-2 min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 focus-visible:outline-3 focus-visible:outline-foco"
         />
       </label>

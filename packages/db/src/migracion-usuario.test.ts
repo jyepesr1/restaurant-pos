@@ -13,43 +13,43 @@ const HASTA_5 = MIGRACIONES.filter((m) => m.version <= 5)
 function baseVersion4() {
   const db = abrirBase(':memory:')
   aplicarMigraciones(db, HASTA_4)
-  const { restaurante } = sembrar(db)
-  const rol = insertarVersionado(db, 'rol', restaurante, { nombre: 'Mesero' })
-  const persona = (nombre: string, pin: string) => {
-    const id = insertarVersionado(db, 'usuario', restaurante, { nombre, rol_id: rol })
-    insertarEnTabla(db, 'usuario_credencial', {
-      usuario_id: id,
-      restaurante_id: restaurante,
-      pin_huella: pin,
-      pin_generado_en: AHORA,
+  const { restaurant } = sembrar(db)
+  const role = insertarVersionado(db, 'roles', restaurant, { name: 'Mesero' })
+  const persona = (name: string, pin: string) => {
+    const id = insertarVersionado(db, 'users', restaurant, { name, role_id: role })
+    insertarEnTabla(db, 'user_credentials', {
+      user_id: id,
+      restaurant_id: restaurant,
+      pin_hash: pin,
+      pin_generated_at: AHORA,
     })
     return id
   }
   const ana = persona('Ana', 'huella-ana')
-  return { db, restaurante, persona, ana }
+  return { db, restaurant, persona, ana }
 }
 
 const conUsuario = (
   db: ReturnType<typeof abrirBase>,
   id: string,
-  usuario: string | null,
-  huella: string | null,
+  user: string | null,
+  fingerprint: string | null,
 ) =>
   db
-    .prepare(
-      'UPDATE usuario_credencial SET nombre_usuario = ?, contrasena_huella = ? WHERE usuario_id = ?',
-    )
-    .run(usuario, huella, id)
+    .prepare('UPDATE user_credentials SET username = ?, password_hash = ? WHERE user_id = ?')
+    .run(user, fingerprint, id)
 
 describe('migración 5: usuario y contraseña', () => {
   it('es la 5 y deja a quien tenía PIN sin usuario (sigue entrando con su PIN)', () => {
     const { db, ana } = baseVersion4()
-    expect(MIGRACIONES.find((m) => m.version === 5)?.nombre).toBe('usuario_contrasena')
+    expect(MIGRACIONES.find((m) => m.version === 5)?.name).toBe('user_password')
     expect(aplicarMigraciones(db, HASTA_5)).toEqual([5])
     expect(versionActual(db)).toBe(5)
-    expect(
-      db.prepare('SELECT * FROM usuario_credencial WHERE usuario_id = ?').get(ana),
-    ).toMatchObject({ pin_huella: 'huella-ana', nombre_usuario: null, contrasena_huella: null })
+    expect(db.prepare('SELECT * FROM user_credentials WHERE user_id = ?').get(ana)).toMatchObject({
+      pin_hash: 'huella-ana',
+      username: null,
+      password_hash: null,
+    })
   })
 
   it('usuario y contraseña van juntos', () => {
@@ -73,23 +73,23 @@ describe('migración 5: usuario y contraseña', () => {
     const luis = persona('Luis', 'huella-luis')
     conUsuario(db, ana, 'caja', 'scrypt$a')
     expect(() => conUsuario(db, luis, 'caja', 'scrypt$b')).toThrow(/UNIQUE/)
-    db.prepare('UPDATE usuario SET activo = 0 WHERE id = ?').run(ana)
+    db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(ana)
     expect(() => conUsuario(db, luis, 'caja', 'scrypt$b')).not.toThrow()
   })
 
   it('el mismo usuario puede existir en dos restaurantes', () => {
     const { db, ana } = baseVersion4()
     aplicarMigraciones(db)
-    const otro = sembrar(db).restaurante
-    const rol = insertarVersionado(db, 'rol', otro, { nombre: 'Cajero' })
-    const id = insertarVersionado(db, 'usuario', otro, { nombre: 'Ana', rol_id: rol })
-    insertarEnTabla(db, 'usuario_credencial', {
-      usuario_id: id,
-      restaurante_id: otro,
-      pin_huella: 'otra',
-      pin_generado_en: AHORA,
-      nombre_usuario: 'caja',
-      contrasena_huella: 'scrypt$c',
+    const other = sembrar(db).restaurant
+    const role = insertarVersionado(db, 'roles', other, { name: 'Cajero' })
+    const id = insertarVersionado(db, 'users', other, { name: 'Ana', role_id: role })
+    insertarEnTabla(db, 'user_credentials', {
+      user_id: id,
+      restaurant_id: other,
+      pin_hash: 'otra',
+      pin_generated_at: AHORA,
+      username: 'caja',
+      password_hash: 'scrypt$c',
     })
     expect(() => conUsuario(db, ana, 'caja', 'scrypt$a')).not.toThrow()
   })

@@ -1,10 +1,10 @@
 import {
-  configCompleta,
-  type EventoPedido,
-  informe,
-  type MedioPago,
-  nombreDeMedio,
-  nuevoId,
+  fullConfig,
+  methodName,
+  newId,
+  type OrderEvent,
+  type PaymentMethod,
+  report,
 } from '@pos/core'
 import type { BaseSqlite } from '@pos/db'
 import { type CierreZ, nombreImpuesto } from '@pos/printing'
@@ -18,15 +18,15 @@ import { AlmacenSqlite } from '@pos/sync/sqlite'
 export interface OpcionesCierreZ {
   db: BaseSqlite
   restauranteId: string
-  zonaHoraria: string
+  timeZone: string
 }
 
 /** La configuración del restaurante con sus valores por defecto. */
 export const configDe = (o: { db: BaseSqlite; restauranteId: string }) =>
-  configCompleta(
+  fullConfig(
     JSON.parse(
       String(
-        o.db.prepare('SELECT config FROM restaurante WHERE id = ?').get(o.restauranteId)?.config ??
+        o.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(o.restauranteId)?.config ??
           '{}',
       ),
     ),
@@ -34,106 +34,105 @@ export const configDe = (o: { db: BaseSqlite; restauranteId: string }) =>
 
 /** Nombres de las personas, por id (las que ya no están siguen con su nombre). */
 export function nombresDeUsuarios(o: OpcionesCierreZ, ids: Iterable<string>) {
-  const nombres: Record<string, string> = {}
-  const consulta = o.db.prepare('SELECT nombre FROM usuario WHERE restaurante_id = ? AND id = ?')
+  const names: Record<string, string> = {}
+  const consulta = o.db.prepare('SELECT name FROM users WHERE restaurant_id = ? AND id = ?')
   for (const id of new Set(ids))
-    nombres[id] = String(consulta.get(o.restauranteId, id)?.nombre ?? 'Alguien')
-  return nombres
+    names[id] = String(consulta.get(o.restauranteId, id)?.name ?? 'Alguien')
+  return names
 }
 
 /** «sábado 24 de octubre de 2026» de un día operativo AAAA-MM-DD. */
-export const diaEnPalabras = (dia: string) =>
+export const diaEnPalabras = (day: string) =>
   new Intl.DateTimeFormat('es-CO', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
-  }).format(new Date(`${dia}T12:00:00Z`))
+  }).format(new Date(`${day}T12:00:00Z`))
 
-const fechaHora = (iso: string, zonaHoraria: string) =>
+const fechaHora = (iso: string, timeZone: string) =>
   new Intl.DateTimeFormat('es-CO', {
     day: 'numeric',
     month: 'short',
     hour: 'numeric',
     minute: '2-digit',
-    timeZone: zonaHoraria,
+    timeZone: timeZone,
   }).format(new Date(iso))
 
 /** El cierre Z de un turno cerrado; null si el turno no existe o sigue abierto. */
 export function armarCierreZ(
   o: OpcionesCierreZ,
-  turnoId: string,
-  reimpresoEn: string | null,
+  shiftId: string,
+  reprintedAt: string | null,
 ): CierreZ | null {
   const almacen = new AlmacenSqlite(o.db, o.restauranteId)
-  const cierre = cierreDeTurno(almacen, turnoId)
-  const cerrado = cierre?.cuadre.cerrado
-  if (!cierre || !cerrado) return null
+  const closeout = cierreDeTurno(almacen, shiftId)
+  const closed = closeout?.reconciliation.closed
+  if (!closeout || !closed) return null
   const config = configDe(o)
   // Un turno es de un día: aunque se cierre pasadas las 6 a. m., lleva las ventas del día en que abrió.
-  const dia = cierre.diaApertura
-  const r = informe({ ...datosDeInforme(almacen, dia, dia), config })
-  const nombres = nombresDeUsuarios(o, [cierre.abiertoPor, cierre.cerradoPor])
-  const medio = (m: { medio: MedioPago; medioPropioId: string | null }) =>
-    nombreDeMedio(m.medio, m.medioPropioId, config.medios_propios)
-  const c = cierre.cuadre
+  const day = closeout.diaApertura
+  const r = report({ ...datosDeInforme(almacen, day, day), config })
+  const names = nombresDeUsuarios(o, [closeout.abiertoPor, closeout.cerradoPor])
+  const method = (m: { method: PaymentMethod; customMethodId: string | null }) =>
+    methodName(m.method, m.customMethodId, config.custom_methods)
+  const c = closeout.reconciliation
   return {
-    restaurante: String(
-      o.db.prepare('SELECT nombre FROM restaurante WHERE id = ?').get(o.restauranteId)?.nombre ??
-        '',
+    restaurant: String(
+      o.db.prepare('SELECT name FROM restaurants WHERE id = ?').get(o.restauranteId)?.name ?? '',
     ),
-    dia: diaEnPalabras(dia),
-    abierto: fechaHora(c.abiertoEn, o.zonaHoraria),
-    cerrado: fechaHora(cerrado.hora, o.zonaHoraria),
-    abrio: nombres[cierre.abiertoPor] ?? '',
-    cerro: nombres[cierre.cerradoPor] ?? '',
-    efectivo: {
+    day: diaEnPalabras(day),
+    opened: fechaHora(c.openedAt, o.timeZone),
+    closed: fechaHora(closed.time, o.timeZone),
+    abrio: names[closeout.abiertoPor] ?? '',
+    cerro: names[closeout.cerradoPor] ?? '',
+    cash: {
       base: c.base,
-      cobrado: c.efectivo.cobrado,
-      devoluciones: c.efectivo.devoluciones,
-      entradas: c.efectivo.entradas,
-      salidas: c.efectivo.salidas,
-      pagosPropinas: c.efectivo.pagosPropinas,
-      esperado: cerrado.esperado,
-      contado: cerrado.contado,
-      diferencia: cerrado.diferencia,
+      charged: c.cash.charged,
+      refunds: c.cash.refunds,
+      entries: c.cash.entries,
+      outflows: c.cash.outflows,
+      tipPayouts: c.cash.tipPayouts,
+      expected: closed.expected,
+      counted: closed.counted,
+      variance: closed.variance,
     },
-    otrosMedios: cerrado.otrosMedios.map((m) => ({
-      nombre: medio(m),
-      esperado: m.esperado,
-      reportado: m.reportado,
-      diferencia: m.diferencia,
+    otherMethods: closed.otherMethods.map((m) => ({
+      name: method(m),
+      expected: m.expected,
+      reported: m.reported,
+      variance: m.variance,
     })),
-    justificacion: cerrado.justificacion,
-    cobrado: c.porMedio.map((m) => ({ nombre: medio(m), venta: m.venta, propina: m.propina })),
-    ventas: {
-      neto: r.ventas.neto,
-      impuestos: r.ventas.impuestos.map((i) => ({
-        nombre: nombreImpuesto(i.tipo, i.tarifa),
+    justification: closed.justification,
+    charged: c.byMethod.map((m) => ({ name: method(m), sale: m.sale, tip: m.tip })),
+    sales: {
+      net: r.sales.net,
+      taxes: r.sales.taxes.map((i) => ({
+        name: nombreImpuesto(i.type, i.rate),
         base: i.base,
-        valor: i.impuesto,
+        value: i.tax,
       })),
-      propinas: r.ventas.propinas,
-      cuentas: r.ventas.cuentas,
-      comensales: r.ventas.comensales,
-      ticketPromedio: r.ventas.ticketPromedio,
-      ajustes: r.ventas.ajustes,
+      tips: r.sales.tips,
+      checks: r.sales.checks,
+      guests: r.sales.guests,
+      averageTicket: r.sales.averageTicket,
+      settings: r.sales.settings,
       // Lo anulado en el día, como la lista de Reportes (cuenta el día en que se anuló).
-      anulado: r.anulaciones.reduce((a, x) => a + x.valor, 0),
-      cancelado: r.cancelaciones.reduce((a, x) => a + x.valor, 0),
-      descuentos: r.ventas.descuentos,
+      voided: r.voids.reduce((a, x) => a + x.value, 0),
+      canceled: r.cancellations.reduce((a, x) => a + x.value, 0),
+      discounts: r.sales.discounts,
     },
-    reimpreso: reimpresoEn ? fechaHora(reimpresoEn, o.zonaHoraria) : null,
+    reprinted: reprintedAt ? fechaHora(reprintedAt, o.timeZone) : null,
   }
 }
 
 /** La impresora de precuentas, si hay una elegida y activa. */
 export function impresoraDeCierre(o: OpcionesCierreZ): string | null {
-  const id = configDe(o).impresora_precuenta_id
+  const id = configDe(o).pre_bill_printer_id
   if (!id) return null
   const activa = o.db
-    .prepare('SELECT 1 FROM impresora WHERE restaurante_id = ? AND id = ? AND activo = 1')
+    .prepare('SELECT 1 FROM printers WHERE restaurant_id = ? AND id = ? AND active = 1')
     .get(o.restauranteId, id)
   return activa ? id : null
 }
@@ -144,28 +143,28 @@ export function impresoraDeCierre(o: OpcionesCierreZ): string | null {
  */
 export function encolarCierreZ(
   o: OpcionesCierreZ,
-  turnoId: string,
-  cuando: { evento: EventoPedido } | { reimpresoEn: string },
-): 'en_cola' | 'sin_impresora' | 'sin_cierre' {
+  shiftId: string,
+  cuando: { event: OrderEvent } | { reprintedAt: string },
+): 'queued' | 'no_printer' | 'no_closeout' {
   const impresoraId = impresoraDeCierre(o)
-  if (!impresoraId) return 'sin_impresora'
-  const reimpresoEn = 'reimpresoEn' in cuando ? cuando.reimpresoEn : null
-  const z = armarCierreZ(o, turnoId, reimpresoEn)
-  if (!z) return 'sin_cierre'
+  if (!impresoraId) return 'no_printer'
+  const reprintedAt = 'reprintedAt' in cuando ? cuando.reprintedAt : null
+  const z = armarCierreZ(o, shiftId, reprintedAt)
+  if (!z) return 'no_closeout'
   o.db
     .prepare(
-      `INSERT INTO trabajo_impresion
-         (id, restaurante_id, impresora_id, tipo, evento_id, comanda_id, contenido, creado_en)
-       VALUES (?, ?, ?, 'informe', ?, 'cierre', ?, ?)
+      `INSERT INTO print_jobs
+         (id, restaurant_id, printer_id, type, event_id, ticket_id, content, created_at)
+       VALUES (?, ?, ?, 'report', ?, 'closeout', ?, ?)
        ON CONFLICT DO NOTHING`,
     )
     .run(
-      nuevoId(),
+      newId(),
       o.restauranteId,
       impresoraId,
-      'evento' in cuando ? cuando.evento.id : null,
+      'event' in cuando ? cuando.event.id : null,
       JSON.stringify(z),
-      'evento' in cuando ? cuando.evento.recibido_en : (reimpresoEn as string),
+      'event' in cuando ? cuando.event.received_at : (reprintedAt as string),
     )
-  return 'en_cola'
+  return 'queued'
 }

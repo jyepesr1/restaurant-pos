@@ -4,13 +4,13 @@
 const ESPERA_MS = 8000
 
 export class ErrorApi extends Error {
-  readonly codigo: string
+  readonly code: string
   /** Cuánto esperar antes de otro intento (tras varios PIN errados, ADR-008). */
   readonly esperaMs: number
 
-  constructor(codigo: string, mensaje: string, esperaMs = 0) {
-    super(mensaje)
-    this.codigo = codigo
+  constructor(code: string, message: string, esperaMs = 0) {
+    super(message)
+    this.code = code
     this.esperaMs = esperaMs
   }
 }
@@ -35,15 +35,15 @@ export async function llamar<T>(
       signal: AbortSignal.timeout(ESPERA_MS),
     })
   } catch {
-    throw new ErrorApi('sin_conexion', SIN_HUB)
+    throw new ErrorApi('offline', SIN_HUB)
   }
   if (r.status === 204) return undefined as T
-  const datos = await r.json().catch(() => null)
+  const data = await r.json().catch(() => null)
   if (!r.ok)
     throw new ErrorApi(
-      String(datos?.error ?? 'error'),
-      String(datos?.mensaje ?? `La caja respondió con un error (${r.status}). Intenta de nuevo.`),
-      Number(datos?.espera_ms ?? 0),
+      String(data?.error ?? 'error'),
+      String(data?.message ?? `La caja respondió con un error (${r.status}). Intenta de nuevo.`),
+      Number(data?.espera_ms ?? 0),
     )
-  return datos as T
+  return data as T
 }

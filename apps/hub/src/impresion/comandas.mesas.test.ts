@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { insertarVersionado, SISTEMA } from '../acceso/registros'
 import { type Equipo, type MontajeImpresion, montarImpresion } from './montaje-impresion'
@@ -8,134 +8,132 @@ import { type Equipo, type MontajeImpresion, montarImpresion } from './montaje-i
 
 function conImpresoras(t: MontajeImpresion) {
   return {
-    cocina: t.impresoraNueva('Cocina', [t.cocina]),
-    barra: t.impresoraNueva('Barra', [t.barra]),
+    kitchen: t.impresoraNueva('Cocina', [t.kitchen]),
+    bar: t.impresoraNueva('Barra', [t.bar]),
   }
 }
 
-const trabajosTipo = (t: MontajeImpresion, tipo: string) =>
-  t.trabajos().filter((f) => t.contenido(f).tipo === tipo)
+const trabajosTipo = (t: MontajeImpresion, type: string) =>
+  t.trabajos().filter((f) => t.content(f).type === type)
 
 /** El ítem movido tal como lo manda el equipo, tomado del pedido real. */
-function movidoDe(t: MontajeImpresion, pedido: string, itemId: string) {
-  const i = t.hub.pedido(pedido)?.items[itemId]
+function movidoDe(t: MontajeImpresion, order: string, itemId: string) {
+  const i = t.hub.order(order)?.items[itemId]
   if (!i) throw new Error('sin ítem')
   return {
     item: {
       item_id: i.id,
-      producto_id: i.productoId,
-      variante_id: i.varianteId,
-      nombre: i.nombre,
-      precio_unitario: i.precioUnitario,
-      impuesto_tipo: i.impuestoTipo,
-      tarifa: i.tarifa,
-      cantidad: i.cantidad,
-      comensal: i.comensal,
-      curso: i.curso,
-      modificadores: i.modificadores.map((m) => ({
-        modificador_id: m.modificadorId,
-        nombre: m.nombre,
-        precio_extra: m.precioExtra,
+      product_id: i.productId,
+      variant_id: i.variantId,
+      name: i.name,
+      unit_price: i.unitPrice,
+      tax_type: i.taxType,
+      rate: i.rate,
+      quantity: i.quantity,
+      guest: i.guest,
+      course: i.course,
+      modifiers: i.modifiers.map((m) => ({
+        modifier_id: m.modifierId,
+        name: m.name,
+        extra_price: m.extraPrice,
       })),
-      notas: i.notas,
+      notes: i.notes,
     },
-    estado: i.estado,
-    cantidad_anulada: i.cantidadAnulada,
-    agregado_por: i.agregadoPor,
+    status: i.status,
+    voided_quantity: i.voidedQuantity,
+    added_by: i.addedBy,
   }
 }
 
-function mover(t: MontajeImpresion, e: Equipo, origen: string, destino: string, ids: string[]) {
+function move(t: MontajeImpresion, e: Equipo, source: string, target: string, ids: string[]) {
   return e.mandar(
-    origen,
-    'ItemsMovidos',
-    { pedido_destino_id: destino, items: ids.map((id) => movidoDe(t, origen, id)) },
-    { relacionados: [destino] },
+    source,
+    'ItemsMoved',
+    { target_order_id: target, items: ids.map((id) => movidoDe(t, source, id)) },
+    { related: [target] },
   )
 }
 
-const cancelar = (caja: Equipo, pedido: string) =>
-  caja.mandar(pedido, 'PedidoCancelado', {}, { motivo: 'Error del mesero' })
+const cancel = (register: Equipo, order: string) =>
+  register.mandar(order, 'OrderCanceled', {}, { reason: 'Error del mesero' })
 
 describe('cancelar el pedido', () => {
   it('lo que tenía la cocina sale como ANULAR, una comanda por la que salió, con su número', async () => {
     const t = montarImpresion()
     const imp = conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const caja = t.equipo('admin', 'caja')
-    const { pedido, items } = t.pedidoCon(
+    const ana = t.device('waiter')
+    const register = t.device('admin', 'register')
+    const { order, items } = t.orderWith(
       ana,
       [
-        { nombre: 'Tagliata', estacion: t.cocina, cantidad: 2 },
-        { nombre: 'Aperol Spritz', estacion: t.barra },
+        { name: 'Tagliata', station: t.kitchen, quantity: 2 },
+        { name: 'Aperol Spritz', station: t.bar },
       ],
-      t.mesa('5'),
+      t.table('5'),
     )
-    t.enviar(ana, pedido, items)
-    await t.cola.vuelta()
-    expect(cancelar(caja, pedido).estado).toBe('confirmado')
-    const anulaciones = trabajosTipo(t, 'anulacion')
-    expect(anulaciones).toHaveLength(2)
-    const porEstacion = Object.fromEntries(
-      anulaciones.map((f) => [t.contenido(f).estacion, t.contenido(f)]),
-    )
-    expect(porEstacion.Cocina).toMatchObject({ destino: 'Mesa 5', numero: 1 })
-    expect(porEstacion.Cocina.items).toMatchObject([{ nombre: 'Tagliata', cantidad: 2 }])
-    expect(porEstacion.Barra.items).toMatchObject([{ nombre: 'Aperol Spritz', cantidad: 1 }])
-    await t.cola.vuelta()
-    expect(imp.cocina.papel.textos().at(-1)).toContain('ANULAR')
+    t.send(ana, order, items)
+    await t.cola.runOnce()
+    expect(cancel(register, order).status).toBe('confirmed')
+    const voids = trabajosTipo(t, 'voidEntry')
+    expect(voids).toHaveLength(2)
+    const porEstacion = Object.fromEntries(voids.map((f) => [t.content(f).station, t.content(f)]))
+    expect(porEstacion.Cocina).toMatchObject({ target: 'Mesa 5', numero: 1 })
+    expect(porEstacion.Cocina.items).toMatchObject([{ name: 'Tagliata', quantity: 2 }])
+    expect(porEstacion.Barra.items).toMatchObject([{ name: 'Aperol Spritz', quantity: 1 }])
+    await t.cola.runOnce()
+    expect(imp.kitchen.papel.textos().at(-1)).toContain('ANULAR')
   })
 
   it('solo se anula lo que sigue en cocina: no lo entregado ni lo anulado, y las unidades que quedan', async () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const caja = t.equipo('admin', 'caja')
-    const { pedido, items } = t.pedidoCon(
+    const ana = t.device('waiter')
+    const register = t.device('admin', 'register')
+    const { order, items } = t.orderWith(
       ana,
       [
-        { nombre: 'Tagliata', estacion: t.cocina, cantidad: 3 },
-        { nombre: 'Risotto', estacion: t.cocina },
-        { nombre: 'Pizza', estacion: t.cocina },
+        { name: 'Tagliata', station: t.kitchen, quantity: 3 },
+        { name: 'Risotto', station: t.kitchen },
+        { name: 'Pizza', station: t.kitchen },
       ],
-      t.mesa('5'),
+      t.table('5'),
     )
-    t.enviar(ana, pedido, items)
+    t.send(ana, order, items)
     const [tagliata, risotto, pizza] = items
-    ana.mandar(pedido, 'ItemEntregado', { item_ids: [risotto?.id] })
-    caja.mandar(pedido, 'ItemAnulado', {
+    ana.mandar(order, 'ItemServed', { item_ids: [risotto?.id] })
+    register.mandar(order, 'ItemVoided', {
       item_id: tagliata?.id,
-      cantidad: 1,
-      ya_preparado: false,
-      comanda_id: null,
+      quantity: 1,
+      already_prepared: false,
+      ticket_id: null,
     })
-    caja.mandar(pedido, 'ItemAnulado', {
+    register.mandar(order, 'ItemVoided', {
       item_id: pizza?.id,
-      cantidad: 1,
-      ya_preparado: false,
-      comanda_id: null,
+      quantity: 1,
+      already_prepared: false,
+      ticket_id: null,
     })
-    const antes = trabajosTipo(t, 'anulacion').length
-    cancelar(caja, pedido)
-    const nuevas = trabajosTipo(t, 'anulacion').slice(antes)
-    expect(nuevas).toHaveLength(1)
-    expect(t.contenido(nuevas[0]).items).toMatchObject([{ nombre: 'Tagliata', cantidad: 2 }])
+    const before = trabajosTipo(t, 'voidEntry').length
+    cancel(register, order)
+    const newOnes = trabajosTipo(t, 'voidEntry').slice(before)
+    expect(newOnes).toHaveLength(1)
+    expect(t.content(newOnes[0]).items).toMatchObject([{ name: 'Tagliata', quantity: 2 }])
   })
 
   it('sin nada en cocina (solo pendientes, entregados o un pedido vacío) no imprime nada', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const caja = t.equipo('admin', 'caja')
-    const vacio = t.abrir(ana, t.mesa('1'))
-    const pendientes = t.pedidoCon(ana, [{ nombre: 'Pizza', estacion: t.cocina }], t.mesa('2'))
-    const entregado = t.pedidoCon(ana, [{ nombre: 'Risotto', estacion: t.cocina }], t.mesa('3'))
-    t.enviar(ana, entregado.pedido, entregado.items)
-    ana.mandar(entregado.pedido, 'ItemEntregado', { item_ids: [entregado.items[0]?.id] })
+    const ana = t.device('waiter')
+    const register = t.device('admin', 'register')
+    const empty = t.open(ana, t.table('1'))
+    const pendingList = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], t.table('2'))
+    const served = t.orderWith(ana, [{ name: 'Risotto', station: t.kitchen }], t.table('3'))
+    t.send(ana, served.order, served.items)
+    ana.mandar(served.order, 'ItemServed', { item_ids: [served.items[0]?.id] })
     const hechos = t.trabajos().length
-    expect(cancelar(caja, vacio).estado).toBe('confirmado')
-    expect(cancelar(caja, pendientes.pedido).estado).toBe('confirmado')
-    expect(cancelar(caja, entregado.pedido).estado).toBe('confirmado')
+    expect(cancel(register, empty).status).toBe('confirmed')
+    expect(cancel(register, pendingList.order).status).toBe('confirmed')
+    expect(cancel(register, served.order).status).toBe('confirmed')
     expect(t.trabajos()).toHaveLength(hechos)
     expect(t.fallosGuardar).toEqual([])
   })
@@ -143,29 +141,29 @@ describe('cancelar el pedido', () => {
   it('un platillo ya listo todavía se anula; una cancelación rechazada no imprime', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const caja = t.equipo('admin', 'caja')
-    const { pedido, items } = t.pedidoCon(ana, [{ nombre: 'Tagliata', estacion: t.cocina }])
-    t.enviar(ana, pedido, items)
-    ana.mandar(pedido, 'ItemListo', { item_ids: [items[0]?.id] })
+    const ana = t.device('waiter')
+    const register = t.device('admin', 'register')
+    const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
+    t.send(ana, order, items)
+    ana.mandar(order, 'ItemReady', { item_ids: [items[0]?.id] })
     // El mesero no puede cancelar: se rechaza y no hay comanda.
-    expect(ana.mandar(pedido, 'PedidoCancelado', {}, { motivo: 'x' }).estado).toBe('rechazado')
-    expect(trabajosTipo(t, 'anulacion')).toHaveLength(0)
-    cancelar(caja, pedido)
-    expect(trabajosTipo(t, 'anulacion')).toHaveLength(1)
+    expect(ana.mandar(order, 'OrderCanceled', {}, { reason: 'x' }).status).toBe('rejected')
+    expect(trabajosTipo(t, 'voidEntry')).toHaveLength(0)
+    cancel(register, order)
+    expect(trabajosTipo(t, 'voidEntry')).toHaveLength(1)
   })
 
   it('lleva "Mesa 5 + 6" cuando el pedido tenía mesas unidas', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const caja = t.equipo('admin', 'caja')
-    const [m5, m6] = [t.mesa('5'), t.mesa('6')]
-    const { pedido, items } = t.pedidoCon(ana, [{ nombre: 'Pizza', estacion: t.cocina }], m5)
-    ana.mandar(pedido, 'MesasUnidas', { mesa_ids: [m6] })
-    t.enviar(ana, pedido, items)
-    cancelar(caja, pedido)
-    expect(t.contenido(trabajosTipo(t, 'anulacion')[0]).destino).toBe('Mesa 5 + 6')
+    const ana = t.device('waiter')
+    const register = t.device('admin', 'register')
+    const [m5, m6] = [t.table('5'), t.table('6')]
+    const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], m5)
+    ana.mandar(order, 'TablesMerged', { table_ids: [m6] })
+    t.send(ana, order, items)
+    cancel(register, order)
+    expect(t.content(trabajosTipo(t, 'voidEntry')[0]).target).toBe('Mesa 5 + 6')
   })
 })
 
@@ -173,46 +171,44 @@ describe('cambiar de mesa (traslado)', () => {
   it('con platos en cocina, cada estación recibe CAMBIO DE MESA con la mesa nueva y «Antes: Mesa 5»', async () => {
     const t = montarImpresion()
     const imp = conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const { pedido, items } = t.pedidoCon(
+    const ana = t.device('waiter')
+    const { order, items } = t.orderWith(
       ana,
       [
-        { nombre: 'Tagliata', estacion: t.cocina },
-        { nombre: 'Aperol Spritz', estacion: t.barra },
+        { name: 'Tagliata', station: t.kitchen },
+        { name: 'Aperol Spritz', station: t.bar },
       ],
-      t.mesa('5'),
+      t.table('5'),
     )
-    t.enviar(ana, pedido, items)
-    await t.cola.vuelta()
-    const m6 = t.mesa('6')
-    expect(ana.mandar(pedido, 'PedidoMovidoDeMesa', { mesa_destino_id: m6 }).estado).toBe(
-      'confirmado',
-    )
-    const traslados = trabajosTipo(t, 'traslado')
+    t.send(ana, order, items)
+    await t.cola.runOnce()
+    const m6 = t.table('6')
+    expect(ana.mandar(order, 'OrderMovedTable', { target_table_id: m6 }).status).toBe('confirmed')
+    const traslados = trabajosTipo(t, 'move')
     expect(traslados).toHaveLength(2)
     for (const f of traslados)
-      expect(t.contenido(f)).toMatchObject({ destino: 'Mesa 6', antes: 'Mesa 5' })
-    await t.cola.vuelta()
-    const texto = imp.cocina.papel.textos().at(-1) as string
-    expect(texto).toContain('CAMBIO DE MESA')
-    expect(texto).toContain('Antes: Mesa 5')
-    expect(texto).toMatch(/Mesa 6 +#1/)
-    expect(texto).toContain('1 x Tagliata')
+      expect(t.content(f)).toMatchObject({ target: 'Mesa 6', before: 'Mesa 5' })
+    await t.cola.runOnce()
+    const text = imp.kitchen.papel.textos().at(-1) as string
+    expect(text).toContain('CAMBIO DE MESA')
+    expect(text).toContain('Antes: Mesa 5')
+    expect(text).toMatch(/Mesa 6 +#1/)
+    expect(text).toContain('1 x Tagliata')
   })
 
   it('conserva el número de la comanda original y no lleva la nota del pedido', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const { pedido, items } = t.pedidoCon(
+    const ana = t.device('waiter')
+    const { order, items } = t.orderWith(
       ana,
-      [{ nombre: 'Tagliata', estacion: t.cocina }],
-      t.mesa('5'),
+      [{ name: 'Tagliata', station: t.kitchen }],
+      t.table('5'),
     )
-    ana.mandar(pedido, 'NotaPedidoCambiada', { notas: 'alérgico al maní' })
-    t.enviar(ana, pedido, items)
-    ana.mandar(pedido, 'PedidoMovidoDeMesa', { mesa_destino_id: t.mesa('6') })
-    const c = t.contenido(trabajosTipo(t, 'traslado')[0])
+    ana.mandar(order, 'OrderNoteChanged', { notes: 'alérgico al maní' })
+    t.send(ana, order, items)
+    ana.mandar(order, 'OrderMovedTable', { target_table_id: t.table('6') })
+    const c = t.content(trabajosTipo(t, 'move')[0])
     expect(c.numero).toBe(1)
     expect(c.notaPedido ?? null).toBeNull()
   })
@@ -220,89 +216,84 @@ describe('cambiar de mesa (traslado)', () => {
   it('nada en cocina, nada que avisar: pendientes, entregados y pedidos sin enviar no imprimen', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const a = t.pedidoCon(ana, [{ nombre: 'Pizza', estacion: t.cocina }], t.mesa('1'))
-    const b = t.pedidoCon(ana, [{ nombre: 'Risotto', estacion: t.cocina }], t.mesa('2'))
-    t.enviar(ana, b.pedido, b.items)
-    ana.mandar(b.pedido, 'ItemEntregado', { item_ids: [b.items[0]?.id] })
-    expect(
-      ana.mandar(a.pedido, 'PedidoMovidoDeMesa', { mesa_destino_id: t.mesa('8') }).estado,
-    ).toBe('confirmado')
-    expect(
-      ana.mandar(b.pedido, 'PedidoMovidoDeMesa', { mesa_destino_id: t.mesa('9') }).estado,
-    ).toBe('confirmado')
-    expect(trabajosTipo(t, 'traslado')).toHaveLength(0)
+    const ana = t.device('waiter')
+    const a = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], t.table('1'))
+    const b = t.orderWith(ana, [{ name: 'Risotto', station: t.kitchen }], t.table('2'))
+    t.send(ana, b.order, b.items)
+    ana.mandar(b.order, 'ItemServed', { item_ids: [b.items[0]?.id] })
+    expect(ana.mandar(a.order, 'OrderMovedTable', { target_table_id: t.table('8') }).status).toBe(
+      'confirmed',
+    )
+    expect(ana.mandar(b.order, 'OrderMovedTable', { target_table_id: t.table('9') }).status).toBe(
+      'confirmed',
+    )
+    expect(trabajosTipo(t, 'move')).toHaveLength(0)
   })
 
   it('pasarse a la misma mesa no imprime', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const m5 = t.mesa('5')
-    const { pedido, items } = t.pedidoCon(ana, [{ nombre: 'Pizza', estacion: t.cocina }], m5)
-    t.enviar(ana, pedido, items)
-    ana.mandar(pedido, 'PedidoMovidoDeMesa', { mesa_destino_id: m5 })
-    expect(trabajosTipo(t, 'traslado')).toHaveLength(0)
+    const ana = t.device('waiter')
+    const m5 = t.table('5')
+    const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], m5)
+    t.send(ana, order, items)
+    ana.mandar(order, 'OrderMovedTable', { target_table_id: m5 })
+    expect(trabajosTipo(t, 'move')).toHaveLength(0)
   })
 
   it('con mesas unidas: «Antes: Mesa 5 + 6» y la nueva sigue con su grupo', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const [m5, m6, m7] = [t.mesa('5'), t.mesa('6'), t.mesa('7')]
-    const { pedido, items } = t.pedidoCon(ana, [{ nombre: 'Pizza', estacion: t.cocina }], m5)
-    ana.mandar(pedido, 'MesasUnidas', { mesa_ids: [m6] })
-    t.enviar(ana, pedido, items)
-    ana.mandar(pedido, 'PedidoMovidoDeMesa', { mesa_destino_id: m7 })
-    expect(t.contenido(trabajosTipo(t, 'traslado')[0])).toMatchObject({
-      antes: 'Mesa 5 + 6',
-      destino: 'Mesa 7 + 6',
+    const ana = t.device('waiter')
+    const [m5, m6, m7] = [t.table('5'), t.table('6'), t.table('7')]
+    const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], m5)
+    ana.mandar(order, 'TablesMerged', { table_ids: [m6] })
+    t.send(ana, order, items)
+    ana.mandar(order, 'OrderMovedTable', { target_table_id: m7 })
+    expect(t.content(trabajosTipo(t, 'move')[0])).toMatchObject({
+      before: 'Mesa 5 + 6',
+      target: 'Mesa 7 + 6',
     })
   })
 
   it('pasarse a una de sus mesas unidas: la nueva es solo esa', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const [m5, m6] = [t.mesa('5'), t.mesa('6')]
-    const { pedido, items } = t.pedidoCon(ana, [{ nombre: 'Pizza', estacion: t.cocina }], m5)
-    ana.mandar(pedido, 'MesasUnidas', { mesa_ids: [m6] })
-    t.enviar(ana, pedido, items)
-    ana.mandar(pedido, 'PedidoMovidoDeMesa', { mesa_destino_id: m6 })
-    expect(t.contenido(trabajosTipo(t, 'traslado')[0])).toMatchObject({
-      antes: 'Mesa 5 + 6',
-      destino: 'Mesa 6',
+    const ana = t.device('waiter')
+    const [m5, m6] = [t.table('5'), t.table('6')]
+    const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], m5)
+    ana.mandar(order, 'TablesMerged', { table_ids: [m6] })
+    t.send(ana, order, items)
+    ana.mandar(order, 'OrderMovedTable', { target_table_id: m6 })
+    expect(t.content(trabajosTipo(t, 'move')[0])).toMatchObject({
+      before: 'Mesa 5 + 6',
+      target: 'Mesa 6',
     })
   })
 
   it('unir o separar mesas sin cambiar la principal no avisa a la cocina', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const [m5, m6] = [t.mesa('5'), t.mesa('6')]
-    const { pedido, items } = t.pedidoCon(ana, [{ nombre: 'Pizza', estacion: t.cocina }], m5)
-    t.enviar(ana, pedido, items)
-    const antes = t.trabajos().length
-    ana.mandar(pedido, 'MesasUnidas', { mesa_ids: [m6] })
-    ana.mandar(pedido, 'MesasSeparadas', { mesa_ids: [m6] })
-    expect(t.trabajos()).toHaveLength(antes)
+    const ana = t.device('waiter')
+    const [m5, m6] = [t.table('5'), t.table('6')]
+    const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], m5)
+    t.send(ana, order, items)
+    const before = t.trabajos().length
+    ana.mandar(order, 'TablesMerged', { table_ids: [m6] })
+    ana.mandar(order, 'TablesSeparated', { table_ids: [m6] })
+    expect(t.trabajos()).toHaveLength(before)
   })
 
   it('un pedido de barra que pasa a una mesa dice «Antes: Barra»', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const { pedido, items } = t.pedidoCon(
-      ana,
-      [{ nombre: 'Pizza', estacion: t.cocina }],
-      null,
-      'barra',
-    )
-    t.enviar(ana, pedido, items)
-    ana.mandar(pedido, 'PedidoMovidoDeMesa', { mesa_destino_id: t.mesa('4') })
-    expect(t.contenido(trabajosTipo(t, 'traslado')[0])).toMatchObject({
-      antes: 'Barra',
-      destino: 'Mesa 4',
+    const ana = t.device('waiter')
+    const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], null, 'bar')
+    t.send(ana, order, items)
+    ana.mandar(order, 'OrderMovedTable', { target_table_id: t.table('4') })
+    expect(t.content(trabajosTipo(t, 'move')[0])).toMatchObject({
+      before: 'Barra',
+      target: 'Mesa 4',
     })
   })
 })
@@ -311,115 +302,110 @@ describe('mover productos (traslado)', () => {
   function origenConDosEstaciones() {
     const t = montarImpresion()
     const imp = conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const m5 = t.mesa('5')
-    const { pedido, items } = t.pedidoCon(
+    const ana = t.device('waiter')
+    const m5 = t.table('5')
+    const { order, items } = t.orderWith(
       ana,
       [
-        { nombre: 'Tagliata', estacion: t.cocina },
-        { nombre: 'Risotto', estacion: t.cocina },
-        { nombre: 'Aperol Spritz', estacion: t.barra },
+        { name: 'Tagliata', station: t.kitchen },
+        { name: 'Risotto', station: t.kitchen },
+        { name: 'Aperol Spritz', station: t.bar },
       ],
       m5,
     )
-    t.enviar(ana, pedido, items)
-    return { t, imp, ana, pedido, items, m5 }
+    t.send(ana, order, items)
+    return { t, imp, ana, order, items, m5 }
   }
 
   it('a una mesa libre (pedido nuevo): solo lo movido sale, con el destino y «Antes: Mesa 5»', async () => {
-    const { t, imp, ana, pedido, items } = origenConDosEstaciones()
-    const destino = nuevoId()
-    ana.mandar(destino, 'PedidoAbierto', { canal: 'salon', mesa_id: t.mesa('8'), comensales: 1 })
-    expect(mover(t, ana, pedido, destino, [items[1]?.id as string]).estado).toBe('confirmado')
-    const traslados = trabajosTipo(t, 'traslado')
+    const { t, imp, ana, order, items } = origenConDosEstaciones()
+    const target = newId()
+    ana.mandar(target, 'OrderOpened', { channel: 'dine_in', table_id: t.table('8'), guests: 1 })
+    expect(move(t, ana, order, target, [items[1]?.id as string]).status).toBe('confirmed')
+    const traslados = trabajosTipo(t, 'move')
     expect(traslados).toHaveLength(1)
-    expect(t.contenido(traslados[0])).toMatchObject({
-      estacion: 'Cocina',
-      destino: 'Mesa 8',
-      antes: 'Mesa 5',
+    expect(t.content(traslados[0])).toMatchObject({
+      station: 'Cocina',
+      target: 'Mesa 8',
+      before: 'Mesa 5',
       numero: 1,
     })
-    expect(t.contenido(traslados[0]).items).toMatchObject([{ nombre: 'Risotto' }])
-    await t.cola.vuelta()
-    expect(imp.cocina.papel.textos().at(-1)).toContain('Antes: Mesa 5')
+    expect(t.content(traslados[0]).items).toMatchObject([{ name: 'Risotto' }])
+    await t.cola.runOnce()
+    expect(imp.kitchen.papel.textos().at(-1)).toContain('Antes: Mesa 5')
   })
 
   it('a un pedido que ya existe con productos: el destino es la mesa de ese pedido', () => {
-    const { t, ana, pedido, items } = origenConDosEstaciones()
-    const otro = t.pedidoCon(ana, [{ nombre: 'Pizza', estacion: t.cocina }], t.mesa('9'))
-    mover(t, ana, pedido, otro.pedido, [items[0]?.id as string])
-    expect(t.contenido(trabajosTipo(t, 'traslado')[0])).toMatchObject({
-      destino: 'Mesa 9',
-      antes: 'Mesa 5',
+    const { t, ana, order, items } = origenConDosEstaciones()
+    const other = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], t.table('9'))
+    move(t, ana, order, other.order, [items[0]?.id as string])
+    expect(t.content(trabajosTipo(t, 'move')[0])).toMatchObject({
+      target: 'Mesa 9',
+      before: 'Mesa 5',
     })
-    expect(t.contenido(trabajosTipo(t, 'traslado')[0]).items).toMatchObject([
-      { nombre: 'Tagliata' },
-    ])
+    expect(t.content(trabajosTipo(t, 'move')[0]).items).toMatchObject([{ name: 'Tagliata' }])
   })
 
   it('un destino con mesas unidas se anuncia «Mesa 8 + 9»', () => {
-    const { t, ana, pedido, items } = origenConDosEstaciones()
-    const [m8, m9] = [t.mesa('8'), t.mesa('9')]
-    const otro = t.pedidoCon(ana, [{ nombre: 'Pizza', estacion: t.cocina }], m8)
-    ana.mandar(otro.pedido, 'MesasUnidas', { mesa_ids: [m9] })
-    mover(t, ana, pedido, otro.pedido, [items[0]?.id as string])
-    expect(t.contenido(trabajosTipo(t, 'traslado')[0]).destino).toBe('Mesa 8 + 9')
+    const { t, ana, order, items } = origenConDosEstaciones()
+    const [m8, m9] = [t.table('8'), t.table('9')]
+    const other = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], m8)
+    ana.mandar(other.order, 'TablesMerged', { table_ids: [m9] })
+    move(t, ana, order, other.order, [items[0]?.id as string])
+    expect(t.content(trabajosTipo(t, 'move')[0]).target).toBe('Mesa 8 + 9')
   })
 
   it('platos de dos estaciones: una comanda de traslado por la que salieron', () => {
-    const { t, ana, pedido, items } = origenConDosEstaciones()
-    const destino = nuevoId()
-    ana.mandar(destino, 'PedidoAbierto', { canal: 'salon', mesa_id: t.mesa('8'), comensales: 1 })
-    mover(
+    const { t, ana, order, items } = origenConDosEstaciones()
+    const target = newId()
+    ana.mandar(target, 'OrderOpened', { channel: 'dine_in', table_id: t.table('8'), guests: 1 })
+    move(
       t,
       ana,
-      pedido,
-      destino,
+      order,
+      target,
       items.map((i) => i.id),
     )
     const porEstacion = Object.fromEntries(
-      trabajosTipo(t, 'traslado').map((f) => [
-        t.contenido(f).estacion,
-        t.contenido(f).items.length,
-      ]),
+      trabajosTipo(t, 'move').map((f) => [t.content(f).station, t.content(f).items.length]),
     )
     expect(porEstacion).toEqual({ Cocina: 2, Barra: 1 })
   })
 
   it('lo pendiente o entregado que se mueve no avisa a la cocina; lo demás, sí', () => {
-    const { t, ana, pedido, items } = origenConDosEstaciones()
-    const pendiente = t.agregar(ana, pedido, { nombre: 'Pan', estacion: t.cocina })
-    ana.mandar(pedido, 'ItemEntregado', { item_ids: [items[1]?.id] })
-    const destino = nuevoId()
-    ana.mandar(destino, 'PedidoAbierto', { canal: 'salon', mesa_id: t.mesa('8'), comensales: 1 })
-    mover(t, ana, pedido, destino, [pendiente.id, items[1]?.id as string])
-    expect(trabajosTipo(t, 'traslado')).toHaveLength(0)
-    mover(t, ana, pedido, destino, [items[0]?.id as string])
-    expect(trabajosTipo(t, 'traslado')).toHaveLength(1)
+    const { t, ana, order, items } = origenConDosEstaciones()
+    const pending = t.add(ana, order, { name: 'Pan', station: t.kitchen })
+    ana.mandar(order, 'ItemServed', { item_ids: [items[1]?.id] })
+    const target = newId()
+    ana.mandar(target, 'OrderOpened', { channel: 'dine_in', table_id: t.table('8'), guests: 1 })
+    move(t, ana, order, target, [pending.id, items[1]?.id as string])
+    expect(trabajosTipo(t, 'move')).toHaveLength(0)
+    move(t, ana, order, target, [items[0]?.id as string])
+    expect(trabajosTipo(t, 'move')).toHaveLength(1)
   })
 
   it('moverlo otra vez sigue encontrando la comanda de su envío original', () => {
-    const { t, ana, pedido, items } = origenConDosEstaciones()
-    const [uno, dos] = [nuevoId(), nuevoId()]
-    ana.mandar(uno, 'PedidoAbierto', { canal: 'salon', mesa_id: t.mesa('8'), comensales: 1 })
-    ana.mandar(dos, 'PedidoAbierto', { canal: 'salon', mesa_id: t.mesa('9'), comensales: 1 })
-    mover(t, ana, pedido, uno, [items[0]?.id as string])
-    mover(t, ana, uno, dos, [items[0]?.id as string])
-    const traslados = trabajosTipo(t, 'traslado')
+    const { t, ana, order, items } = origenConDosEstaciones()
+    const [one, two] = [newId(), newId()]
+    ana.mandar(one, 'OrderOpened', { channel: 'dine_in', table_id: t.table('8'), guests: 1 })
+    ana.mandar(two, 'OrderOpened', { channel: 'dine_in', table_id: t.table('9'), guests: 1 })
+    move(t, ana, order, one, [items[0]?.id as string])
+    move(t, ana, one, two, [items[0]?.id as string])
+    const traslados = trabajosTipo(t, 'move')
     expect(traslados).toHaveLength(2)
-    expect(t.contenido(traslados[1])).toMatchObject({
-      destino: 'Mesa 9',
-      antes: 'Mesa 8',
+    expect(t.content(traslados[1])).toMatchObject({
+      target: 'Mesa 9',
+      before: 'Mesa 8',
       numero: 1,
     })
   })
 
   it('un movimiento rechazado no imprime', () => {
-    const { t, ana, pedido, items } = origenConDosEstaciones()
-    const destino = nuevoId() // no existe
-    const r = mover(t, ana, pedido, destino, [items[0]?.id as string])
-    expect(r.estado).toBe('rechazado')
-    expect(trabajosTipo(t, 'traslado')).toHaveLength(0)
+    const { t, ana, order, items } = origenConDosEstaciones()
+    const target = newId() // no existe
+    const r = move(t, ana, order, target, [items[0]?.id as string])
+    expect(r.status).toBe('rejected')
+    expect(trabajosTipo(t, 'move')).toHaveLength(0)
   })
 })
 
@@ -427,36 +413,34 @@ describe('reimprimir la comanda de platos que se movieron', () => {
   it('ComandaReimpresa en el pedido de destino encuentra la comanda del origen', async () => {
     const t = montarImpresion()
     const imp = conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const { pedido, items } = t.pedidoCon(
+    const ana = t.device('waiter')
+    const { order, items } = t.orderWith(
       ana,
-      [{ nombre: 'Tagliata', estacion: t.cocina }],
-      t.mesa('5'),
+      [{ name: 'Tagliata', station: t.kitchen }],
+      t.table('5'),
     )
-    const enviado = t.enviar(ana, pedido, items)
-    const destino = nuevoId()
-    ana.mandar(destino, 'PedidoAbierto', { canal: 'salon', mesa_id: t.mesa('8'), comensales: 1 })
-    mover(t, ana, pedido, destino, [items[0]?.id as string])
-    await t.cola.vuelta()
-    const comandaId = enviado.comandas[0]?.comanda_id
-    expect(ana.mandar(destino, 'ComandaReimpresa', { comanda_id: comandaId }).estado).toBe(
-      'confirmado',
-    )
-    const reimpresiones = trabajosTipo(t, 'reimpresion')
+    const sent = t.send(ana, order, items)
+    const target = newId()
+    ana.mandar(target, 'OrderOpened', { channel: 'dine_in', table_id: t.table('8'), guests: 1 })
+    move(t, ana, order, target, [items[0]?.id as string])
+    await t.cola.runOnce()
+    const comandaId = sent.tickets[0]?.ticket_id
+    expect(ana.mandar(target, 'TicketReprinted', { ticket_id: comandaId }).status).toBe('confirmed')
+    const reimpresiones = trabajosTipo(t, 'reprinting')
     expect(reimpresiones).toHaveLength(1)
-    expect(t.contenido(reimpresiones[0])).toMatchObject({ destino: 'Mesa 8', numero: 1 })
-    expect(t.contenido(reimpresiones[0]).items).toMatchObject([{ nombre: 'Tagliata' }])
-    await t.cola.vuelta()
-    expect(imp.cocina.papel.textos().at(-1)).toContain('REIMPRESIÓN')
+    expect(t.content(reimpresiones[0])).toMatchObject({ target: 'Mesa 8', numero: 1 })
+    expect(t.content(reimpresiones[0]).items).toMatchObject([{ name: 'Tagliata' }])
+    await t.cola.runOnce()
+    expect(imp.kitchen.papel.textos().at(-1)).toContain('REIMPRESIÓN')
   })
 
   it('una comanda que no existe en ningún pedido no imprime nada', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const { pedido } = t.pedidoCon(ana, [{ nombre: 'Tagliata', estacion: t.cocina }])
-    ana.mandar(pedido, 'ComandaReimpresa', { comanda_id: nuevoId() })
-    expect(trabajosTipo(t, 'reimpresion')).toHaveLength(0)
+    const ana = t.device('waiter')
+    const { order } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
+    ana.mandar(order, 'TicketReprinted', { ticket_id: newId() })
+    expect(trabajosTipo(t, 'reprinting')).toHaveLength(0)
   })
 })
 
@@ -464,73 +448,65 @@ describe('varios restaurantes en la misma base (mesas)', () => {
   it('el nombre de la mesa se busca en el restaurante del evento: una mesa de otro no se imprime', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const otro = nuevoId()
+    const other = newId()
     t.db
       .prepare(
-        `INSERT INTO restaurante (id, restaurante_id, creado_en, actualizado_en, version, nombre, config)
+        `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
          VALUES (?, ?, ?, ?, 1, 'Otro', '{}')`,
       )
-      .run(otro, otro, '2026-10-24T20:00:00.000Z', '2026-10-24T20:00:00.000Z')
+      .run(other, other, '2026-10-24T20:00:00.000Z', '2026-10-24T20:00:00.000Z')
     const sedeOtro = insertarVersionado(
       t.db,
-      'sede',
-      otro,
-      { nombre: 'Sede', direccion: null, zona_horaria: 'America/Bogota' },
+      'locations',
+      other,
+      { name: 'Sede', address: null, time_zone: 'America/Bogota' },
       SISTEMA,
       '2026-10-24T20:00:00.000Z',
     )
     const zonaOtro = insertarVersionado(
       t.db,
-      'zona',
-      otro,
-      { sede_id: sedeOtro, nombre: 'Salón', orden: 1, piso: 1 },
+      'zones',
+      other,
+      { location_id: sedeOtro, name: 'Salón', position: 1, level: 1 },
       SISTEMA,
       '2026-10-24T20:00:00.000Z',
     )
     const mesaAjena = insertarVersionado(
       t.db,
-      'mesa',
-      otro,
+      'dining_tables',
+      other,
       {
-        zona_id: zonaOtro,
-        nombre: 'AJENA',
-        forma: 'cuadrada',
+        zone_id: zonaOtro,
+        name: 'AJENA',
+        shape: 'square',
         x: 0,
         y: 0,
-        ancho: 1,
-        alto: 1,
-        capacidad: 4,
+        width: 1,
+        height: 1,
+        capacity: 4,
       },
       SISTEMA,
       '2026-10-24T20:00:00.000Z',
     )
-    const ana = t.equipo('mesero')
-    const { pedido, items } = t.pedidoCon(
-      ana,
-      [{ nombre: 'Pizza', estacion: t.cocina }],
-      t.mesa('5'),
-    )
-    t.enviar(ana, pedido, items)
-    ana.mandar(pedido, 'PedidoMovidoDeMesa', { mesa_destino_id: mesaAjena })
-    const c = t.contenido(trabajosTipo(t, 'traslado')[0])
-    expect(c.destino).toBe('Mesa')
+    const ana = t.device('waiter')
+    const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], t.table('5'))
+    t.send(ana, order, items)
+    ana.mandar(order, 'OrderMovedTable', { target_table_id: mesaAjena })
+    const c = t.content(trabajosTipo(t, 'move')[0])
+    expect(c.target).toBe('Mesa')
     expect(JSON.stringify(c)).not.toContain('AJENA')
-    expect(c.antes).toBe('Mesa 5')
+    expect(c.before).toBe('Mesa 5')
   })
 
   it('una cancelación de otro restaurante no genera trabajos en este', () => {
     const t = montarImpresion()
     conImpresoras(t)
-    const ana = t.equipo('mesero')
-    const caja = t.equipo('admin', 'caja')
-    const { pedido, items } = t.pedidoCon(
-      ana,
-      [{ nombre: 'Pizza', estacion: t.cocina }],
-      t.mesa('5'),
-    )
-    t.enviar(ana, pedido, items)
-    cancelar(caja, pedido)
-    const filas = t.db.prepare('SELECT DISTINCT restaurante_id AS r FROM trabajo_impresion').all()
-    expect(filas.map((f) => f.r)).toEqual([t.restauranteId])
+    const ana = t.device('waiter')
+    const register = t.device('admin', 'register')
+    const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], t.table('5'))
+    t.send(ana, order, items)
+    cancel(register, order)
+    const rows = t.db.prepare('SELECT DISTINCT restaurant_id AS r FROM print_jobs').all()
+    expect(rows.map((f) => f.r)).toEqual([t.restauranteId])
   })
 })

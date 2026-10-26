@@ -1,8 +1,8 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
-import { buscar } from '../ui/busqueda'
+import { search } from '../ui/busqueda'
 import { Etiqueta } from '../ui/Etiqueta'
 import { pesos } from '../ui/formato'
 import { achicarFoto } from '../ui/foto'
@@ -33,23 +33,23 @@ import type { CambioCatalogo, CatalogoEdicion } from './motor'
 // guardar, el hub avisa a todos los equipos y les llega la carta nueva. Nada se borra: lo que se
 // quita se archiva y se puede volver a poner.
 //
-// Con solo el permiso `editar_precios` se ven todos los campos pero solo se cambian precios.
+// Con solo el permiso `edit_prices` se ven todos los campos pero solo se cambian precios.
 
-type Pestana = 'productos' | 'opciones' | 'categorias'
-const ARCHIVADOS = 'archivados'
+type Pestana = 'products' | 'options' | 'categories'
+const ARCHIVADOS = 'archived'
 
-const campo =
+const field =
   'min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 text-lg disabled:opacity-60 focus-visible:outline-3 focus-visible:outline-foco'
 
-export function Carta() {
-  const { sesion } = useSala()
+export function Menu() {
+  const { session } = useSala()
   const avisar = useAvisar()
   const [c, setC] = useState<CatalogoEdicion | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [pestana, setPestana] = useState<Pestana>('productos')
-  const [producto, setProducto] = useState<BorradorProducto | null>(null)
-  const [grupo, setGrupo] = useState<BorradorGrupo | null>(null)
-  const puedeTodo = sesion?.permisos.includes('editar_catalogo') ?? false
+  const [pestana, setPestana] = useState<Pestana>('products')
+  const [product, setProducto] = useState<BorradorProducto | null>(null)
+  const [group, setGrupo] = useState<BorradorGrupo | null>(null)
+  const puedeTodo = session?.permissions.includes('edit_catalog') ?? false
 
   const cargar = useCallback(
     () =>
@@ -67,9 +67,9 @@ export function Carta() {
   }, [cargar])
 
   /** Guarda en el hub; devuelve el mensaje de error, o `null` si quedó guardado. */
-  const guardar = async (cambios: CambioCatalogo[], hecho: string) => {
+  const guardar = async (changes: CambioCatalogo[], hecho: string) => {
     try {
-      await sala.editarCatalogo(cambios)
+      await sala.editarCatalogo(changes)
       await cargar()
       avisar(hecho)
       return null
@@ -79,16 +79,16 @@ export function Carta() {
   }
 
   return (
-    <MarcoSala titulo="Carta" volver="/">
+    <MarcoSala titulo="Carta" back="/">
       <div className="mx-auto max-w-4xl p-3">
         <Grupo etiqueta="Qué editar" className="mb-4 flex flex-wrap gap-2">
-          <Opcion elegida={pestana === 'productos'} alElegir={() => setPestana('productos')}>
+          <Opcion elegida={pestana === 'products'} alElegir={() => setPestana('products')}>
             Productos
           </Opcion>
-          <Opcion elegida={pestana === 'opciones'} alElegir={() => setPestana('opciones')}>
+          <Opcion elegida={pestana === 'options'} alElegir={() => setPestana('options')}>
             Grupos de opciones
           </Opcion>
-          <Opcion elegida={pestana === 'categorias'} alElegir={() => setPestana('categorias')}>
+          <Opcion elegida={pestana === 'categories'} alElegir={() => setPestana('categories')}>
             Categorías y estaciones
           </Opcion>
         </Grupo>
@@ -105,14 +105,14 @@ export function Carta() {
         )}
         {!c ? (
           !error && <p className="text-texto-suave">Cargando la carta…</p>
-        ) : pestana === 'productos' ? (
+        ) : pestana === 'products' ? (
           <ListaProductos
             c={c}
             puedeTodo={puedeTodo}
             alAbrir={(id) => setProducto(borradorDeProducto(c, id))}
             alCrear={(categoriaId) => setProducto(productoNuevo(c, categoriaId))}
           />
-        ) : pestana === 'opciones' ? (
+        ) : pestana === 'options' ? (
           <ListaGrupos
             c={c}
             puedeTodo={puedeTodo}
@@ -123,28 +123,28 @@ export function Carta() {
           <Categorias c={c} puedeTodo={puedeTodo} guardar={guardar} />
         )}
       </div>
-      {c && producto && (
+      {c && product && (
         <PanelProducto
           c={c}
-          inicial={producto}
+          initial={product}
           puedeTodo={puedeTodo}
           alCambiarFoto={() => void cargar()}
           alCerrar={() => setProducto(null)}
-          alGuardar={async (b) => {
-            const r = await guardar(cambiosDeProducto(c, b), `Guardaste ${b.nombre.trim()}`)
+          onSave={async (b) => {
+            const r = await guardar(cambiosDeProducto(c, b), `Guardaste ${b.name.trim()}`)
             if (!r) setProducto(null)
             return r
           }}
         />
       )}
-      {c && grupo && (
+      {c && group && (
         <PanelGrupo
           c={c}
-          inicial={grupo}
+          initial={group}
           puedeTodo={puedeTodo}
           alCerrar={() => setGrupo(null)}
-          alGuardar={async (g) => {
-            const r = await guardar(cambiosDeGrupo(c, g), `Guardaste ${g.nombre.trim()}`)
+          onSave={async (g) => {
+            const r = await guardar(cambiosDeGrupo(c, g), `Guardaste ${g.name.trim()}`)
             if (!r) setGrupo(null)
             return r
           }}
@@ -160,13 +160,13 @@ function Fila({
   titulo,
   detalle,
   extremo,
-  archivado,
+  archived,
   alTocar,
 }: {
   titulo: string
   detalle?: string
   extremo?: string
-  archivado: boolean
+  archived: boolean
   alTocar: () => void
 }) {
   return (
@@ -180,7 +180,7 @@ function Fila({
           <span className="font-semibold">{titulo}</span>
           {detalle && <span className="block text-sm text-texto-suave">{detalle}</span>}
         </span>
-        {archivado && <Etiqueta tono="neutro">Archivado</Etiqueta>}
+        {archived && <Etiqueta tono="neutral">Archivado</Etiqueta>}
         {extremo && <span className="cifras">{extremo}</span>}
       </button>
     </li>
@@ -198,16 +198,16 @@ function ListaProductos({
   alAbrir: (id: string) => void
   alCrear: (categoriaId: string) => void
 }) {
-  const categorias = c.categorias.filter((x) => x.activo)
-  const [categoria, setCategoria] = useState(categorias[0]?.id ?? ARCHIVADOS)
+  const categories = c.categories.filter((x) => x.active)
+  const [category, setCategoria] = useState(categories[0]?.id ?? ARCHIVADOS)
   const [busqueda, setBusqueda] = useState('')
-  const variantesDe = (id: string) => c.variantes.filter((v) => v.producto_id === id && v.activo)
-  const lista = busqueda.trim()
-    ? buscar(c.productos, busqueda, (p) => p.nombre)
-    : categoria === ARCHIVADOS
+  const variantesDe = (id: string) => c.variants.filter((v) => v.product_id === id && v.active)
+  const list = busqueda.trim()
+    ? search(c.products, busqueda, (p) => p.name)
+    : category === ARCHIVADOS
       ? // También los activos de una categoría archivada: no salen en la carta de los equipos.
-        c.productos.filter((p) => !p.activo || !categorias.some((x) => x.id === p.categoria_id))
-      : c.productos.filter((p) => p.categoria_id === categoria && p.activo)
+        c.products.filter((p) => !p.active || !categories.some((x) => x.id === p.category_id))
+      : c.products.filter((p) => p.category_id === category && p.active)
 
   return (
     <section aria-label="Productos">
@@ -219,17 +219,15 @@ function ListaProductos({
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Buscar un producto"
-            className={campo}
+            className={field}
           />
         </label>
         {puedeTodo && (
           <Boton
-            variante="principal"
-            icono="mas"
-            disabled={categorias.length === 0}
-            onClick={() =>
-              alCrear(categoria === ARCHIVADOS ? (categorias[0]?.id ?? '') : categoria)
-            }
+            variant="main"
+            icono="more"
+            disabled={categories.length === 0}
+            onClick={() => alCrear(category === ARCHIVADOS ? (categories[0]?.id ?? '') : category)}
           >
             Nuevo producto
           </Boton>
@@ -237,38 +235,38 @@ function ListaProductos({
       </div>
       {!busqueda.trim() && (
         <Grupo etiqueta="Categorías" className="-mx-3 mb-3 flex gap-2 overflow-x-auto px-3 pb-1">
-          {categorias.map((x) => (
-            <Opcion key={x.id} elegida={x.id === categoria} alElegir={() => setCategoria(x.id)}>
-              {x.nombre}
+          {categories.map((x) => (
+            <Opcion key={x.id} elegida={x.id === category} alElegir={() => setCategoria(x.id)}>
+              {x.name}
             </Opcion>
           ))}
-          <Opcion elegida={categoria === ARCHIVADOS} alElegir={() => setCategoria(ARCHIVADOS)}>
+          <Opcion elegida={category === ARCHIVADOS} alElegir={() => setCategoria(ARCHIVADOS)}>
             Archivados
           </Opcion>
         </Grupo>
       )}
       <ul className="rounded-2xl border border-borde bg-superficie">
-        {lista.length === 0 && (
+        {list.length === 0 && (
           <li className="p-6 text-center text-texto-suave">No hay productos aquí.</li>
         )}
-        {lista.map((p) => {
-          const variantes = variantesDe(p.id)
+        {list.map((p) => {
+          const variants = variantesDe(p.id)
           return (
             <Fila
               key={p.id}
-              titulo={p.nombre}
+              titulo={p.name}
               detalle={
                 [
-                  variantes.map((v) => v.nombre).join(' · '),
-                  p.activo && !categorias.some((x) => x.id === p.categoria_id)
+                  variants.map((v) => v.name).join(' · '),
+                  p.active && !categories.some((x) => x.id === p.category_id)
                     ? 'Su categoría está archivada'
                     : '',
                 ]
                   .filter(Boolean)
                   .join(' — ') || undefined
               }
-              extremo={variantes.length > 0 ? `desde ${pesos(p.precio)}` : pesos(p.precio)}
-              archivado={!p.activo}
+              extremo={variants.length > 0 ? `desde ${pesos(p.price)}` : pesos(p.price)}
+              archived={!p.active}
               alTocar={() => alAbrir(p.id)}
             />
           )
@@ -289,13 +287,13 @@ function ListaGrupos({
   alAbrir: (id: string) => void
   alCrear: () => void
 }) {
-  const reglas = (minimo: number, maximo: number) =>
-    minimo === 0
-      ? `Opcional, hasta ${maximo}`
-      : minimo === maximo
-        ? `Obligatorio: elige ${minimo}`
-        : `Elige de ${minimo} a ${maximo}`
-  const grupos = [...c.grupos].sort((a, b) => Number(b.activo) - Number(a.activo))
+  const reglas = (minimum: number, maximum: number) =>
+    minimum === 0
+      ? `Opcional, hasta ${maximum}`
+      : minimum === maximum
+        ? `Obligatorio: elige ${minimum}`
+        : `Elige de ${minimum} a ${maximum}`
+  const groups = [...c.groups].sort((a, b) => Number(b.active) - Number(a.active))
   return (
     <section aria-label="Grupos de opciones">
       <p className="mb-3 text-texto-suave">
@@ -303,17 +301,17 @@ function ListaGrupos({
         adicionales con precio. Un mismo grupo sirve para varios productos.
       </p>
       {puedeTodo && (
-        <Boton variante="principal" icono="mas" className="mb-3" onClick={alCrear}>
+        <Boton variant="main" icono="more" className="mb-3" onClick={alCrear}>
           Nuevo grupo de opciones
         </Boton>
       )}
       <ul className="rounded-2xl border border-borde bg-superficie">
-        {grupos.length === 0 && (
+        {groups.length === 0 && (
           <li className="p-6 text-center text-texto-suave">Todavía no hay grupos de opciones.</li>
         )}
-        {grupos.map((g) => {
+        {groups.map((g) => {
           // Los nombres de los productos distinguen dos grupos que se llaman igual ("Sabor").
-          const usan = productosDeGrupo(c, g.id).map((p) => p.nombre)
+          const usan = productosDeGrupo(c, g.id).map((p) => p.name)
           const quienes =
             usan.length === 0
               ? 'ningún producto'
@@ -323,9 +321,9 @@ function ListaGrupos({
           return (
             <Fila
               key={g.id}
-              titulo={g.nombre}
-              detalle={`${reglas(g.minimo, g.maximo)} · ${quienes}`}
-              archivado={!g.activo}
+              titulo={g.name}
+              detalle={`${reglas(g.minimum, g.maximum)} · ${quienes}`}
+              archived={!g.active}
               alTocar={() => alAbrir(g.id)}
             />
           )
@@ -349,46 +347,46 @@ function Campo({ etiqueta, children }: { etiqueta: string; children: ReactNode }
 
 /** Monto en pesos: acepta "40.900" o "40900" y lo muestra con puntos al salir del campo. */
 function CampoPesos({
-  valor,
-  alCambiar,
+  value,
+  onChange,
   alValidar,
   etiqueta,
   disabled,
 }: {
-  valor: number
-  alCambiar: (pesos: number) => void
+  value: number
+  onChange: (pesos: number) => void
   /** Avisa si lo escrito es un monto válido: con uno mal escrito no se puede guardar. */
-  alValidar: (valido: boolean) => void
+  alValidar: (valid: boolean) => void
   etiqueta: string
   disabled?: boolean
 }) {
-  const formato = (n: number) => n.toLocaleString('es-CO')
-  const [texto, setTexto] = useState(formato(valor))
+  const format = (n: number) => n.toLocaleString('es-CO')
+  const [text, setTexto] = useState(format(value))
   const id = useId()
-  const valido = leerPesos(texto) !== null
+  const valid = leerPesos(text) !== null
   return (
     <span className="flex flex-col gap-1">
       <input
         aria-label={etiqueta}
-        aria-invalid={!valido}
-        aria-describedby={valido ? undefined : id}
+        aria-invalid={!valid}
+        aria-describedby={valid ? undefined : id}
         inputMode="numeric"
         disabled={disabled}
-        value={texto}
+        value={text}
         onFocus={(e) => e.currentTarget.select()}
         onChange={(e) => {
           setTexto(e.target.value)
           const n = leerPesos(e.target.value)
           alValidar(n !== null)
-          if (n !== null) alCambiar(n)
+          if (n !== null) onChange(n)
         }}
         onBlur={() => {
-          const n = leerPesos(texto)
-          if (n !== null) setTexto(formato(n))
+          const n = leerPesos(text)
+          if (n !== null) setTexto(format(n))
         }}
-        className={`${campo} cifras text-right ${valido ? '' : 'border-alerta-fuerte'}`}
+        className={`${field} cifras text-right ${valid ? '' : 'border-alerta-fuerte'}`}
       />
-      {!valido && (
+      {!valid && (
         <span id={id} className="text-sm text-alerta-texto">
           Escribe el valor en pesos, sin centavos
         </span>
@@ -400,18 +398,18 @@ function CampoPesos({
 /** Pie de los paneles: guardar (dice lo que falta o el error del hub) o, al querer cerrar con
  * cambios, confirmar que se descartan. */
 function PieGuardar({
-  problemas,
+  issues,
   sinCambios,
   error,
-  alGuardar,
+  onSave,
   confirmandoCierre,
   alSeguir,
   alDescartar,
 }: {
-  problemas: string[]
+  issues: string[]
   sinCambios: boolean
   error: string | null
-  alGuardar: () => Promise<void>
+  onSave: () => Promise<void>
   confirmandoCierre: boolean
   alSeguir: () => void
   alDescartar: () => void
@@ -424,11 +422,11 @@ function PieGuardar({
           Tienes cambios sin guardar.
         </p>
         <div className="flex gap-2">
-          <Boton variante="secundario" grande className="flex-1" onClick={alDescartar}>
+          <Boton variant="secondary" large className="flex-1" onClick={alDescartar}>
             Descartar
           </Boton>
           {/* El foco va a la opción segura. */}
-          <Boton variante="principal" grande className="flex-1" autoFocus onClick={alSeguir}>
+          <Boton variant="main" large className="flex-1" autoFocus onClick={alSeguir}>
             Seguir editando
           </Boton>
         </div>
@@ -442,17 +440,17 @@ function PieGuardar({
         </p>
       ) : (
         <p className="min-h-6 text-alerta-texto" aria-live="polite">
-          {problemas[0] ?? ''}
+          {issues[0] ?? ''}
         </p>
       )}
       <Boton
-        variante="principal"
-        grande
+        variant="main"
+        large
         className="w-full"
-        disabled={guardando || problemas.length > 0 || sinCambios}
+        disabled={guardando || issues.length > 0 || sinCambios}
         onClick={async () => {
           setGuardando(true)
-          await alGuardar()
+          await onSave()
           setGuardando(false)
         }}
       >
@@ -466,18 +464,18 @@ function PieGuardar({
 function usePanel(sinCambios: boolean, alCerrar: () => void) {
   const [malos, setMalos] = useState<ReadonlySet<string>>(new Set())
   const [confirmando, setConfirmando] = useState(false)
-  const validar = (clave: string) => (valido: boolean) =>
+  const validar = (key: string) => (valid: boolean) =>
     setMalos((m) => {
-      const nuevo = new Set(m)
-      if (valido) nuevo.delete(clave)
-      else nuevo.add(clave)
-      return nuevo
+      const fresh = new Set(m)
+      if (valid) fresh.delete(key)
+      else fresh.add(key)
+      return fresh
     })
   return {
     precioMalo: malos.size > 0 ? ['Hay un precio mal escrito'] : [],
     validar,
     confirmando,
-    cerrar: () => (sinCambios ? alCerrar() : setConfirmando(true)),
+    close: () => (sinCambios ? alCerrar() : setConfirmando(true)),
     seguir: () => setConfirmando(false),
   }
 }
@@ -486,41 +484,41 @@ function usePanel(sinCambios: boolean, alCerrar: () => void) {
 
 function PanelProducto({
   c,
-  inicial,
+  initial,
   puedeTodo,
   alCambiarFoto,
   alCerrar,
-  alGuardar,
+  onSave,
 }: {
   c: CatalogoEdicion
-  inicial: BorradorProducto
+  initial: BorradorProducto
   puedeTodo: boolean
   /** La foto se guarda aparte: la carta del editor se vuelve a leer para que no quede vieja. */
   alCambiarFoto: () => void
   alCerrar: () => void
-  alGuardar: (b: BorradorProducto) => Promise<string | null>
+  onSave: (b: BorradorProducto) => Promise<string | null>
 }) {
-  const [b, setB] = useState(inicial)
+  const [b, setB] = useState(initial)
   const [error, setError] = useState<string | null>(null)
-  const cambiar = (parcial: Partial<BorradorProducto>) => setB((x) => ({ ...x, ...parcial }))
-  const variantes = b.variantes.filter((v) => v.activo)
-  const cambiarVariante = (id: string, parcial: Partial<BorradorProducto['variantes'][number]>) =>
-    cambiar({ variantes: b.variantes.map((v) => (v.id === id ? { ...v, ...parcial } : v)) })
-  const grupos = c.grupos.filter((g) => g.activo || b.grupos.includes(g.id))
+  const patch = (partial: Partial<BorradorProducto>) => setB((x) => ({ ...x, ...partial }))
+  const variants = b.variants.filter((v) => v.active)
+  const cambiarVariante = (id: string, partial: Partial<BorradorProducto['variants'][number]>) =>
+    patch({ variants: b.variants.map((v) => (v.id === id ? { ...v, ...partial } : v)) })
+  const groups = c.groups.filter((g) => g.active || b.groups.includes(g.id))
   const sinCambios = cambiosDeProducto(c, b).length === 0
   const panel = usePanel(sinCambios, alCerrar)
 
   return (
     <PanelLateral
-      abierto
-      titulo={inicial.nuevo ? 'Nuevo producto' : inicial.nombre}
-      alCerrar={panel.cerrar}
+      opened
+      titulo={initial.fresh ? 'Nuevo producto' : initial.name}
+      alCerrar={panel.close}
       pie={
         <PieGuardar
-          problemas={[...panel.precioMalo, ...problemasDeProducto(b)]}
+          issues={[...panel.precioMalo, ...problemasDeProducto(b)]}
           sinCambios={sinCambios}
           error={error}
-          alGuardar={async () => setError(await alGuardar(b))}
+          onSave={async () => setError(await onSave(b))}
           confirmandoCierre={panel.confirmando}
           alSeguir={panel.seguir}
           alDescartar={alCerrar}
@@ -532,69 +530,69 @@ function PanelProducto({
           Tu rol solo puede cambiar precios.
         </p>
       )}
-      {!b.activo && (
+      {!b.active && (
         <p className="mb-4 rounded-xl bg-neutro-suave p-3 text-neutro-texto">
           Archivado: no aparece en la carta de los equipos.
         </p>
       )}
       <Campo etiqueta="Nombre">
         <input
-          className={campo}
-          value={b.nombre}
+          className={field}
+          value={b.name}
           maxLength={80}
           disabled={!puedeTodo}
-          onChange={(e) => cambiar({ nombre: e.target.value })}
+          onChange={(e) => patch({ name: e.target.value })}
         />
       </Campo>
       <Campo etiqueta="Descripción (opcional)">
         <textarea
-          className={`${campo} py-2`}
+          className={`${field} py-2`}
           rows={2}
           maxLength={300}
-          value={b.descripcion}
+          value={b.description}
           disabled={!puedeTodo}
-          onChange={(e) => cambiar({ descripcion: e.target.value })}
+          onChange={(e) => patch({ description: e.target.value })}
         />
       </Campo>
       <Campo etiqueta="Categoría">
         <select
-          className={campo}
+          className={field}
           value={b.categoriaId}
           disabled={!puedeTodo}
-          onChange={(e) => cambiar({ categoriaId: e.target.value })}
+          onChange={(e) => patch({ categoriaId: e.target.value })}
         >
-          {c.categorias
-            .filter((x) => x.activo || x.id === b.categoriaId)
+          {c.categories
+            .filter((x) => x.active || x.id === b.categoriaId)
             .map((x) => (
               <option key={x.id} value={x.id}>
-                {x.nombre}
+                {x.name}
               </option>
             ))}
         </select>
       </Campo>
       <Campo etiqueta="Impuesto">
         <select
-          className={campo}
+          className={field}
           value={b.impuestoId}
           disabled={!puedeTodo}
-          onChange={(e) => cambiar({ impuestoId: e.target.value })}
+          onChange={(e) => patch({ impuestoId: e.target.value })}
         >
-          {c.impuestos
-            .filter((x) => x.activo || x.id === b.impuestoId)
+          {c.taxes
+            .filter((x) => x.active || x.id === b.impuestoId)
             .map((x) => (
               <option key={x.id} value={x.id}>
-                {x.nombre}
+                {x.name}
               </option>
             ))}
         </select>
       </Campo>
-      {variantes.length === 0 && (
+      {variants.length === 0 && (
         <Campo etiqueta="Precio (con impuesto incluido)">
           <CampoPesos
-            etiqueta={`Precio de ${b.nombre || 'el producto'}`}
-            valor={b.precio}
-            alCambiar={(precio) => cambiar({ precio })}
-            alValidar={panel.validar('producto')}
+            etiqueta={`Precio de ${b.name || 'el producto'}`}
+            value={b.price}
+            onChange={(price) => patch({ price })}
+            alValidar={panel.validar('product')}
           />
         </Campo>
       )}
@@ -604,33 +602,33 @@ function PanelProducto({
         <p className="mb-2 text-sm text-texto-suave">
           Si el producto tiene tamaños, el mesero debe elegir uno y cada uno tiene su precio.
         </p>
-        {variantes.map((v) => (
+        {variants.map((v) => (
           <div key={v.id} className="mb-2 flex items-start gap-2">
             <input
               aria-label="Nombre del tamaño"
-              className={`${campo} flex-1`}
-              value={v.nombre}
+              className={`${field} flex-1`}
+              value={v.name}
               placeholder="Copa"
               maxLength={80}
               disabled={!puedeTodo}
-              onChange={(e) => cambiarVariante(v.id, { nombre: e.target.value })}
+              onChange={(e) => cambiarVariante(v.id, { name: e.target.value })}
             />
             <span className="w-36">
               <CampoPesos
-                etiqueta={`Precio de ${v.nombre || 'este tamaño'}`}
-                valor={v.precio}
-                alCambiar={(precio) => cambiarVariante(v.id, { precio })}
+                etiqueta={`Precio de ${v.name || 'este tamaño'}`}
+                value={v.price}
+                onChange={(price) => cambiarVariante(v.id, { price })}
                 alValidar={panel.validar(v.id)}
               />
             </span>
             {puedeTodo && (
               <Boton
-                variante="fantasma"
-                icono="cerrar"
-                aria-label={`Quitar ${v.nombre || 'este tamaño'}`}
+                variant="ghost"
+                icono="close"
+                aria-label={`Quitar ${v.name || 'este tamaño'}`}
                 onClick={() => {
                   panel.validar(v.id)(true)
-                  cambiarVariante(v.id, { activo: false })
+                  cambiarVariante(v.id, { active: false })
                 }}
               />
             )}
@@ -638,12 +636,12 @@ function PanelProducto({
         ))}
         {puedeTodo && (
           <Boton
-            icono="mas"
+            icono="more"
             onClick={() =>
-              cambiar({
-                variantes: [
-                  ...b.variantes,
-                  { id: nuevoId(), nuevo: true, nombre: '', precio: b.precio, activo: true },
+              patch({
+                variants: [
+                  ...b.variants,
+                  { id: newId(), fresh: true, name: '', price: b.price, active: true },
                 ],
               })
             }
@@ -655,30 +653,29 @@ function PanelProducto({
 
       <fieldset className="mb-4">
         <legend className="mb-1 font-semibold">Grupos de opciones que se piden</legend>
-        {grupos.length === 0 ? (
+        {groups.length === 0 ? (
           <p className="text-sm text-texto-suave">
             Crea grupos (término, sabor, adicionales) en la pestaña Grupos de opciones.
           </p>
         ) : !puedeTodo ? (
           <p>
-            {b.grupos.map((id) => c.grupos.find((g) => g.id === id)?.nombre).join(', ') ||
-              'Ninguno'}
+            {b.groups.map((id) => c.groups.find((g) => g.id === id)?.name).join(', ') || 'Ninguno'}
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {grupos.map((g) => {
-              const elegido = b.grupos.includes(g.id)
+            {groups.map((g) => {
+              const elegido = b.groups.includes(g.id)
               return (
                 <Opcion
                   key={g.id}
                   elegida={elegido}
                   alElegir={() =>
-                    cambiar({
-                      grupos: elegido ? b.grupos.filter((x) => x !== g.id) : [...b.grupos, g.id],
+                    patch({
+                      groups: elegido ? b.groups.filter((x) => x !== g.id) : [...b.groups, g.id],
                     })
                   }
                 >
-                  {g.nombre}
+                  {g.name}
                 </Opcion>
               )
             })}
@@ -686,11 +683,11 @@ function PanelProducto({
         )}
       </fieldset>
 
-      {puedeTodo && !inicial.nuevo && (
+      {puedeTodo && !initial.fresh && (
         <FotoProducto
-          productoId={inicial.id}
-          foto={c.productos.find((p) => p.id === inicial.id)?.foto ?? null}
-          alCambiar={alCambiarFoto}
+          productId={initial.id}
+          photo={c.products.find((p) => p.id === initial.id)?.photo ?? null}
+          onChange={alCambiarFoto}
         />
       )}
 
@@ -699,8 +696,8 @@ function PanelProducto({
           <input
             type="checkbox"
             className="size-6"
-            checked={b.favorito}
-            onChange={(e) => cambiar({ favorito: e.target.checked })}
+            checked={b.favorite}
+            onChange={(e) => patch({ favorite: e.target.checked })}
           />
           <span>
             <span className="font-semibold">Favorito</span>
@@ -711,9 +708,9 @@ function PanelProducto({
         </label>
       )}
 
-      {puedeTodo && !inicial.nuevo && (
-        <Boton variante="secundario" onClick={() => cambiar({ activo: !b.activo })}>
-          {b.activo ? 'Archivar (sacar de la carta)' : 'Volver a ponerlo en la carta'}
+      {puedeTodo && !initial.fresh && (
+        <Boton variant="secondary" onClick={() => patch({ active: !b.active })}>
+          {b.active ? 'Archivar (sacar de la carta)' : 'Volver a ponerlo en la carta'}
         </Boton>
       )}
     </PanelLateral>
@@ -722,36 +719,36 @@ function PanelProducto({
 
 // ── Grupo de opciones ──────────────────────────────────────────────────
 
-function Contador({
+function Accountant({
   etiqueta,
-  valor,
-  minimo,
-  maximo,
-  alCambiar,
+  value,
+  minimum,
+  maximum,
+  onChange,
   disabled,
 }: {
   etiqueta: string
-  valor: number
-  minimo: number
-  maximo: number
-  alCambiar: (n: number) => void
+  value: number
+  minimum: number
+  maximum: number
+  onChange: (n: number) => void
   disabled?: boolean
 }) {
   return (
     <div className="flex items-center gap-2">
       <span className="flex-1 font-semibold">{etiqueta}</span>
       <Boton
-        icono="menos"
+        icono="minus"
         aria-label={`${etiqueta}: uno menos`}
-        disabled={disabled || valor <= minimo}
-        onClick={() => alCambiar(valor - 1)}
+        disabled={disabled || value <= minimum}
+        onClick={() => onChange(value - 1)}
       />
-      <output className="cifras w-8 text-center text-xl font-semibold">{valor}</output>
+      <output className="cifras w-8 text-center text-xl font-semibold">{value}</output>
       <Boton
-        icono="mas"
+        icono="more"
         aria-label={`${etiqueta}: uno más`}
-        disabled={disabled || valor >= maximo}
-        onClick={() => alCambiar(valor + 1)}
+        disabled={disabled || value >= maximum}
+        onClick={() => onChange(value + 1)}
       />
     </div>
   )
@@ -759,38 +756,38 @@ function Contador({
 
 function PanelGrupo({
   c,
-  inicial,
+  initial,
   puedeTodo,
   alCerrar,
-  alGuardar,
+  onSave,
 }: {
   c: CatalogoEdicion
-  inicial: BorradorGrupo
+  initial: BorradorGrupo
   puedeTodo: boolean
   alCerrar: () => void
-  alGuardar: (g: BorradorGrupo) => Promise<string | null>
+  onSave: (g: BorradorGrupo) => Promise<string | null>
 }) {
-  const [g, setG] = useState(inicial)
+  const [g, setG] = useState(initial)
   const [error, setError] = useState<string | null>(null)
-  const cambiar = (parcial: Partial<BorradorGrupo>) => setG((x) => ({ ...x, ...parcial }))
-  const opciones = g.opciones.filter((o) => o.activo)
-  const cambiarOpcion = (id: string, parcial: Partial<BorradorGrupo['opciones'][number]>) =>
-    cambiar({ opciones: g.opciones.map((o) => (o.id === id ? { ...o, ...parcial } : o)) })
+  const patch = (partial: Partial<BorradorGrupo>) => setG((x) => ({ ...x, ...partial }))
+  const options = g.options.filter((o) => o.active)
+  const cambiarOpcion = (id: string, partial: Partial<BorradorGrupo['options'][number]>) =>
+    patch({ options: g.options.map((o) => (o.id === id ? { ...o, ...partial } : o)) })
   const usan = productosConGrupo(c, g.id)
   const sinCambios = cambiosDeGrupo(c, g).length === 0
   const panel = usePanel(sinCambios, alCerrar)
 
   return (
     <PanelLateral
-      abierto
-      titulo={inicial.nuevo ? 'Nuevo grupo de opciones' : inicial.nombre}
-      alCerrar={panel.cerrar}
+      opened
+      titulo={initial.fresh ? 'Nuevo grupo de opciones' : initial.name}
+      alCerrar={panel.close}
       pie={
         <PieGuardar
-          problemas={[...panel.precioMalo, ...problemasDeGrupo(g)]}
+          issues={[...panel.precioMalo, ...problemasDeGrupo(g)]}
           sinCambios={sinCambios}
           error={error}
-          alGuardar={async () => setError(await alGuardar(g))}
+          onSave={async () => setError(await onSave(g))}
           confirmandoCierre={panel.confirmando}
           alSeguir={panel.seguir}
           alDescartar={alCerrar}
@@ -804,66 +801,66 @@ function PanelGrupo({
       )}
       <Campo etiqueta="Nombre">
         <input
-          className={campo}
-          value={g.nombre}
+          className={field}
+          value={g.name}
           placeholder="Término de la carne"
           maxLength={80}
           disabled={!puedeTodo}
-          onChange={(e) => cambiar({ nombre: e.target.value })}
+          onChange={(e) => patch({ name: e.target.value })}
         />
       </Campo>
       <div className="mb-4 flex flex-col gap-2">
-        <Contador
+        <Accountant
           etiqueta="Mínimo a elegir"
-          valor={g.minimo}
-          minimo={0}
-          maximo={g.maximo}
+          value={g.minimum}
+          minimum={0}
+          maximum={g.maximum}
           disabled={!puedeTodo}
-          alCambiar={(minimo) => cambiar({ minimo })}
+          onChange={(minimum) => patch({ minimum })}
         />
-        <Contador
+        <Accountant
           etiqueta="Máximo a elegir"
-          valor={g.maximo}
-          minimo={Math.max(1, g.minimo)}
-          maximo={20}
+          value={g.maximum}
+          minimum={Math.max(1, g.minimum)}
+          maximum={20}
           disabled={!puedeTodo}
-          alCambiar={(maximo) => cambiar({ maximo })}
+          onChange={(maximum) => patch({ maximum })}
         />
         <p className="text-sm text-texto-suave">
-          {g.minimo === 0
+          {g.minimum === 0
             ? 'Opcional: el mesero puede no elegir nada.'
             : 'Obligatorio: el mesero no puede agregar el producto sin elegir.'}
         </p>
       </div>
       <fieldset className="mb-4">
         <legend className="mb-2 font-semibold">Opciones y su precio extra</legend>
-        {opciones.map((o) => (
+        {options.map((o) => (
           <div key={o.id} className="mb-2 flex items-start gap-2">
             <input
               aria-label="Nombre de la opción"
-              className={`${campo} flex-1`}
-              value={o.nombre}
+              className={`${field} flex-1`}
+              value={o.name}
               placeholder="Tocineta"
               maxLength={80}
               disabled={!puedeTodo}
-              onChange={(e) => cambiarOpcion(o.id, { nombre: e.target.value })}
+              onChange={(e) => cambiarOpcion(o.id, { name: e.target.value })}
             />
             <span className="w-32">
               <CampoPesos
-                etiqueta={`Precio extra de ${o.nombre || 'esta opción'}`}
-                valor={o.precioExtra}
-                alCambiar={(precioExtra) => cambiarOpcion(o.id, { precioExtra })}
+                etiqueta={`Precio extra de ${o.name || 'esta opción'}`}
+                value={o.extraPrice}
+                onChange={(extraPrice) => cambiarOpcion(o.id, { extraPrice })}
                 alValidar={panel.validar(o.id)}
               />
             </span>
             {puedeTodo && (
               <Boton
-                variante="fantasma"
-                icono="cerrar"
-                aria-label={`Quitar ${o.nombre || 'esta opción'}`}
+                variant="ghost"
+                icono="close"
+                aria-label={`Quitar ${o.name || 'esta opción'}`}
                 onClick={() => {
                   panel.validar(o.id)(true)
-                  cambiarOpcion(o.id, { activo: false })
+                  cambiarOpcion(o.id, { active: false })
                 }}
               />
             )}
@@ -871,12 +868,12 @@ function PanelGrupo({
         ))}
         {puedeTodo && (
           <Boton
-            icono="mas"
+            icono="more"
             onClick={() =>
-              cambiar({
-                opciones: [
-                  ...g.opciones,
-                  { id: nuevoId(), nuevo: true, nombre: '', precioExtra: 0, activo: true },
+              patch({
+                options: [
+                  ...g.options,
+                  { id: newId(), fresh: true, name: '', extraPrice: 0, active: true },
                 ],
               })
             }
@@ -885,9 +882,9 @@ function PanelGrupo({
           </Boton>
         )}
       </fieldset>
-      {puedeTodo && !inicial.nuevo && (
-        <Boton variante="secundario" onClick={() => cambiar({ activo: !g.activo })}>
-          {g.activo ? 'Archivar el grupo' : 'Volver a usarlo'}
+      {puedeTodo && !initial.fresh && (
+        <Boton variant="secondary" onClick={() => patch({ active: !g.active })}>
+          {g.active ? 'Archivar el grupo' : 'Volver a usarlo'}
         </Boton>
       )}
     </PanelLateral>
@@ -898,60 +895,60 @@ function PanelGrupo({
 
 /** Una fila editable con nombre y, si es categoría, su estación. Guarda sola al tocar Guardar. */
 function FilaEditable({
-  nombre,
+  name,
   estacionId,
-  estaciones,
-  activo,
-  nuevo,
+  stations,
+  active,
+  fresh,
   puedeTodo,
-  alGuardar,
+  onSave,
 }: {
-  nombre: string
+  name: string
   estacionId?: string | null
-  estaciones?: CatalogoEdicion['estaciones']
-  activo: boolean
-  nuevo?: boolean
+  stations?: CatalogoEdicion['stations']
+  active: boolean
+  fresh?: boolean
   puedeTodo: boolean
-  alGuardar: (d: {
-    nombre: string
+  onSave: (d: {
+    name: string
     estacionId: string | null
-    activo: boolean
+    active: boolean
   }) => Promise<string | null>
 }) {
-  const [n, setN] = useState(nombre)
+  const [n, setN] = useState(name)
   const [e, setE] = useState(estacionId ?? null)
   const [error, setError] = useState<string | null>(null)
-  const cambio = n.trim() !== nombre || e !== (estacionId ?? null)
+  const change = n.trim() !== name || e !== (estacionId ?? null)
   const guardar = async (a: boolean) => {
-    const r = await alGuardar({ nombre: n.trim(), estacionId: e, activo: a })
+    const r = await onSave({ name: n.trim(), estacionId: e, active: a })
     setError(r)
-    if (!r && nuevo) setN('')
+    if (!r && fresh) setN('')
   }
   return (
     <li className="flex flex-wrap items-center gap-2 border-b border-borde p-2">
       <input
-        aria-label={nuevo ? 'Nombre' : `Nombre de ${nombre}`}
-        className={`${campo} min-w-40 flex-1`}
+        aria-label={fresh ? 'Nombre' : `Nombre de ${name}`}
+        className={`${field} min-w-40 flex-1`}
         value={n}
-        placeholder={nuevo ? (estaciones ? 'Nueva categoría' : 'Nueva estación') : undefined}
+        placeholder={fresh ? (stations ? 'Nueva categoría' : 'Nueva estación') : undefined}
         maxLength={80}
         disabled={!puedeTodo}
         onChange={(x) => setN(x.target.value)}
       />
-      {estaciones && (
+      {stations && (
         <select
           aria-label="Estación a la que va"
-          className={`${campo} w-auto`}
+          className={`${field} w-auto`}
           value={e ?? ''}
           disabled={!puedeTodo}
           onChange={(x) => setE(x.target.value || null)}
         >
           <option value="">Sin estación</option>
-          {estaciones
-            .filter((x) => x.activo || x.id === e)
+          {stations
+            .filter((x) => x.active || x.id === e)
             .map((x) => (
               <option key={x.id} value={x.id}>
-                {x.nombre}
+                {x.name}
               </option>
             ))}
         </select>
@@ -959,18 +956,15 @@ function FilaEditable({
       {puedeTodo && (
         <>
           <Boton
-            variante="principal"
-            disabled={!n.trim() || (!cambio && !nuevo)}
-            onClick={() => void guardar(activo)}
+            variant="main"
+            disabled={!n.trim() || (!change && !fresh)}
+            onClick={() => void guardar(active)}
           >
-            {nuevo ? 'Agregar' : 'Guardar'}
+            {fresh ? 'Agregar' : 'Guardar'}
           </Boton>
-          {!nuevo && (
-            <Boton
-              variante={activo ? 'fantasma' : 'secundario'}
-              onClick={() => void guardar(!activo)}
-            >
-              {activo ? 'Archivar' : 'Volver a usar'}
+          {!fresh && (
+            <Boton variant={active ? 'ghost' : 'secondary'} onClick={() => void guardar(!active)}>
+              {active ? 'Archivar' : 'Volver a usar'}
             </Boton>
           )}
         </>
@@ -991,112 +985,112 @@ function Categorias({
 }: {
   c: CatalogoEdicion
   puedeTodo: boolean
-  guardar: (cambios: CambioCatalogo[], hecho: string) => Promise<string | null>
+  guardar: (changes: CambioCatalogo[], hecho: string) => Promise<string | null>
 }) {
   return (
     <div className="flex flex-col gap-6">
-      <section aria-labelledby="titulo-categorias">
-        <h2 id="titulo-categorias" className="mb-1 text-lg font-semibold">
+      <section aria-labelledby="title-categories">
+        <h2 id="title-categories" className="mb-1 text-lg font-semibold">
           Categorías
         </h2>
         <p className="mb-2 text-texto-suave">
           La estación dice a dónde va la comanda de sus productos (cocina o barra).
         </p>
         <ul className="rounded-2xl border border-borde bg-superficie">
-          {c.categorias.map((x) => (
+          {c.categories.map((x) => (
             <FilaEditable
               key={`${x.id}-${x.version}`}
-              nombre={x.nombre}
-              estacionId={x.estacion_id}
-              estaciones={c.estaciones}
-              activo={x.activo}
+              name={x.name}
+              estacionId={x.station_id}
+              stations={c.stations}
+              active={x.active}
               puedeTodo={puedeTodo}
-              alGuardar={(d) =>
+              onSave={(d) =>
                 guardar(
                   [
                     {
-                      entidad: 'categoria',
+                      entity: 'categories',
                       id: x.id,
-                      datos: { nombre: d.nombre, estacion_id: d.estacionId, activo: d.activo },
+                      data: { name: d.name, station_id: d.estacionId, active: d.active },
                     },
                   ],
-                  `Guardaste ${d.nombre}`,
+                  `Guardaste ${d.name}`,
                 )
               }
             />
           ))}
           {puedeTodo && (
             <FilaEditable
-              key={`nueva-${c.version}`}
-              nombre=""
-              estacionId={c.estaciones.find((x) => x.activo)?.id ?? null}
-              estaciones={c.estaciones}
-              activo
-              nuevo
+              key={`new-${c.version}`}
+              name=""
+              estacionId={c.stations.find((x) => x.active)?.id ?? null}
+              stations={c.stations}
+              active
+              fresh
               puedeTodo
-              alGuardar={(d) =>
+              onSave={(d) =>
                 guardar(
                   [
                     {
-                      entidad: 'categoria',
-                      id: nuevoId(),
-                      datos: {
-                        nombre: d.nombre,
-                        orden: c.categorias.length,
-                        estacion_id: d.estacionId,
-                        activo: true,
+                      entity: 'categories',
+                      id: newId(),
+                      data: {
+                        name: d.name,
+                        position: c.categories.length,
+                        station_id: d.estacionId,
+                        active: true,
                       },
                     },
                   ],
-                  `Agregaste ${d.nombre}`,
+                  `Agregaste ${d.name}`,
                 )
               }
             />
           )}
         </ul>
       </section>
-      <section aria-labelledby="titulo-estaciones">
-        <h2 id="titulo-estaciones" className="mb-2 text-lg font-semibold">
+      <section aria-labelledby="title-stations">
+        <h2 id="title-stations" className="mb-2 text-lg font-semibold">
           Estaciones
         </h2>
         <ul className="rounded-2xl border border-borde bg-superficie">
-          {c.estaciones.map((x) => (
+          {c.stations.map((x) => (
             <FilaEditable
               key={`${x.id}-${x.version}`}
-              nombre={x.nombre}
-              activo={x.activo}
+              name={x.name}
+              active={x.active}
               puedeTodo={puedeTodo}
-              alGuardar={(d) =>
+              onSave={(d) =>
                 guardar(
                   [
                     {
-                      entidad: 'estacion',
+                      entity: 'stations',
                       id: x.id,
-                      datos: { nombre: d.nombre, activo: d.activo },
+                      data: { name: d.name, active: d.active },
                     },
                   ],
-                  `Guardaste ${d.nombre}`,
+                  `Guardaste ${d.name}`,
                 )
               }
             />
           ))}
           {puedeTodo && (
             <FilaEditable
-              key={`nueva-estacion-${c.version}`}
-              nombre=""
-              activo
-              nuevo
+              key={`new-station-${c.version}`}
+              name=""
+              active
+              fresh
               puedeTodo
-              alGuardar={(d) =>
+              onSave={(d) =>
                 guardar(
                   [
                     {
-                      entidad: 'estacion',
-                      id: nuevoId(),
-                      datos: { nombre: d.nombre, orden: c.estaciones.length, activo: true },
+                      entity: 'stations',
+                      id: newId(),
+                      data: { name: d.name, position: c.stations.length, active: true },
                     },
                   ],
-                  `Agregaste ${d.nombre}`,
+                  `Agregaste ${d.name}`,
                 )
               }
             />
@@ -1112,24 +1106,24 @@ function Categorias({
  * producto, y se achica en el equipo antes de subirla. Sin foto, la carta muestra un ícono.
  */
 function FotoProducto({
-  productoId,
-  foto,
-  alCambiar,
+  productId,
+  photo,
+  onChange,
 }: {
-  productoId: string
-  foto: string | null
-  alCambiar: () => void
+  productId: string
+  photo: string | null
+  onChange: () => void
 }) {
-  const [actual, setActual] = useState(foto ? `/fotos/${foto}` : null)
+  const [current, setActual] = useState(photo ? `/photos/${photo}` : null)
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const entrada = useRef<HTMLInputElement>(null)
+  const entry = useRef<HTMLInputElement>(null)
   const subir = async (imagen: string | null) => {
     setOcupado(true)
     setError(null)
     try {
-      setActual(await sala.subirFoto(productoId, imagen))
-      alCambiar()
+      setActual(await sala.subirFoto(productId, imagen))
+      onChange()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar la foto')
     }
@@ -1140,25 +1134,25 @@ function FotoProducto({
       <p className="font-semibold">Foto (opcional)</p>
       <div className="flex items-center gap-3">
         <span className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-linea bg-superficie-2">
-          {actual ? (
-            <img src={actual} alt="Foto del producto" className="size-full object-cover" />
+          {current ? (
+            <img src={current} alt="Foto del producto" className="size-full object-cover" />
           ) : (
-            <Icono nombre="foto" className="size-8 text-texto-suave" />
+            <Icono name="photo" className="size-8 text-texto-suave" />
           )}
         </span>
         <span className="flex flex-col gap-2">
-          <Boton icono="foto" disabled={ocupado} onClick={() => entrada.current?.click()}>
-            {ocupado ? 'Guardando…' : actual ? 'Cambiar foto' : 'Subir foto'}
+          <Boton icono="photo" disabled={ocupado} onClick={() => entry.current?.click()}>
+            {ocupado ? 'Guardando…' : current ? 'Cambiar foto' : 'Subir foto'}
           </Boton>
-          {actual && (
-            <Boton variante="fantasma" disabled={ocupado} onClick={() => void subir(null)}>
+          {current && (
+            <Boton variant="ghost" disabled={ocupado} onClick={() => void subir(null)}>
               Quitar foto
             </Boton>
           )}
         </span>
       </div>
       <input
-        ref={entrada}
+        ref={entry}
         type="file"
         accept="image/*"
         className="sr-only"

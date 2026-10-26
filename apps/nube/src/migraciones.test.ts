@@ -8,17 +8,17 @@ import { baseDePrueba, baseVacia } from './pruebas/pglite'
 const m1 = MIGRACIONES_NUBE[0] as MigracionNube
 const m2: MigracionNube = {
   version: 2,
-  nombre: 'cosas',
+  name: 'cosas',
   sql: 'CREATE TABLE cosa (id integer PRIMARY KEY, v text); INSERT INTO cosa VALUES (1, $$uno$$);',
 }
 const m3: MigracionNube = {
   version: 3,
-  nombre: 'mas_cosas',
+  name: 'more_stuff',
   // Falla si la 2 no se aplicó antes: la tabla `cosa` no existiría.
   sql: 'ALTER TABLE cosa ADD COLUMN extra text; UPDATE cosa SET extra = $$dos$$ WHERE id = 1;',
 }
 
-const tablas = async (db: ReturnType<typeof baseVacia>['db']) =>
+const sqlTables = async (db: ReturnType<typeof baseVacia>['db']) =>
   (
     await db.query<{ t: string }>(
       "SELECT tablename AS t FROM pg_tables WHERE schemaname = 'public' ORDER BY 1",
@@ -29,19 +29,19 @@ describe('aplicar', () => {
   it('en una base vacía aplica la 1 y deja el registro con su huella', async () => {
     const { sql, db } = baseVacia()
     expect(await migrar(sql)).toEqual([1])
-    const filas = (
-      await db.query<{ version: number; nombre: string; huella: string }>(
-        'SELECT version, nombre, huella FROM migracion',
+    const rows = (
+      await db.query<{ version: number; name: string; fingerprint: string }>(
+        'SELECT version, name, fingerprint FROM migrations',
       )
     ).rows
-    expect(filas).toEqual([{ version: 1, nombre: 'inicial', huella: huellaSql(m1.sql) }])
-    expect(await tablas(db)).toEqual(
+    expect(rows).toEqual([{ version: 1, name: 'initial', fingerprint: huellaSql(m1.sql) }])
+    expect(await sqlTables(db)).toEqual(
       expect.arrayContaining([
-        'restaurante',
-        'codigo_registro',
-        'hub',
-        'evento',
-        'evento_distinto',
+        'restaurants',
+        'registration_codes',
+        'hubs',
+        'events',
+        'divergent_events',
       ]),
     )
   })
@@ -49,9 +49,9 @@ describe('aplicar', () => {
   it('repetir no hace nada, ni la 2.ª, ni la 10.ª vez', async () => {
     const { sql, db } = baseVacia()
     await migrar(sql)
-    const antes = (await db.query('SELECT * FROM migracion')).rows
+    const before = (await db.query('SELECT * FROM migrations')).rows
     for (let i = 0; i < 10; i++) expect(await migrar(sql)).toEqual([])
-    expect((await db.query('SELECT * FROM migracion')).rows).toEqual(antes)
+    expect((await db.query('SELECT * FROM migrations')).rows).toEqual(before)
   })
 
   it('varias migraciones se aplican en orden, y solo las que faltan', async () => {
@@ -65,7 +65,7 @@ describe('aplicar', () => {
     ])
     const versiones = (
       await db.query<{ version: number }>(
-        'SELECT version FROM migracion ORDER BY aplicada_en, version',
+        'SELECT version FROM migrations ORDER BY applied_at, version',
       )
     ).rows.map((r) => r.version)
     expect(versiones).toEqual([1, 2, 3])
@@ -84,16 +84,16 @@ describe('aplicar', () => {
       migrar(sql, [m1, m2]),
     ])
     expect(resultados.flat().sort()).toEqual([1, 2])
-    expect((await db.query('SELECT version FROM migracion')).rows).toHaveLength(2)
+    expect((await db.query('SELECT version FROM migrations')).rows).toHaveLength(2)
     expect((await db.query('SELECT * FROM cosa')).rows).toHaveLength(1)
   })
 
   it('si el rol faro_datos ya existe en el servidor (otra base), la migración no falla ni lo duplica', async () => {
     const { sql, db } = baseVacia()
-    await db.exec('CREATE ROLE faro_datos NOLOGIN NOBYPASSRLS')
+    await db.exec('CREATE ROLE faro_data NOLOGIN NOBYPASSRLS')
     await expect(migrar(sql)).resolves.toEqual([1])
     expect(
-      (await db.query("SELECT count(*)::int AS n FROM pg_roles WHERE rolname = 'faro_datos'")).rows,
+      (await db.query("SELECT count(*)::int AS n FROM pg_roles WHERE rolname = 'faro_data'")).rows,
     ).toEqual([{ n: 1 }])
   })
 
@@ -101,32 +101,32 @@ describe('aplicar', () => {
     const { sql, db } = baseVacia()
     await migrar(sql, [m1, m2])
     expect(await migrar(sql, [m1])).toEqual([])
-    expect((await db.query('SELECT version FROM migracion')).rows).toHaveLength(2)
+    expect((await db.query('SELECT version FROM migrations')).rows).toHaveLength(2)
   })
 
   it('la migración 1 deja la seguridad por fila activa y el rol sin permisos de más', async () => {
     const { db } = await baseDePrueba()
     const rls = (
       await db.query<{ relname: string; relrowsecurity: boolean }>(
-        "SELECT relname, relrowsecurity FROM pg_class WHERE relname IN ('evento', 'evento_distinto') ORDER BY 1",
+        "SELECT relname, relrowsecurity FROM pg_class WHERE relname IN ('events', 'divergent_events') ORDER BY 1",
       )
     ).rows
     expect(rls).toEqual([
-      { relname: 'evento', relrowsecurity: true },
-      { relname: 'evento_distinto', relrowsecurity: true },
+      { relname: 'divergent_events', relrowsecurity: true },
+      { relname: 'events', relrowsecurity: true },
     ])
-    const permisos = (
+    const permissions = (
       await db.query<{ t: string; p: string }>(
         `SELECT table_name AS t, privilege_type AS p FROM information_schema.role_table_grants
-         WHERE grantee = 'faro_datos' AND table_schema = 'public' ORDER BY 1, 2`,
+         WHERE grantee = 'faro_data' AND table_schema = 'public' ORDER BY 1, 2`,
       )
     ).rows
-    const de = (tabla: string) => permisos.filter((x) => x.t === tabla).map((x) => x.p)
-    expect(de('evento')).toEqual(['INSERT', 'SELECT'])
-    expect(de('evento_distinto')).toEqual(['INSERT', 'SELECT'])
-    expect(de('restaurante')).toEqual(['INSERT', 'SELECT'])
-    expect(de('migracion')).toEqual([])
-    for (const t of permisos) expect(['DELETE', 'TRUNCATE']).not.toContain(t.p)
+    const de = (tabla: string) => permissions.filter((x) => x.t === tabla).map((x) => x.p)
+    expect(de('events')).toEqual(['INSERT', 'SELECT'])
+    expect(de('divergent_events')).toEqual(['INSERT', 'SELECT'])
+    expect(de('restaurants')).toEqual(['INSERT', 'SELECT'])
+    expect(de('migrations')).toEqual([])
+    for (const t of permissions) expect(['DELETE', 'TRUNCATE']).not.toContain(t.p)
   })
 })
 
@@ -151,8 +151,8 @@ describe('una migración ya aplicada no se edita', () => {
     await expect(migrar(sql, [{ ...m1, sql: `${m1.sql}\n-- cambio` }, m2])).rejects.toThrow(
       /cambió/,
     )
-    expect(await tablas(db)).not.toContain('cosa')
-    expect((await db.query('SELECT version FROM migracion')).rows).toHaveLength(1)
+    expect(await sqlTables(db)).not.toContain('cosa')
+    expect((await db.query('SELECT version FROM migrations')).rows).toHaveLength(1)
   })
 
   it('editar una intermedia ya aplicada también falla', async () => {
@@ -166,7 +166,7 @@ describe('una migración ya aplicada no se edita', () => {
   it('cambiar solo el nombre no es una edición del SQL', async () => {
     const { sql } = baseVacia()
     await migrar(sql)
-    await expect(migrar(sql, [{ ...m1, nombre: 'otro_nombre' }])).resolves.toEqual([])
+    await expect(migrar(sql, [{ ...m1, name: 'other_name' }])).resolves.toEqual([])
   })
 
   it('la huella cambia con cualquier carácter, incluidas las tildes', () => {
@@ -179,11 +179,11 @@ describe('una migración ya aplicada no se edita', () => {
 })
 
 describe('numeración', () => {
-  const sinTocar = async (lista: MigracionNube[]) => {
+  const sinTocar = async (list: MigracionNube[]) => {
     const { sql, db } = baseVacia()
-    await expect(migrar(sql, lista)).rejects.toThrow(/numeradas 1, 2, 3/)
+    await expect(migrar(sql, list)).rejects.toThrow(/numeradas 1, 2, 3/)
     // Falló antes de tocar la base: ni siquiera existe el registro de migraciones.
-    expect(await tablas(db)).toEqual([])
+    expect(await sqlTables(db)).toEqual([])
   }
 
   it('empezar en 2 falla', () => sinTocar([{ ...m2, version: 2 }]))
@@ -206,24 +206,24 @@ describe('una migración que falla', () => {
   it('se deshace entera: ni sus tablas ni su fila en el registro', async () => {
     const { sql, db } = baseVacia()
     await migrar(sql)
-    const rota: MigracionNube = {
+    const broken: MigracionNube = {
       version: 2,
-      nombre: 'rota',
+      name: 'broken',
       sql: 'CREATE TABLE a (x integer); CREATE TABLE b (x integer); SELECT esto_no_existe();',
     }
-    await expect(migrar(sql, [m1, rota])).rejects.toThrow()
-    expect(await tablas(db)).not.toContain('a')
-    expect(await tablas(db)).not.toContain('b')
-    expect((await db.query('SELECT version FROM migracion')).rows).toHaveLength(1)
+    await expect(migrar(sql, [m1, broken])).rejects.toThrow()
+    expect(await sqlTables(db)).not.toContain('a')
+    expect(await sqlTables(db)).not.toContain('b')
+    expect((await db.query('SELECT version FROM migrations')).rows).toHaveLength(1)
     // Corregida, la misma versión se aplica sin problema.
     expect(await migrar(sql, [m1, m2])).toEqual([2])
   })
 
   it('las anteriores a la que falla se quedan aplicadas', async () => {
     const { sql, db } = baseVacia()
-    const rota: MigracionNube = { version: 3, nombre: 'rota', sql: 'SELECT esto_no_existe();' }
-    await expect(migrar(sql, [m1, m2, rota])).rejects.toThrow()
-    expect((await db.query('SELECT version FROM migracion ORDER BY 1')).rows).toEqual([
+    const broken: MigracionNube = { version: 3, name: 'broken', sql: 'SELECT esto_no_existe();' }
+    await expect(migrar(sql, [m1, m2, broken])).rejects.toThrow()
+    expect((await db.query('SELECT version FROM migrations ORDER BY 1')).rows).toEqual([
       { version: 1 },
       { version: 2 },
     ])

@@ -1,21 +1,21 @@
 import {
-  cuadreDeTurno,
-  type EstadoPedido,
-  type EventoPedido,
-  informe,
-  nuevoId,
-  reconstruir,
-  totalesPedido,
+  newId,
+  type OrderEvent,
+  type OrderState,
+  orderTotals,
+  rebuild,
+  report,
+  shiftReconciliation,
 } from '@pos/core'
 import { aplicarMigraciones } from '@pos/db'
 import { abrirBase } from '@pos/db/node'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { accionArb } from '../../core/src/pruebas/simulador'
+import { actionArb } from '../../core/src/testing/simulator'
 import { AlmacenMemoria } from './hub/almacen'
 import { AlmacenSqlite } from './hub/almacen-sqlite'
 import { cierreDeTurno, cuadreGuardado, datosDeInforme } from './hub/informe'
-import { armarHistoria, cargar, DIAS, type PlanDeHistoria } from './pruebas/historias'
+import { armarHistoria, cargar, DAYS, type PlanDeHistoria } from './pruebas/historias'
 import { AHORA, baseSqlite } from './pruebas/montaje'
 
 // Lo que el hub lee de la base para los reportes (tarea 1.9, docs/KPIS.md#período), con historias
@@ -23,29 +23,29 @@ import { AHORA, baseSqlite } from './pruebas/montaje'
 // reabiertos y vueltos a cerrar, y turnos de caja. Lo mismo con el almacén en memoria y con SQLite.
 
 const CONFIG = { seed: 20_261_041, numRuns: 120 }
-const CONFIG_INFORME = { ventas_por_mesero: 'quien_agrega', redondeo_modo: 'mitad_arriba' } as const
+const CONFIG_INFORME = { sales_by_waiter: 'added_by', rounding_mode: 'half_up' } as const
 
 const plan = fc.record<PlanDeHistoria>({
-  acciones: fc.array(accionArb, { minLength: 10, maxLength: 70, size: 'max' }),
-  dias: fc.array(fc.nat(2), { minLength: 1, maxLength: 150 }),
-  cierra: fc.tuple(fc.boolean(), fc.boolean()),
-  propinas: fc.tuple(fc.constantFrom(0, 1_000), fc.constantFrom(0, 2_500)),
+  actions: fc.array(actionArb, { minLength: 10, maxLength: 70, size: 'max' }),
+  days: fc.array(fc.nat(2), { minLength: 1, maxLength: 150 }),
+  closes: fc.tuple(fc.boolean(), fc.boolean()),
+  tips: fc.tuple(fc.constantFrom(0, 1_000), fc.constantFrom(0, 2_500)),
 })
-const ventana = fc.record({ desde: fc.nat(2), largo: fc.nat(2) })
-const rango = (v: { desde: number; largo: number }) => ({
-  desde: DIAS[Math.min(v.desde, 2)] as string,
-  hasta: DIAS[Math.min(v.desde + v.largo, 2)] as string,
+const ventana = fc.record({ from: fc.nat(2), length: fc.nat(2) })
+const range = (v: { from: number; length: number }) => ({
+  from: DAYS[Math.min(v.from, 2)] as string,
+  until: DAYS[Math.min(v.from + v.length, 2)] as string,
 })
 
-const suma = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
+const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 
-function almacenes(eventos: readonly EventoPedido[]) {
-  const memoria = new AlmacenMemoria()
-  cargar(memoria, eventos)
+function almacenes(events: readonly OrderEvent[]) {
+  const memory = new AlmacenMemoria()
+  cargar(memory, events)
   const { db, restauranteId } = baseSqlite()
   const sqlite = new AlmacenSqlite(db, restauranteId)
-  cargar(sqlite, eventos)
-  return { memoria, sqlite, db, restauranteId }
+  cargar(sqlite, events)
+  return { memory, sqlite, db, restauranteId }
 }
 
 describe('datosDeInforme con historias al azar', () => {
@@ -53,18 +53,16 @@ describe('datosDeInforme con historias al azar', () => {
     fc.assert(
       fc.property(plan, ventana, (p, v) => {
         const h = armarHistoria(p)
-        const { memoria, sqlite, db, restauranteId } = almacenes(h.eventos)
-        const { desde, hasta } = rango(v)
-        const enMemoria = datosDeInforme(memoria, desde, hasta)
-        const enSqlite = datosDeInforme(sqlite, desde, hasta)
+        const { memory, sqlite, db, restauranteId } = almacenes(h.events)
+        const { from, until } = range(v)
+        const enMemoria = datosDeInforme(memory, from, until)
+        const enSqlite = datosDeInforme(sqlite, from, until)
         expect(enSqlite).toEqual(enMemoria)
         // «Reiniciar el hub»: otro almacén sobre la misma base da lo mismo.
-        expect(datosDeInforme(new AlmacenSqlite(db, restauranteId), desde, hasta)).toEqual(
-          enMemoria,
-        )
+        expect(datosDeInforme(new AlmacenSqlite(db, restauranteId), from, until)).toEqual(enMemoria)
         // Y el informe que sale de ellos.
-        expect(informe({ ...enSqlite, config: CONFIG_INFORME })).toEqual(
-          informe({ ...enMemoria, config: CONFIG_INFORME }),
+        expect(report({ ...enSqlite, config: CONFIG_INFORME })).toEqual(
+          report({ ...enMemoria, config: CONFIG_INFORME }),
         )
       }),
       CONFIG,
@@ -75,32 +73,32 @@ describe('datosDeInforme con historias al azar', () => {
     fc.assert(
       fc.property(plan, ventana, (p, v) => {
         const h = armarHistoria(p)
-        const { memoria, sqlite } = almacenes(h.eventos)
-        const { desde, hasta } = rango(v)
-        const datos = datosDeInforme(memoria, desde, hasta)
-        expect(datosDeInforme(sqlite, desde, hasta).cierres).toEqual(datos.cierres)
-        const cierres = h.eventos.filter(
-          (e) => e.tipo === 'PedidoCerrado' && e.dia_operativo >= desde && e.dia_operativo <= hasta,
+        const { memory, sqlite } = almacenes(h.events)
+        const { from, until } = range(v)
+        const data = datosDeInforme(memory, from, until)
+        expect(datosDeInforme(sqlite, from, until).closings).toEqual(data.closings)
+        const closings = h.events.filter(
+          (e) => e.type === 'OrderClosed' && e.business_day >= from && e.business_day <= until,
         )
-        expect(datos.cierres).toHaveLength(cierres.length)
-        for (const [i, c] of cierres.entries()) {
-          const dato = datos.cierres[i]
-          const previos = h.eventos.filter(
+        expect(data.closings).toHaveLength(closings.length)
+        for (const [i, c] of closings.entries()) {
+          const dato = data.closings[i]
+          const previos = h.events.filter(
             (e) =>
-              e.tipo === 'PedidoCerrado' &&
-              e.agregado_id === c.agregado_id &&
-              e.secuencia < c.secuencia,
+              e.type === 'OrderClosed' &&
+              e.aggregate_id === c.aggregate_id &&
+              e.sequence < c.sequence,
           )
-          const hasta1 = (secuencia: number) =>
-            reconstruir(
-              h.eventos.filter((e) => e.secuencia <= secuencia),
-              c.agregado_id,
+          const hasta1 = (sequence: number) =>
+            rebuild(
+              h.events.filter((e) => e.sequence <= sequence),
+              c.aggregate_id,
             )
-          expect(dato?.despues).toEqual(hasta1(c.secuencia))
+          expect(dato?.after).toEqual(hasta1(c.sequence))
           // El primer cierre no tiene anterior; los demás parten del cierre inmediatamente anterior.
-          const anterior = previos.at(-1)
-          expect(dato?.antes ?? null).toEqual(anterior ? hasta1(anterior.secuencia) : null)
-          expect(dato?.despues.estado).toBe('cerrado')
+          const previous = previos.at(-1)
+          expect(dato?.before ?? null).toEqual(previous ? hasta1(previous.sequence) : null)
+          expect(dato?.after.status).toBe('closed')
         }
       }),
       { ...CONFIG, seed: 20_261_042 },
@@ -111,46 +109,46 @@ describe('datosDeInforme con historias al azar', () => {
     fc.assert(
       fc.property(plan, ventana, (p, v) => {
         const h = armarHistoria(p)
-        const { sqlite } = almacenes(h.eventos)
-        const { desde, hasta } = rango(v)
-        const datos = datosDeInforme(sqlite, desde, hasta)
-        const secuencias = datos.eventos.map((e) => e.secuencia)
+        const { sqlite } = almacenes(h.events)
+        const { from, until } = range(v)
+        const data = datosDeInforme(sqlite, from, until)
+        const secuencias = data.events.map((e) => e.sequence)
         expect(secuencias).toEqual([...secuencias].sort((a, b) => (a ?? 0) - (b ?? 0)))
-        expect(new Set(datos.eventos.map((e) => e.id)).size).toBe(datos.eventos.length)
-        const pagos = new Set(
-          datos.eventos.filter((e) => e.tipo === 'PagoRegistrado').map((e) => e.datos.pago_id),
+        expect(new Set(data.events.map((e) => e.id)).size).toBe(data.events.length)
+        const payments = new Set(
+          data.events.filter((e) => e.type === 'PaymentRecorded').map((e) => e.data.payment_id),
         )
-        const delPeriodo = h.eventos.filter(
+        const fromPeriod = h.events.filter(
           (e) =>
-            e.dia_operativo >= desde &&
-            e.dia_operativo <= hasta &&
+            e.business_day >= from &&
+            e.business_day <= until &&
             [
-              'PagoRegistrado',
-              'PagoAnulado',
-              'ReembolsoRegistrado',
-              'ItemAnulado',
-              'PedidoCancelado',
-              'MovimientoCajaRegistrado',
-            ].includes(e.tipo),
+              'PaymentRecorded',
+              'PaymentVoided',
+              'RefundRecorded',
+              'ItemVoided',
+              'OrderCanceled',
+              'CashMovementRecorded',
+            ].includes(e.type),
         )
         // Todo lo del período está, y lo que sobra son solo pagos de otro día que alguien reversó.
-        const ids = new Set(datos.eventos.map((e) => e.id))
-        for (const e of delPeriodo) expect(ids).toContain(e.id)
-        const delDia = new Set(delPeriodo.map((e) => e.id))
-        for (const e of datos.eventos) {
+        const ids = new Set(data.events.map((e) => e.id))
+        for (const e of fromPeriod) expect(ids).toContain(e.id)
+        const delDia = new Set(fromPeriod.map((e) => e.id))
+        for (const e of data.events) {
           if (delDia.has(e.id)) continue
-          expect(e.tipo).toBe('PagoRegistrado')
+          expect(e.type).toBe('PaymentRecorded')
           expect(
-            datos.eventos.some(
+            data.events.some(
               (x) =>
-                (x.tipo === 'PagoAnulado' || x.tipo === 'ReembolsoRegistrado') &&
-                x.datos.pago_id === (e.datos as { pago_id: string }).pago_id,
+                (x.type === 'PaymentVoided' || x.type === 'RefundRecorded') &&
+                x.data.payment_id === (e.data as { payment_id: string }).payment_id,
             ),
           ).toBe(true)
         }
-        for (const e of datos.eventos) {
-          if (e.tipo === 'PagoAnulado' || e.tipo === 'ReembolsoRegistrado')
-            expect(pagos).toContain(e.datos.pago_id)
+        for (const e of data.events) {
+          if (e.type === 'PaymentVoided' || e.type === 'RefundRecorded')
+            expect(payments).toContain(e.data.payment_id)
         }
       }),
       { ...CONFIG, seed: 20_261_043 },
@@ -161,40 +159,40 @@ describe('datosDeInforme con historias al azar', () => {
     fc.assert(
       fc.property(plan, ventana, (p, v) => {
         const h = armarHistoria(p)
-        const { sqlite } = almacenes(h.eventos)
-        const { desde, hasta } = rango(v)
-        const r = informe({ ...datosDeInforme(sqlite, desde, hasta), config: CONFIG_INFORME })
+        const { sqlite } = almacenes(h.events)
+        const { from, until } = range(v)
+        const r = report({ ...datosDeInforme(sqlite, from, until), config: CONFIG_INFORME })
         // Aparte, sobre todos los eventos: el dinero que entró o salió por medio en esos días.
-        const pagos = new Map(
-          h.eventos
-            .filter((e) => e.tipo === 'PagoRegistrado')
-            .map((e) => [e.datos.pago_id, e.datos] as const),
+        const payments = new Map(
+          h.events
+            .filter((e) => e.type === 'PaymentRecorded')
+            .map((e) => [e.data.payment_id, e.data] as const),
         )
-        const esperado = new Map<string, number>()
-        const mover = (clave: string, n: number) =>
-          esperado.set(clave, (esperado.get(clave) ?? 0) + n)
-        for (const e of h.eventos) {
-          if (e.dia_operativo < desde || e.dia_operativo > hasta) continue
-          if (e.tipo === 'PagoRegistrado')
-            mover(
-              `${e.datos.medio}:${e.datos.medio_propio_id ?? ''}`,
-              e.datos.monto + e.datos.ajuste_redondeo,
+        const expected = new Map<string, number>()
+        const move = (key: string, n: number) => expected.set(key, (expected.get(key) ?? 0) + n)
+        for (const e of h.events) {
+          if (e.business_day < from || e.business_day > until) continue
+          if (e.type === 'PaymentRecorded')
+            move(
+              `${e.data.method}:${e.data.custom_method_id ?? ''}`,
+              e.data.amount + e.data.rounding_adjustment,
             )
-          else if (e.tipo === 'PagoAnulado') {
-            const o = pagos.get(e.datos.pago_id)
-            if (o) mover(`${o.medio}:${o.medio_propio_id ?? ''}`, -(o.monto + o.ajuste_redondeo))
-          } else if (e.tipo === 'ReembolsoRegistrado') {
-            const o = pagos.get(e.datos.pago_id)
-            mover(`${e.datos.medio}:${o?.medio_propio_id ?? ''}`, -e.datos.monto_venta)
+          else if (e.type === 'PaymentVoided') {
+            const o = payments.get(e.data.payment_id)
+            if (o)
+              move(`${o.method}:${o.custom_method_id ?? ''}`, -(o.amount + o.rounding_adjustment))
+          } else if (e.type === 'RefundRecorded') {
+            const o = payments.get(e.data.payment_id)
+            move(`${e.data.method}:${o?.custom_method_id ?? ''}`, -e.data.sale_amount)
           }
         }
-        for (const m of r.porMedio)
-          expect(m.venta, `${m.medio}`).toBe(
-            esperado.get(`${m.medio}:${m.medioPropioId ?? ''}`) ?? 0,
+        for (const m of r.byMethod)
+          expect(m.sale, `${m.method}`).toBe(
+            expected.get(`${m.method}:${m.customMethodId ?? ''}`) ?? 0,
           )
         // Lo que no salió en el informe tiene que ser 0 en el oráculo.
-        const salieron = new Set(r.porMedio.map((m) => `${m.medio}:${m.medioPropioId ?? ''}`))
-        for (const [clave, n] of esperado) if (!salieron.has(clave)) expect(n).toBe(0)
+        const salieron = new Set(r.byMethod.map((m) => `${m.method}:${m.customMethodId ?? ''}`))
+        for (const [key, n] of expected) if (!salieron.has(key)) expect(n).toBe(0)
       }),
       { ...CONFIG, seed: 20_261_044 },
     )
@@ -204,34 +202,30 @@ describe('datosDeInforme con historias al azar', () => {
     fc.assert(
       fc.property(plan, ventana, (p, v) => {
         const h = armarHistoria(p)
-        const { sqlite } = almacenes(h.eventos)
-        const { desde, hasta } = rango(v)
-        const r = informe({ ...datosDeInforme(sqlite, desde, hasta), config: CONFIG_INFORME })
+        const { sqlite } = almacenes(h.events)
+        const { from, until } = range(v)
+        const r = report({ ...datosDeInforme(sqlite, from, until), config: CONFIG_INFORME })
         // El precio de cada ítem, tomado de su alta o de la copia que viajó al mover o unir.
-        const precios = new Map<string, number>()
-        const copia = (i: {
+        const prices = new Map<string, number>()
+        const copy = (i: {
           item_id: string
-          precio_unitario: number
-          modificadores: { precio_extra: number }[]
-        }) =>
-          precios.set(
-            i.item_id,
-            i.precio_unitario + suma(i.modificadores.map((m) => m.precio_extra)),
-          )
-        for (const e of h.eventos) {
-          if (e.tipo === 'ItemAgregado') copia(e.datos)
-          else if (e.tipo === 'ItemsMovidos' || e.tipo === 'PedidosUnidos')
-            for (const m of e.datos.items) copia(m.item)
+          unit_price: number
+          modifiers: { extra_price: number }[]
+        }) => prices.set(i.item_id, i.unit_price + sum(i.modifiers.map((m) => m.extra_price)))
+        for (const e of h.events) {
+          if (e.type === 'ItemAdded') copy(e.data)
+          else if (e.type === 'ItemsMoved' || e.type === 'OrdersMerged')
+            for (const m of e.data.items) copy(m.item)
         }
-        const anulados = h.eventos.filter(
-          (e) => e.tipo === 'ItemAnulado' && e.dia_operativo >= desde && e.dia_operativo <= hasta,
+        const voidedEvents = h.events.filter(
+          (e) => e.type === 'ItemVoided' && e.business_day >= from && e.business_day <= until,
         )
-        expect(r.anulaciones.map((a) => a.eventoId)).toEqual(anulados.map((e) => e.id))
-        for (const [i, a] of r.anulaciones.entries()) {
-          const e = anulados[i]
-          if (e?.tipo !== 'ItemAnulado') throw new Error('desorden')
-          expect(a.valor).toBe(e.datos.cantidad * (precios.get(e.datos.item_id) ?? Number.NaN))
-          expect(a.nombre).not.toBe('Producto')
+        expect(r.voids.map((a) => a.eventId)).toEqual(voidedEvents.map((e) => e.id))
+        for (const [i, a] of r.voids.entries()) {
+          const e = voidedEvents[i]
+          if (e?.type !== 'ItemVoided') throw new Error('desorden')
+          expect(a.value).toBe(e.data.quantity * (prices.get(e.data.item_id) ?? Number.NaN))
+          expect(a.name).not.toBe('Producto')
         }
       }),
       { ...CONFIG, seed: 20_261_049 },
@@ -239,28 +233,26 @@ describe('datosDeInforme con historias al azar', () => {
   })
 
   it('el neto del período es lo pagado de más en cada cierre que en el anterior, sin reembolsos', () => {
-    const pagado = (p: EstadoPedido | null) =>
-      suma(
-        Object.values(p?.pagos ?? {})
-          .filter((x) => !x.anulado)
-          .map((x) => x.monto - x.reembolsadoVenta),
+    const paid = (p: OrderState | null) =>
+      sum(
+        Object.values(p?.payments ?? {})
+          .filter((x) => !x.voided)
+          .map((x) => x.amount - x.refundedSale),
       )
     fc.assert(
       fc.property(plan, ventana, (p, v) => {
         const h = armarHistoria(p)
-        const { memoria } = almacenes(h.eventos)
-        const { desde, hasta } = rango(v)
-        const datos = datosDeInforme(memoria, desde, hasta)
-        const r = informe({ ...datos, config: CONFIG_INFORME })
-        expect(r.ventas.neto).toBe(
-          suma(datos.cierres.map((c) => pagado(c.despues) - pagado(c.antes))),
-        )
-        expect(suma(r.porProducto.map((x) => x.neto))).toBe(r.ventas.neto)
-        expect(suma(r.porMesero.map((x) => x.neto))).toBe(r.ventas.neto)
-        expect(suma(r.ventas.impuestos.map((x) => x.base + x.impuesto))).toBe(r.ventas.neto)
+        const { memory } = almacenes(h.events)
+        const { from, until } = range(v)
+        const data = datosDeInforme(memory, from, until)
+        const r = report({ ...data, config: CONFIG_INFORME })
+        expect(r.sales.net).toBe(sum(data.closings.map((c) => paid(c.after) - paid(c.before))))
+        expect(sum(r.byProduct.map((x) => x.net))).toBe(r.sales.net)
+        expect(sum(r.byWaiter.map((x) => x.net))).toBe(r.sales.net)
+        expect(sum(r.sales.taxes.map((x) => x.base + x.tax))).toBe(r.sales.net)
         // Una cuenta y sus comensales se cuentan una vez: en el primer cierre.
-        expect(r.ventas.comensales).toBe(
-          suma(datos.cierres.filter((c) => c.antes === null).map((c) => c.despues.comensales)),
+        expect(r.sales.guests).toBe(
+          sum(data.closings.filter((c) => c.before === null).map((c) => c.after.guests)),
         )
       }),
       { ...CONFIG, seed: 20_261_045 },
@@ -273,31 +265,31 @@ describe('turnos de caja leídos de la base', () => {
     fc.assert(
       fc.property(plan, (p) => {
         const h = armarHistoria(p)
-        const { memoria, sqlite } = almacenes(h.eventos)
-        for (const [n, turno] of h.turnos.entries()) {
-          const apertura = DIAS[0]
-          const cobrosEsperados = h.eventos.filter(
+        const { memory, sqlite } = almacenes(h.events)
+        for (const [n, shift] of h.shifts.entries()) {
+          const opening = DAYS[0]
+          const cobrosEsperados = h.events.filter(
             (e) =>
-              ['PagoRegistrado', 'PagoAnulado', 'ReembolsoRegistrado'].includes(e.tipo) &&
-              (e.datos as { turno_caja_id?: string }).turno_caja_id === turno,
+              ['PaymentRecorded', 'PaymentVoided', 'RefundRecorded'].includes(e.type) &&
+              (e.data as { register_shift_id?: string }).register_shift_id === shift,
           )
-          expect(memoria.cobrosDeTurno(turno, apertura).map((e) => e.id)).toEqual(
+          expect(memory.cobrosDeTurno(shift, opening).map((e) => e.id)).toEqual(
             cobrosEsperados.map((e) => e.id),
           )
-          expect(sqlite.cobrosDeTurno(turno, apertura).map((e) => e.id)).toEqual(
+          expect(sqlite.cobrosDeTurno(shift, opening).map((e) => e.id)).toEqual(
             cobrosEsperados.map((e) => e.id),
           )
           // El cuadre desde la base es el del turno calculado con todos los eventos.
-          const completo = cuadreDeTurno(h.eventos, turno)
-          expect(cuadreGuardado(sqlite, turno)).toEqual(completo)
-          expect(cuadreGuardado(memoria, turno)).toEqual(completo)
-          const cierre = cierreDeTurno(sqlite, turno)
-          expect(cierreDeTurno(memoria, turno)).toEqual(cierre)
-          if (p.cierra[n as 0 | 1]) {
-            expect(cierre?.cuadre.cerrado).not.toBeNull()
-            expect(cierre?.diaOperativo).toBe(DIAS[2])
-            expect(cierre?.diaApertura).toBe(DIAS[0])
-          } else expect(cierre).toBeNull()
+          const completo = shiftReconciliation(h.events, shift)
+          expect(cuadreGuardado(sqlite, shift)).toEqual(completo)
+          expect(cuadreGuardado(memory, shift)).toEqual(completo)
+          const closeout = cierreDeTurno(sqlite, shift)
+          expect(cierreDeTurno(memory, shift)).toEqual(closeout)
+          if (p.closes[n as 0 | 1]) {
+            expect(closeout?.reconciliation.closed).not.toBeNull()
+            expect(closeout?.businessDay).toBe(DAYS[2])
+            expect(closeout?.diaApertura).toBe(DAYS[0])
+          } else expect(closeout).toBeNull()
         }
       }),
       { ...CONFIG, seed: 20_261_046 },
@@ -305,14 +297,14 @@ describe('turnos de caja leídos de la base', () => {
   })
 
   it('un turno sin abrir o inventado no tiene cuadre ni cierre ni cobros', () => {
-    const { memoria, sqlite } = almacenes([])
-    for (const a of [memoria, sqlite]) {
-      const id = nuevoId()
+    const { memory, sqlite } = almacenes([])
+    for (const a of [memory, sqlite]) {
+      const id = newId()
       expect(cuadreGuardado(a, id)).toBeNull()
       expect(cierreDeTurno(a, id)).toBeNull()
-      expect(a.cobrosDeTurno(id, DIAS[0])).toEqual([])
-      expect(a.eventosDelPeriodo(['PedidoCerrado'], DIAS[0], DIAS[2])).toEqual([])
-      expect(a.eventosDelPeriodo([], DIAS[0], DIAS[2])).toEqual([])
+      expect(a.cobrosDeTurno(id, DAYS[0])).toEqual([])
+      expect(a.eventosDelPeriodo(['OrderClosed'], DAYS[0], DAYS[2])).toEqual([])
+      expect(a.eventosDelPeriodo([], DAYS[0], DAYS[2])).toEqual([])
     }
   })
 })
@@ -321,9 +313,9 @@ describe('multirestaurante: el informe de uno no ve al otro', () => {
   /** Una base con dos restaurantes: el segundo se agrega a la del montaje. */
   function dosRestaurantes() {
     const { db, restauranteId: a } = baseSqlite()
-    const b = nuevoId()
+    const b = newId()
     db.prepare(
-      `INSERT INTO restaurante (id, restaurante_id, creado_en, actualizado_en, version, nombre, config)
+      `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
        VALUES (?, ?, ?, ?, 1, 'Otro', '{}')`,
     ).run(b, b, AHORA, AHORA)
     return { db, a, b }
@@ -338,30 +330,30 @@ describe('multirestaurante: el informe de uno no ve al otro', () => {
         const almA = new AlmacenSqlite(db, a)
         const almB = new AlmacenSqlite(db, b)
         // Entrelazados: A, B, A, B...
-        const n = Math.max(ha.eventos.length, hb.eventos.length)
+        const n = Math.max(ha.events.length, hb.events.length)
         for (let i = 0; i < n; i++) {
-          const ea = ha.eventos[i]
-          const eb = hb.eventos[i]
+          const ea = ha.events[i]
+          const eb = hb.events[i]
           if (ea) cargar(almA, [ea])
           if (eb) cargar(almB, [eb])
         }
-        const solo = (eventos: EventoPedido[]) => {
+        const only = (events: OrderEvent[]) => {
           const m = new AlmacenMemoria()
-          cargar(m, eventos)
+          cargar(m, events)
           return m
         }
-        const { desde, hasta } = rango(v)
-        expect(datosDeInforme(almA, desde, hasta)).toEqual(
-          datosDeInforme(solo(ha.eventos), desde, hasta),
+        const { from, until } = range(v)
+        expect(datosDeInforme(almA, from, until)).toEqual(
+          datosDeInforme(only(ha.events), from, until),
         )
-        expect(datosDeInforme(almB, desde, hasta)).toEqual(
-          datosDeInforme(solo(hb.eventos), desde, hasta),
+        expect(datosDeInforme(almB, from, until)).toEqual(
+          datosDeInforme(only(hb.events), from, until),
         )
         // Los turnos del uno no existen para el otro (el simulador comparte el id TURNO: los cuadres
         // de cada restaurante cuentan solo sus propios pagos).
-        for (const t of ha.turnos) {
-          expect(cuadreGuardado(almA, t)).toEqual(cuadreGuardado(solo(ha.eventos), t))
-          expect(cuadreGuardado(almB, t)).toEqual(cuadreGuardado(solo(hb.eventos), t))
+        for (const t of ha.shifts) {
+          expect(cuadreGuardado(almA, t)).toEqual(cuadreGuardado(only(ha.events), t))
+          expect(cuadreGuardado(almB, t)).toEqual(cuadreGuardado(only(hb.events), t))
         }
       }),
       { ...CONFIG, numRuns: 40, seed: 20_261_047 },
@@ -370,60 +362,60 @@ describe('multirestaurante: el informe de uno no ve al otro', () => {
 
   it('con los mismos ids en los dos, lo de uno nunca aparece en el otro', () => {
     const h = armarHistoria({
-      acciones: [],
-      dias: [1],
-      cierra: [true, true],
-      propinas: [0, 0],
+      actions: [],
+      days: [1],
+      closes: [true, true],
+      tips: [0, 0],
     })
     const { db, a, b } = dosRestaurantes()
     const almA = new AlmacenSqlite(db, a)
     const almB = new AlmacenSqlite(db, b)
-    cargar(almA, h.eventos)
-    for (const t of h.turnos) {
+    cargar(almA, h.events)
+    for (const t of h.shifts) {
       expect(cierreDeTurno(almA, t)).not.toBeNull()
       expect(cierreDeTurno(almB, t)).toBeNull()
       expect(cuadreGuardado(almB, t)).toBeNull()
-      expect(almB.cobrosDeTurno(t, DIAS[0])).toEqual([])
+      expect(almB.cobrosDeTurno(t, DAYS[0])).toEqual([])
     }
-    const vacio = datosDeInforme(almB, DIAS[0], DIAS[2])
-    expect(vacio).toMatchObject({
-      cierres: [],
-      relacionados: [],
-      eventos: [],
+    const empty = datosDeInforme(almB, DAYS[0], DAYS[2])
+    expect(empty).toMatchObject({
+      closings: [],
+      related: [],
+      events: [],
       cierresDeCaja: [],
     })
-    expect(datosDeInforme(almA, DIAS[0], DIAS[2]).cierresDeCaja).toHaveLength(2)
+    expect(datosDeInforme(almA, DAYS[0], DAYS[2]).cierresDeCaja).toHaveLength(2)
   })
 
   it('misma base en un archivo: reabrirla sigue separando los restaurantes', () => {
     // Una base nueva por prueba, sin tocar la de nadie más.
     const db = abrirBase(':memory:')
     aplicarMigraciones(db)
-    const ids = [nuevoId(), nuevoId()] as const
+    const ids = [newId(), newId()] as const
     for (const id of ids)
       db.prepare(
-        `INSERT INTO restaurante (id, restaurante_id, creado_en, actualizado_en, version, nombre, config)
+        `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
          VALUES (?, ?, ?, ?, 1, 'R', '{}')`,
       ).run(id, id, AHORA, AHORA)
     const h = armarHistoria({
-      acciones: [],
-      dias: [2],
-      cierra: [true, false],
-      propinas: [500, 0],
+      actions: [],
+      days: [2],
+      closes: [true, false],
+      tips: [500, 0],
     })
-    cargar(new AlmacenSqlite(db, ids[0]), h.eventos)
-    const reabierto = new AlmacenSqlite(db, ids[1])
-    expect(datosDeInforme(reabierto, DIAS[0], DIAS[2]).eventos).toEqual([])
+    cargar(new AlmacenSqlite(db, ids[0]), h.events)
+    const reopened = new AlmacenSqlite(db, ids[1])
+    expect(datosDeInforme(reopened, DAYS[0], DAYS[2]).events).toEqual([])
     expect(
-      datosDeInforme(new AlmacenSqlite(db, ids[0]), DIAS[0], DIAS[2]).cierresDeCaja,
+      datosDeInforme(new AlmacenSqlite(db, ids[0]), DAYS[0], DAYS[2]).cierresDeCaja,
     ).toHaveLength(1)
   })
 })
 
 describe('las historias llegan a los casos que importan', () => {
   it('hay cierres en otro día, reaperturas, reversos de otro día, turnos cerrados y propinas', () => {
-    const visto = {
-      cerrados: 0,
+    const seen = {
+      closedIds: 0,
       cierreDeUnaReapertura: 0,
       reabiertoSinCerrar: 0,
       reversoDeOtroDia: 0,
@@ -432,75 +424,75 @@ describe('las historias llegan a los casos que importan', () => {
     fc.assert(
       fc.property(plan, ventana, (p, v) => {
         const h = armarHistoria(p)
-        const { memoria } = almacenes(h.eventos)
-        const { desde, hasta } = rango(v)
-        const datos = datosDeInforme(memoria, desde, hasta)
-        if (datos.cierres.length > 0) visto.cerrados += 1
-        if (datos.cierres.some((c) => c.antes !== null)) visto.cierreDeUnaReapertura += 1
-        if (datos.cierresDeCaja.length > 0) visto.turnoCerrado += 1
-        for (const estado of h.servicio.estados) {
-          if (!estado) continue
-          const cierres = h.eventos.filter(
-            (e) => e.tipo === 'PedidoCerrado' && e.agregado_id === estado.id,
+        const { memory } = almacenes(h.events)
+        const { from, until } = range(v)
+        const data = datosDeInforme(memory, from, until)
+        if (data.closings.length > 0) seen.closedIds += 1
+        if (data.closings.some((c) => c.before !== null)) seen.cierreDeUnaReapertura += 1
+        if (data.cierresDeCaja.length > 0) seen.turnoCerrado += 1
+        for (const status of h.service.statuses) {
+          if (!status) continue
+          const closings = h.events.filter(
+            (e) => e.type === 'OrderClosed' && e.aggregate_id === status.id,
           )
-          const reabierto = h.eventos.some(
-            (e) => e.tipo === 'PedidoReabierto' && e.agregado_id === estado.id,
+          const reopened = h.events.some(
+            (e) => e.type === 'OrderReopened' && e.aggregate_id === status.id,
           )
-          if (reabierto && estado.estado === 'abierto' && cierres.length > 0)
-            visto.reabiertoSinCerrar += 1
+          if (reopened && status.status === 'open' && closings.length > 0)
+            seen.reabiertoSinCerrar += 1
         }
         const registrados = new Map(
-          h.eventos
-            .filter((e) => e.tipo === 'PagoRegistrado')
-            .map((e) => [e.datos.pago_id, e.dia_operativo] as const),
+          h.events
+            .filter((e) => e.type === 'PaymentRecorded')
+            .map((e) => [e.data.payment_id, e.business_day] as const),
         )
         if (
-          datos.eventos.some(
+          data.events.some(
             (e) =>
-              (e.tipo === 'PagoAnulado' || e.tipo === 'ReembolsoRegistrado') &&
-              registrados.get(e.datos.pago_id) !== e.dia_operativo,
+              (e.type === 'PaymentVoided' || e.type === 'RefundRecorded') &&
+              registrados.get(e.data.payment_id) !== e.business_day,
           )
         )
-          visto.reversoDeOtroDia += 1
+          seen.reversoDeOtroDia += 1
       }),
       { ...CONFIG, numRuns: 300, seed: 20_261_048 },
     )
-    for (const [caso, n] of Object.entries(visto)) expect(n, caso).toBeGreaterThan(0)
+    for (const [caseName, n] of Object.entries(seen)) expect(n, caseName).toBeGreaterThan(0)
   })
 })
 
 // ── Lo ya reportado de un día no cambia (DINERO.md#día-operativo-e-informes) ──────────────────
 
-const ventasDe = (a: AlmacenMemoria | AlmacenSqlite, desde: string, hasta = desde) =>
-  informe({ ...datosDeInforme(a, desde, hasta), config: CONFIG_INFORME })
+const ventasDe = (a: AlmacenMemoria | AlmacenSqlite, from: string, until = from) =>
+  report({ ...datosDeInforme(a, from, until), config: CONFIG_INFORME })
 
 /** Historias con los días en orden, como en la vida real: nada nuevo cae en un día ya pasado. */
 const planOrdenado = fc.record<PlanDeHistoria>({
-  acciones: fc.array(accionArb, { minLength: 10, maxLength: 80, size: 'max' }),
-  dias: fc.constant([1]),
-  cierra: fc.constant<[boolean, boolean]>([false, false]),
-  propinas: fc.constant<[number, number]>([0, 0]),
+  actions: fc.array(actionArb, { minLength: 10, maxLength: 80, size: 'max' }),
+  days: fc.constant([1]),
+  closes: fc.constant<[boolean, boolean]>([false, false]),
+  tips: fc.constant<[number, number]>([0, 0]),
   cortes: fc
     .tuple(fc.nat(50), fc.nat(50))
     .map(([a, b]) => [Math.min(a, b), Math.max(a, b)] as [number, number]),
 })
 
-const CAMPOS = ['bruto', 'anulado', 'descuentos', 'neto', 'ajustes', 'propinas'] as const
+const CAMPOS = ['gross', 'voided', 'discounts', 'net', 'settings', 'tips'] as const
 
 describe('lo reportado de un día no cambia', () => {
   it('el informe de un día es el mismo hoy que tras cualquier evento posterior en otros días', () => {
     fc.assert(
       fc.property(planOrdenado, (p) => {
         const h = armarHistoria(p)
-        const { memoria, sqlite } = almacenes(h.eventos)
-        for (const dia of DIAS) {
+        const { memory, sqlite } = almacenes(h.events)
+        for (const day of DAYS) {
           // Lo que se sabía al terminar ese día: todo lo registrado hasta él.
-          const hastaElDia = h.eventos.filter((e) => e.dia_operativo <= dia)
-          const { memoria: ayer, sqlite: ayerSqlite } = almacenes(hastaElDia)
-          const entonces = ventasDe(ayer, dia)
-          expect(ventasDe(memoria, dia)).toEqual(entonces)
-          expect(ventasDe(sqlite, dia)).toEqual(entonces)
-          expect(ventasDe(ayerSqlite, dia)).toEqual(entonces)
+          const hastaElDia = h.events.filter((e) => e.business_day <= day)
+          const { memory: yesterday, sqlite: ayerSqlite } = almacenes(hastaElDia)
+          const entonces = ventasDe(yesterday, day)
+          expect(ventasDe(memory, day)).toEqual(entonces)
+          expect(ventasDe(sqlite, day)).toEqual(entonces)
+          expect(ventasDe(ayerSqlite, day)).toEqual(entonces)
         }
       }),
       { ...CONFIG, seed: 20_261_050, numRuns: 60 },
@@ -511,14 +503,14 @@ describe('lo reportado de un día no cambia', () => {
     fc.assert(
       fc.property(planOrdenado, (p) => {
         const h = armarHistoria(p)
-        const { memoria } = almacenes(h.eventos)
-        for (const dia of DIAS) {
-          const { memoria: ayer } = almacenes(h.eventos.filter((e) => e.dia_operativo <= dia))
-          expect(datosDeInforme(memoria, dia, dia).cierres).toEqual(
-            datosDeInforme(ayer, dia, dia).cierres,
+        const { memory } = almacenes(h.events)
+        for (const day of DAYS) {
+          const { memory: yesterday } = almacenes(h.events.filter((e) => e.business_day <= day))
+          expect(datosDeInforme(memory, day, day).closings).toEqual(
+            datosDeInforme(yesterday, day, day).closings,
           )
-          expect(datosDeInforme(memoria, dia, dia).eventos).toEqual(
-            datosDeInforme(ayer, dia, dia).eventos,
+          expect(datosDeInforme(memory, day, day).events).toEqual(
+            datosDeInforme(yesterday, day, day).events,
           )
         }
       }),
@@ -532,38 +524,36 @@ describe('Σ por días = el estado final', () => {
     fc.assert(
       fc.property(plan, (p) => {
         const h = armarHistoria(p)
-        const { memoria } = almacenes(h.eventos)
-        const dias = DIAS.map((d) => ventasDe(memoria, d).ventas)
-        const esperado = { bruto: 0, anulado: 0, descuentos: 0, neto: 0, ajustes: 0, propinas: 0 }
-        let cuentas = 0
-        let comensales = 0
-        for (const id of h.servicio.pedidos) {
-          const cierres = h.eventos.filter(
-            (e) => e.tipo === 'PedidoCerrado' && e.agregado_id === id,
-          )
-          const primero = cierres.at(0)
-          const ultimo = cierres.at(-1)
-          if (!primero || !ultimo) continue
-          const estadoEn = (secuencia: number) =>
-            reconstruir(
-              h.eventos.filter((e) => e.secuencia <= secuencia),
+        const { memory } = almacenes(h.events)
+        const days = DAYS.map((d) => ventasDe(memory, d).sales)
+        const expected = { gross: 0, voided: 0, discounts: 0, net: 0, settings: 0, tips: 0 }
+        let checks = 0
+        let guests = 0
+        for (const id of h.service.orders) {
+          const closings = h.events.filter((e) => e.type === 'OrderClosed' && e.aggregate_id === id)
+          const firstOne = closings.at(0)
+          const ultimo = closings.at(-1)
+          if (!firstOne || !ultimo) continue
+          const estadoEn = (sequence: number) =>
+            rebuild(
+              h.events.filter((e) => e.sequence <= sequence),
               id,
-            ) as EstadoPedido
-          const final = totalesPedido(estadoEn(ultimo.secuencia))
-          esperado.bruto += final.bruto
-          esperado.anulado += final.anulado
-          esperado.descuentos += final.descuento
-          esperado.neto += final.neto
-          esperado.ajustes += final.ajustes
-          esperado.propinas += final.propinas
-          const inicial = estadoEn(primero.secuencia)
-          comensales += inicial.comensales
-          if (totalesPedido(inicial).neto > 0) cuentas += 1
+            ) as OrderState
+          const final = orderTotals(estadoEn(ultimo.sequence))
+          expected.gross += final.gross
+          expected.voided += final.voided
+          expected.discounts += final.discount
+          expected.net += final.net
+          expected.settings += final.settings
+          expected.tips += final.tips
+          const initial = estadoEn(firstOne.sequence)
+          guests += initial.guests
+          if (orderTotals(initial).net > 0) checks += 1
         }
-        for (const campo of CAMPOS)
-          expect(suma(dias.map((d) => d[campo])), campo).toBe(esperado[campo])
-        expect(suma(dias.map((d) => d.cuentas))).toBe(cuentas)
-        expect(suma(dias.map((d) => d.comensales))).toBe(comensales)
+        for (const field of CAMPOS)
+          expect(sum(days.map((d) => d[field])), field).toBe(expected[field])
+        expect(sum(days.map((d) => d.checks))).toBe(checks)
+        expect(sum(days.map((d) => d.guests))).toBe(guests)
       }),
       { ...CONFIG, seed: 20_261_052, numRuns: 100 },
     )
@@ -573,10 +563,10 @@ describe('Σ por días = el estado final', () => {
     fc.assert(
       fc.property(plan, (p) => {
         const h = armarHistoria(p)
-        const { memoria } = almacenes(h.eventos)
-        for (const d of DIAS) {
-          const v = ventasDe(memoria, d).ventas
-          expect(suma(v.impuestos.map((i) => i.base + i.impuesto))).toBe(v.neto)
+        const { memory } = almacenes(h.events)
+        for (const d of DAYS) {
+          const v = ventasDe(memory, d).sales
+          expect(sum(v.taxes.map((i) => i.base + i.tax))).toBe(v.net)
         }
       }),
       { ...CONFIG, seed: 20_261_054 },
@@ -589,13 +579,13 @@ describe('un rango es la suma de sus días', () => {
     fc.assert(
       fc.property(plan, ventana, (p, v) => {
         const h = armarHistoria(p)
-        const { memoria, sqlite } = almacenes(h.eventos)
-        const { desde, hasta } = rango(v)
-        const dias = DIAS.filter((d) => d >= desde && d <= hasta)
-        const todo = ventasDe(sqlite, desde, hasta).ventas
-        const porDia = dias.map((d) => ventasDe(memoria, d).ventas)
-        for (const campo of [...CAMPOS, 'cuentas', 'comensales'] as const)
-          expect(todo[campo], campo).toBe(suma(porDia.map((d) => d[campo])))
+        const { memory, sqlite } = almacenes(h.events)
+        const { from, until } = range(v)
+        const days = DAYS.filter((d) => d >= from && d <= until)
+        const everything = ventasDe(sqlite, from, until).sales
+        const porDia = days.map((d) => ventasDe(memory, d).sales)
+        for (const field of [...CAMPOS, 'checks', 'guests'] as const)
+          expect(everything[field], field).toBe(sum(porDia.map((d) => d[field])))
       }),
       { ...CONFIG, seed: 20_261_055 },
     )
@@ -605,68 +595,64 @@ describe('un rango es la suma de sus días', () => {
     fc.assert(
       fc.property(plan, ventana, (p, v) => {
         const h = armarHistoria(p)
-        const { memoria } = almacenes(h.eventos)
-        const { desde, hasta } = rango(v)
-        const dias = DIAS.filter((d) => d >= desde && d <= hasta)
-        const todo = ventasDe(memoria, desde, hasta)
-        const porDia = dias.map((d) => ventasDe(memoria, d))
-        const sumarPor = <T>(
-          lista: T[][],
-          clave: (x: T) => string,
-          campos: ((x: T) => number)[],
-        ) => {
+        const { memory } = almacenes(h.events)
+        const { from, until } = range(v)
+        const days = DAYS.filter((d) => d >= from && d <= until)
+        const everything = ventasDe(memory, from, until)
+        const porDia = days.map((d) => ventasDe(memory, d))
+        const sumarPor = <T>(list: T[][], key: (x: T) => string, fields: ((x: T) => number)[]) => {
           const m = new Map<string, number[]>()
-          for (const fila of lista.flat()) {
-            const acc = m.get(clave(fila)) ?? campos.map(() => 0)
-            campos.forEach((c, i) => {
+          for (const fila of list.flat()) {
+            const acc = m.get(key(fila)) ?? fields.map(() => 0)
+            fields.forEach((c, i) => {
               acc[i] = (acc[i] ?? 0) + c(fila)
             })
-            m.set(clave(fila), acc)
+            m.set(key(fila), acc)
           }
           // Lo que suma cero no sale en el informe.
           return new Map([...m].filter(([, a]) => a.some((n) => n !== 0)))
         }
-        const comoMapa = <T>(lista: T[], clave: (x: T) => string, campos: ((x: T) => number)[]) =>
-          sumarPor([lista], clave, campos)
+        const comoMapa = <T>(list: T[], key: (x: T) => string, fields: ((x: T) => number)[]) =>
+          sumarPor([list], key, fields)
 
-        const medio = (m: { medio: string; medioPropioId: string | null }) =>
-          `${m.medio}:${m.medioPropioId ?? ''}`
+        const method = (m: { method: string; customMethodId: string | null }) =>
+          `${m.method}:${m.customMethodId ?? ''}`
         expect(
-          comoMapa(todo.porMedio, medio, [(m) => m.venta, (m) => m.propina, (m) => m.pagos]),
+          comoMapa(everything.byMethod, method, [(m) => m.sale, (m) => m.tip, (m) => m.payments]),
         ).toEqual(
           sumarPor(
-            porDia.map((d) => d.porMedio),
-            medio,
-            [(m) => m.venta, (m) => m.propina, (m) => m.pagos],
+            porDia.map((d) => d.byMethod),
+            method,
+            [(m) => m.sale, (m) => m.tip, (m) => m.payments],
           ),
         )
         expect(
-          comoMapa(todo.porMesero, (m) => m.usuarioId, [(m) => m.neto, (m) => m.cuentas]),
+          comoMapa(everything.byWaiter, (m) => m.userId, [(m) => m.net, (m) => m.checks]),
         ).toEqual(
           sumarPor(
-            porDia.map((d) => d.porMesero),
-            (m) => m.usuarioId,
-            [(m) => m.neto, (m) => m.cuentas],
+            porDia.map((d) => d.byWaiter),
+            (m) => m.userId,
+            [(m) => m.net, (m) => m.checks],
           ),
         )
-        const producto = (x: { productoId: string; varianteId: string | null }) =>
-          `${x.productoId}:${x.varianteId ?? ''}`
-        expect(comoMapa(todo.porProducto, producto, [(x) => x.unidades, (x) => x.neto])).toEqual(
+        const product = (x: { productId: string; variantId: string | null }) =>
+          `${x.productId}:${x.variantId ?? ''}`
+        expect(comoMapa(everything.byProduct, product, [(x) => x.units, (x) => x.net])).toEqual(
           sumarPor(
-            porDia.map((d) => d.porProducto),
-            producto,
-            [(x) => x.unidades, (x) => x.neto],
+            porDia.map((d) => d.byProduct),
+            product,
+            [(x) => x.units, (x) => x.net],
           ),
         )
-        expect(todo.anulaciones.map((a) => a.eventoId)).toEqual(
-          porDia.flatMap((d) => d.anulaciones.map((a) => a.eventoId)),
+        expect(everything.voids.map((a) => a.eventId)).toEqual(
+          porDia.flatMap((d) => d.voids.map((a) => a.eventId)),
         )
-        expect(todo.cancelaciones.map((a) => a.eventoId)).toEqual(
-          porDia.flatMap((d) => d.cancelaciones.map((a) => a.eventoId)),
+        expect(everything.cancellations.map((a) => a.eventId)).toEqual(
+          porDia.flatMap((d) => d.cancellations.map((a) => a.eventId)),
         )
-        expect(todo.descuentos).toHaveLength(suma(porDia.map((d) => d.descuentos.length)))
-        for (const campo of ['propinas', 'pagadas', 'saldo'] as const)
-          expect(todo.fondoPropinas[campo]).toBe(suma(porDia.map((d) => d.fondoPropinas[campo])))
+        expect(everything.discounts).toHaveLength(sum(porDia.map((d) => d.discounts.length)))
+        for (const field of ['tips', 'paidOut', 'balance'] as const)
+          expect(everything.tipPool[field]).toBe(sum(porDia.map((d) => d.tipPool[field])))
       }),
       { ...CONFIG, seed: 20_261_056 },
     )

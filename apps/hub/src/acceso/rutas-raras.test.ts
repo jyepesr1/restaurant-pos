@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { crearServidor } from '../servidor'
 import { montarAcceso } from './montaje'
@@ -8,111 +8,111 @@ import { montarAcceso } from './montaje'
 
 function montarApi() {
   const m = montarAcceso()
-  const app = crearServidor({ acceso: m.acceso })
-  const enviar = (
+  const app = crearServidor({ access: m.access })
+  const send = (
     url: string,
-    opciones: {
+    options: {
       payload?: string | object
       token?: string
-      tipo?: string
+      type?: string
       metodo?: 'POST' | 'GET' | 'PUT'
     } = {},
   ) =>
     app.inject({
-      method: opciones.metodo ?? 'POST',
+      method: options.metodo ?? 'POST',
       url,
-      ...(opciones.payload === undefined ? {} : { payload: opciones.payload as object }),
+      ...(options.payload === undefined ? {} : { payload: options.payload as object }),
       headers: {
-        ...(opciones.tipo ? { 'content-type': opciones.tipo } : {}),
-        ...(opciones.token ? { authorization: `Bearer ${opciones.token}` } : {}),
+        ...(options.type ? { 'content-type': options.type } : {}),
+        ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
       },
     })
   /** Lo mismo con el JSON ya escrito a mano (para cuerpos que JSON.stringify no produciría). */
   const crudo = (url: string, cuerpo: string, token?: string) =>
-    enviar(url, { payload: cuerpo, tipo: 'application/json', token })
-  return { ...m, app, enviar, crudo }
+    send(url, { payload: cuerpo, type: 'application/json', token })
+  return { ...m, app, send, crudo }
 }
 
 /** Un celular de mesero como en el restaurante: entra con su PIN y el hub lo registra (ADR-013). */
 async function conDispositivo() {
   const api = montarApi()
-  const s = await api.enviar('/api/entrar', { payload: { pin: api.personas.mesero.pin } })
-  const r = s.json() as { equipo: { token: string }; sesion_id: string; secreto: string }
-  return { ...api, token: r.equipo.token, sesion: { sesion_id: r.sesion_id, secreto: r.secreto } }
+  const s = await api.send('/api/sign-in', { payload: { pin: api.people.waiter.pin } })
+  const r = s.json() as { device: { token: string }; session_id: string; secret: string }
+  return { ...api, token: r.device.token, session: { session_id: r.session_id, secret: r.secret } }
 }
 
-const RUTAS_CON_TOKEN = ['/api/sesiones', '/api/sesiones/cerrar', '/api/autorizaciones'] as const
-const RUTAS_SIN_TOKEN = ['/api/emparejamientos', '/api/emparejar'] as const
+const RUTAS_CON_TOKEN = ['/api/sessions', '/api/sessions/close', '/api/authorizations'] as const
+const RUTAS_SIN_TOKEN = ['/api/pairings', '/api/pair'] as const
 
-async function sigueVivo(api: { enviar: ReturnType<typeof montarApi>['enviar'] }) {
-  const r = await api.enviar('/api/salud', { metodo: 'GET' })
+async function sigueVivo(api: { send: ReturnType<typeof montarApi>['send'] }) {
+  const r = await api.send('/api/health', { metodo: 'GET' })
   expect(r.statusCode).toBe(200)
-  expect(r.json()).toMatchObject({ estado: 'ok' })
+  expect(r.json()).toMatchObject({ status: 'ok' })
 }
 
 describe('API de acceso con cuerpos raros', () => {
   it('campos de más, de menos o de otro tipo: 400 con el mismo cuerpo de error, sin eco de lo enviado', async () => {
     const api = await conDispositivo()
-    const secreto = 'SECRETO-QUE-NO-DEBE-VOLVER'
+    const secret = 'SECRETO-QUE-NO-DEBE-VOLVER'
     const malos: [string, unknown][] = [
-      ['/api/emparejamientos', { pin: '1234', nombre: 'X', tipo: 'caja', extra: secreto }],
-      ['/api/emparejamientos', { pin: 1234, nombre: 'X', tipo: 'caja' }],
-      ['/api/emparejamientos', { pin: '1234', nombre: ['X'], tipo: 'caja' }],
-      ['/api/emparejamientos', { pin: '1234', nombre: 'X' }],
-      ['/api/emparejamientos', { pin: null, nombre: null, tipo: null }],
-      ['/api/emparejar', { codigo: 1 }],
-      ['/api/emparejar', { codigo: { $ne: '' } }],
-      ['/api/emparejar', { codigo: 'ABCDEFGH', extra: secreto }],
-      ['/api/emparejar', {}],
-      ['/api/sesiones', { pin: 1234 }],
-      ['/api/sesiones', { pin: ['1234'] }],
-      ['/api/sesiones', { pin: '1234', rol: 'admin' }],
-      ['/api/sesiones', { pin: '1'.repeat(21) }],
-      ['/api/sesiones/cerrar', { sesion_id: 'corto', secreto: 'x' }],
-      ['/api/sesiones/cerrar', { sesion_id: nuevoId(), secreto: '' }],
-      ['/api/sesiones/cerrar', { sesion_id: nuevoId(), secreto: 'x'.repeat(101) }],
-      ['/api/sesiones/cerrar', { sesion_id: nuevoId(), secreto: 7 }],
+      ['/api/pairings', { pin: '1234', name: 'X', type: 'register', extra: secret }],
+      ['/api/pairings', { pin: 1234, name: 'X', type: 'register' }],
+      ['/api/pairings', { pin: '1234', name: ['X'], type: 'register' }],
+      ['/api/pairings', { pin: '1234', name: 'X' }],
+      ['/api/pairings', { pin: null, name: null, type: null }],
+      ['/api/pair', { code: 1 }],
+      ['/api/pair', { code: { $ne: '' } }],
+      ['/api/pair', { code: 'ABCDEFGH', extra: secret }],
+      ['/api/pair', {}],
+      ['/api/sessions', { pin: 1234 }],
+      ['/api/sessions', { pin: ['1234'] }],
+      ['/api/sessions', { pin: '1234', role: 'admin' }],
+      ['/api/sessions', { pin: '1'.repeat(21) }],
+      ['/api/sessions/close', { session_id: 'corto', secret: 'x' }],
+      ['/api/sessions/close', { session_id: newId(), secret: '' }],
+      ['/api/sessions/close', { session_id: newId(), secret: 'x'.repeat(101) }],
+      ['/api/sessions/close', { session_id: newId(), secret: 7 }],
       [
-        '/api/autorizaciones',
+        '/api/authorizations',
         {
-          sesion_id: nuevoId(),
-          secreto: 'x',
+          session_id: newId(),
+          secret: 'x',
           pin: '1234',
-          accion: 'a'.repeat(51),
-          agregado_id: nuevoId(),
-          evento_id: nuevoId(),
+          action: 'a'.repeat(51),
+          aggregate_id: newId(),
+          event_id: newId(),
         },
       ],
       [
-        '/api/autorizaciones',
+        '/api/authorizations',
         {
-          sesion_id: nuevoId(),
-          secreto: 'x',
+          session_id: newId(),
+          secret: 'x',
           pin: '1234',
-          accion: 'anular_item_enviado',
-          agregado_id: 'no',
-          evento_id: nuevoId(),
+          action: 'void_sent_item',
+          aggregate_id: 'no',
+          event_id: newId(),
         },
       ],
       [
-        '/api/autorizaciones',
+        '/api/authorizations',
         {
-          sesion_id: nuevoId(),
-          secreto: 'x',
+          session_id: newId(),
+          secret: 'x',
           pin: '1234',
-          accion: 'anular_item_enviado',
-          agregado_id: nuevoId(),
+          action: 'void_sent_item',
+          aggregate_id: newId(),
         },
       ],
     ]
     for (const [url, cuerpo] of malos) {
-      const r = await api.enviar(url, { payload: cuerpo as object, token: api.token })
+      const r = await api.send(url, { payload: cuerpo as object, token: api.token })
       expect(r.statusCode, `${url} ${JSON.stringify(cuerpo)}`).toBe(400)
       expect(r.json()).toEqual({
-        error: 'datos_invalidos',
-        mensaje: 'Datos con formato inesperado',
+        error: 'invalid_data',
+        message: 'Datos con formato inesperado',
       })
-      expect(r.body).not.toContain(secreto)
+      expect(r.body).not.toContain(secret)
     }
     await sigueVivo(api)
   })
@@ -126,7 +126,7 @@ describe('API de acceso con cuerpos raros', () => {
       }
     }
     for (const url of [...RUTAS_CON_TOKEN, ...RUTAS_SIN_TOKEN]) {
-      const sinCuerpo = await api.enviar(url, { token: api.token })
+      const sinCuerpo = await api.send(url, { token: api.token })
       expect(sinCuerpo.statusCode, url).toBe(400)
     }
     await sigueVivo(api)
@@ -144,19 +144,19 @@ describe('API de acceso con cuerpos raros', () => {
       '',
     ]
     for (const cuerpo of rotos) {
-      const r = await api.crudo('/api/sesiones', cuerpo, api.token)
+      const r = await api.crudo('/api/sessions', cuerpo, api.token)
       expect(r.statusCode, JSON.stringify(cuerpo)).toBeGreaterThanOrEqual(400)
       expect(r.statusCode, JSON.stringify(cuerpo)).toBeLessThan(500)
     }
-    for (const tipo of [
+    for (const type of [
       'text/plain',
       'application/x-www-form-urlencoded',
       'application/xml',
       'multipart/form-data',
     ]) {
-      const r = await api.enviar('/api/sesiones', { payload: 'pin=1234', tipo, token: api.token })
-      expect(r.statusCode, tipo).toBeGreaterThanOrEqual(400)
-      expect(r.statusCode, tipo).toBeLessThan(500)
+      const r = await api.send('/api/sessions', { payload: 'pin=1234', type, token: api.token })
+      expect(r.statusCode, type).toBeGreaterThanOrEqual(400)
+      expect(r.statusCode, type).toBeLessThan(500)
     }
     await sigueVivo(api)
   })
@@ -169,30 +169,30 @@ describe('API de acceso con cuerpos raros', () => {
       expect(r.statusCode, url).toBe(413)
     }
     // Y uno dentro del límite de Fastify pero con un campo gigante: lo para el esquema.
-    const largo = await api.crudo(
-      '/api/sesiones',
+    const length = await api.crudo(
+      '/api/sessions',
       JSON.stringify({ pin: '9'.repeat(500_000) }),
       api.token,
     )
-    expect(largo.statusCode).toBe(400)
-    const nombre = await api.crudo(
-      '/api/emparejamientos',
-      JSON.stringify({ pin: api.personas.admin.pin, nombre: 'N'.repeat(500_000), tipo: 'caja' }),
+    expect(length.statusCode).toBe(400)
+    const name = await api.crudo(
+      '/api/pairings',
+      JSON.stringify({ pin: api.people.admin.pin, name: 'N'.repeat(500_000), type: 'register' }),
     )
-    expect(nombre.statusCode).toBe(400)
+    expect(name.statusCode).toBe(400)
     await sigueVivo(api)
     // Y un cliente normal entra sin problema justo después.
-    const bien = await api.enviar('/api/sesiones', {
-      payload: { pin: api.personas.mesero.pin },
+    const fine = await api.send('/api/sessions', {
+      payload: { pin: api.people.waiter.pin },
       token: api.token,
     })
-    expect(bien.statusCode).toBe(201)
+    expect(fine.statusCode).toBe(201)
   })
 
   it('JSON profundamente anidado o con claves peligrosas no tumba nada ni contamina objetos', async () => {
     const api = await conDispositivo()
     const profundo = `${'['.repeat(50_000)}${']'.repeat(50_000)}`
-    const anidado = await api.crudo('/api/sesiones', profundo, api.token)
+    const anidado = await api.crudo('/api/sessions', profundo, api.token)
     expect(anidado.statusCode).toBeGreaterThanOrEqual(400)
     expect(anidado.statusCode).toBeLessThan(500)
 
@@ -201,7 +201,7 @@ describe('API de acceso con cuerpos raros', () => {
       '{"constructor":{"prototype":{"x":1}},"pin":"1234"}',
       '{"pin":"1234","__proto__":null}',
     ]) {
-      const r = await api.crudo('/api/sesiones', cuerpo, api.token)
+      const r = await api.crudo('/api/sessions', cuerpo, api.token)
       expect(r.statusCode, cuerpo).toBeGreaterThanOrEqual(400)
       expect(r.statusCode, cuerpo).toBeLessThan(500)
     }
@@ -222,35 +222,35 @@ describe('API de acceso con cuerpos raros', () => {
     ]
     // Solo una pantalla de cocina se empareja, desde un equipo ya registrado (ADR-013).
     const token = api.token
-    for (const nombre of raros) {
-      const c = await api.enviar('/api/emparejamientos', {
-        payload: { pin: api.personas.admin.pin, nombre, tipo: 'kds' },
+    for (const name of raros) {
+      const c = await api.send('/api/pairings', {
+        payload: { pin: api.people.admin.pin, name, type: 'kds' },
         token,
       })
-      expect(c.statusCode, nombre).toBe(201)
-      const e = await api.enviar('/api/emparejar', { payload: { codigo: c.json().codigo } })
-      expect(e.statusCode, nombre).toBe(201)
-      expect(e.json().nombre).toBe(nombre.trim())
+      expect(c.statusCode, name).toBe(201)
+      const e = await api.send('/api/pair', { payload: { code: c.json().code } })
+      expect(e.statusCode, name).toBe(201)
+      expect(e.json().name).toBe(name.trim())
     }
     // Más el celular del montaje.
-    expect(Number(api.db.prepare('SELECT count(*) AS n FROM dispositivo').get()?.n)).toBe(
+    expect(Number(api.db.prepare('SELECT count(*) AS n FROM devices').get()?.n)).toBe(
       raros.length + 1,
     )
     // Solo-espacios y nombres de más de 60 caracteres no pasan la regla del servicio.
-    for (const nombre of ['   ', 'x'.repeat(61)]) {
-      const r = await api.enviar('/api/emparejamientos', {
-        payload: { pin: api.personas.admin.pin, nombre, tipo: 'kds' },
+    for (const name of ['   ', 'x'.repeat(61)]) {
+      const r = await api.send('/api/pairings', {
+        payload: { pin: api.people.admin.pin, name, type: 'kds' },
         token,
       })
-      expect(r.statusCode, nombre).toBe(400)
-      expect(r.json().error).toBe('datos_invalidos')
+      expect(r.statusCode, name).toBe(400)
+      expect(r.json().error).toBe('invalid_data')
     }
     await sigueVivo(api)
   })
 
   it('tipo de equipo inventado, con nombres de propiedades de Object o que no es de cocina: 400', async () => {
     const api = await conDispositivo()
-    for (const tipo of [
+    for (const type of [
       'tostadora',
       '',
       'CAJA',
@@ -258,17 +258,17 @@ describe('API de acceso con cuerpos raros', () => {
       '__proto__',
       'constructor',
       'caja ',
-      'caja',
-      'mesero',
+      'register',
+      'waiter',
     ])
       expect(
         (
-          await api.enviar('/api/emparejamientos', {
-            payload: { pin: api.personas.admin.pin, nombre: 'X', tipo },
+          await api.send('/api/pairings', {
+            payload: { pin: api.people.admin.pin, name: 'X', type },
             token: api.token,
           })
         ).statusCode,
-        tipo,
+        type,
       ).toBe(400)
   })
 
@@ -286,14 +286,14 @@ describe('API de acceso con cuerpos raros', () => {
       "Bearer ' OR 1=1 --",
       '',
     ]
-    for (const autorizacion of cabeceras) {
+    for (const authorization of cabeceras) {
       const r = await api.app.inject({
         method: 'POST',
-        url: '/api/sesiones',
+        url: '/api/sessions',
         payload: { pin: '1234' },
-        headers: { authorization: autorizacion },
+        headers: { authorization: authorization },
       })
-      expect(r.statusCode, autorizacion.slice(0, 30)).toBe(401)
+      expect(r.statusCode, authorization.slice(0, 30)).toBe(401)
     }
     await sigueVivo(api)
   })
@@ -302,7 +302,7 @@ describe('API de acceso con cuerpos raros', () => {
     const api = await conDispositivo()
     for (const url of [...RUTAS_CON_TOKEN, ...RUTAS_SIN_TOKEN]) {
       for (const metodo of ['GET', 'PUT'] as const) {
-        const r = await api.enviar(url, { metodo, token: api.token })
+        const r = await api.send(url, { metodo, token: api.token })
         expect(r.statusCode, `${metodo} ${url}`).toBe(404)
       }
     }
@@ -312,12 +312,12 @@ describe('API de acceso con cuerpos raros', () => {
     const api = await conDispositivo()
     // La caja entra con la contraseña del administrador y el hub la registra.
     const admin = (
-      await api.enviar('/api/entrar', {
-        payload: { usuario: api.personas.admin.usuario, contrasena: api.personas.admin.contrasena },
+      await api.send('/api/sign-in', {
+        payload: { user: api.people.admin.user, password: api.people.admin.password },
       })
     ).json()
-    const token = admin.equipo.token as string
-    const cuerpo = { sesion_id: admin.sesion_id, secreto: admin.secreto }
+    const token = admin.device.token as string
+    const cuerpo = { session_id: admin.session_id, secret: admin.secret }
 
     for (const id of [
       'x',
@@ -325,66 +325,65 @@ describe('API de acceso con cuerpos raros', () => {
       '%27%20OR%201%3D1',
       'a'.repeat(5000),
       '..%2f..%2fetc',
-      nuevoId(),
+      newId(),
       '%E0%A4%A',
     ]) {
-      const r = await api.enviar(`/api/dispositivos/${id}/revocar`, { payload: cuerpo, token })
+      const r = await api.send(`/api/devices/${id}/revoke`, { payload: cuerpo, token })
       expect(r.statusCode, id.slice(0, 20)).toBeGreaterThanOrEqual(400)
       expect(r.statusCode, id.slice(0, 20)).toBeLessThan(500)
     }
     expect(
-      api.db.prepare('SELECT count(*) AS n FROM dispositivo WHERE revocado_en IS NOT NULL').get()
-        ?.n,
+      api.db.prepare('SELECT count(*) AS n FROM devices WHERE revoked_at IS NOT NULL').get()?.n,
     ).toBe(0)
     // Sin cuerpo tampoco se revoca nada.
     const dispositivoId = (
-      api.db.prepare("SELECT id FROM dispositivo WHERE nombre = 'Equipo de Ana'").get() as {
+      api.db.prepare("SELECT id FROM devices WHERE name = 'Equipo de Ana'").get() as {
         id: string
       }
     ).id
-    const sinCuerpo = await api.enviar(`/api/dispositivos/${dispositivoId}/revocar`, { token })
+    const sinCuerpo = await api.send(`/api/devices/${dispositivoId}/revoke`, { token })
     expect(sinCuerpo.statusCode).toBe(400)
   })
 
   it('la sesión de un mesero no puede retirar equipos, ni con su propio token', async () => {
     const api = await conDispositivo()
-    const otro = await api.enviar('/api/entrar', {
-      payload: { pin: api.personas.mesero2.pin },
+    const other = await api.send('/api/sign-in', {
+      payload: { pin: api.people.waiter2.pin },
     })
-    const objetivo = otro.json().equipo.dispositivo_id as string
-    const r = await api.enviar(`/api/dispositivos/${objetivo}/revocar`, {
-      payload: { sesion_id: api.sesion.sesion_id, secreto: api.sesion.secreto },
+    const objetivo = other.json().device.device_id as string
+    const r = await api.send(`/api/devices/${objetivo}/revoke`, {
+      payload: { session_id: api.session.session_id, secret: api.session.secret },
       token: api.token,
     })
 
     expect(r.statusCode).toBe(403)
-    expect(r.json()).toMatchObject({ error: 'sin_permiso' })
+    expect(r.json()).toMatchObject({ error: 'no_permission' })
     expect(api.revocados).toEqual([])
   })
 
   it('las respuestas de error no revelan el PIN, el token ni el secreto de sesión', async () => {
     const api = await conDispositivo()
     const respuestas = [
-      await api.enviar('/api/sesiones', { payload: { pin: '0001' }, token: api.token }),
-      await api.enviar('/api/sesiones/cerrar', {
-        payload: { sesion_id: api.sesion.sesion_id, secreto: 'y'.repeat(43) },
+      await api.send('/api/sessions', { payload: { pin: '0001' }, token: api.token }),
+      await api.send('/api/sessions/close', {
+        payload: { session_id: api.session.session_id, secret: 'y'.repeat(43) },
         token: api.token,
       }),
-      await api.enviar('/api/autorizaciones', {
+      await api.send('/api/authorizations', {
         payload: {
-          ...api.sesion,
+          ...api.session,
           pin: '0002',
-          accion: 'anular_item_enviado',
-          agregado_id: nuevoId(),
-          evento_id: nuevoId(),
+          action: 'void_sent_item',
+          aggregate_id: newId(),
+          event_id: newId(),
         },
         token: api.token,
       }),
     ]
     for (const r of respuestas) {
       expect(r.statusCode).toBeGreaterThanOrEqual(400)
-      for (const secreto of [api.token, api.sesion.secreto, '0001', '0002', 'yyyy'])
-        expect(r.body).not.toContain(secreto)
+      for (const secret of [api.token, api.session.secret, '0001', '0002', 'yyyy'])
+        expect(r.body).not.toContain(secret)
     }
   })
 
@@ -392,51 +391,49 @@ describe('API de acceso con cuerpos raros', () => {
     const api = await conDispositivo()
     const malas = []
     for (let i = 0; i < 200; i++)
-      malas.push(
-        api.crudo(i % 2 ? '/api/sesiones' : '/api/emparejar', i % 3 ? '{' : '[]', api.token),
-      )
+      malas.push(api.crudo(i % 2 ? '/api/sessions' : '/api/pair', i % 3 ? '{' : '[]', api.token))
     const respuestas = await Promise.all(malas)
 
     expect(respuestas.every((r) => r.statusCode >= 400 && r.statusCode < 500)).toBe(true)
-    const bien = await api.enviar('/api/sesiones', {
-      payload: { pin: api.personas.mesero.pin },
+    const fine = await api.send('/api/sessions', {
+      payload: { pin: api.people.waiter.pin },
       token: api.token,
     })
-    expect(bien.statusCode).toBe(201)
+    expect(fine.statusCode).toBe(201)
   })
 
   it('pedir un emparejamiento sin token o con un token falso: 401 sin gastar intentos', async () => {
     const api = await conDispositivo()
     for (const token of [undefined, 'inventado', 'x'.repeat(2000)]) {
       for (let i = 0; i < 5; i++) {
-        const r = await api.enviar('/api/emparejamientos', {
-          payload: { pin: '0001', nombre: 'X', tipo: 'kds' },
+        const r = await api.send('/api/pairings', {
+          payload: { pin: '0001', name: 'X', type: 'kds' },
           token,
         })
         expect(r.statusCode).toBe(401)
-        expect(r.json()).toMatchObject({ error: 'token_invalido' })
+        expect(r.json()).toMatchObject({ error: 'invalid_token' })
       }
     }
     // Quien sí tiene un equipo, con el PIN bueno, no esperó por nada de eso.
-    const bien = await api.enviar('/api/emparejamientos', {
-      payload: { pin: api.personas.admin.pin, nombre: 'Cocina', tipo: 'kds' },
+    const fine = await api.send('/api/pairings', {
+      payload: { pin: api.people.admin.pin, name: 'Cocina', type: 'kds' },
       token: api.token,
     })
-    expect(bien.statusCode).toBe(201)
+    expect(fine.statusCode).toBe(201)
   })
 
   it('la huella de la autorización: solo 64 caracteres hexadecimales', async () => {
     const api = await conDispositivo()
-    const cuerpo = (huella: unknown) => ({
-      sesion_id: api.sesion.sesion_id,
-      secreto: api.sesion.secreto,
-      pin: api.personas.gerente.pin,
-      accion: 'anular_item_enviado',
-      agregado_id: nuevoId(),
-      evento_id: nuevoId(),
-      huella,
+    const cuerpo = (fingerprint: unknown) => ({
+      session_id: api.session.session_id,
+      secret: api.session.secret,
+      pin: api.people.manager.pin,
+      action: 'void_sent_item',
+      aggregate_id: newId(),
+      event_id: newId(),
+      fingerprint,
     })
-    for (const huella of [
+    for (const fingerprint of [
       undefined,
       1,
       null,
@@ -446,17 +443,17 @@ describe('API de acceso con cuerpos raros', () => {
       'A'.repeat(64),
       '0'.repeat(65),
     ]) {
-      const r = await api.enviar('/api/autorizaciones', {
-        payload: cuerpo(huella) as object,
+      const r = await api.send('/api/authorizations', {
+        payload: cuerpo(fingerprint) as object,
         token: api.token,
       })
-      expect(r.statusCode, String(huella)).toBe(400)
+      expect(r.statusCode, String(fingerprint)).toBe(400)
     }
-    expect(Number(api.db.prepare('SELECT count(*) AS n FROM autorizacion').get()?.n)).toBe(0)
-    const bien = await api.enviar('/api/autorizaciones', {
+    expect(Number(api.db.prepare('SELECT count(*) AS n FROM authorizations').get()?.n)).toBe(0)
+    const fine = await api.send('/api/authorizations', {
       payload: cuerpo('a'.repeat(64)) as object,
       token: api.token,
     })
-    expect(bien.statusCode).toBe(201)
+    expect(fine.statusCode).toBe(201)
   })
 })

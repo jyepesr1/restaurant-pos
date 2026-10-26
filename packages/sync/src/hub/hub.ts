@@ -1,17 +1,17 @@
 import {
-  aplicarEvento,
-  type CuadreTurno,
-  configCompleta,
-  cuadreDeOtrosMedios,
-  cuadreDeTurno,
-  diaOperativo,
-  type EstadoPedido,
-  type EventoNuevo,
-  type EventoPedido,
-  nuevoId,
-  reconstruir,
-  type TipoProblema,
-  validarEventoNuevo,
+  applyEvent,
+  businessDay,
+  fullConfig,
+  type IssueType,
+  type NewEvent,
+  newId,
+  type OrderEvent,
+  type OrderState,
+  otherMethodsReconciliation,
+  rebuild,
+  type ShiftReconciliation,
+  shiftReconciliation,
+  validateNewEvent,
 } from '@pos/core'
 import { huellaEvento } from '../huella'
 import {
@@ -31,76 +31,76 @@ import {
 
 export interface ConfigHub {
   restauranteId: string
-  zonaHoraria: string
+  timeZone: string
   inicioDiaOperativo: string
   /** Cambia al reinstalar o restaurar el hub; se guarda fuera de la base (docs/SYNC.md#fallas-y-qué-pasa). */
   instancia: string
-  reloj: () => string
+  clock: () => string
   /** Sesiones, permisos y comprobantes de supervisor (docs/SYNC.md#seguridad). */
-  acceso: ControlAcceso
+  access: ControlAcceso
   /** Un evento hizo fallar al hub y se rechazó como `error_interno`: para el registro. */
-  alErrorInterno?: (error: unknown, eventoId: string) => void
+  alErrorInterno?: (error: unknown, eventId: string) => void
   /**
    * Compara lo que copió un ítem (precio, extras, impuesto) con el catálogo en su
-   * `catalogo_version` (docs/DINERO.md#precio-copiado). Sin él, no se revisa.
+   * `catalog_version` (docs/DINERO.md#precio-copiado). Sin él, no se revisa.
    */
-  precios?: RevisorPrecios
+  prices?: RevisorPrecios
   /**
    * Corre dentro de la transacción del evento, ya guardado: lo que escriba queda o se pierde con
    * él (los trabajos de impresión de las comandas, ADR-015). Recibe cada pedido que toca el
    * evento, antes y después de aplicarlo. Si falla, el evento igual se acepta y el fallo va a
-   * `alFalloAlGuardar`: una impresora mal configurada no puede frenar los pedidos.
+   * `onSaveFailure`: una impresora mal configurada no puede frenar los pedidos.
    */
-  alGuardar?: (evento: EventoPedido, pedidos: CambioPedido[]) => void
-  alFalloAlGuardar?: (error: unknown, eventoId: string) => void
+  onSave?: (event: OrderEvent, orders: CambioPedido[]) => void
+  onSaveFailure?: (error: unknown, eventId: string) => void
   /**
    * Las reglas de cobro que tiene hoy el restaurante (tarea 1.6): un pago en efectivo trae su
    * regla de redondeo (docs/DINERO.md#pagos), el medio está habilitado y la tarjeta nombra un
    * datáfono activo. Sin ellas, no se revisan.
    */
   reglasCobro?: () => {
-    multiplo: number
-    modo: string
+    multiple: number
+    mode: string
     medios: readonly string[]
     /** Los medios propios activos del restaurante. */
     mediosPropios?: readonly string[]
-    datafonos: readonly string[]
+    cardTerminals: readonly string[]
     /** Desde qué diferencia el cierre de caja pide justificación (tarea 1.7). */
     umbralDiferencia?: number
   }
 }
 
-/** Un turno de caja abierto (tareas 1.6 y 1.7): se cierra con `TurnoCerrado`. */
+/** Un turno de caja abierto (tareas 1.6 y 1.7): se cierra con `ShiftClosed`. */
 export interface TurnoCaja {
   id: string
   /** El equipo de caja donde se abrió (por ahora cada caja es un equipo). */
-  cajaId: string
+  registerId: string
   base: number
-  abiertoEn: string
-  usuarioId: string
+  openedAt: string
+  userId: string
 }
 
 export interface CambioPedido {
-  antes: EstadoPedido | null
-  despues: EstadoPedido | null
+  before: OrderState | null
+  after: OrderState | null
 }
 
 /** Devuelve qué no coincide con el catálogo, o `null` si todo coincide. */
 export interface RevisorPrecios {
-  revisar(evento: EventoNuevo): string | null
+  revisar(event: NewEvent): string | null
 }
 
 /** Lo que el hub sabe del dispositivo de una conexión (lo da su token). */
 export interface Conexion {
   dispositivoId: string
-  tipo: TipoDispositivo
+  type: TipoDispositivo
   /** Si el dispositivo fue revocado, cuándo. */
   revocadoEn: string | null
 }
 
 export type VeredictoAcceso =
-  | { ok: true; autorizadoPorId: string | null; autorizacionId: string | null }
-  | { ok: false; motivo: string; cuarentena?: boolean }
+  | { ok: true; authorizedById: string | null; autorizacionId: string | null }
+  | { ok: false; reason: string; quarantine?: boolean }
 
 /**
  * Quién puede crear cada evento. El hub no confía en el usuario que dice el evento: lo compara
@@ -109,9 +109,9 @@ export type VeredictoAcceso =
  */
 export interface ControlAcceso {
   /** `pedido`: el estado del pedido antes del evento (algunos permisos dependen de él). */
-  verificar(conexion: Conexion, evento: EventoNuevo, pedido: EstadoPedido | null): VeredictoAcceso
+  verify(connection: Conexion, event: NewEvent, order: OrderState | null): VeredictoAcceso
   /** El evento se guardó: corre en la misma transacción (usa el comprobante y la sesión). */
-  registrarUso(evento: EventoNuevo, veredicto: Extract<VeredictoAcceso, { ok: true }>): void
+  registrarUso(event: NewEvent, veredicto: Extract<VeredictoAcceso, { ok: true }>): void
 }
 
 /** Ventana en que se acepta la hora estimada del dispositivo para el día operativo. */
@@ -127,14 +127,14 @@ const MAX_CUARENTENA = 500
  * Problemas del reductor que, si el dispositivo no estaba al día, son un conflicto (se acepta y
  * se avisa en caja) y no un rechazo (docs/SYNC.md#rechazos-cuarentena-y-conflictos).
  */
-const CONFLICTOS: Partial<Record<TipoProblema, TipoConflicto>> = {
-  item_inexistente: 'item_inexistente',
-  item_ya_enviado: 'item_ya_enviado',
-  estado_item_invalido: 'item_ya_enviado',
-  item_ya_anulado: 'item_ya_anulado',
+const CONFLICTOS: Partial<Record<IssueType, TipoConflicto>> = {
+  item_not_found: 'item_not_found',
+  item_already_sent: 'item_already_sent',
+  invalid_item_status: 'item_already_sent',
+  item_already_voided: 'item_already_voided',
   // Quitar más de lo que queda: otro dispositivo ya quitó parte.
-  cantidad_invalida: 'item_ya_anulado',
-  pedido_cerrado: 'pedido_cerrado',
+  invalid_quantity: 'item_already_voided',
+  order_closed: 'order_closed',
 }
 
 /**
@@ -142,38 +142,38 @@ const CONFLICTOS: Partial<Record<TipoProblema, TipoConflicto>> = {
  * sus productos a otra mesa, o al que se le anularon todos, ya no la ocupa; uno recién abierto, o
  * al que el mesero le quitó lo que aún no enviaba, sí.
  */
-const ocupa = (p: EstadoPedido, mesaId: string) =>
-  p.estado === 'abierto' &&
-  (p.mesaId === mesaId || p.mesasUnidas.includes(mesaId)) &&
-  (Object.values(p.items).some((i) => i.estado !== 'anulado') ||
-    (Object.keys(p.items).length === 0 && !p.vaciadoAlMover))
+const ocupa = (p: OrderState, tableId: string) =>
+  p.status === 'open' &&
+  (p.tableId === tableId || p.mergedTables.includes(tableId)) &&
+  (Object.values(p.items).some((i) => i.status !== 'voided') ||
+    (Object.keys(p.items).length === 0 && !p.emptiedOnMove))
 
 /**
  * Las mesas que un evento hace ocupar a un pedido que antes no las ocupaba: al abrirlo, al
  * cambiarse o al unir, pero también al reabrir una cuenta o al agregar a un pedido vaciado.
  */
-function mesasQueToma(antes: EstadoPedido | null, despues: EstadoPedido | null): string[] {
-  if (!despues || despues.mesaId === null) return []
-  return [despues.mesaId, ...despues.mesasUnidas].filter(
-    (m) => ocupa(despues, m) && !(antes && ocupa(antes, m)),
+function mesasQueToma(before: OrderState | null, after: OrderState | null): string[] {
+  if (!after || after.tableId === null) return []
+  return [after.tableId, ...after.mergedTables].filter(
+    (m) => ocupa(after, m) && !(before && ocupa(before, m)),
   )
 }
 
 /** Cambiarse o unirse a una mesa ocupada exige estar al día: se hace con conexión. */
-const TOMA_CON_CONEXION = new Set(['PedidoMovidoDeMesa', 'MesasUnidas'])
+const TOMA_CON_CONEXION = new Set(['OrderMovedTable', 'TablesMerged'])
 
 /** El umbral de justificación del cierre si no llega el del restaurante (el de fábrica). */
-const UMBRAL_DIFERENCIA_CAJA = configCompleta().umbral_diferencia_caja
+const UMBRAL_DIFERENCIA_CAJA = fullConfig().register_variance_threshold
 
 /** Mover y unir exigen conexión con el hub: nunca son conflicto. */
-const SIEMPRE_EN_LINEA = new Set(['ItemsMovidos', 'PedidosUnidos'])
+const SIEMPRE_EN_LINEA = new Set(['ItemsMoved', 'OrdersMerged'])
 
 /** Pedidos que toca un evento: su agregado, los relacionados y los que el hub puso en `afecta`. */
 export const pedidosDe = (e: {
-  agregado_id: string
-  relacionados: readonly string[]
-  afecta?: readonly string[]
-}) => [...new Set([e.agregado_id, ...e.relacionados, ...(e.afecta ?? [])])]
+  aggregate_id: string
+  related: readonly string[]
+  affects?: readonly string[]
+}) => [...new Set([e.aggregate_id, ...e.related, ...(e.affects ?? [])])]
 
 /**
  * Pedidos que nombra un evento que puede venir malformado (un rechazo por formato no debe
@@ -181,48 +181,46 @@ export const pedidosDe = (e: {
  */
 function agregadosDeCrudo(crudo: unknown): string[] {
   if (typeof crudo !== 'object' || crudo === null) return []
-  const { agregado_id, relacionados } = crudo as { agregado_id?: unknown; relacionados?: unknown }
+  const { aggregate_id, related } = crudo as { aggregate_id?: unknown; related?: unknown }
   return [
-    ...(typeof agregado_id === 'string' ? [agregado_id] : []),
-    ...(Array.isArray(relacionados)
-      ? relacionados.filter((r): r is string => typeof r === 'string')
-      : []),
+    ...(typeof aggregate_id === 'string' ? [aggregate_id] : []),
+    ...(Array.isArray(related) ? related.filter((r): r is string => typeof r === 'string') : []),
   ]
 }
 
 /** Lo que el hub necesita de un evento antes de validarlo: su id, su huella y si es tratable. */
 interface Identificado {
   id: string
-  huella: string
+  fingerprint: string
   /** Lo que se guarda en el rechazo (JSON válido). */
-  contenido: string
+  content: string
   /** Si está demasiado grande o anidado para siquiera validarlo. */
-  problema: string | null
+  issue: string | null
 }
 
 function identificar(crudo: unknown): Identificado {
   const posible = (crudo as { id?: unknown } | null)?.id
   const id = typeof posible === 'string' && posible.length <= 100 ? posible : ''
-  let contenido: string
+  let content: string
   try {
-    contenido = JSON.stringify(crudo) ?? 'null'
+    content = JSON.stringify(crudo) ?? 'null'
   } catch {
-    return { id, huella: 'sin-huella', contenido: '"omitido"', problema: 'demasiado_anidado' }
+    return { id, fingerprint: 'no-fingerprint', content: '"omitido"', issue: 'too_deeply_nested' }
   }
-  if (contenido.length > MAX_CONTENIDO)
-    return { id, huella: 'sin-huella', contenido: '"omitido"', problema: 'demasiado_grande' }
+  if (content.length > MAX_CONTENIDO)
+    return { id, fingerprint: 'no-fingerprint', content: '"omitido"', issue: 'too_large' }
   try {
-    return { id, huella: huellaEvento(crudo), contenido, problema: null }
+    return { id, fingerprint: huellaEvento(crudo), content, issue: null }
   } catch {
-    return { id, huella: 'sin-huella', contenido: '"omitido"', problema: 'demasiado_anidado' }
+    return { id, fingerprint: 'no-fingerprint', content: '"omitido"', issue: 'too_deeply_nested' }
   }
 }
 
 /** Otros dispositivos no reciben la sesión de quien creó el evento. */
-const paraDispositivo = (evento: EventoPedido, dispositivoId: string | null): EventoPedido =>
-  evento.dispositivo_id === dispositivoId || evento.sesion_id === null
-    ? evento
-    : { ...evento, sesion_id: null }
+const paraDispositivo = (event: OrderEvent, dispositivoId: string | null): OrderEvent =>
+  event.device_id === dispositivoId || event.session_id === null
+    ? event
+    : { ...event, session_id: null }
 
 /**
  * El hub de sincronización: autoridad del salón. Valida, numera y guarda cada evento. Mantiene en
@@ -231,11 +229,11 @@ const paraDispositivo = (evento: EventoPedido, dispositivoId: string | null): Ev
  */
 export class HubSync {
   /** Solo pedidos abiertos: los cerrados se reconstruyen de la base. */
-  private readonly pedidos = new Map<string, EstadoPedido>()
+  private readonly orders = new Map<string, OrderState>()
   /** Turnos de caja abiertos, por su id. */
-  private readonly turnos = new Map<string, TurnoCaja>()
+  private readonly shifts = new Map<string, TurnoCaja>()
   /** Los eventos de cada turno abierto: su apertura, pagos, movimientos y conteos. */
-  private readonly eventosDeTurno = new Map<string, EventoPedido[]>()
+  private readonly eventosDeTurno = new Map<string, OrderEvent[]>()
   private readonly almacen: AlmacenHub
   private readonly config: ConfigHub
 
@@ -246,42 +244,42 @@ export class HubSync {
   }
 
   /** Si la mesa tiene un pedido abierto, suyo o de un grupo unido (no se archiva en el plano). */
-  tienePedidoAbierto(mesaId: string): boolean {
-    for (const p of this.pedidos.values()) if (ocupa(p, mesaId)) return true
+  tienePedidoAbierto(tableId: string): boolean {
+    for (const p of this.orders.values()) if (ocupa(p, tableId)) return true
     return false
   }
 
   /** El turno abierto de una caja, si tiene. */
-  turnoAbierto(cajaId: string): TurnoCaja | null {
-    for (const t of this.turnos.values()) if (t.cajaId === cajaId) return t
+  turnoAbierto(registerId: string): TurnoCaja | null {
+    for (const t of this.shifts.values()) if (t.registerId === registerId) return t
     return null
   }
 
   /** Proyección actual de un pedido. */
-  pedido(id: string): EstadoPedido | null {
-    return this.pedidos.get(id) ?? reconstruir(this.almacen.eventosDeAgregado(id), id)
+  order(id: string): OrderState | null {
+    return this.orders.get(id) ?? rebuild(this.almacen.eventosDeAgregado(id), id)
   }
 
-  bienvenida(): Extract<MensajeHub, { tipo: 'bienvenido' }> {
+  bienvenida(): Extract<MensajeHub, { type: 'welcome' }> {
     return {
-      tipo: 'bienvenido',
+      type: 'welcome',
       hub_instancia: this.config.instancia,
       secuencia_max: this.almacen.maxSecuencia(),
-      hora_hub: this.config.reloj(),
+      hora_hub: this.config.clock(),
     }
   }
 
   /** Eventos después de `desde`, por páginas, con `hasta` aunque la vista filtre alguno. */
-  traer(
-    desde: number,
-    tipo: TipoDispositivo,
+  pull(
+    from: number,
+    type: TipoDispositivo,
     dispositivoId: string | null = null,
-  ): Extract<MensajeHub, { tipo: 'eventos' }> {
-    const pagina = this.almacen.eventosDesde(desde, TAMANO_PAGINA)
+  ): Extract<MensajeHub, { type: 'events' }> {
+    const pagina = this.almacen.eventosDesde(from, TAMANO_PAGINA)
     return {
-      tipo: 'eventos',
-      eventos: pagina.filter((e) => this.ve(tipo, e)).map((e) => paraDispositivo(e, dispositivoId)),
-      hasta: pagina.at(-1)?.secuencia ?? desde,
+      type: 'events',
+      events: pagina.filter((e) => this.ve(type, e)).map((e) => paraDispositivo(e, dispositivoId)),
+      until: pagina.at(-1)?.sequence ?? from,
       hay_mas: pagina.length === TAMANO_PAGINA,
     }
   }
@@ -290,7 +288,7 @@ export class HubSync {
    * Qué eventos ve cada tipo de dispositivo. Por ahora solo hay eventos de pedido y los ven
    * todos; la caja y la auditoría se filtrarán cuando existan (Fase 1).
    */
-  ve(_tipo: TipoDispositivo, _evento: EventoPedido): boolean {
+  ve(_tipo: TipoDispositivo, _evento: OrderEvent): boolean {
     return true
   }
 
@@ -298,15 +296,15 @@ export class HubSync {
    * Mensaje `nuevo` para difundir un evento aceptado. `hasta_anterior` supone que el dispositivo
    * ve todos los eventos; cuando `ve` filtre (Fase 1) tendrá que ser por dispositivo.
    */
-  nuevo(
-    evento: EventoPedido,
+  fresh(
+    event: OrderEvent,
     dispositivoId: string | null = null,
-  ): Extract<MensajeHub, { tipo: 'nuevo' }> {
+  ): Extract<MensajeHub, { type: 'new' }> {
     return {
-      tipo: 'nuevo',
-      evento: paraDispositivo(evento, dispositivoId),
-      hasta_anterior: evento.secuencia - 1,
-      hasta: evento.secuencia,
+      type: 'new',
+      event: paraDispositivo(event, dispositivoId),
+      hasta_anterior: event.sequence - 1,
+      until: event.sequence,
     }
   }
 
@@ -316,35 +314,35 @@ export class HubSync {
    * aceptados, para difundirlos.
    */
   recibirLote(
-    conexion: Conexion,
-    eventos: readonly unknown[],
-  ): { resultados: ResultadoEvento[]; aceptados: EventoPedido[] } {
+    connection: Conexion,
+    events: readonly unknown[],
+  ): { resultados: ResultadoEvento[]; aceptados: OrderEvent[] } {
     const rechazados = new Set<string>()
     const resultados: ResultadoEvento[] = []
-    const aceptados: EventoPedido[] = []
-    for (const crudo of eventos) {
-      const datos = identificar(crudo)
-      let procesado: { resultado: ResultadoEvento; aceptado: EventoPedido | null }
+    const aceptados: OrderEvent[] = []
+    for (const crudo of events) {
+      const data = identificar(crudo)
+      let procesado: { result: ResultadoEvento; accepted: OrderEvent | null }
       try {
         procesado = this.almacen.transaccion(() =>
-          this.procesar(conexion, crudo, datos, rechazados),
+          this.procesar(connection, crudo, data, rechazados),
         )
       } catch (error) {
         // Si tampoco se puede guardar el rechazo, el almacén está caído: que el hub se reinicie
         // (lanza). Si se puede, el problema es de este evento: rechazarlo evita que tumbe al hub
         // cada vez que el dispositivo lo reenvíe.
         procesado = this.almacen.transaccion(() =>
-          this.rechazar(conexion, datos, 'error_interno', this.config.reloj()),
+          this.reject(connection, data, 'internal_error', this.config.clock()),
         )
-        this.config.alErrorInterno?.(error, datos.id)
+        this.config.alErrorInterno?.(error, data.id)
       }
-      const { resultado, aceptado } = procesado
-      resultados.push(resultado)
-      if (aceptado) {
-        aceptados.push(aceptado)
-        this.aplicarAProyecciones(aceptado)
+      const { result, accepted } = procesado
+      resultados.push(result)
+      if (accepted) {
+        aceptados.push(accepted)
+        this.aplicarAProyecciones(accepted)
       }
-      if (resultado.estado === 'rechazado') {
+      if (result.status === 'rejected') {
         for (const id of agregadosDeCrudo(crudo)) rechazados.add(id)
       }
     }
@@ -362,65 +360,65 @@ export class HubSync {
    * vuelve lento: en la Fase 1 las proyecciones se guardan en la base.
    */
   private reconstruirProyecciones() {
-    const todos = new Map<string, EstadoPedido>()
-    let desde = 0
+    const all = new Map<string, OrderState>()
+    let from = 0
     for (;;) {
-      const pagina = this.almacen.eventosDesde(desde, TAMANO_PAGINA)
-      for (const evento of pagina) {
-        this.aplicarATurnos(evento)
-        if (evento.agregado_tipo !== 'pedido') continue
-        for (const id of pedidosDe(evento)) {
-          const r = aplicarEvento(todos.get(id) ?? null, evento)
-          if (r.estado) todos.set(id, r.estado)
+      const pagina = this.almacen.eventosDesde(from, TAMANO_PAGINA)
+      for (const event of pagina) {
+        this.aplicarATurnos(event)
+        if (event.aggregate_type !== 'order') continue
+        for (const id of pedidosDe(event)) {
+          const r = applyEvent(all.get(id) ?? null, event)
+          if (r.status) all.set(id, r.status)
         }
       }
       if (pagina.length < TAMANO_PAGINA) break
-      desde = pagina.at(-1)?.secuencia ?? desde
+      from = pagina.at(-1)?.sequence ?? from
     }
-    for (const [id, pedido] of todos) if (pedido.estado === 'abierto') this.pedidos.set(id, pedido)
+    for (const [id, order] of all) if (order.status === 'open') this.orders.set(id, order)
   }
 
   /**
    * Lleva los turnos abiertos y los eventos de cada uno (tarea 1.7): con ellos se calcula el cuadre
    * al cerrar. Un cierre saca el turno; un pago ya no puede caer en él.
    */
-  private aplicarATurnos(evento: EventoPedido) {
-    const agregar = (turnoId: string, ...eventos: EventoPedido[]) =>
-      this.eventosDeTurno.get(turnoId)?.push(...eventos)
-    switch (evento.tipo) {
-      case 'TurnoAbierto':
-        this.turnos.set(evento.agregado_id, {
-          id: evento.agregado_id,
-          cajaId: evento.datos.caja_id,
-          base: evento.datos.base,
-          abiertoEn: evento.recibido_en,
-          usuarioId: evento.usuario_id,
+  private aplicarATurnos(event: OrderEvent) {
+    const add = (shiftId: string, ...events: OrderEvent[]) =>
+      this.eventosDeTurno.get(shiftId)?.push(...events)
+    switch (event.type) {
+      case 'ShiftOpened':
+        this.shifts.set(event.aggregate_id, {
+          id: event.aggregate_id,
+          registerId: event.data.register_id,
+          base: event.data.base,
+          openedAt: event.received_at,
+          userId: event.user_id,
         })
-        this.eventosDeTurno.set(evento.agregado_id, [evento])
+        this.eventosDeTurno.set(event.aggregate_id, [event])
         break
-      case 'PagoRegistrado':
-        agregar(evento.datos.turno_caja_id, evento)
+      case 'PaymentRecorded':
+        add(event.data.register_shift_id, event)
         break
-      case 'PagoAnulado':
-      case 'ReembolsoRegistrado': {
+      case 'PaymentVoided':
+      case 'RefundRecorded': {
         // La anulación o el reembolso cae en el turno donde se registra: ahí hace falta el pago
         // que reversa (su medio), aunque se haya cobrado en otro turno.
-        const pago = this.almacen
-          .eventosDeAgregado(evento.agregado_id)
-          .find((e) => e.tipo === 'PagoRegistrado' && e.datos.pago_id === evento.datos.pago_id)
-        const lista = this.eventosDeTurno.get(evento.datos.turno_caja_id)
-        if (pago && lista && !lista.some((e) => e.id === pago.id))
-          agregar(evento.datos.turno_caja_id, pago)
-        agregar(evento.datos.turno_caja_id, evento)
+        const payment = this.almacen
+          .eventosDeAgregado(event.aggregate_id)
+          .find((e) => e.type === 'PaymentRecorded' && e.data.payment_id === event.data.payment_id)
+        const list = this.eventosDeTurno.get(event.data.register_shift_id)
+        if (payment && list && !list.some((e) => e.id === payment.id))
+          add(event.data.register_shift_id, payment)
+        add(event.data.register_shift_id, event)
         break
       }
-      case 'MovimientoCajaRegistrado':
-      case 'ArqueoRegistrado':
-        agregar(evento.agregado_id, evento)
+      case 'CashMovementRecorded':
+      case 'CashCountRecorded':
+        add(event.aggregate_id, event)
         break
-      case 'TurnoCerrado':
-        this.turnos.delete(evento.agregado_id)
-        this.eventosDeTurno.delete(evento.agregado_id)
+      case 'ShiftClosed':
+        this.shifts.delete(event.aggregate_id)
+        this.eventosDeTurno.delete(event.aggregate_id)
         break
     }
   }
@@ -429,19 +427,19 @@ export class HubSync {
    * El cuadre de un turno (lo cobrado, los movimientos y el efectivo esperado): el abierto, de
    * memoria; el cerrado, de la base.
    */
-  cuadre(turnoId: string): CuadreTurno | null {
-    const abierto = this.eventosDeTurno.get(turnoId)
-    return abierto ? cuadreDeTurno(abierto, turnoId) : cuadreGuardado(this.almacen, turnoId)
+  reconciliation(shiftId: string): ShiftReconciliation | null {
+    const opened = this.eventosDeTurno.get(shiftId)
+    return opened ? shiftReconciliation(opened, shiftId) : cuadreGuardado(this.almacen, shiftId)
   }
 
   /** Lo que necesita el informe de un período de días operativos (tarea 1.9). */
-  datosDeInforme(desde: string, hasta: string): DatosInforme {
-    return datosDeInforme(this.almacen, desde, hasta)
+  datosDeInforme(from: string, until: string): DatosInforme {
+    return datosDeInforme(this.almacen, from, until)
   }
 
   /** El cierre de un turno ya cerrado, para reimprimir su cierre Z. */
-  cierreDeTurno(turnoId: string): CierreDeTurno | null {
-    return cierreDeTurno(this.almacen, turnoId)
+  cierreDeTurno(shiftId: string): CierreDeTurno | null {
+    return cierreDeTurno(this.almacen, shiftId)
   }
 
   /**
@@ -449,255 +447,248 @@ export class HubSync {
    * vez, y cada pago, anulación o reembolso cae en un turno abierto de la caja que lo registra.
    * Un pago usa un medio habilitado, un datáfono activo y la regla de redondeo del restaurante.
    */
-  private problemaDeCaja(evento: EventoNuevo): string | null {
-    if (evento.tipo === 'TurnoAbierto') {
-      if (evento.datos.caja_id !== evento.dispositivo_id) return 'caja_distinta'
+  private problemaDeCaja(event: NewEvent): string | null {
+    if (event.type === 'ShiftOpened') {
+      if (event.data.register_id !== event.device_id) return 'register_mismatch'
       if (
-        this.turnos.has(evento.agregado_id) ||
-        this.almacen.eventosDeAgregado(evento.agregado_id).length > 0
+        this.shifts.has(event.aggregate_id) ||
+        this.almacen.eventosDeAgregado(event.aggregate_id).length > 0
       )
-        return 'turno_ya_existe'
-      if (this.turnoAbierto(evento.datos.caja_id)) return 'turno_ya_abierto'
+        return 'shift_already_exists'
+      if (this.turnoAbierto(event.data.register_id)) return 'shift_already_open'
       return null
     }
     if (
-      evento.tipo === 'MovimientoCajaRegistrado' ||
-      evento.tipo === 'ArqueoRegistrado' ||
-      evento.tipo === 'TurnoCerrado'
+      event.type === 'CashMovementRecorded' ||
+      event.type === 'CashCountRecorded' ||
+      event.type === 'ShiftClosed'
     ) {
-      const turno = this.turnos.get(evento.agregado_id)
-      if (!turno) return 'sin_turno'
-      if (turno.cajaId !== evento.dispositivo_id) return 'turno_de_otra_caja'
-      if (evento.tipo !== 'TurnoCerrado') return null
+      const shift = this.shifts.get(event.aggregate_id)
+      if (!shift) return 'no_shift'
+      if (shift.registerId !== event.device_id) return 'other_register_shift'
+      if (event.type !== 'ShiftClosed') return null
       // El cierre debe cuadrar con lo que registró el hub: el conteo existe y es el mismo, lo
       // esperado es lo que da el cuadre, y una diferencia grande trae justificación.
-      const cuadre = this.cuadre(turno.id)
-      const arqueo = cuadre?.arqueos.find((a) => a.id === evento.datos.arqueo_id)
-      if (!cuadre || !arqueo) return 'arqueo_inexistente'
+      const reconciliation = this.reconciliation(shift.id)
+      const cashCount = reconciliation?.cashCounts.find((a) => a.id === event.data.cash_count_id)
+      if (!reconciliation || !cashCount) return 'cash_count_not_found'
       // Con el último conteo, y hecho después del último movimiento de dinero del turno.
-      if (cuadre.arqueos.at(-1)?.id !== arqueo.id) return 'arqueo_no_es_el_ultimo'
-      const eventos = this.eventosDeTurno.get(turno.id) ?? []
-      const posicion = (tipos: readonly string[]) =>
-        eventos.findLastIndex((e) => tipos.includes(e.tipo))
+      if (reconciliation.cashCounts.at(-1)?.id !== cashCount.id) return 'cash_count_not_latest'
+      const events = this.eventosDeTurno.get(shift.id) ?? []
+      const posicion = (types: readonly string[]) =>
+        events.findLastIndex((e) => types.includes(e.type))
       if (
-        posicion([
-          'PagoRegistrado',
-          'PagoAnulado',
-          'ReembolsoRegistrado',
-          'MovimientoCajaRegistrado',
-        ]) > posicion(['ArqueoRegistrado'])
+        posicion(['PaymentRecorded', 'PaymentVoided', 'RefundRecorded', 'CashMovementRecorded']) >
+        posicion(['CashCountRecorded'])
       )
-        return 'arqueo_desactualizado'
-      if (arqueo.contado !== evento.datos.contado_efectivo) return 'contado_distinto'
-      if (cuadre.efectivo.esperado !== evento.datos.esperado_efectivo) return 'esperado_distinto'
+        return 'stale_cash_count'
+      if (cashCount.counted !== event.data.counted_cash) return 'counted_mismatch'
+      if (reconciliation.cash.expected !== event.data.expected_cash) return 'expected_mismatch'
       // Los demás medios (tarea 1.8): cada uno con lo que registró el hub y lo que dijo su cierre
       // en el conteo, ni más ni menos.
       const comoTexto = (l: {
-        medio: string
-        medioPropioId: string | null
-        esperado: number
-        reportado: number
-      }) => `${l.medio}:${l.medioPropioId ?? ''}:${l.esperado}:${l.reportado}`
-      const otros = cuadreDeOtrosMedios(cuadre, arqueo)
-      const delEvento = (evento.datos.otros_medios ?? []).map((o) => ({
-        medio: o.medio,
-        medioPropioId: o.medio_propio_id,
-        esperado: o.esperado,
-        reportado: o.reportado,
+        method: string
+        customMethodId: string | null
+        expected: number
+        reported: number
+      }) => `${l.method}:${l.customMethodId ?? ''}:${l.expected}:${l.reported}`
+      const others = otherMethodsReconciliation(reconciliation, cashCount)
+      const delEvento = (event.data.other_methods ?? []).map((o) => ({
+        method: o.method,
+        customMethodId: o.custom_method_id,
+        expected: o.expected,
+        reported: o.reported,
       }))
-      if (otros.map(comoTexto).sort().join('|') !== delEvento.map(comoTexto).sort().join('|'))
-        return 'otros_medios_distintos'
+      if (others.map(comoTexto).sort().join('|') !== delEvento.map(comoTexto).sort().join('|'))
+        return 'other_methods_mismatch'
       const umbral = this.config.reglasCobro?.().umbralDiferencia ?? UMBRAL_DIFERENCIA_CAJA
-      const grande = (d: number) => Math.abs(d) >= Math.max(1, umbral)
+      const large = (d: number) => Math.abs(d) >= Math.max(1, umbral)
       if (
-        (grande(evento.datos.diferencia) || otros.some((o) => grande(o.diferencia))) &&
-        !evento.datos.justificacion
+        (large(event.data.variance) || others.some((o) => large(o.variance))) &&
+        !event.data.justification
       )
-        return 'falta_justificacion'
+        return 'missing_justification'
       return null
     }
     if (
-      evento.tipo !== 'PagoRegistrado' &&
-      evento.tipo !== 'PagoAnulado' &&
-      evento.tipo !== 'ReembolsoRegistrado'
+      event.type !== 'PaymentRecorded' &&
+      event.type !== 'PaymentVoided' &&
+      event.type !== 'RefundRecorded'
     )
       return null
-    const turno = this.turnos.get(evento.datos.turno_caja_id)
-    if (!turno) return 'sin_turno'
-    if (turno.cajaId !== evento.dispositivo_id) return 'turno_de_otra_caja'
-    if (evento.tipo === 'PagoRegistrado' && this.config.reglasCobro) {
+    const shift = this.shifts.get(event.data.register_shift_id)
+    if (!shift) return 'no_shift'
+    if (shift.registerId !== event.device_id) return 'other_register_shift'
+    if (event.type === 'PaymentRecorded' && this.config.reglasCobro) {
       const reglas = this.config.reglasCobro()
-      const { redondeo, medio, datafono, medio_propio_id } = evento.datos
+      const { rounding, method, cardTerminal, custom_method_id } = event.data
       if (
-        medio === 'otro'
-          ? !medio_propio_id || !(reglas.mediosPropios ?? []).includes(medio_propio_id)
-          : !reglas.medios.includes(medio)
+        method === 'other'
+          ? !custom_method_id || !(reglas.mediosPropios ?? []).includes(custom_method_id)
+          : !reglas.medios.includes(method)
       )
-        return 'medio_no_habilitado'
-      if (datafono && !reglas.datafonos.includes(datafono.datafono_id))
-        return 'datafono_desconocido'
-      if (redondeo && (redondeo.multiplo !== reglas.multiplo || redondeo.modo !== reglas.modo))
-        return 'redondeo_distinto'
+        return 'method_not_enabled'
+      if (cardTerminal && !reglas.cardTerminals.includes(cardTerminal.card_terminal_id))
+        return 'unknown_card_terminal'
+      if (rounding && (rounding.multiple !== reglas.multiple || rounding.mode !== reglas.mode))
+        return 'rounding_mismatch'
     }
     return null
   }
 
-  private aplicarAProyecciones(evento: EventoPedido) {
-    this.aplicarATurnos(evento)
-    if (evento.agregado_tipo !== 'pedido') return
-    for (const id of pedidosDe(evento)) {
-      const r = aplicarEvento(this.pedido(id), evento)
-      if (r.estado?.estado === 'abierto') this.pedidos.set(id, r.estado)
-      else this.pedidos.delete(id)
+  private aplicarAProyecciones(event: OrderEvent) {
+    this.aplicarATurnos(event)
+    if (event.aggregate_type !== 'order') return
+    for (const id of pedidosDe(event)) {
+      const r = applyEvent(this.order(id), event)
+      if (r.status?.status === 'open') this.orders.set(id, r.status)
+      else this.orders.delete(id)
     }
   }
 
   private procesar(
-    conexion: Conexion,
+    connection: Conexion,
     crudo: unknown,
-    datos: Identificado,
+    data: Identificado,
     rechazadosEnLote: ReadonlySet<string>,
-  ): { resultado: ResultadoEvento; aceptado: EventoPedido | null } {
-    const recibidoEn = this.config.reloj()
-    const { id, huella: contenido } = datos
-    if (datos.problema)
-      return this.rechazar(conexion, datos, `esquema: ${datos.problema}`, recibidoEn)
+  ): { result: ResultadoEvento; accepted: OrderEvent | null } {
+    const recibidoEn = this.config.clock()
+    const { id, fingerprint: content } = data
+    if (data.issue) return this.reject(connection, data, `esquema: ${data.issue}`, recibidoEn)
 
     // 1. Idempotencia: el mismo id con el mismo contenido recibe la misma respuesta.
-    const previo = this.almacen.rechazo(this.claveRechazo(datos), contenido)
-    if (previo)
-      return { resultado: { id, estado: 'rechazado', motivo: previo.motivo }, aceptado: null }
-    const guardado = id ? this.almacen.porId(id) : undefined
-    if (guardado) {
-      if (guardado.huella === contenido)
-        return { resultado: this.confirmado(guardado.evento), aceptado: null }
-      return this.rechazar(conexion, datos, 'id_repetido', recibidoEn)
+    const previous = this.almacen.rechazo(this.claveRechazo(data), content)
+    if (previous)
+      return { result: { id, status: 'rejected', reason: previous.reason }, accepted: null }
+    const saved = id ? this.almacen.porId(id) : undefined
+    if (saved) {
+      if (saved.fingerprint === content)
+        return { result: this.confirmed(saved.event), accepted: null }
+      return this.reject(connection, data, 'duplicate_id', recibidoEn)
     }
 
     // 2. Formato.
-    const validacion = validarEventoNuevo(crudo)
-    if (!validacion.ok)
-      return this.rechazar(conexion, datos, `esquema: ${validacion.errores[0]}`, recibidoEn)
-    const evento = validacion.evento
+    const validation = validateNewEvent(crudo)
+    if (!validation.ok)
+      return this.reject(connection, data, `esquema: ${validation.errors[0]}`, recibidoEn)
+    const event = validation.event
 
     // 3. Dispositivo.
-    if (evento.dispositivo_id !== conexion.dispositivoId) {
-      return this.rechazar(conexion, datos, 'dispositivo_distinto', recibidoEn)
+    if (event.device_id !== connection.dispositivoId) {
+      return this.reject(connection, data, 'device_mismatch', recibidoEn)
     }
-    if (conexion.revocadoEn) {
+    if (connection.revocadoEn) {
       // Lo hecho antes de revocarlo lo revisa el gerente; lo de después no vale.
-      const antes = Date.parse(evento.hora_estimada_hub) < Date.parse(conexion.revocadoEn)
-      return antes
-        ? this.aCuarentena(conexion, datos, 'dispositivo_revocado', recibidoEn)
-        : this.rechazar(conexion, datos, 'dispositivo_revocado', recibidoEn)
+      const before = Date.parse(event.hub_estimated_time) < Date.parse(connection.revocadoEn)
+      return before
+        ? this.aCuarentena(connection, data, 'revoked_device', recibidoEn)
+        : this.reject(connection, data, 'revoked_device', recibidoEn)
     }
 
     // 3b. Sesión y permiso. Una sesión que el hub no conoce (p. ej. tras restaurarlo) va a
     // cuarentena: el evento pudo ser legítimo.
     // Un evento de producto no tiene pedido: no hace falta reconstruir nada para juzgarlo.
-    const pedidoPrevio = evento.agregado_tipo === 'pedido' ? this.pedido(evento.agregado_id) : null
-    const acceso = this.config.acceso.verificar(conexion, evento, pedidoPrevio)
-    if (!acceso.ok) {
-      return acceso.cuarentena
-        ? this.aCuarentena(conexion, datos, acceso.motivo, recibidoEn)
-        : this.rechazar(conexion, datos, acceso.motivo, recibidoEn)
+    const pedidoPrevio = event.aggregate_type === 'order' ? this.order(event.aggregate_id) : null
+    const access = this.config.access.verify(connection, event, pedidoPrevio)
+    if (!access.ok) {
+      return access.quarantine
+        ? this.aCuarentena(connection, data, access.reason, recibidoEn)
+        : this.reject(connection, data, access.reason, recibidoEn)
     }
 
     // 4. Dependencias dentro del lote y secuencia base.
-    const agregados = pedidosDe(evento)
+    const agregados = pedidosDe(event)
     if (agregados.some((a) => rechazadosEnLote.has(a))) {
-      return this.rechazar(conexion, datos, 'depende_de_rechazado', recibidoEn)
+      return this.reject(connection, data, 'depends_on_rejected', recibidoEn)
     }
     const max = this.almacen.maxSecuencia()
-    if (evento.secuencia_base > max) {
-      return this.rechazar(conexion, datos, 'secuencia_base_invalida', recibidoEn)
+    if (event.base_sequence > max) {
+      return this.reject(connection, data, 'invalid_base_sequence', recibidoEn)
     }
 
     // 5. Lo que agrega el hub.
-    const dia = diaOperativo(
-      this.horaParaDia(evento.hora_estimada_hub, recibidoEn),
-      this.config.zonaHoraria,
+    const day = businessDay(
+      this.horaParaDia(event.hub_estimated_time, recibidoEn),
+      this.config.timeZone,
       this.config.inicioDiaOperativo,
     )
     const candidato = {
-      ...evento,
-      secuencia: max + 1,
-      recibido_en: recibidoEn,
-      dia_operativo: dia,
-      asignaciones: this.asignaciones(evento, dia),
-      afecta: [],
-      autorizado_por_id: acceso.autorizadoPorId,
-    } as EventoPedido
+      ...event,
+      sequence: max + 1,
+      received_at: recibidoEn,
+      business_day: day,
+      assignments: this.assignments(event, day),
+      affects: [],
+      authorized_by_id: access.authorizedById,
+    } as OrderEvent
 
     // 5b. Caja: turno abierto y redondeo del restaurante.
-    const deCaja = this.problemaDeCaja(evento)
-    if (deCaja) return this.rechazar(conexion, datos, deCaja, recibidoEn)
+    const deCaja = this.problemaDeCaja(event)
+    if (deCaja) return this.reject(connection, data, deCaja, recibidoEn)
 
     // 6. Aplicar a cada pedido y decidir. Un evento de producto (agotado) no toca pedidos.
-    const esDePedido = evento.agregado_tipo === 'pedido'
-    const antes = esDePedido ? agregados.map((pedidoId) => this.pedido(pedidoId)) : []
-    const resultados = antes.map((pedido) => aplicarEvento(pedido, candidato))
-    const problema = resultados.find(
-      (r) => r.problema && r.problema.tipo !== 'items_omitidos',
-    )?.problema
+    const esDePedido = event.aggregate_type === 'order'
+    const before = esDePedido ? agregados.map((orderId) => this.order(orderId)) : []
+    const resultados = before.map((order) => applyEvent(order, candidato))
+    const issue = resultados.find((r) => r.issue && r.issue.type !== 'items_omitted')?.issue
     // Al día: no hay nada de otros dispositivos en esos pedidos que no conociera.
     const alDia =
-      this.almacen.ultimaSecuenciaDe(agregados, conexion.dispositivoId) <= evento.secuencia_base
+      this.almacen.ultimaSecuenciaDe(agregados, connection.dispositivoId) <= event.base_sequence
 
-    let conflicto: { tipo: TipoConflicto; descripcion: string; agregadoId: string } | null = null
-    if (problema) {
-      const tipo = CONFLICTOS[problema.tipo]
-      if (!tipo || alDia || SIEMPRE_EN_LINEA.has(evento.tipo)) {
-        return this.rechazar(conexion, datos, problema.tipo, recibidoEn)
+    let conflict: { type: TipoConflicto; description: string; agregadoId: string } | null = null
+    if (issue) {
+      const type = CONFLICTOS[issue.type]
+      if (!type || alDia || SIEMPRE_EN_LINEA.has(event.type)) {
+        return this.reject(connection, data, issue.type, recibidoEn)
       }
-      conflicto = { tipo, descripcion: problema.descripcion, agregadoId: evento.agregado_id }
+      conflict = { type, description: issue.description, agregadoId: event.aggregate_id }
     }
-    const mesa = problema
+    const table = issue
       ? null
       : this.mesaOcupada(
-          evento,
+          event,
           agregados,
-          antes.flatMap((pedido, i) => mesasQueToma(pedido, resultados[i]?.estado ?? null)),
+          before.flatMap((order, i) => mesasQueToma(order, resultados[i]?.status ?? null)),
         )
-    if (mesa === 'rechazar') return this.rechazar(conexion, datos, 'mesa_ocupada', recibidoEn)
+    if (table === 'reject') return this.reject(connection, data, 'table_occupied', recibidoEn)
     // Un precio que no cuadra con el catálogo se acepta (el ítem ya se pidió, quizá sin
     // conexión) y la caja lo revisa (docs/SYNC.md#rechazos-cuarentena-y-conflictos). Un evento
     // guarda un solo conflicto: si además hay dos pedidos en la mesa, va en la misma descripción.
-    const diferencia =
-      !problema && evento.tipo === 'ItemAgregado' ? this.config.precios?.revisar(evento) : null
-    if (mesa)
-      conflicto = diferencia
-        ? { ...mesa, descripcion: `${mesa.descripcion}. Revisa también el precio: ${diferencia}` }
-        : mesa
-    else if (diferencia)
-      conflicto = {
-        tipo: 'precio_distinto',
-        descripcion: diferencia,
-        agregadoId: evento.agregado_id,
+    const variance =
+      !issue && event.type === 'ItemAdded' ? this.config.prices?.revisar(event) : null
+    if (table)
+      conflict = variance
+        ? { ...table, description: `${table.description}. Revisa también el precio: ${variance}` }
+        : table
+    else if (variance)
+      conflict = {
+        type: 'price_mismatch',
+        description: variance,
+        agregadoId: event.aggregate_id,
       }
 
     // 7. Guardar.
-    this.almacen.guardarEvento(candidato, contenido, agregados)
-    this.config.acceso.registrarUso(evento, acceso)
-    if (conflicto) {
+    this.almacen.saveEvent(candidato, content, agregados)
+    this.config.access.registrarUso(event, access)
+    if (conflict) {
       this.almacen.guardarConflicto({
-        id: nuevoId(),
-        eventoId: id,
+        id: newId(),
+        eventId: id,
         detectadoEn: recibidoEn,
-        ...conflicto,
+        ...conflict,
       })
     }
-    if (this.config.alGuardar) {
+    if (this.config.onSave) {
       try {
-        this.config.alGuardar(
+        this.config.onSave(
           candidato,
-          antes.map((pedido, i) => ({ antes: pedido, despues: resultados[i]?.estado ?? null })),
+          before.map((order, i) => ({ before: order, after: resultados[i]?.status ?? null })),
         )
       } catch (error) {
-        this.config.alFalloAlGuardar?.(error, id)
+        this.config.onSaveFailure?.(error, id)
       }
     }
-    return { resultado: this.confirmado(candidato), aceptado: candidato }
+    return { result: this.confirmed(candidato), accepted: candidato }
   }
 
   /**
@@ -705,26 +696,26 @@ export class HubSync {
    * no lo conocía (estaba sin conexión), se aceptan los dos y se avisa en caja.
    */
   private mesaOcupada(
-    evento: EventoNuevo,
+    event: NewEvent,
     agregados: readonly string[],
-    mesas: readonly string[],
-  ): { tipo: TipoConflicto; descripcion: string; agregadoId: string } | 'rechazar' | null {
-    if (mesas.length === 0) return null
-    let otro: EstadoPedido | undefined
-    for (const p of this.pedidos.values())
-      if (!agregados.includes(p.id) && mesas.some((m) => ocupa(p, m))) {
-        otro = p
+    tables: readonly string[],
+  ): { type: TipoConflicto; description: string; agregadoId: string } | 'reject' | null {
+    if (tables.length === 0) return null
+    let other: OrderState | undefined
+    for (const p of this.orders.values())
+      if (!agregados.includes(p.id) && tables.some((m) => ocupa(p, m))) {
+        other = p
         break
       }
-    if (!otro) return null
-    if (TOMA_CON_CONEXION.has(evento.tipo) || SIEMPRE_EN_LINEA.has(evento.tipo)) return 'rechazar'
+    if (!other) return null
+    if (TOMA_CON_CONEXION.has(event.type) || SIEMPRE_EN_LINEA.has(event.type)) return 'reject'
     const loConocia =
-      this.almacen.ultimaSecuenciaDe([otro.id], evento.dispositivo_id) <= evento.secuencia_base
-    if (loConocia) return 'rechazar'
+      this.almacen.ultimaSecuenciaDe([other.id], event.device_id) <= event.base_sequence
+    if (loConocia) return 'reject'
     return {
-      tipo: 'mesa_duplicada',
-      descripcion: 'Dos pedidos abiertos en la misma mesa: únelos en caja',
-      agregadoId: evento.agregado_id,
+      type: 'duplicate_table',
+      description: 'Dos pedidos abiertos en la misma mesa: únelos en caja',
+      agregadoId: event.aggregate_id,
     }
   }
 
@@ -732,19 +723,18 @@ export class HubSync {
    * Números que da el hub: el del pedido del día al abrirlo, y uno por comanda al enviar, seguidos
    * en el día operativo (ADR-006 y ADR-015).
    */
-  private asignaciones(evento: EventoNuevo, dia: string): EventoPedido['asignaciones'] {
-    if (evento.tipo === 'PedidoAbierto')
-      return { numero_dia: this.almacen.aperturasDelDia(dia) + 1 }
-    if (evento.tipo === 'ItemsEnviados') {
+  private assignments(event: NewEvent, day: string): OrderEvent['assignments'] {
+    if (event.type === 'OrderOpened') return { day_number: this.almacen.aperturasDelDia(day) + 1 }
+    if (event.type === 'ItemsSent') {
       // Solo las comandas que de verdad mandan algo a cocina: lo que ya envió otro equipo no gasta
       // número, y la cocina no ve saltos (#1, #3).
-      const antes = this.pedido(evento.agregado_id)
-      const conAlgo = evento.datos.comandas.filter((c) =>
-        c.item_ids.some((id) => antes?.items[id]?.estado === 'pendiente'),
+      const before = this.order(event.aggregate_id)
+      const conAlgo = event.data.tickets.filter((c) =>
+        c.item_ids.some((id) => before?.items[id]?.status === 'pending'),
       )
-      const base = this.almacen.comandasDelDia(dia)
+      const base = this.almacen.comandasDelDia(day)
       return {
-        numeros_comanda: Object.fromEntries(conAlgo.map((c, i) => [c.comanda_id, base + i + 1])),
+        ticket_numbers: Object.fromEntries(conAlgo.map((c, i) => [c.ticket_id, base + i + 1])),
       }
     }
     return {}
@@ -752,66 +742,65 @@ export class HubSync {
 
   /** La hora del dispositivo corregida vale si cae en una ventana razonable; si no, la del hub. */
   private horaParaDia(horaEstimada: string, recibidoEn: string): string {
-    const diferencia = Date.parse(recibidoEn) - Date.parse(horaEstimada)
-    return diferencia <= ANTES_MAX_MS && diferencia >= -DESPUES_MAX_MS ? horaEstimada : recibidoEn
+    const variance = Date.parse(recibidoEn) - Date.parse(horaEstimada)
+    return variance <= ANTES_MAX_MS && variance >= -DESPUES_MAX_MS ? horaEstimada : recibidoEn
   }
 
-  private confirmado(evento: EventoPedido): ResultadoEvento {
-    const { secuencia, recibido_en, dia_operativo, asignaciones, afecta, autorizado_por_id } =
-      evento
+  private confirmed(event: OrderEvent): ResultadoEvento {
+    const { sequence, received_at, business_day, assignments, affects, authorized_by_id } = event
     return {
-      id: evento.id,
-      estado: 'confirmado',
+      id: event.id,
+      status: 'confirmed',
       aceptacion: {
-        secuencia,
-        recibido_en,
-        dia_operativo,
-        asignaciones,
-        afecta,
-        autorizado_por_id,
+        sequence,
+        received_at,
+        business_day,
+        assignments,
+        affects,
+        authorized_by_id,
       },
-      conflicto: this.almacen.conflictoDe(evento.id)?.tipo ?? null,
+      conflict: this.almacen.conflictoDe(event.id)?.type ?? null,
     }
   }
 
   /** La hora la pone el dispositivo: por eso la cuarentena tiene tope por dispositivo. */
   private aCuarentena(
-    conexion: Conexion,
-    datos: Identificado,
-    motivo: string,
+    connection: Conexion,
+    data: Identificado,
+    reason: string,
     recibidoEn: string,
-  ): { resultado: ResultadoEvento; aceptado: null } {
-    if (this.almacen.cuarentenasDe(conexion.dispositivoId) >= MAX_CUARENTENA)
-      return this.rechazar(conexion, datos, motivo, recibidoEn)
+  ): { result: ResultadoEvento; accepted: null } {
+    if (this.almacen.cuarentenasDe(connection.dispositivoId) >= MAX_CUARENTENA)
+      return this.reject(connection, data, reason, recibidoEn)
     this.almacen.guardarCuarentena({
-      eventoId: datos.id,
-      dispositivoId: conexion.dispositivoId,
-      motivo,
-      contenido: datos.contenido,
+      eventId: data.id,
+      dispositivoId: connection.dispositivoId,
+      reason,
+      content: data.content,
       recibidoEn,
     })
-    return { resultado: { id: datos.id, estado: 'cuarentena' }, aceptado: null }
+    return { result: { id: data.id, status: 'quarantine' }, accepted: null }
   }
 
   /** Un evento sin id se identifica por su huella. */
-  private claveRechazo(datos: Identificado) {
-    return datos.id || `sin-id-${datos.huella}`
+  private claveRechazo(data: Identificado) {
+    return data.id || `no-id-${data.fingerprint}`
   }
 
-  private rechazar(
-    conexion: Conexion,
-    datos: Identificado,
-    motivo: string,
+  private reject(
+    connection: Conexion,
+    data: Identificado,
+    reason: string,
     recibidoEn: string,
-  ): { resultado: ResultadoEvento; aceptado: null } {
+  ): { result: ResultadoEvento; accepted: null } {
     this.almacen.guardarRechazo({
-      eventoId: this.claveRechazo(datos),
-      huella: datos.huella,
-      dispositivoId: conexion.dispositivoId,
-      motivo,
-      contenido: datos.contenido,
+      eventId: this.claveRechazo(data),
+      fingerprint: data.fingerprint,
+      dispositivoId: connection.dispositivoId,
+      reason,
+      content: data.content,
       recibidoEn,
     })
-    return { resultado: { id: datos.id, estado: 'rechazado', motivo }, aceptado: null }
+    return { result: { id: data.id, status: 'rejected', reason }, accepted: null }
   }
 }

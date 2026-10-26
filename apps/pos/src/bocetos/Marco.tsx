@@ -11,19 +11,19 @@ import { useSimulacion } from './estado'
 
 export function Marco({
   titulo,
-  volver = '/bocetos',
-  usuario = 'Mesero 1',
-  acciones,
+  back = '/mockups',
+  user = 'Mesero 1',
+  actions,
   children,
 }: {
   titulo: string
-  volver?: string
-  usuario?: string
-  acciones?: ReactNode
+  back?: string
+  user?: string
+  actions?: ReactNode
   children: ReactNode
 }) {
-  const { oscuro, elegir } = useTema()
-  const { conexion, pendientes, impresorasConFalla } = useSimulacion()
+  const { dark, select } = useTema()
+  const { connection, pendingList, impresorasConFalla } = useSimulacion()
   const encabezado = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
@@ -34,12 +34,7 @@ export function Marco({
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-30 flex flex-wrap items-center gap-2 border-b border-borde bg-superficie/95 px-2 py-2 backdrop-blur">
-        <Boton
-          variante="fantasma"
-          icono="atras"
-          aria-label="Volver"
-          onClick={() => navegar(volver)}
-        />
+        <Boton variant="ghost" icono="back" aria-label="Volver" onClick={() => navegar(back)} />
         {/* La insignia del restaurante: el logo en su círculo crema, como en la carta. */}
         <img
           src="/marca/la-spritzzeria.svg"
@@ -54,18 +49,18 @@ export function Marco({
           {titulo}
         </h1>
         <IndicadorConexion
-          estado={conexion}
-          pendientes={pendientes}
+          status={connection}
+          pendingList={pendingList}
           impresorasConFalla={impresorasConFalla}
         />
-        <span className="hidden text-texto-suave sm:inline">{usuario}</span>
-        {acciones}
+        <span className="hidden text-texto-suave sm:inline">{user}</span>
+        {actions}
         <Boton
-          variante="fantasma"
-          icono={oscuro ? 'sol' : 'luna'}
+          variant="ghost"
+          icono={dark ? 'sun' : 'moon'}
           aria-label="Modo oscuro"
-          aria-pressed={oscuro}
-          onClick={() => elegir(oscuro ? 'claro' : 'oscuro')}
+          aria-pressed={dark}
+          onClick={() => select(dark ? 'light' : 'dark')}
         />
       </header>
       <div className="firma-marca" aria-hidden="true" />

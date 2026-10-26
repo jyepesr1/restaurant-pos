@@ -9,7 +9,7 @@ export {
 } from './dispositivo/almacen'
 export { ClienteSync, type OpcionesCliente } from './dispositivo/cliente'
 export {
-  type Canal,
+  type Channel,
   type EstadoConexion,
   GestorConexion,
   type Manejadores,
@@ -45,7 +45,7 @@ export {
   datosDeInforme,
 } from './hub/informe'
 export { type Autenticador, SalaSync } from './hub/sala'
-export { huella, huellaEvento, jsonCanonico } from './huella'
+export { canonicalJson, fingerprint, huellaEvento } from './huella'
 export {
   type CodigoError,
   type EstadoImpresora,

@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { abrirPedido, eventosDe, montar } from './pruebas/montaje'
 
@@ -8,51 +8,51 @@ import { abrirPedido, eventosDe, montar } from './pruebas/montaje'
 describe('eventos de producto', () => {
   it('un agotado se confirma, llega a los demás y no crea ningún pedido', async () => {
     const m = montar()
-    const caja = m.red.dispositivo('caja')
-    const celular = m.red.dispositivo('celular')
-    await caja.conectar()
-    await celular.conectar()
-    await m.red.estabilizar()
+    const register = m.network.device('register')
+    const phone = m.network.device('phone')
+    await register.connect()
+    await phone.connect()
+    await m.network.settle()
 
-    const producto = nuevoId()
-    await caja.crear(
-      producto,
-      'ProductoAgotado',
-      { producto_id: producto, variante_id: null },
-      { agregado_tipo: 'producto' },
+    const product = newId()
+    await register.crear(
+      product,
+      'ProductSoldOut',
+      { product_id: product, variant_id: null },
+      { aggregate_type: 'product' },
     )
-    const pedido = await abrirPedido(celular)
-    await m.red.estabilizar()
+    const order = await abrirPedido(phone)
+    await m.network.settle()
 
-    expect(eventosDe(m).map((e) => [e.tipo, e.secuencia])).toEqual([
-      ['ProductoAgotado', 1],
-      ['PedidoAbierto', 2],
+    expect(eventosDe(m).map((e) => [e.type, e.sequence])).toEqual([
+      ['ProductSoldOut', 1],
+      ['OrderOpened', 2],
     ])
-    const delCelular = (await celular.cliente.locales()).find(
-      (l) => l.evento.tipo === 'ProductoAgotado',
+    const delCelular = (await phone.cliente.locales()).find(
+      (l) => l.event.type === 'ProductSoldOut',
     )
-    expect(delCelular?.estado).toBe('confirmado')
-    expect(m.hub().pedido(producto)).toBeNull()
-    expect(m.hub().pedido(pedido)?.estado).toBe('abierto')
-    expect(await celular.cliente.pedido(producto)).toBeNull()
+    expect(delCelular?.status).toBe('confirmed')
+    expect(m.hub().order(product)).toBeNull()
+    expect(m.hub().order(order)?.status).toBe('open')
+    expect(await phone.cliente.order(product)).toBeNull()
   })
 
   it('tras reiniciar el hub, los agotados no estorban al reconstruir los pedidos', async () => {
     const m = montar()
-    const caja = m.red.dispositivo('caja')
-    await caja.conectar()
-    const producto = nuevoId()
-    await caja.crear(
-      producto,
-      'ProductoAgotado',
-      { producto_id: producto, variante_id: null },
-      { agregado_tipo: 'producto' },
+    const register = m.network.device('register')
+    await register.connect()
+    const product = newId()
+    await register.crear(
+      product,
+      'ProductSoldOut',
+      { product_id: product, variant_id: null },
+      { aggregate_type: 'product' },
     )
-    const pedido = await abrirPedido(caja)
-    await m.red.estabilizar()
+    const order = await abrirPedido(register)
+    await m.network.settle()
     const sala = m.crearSala()
     expect(sala).toBeDefined()
-    expect(m.hub().pedido(pedido)?.estado).toBe('abierto')
+    expect(m.hub().order(order)?.status).toBe('open')
     expect(m.hub().tienePedidoAbierto('x')).toBe(false)
   })
 })

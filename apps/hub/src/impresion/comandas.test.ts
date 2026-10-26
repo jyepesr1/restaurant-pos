@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { leerEscpos } from '@pos/printing'
 import { HubSync } from '@pos/sync'
 import { AlmacenSqlite } from '@pos/sync/sqlite'
@@ -15,261 +15,257 @@ import { abrirImpresoraDePrueba, type ImpresoraDePrueba } from './impresora-prue
 
 const abiertas: ImpresoraDePrueba[] = []
 afterEach(async () => {
-  for (const i of abiertas.splice(0)) await i.cerrar()
+  for (const i of abiertas.splice(0)) await i.close()
 })
 
 async function montar() {
   const m = montarAcceso()
-  const ahora = m.reloj()
-  const cocina = insertarVersionado(
+  const ahora = m.clock()
+  const kitchen = insertarVersionado(
     m.db,
-    'estacion',
+    'stations',
     m.restauranteId,
-    { nombre: 'Cocina', orden: 1 },
+    { name: 'Cocina', position: 1 },
     SISTEMA,
     ahora,
   )
-  const barra = insertarVersionado(
+  const bar = insertarVersionado(
     m.db,
-    'estacion',
+    'stations',
     m.restauranteId,
-    { nombre: 'Barra', orden: 2 },
+    { name: 'Barra', position: 2 },
     SISTEMA,
     ahora,
   )
-  const opciones = { db: m.db, restauranteId: m.restauranteId, zonaHoraria: 'America/Bogota' }
+  const options = { db: m.db, restauranteId: m.restauranteId, timeZone: 'America/Bogota' }
   const cola = new ColaImpresion({ db: m.db, restauranteId: m.restauranteId })
   const hub = new HubSync(new AlmacenSqlite(m.db, m.restauranteId), {
     restauranteId: m.restauranteId,
-    zonaHoraria: 'America/Bogota',
+    timeZone: 'America/Bogota',
     inicioDiaOperativo: '06:00',
     instancia: 'hub-1',
-    reloj: m.reloj,
-    acceso: m.acceso,
-    alGuardar: (evento, cambios) => {
-      trabajosDeEvento(opciones, evento, cambios)
+    clock: m.clock,
+    access: m.access,
+    onSave: (event, changes) => {
+      trabajosDeEvento(options, event, changes)
     },
   })
-  const impresora = async (
-    nombre: string,
-    estaciones: string[],
-    respaldo: string | null = null,
-  ) => {
-    const prueba = await abrirImpresoraDePrueba()
-    abiertas.push(prueba)
+  const printer = async (name: string, stations: string[], respaldo: string | null = null) => {
+    const mockPrinter = await abrirImpresoraDePrueba()
+    abiertas.push(mockPrinter)
     const id = insertarVersionado(
       m.db,
-      'impresora',
+      'printers',
       m.restauranteId,
       {
-        nombre,
-        conexion: 'red',
-        direccion: '127.0.0.1',
-        puerto: prueba.puerto,
-        ancho: 80,
-        pagina_codigos: 'pc850',
-        respaldo_id: respaldo,
-        estacion_ids: JSON.stringify(estaciones),
+        name,
+        connection: 'network',
+        address: '127.0.0.1',
+        port: mockPrinter.port,
+        width: 80,
+        code_page: 'pc850',
+        fallback_id: respaldo,
+        station_ids: JSON.stringify(stations),
       },
       SISTEMA,
       ahora,
     )
-    return { id, prueba }
+    return { id, mockPrinter }
   }
-  const { conexion } = m.emparejar('mesero')
-  const sesion = m.entrar(conexion, 'mesero')
+  const { connection } = m.emparejar('waiter')
+  const session = m.entrar(connection, 'waiter')
   /** Abre un pedido con un plato de cocina y una bebida de barra, y los envía. */
-  const enviar = () => {
-    const pedido = nuevoId()
-    const plato = {
-      ...item([{ modificador_id: nuevoId(), nombre: 'Término medio', precio_extra: 0 }]),
-      nombre: 'Tagliata',
-      comensal: 1,
+  const send = () => {
+    const order = newId()
+    const dish = {
+      ...item([{ modifier_id: newId(), name: 'Término medio', extra_price: 0 }]),
+      name: 'Tagliata',
+      guest: 1,
     }
-    const bebida = { ...item(), nombre: 'Aperol Spritz' }
-    const en = { agregado_id: pedido }
-    const base = m.db.prepare('SELECT coalesce(max(secuencia), 0) AS s FROM evento').get()
+    const bebida = { ...item(), name: 'Aperol Spritz' }
+    const en = { aggregate_id: order }
+    const base = m.db.prepare('SELECT coalesce(max(sequence), 0) AS s FROM events').get()
       ?.s as number
-    const r = hub.recibirLote(conexion, [
-      m.evento(conexion, sesion, 'PedidoAbierto', ABRIR, { ...en, secuencia_base: base }),
-      m.evento(conexion, sesion, 'ItemAgregado', plato, { ...en, secuencia_base: base + 1 }),
-      m.evento(conexion, sesion, 'ItemAgregado', bebida, { ...en, secuencia_base: base + 2 }),
-      m.evento(
-        conexion,
-        sesion,
-        'ItemsEnviados',
+    const r = hub.recibirLote(connection, [
+      m.event(connection, session, 'OrderOpened', ABRIR, { ...en, base_sequence: base }),
+      m.event(connection, session, 'ItemAdded', dish, { ...en, base_sequence: base + 1 }),
+      m.event(connection, session, 'ItemAdded', bebida, { ...en, base_sequence: base + 2 }),
+      m.event(
+        connection,
+        session,
+        'ItemsSent',
         {
-          comandas: [
-            { comanda_id: nuevoId(), estacion_id: cocina, item_ids: [plato.item_id] },
-            { comanda_id: nuevoId(), estacion_id: barra, item_ids: [bebida.item_id] },
+          tickets: [
+            { ticket_id: newId(), station_id: kitchen, item_ids: [dish.item_id] },
+            { ticket_id: newId(), station_id: bar, item_ids: [bebida.item_id] },
           ],
         },
-        { ...en, secuencia_base: base + 3 },
+        { ...en, base_sequence: base + 3 },
       ),
     ])
-    expect(r.resultados.map((x) => x.estado)).toEqual([
-      'confirmado',
-      'confirmado',
-      'confirmado',
-      'confirmado',
+    expect(r.resultados.map((x) => x.status)).toEqual([
+      'confirmed',
+      'confirmed',
+      'confirmed',
+      'confirmed',
     ])
     return r.aceptados.at(-1)
   }
   /** Un evento más del mismo equipo, después de todo lo que ya hay. */
-  const otro = (pedido: string, tipo: Parameters<typeof m.evento>[2], datos: object) => {
-    const base = m.db.prepare('SELECT coalesce(max(secuencia), 0) AS s FROM evento').get()
+  const other = (order: string, type: Parameters<typeof m.event>[2], data: object) => {
+    const base = m.db.prepare('SELECT coalesce(max(sequence), 0) AS s FROM events').get()
       ?.s as number
-    return hub.recibirLote(conexion, [
-      m.evento(conexion, sesion, tipo, datos, { agregado_id: pedido, secuencia_base: base }),
+    return hub.recibirLote(connection, [
+      m.event(connection, session, type, data, { aggregate_id: order, base_sequence: base }),
     ])
   }
-  return { m, cola, hub, cocina, barra, impresora, enviar, otro }
+  return { m, cola, hub, kitchen, bar, printer, send, other }
 }
 
-const pendientes = (m: ReturnType<typeof montarAcceso>) =>
-  Number(
-    m.db.prepare("SELECT count(*) AS n FROM trabajo_impresion WHERE estado = 'pendiente'").get()?.n,
-  )
+const pendingList = (m: ReturnType<typeof montarAcceso>) =>
+  Number(m.db.prepare("SELECT count(*) AS n FROM print_jobs WHERE status = 'pending'").get()?.n)
 
 describe('comandas impresas', () => {
   it('cada estación imprime lo suyo, con número del día seguido', async () => {
     const t = await montar()
-    const cocina = await t.impresora('Cocina', [t.cocina])
-    const barra = await t.impresora('Barra', [t.barra])
-    const enviado = t.enviar()
-    expect(Object.values(enviado?.asignaciones.numeros_comanda ?? {})).toEqual([1, 2])
-    expect(pendientes(t.m)).toBe(2)
-    await t.cola.vuelta()
-    expect(pendientes(t.m)).toBe(0)
-    await cocina.prueba.esperar(1)
-    await barra.prueba.esperar(1)
-    const enCocina = leerEscpos(cocina.prueba.recibidos[0] as Uint8Array).texto
+    const kitchen = await t.printer('Cocina', [t.kitchen])
+    const bar = await t.printer('Barra', [t.bar])
+    const sent = t.send()
+    expect(Object.values(sent?.assignments.ticket_numbers ?? {})).toEqual([1, 2])
+    expect(pendingList(t.m)).toBe(2)
+    await t.cola.runOnce()
+    expect(pendingList(t.m)).toBe(0)
+    await kitchen.mockPrinter.esperar(1)
+    await bar.mockPrinter.esperar(1)
+    const enCocina = leerEscpos(kitchen.mockPrinter.recibidos[0] as Uint8Array).text
     expect(enCocina).toContain('COCINA')
     expect(enCocina).toContain('Tagliata')
     expect(enCocina).toContain('> Término medio')
     expect(enCocina).toMatch(/Mesa +#1/)
     expect(enCocina).not.toContain('Aperol')
-    expect(leerEscpos(barra.prueba.recibidos[0] as Uint8Array).texto).toContain('Aperol Spritz')
+    expect(leerEscpos(bar.mockPrinter.recibidos[0] as Uint8Array).text).toContain('Aperol Spritz')
     // Un segundo envío sigue la numeración del día.
-    const otro = t.enviar()
-    expect(Object.values(otro?.asignaciones.numeros_comanda ?? {})).toEqual([3, 4])
+    const other = t.send()
+    expect(Object.values(other?.assignments.ticket_numbers ?? {})).toEqual([3, 4])
   })
 
   it('una estación sin impresora no deja trabajos', async () => {
     const t = await montar()
-    await t.impresora('Barra', [t.barra])
-    t.enviar()
-    expect(pendientes(t.m)).toBe(1)
+    await t.printer('Barra', [t.bar])
+    t.send()
+    expect(pendingList(t.m)).toBe(1)
   })
 
   it('si la impresora no responde, se reintenta, y a los 3 fallos sale por la de respaldo', async () => {
     const t = await montar()
-    const respaldo = await t.impresora('Respaldo', [])
-    const cocina = await t.impresora('Cocina', [t.cocina], respaldo.id)
-    await cocina.prueba.apagar(true)
+    const respaldo = await t.printer('Respaldo', [])
+    const kitchen = await t.printer('Cocina', [t.kitchen], respaldo.id)
+    await kitchen.mockPrinter.apagar(true)
     let ahora = Date.now()
     const cola = new ColaImpresion({
       db: t.m.db,
       restauranteId: t.m.restauranteId,
-      reloj: () => ahora,
+      clock: () => ahora,
     })
-    t.enviar()
+    t.send()
     for (let i = 0; i < 3; i++) {
       if (i > 0) ahora += 60_000
-      await cola.vuelta()
+      await cola.runOnce()
     }
-    expect(cola.estado().find((e) => e.id === cocina.id)?.estado).toBe('falla')
-    expect(cocina.prueba.recibidos).toHaveLength(0)
-    await cola.vuelta()
-    await respaldo.prueba.esperar(1)
-    expect(respaldo.prueba.recibidos).toHaveLength(1)
-    expect(leerEscpos(respaldo.prueba.recibidos[0] as Uint8Array).texto).toContain('Tagliata')
-    const fila = t.m.db.prepare("SELECT * FROM trabajo_impresion WHERE tipo = 'comanda'").get()
-    expect(fila?.estado).toBe('impreso')
-    expect(fila?.impreso_en_id).toBe(respaldo.id)
-    expect(Number(fila?.intentos)).toBe(4)
+    expect(cola.status().find((e) => e.id === kitchen.id)?.status).toBe('failed')
+    expect(kitchen.mockPrinter.recibidos).toHaveLength(0)
+    await cola.runOnce()
+    await respaldo.mockPrinter.esperar(1)
+    expect(respaldo.mockPrinter.recibidos).toHaveLength(1)
+    expect(leerEscpos(respaldo.mockPrinter.recibidos[0] as Uint8Array).text).toContain('Tagliata')
+    const fila = t.m.db.prepare("SELECT * FROM print_jobs WHERE type = 'ticket'").get()
+    expect(fila?.status).toBe('printed')
+    expect(fila?.printed_on_id).toBe(respaldo.id)
+    expect(Number(fila?.attempts)).toBe(4)
   })
 
   it('el reintento del mismo envío no duplica la comanda', async () => {
     const t = await montar()
-    await t.impresora('Cocina', [t.cocina])
-    const evento = t.enviar()
-    if (!evento) throw new Error('sin evento')
-    const cambios = [{ antes: null, despues: t.hub.pedido(evento.agregado_id) }]
+    await t.printer('Cocina', [t.kitchen])
+    const event = t.send()
+    if (!event) throw new Error('sin evento')
+    const changes = [{ before: null, after: t.hub.order(event.aggregate_id) }]
     // Ya enviado: no queda nada «pendiente → enviado» y no se arma nada nuevo.
     expect(
       trabajosDeEvento(
-        { db: t.m.db, restauranteId: t.m.restauranteId, zonaHoraria: 'America/Bogota' },
-        evento,
-        cambios,
+        { db: t.m.db, restauranteId: t.m.restauranteId, timeZone: 'America/Bogota' },
+        event,
+        changes,
       ),
     ).toBe(0)
-    expect(pendientes(t.m)).toBe(1)
+    expect(pendingList(t.m)).toBe(1)
   })
 
   it('la principal se vuelve a probar al vencer su espera y, si ya responde, imprime lo suyo', async () => {
     const t = await montar()
-    const respaldo = await t.impresora('Respaldo', [])
-    const cocina = await t.impresora('Cocina', [t.cocina], respaldo.id)
-    await cocina.prueba.apagar(true)
+    const respaldo = await t.printer('Respaldo', [])
+    const kitchen = await t.printer('Cocina', [t.kitchen], respaldo.id)
+    await kitchen.mockPrinter.apagar(true)
     let ahora = Date.now()
     const cola = new ColaImpresion({
       db: t.m.db,
       restauranteId: t.m.restauranteId,
-      reloj: () => ahora,
+      clock: () => ahora,
     })
-    t.enviar()
+    t.send()
     for (let i = 0; i < 3; i++) {
       if (i > 0) ahora += 60_000
-      await cola.vuelta()
+      await cola.runOnce()
     }
-    await cocina.prueba.apagar(false)
+    await kitchen.mockPrinter.apagar(false)
     ahora += 60_000
-    t.enviar()
-    await cola.vuelta()
-    await cola.vuelta()
-    await cocina.prueba.esperar(2)
-    expect(cocina.prueba.recibidos).toHaveLength(2)
-    expect(respaldo.prueba.recibidos).toHaveLength(0)
-    expect(cola.estado().find((e) => e.id === cocina.id)?.estado).toBe('lista')
+    t.send()
+    await cola.runOnce()
+    await cola.runOnce()
+    await kitchen.mockPrinter.esperar(2)
+    expect(kitchen.mockPrinter.recibidos).toHaveLength(2)
+    expect(respaldo.mockPrinter.recibidos).toHaveLength(0)
+    expect(cola.status().find((e) => e.id === kitchen.id)?.status).toBe('ready')
   })
 
   it('cambiar la nota del pedido con platos en cocina imprime «NOTA NUEVA» en cada estación con algo pendiente', async () => {
     const t = await montar()
-    const cocina = await t.impresora('Cocina', [t.cocina])
-    const barra = await t.impresora('Barra', [t.barra])
-    const enviado = t.enviar()
-    if (!enviado) throw new Error('sin envío')
-    await t.cola.vuelta()
-    const r = t.otro(enviado.agregado_id, 'NotaPedidoCambiada', { notas: 'alérgico al maní' })
-    expect(r.resultados[0]?.estado).toBe('confirmado')
-    await t.cola.vuelta()
-    await cocina.prueba.esperar(2)
-    await barra.prueba.esperar(2)
-    const nota = leerEscpos(cocina.prueba.recibidos[1] as Uint8Array).texto
-    expect(nota).toContain('NOTA NUEVA')
-    expect(nota).toContain('NOTA DEL PEDIDO: alérgico al maní')
-    expect(leerEscpos(barra.prueba.recibidos[1] as Uint8Array).texto).toContain('alérgico al maní')
+    const kitchen = await t.printer('Cocina', [t.kitchen])
+    const bar = await t.printer('Barra', [t.bar])
+    const sent = t.send()
+    if (!sent) throw new Error('sin envío')
+    await t.cola.runOnce()
+    const r = t.other(sent.aggregate_id, 'OrderNoteChanged', { notes: 'alérgico al maní' })
+    expect(r.resultados[0]?.status).toBe('confirmed')
+    await t.cola.runOnce()
+    await kitchen.mockPrinter.esperar(2)
+    await bar.mockPrinter.esperar(2)
+    const note = leerEscpos(kitchen.mockPrinter.recibidos[1] as Uint8Array).text
+    expect(note).toContain('NOTA NUEVA')
+    expect(note).toContain('NOTA DEL PEDIDO: alérgico al maní')
+    expect(leerEscpos(bar.mockPrinter.recibidos[1] as Uint8Array).text).toContain(
+      'alérgico al maní',
+    )
 
     // Quitarla también se avisa en papel.
-    t.otro(enviado.agregado_id, 'NotaPedidoCambiada', { notas: null })
-    await t.cola.vuelta()
-    await cocina.prueba.esperar(3)
-    expect(leerEscpos(cocina.prueba.recibidos[2] as Uint8Array).texto).toContain(
+    t.other(sent.aggregate_id, 'OrderNoteChanged', { notes: null })
+    await t.cola.runOnce()
+    await kitchen.mockPrinter.esperar(3)
+    expect(leerEscpos(kitchen.mockPrinter.recibidos[2] as Uint8Array).text).toContain(
       'SE QUITÓ LA NOTA DEL PEDIDO',
     )
   })
 
   it('la nota de un pedido sin nada en cocina no imprime nada', async () => {
     const t = await montar()
-    await t.impresora('Cocina', [t.cocina])
-    const enviado = t.enviar()
-    if (!enviado) throw new Error('sin envío')
-    const pedido = t.hub.pedido(enviado.agregado_id)
-    const ids = Object.keys(pedido?.items ?? {})
-    t.otro(enviado.agregado_id, 'ItemEntregado', { item_ids: ids })
-    const antes = pendientes(t.m)
-    t.otro(enviado.agregado_id, 'NotaPedidoCambiada', { notas: 'cumpleaños' })
-    expect(pendientes(t.m)).toBe(antes)
+    await t.printer('Cocina', [t.kitchen])
+    const sent = t.send()
+    if (!sent) throw new Error('sin envío')
+    const order = t.hub.order(sent.aggregate_id)
+    const ids = Object.keys(order?.items ?? {})
+    t.other(sent.aggregate_id, 'ItemServed', { item_ids: ids })
+    const before = pendingList(t.m)
+    t.other(sent.aggregate_id, 'OrderNoteChanged', { notes: 'cumpleaños' })
+    expect(pendingList(t.m)).toBe(before)
   })
 })

@@ -1,4 +1,4 @@
-import { type EstadoPedido, impuestosDelPedido, nuevoId, totalesPedido } from '@pos/core'
+import { newId, type OrderState, orderTaxes, orderTotals } from '@pos/core'
 import type { Catalogo } from '@pos/sync'
 import { useState } from 'react'
 import { useAvisar } from '../ui/avisos'
@@ -13,7 +13,7 @@ import { sala, useSala, useVistaLocal } from './contexto'
 import {
   enPartesIguales,
   lineasDe,
-  nombreDeMedio,
+  methodName,
   nombreImpuesto,
   porCobrar,
   porProductos,
@@ -30,36 +30,36 @@ import { CANALES, unidadesPorEnviar } from './pedido'
 // aparte. Cobrar solo se puede en un equipo de caja con la caja abierta y conexión con el hub; al
 // quedar el saldo en 0, el pedido se cierra solo y la mesa queda libre.
 
-type Modo = 'una' | 'iguales' | 'productos'
+type Modo = 'single' | 'even' | 'products'
 
 const MOTIVOS_ANULAR_PAGO = ['Se registró por error', 'Pagó con otro medio'] as const
 
-const mensaje = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
+const message = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
 
 /** «Mesa 5 + 6», «Para llevar #12». */
-function tituloDe(catalogo: Catalogo, pedido: EstadoPedido): string {
-  if (pedido.mesaId) {
-    const nombres = [pedido.mesaId, ...pedido.mesasUnidas].map(
-      (id) => catalogo.mesas.find((m) => m.id === id)?.nombre ?? '?',
+function tituloDe(catalog: Catalogo, order: OrderState): string {
+  if (order.tableId) {
+    const names = [order.tableId, ...order.mergedTables].map(
+      (id) => catalog.tables.find((m) => m.id === id)?.name ?? '?',
     )
-    return `Mesa ${nombres.join(' + ')}`
+    return `Mesa ${names.join(' + ')}`
   }
-  const canal = CANALES[pedido.canal as keyof typeof CANALES] ?? 'Pedido'
-  return pedido.numeroDia ? `${canal} #${pedido.numeroDia}` : canal
+  const channel = CANALES[order.channel as keyof typeof CANALES] ?? 'Pedido'
+  return order.dayNumber ? `${channel} #${order.dayNumber}` : channel
 }
 
-export function Cuenta() {
+export function Check() {
   const { parametros } = useRuta()
-  const pedidoId = parametros.get('pedido')
+  const orderId = parametros.get('order')
   const vista = useVistaLocal()
-  const { catalogo, sesion, equipo, conexion } = useSala()
+  const { catalog, session, device, connection } = useSala()
   const avisar = useAvisar()
   // Lo cobrado que cerró el pedido: se sigue viendo (el cambio que hay que entregar).
-  const [cerrado, setCerrado] = useState<{ titulo: string; cambio: number | null } | null>(null)
+  const [closed, setCerrado] = useState<{ titulo: string; change: number | null } | null>(null)
   const [ultimoCambio, setUltimoCambio] = useState<number | null>(null)
-  const [modo, setModo] = useState<Modo>('una')
-  const [personas, setPersonas] = useState(2)
-  const [cuentas, setCuentas] = useState(2)
+  const [mode, setModo] = useState<Modo>('single')
+  const [people, setPersonas] = useState(2)
+  const [checks, setCuentas] = useState(2)
   const [asignadas, setAsignadas] = useState<Map<string, number[]>>(new Map())
   const [cobrando, setCobrando] = useState<Cobrando | null>(null)
   const [anulando, setAnulando] = useState<string | null>(null)
@@ -67,67 +67,67 @@ export function Cuenta() {
   const [propinaElegida, setPropinaElegida] = useState<number | null>(null)
   const [editandoPropina, setEditandoPropina] = useState(false)
 
-  if (cerrado)
+  if (closed)
     return (
-      <MarcoSala titulo={cerrado.titulo} volver="/">
+      <MarcoSala titulo={closed.titulo} back="/">
         <div className="mx-auto flex max-w-md flex-col gap-4 p-4">
           <p className="rounded-2xl bg-libre-suave p-4 text-libre-texto">
             <span className="block text-lg font-semibold">Pagado y cerrado</span>
-            {cerrado.cambio !== null && cerrado.cambio > 0 && (
+            {closed.change !== null && closed.change > 0 && (
               <>
                 <span className="mt-2 block">Cambio a entregar</span>
                 <span className="cifras font-titulo text-4xl font-bold">
-                  {pesos(cerrado.cambio)}
+                  {pesos(closed.change)}
                 </span>
               </>
             )}
           </p>
-          <Boton variante="principal" grande icono="mesa" onClick={() => navegar('/')}>
+          <Boton variant="main" large icono="table" onClick={() => navegar('/')}>
             Volver al salón
           </Boton>
         </div>
       </MarcoSala>
     )
 
-  if (!catalogo || !vista) return null
-  const pedidoVisible = vista.pedidos.find((p) => p.estado.id === pedidoId)
+  if (!catalog || !vista) return null
+  const pedidoVisible = vista.orders.find((p) => p.status.id === orderId)
   if (!pedidoVisible)
     return (
-      <MarcoSala titulo="Cuenta" volver="/">
+      <MarcoSala titulo="Cuenta" back="/">
         <p className="p-6 text-texto-suave">Este pedido ya no está abierto.</p>
       </MarcoSala>
     )
-  const pedido = pedidoVisible.estado
-  const titulo = tituloDe(catalogo, pedido)
-  const volverAlPedido = `/pedido?pedido=${pedido.id}${pedido.mesaId ? `&mesa=${pedido.mesaId}` : ''}`
-  const reglas = reglasDe(catalogo)
+  const order = pedidoVisible.status
+  const titulo = tituloDe(catalog, order)
+  const volverAlPedido = `/order?order=${order.id}${order.tableId ? `&table=${order.tableId}` : ''}`
+  const reglas = reglasDe(catalog)
   if (!reglas)
     return (
-      <MarcoSala titulo={`Cuenta · ${titulo}`} volver="/">
+      <MarcoSala titulo={`Cuenta · ${titulo}`} back="/">
         <p className="p-6 text-texto-suave">
           La caja tiene una versión anterior que no sabe cobrar: hay que actualizarla.
         </p>
       </MarcoSala>
     )
 
-  const permisos = sesion?.permisos ?? []
-  const enLinea = conexion === 'conectado'
-  const esCaja = equipo?.tipo === 'caja'
-  const puedeDividir = permisos.includes('dividir_cuenta')
-  const puedeCobrar = esCaja && permisos.includes('registrar_pago')
-  const puedeAnularPago = esCaja && permisos.includes('anular_pago')
-  const puedeCerrar = esCaja && permisos.includes('cerrar_mesa')
-  const turno = vista.turno
-  const totales = totalesPedido(pedido)
-  const lineas = lineasDe(pedido)
-  const { saldo, cuentas: divididas, sinAsignar } = porCobrar(pedido)
-  const propinaSaldo = propinaSugeridaDe(pedido, saldo, reglas)
-  const propinaCinco = propinaSugeridaDe(pedido, saldo, { ...reglas, propinaSugerida: 500 })
+  const permissions = session?.permissions ?? []
+  const enLinea = connection === 'connected'
+  const esCaja = device?.type === 'register'
+  const puedeDividir = permissions.includes('split_check')
+  const puedeCobrar = esCaja && permissions.includes('record_payment')
+  const puedeAnularPago = esCaja && permissions.includes('void_payment')
+  const puedeCerrar = esCaja && permissions.includes('close_table')
+  const shift = vista.shift
+  const totales = orderTotals(order)
+  const lines = lineasDe(order)
+  const { balance, checks: divididas, unassigned } = porCobrar(order)
+  const propinaSaldo = propinaSugeridaDe(order, balance, reglas)
+  const propinaCinco = propinaSugeridaDe(order, balance, { ...reglas, suggestedTip: 500 })
   // La que pide el cliente al ver la precuenta (sin propina, otro valor); va al papel y al cobro.
   const propinaVista = propinaElegida ?? propinaSaldo
-  const impuestos = impuestosDelPedido(pedido, reglas.redondeoModo)
-  const pagos = Object.values(pedido.pagos).filter((p) => !p.anulado)
-  const sinEnviar = unidadesPorEnviar(pedido)
+  const taxes = orderTaxes(order, reglas.redondeoModo)
+  const payments = Object.values(order.payments).filter((p) => !p.voided)
+  const sinEnviar = unidadesPorEnviar(order)
 
   /** Un trabajo que registra eventos: uno a la vez, y el error se avisa. */
   const hacer = async (trabajo: () => Promise<void>) => {
@@ -136,71 +136,71 @@ export function Cuenta() {
     try {
       await trabajo()
     } catch (e) {
-      avisar(mensaje(e))
+      avisar(message(e))
     } finally {
       setOcupado(false)
     }
   }
 
-  const imprimir = (cuentaId: string | null, subtotal: number, propina: number) =>
+  const imprimir = (checkId: string | null, subtotal: number, tip: number) =>
     hacer(async () => {
-      await sala.registrar('PrecuentaImpresa', pedido.id, {
-        cuenta_id: cuentaId,
+      await sala.record('PreBillPrinted', order.id, {
+        check_id: checkId,
         subtotal,
-        propina_sugerida: propina,
+        suggested_tip: tip,
       })
       avisar(
         reglas.imprimePrecuenta ? 'Precuenta enviada a la impresora' : `${titulo}: pidió la cuenta`,
       )
     })
 
-  const dividir = (nuevas: ReturnType<typeof enPartesIguales>) =>
+  const split = (newOnes: ReturnType<typeof enPartesIguales>) =>
     hacer(async () => {
-      await sala.registrar('CuentaDividida', pedido.id, { cuentas: nuevas })
-      setModo('una')
+      await sala.record('CheckSplit', order.id, { checks: newOnes })
+      setModo('single')
       setAsignadas(new Map())
     })
 
-  const deshacer = () =>
+  const undo = () =>
     hacer(async () => {
-      await sala.registrar('DivisionDeshecha', pedido.id, {})
+      await sala.record('SplitUndone', order.id, {})
     })
 
   /** Cierra el pedido con saldo 0; el hub confirma antes de mostrarlo cerrado. */
-  const cerrar = async (cambio: number | null) => {
-    await sala.registrarConfirmado('PedidoCerrado', pedido.id, {})
-    setCerrado({ titulo, cambio })
+  const close = async (change: number | null) => {
+    await sala.registrarConfirmado('OrderClosed', order.id, {})
+    setCerrado({ titulo, change })
     avisar(`${titulo}: pagada y cerrada`)
   }
 
   // El dinero se muestra como cobrado solo cuando el hub lo acepta: un pago que el hub rechaza
   // desaparecería de la cuenta después de que el cliente ya pagó.
-  const cobrar = (pago: PagoNuevo) =>
+  const cobrar = (payment: PagoNuevo) =>
     hacer(async () => {
-      if (!turno) throw new Error('Abre la caja para cobrar')
-      await sala.registrarConfirmado('PagoRegistrado', pedido.id, {
-        ...pago,
-        turno_caja_id: turno.id,
+      if (!shift) throw new Error('Abre la caja para cobrar')
+      await sala.registrarConfirmado('PaymentRecorded', order.id, {
+        ...payment,
+        register_shift_id: shift.id,
       })
       setCobrando(null)
-      setUltimoCambio(pago.cambio)
+      setUltimoCambio(payment.change)
       // Lo que queda según lo guardado ya con el pago (otro equipo pudo cobrar al mismo tiempo).
-      const despues = await sala.sync?.pedido(pedido.id)
-      const queda = despues ? totalesPedido(despues).saldo : saldo - pago.monto
+      const after = await sala.sync?.order(order.id)
+      const queda = after ? orderTotals(after).balance : balance - payment.amount
       // La mesa se cierra sola al quedar en 0 (decisión del dueño, 26-oct-2026). Si el cierre
       // falla, el pago ya quedó y «Cerrar la mesa» lo vuelve a intentar.
-      if (queda === 0 && puedeCerrar) await cerrar(pago.cambio)
+      if (queda === 0 && puedeCerrar) await close(payment.change)
       else avisar(queda === 0 ? 'Pago registrado' : `Pago registrado. Queda ${pesos(queda)}`)
     })
 
-  const anularPago = (pagoId: string, motivo: string) =>
+  const anularPago = (paymentId: string, reason: string) =>
     hacer(async () => {
-      if (!turno) throw new Error('Abre la caja para anular un pago')
+      if (!shift) throw new Error('Abre la caja para anular un pago')
       await sala.registrarConfirmado(
-        'PagoAnulado',
-        pedido.id,
-        { pago_id: pagoId, turno_caja_id: turno.id },
-        { motivo },
+        'PaymentVoided',
+        order.id,
+        { payment_id: paymentId, register_shift_id: shift.id },
+        { reason },
       )
       setAnulando(null)
       avisar('Pago anulado')
@@ -211,9 +211,9 @@ export function Cuenta() {
     ? null
     : !enLinea
       ? 'Sin conexión con el hub: para cobrar hace falta la red. Revisa el cable o el Wi-Fi.'
-      : !turno
+      : !shift
         ? 'La caja está cerrada: ábrela con la base para empezar a cobrar.'
-        : turno.porConfirmar
+        : shift.porConfirmar
           ? 'La caja se está abriendo: espera a que el hub lo confirme.'
           : null
   const abrirCobro = (c: Cobrando) => {
@@ -221,56 +221,56 @@ export function Cuenta() {
   }
 
   const montosVista =
-    modo === 'iguales'
-      ? enPartesIguales(pedido, personas, reglas, nuevoId)
-      : modo === 'productos'
-        ? porProductos(pedido, asignadas, cuentas, reglas, nuevoId).cuentas
+    mode === 'even'
+      ? enPartesIguales(order, people, reglas, newId)
+      : mode === 'products'
+        ? porProductos(order, asignadas, checks, reglas, newId).checks
         : []
   const sinAsignarVista =
-    modo === 'productos' ? porProductos(pedido, asignadas, cuentas, reglas, nuevoId).sinAsignar : 0
+    mode === 'products' ? porProductos(order, asignadas, checks, reglas, newId).unassigned : 0
   // Por productos solo antes del primer pago: después se divide lo que queda en partes iguales.
-  const porProductosPosible = totales.pagado === 0
+  const porProductosPosible = totales.paid === 0
 
-  const tocarItem = (id: string, cuenta: number) =>
+  const tocarItem = (id: string, check: number) =>
     setAsignadas((a) => {
       const b = new Map(a)
       const actuales = b.get(id) ?? []
-      const nuevas = actuales.includes(cuenta)
-        ? actuales.filter((c) => c !== cuenta)
-        : [...actuales, cuenta].sort((x, y) => x - y)
-      if (nuevas.length === 0) b.delete(id)
-      else b.set(id, nuevas)
+      const newOnes = actuales.includes(check)
+        ? actuales.filter((c) => c !== check)
+        : [...actuales, check].sort((x, y) => x - y)
+      if (newOnes.length === 0) b.delete(id)
+      else b.set(id, newOnes)
       return b
     })
 
   return (
-    <MarcoSala titulo={`Cuenta · ${titulo}`} volver={volverAlPedido}>
+    <MarcoSala titulo={`Cuenta · ${titulo}`} back={volverAlPedido}>
       <div className="mx-auto grid max-w-5xl gap-4 p-3 pb-28 md:grid-cols-[1fr_24rem] md:p-5">
         <section
           className="rounded-2xl border border-linea bg-superficie shadow-flota"
           aria-label="Precuenta"
         >
           <ul>
-            {lineas.map((l) => (
+            {lines.map((l) => (
               <li key={l.id} className="border-b border-linea px-4 py-3">
                 <div className="flex items-start gap-3">
-                  <span className="cifras w-6 font-semibold">{l.cantidad}</span>
+                  <span className="cifras w-6 font-semibold">{l.quantity}</span>
                   <span className="flex-1">
-                    <span className="font-semibold">{l.nombre}</span>
-                    {l.opciones.length > 0 && (
+                    <span className="font-semibold">{l.name}</span>
+                    {l.options.length > 0 && (
                       <span className="block text-sm text-texto-suave">
-                        {l.opciones.join(' · ')}
+                        {l.options.join(' · ')}
                       </span>
                     )}
                   </span>
-                  <span className="cifras">{pesos(l.neto)}</span>
+                  <span className="cifras">{pesos(l.net)}</span>
                 </div>
-                {modo === 'productos' && porProductosPosible && !pedido.cuentas && (
+                {mode === 'products' && porProductosPosible && !order.checks && (
                   <Grupo
-                    etiqueta={`Quién paga ${l.nombre}`}
+                    etiqueta={`Quién paga ${l.name}`}
                     className="mt-2 flex flex-wrap gap-2 pl-9"
                   >
-                    {Array.from({ length: cuentas }, (_, c) => (
+                    {Array.from({ length: checks }, (_, c) => (
                       <Opcion
                         // biome-ignore lint/suspicious/noArrayIndexKey: las cuentas son posiciones
                         key={c}
@@ -284,45 +284,45 @@ export function Cuenta() {
                 )}
               </li>
             ))}
-            {lineas.length === 0 && (
+            {lines.length === 0 && (
               <li className="p-4 text-texto-suave">El pedido no tiene productos.</li>
             )}
           </ul>
           <dl className="cifras grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 p-4">
-            {impuestos.length > 0 && (
+            {taxes.length > 0 && (
               <>
                 <dt className="text-texto-suave">Base sin impuestos</dt>
                 <dd className="text-right text-texto-suave">
-                  {pesos(impuestos.reduce((a, i) => a + i.base, 0))}
+                  {pesos(taxes.reduce((a, i) => a + i.base, 0))}
                 </dd>
-                {impuestos
-                  .filter((i) => i.impuesto > 0)
+                {taxes
+                  .filter((i) => i.tax > 0)
                   .map((i) => (
-                    <div key={`${i.tipo}${i.tarifa}`} className="contents">
-                      <dt className="text-texto-suave">{nombreImpuesto(i.tipo, i.tarifa)}</dt>
-                      <dd className="text-right text-texto-suave">{pesos(i.impuesto)}</dd>
+                    <div key={`${i.type}${i.rate}`} className="contents">
+                      <dt className="text-texto-suave">{nombreImpuesto(i.type, i.rate)}</dt>
+                      <dd className="text-right text-texto-suave">{pesos(i.tax)}</dd>
                     </div>
                   ))}
               </>
             )}
             <dt className="font-semibold">Total</dt>
-            <dd className="text-right font-semibold">{pesos(totales.neto)}</dd>
-            {totales.pagado > 0 && (
+            <dd className="text-right font-semibold">{pesos(totales.net)}</dd>
+            {totales.paid > 0 && (
               <>
                 <dt className="text-libre-texto">Ya pagado</dt>
-                <dd className="text-right text-libre-texto">{`-${pesos(totales.pagado)}`}</dd>
+                <dd className="text-right text-libre-texto">{`-${pesos(totales.paid)}`}</dd>
                 <dt className="font-semibold">Saldo</dt>
-                <dd className="text-right font-semibold">{pesos(saldo)}</dd>
+                <dd className="text-right font-semibold">{pesos(balance)}</dd>
               </>
             )}
-            {saldo > 0 && (
+            {balance > 0 && (
               <>
                 <dt className="flex items-center gap-2 text-texto-suave">
                   {propinaElegida === null
-                    ? `Propina sugerida (${reglas.propinaSugerida / 100} %, voluntaria)`
+                    ? `Propina sugerida (${reglas.suggestedTip / 100} %, voluntaria)`
                     : 'Propina (voluntaria)'}
                   <Boton
-                    variante="fantasma"
+                    variant="ghost"
                     className="min-h-10! px-2! text-sm"
                     onClick={() => setEditandoPropina((v) => !v)}
                   >
@@ -334,12 +334,12 @@ export function Cuenta() {
                   {propinaVista > 0 ? 'Con propina' : 'A pagar'}
                 </dt>
                 <dd className="font-titulo text-right text-2xl font-bold">
-                  {pesos(saldo + propinaVista)}
+                  {pesos(balance + propinaVista)}
                 </dd>
               </>
             )}
           </dl>
-          {editandoPropina && saldo > 0 && (
+          {editandoPropina && balance > 0 && (
             <div className="mx-4 mb-4 flex flex-col gap-2 rounded-xl bg-superficie-2/60 p-3">
               <Grupo etiqueta="Propina" className="flex flex-wrap gap-2">
                 <Opcion
@@ -349,9 +349,9 @@ export function Cuenta() {
                     setEditandoPropina(false)
                   }}
                 >
-                  {`${reglas.propinaSugerida / 100} % (sugerida) · ${pesos(propinaSaldo)}`}
+                  {`${reglas.suggestedTip / 100} % (sugerida) · ${pesos(propinaSaldo)}`}
                 </Opcion>
-                {reglas.propinaSugerida !== 500 && (
+                {reglas.suggestedTip !== 500 && (
                   <Opcion
                     elegida={propinaElegida === propinaCinco}
                     alElegir={() => {
@@ -385,24 +385,24 @@ export function Cuenta() {
               </label>
             </div>
           )}
-          {pagos.length > 0 && (
+          {payments.length > 0 && (
             <div className="border-t border-linea p-4">
               <h2 className="mb-2 font-semibold">Pagos</h2>
               <ul className="cifras flex flex-col gap-2">
-                {pagos.map((p) => (
+                {payments.map((p) => (
                   <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
                     <span>
-                      {nombreDeMedio(p.medio, p.medioPropioId, reglas)}
-                      {p.cuentaId &&
-                        ` · ${divididas.find((c) => c.id === p.cuentaId)?.nombre ?? 'Cuenta'}`}
+                      {methodName(p.method, p.customMethodId, reglas)}
+                      {p.checkId &&
+                        ` · ${divididas.find((c) => c.id === p.checkId)?.name ?? 'Cuenta'}`}
                     </span>
                     <span className="flex items-center gap-2 text-right">
-                      {pesos(p.monto)}
-                      {p.propina > 0 && ` + propina ${pesos(p.propina)}`}
-                      {p.ajusteRedondeo !== 0 &&
-                        ` (redondeo ${p.ajusteRedondeo > 0 ? '+' : ''}${pesos(p.ajusteRedondeo)})`}
-                      {puedeAnularPago && turno && enLinea && (
-                        <Boton variante="fantasma" onClick={() => setAnulando(p.id)}>
+                      {pesos(p.amount)}
+                      {p.tip > 0 && ` + propina ${pesos(p.tip)}`}
+                      {p.roundingAdjustment !== 0 &&
+                        ` (redondeo ${p.roundingAdjustment > 0 ? '+' : ''}${pesos(p.roundingAdjustment)})`}
+                      {puedeAnularPago && shift && enLinea && (
+                        <Boton variant="ghost" onClick={() => setAnulando(p.id)}>
                           Anular
                         </Boton>
                       )}
@@ -426,11 +426,11 @@ export function Cuenta() {
           aria-label="Cómo se paga"
         >
           <Boton
-            variante="secundario"
-            grande
-            icono="recibo"
-            disabled={ocupado || saldo === 0}
-            onClick={() => imprimir(null, saldo, propinaVista)}
+            variant="secondary"
+            large
+            icono="receipt"
+            disabled={ocupado || balance === 0}
+            onClick={() => imprimir(null, balance, propinaVista)}
           >
             {reglas.imprimePrecuenta ? 'Imprimir precuenta' : 'Pidió la cuenta'}
           </Boton>
@@ -440,13 +440,13 @@ export function Cuenta() {
             </p>
           )}
 
-          {saldo === 0 && puedeCerrar && (
+          {balance === 0 && puedeCerrar && (
             <Boton
-              variante="principal"
-              grande
+              variant="main"
+              large
               icono="check"
               disabled={ocupado || !enLinea}
-              onClick={() => hacer(() => cerrar(ultimoCambio))}
+              onClick={() => hacer(() => close(ultimoCambio))}
             >
               Cerrar la mesa
             </Boton>
@@ -465,18 +465,18 @@ export function Cuenta() {
             </div>
           )}
 
-          {!puedeCobrar && saldo > 0 && (
+          {!puedeCobrar && balance > 0 && (
             <p className="text-sm text-texto-suave">El cobro lo hace la caja.</p>
           )}
 
           {sinCobro && (
             <div className="rounded-xl bg-proceso-suave p-3 text-proceso-texto">
               <p>{sinCobro}</p>
-              {!turno && enLinea && (
+              {!shift && enLinea && (
                 <Boton
                   className="mt-2"
                   onClick={() =>
-                    navegar(`/caja?volver=${encodeURIComponent(`/cuenta?pedido=${pedido.id}`)}`)
+                    navegar(`/register?back=${encodeURIComponent(`/check?order=${order.id}`)}`)
                   }
                 >
                   Abrir la caja
@@ -485,76 +485,71 @@ export function Cuenta() {
             </div>
           )}
 
-          {pedido.cuentas ? (
+          {order.checks ? (
             <Divididas
-              cuentas={divididas}
-              sinAsignar={sinAsignar}
+              checks={divididas}
+              unassigned={unassigned}
               puedeCobrar={puedeCobrar && !sinCobro}
-              puedeDeshacer={puedeDividir && !pagos.some((p) => p.cuentaId !== null)}
+              puedeDeshacer={puedeDividir && !payments.some((p) => p.checkId !== null)}
               ocupado={ocupado}
               alCobrar={abrirCobro}
-              alImprimir={(c) => imprimir(c.id, c.saldo, c.propinaPendiente)}
-              alDeshacer={deshacer}
+              alImprimir={(c) => imprimir(c.id, c.balance, c.propinaPendiente)}
+              alDeshacer={undo}
             />
           ) : (
             <>
-              {puedeDividir && saldo > 0 && (
+              {puedeDividir && balance > 0 && (
                 <Grupo etiqueta="Cómo se paga" className="grid grid-cols-3 gap-2">
                   {(
                     [
-                      ['una', 'Una cuenta'],
-                      ['iguales', 'Partes iguales'],
-                      ['productos', 'Por productos'],
+                      ['single', 'Una cuenta'],
+                      ['even', 'Partes iguales'],
+                      ['products', 'Por productos'],
                     ] as const
-                  ).map(([m, texto]) => (
-                    <Opcion
-                      key={m}
-                      forma="tarjeta"
-                      elegida={modo === m}
-                      alElegir={() => setModo(m)}
-                    >
-                      {texto}
+                  ).map(([m, text]) => (
+                    <Opcion key={m} shape="card" elegida={mode === m} alElegir={() => setModo(m)}>
+                      {text}
                     </Opcion>
                   ))}
                 </Grupo>
               )}
-              {modo === 'una' && puedeCobrar && saldo > 0 && (
+              {mode === 'single' && puedeCobrar && balance > 0 && (
                 <Boton
-                  variante="principal"
-                  grande
-                  icono="billete"
+                  variant="main"
+                  large
+                  icono="bill"
                   disabled={!!sinCobro || ocupado}
                   onClick={() =>
                     abrirCobro({
-                      cuentaId: null,
-                      nombre: titulo,
-                      disponible: saldo,
-                      cuenta: null,
+                      checkId: null,
+                      name: titulo,
+                      available: balance,
+                      check: null,
                       propinaInicial: propinaElegida,
                     })
                   }
                 >
-                  {`Cobrar ${pesos(saldo)}`}
+                  {`Cobrar ${pesos(balance)}`}
                 </Boton>
               )}
-              {modo === 'iguales' && (
-                <Contador
-                  nombre="Personas"
-                  valor={personas}
-                  minimo={2}
-                  maximo={20}
-                  alCambiar={setPersonas}
+              {mode === 'even' && (
+                <Accountant
+                  name="Personas"
+                  value={people}
+                  minimum={2}
+                  maximum={20}
+                  onChange={setPersonas}
                 />
               )}
-              {modo === 'productos' &&
+              {mode === 'products' &&
                 (porProductosPosible ? (
                   <>
-                    <Contador
-                      nombre="Cuentas"
-                      valor={cuentas}
-                      minimo={2}
-                      maximo={10}
-                      alCambiar={(n) => {
+                    <Accountant
+                      name="Cuentas"
+                      value={checks}
+                      minimum={2}
+                      maximum={10}
+                      onChange={(n) => {
                         setCuentas(n)
                         setAsignadas((a) => recortarAsignaciones(a, n))
                       }}
@@ -569,16 +564,16 @@ export function Cuenta() {
                     Ya hay pagos: divide lo que queda en partes iguales.
                   </p>
                 ))}
-              {modo !== 'una' && (modo === 'iguales' || porProductosPosible) && (
+              {mode !== 'single' && (mode === 'even' || porProductosPosible) && (
                 <>
                   <ul className="flex flex-col gap-2">
                     {montosVista.map((c) => (
                       <li
-                        key={c.cuenta_id}
+                        key={c.check_id}
                         className="cifras flex justify-between rounded-xl border border-linea bg-superficie p-3"
                       >
-                        <span className="font-semibold">{c.nombre}</span>
-                        <span>{`${pesos(c.monto)} + propina ${pesos(c.propina_sugerida)}`}</span>
+                        <span className="font-semibold">{c.name}</span>
+                        <span>{`${pesos(c.amount)} + propina ${pesos(c.suggested_tip)}`}</span>
                       </li>
                     ))}
                     {sinAsignarVista > 0 && (
@@ -589,10 +584,10 @@ export function Cuenta() {
                     )}
                   </ul>
                   <Boton
-                    variante="principal"
-                    grande
-                    disabled={ocupado || montosVista.every((c) => c.monto === 0)}
-                    onClick={() => dividir(montosVista)}
+                    variant="main"
+                    large
+                    disabled={ocupado || montosVista.every((c) => c.amount === 0)}
+                    onClick={() => split(montosVista)}
                   >
                     {`Dividir en ${montosVista.length}`}
                   </Boton>
@@ -605,27 +600,27 @@ export function Cuenta() {
 
       <PanelCobro
         cobrando={cobrando}
-        pedido={pedido}
+        order={order}
         reglas={reglas}
-        datafonos={catalogo.datafonos ?? []}
+        cardTerminals={catalog.cardTerminals ?? []}
         ocupado={ocupado}
         alCerrar={() => setCobrando(null)}
         alCobrar={cobrar}
       />
       <PanelAnularPago
         key={anulando ?? 'ninguno'}
-        pagoId={anulando}
+        paymentId={anulando}
         ocupado={ocupado}
         alCerrar={() => setAnulando(null)}
-        alAnular={anularPago}
+        onVoid={anularPago}
       />
     </MarcoSala>
   )
 }
 
 function Divididas({
-  cuentas,
-  sinAsignar,
+  checks,
+  unassigned,
   puedeCobrar,
   puedeDeshacer,
   ocupado,
@@ -633,38 +628,38 @@ function Divididas({
   alImprimir,
   alDeshacer,
 }: {
-  cuentas: ReturnType<typeof porCobrar>['cuentas']
-  sinAsignar: number
+  checks: ReturnType<typeof porCobrar>['checks']
+  unassigned: number
   puedeCobrar: boolean
   puedeDeshacer: boolean
   ocupado: boolean
   alCobrar: (c: Cobrando) => void
-  alImprimir: (c: ReturnType<typeof porCobrar>['cuentas'][number]) => void
+  alImprimir: (c: ReturnType<typeof porCobrar>['checks'][number]) => void
   alDeshacer: () => void
 }) {
   return (
     <>
       <ul className="flex flex-col gap-2">
-        {cuentas.map((c) => (
+        {checks.map((c) => (
           <li
             key={c.id}
             className="flex flex-col gap-2 rounded-xl border border-linea bg-superficie p-3"
           >
             <span className="flex items-baseline justify-between gap-2">
-              <span className="font-semibold">{c.nombre}</span>
-              {c.saldo === 0 ? (
-                <Etiqueta tono="libre" icono="check">
+              <span className="font-semibold">{c.name}</span>
+              {c.balance === 0 ? (
+                <Etiqueta tono="free" icono="check">
                   Pagada
                 </Etiqueta>
               ) : (
-                <span className="cifras text-sm text-texto-suave">{`${pesos(c.saldo)} + propina ${pesos(c.propinaPendiente)}`}</span>
+                <span className="cifras text-sm text-texto-suave">{`${pesos(c.balance)} + propina ${pesos(c.propinaPendiente)}`}</span>
               )}
             </span>
-            {c.saldo > 0 && (
+            {c.balance > 0 && (
               <span className="flex gap-2">
                 <Boton
-                  icono="recibo"
-                  aria-label={`Precuenta de ${c.nombre}`}
+                  icono="receipt"
+                  aria-label={`Precuenta de ${c.name}`}
                   disabled={ocupado}
                   onClick={() => alImprimir(c)}
                 >
@@ -672,54 +667,54 @@ function Divididas({
                 </Boton>
                 {puedeCobrar && (
                   <Boton
-                    variante="principal"
+                    variant="main"
                     className="flex-1"
                     disabled={ocupado}
                     onClick={() =>
                       alCobrar({
-                        cuentaId: c.id,
-                        nombre: c.nombre,
-                        disponible: c.saldo,
-                        cuenta: c,
+                        checkId: c.id,
+                        name: c.name,
+                        available: c.balance,
+                        check: c,
                         propinaInicial: null,
                       })
                     }
                   >
-                    {`Cobrar ${pesos(c.saldo)}`}
+                    {`Cobrar ${pesos(c.balance)}`}
                   </Boton>
                 )}
               </span>
             )}
           </li>
         ))}
-        {sinAsignar > 0 && (
+        {unassigned > 0 && (
           <li className="flex flex-col gap-2 rounded-xl bg-proceso-suave p-3 text-proceso-texto">
             <span className="cifras flex justify-between">
               <span className="font-semibold">Sin asignar</span>
-              <span>{pesos(sinAsignar)}</span>
+              <span>{pesos(unassigned)}</span>
             </span>
             {puedeCobrar && (
               <Boton
-                variante="principal"
+                variant="main"
                 disabled={ocupado}
                 onClick={() =>
                   alCobrar({
-                    cuentaId: null,
-                    nombre: 'Sin asignar',
-                    disponible: sinAsignar,
-                    cuenta: null,
+                    checkId: null,
+                    name: 'Sin asignar',
+                    available: unassigned,
+                    check: null,
                     propinaInicial: null,
                   })
                 }
               >
-                {`Cobrar ${pesos(sinAsignar)}`}
+                {`Cobrar ${pesos(unassigned)}`}
               </Boton>
             )}
           </li>
         )}
       </ul>
       {puedeDeshacer && (
-        <Boton variante="fantasma" disabled={ocupado} onClick={alDeshacer}>
+        <Boton variant="ghost" disabled={ocupado} onClick={alDeshacer}>
           Deshacer la división
         </Boton>
       )}
@@ -727,34 +722,34 @@ function Divididas({
   )
 }
 
-function Contador({
-  nombre,
-  valor,
-  minimo,
-  maximo,
-  alCambiar,
+function Accountant({
+  name,
+  value,
+  minimum,
+  maximum,
+  onChange,
 }: {
-  nombre: string
-  valor: number
-  minimo: number
-  maximo: number
-  alCambiar: (n: number) => void
+  name: string
+  value: number
+  minimum: number
+  maximum: number
+  onChange: (n: number) => void
 }) {
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-linea bg-superficie p-3">
-      <span className="flex-1 font-semibold">{nombre}</span>
+      <span className="flex-1 font-semibold">{name}</span>
       <Boton
-        icono="menos"
-        aria-label={`Quitar: quedan ${valor - 1}`}
-        disabled={valor <= minimo}
-        onClick={() => alCambiar(valor - 1)}
+        icono="minus"
+        aria-label={`Quitar: quedan ${value - 1}`}
+        disabled={value <= minimum}
+        onClick={() => onChange(value - 1)}
       />
-      <span className="cifras w-8 text-center text-xl font-semibold">{valor}</span>
+      <span className="cifras w-8 text-center text-xl font-semibold">{value}</span>
       <Boton
-        icono="mas"
-        aria-label={`Agregar: quedan ${valor + 1}`}
-        disabled={valor >= maximo}
-        onClick={() => alCambiar(valor + 1)}
+        icono="more"
+        aria-label={`Agregar: quedan ${value + 1}`}
+        disabled={value >= maximum}
+        onClick={() => onChange(value + 1)}
       />
     </div>
   )
@@ -762,31 +757,31 @@ function Contador({
 
 /** Anular un pago mal registrado: con motivo. La reversa cae en el turno abierto de esta caja. */
 function PanelAnularPago({
-  pagoId,
+  paymentId,
   ocupado,
   alCerrar,
-  alAnular,
+  onVoid,
 }: {
-  pagoId: string | null
+  paymentId: string | null
   ocupado: boolean
   alCerrar: () => void
-  alAnular: (pagoId: string, motivo: string) => void
+  onVoid: (paymentId: string, reason: string) => void
 }) {
-  const [motivo, setMotivo] = useState<string | null>(null)
-  const [otro, setOtro] = useState('')
-  const final = motivo === 'otro' ? otro.trim() || null : motivo
+  const [reason, setMotivo] = useState<string | null>(null)
+  const [other, setOtro] = useState('')
+  const final = reason === 'other' ? other.trim() || null : reason
   return (
     <PanelLateral
-      abierto={pagoId !== null}
+      opened={paymentId !== null}
       titulo="Anular el pago"
       alCerrar={alCerrar}
       pie={
         <Boton
-          variante="peligro"
-          grande
+          variant="danger"
+          large
           className="w-full"
           disabled={!final || ocupado}
-          onClick={() => pagoId && final && alAnular(pagoId, final)}
+          onClick={() => paymentId && final && onVoid(paymentId, final)}
         >
           Anular el pago
         </Boton>
@@ -796,19 +791,19 @@ function PanelAnularPago({
         <p>El saldo vuelve a quedar por cobrar. Si fue en efectivo, devuelve el dinero.</p>
         <Grupo etiqueta="Motivo" className="flex flex-wrap gap-2">
           {MOTIVOS_ANULAR_PAGO.map((m) => (
-            <Opcion key={m} elegida={motivo === m} alElegir={() => setMotivo(m)}>
+            <Opcion key={m} elegida={reason === m} alElegir={() => setMotivo(m)}>
               {m}
             </Opcion>
           ))}
-          <Opcion elegida={motivo === 'otro'} alElegir={() => setMotivo('otro')}>
+          <Opcion elegida={reason === 'other'} alElegir={() => setMotivo('other')}>
             Otro
           </Opcion>
         </Grupo>
-        {motivo === 'otro' && (
+        {reason === 'other' && (
           <input
             className={claseCampo}
             maxLength={200}
-            value={otro}
+            value={other}
             placeholder="Escribe el motivo"
             // biome-ignore lint/a11y/noAutofocus: se eligió «Otro» justo para escribirlo
             autoFocus

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import type { MensajeHub } from '@pos/sync'
 import { afterEach, describe, expect, it } from 'vitest'
 import { montarAcceso } from './acceso/montaje'
@@ -18,73 +18,80 @@ afterEach(() => {
 
 function mundo() {
   const m = montarAcceso()
-  const dir = mkdtempSync(join(tmpdir(), 'hub-cierre-'))
+  const dir = mkdtempSync(join(tmpdir(), 'hub-closeout-'))
   carpetas.push(dir)
-  const sala = prepararSincronizacion(m.db, dir, m.restauranteId, m.acceso)
-  const caja = m.emparejar('caja')
-  const sesion = m.entrar(caja.conexion, 'cajero')
+  const sala = prepararSincronizacion(m.db, dir, m.restauranteId, m.access)
+  const register = m.emparejar('register')
+  const session = m.entrar(register.connection, 'cashier')
   const recibidos: MensajeHub[] = []
-  const enlace = sala.conectar((mensaje) => recibidos.push(mensaje))
+  const enlace = sala.connect((message) => recibidos.push(message))
   enlace.recibir({
-    tipo: 'hola',
-    token: caja.token,
+    type: 'hello',
+    token: register.token,
     hub_instancia: null,
-    hasta: 0,
+    until: 0,
     version_app: 'pruebas',
   })
-  let lote = 0
+  let batch = 0
   const maxSecuencia = () =>
     Number(
       m.db
-        .prepare('SELECT coalesce(max(secuencia), 0) AS s FROM evento WHERE restaurante_id = ?')
+        .prepare('SELECT coalesce(max(sequence), 0) AS s FROM events WHERE restaurant_id = ?')
         .get(m.restauranteId)?.s,
     )
-  const mandar = (tipo: string, agregado: string, datos: unknown): string => {
-    lote += 1
+  const mandar = (type: string, aggregate: string, data: unknown): string => {
+    batch += 1
     enlace.recibir({
-      tipo: 'empujar',
-      lote_id: `lote-${lote}`,
-      eventos: [
-        m.evento(caja.conexion, sesion, tipo, datos, {
-          agregado_id: agregado,
-          agregado_tipo: 'turno_caja',
-          secuencia_base: maxSecuencia(),
+      type: 'push',
+      lote_id: `lote-${batch}`,
+      events: [
+        m.event(register.connection, session, type, data, {
+          aggregate_id: aggregate,
+          aggregate_type: 'register_shift',
+          base_sequence: maxSecuencia(),
         } as never),
       ],
     })
-    const ultimo = recibidos.filter((x) => x.tipo === 'resultado').at(-1)
-    if (ultimo?.tipo !== 'resultado') throw new Error('Sin resultado')
+    const ultimo = recibidos.filter((x) => x.type === 'result').at(-1)
+    if (ultimo?.type !== 'result') throw new Error('Sin resultado')
     const r = ultimo.resultados[0]
-    return r?.estado === 'rechazado' ? r.motivo : (r?.estado ?? 'sin resultado')
+    return r?.status === 'rejected' ? r.reason : (r?.status ?? 'sin resultado')
   }
   const ponerConfig = (config: object) =>
     m.db
-      .prepare('UPDATE restaurante SET config = ? WHERE id = ?')
+      .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
       .run(JSON.stringify(config), m.restauranteId)
 
   /** Abre un turno de base 100.000 y cuenta `contado` pesos (en billetes de $1.000 y monedas de $1). */
-  const turnoContado = (contado: number) => {
-    const turno = nuevoId()
+  const turnoContado = (counted: number) => {
+    const shift = newId()
     expect(
-      mandar('TurnoAbierto', turno, { caja_id: caja.conexion.dispositivoId, base: 100_000 }),
-    ).toBe('confirmado')
-    const arqueo = nuevoId()
-    const conteo = [
-      { valor: 1_000, cantidad: Math.floor(contado / 1_000) },
-      { valor: 1, cantidad: contado % 1_000 },
-    ].filter((c) => c.cantidad > 0)
+      mandar('ShiftOpened', shift, {
+        register_id: register.connection.dispositivoId,
+        base: 100_000,
+      }),
+    ).toBe('confirmed')
+    const cashCount = newId()
+    const tally = [
+      { value: 1_000, quantity: Math.floor(counted / 1_000) },
+      { value: 1, quantity: counted % 1_000 },
+    ].filter((c) => c.quantity > 0)
     expect(
-      mandar('ArqueoRegistrado', turno, { arqueo_id: arqueo, conteo, contado_efectivo: contado }),
-    ).toBe('confirmado')
-    const cerrar = (justificacion: string | null = null) =>
-      mandar('TurnoCerrado', turno, {
-        arqueo_id: arqueo,
-        esperado_efectivo: 100_000,
-        contado_efectivo: contado,
-        diferencia: contado - 100_000,
-        justificacion,
+      mandar('CashCountRecorded', shift, {
+        cash_count_id: cashCount,
+        tally,
+        counted_cash: counted,
+      }),
+    ).toBe('confirmed')
+    const close = (justification: string | null = null) =>
+      mandar('ShiftClosed', shift, {
+        cash_count_id: cashCount,
+        expected_cash: 100_000,
+        counted_cash: counted,
+        variance: counted - 100_000,
+        justification,
       })
-    return { turno, arqueo, cerrar }
+    return { shift, cashCount, close }
   }
   return { m, ponerConfig, turnoContado, mandar }
 }
@@ -92,41 +99,41 @@ function mundo() {
 describe('el umbral de diferencia se lee de la configuración en cada cierre', () => {
   it('de fábrica ($1.000): $999 de faltante se cierra solo; $1.000 pide justificación', () => {
     const e = mundo()
-    expect(e.turnoContado(99_001).cerrar()).toBe('confirmado')
+    expect(e.turnoContado(99_001).close()).toBe('confirmed')
     const t = e.turnoContado(99_000)
-    expect(t.cerrar()).toBe('falta_justificacion')
-    expect(t.cerrar('Propina de la mesa 3')).toBe('confirmado')
+    expect(t.close()).toBe('missing_justification')
+    expect(t.close('Propina de la mesa 3')).toBe('confirmed')
   })
 
   it('una configuración vieja, sin el campo, usa también $1.000', () => {
     const e = mundo()
     e.ponerConfig({})
-    expect(e.turnoContado(99_500).cerrar()).toBe('confirmado')
-    expect(e.turnoContado(99_000).cerrar()).toBe('falta_justificacion')
+    expect(e.turnoContado(99_500).close()).toBe('confirmed')
+    expect(e.turnoContado(99_000).close()).toBe('missing_justification')
   })
 
   it('si el administrador lo baja a $0 con el hub andando, el siguiente cierre ya pide justificación', () => {
     const e = mundo()
     const t = e.turnoContado(99_999)
-    e.ponerConfig({ umbral_diferencia_caja: 0 })
-    expect(t.cerrar()).toBe('falta_justificacion')
-    expect(t.cerrar('Faltó un peso')).toBe('confirmado')
+    e.ponerConfig({ register_variance_threshold: 0 })
+    expect(t.close()).toBe('missing_justification')
+    expect(t.close('Faltó un peso')).toBe('confirmed')
   })
 
   it('si lo sube a $5.000, un faltante de $4.999 pasa y uno de $5.000 no', () => {
     const e = mundo()
-    e.ponerConfig({ umbral_diferencia_caja: 5_000 })
-    expect(e.turnoContado(95_001).cerrar()).toBe('confirmado')
-    const faltante = e.turnoContado(95_000)
-    expect(faltante.cerrar()).toBe('falta_justificacion')
-    expect(faltante.cerrar('Se pagó un proveedor')).toBe('confirmado')
+    e.ponerConfig({ register_variance_threshold: 5_000 })
+    expect(e.turnoContado(95_001).close()).toBe('confirmed')
+    const short = e.turnoContado(95_000)
+    expect(short.close()).toBe('missing_justification')
+    expect(short.close('Se pagó un proveedor')).toBe('confirmed')
     const sobrante = e.turnoContado(105_000)
-    expect(sobrante.cerrar()).toBe('falta_justificacion')
+    expect(sobrante.close()).toBe('missing_justification')
   })
 
   it('con umbral 0, una caja que cuadra exacto se cierra sin justificación', () => {
     const e = mundo()
-    e.ponerConfig({ umbral_diferencia_caja: 0 })
-    expect(e.turnoContado(100_000).cerrar()).toBe('confirmado')
+    e.ponerConfig({ register_variance_threshold: 0 })
+    expect(e.turnoContado(100_000).close()).toBe('confirmed')
   })
 })

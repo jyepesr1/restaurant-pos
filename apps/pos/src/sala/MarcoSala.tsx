@@ -15,10 +15,10 @@ import { sala, useSala } from './contexto'
 
 // En la Fase 0 no hay nube: conectado al hub es "Solo red local", lo normal (brief §5, regla 7).
 const ESTADO: Record<EstadoConexion, EstadoVisible> = {
-  conectado: 'solo_local',
-  conectando: 'conectando',
-  sin_respuesta: 'sin_conexion',
-  desconectado: 'sin_conexion',
+  connected: 'local_only',
+  connecting: 'connecting',
+  no_response: 'offline',
+  disconnected: 'offline',
 }
 
 /**
@@ -27,80 +27,85 @@ const ESTADO: Record<EstadoConexion, EstadoVisible> = {
  */
 function modoDemo(): boolean {
   try {
-    const pedido = new URLSearchParams(location.search).get('demo')
-    if (pedido === '1') localStorage.setItem('pos:demo', '1')
-    if (pedido === '0') localStorage.removeItem('pos:demo')
+    const order = new URLSearchParams(location.search).get('demo')
+    if (order === '1') localStorage.setItem('pos:demo', '1')
+    if (order === '0') localStorage.removeItem('pos:demo')
     return import.meta.env.DEV || localStorage.getItem('pos:demo') === '1'
   } catch {
     return import.meta.env.DEV
   }
 }
 
-interface Seccion {
+interface Section {
   ruta: string
-  nombre: string
+  name: string
   icono: NombreIcono
   /** Alguno de estos permisos la muestra; sin lista, la ve todo el que entra. */
-  permisos?: readonly string[]
+  permissions?: readonly string[]
   /** Otras rutas que son parte de esta sección (el pedido es parte del salón). */
   tambien?: readonly string[]
 }
 
-const SECCIONES: readonly { grupo: string; secciones: readonly Seccion[] }[] = [
+const SECCIONES: readonly { group: string; sections: readonly Section[] }[] = [
   {
-    grupo: 'Servicio',
-    secciones: [
-      { ruta: '/', nombre: 'Salón', icono: 'mesa', tambien: ['/pedido', '/cuenta'] },
-      { ruta: '/cocina', nombre: 'Pedidos en cocina', icono: 'fuego' },
+    group: 'Servicio',
+    sections: [
+      { ruta: '/', name: 'Salón', icono: 'table', tambien: ['/order', '/check'] },
+      { ruta: '/kitchen', name: 'Pedidos en cocina', icono: 'fire' },
       {
-        ruta: '/caja',
-        nombre: 'Caja',
-        icono: 'billete',
-        permisos: ['abrir_turno_caja', 'registrar_pago'],
+        ruta: '/register',
+        name: 'Caja',
+        icono: 'bill',
+        permissions: ['open_register_shift', 'record_payment'],
       },
     ],
   },
   {
-    grupo: 'Administración',
-    secciones: [
-      { ruta: '/reportes', nombre: 'Reportes', icono: 'grafica', permisos: ['ver_reportes'] },
+    group: 'Administración',
+    sections: [
+      { ruta: '/reports', name: 'Reportes', icono: 'chart', permissions: ['view_reports'] },
       {
-        ruta: '/carta',
-        nombre: 'Carta',
-        icono: 'carta',
-        permisos: ['editar_catalogo', 'editar_precios'],
-      },
-      { ruta: '/plano', nombre: 'Plano del salón', icono: 'plano', permisos: ['editar_catalogo'] },
-      {
-        ruta: '/personal',
-        nombre: 'Personal y roles',
-        icono: 'personas',
-        permisos: ['administrar_usuarios'],
+        ruta: '/menu',
+        name: 'Carta',
+        icono: 'menu',
+        permissions: ['edit_catalog', 'edit_prices'],
       },
       {
-        ruta: '/cocina/ajustes',
-        nombre: 'Cocina e impresoras',
-        icono: 'impresora',
-        permisos: ['administrar_dispositivos'],
+        ruta: '/floor-plan',
+        name: 'Plano del salón',
+        icono: 'floorPlan',
+        permissions: ['edit_catalog'],
       },
       {
-        ruta: '/caja/ajustes',
-        nombre: 'Caja y pagos',
-        icono: 'tarjeta',
-        permisos: ['administrar_dispositivos'],
+        ruta: '/staff',
+        name: 'Personal y roles',
+        icono: 'people',
+        permissions: ['manage_users'],
       },
       {
-        ruta: '/marca',
-        nombre: 'Marca del restaurante',
-        icono: 'marca',
-        permisos: ['administrar_usuarios'],
+        ruta: '/kitchen/settings',
+        name: 'Cocina e impresoras',
+        icono: 'printer',
+        permissions: ['manage_devices'],
+      },
+      {
+        ruta: '/register/settings',
+        name: 'Caja y pagos',
+        icono: 'card',
+        permissions: ['manage_devices'],
+      },
+      {
+        ruta: '/brand',
+        name: 'Marca del restaurante',
+        icono: 'brand',
+        permissions: ['manage_users'],
       },
     ],
   },
 ]
 
-const iniciales = (nombre: string) =>
-  nombre
+const iniciales = (name: string) =>
+  name
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
@@ -109,47 +114,47 @@ const iniciales = (nombre: string) =>
 
 export function MarcoSala({
   titulo,
-  volver,
+  back,
   protegerSalida,
-  acciones,
+  actions,
   children,
 }: {
   titulo: string
-  volver?: string
+  back?: string
   /**
    * Volver, cambiar de sección y Salir pasan por aquí antes de dejar la pantalla (p. ej., para
    * avisar de cambios sin guardar): recibe lo que haría y decide si lo hace.
    */
-  protegerSalida?: (accion: () => void) => void
+  protegerSalida?: (action: () => void) => void
   /** Botones propios de la pantalla, arriba a la derecha. */
-  acciones?: ReactNode
+  actions?: ReactNode
   children: ReactNode
 }) {
-  const { oscuro, elegir } = useTema()
-  const { conexion, pendientes, sesion, simulandoSinConexion, catalogo, impresoras } = useSala()
-  const caidas = impresoras.filter((i) => i.estado === 'falla')
+  const { dark, select } = useTema()
+  const { connection, pendingList, session, simulandoSinConexion, catalog, printers } = useSala()
+  const caidas = printers.filter((i) => i.status === 'failed')
   const { ruta } = useRuta()
   const [menuAbierto, setMenuAbierto] = useState(false)
   const encabezado = useRef<HTMLHeadingElement>(null)
-  const salirCon = (accion: () => void) => (protegerSalida ? protegerSalida(accion) : accion())
-  const ir = (destino: string) =>
+  const salirCon = (action: () => void) => (protegerSalida ? protegerSalida(action) : action())
+  const ir = (target: string) =>
     salirCon(() => {
       setMenuAbierto(false)
-      navegar(destino)
+      navegar(target)
     })
-  const restaurante = catalogo?.restaurante.nombre
-  const permisos = sesion?.permisos ?? []
-  const grupos = SECCIONES.map((g) => ({
+  const restaurant = catalog?.restaurant.name
+  const permissions = session?.permissions ?? []
+  const groups = SECCIONES.map((g) => ({
     ...g,
-    secciones: g.secciones.filter(
-      (s) => !s.permisos || s.permisos.some((p) => permisos.includes(p)),
+    sections: g.sections.filter(
+      (s) => !s.permissions || s.permissions.some((p) => permissions.includes(p)),
     ),
-  })).filter((g) => g.secciones.length > 0)
-  const conNavegacion = sesion !== null && grupos.length > 0
+  })).filter((g) => g.sections.length > 0)
+  const conNavegacion = session !== null && groups.length > 0
 
   useEffect(() => {
-    document.title = `${titulo} · ${restaurante ?? 'Faro'}`
-  }, [titulo, restaurante])
+    document.title = `${titulo} · ${restaurant ?? 'Faro'}`
+  }, [titulo, restaurant])
   // El foco va al título al llegar a la pantalla, no cada vez que el título cambia (un pedido
   // para llevar recibe su número después): no se le roba el foco a quien está escribiendo.
   useEffect(() => {
@@ -181,29 +186,29 @@ export function MarcoSala({
 
   const navegacion = (compacta: boolean) => (
     <nav aria-label="Secciones" className="flex flex-col gap-5">
-      {grupos.map((g) => (
-        <div key={g.grupo} className="flex flex-col gap-1">
+      {groups.map((g) => (
+        <div key={g.group} className="flex flex-col gap-1">
           <p
             className={`px-3 text-sm font-medium text-texto-suave ${compacta ? 'lg:block hidden' : ''}`}
           >
-            {g.grupo}
+            {g.group}
           </p>
-          {g.secciones.map((s) => {
-            const actual = s.ruta === ruta || (s.tambien?.includes(ruta) ?? false)
+          {g.sections.map((s) => {
+            const current = s.ruta === ruta || (s.tambien?.includes(ruta) ?? false)
             return (
               <button
                 key={s.ruta}
                 type="button"
-                aria-current={actual ? 'page' : undefined}
-                aria-label={compacta ? s.nombre : undefined}
-                title={compacta ? s.nombre : undefined}
+                aria-current={current ? 'page' : undefined}
+                aria-label={compacta ? s.name : undefined}
+                title={compacta ? s.name : undefined}
                 onClick={() => ir(s.ruta)}
                 className={`flex min-h-12 items-center gap-3 rounded-xl px-3 text-left font-medium transition-colors focus-visible:outline-3 focus-visible:outline-foco ${
-                  actual ? 'bg-accion-suave text-accion-texto' : 'text-texto hover:bg-superficie-2'
+                  current ? 'bg-accion-suave text-accion-texto' : 'text-texto hover:bg-superficie-2'
                 } ${compacta ? 'justify-center lg:justify-start' : ''}`}
               >
-                <Icono nombre={s.icono} className="size-5 shrink-0" />
-                <span className={compacta ? 'hidden lg:inline' : ''}>{s.nombre}</span>
+                <Icono name={s.icono} className="size-5 shrink-0" />
+                <span className={compacta ? 'hidden lg:inline' : ''}>{s.name}</span>
               </button>
             )
           })}
@@ -212,27 +217,27 @@ export function MarcoSala({
     </nav>
   )
 
-  const quien = sesion && (
+  const quien = session && (
     <div className="flex items-center gap-3">
       <span
         aria-hidden="true"
         className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accion-suave font-semibold text-accion-texto"
       >
-        {iniciales(sesion.usuario.nombre)}
+        {iniciales(session.user.name)}
       </span>
       <span className="flex min-w-0 flex-col leading-tight">
-        <span className="truncate font-semibold">{sesion.usuario.nombre}</span>
-        <span className="truncate text-sm text-texto-suave">{sesion.usuario.rol}</span>
+        <span className="truncate font-semibold">{session.user.name}</span>
+        <span className="truncate text-sm text-texto-suave">{session.user.role}</span>
       </span>
     </div>
   )
 
-  const salir = sesion && (
+  const exit = session && (
     <Boton
-      variante="fantasma"
-      icono="salir"
+      variant="ghost"
+      icono="exit"
       className="w-full justify-start"
-      onClick={() => salirCon(() => void sala.salir())}
+      onClick={() => salirCon(() => void sala.exit())}
     >
       Salir
     </Boton>
@@ -246,21 +251,21 @@ export function MarcoSala({
           <aside className="sticky top-0 hidden h-dvh w-20 shrink-0 flex-col gap-6 border-r border-linea bg-lateral px-3 py-4 md:flex lg:w-64 lg:px-4">
             <div className="flex justify-center lg:justify-start lg:px-1">
               <span className="hidden lg:block">
-                <Logo nombre={restaurante} marca={catalogo?.restaurante.marca} />
+                <Logo name={restaurant} brand={catalog?.restaurant.brand} />
               </span>
-              <span className="lg:hidden" title={restaurante ?? 'Faro'}>
-                <Logo marca={catalogo?.restaurante.marca} soloMarca />
+              <span className="lg:hidden" title={restaurant ?? 'Faro'}>
+                <Logo brand={catalog?.restaurant.brand} soloMarca />
               </span>
             </div>
             <div className="hidden rounded-2xl bg-superficie-2 p-3 lg:block">{quien}</div>
             <div className="-mx-1 flex-1 overflow-y-auto px-1 py-1">{navegacion(true)}</div>
-            <div className="hidden lg:block">{salir}</div>
+            <div className="hidden lg:block">{exit}</div>
             <Boton
-              variante="fantasma"
-              icono="salir"
+              variant="ghost"
+              icono="exit"
               aria-label="Salir"
               className="lg:hidden"
-              onClick={() => salirCon(() => void sala.salir())}
+              onClick={() => salirCon(() => void sala.exit())}
             />
           </aside>
         )}
@@ -271,23 +276,23 @@ export function MarcoSala({
               {conNavegacion && (
                 <Boton
                   ref={botonMenu}
-                  variante="fantasma"
-                  icono="menu"
+                  variant="ghost"
+                  icono="hamburger"
                   aria-label="Menú"
                   aria-expanded={menuAbierto}
                   className="md:hidden"
                   onClick={() => setMenuAbierto(true)}
                 />
               )}
-              {volver && (
+              {back && (
                 <Boton
-                  variante="fantasma"
-                  icono="atras"
+                  variant="ghost"
+                  icono="back"
                   aria-label="Volver"
-                  onClick={() => salirCon(() => navegar(volver))}
+                  onClick={() => salirCon(() => navegar(back))}
                 />
               )}
-              {!conNavegacion && <Logo nombre={restaurante} marca={catalogo?.restaurante.marca} />}
+              {!conNavegacion && <Logo name={restaurant} brand={catalog?.restaurant.brand} />}
               <h1
                 ref={encabezado}
                 tabIndex={-1}
@@ -295,41 +300,41 @@ export function MarcoSala({
               >
                 {titulo}
               </h1>
-              <IndicadorConexion estado={ESTADO[conexion]} pendientes={pendientes} compacto />
+              <IndicadorConexion status={ESTADO[connection]} pendingList={pendingList} compacto />
               <span aria-live="polite" className="contents">
                 {caidas.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => ir('/cocina')}
+                    onClick={() => ir('/kitchen')}
                     className="inline-flex min-h-12 items-center gap-2 rounded-full bg-alerta-fuerte px-3 text-sm font-semibold text-white focus-visible:outline-3 focus-visible:outline-foco"
                   >
-                    <Icono nombre="impresora" className="size-5" />
+                    <Icono name="printer" className="size-5" />
                     {caidas.length === 1
-                      ? `${caidas[0]?.nombre} no imprime`
+                      ? `${caidas[0]?.name} no imprime`
                       : `${caidas.length} impresoras no imprimen`}
                   </button>
                 )}
               </span>
               <div className="flex items-center gap-1">
-                {acciones}
+                {actions}
                 {(simulandoSinConexion || modoDemo()) && (
                   <button
                     type="button"
                     role="switch"
                     aria-checked={simulandoSinConexion}
                     onClick={() => sala.simularSinConexion(!simulandoSinConexion)}
-                    className={`${claseBoton(simulandoSinConexion ? 'peligro' : 'secundario')} whitespace-nowrap`}
+                    className={`${claseBoton(simulandoSinConexion ? 'danger' : 'secondary')} whitespace-nowrap`}
                   >
-                    {simulandoSinConexion && <Icono nombre="check" />}
+                    {simulandoSinConexion && <Icono name="check" />}
                     Simular corte
                   </button>
                 )}
                 <Boton
-                  variante="fantasma"
-                  icono={oscuro ? 'sol' : 'luna'}
+                  variant="ghost"
+                  icono={dark ? 'sun' : 'moon'}
                   aria-label="Modo oscuro"
-                  aria-pressed={oscuro}
-                  onClick={() => elegir(oscuro ? 'claro' : 'oscuro')}
+                  aria-pressed={dark}
+                  onClick={() => select(dark ? 'light' : 'dark')}
                 />
               </div>
             </div>
@@ -356,11 +361,11 @@ export function MarcoSala({
             className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col gap-6 bg-lateral p-4 shadow-flota"
           >
             <div className="flex items-center justify-between">
-              <Logo nombre={restaurante} marca={catalogo?.restaurante.marca} />
+              <Logo name={restaurant} brand={catalog?.restaurant.brand} />
               <Boton
                 ref={cerrarMenu}
-                variante="fantasma"
-                icono="cerrar"
+                variant="ghost"
+                icono="close"
                 aria-label="Cerrar el menú"
                 onClick={() => setMenuAbierto(false)}
               />
@@ -368,14 +373,14 @@ export function MarcoSala({
             <div className="rounded-2xl bg-superficie-2 p-3">{quien}</div>
             <div className="-mx-1 flex-1 overflow-y-auto px-1 py-1">{navegacion(false)}</div>
             <Boton
-              variante="fantasma"
-              icono={oscuro ? 'sol' : 'luna'}
+              variant="ghost"
+              icono={dark ? 'sun' : 'moon'}
               className="justify-start"
-              onClick={() => elegir(oscuro ? 'claro' : 'oscuro')}
+              onClick={() => select(dark ? 'light' : 'dark')}
             >
-              {oscuro ? 'Modo claro' : 'Modo oscuro'}
+              {dark ? 'Modo claro' : 'Modo oscuro'}
             </Boton>
-            {salir}
+            {exit}
           </div>
         </div>
       )}

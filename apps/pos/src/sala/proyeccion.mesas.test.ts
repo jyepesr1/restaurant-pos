@@ -1,4 +1,4 @@
-import { type EstadoPedido, nuevoId } from '@pos/core'
+import { newId, type OrderState } from '@pos/core'
 import type { EventoLocal } from '@pos/sync'
 import { describe, expect, it } from 'vitest'
 import { comandasEnCocina } from './comandas'
@@ -9,366 +9,358 @@ import {
   type PedidoVisible,
   pedidosAbiertos as proyectar,
 } from './proyeccion'
-import { apertura, datosItem, enOrden, local } from './pruebas'
+import { datosItem, inOrder, local, opening } from './pruebas'
 
 // Tarea 1.5 en la lista de pedidos del equipo y en «Pedidos en cocina»: un plato que pasa de un
 // pedido a otro se ve en el destino y no en el origen, también si el movimiento aún está
 // pendiente (sin conexión). Las mesas unidas ocupan todas el mismo pedido.
 
-const COCINA = nuevoId()
-const pedidosAbiertos = (l: EventoLocal[]) => proyectar(enOrden(l))
-const idDe = (l: EventoLocal) => (l.evento.datos as { item_id: string }).item_id
-const dePedido = (v: PedidoVisible[], id: string) => v.find((p) => p.estado.id === id)
+const COCINA = newId()
+const pedidosAbiertos = (l: EventoLocal[]) => proyectar(inOrder(l))
+const idDe = (l: EventoLocal) => (l.event.data as { item_id: string }).item_id
+const dePedido = (v: PedidoVisible[], id: string) => v.find((p) => p.status.id === id)
 
 /** Origen con un plato enviado; destino abierto; y el evento de mover como lo arma la pantalla. */
-function escenario(opciones: { estadoMover?: 'confirmado' | 'pendiente' | 'rechazado' } = {}) {
-  const origen = nuevoId()
-  const destino = nuevoId()
-  const a = local('ItemAgregado', origen, datosItem({ nombre: 'Tagliata', cantidad: 2 }))
-  const b = local('ItemAgregado', origen, datosItem({ nombre: 'Risotto' }))
-  const comanda = nuevoId()
+function scenario(options: { estadoMover?: 'confirmed' | 'pending' | 'rejected' } = {}) {
+  const source = newId()
+  const target = newId()
+  const a = local('ItemAdded', source, datosItem({ name: 'Tagliata', quantity: 2 }))
+  const b = local('ItemAdded', source, datosItem({ name: 'Risotto' }))
+  const ticket = newId()
   const base = [
-    local('PedidoAbierto', origen, { ...apertura, mesa_id: nuevoId() }),
-    local('PedidoAbierto', destino, { ...apertura, mesa_id: nuevoId() }),
+    local('OrderOpened', source, { ...opening, table_id: newId() }),
+    local('OrderOpened', target, { ...opening, table_id: newId() }),
     a,
     b,
-    local('ItemsEnviados', origen, {
-      comandas: [{ comanda_id: comanda, estacion_id: COCINA, item_ids: [idDe(a), idDe(b)] }],
+    local('ItemsSent', source, {
+      tickets: [{ ticket_id: ticket, station_id: COCINA, item_ids: [idDe(a), idDe(b)] }],
     }),
   ] as EventoLocal[]
-  const antes = pedidosAbiertos(base)
-  const itemA = dePedido(antes, origen)?.estado.items[idDe(a)]
+  const before = pedidosAbiertos(base)
+  const itemA = dePedido(before, source)?.status.items[idDe(a)]
   if (!itemA) throw new Error('sin ítem')
-  const mover = local(
-    'ItemsMovidos',
-    origen,
-    { pedido_destino_id: destino, items: [movidoDe(itemA)] },
-    opciones.estadoMover ?? 'confirmado',
-    { relacionados: [destino] },
+  const move = local(
+    'ItemsMoved',
+    source,
+    { target_order_id: target, items: [movidoDe(itemA)] },
+    options.estadoMover ?? 'confirmed',
+    { related: [target] },
   )
-  return { origen, destino, a, b, comanda, base, mover, todos: [...base, mover] as EventoLocal[] }
+  return { source, target, a, b, ticket, base, move, all: [...base, move] as EventoLocal[] }
 }
 
 describe('pedidosAbiertos con productos movidos', () => {
   it('el plato aparece en el destino y no en el origen', () => {
-    const e = escenario()
-    const v = pedidosAbiertos(e.todos)
-    expect(Object.keys(dePedido(v, e.origen)?.estado.items ?? {})).toEqual([idDe(e.b)])
-    expect(Object.keys(dePedido(v, e.destino)?.estado.items ?? {})).toEqual([idDe(e.a)])
-    expect(dePedido(v, e.destino)?.estado.items[idDe(e.a)]).toMatchObject({
-      estado: 'enviado',
-      cantidad: 2,
+    const e = scenario()
+    const v = pedidosAbiertos(e.all)
+    expect(Object.keys(dePedido(v, e.source)?.status.items ?? {})).toEqual([idDe(e.b)])
+    expect(Object.keys(dePedido(v, e.target)?.status.items ?? {})).toEqual([idDe(e.a)])
+    expect(dePedido(v, e.target)?.status.items[idDe(e.a)]).toMatchObject({
+      status: 'sent',
+      quantity: 2,
     })
   })
 
   it('los totales se reparten y su suma no cambia', () => {
-    const e = escenario()
-    const antes = pedidosAbiertos(e.base)
-    const despues = pedidosAbiertos(e.todos)
-    const suma = (v: PedidoVisible[]) => v.reduce((n, p) => n + p.total, 0)
-    expect(suma(despues)).toBe(suma(antes))
-    expect(dePedido(despues, e.destino)?.total).toBeGreaterThan(0)
+    const e = scenario()
+    const before = pedidosAbiertos(e.base)
+    const after = pedidosAbiertos(e.all)
+    const sum = (v: PedidoVisible[]) => v.reduce((n, p) => n + p.total, 0)
+    expect(sum(after)).toBe(sum(before))
+    expect(dePedido(after, e.target)?.total).toBeGreaterThan(0)
   })
 
   it('pendiente (sin conexión): ya se ve movido, y los dos pedidos quedan «por confirmar»', () => {
-    const e = escenario({ estadoMover: 'pendiente' })
-    const v = pedidosAbiertos(e.todos)
-    expect(dePedido(v, e.origen)?.estado.items[idDe(e.a)]).toBeUndefined()
-    expect(dePedido(v, e.destino)?.estado.items[idDe(e.a)]).toBeDefined()
-    expect(dePedido(v, e.origen)?.porConfirmar).toBe(true)
-    expect(dePedido(v, e.destino)?.porConfirmar).toBe(true)
+    const e = scenario({ estadoMover: 'pending' })
+    const v = pedidosAbiertos(e.all)
+    expect(dePedido(v, e.source)?.status.items[idDe(e.a)]).toBeUndefined()
+    expect(dePedido(v, e.target)?.status.items[idDe(e.a)]).toBeDefined()
+    expect(dePedido(v, e.source)?.porConfirmar).toBe(true)
+    expect(dePedido(v, e.target)?.porConfirmar).toBe(true)
   })
 
   it('un movimiento rechazado por el hub no cambia nada: el plato sigue en el origen', () => {
-    const e = escenario({ estadoMover: 'rechazado' })
-    const v = pedidosAbiertos(e.todos)
-    expect(dePedido(v, e.origen)?.estado.items[idDe(e.a)]).toBeDefined()
-    expect(dePedido(v, e.destino)?.estado.items).toEqual({})
+    const e = scenario({ estadoMover: 'rejected' })
+    const v = pedidosAbiertos(e.all)
+    expect(dePedido(v, e.source)?.status.items[idDe(e.a)]).toBeDefined()
+    expect(dePedido(v, e.target)?.status.items).toEqual({})
   })
 
   it('abrir el destino y mover, ambos pendientes: el pedido nuevo aparece ya con el plato', () => {
-    const origen = nuevoId()
-    const destino = nuevoId()
-    const a = local('ItemAgregado', origen, datosItem())
+    const source = newId()
+    const target = newId()
+    const a = local('ItemAdded', source, datosItem())
     const base = [
-      local('PedidoAbierto', origen, { ...apertura, mesa_id: nuevoId() }),
+      local('OrderOpened', source, { ...opening, table_id: newId() }),
       a,
-      local('ItemsEnviados', origen, {
-        comandas: [{ comanda_id: nuevoId(), estacion_id: COCINA, item_ids: [idDe(a)] }],
+      local('ItemsSent', source, {
+        tickets: [{ ticket_id: newId(), station_id: COCINA, item_ids: [idDe(a)] }],
       }),
     ] as EventoLocal[]
-    const item = dePedido(pedidosAbiertos(base), origen)?.estado.items[idDe(a)]
+    const item = dePedido(pedidosAbiertos(base), source)?.status.items[idDe(a)]
     if (!item) throw new Error('sin ítem')
-    const lote = [
+    const batch = [
       ...base,
-      local('PedidoAbierto', destino, { ...apertura, mesa_id: nuevoId() }, 'pendiente'),
-      local(
-        'ItemsMovidos',
-        origen,
-        { pedido_destino_id: destino, items: [movidoDe(item)] },
-        'pendiente',
-        { relacionados: [destino] },
-      ),
+      local('OrderOpened', target, { ...opening, table_id: newId() }, 'pending'),
+      local('ItemsMoved', source, { target_order_id: target, items: [movidoDe(item)] }, 'pending', {
+        related: [target],
+      }),
     ] as EventoLocal[]
-    const v = pedidosAbiertos(lote)
-    expect(dePedido(v, destino)?.estado.items[idDe(a)]).toBeDefined()
-    expect(dePedido(v, origen)?.estado.items).toEqual({})
+    const v = pedidosAbiertos(batch)
+    expect(dePedido(v, target)?.status.items[idDe(a)]).toBeDefined()
+    expect(dePedido(v, source)?.status.items).toEqual({})
   })
 
   it('un origen que se queda sin productos sigue abierto pero no ocupa su mesa; el destino sí', () => {
-    const e = escenario()
-    const todo = {
-      ...e.mover,
-      evento: {
-        ...e.mover.evento,
-        datos: {
-          pedido_destino_id: e.destino,
+    const e = scenario()
+    const everything = {
+      ...e.move,
+      event: {
+        ...e.move.event,
+        data: {
+          target_order_id: e.target,
           items: [e.a, e.b].map((l) =>
-            movidoDe(dePedido(pedidosAbiertos(e.base), e.origen)?.estado.items[idDe(l)] as never),
+            movidoDe(dePedido(pedidosAbiertos(e.base), e.source)?.status.items[idDe(l)] as never),
           ),
         },
       },
     } as EventoLocal
-    const v = pedidosAbiertos([...e.base, todo])
-    const origen = dePedido(v, e.origen)
-    expect(origen?.estado.estado).toBe('abierto')
-    expect(Object.keys(origen?.estado.items ?? {})).toEqual([])
-    expect(ocupaMesa((origen as PedidoVisible).estado)).toBe(false)
-    expect(ocupaMesa(dePedido(v, e.destino)?.estado as never)).toBe(true)
-    expect(estadoMesa([origen as PedidoVisible])).toBe('libre')
+    const v = pedidosAbiertos([...e.base, everything])
+    const source = dePedido(v, e.source)
+    expect(source?.status.status).toBe('open')
+    expect(Object.keys(source?.status.items ?? {})).toEqual([])
+    expect(ocupaMesa((source as PedidoVisible).status)).toBe(false)
+    expect(ocupaMesa(dePedido(v, e.target)?.status as never)).toBe(true)
+    expect(estadoMesa([source as PedidoVisible])).toBe('free')
   })
 
   it('el movimiento no duplica el pedido de destino ni deja eventos ajenos en un tercero', () => {
-    const e = escenario()
-    const tercero = nuevoId()
+    const e = scenario()
+    const thirdOne = newId()
     const v = pedidosAbiertos([
-      ...e.todos,
-      local('PedidoAbierto', tercero, { ...apertura, mesa_id: nuevoId() }),
+      ...e.all,
+      local('OrderOpened', thirdOne, { ...opening, table_id: newId() }),
     ])
-    expect(v.map((p) => p.estado.id).sort()).toEqual([e.origen, e.destino, tercero].sort())
-    expect(dePedido(v, tercero)?.estado.items).toEqual({})
+    expect(v.map((p) => p.status.id).sort()).toEqual([e.source, e.target, thirdOne].sort())
+    expect(dePedido(v, thirdOne)?.status.items).toEqual({})
   })
 
   it('ida y vuelta: el plato vuelve al origen', () => {
-    const e = escenario()
-    const enDestino = dePedido(pedidosAbiertos(e.todos), e.destino)?.estado.items[idDe(e.a)]
+    const e = scenario()
+    const enDestino = dePedido(pedidosAbiertos(e.all), e.target)?.status.items[idDe(e.a)]
     if (!enDestino) throw new Error('sin ítem')
-    const vuelta = local(
-      'ItemsMovidos',
-      e.destino,
-      { pedido_destino_id: e.origen, items: [movidoDe(enDestino)] },
-      'confirmado',
-      { relacionados: [e.origen] },
+    const runOnce = local(
+      'ItemsMoved',
+      e.target,
+      { target_order_id: e.source, items: [movidoDe(enDestino)] },
+      'confirmed',
+      { related: [e.source] },
     )
-    const v = pedidosAbiertos([...e.todos, vuelta] as EventoLocal[])
-    expect(dePedido(v, e.origen)?.estado.items[idDe(e.a)]).toBeDefined()
-    expect(dePedido(v, e.destino)?.estado.items[idDe(e.a)]).toBeUndefined()
+    const v = pedidosAbiertos([...e.all, runOnce] as EventoLocal[])
+    expect(dePedido(v, e.source)?.status.items[idDe(e.a)]).toBeDefined()
+    expect(dePedido(v, e.target)?.status.items[idDe(e.a)]).toBeUndefined()
   })
 })
 
 describe('comandasEnCocina con un plato movido', () => {
   it('la comanda se parte en dos tarjetas: lo que quedó en el origen y lo que llegó al destino', () => {
-    const e = escenario()
-    const locales = enOrden(e.todos)
-    const pedidos = proyectar(locales)
-    const c = comandasEnCocina(locales, pedidos)
+    const e = scenario()
+    const locales = inOrder(e.all)
+    const orders = proyectar(locales)
+    const c = comandasEnCocina(locales, orders)
     expect(c).toHaveLength(2)
-    expect(c.every((x) => x.comandaId === e.comanda)).toBe(true)
+    expect(c.every((x) => x.comandaId === e.ticket)).toBe(true)
     const porPedido = Object.fromEntries(
-      c.map((x) => [x.pedido.estado.id, x.items.map((i) => i.nombre)]),
+      c.map((x) => [x.order.status.id, x.items.map((i) => i.name)]),
     )
-    expect(porPedido).toEqual({ [e.origen]: ['Risotto'], [e.destino]: ['Tagliata'] })
+    expect(porPedido).toEqual({ [e.source]: ['Risotto'], [e.target]: ['Tagliata'] })
   })
 
   it('cada tarjeta tiene una clave distinta (comanda + pedido)', () => {
-    const e = escenario()
-    const locales = enOrden(e.todos)
+    const e = scenario()
+    const locales = inOrder(e.all)
     const c = comandasEnCocina(locales, proyectar(locales))
-    expect(new Set(c.map((x) => x.clave)).size).toBe(c.length)
-    expect(c.map((x) => x.clave).sort()).toEqual(
-      [`${e.comanda}:${e.origen}`, `${e.comanda}:${e.destino}`].sort(),
+    expect(new Set(c.map((x) => x.key)).size).toBe(c.length)
+    expect(c.map((x) => x.key).sort()).toEqual(
+      [`${e.ticket}:${e.source}`, `${e.ticket}:${e.target}`].sort(),
     )
   })
 
   it('sin mover, una sola tarjeta con clave comanda:pedido', () => {
-    const e = escenario()
-    const locales = enOrden(e.base)
+    const e = scenario()
+    const locales = inOrder(e.base)
     const c = comandasEnCocina(locales, proyectar(locales))
     expect(c).toHaveLength(1)
-    expect(c[0]?.clave).toBe(`${e.comanda}:${e.origen}`)
-    expect(c[0]?.items.map((i) => i.nombre)).toEqual(['Tagliata', 'Risotto'])
+    expect(c[0]?.key).toBe(`${e.ticket}:${e.source}`)
+    expect(c[0]?.items.map((i) => i.name)).toEqual(['Tagliata', 'Risotto'])
   })
 
   it('si se mueve todo, solo queda la tarjeta del destino', () => {
-    const e = escenario()
-    const base = proyectar(enOrden(e.base))
-    const origen = dePedido(base, e.origen)
-    const todo = local(
-      'ItemsMovidos',
-      e.origen,
+    const e = scenario()
+    const base = proyectar(inOrder(e.base))
+    const source = dePedido(base, e.source)
+    const everything = local(
+      'ItemsMoved',
+      e.source,
       {
-        pedido_destino_id: e.destino,
-        items: [e.a, e.b].map((l) => movidoDe(origen?.estado.items[idDe(l)] as never)),
+        target_order_id: e.target,
+        items: [e.a, e.b].map((l) => movidoDe(source?.status.items[idDe(l)] as never)),
       },
-      'confirmado',
-      { relacionados: [e.destino] },
+      'confirmed',
+      { related: [e.target] },
     )
-    const locales = enOrden([...e.base, todo] as EventoLocal[])
+    const locales = inOrder([...e.base, everything] as EventoLocal[])
     const c = comandasEnCocina(locales, proyectar(locales))
     expect(c).toHaveLength(1)
-    expect(c[0]?.pedido.estado.id).toBe(e.destino)
+    expect(c[0]?.order.status.id).toBe(e.target)
     expect(c[0]?.items).toHaveLength(2)
   })
 
   it('pendiente sin conexión: la tarjeta ya sigue al plato al destino', () => {
-    const e = escenario({ estadoMover: 'pendiente' })
-    const locales = enOrden(e.todos)
+    const e = scenario({ estadoMover: 'pending' })
+    const locales = inOrder(e.all)
     const c = comandasEnCocina(locales, proyectar(locales))
-    expect(c.find((x) => x.pedido.estado.id === e.destino)?.items.map((i) => i.nombre)).toEqual([
+    expect(c.find((x) => x.order.status.id === e.target)?.items.map((i) => i.name)).toEqual([
       'Tagliata',
     ])
   })
 
   it('un plato entregado en el destino sale de cocina; el que sigue en el origen se queda', () => {
-    const e = escenario()
-    const locales = enOrden([
-      ...e.todos,
-      local('ItemEntregado', e.destino, { item_ids: [idDe(e.a)] }),
+    const e = scenario()
+    const locales = inOrder([
+      ...e.all,
+      local('ItemServed', e.target, { item_ids: [idDe(e.a)] }),
     ] as EventoLocal[])
     const c = comandasEnCocina(locales, proyectar(locales))
-    expect(c.map((x) => x.pedido.estado.id)).toEqual([e.origen])
+    expect(c.map((x) => x.order.status.id)).toEqual([e.source])
   })
 
   it('un pedido cancelado deja de aparecer en cocina', () => {
-    const e = escenario()
-    const locales = enOrden([
-      ...e.todos,
-      local('PedidoCancelado', e.destino, {}, 'confirmado', { motivo: 'x' }),
+    const e = scenario()
+    const locales = inOrder([
+      ...e.all,
+      local('OrderCanceled', e.target, {}, 'confirmed', { reason: 'x' }),
     ] as EventoLocal[])
     const c = comandasEnCocina(locales, proyectar(locales))
-    expect(c.map((x) => x.pedido.estado.id)).toEqual([e.origen])
+    expect(c.map((x) => x.order.status.id)).toEqual([e.source])
   })
 
   it('el orden por hora de envío se mantiene entre las tarjetas partidas y otras comandas', () => {
-    const e = escenario()
-    const locales = enOrden(e.todos)
+    const e = scenario()
+    const locales = inOrder(e.all)
     const c = comandasEnCocina(locales, proyectar(locales))
     expect(c.map((x) => x.enviadaEn)).toEqual([...c.map((x) => x.enviadaEn)].sort())
   })
 })
 
 describe('ocupaMesa', () => {
-  const abierto = (extras: Parameters<typeof local>[4] = {}, agregar = false, quitar = false) => {
-    const p = nuevoId()
+  const opened = (extras: Parameters<typeof local>[4] = {}, add = false, remove = false) => {
+    const p = newId()
     const it = datosItem()
-    const ev = [
-      local('PedidoAbierto', p, { ...apertura, mesa_id: nuevoId() }, 'confirmado', extras),
-    ]
-    if (agregar) ev.push(local('ItemAgregado', p, it) as never)
-    if (quitar) ev.push(local('ItemQuitado', p, { item_id: it.item_id }) as never)
-    return pedidosAbiertos(ev as EventoLocal[])[0]?.estado as EstadoPedido
+    const ev = [local('OrderOpened', p, { ...opening, table_id: newId() }, 'confirmed', extras)]
+    if (add) ev.push(local('ItemAdded', p, it) as never)
+    if (remove) ev.push(local('ItemRemoved', p, { item_id: it.item_id }) as never)
+    return pedidosAbiertos(ev as EventoLocal[])[0]?.status as OrderState
   }
 
   it('un pedido recién abierto, sin nada, ocupa la mesa', () => {
-    expect(ocupaMesa(abierto())).toBe(true)
+    expect(ocupaMesa(opened())).toBe(true)
   })
 
   it('con un producto vigente, la ocupa', () => {
-    expect(ocupaMesa(abierto({}, true))).toBe(true)
+    expect(ocupaMesa(opened({}, true))).toBe(true)
   })
 
   it('uno cerrado o cancelado no', () => {
-    const p = nuevoId()
-    const cancelado = pedidosAbiertos([
-      local('PedidoAbierto', p, { ...apertura, mesa_id: nuevoId() }),
-      local('PedidoCancelado', p, {}, 'confirmado', { motivo: 'x' }),
+    const p = newId()
+    const canceled = pedidosAbiertos([
+      local('OrderOpened', p, { ...opening, table_id: newId() }),
+      local('OrderCanceled', p, {}, 'confirmed', { reason: 'x' }),
     ])
-    expect(cancelado).toEqual([])
-    const estado = { ...abierto(), estado: 'cancelado' as const }
-    expect(ocupaMesa(estado)).toBe(false)
-    expect(ocupaMesa({ ...abierto(), estado: 'cerrado' as const })).toBe(false)
+    expect(canceled).toEqual([])
+    const status = { ...opened(), status: 'canceled' as const }
+    expect(ocupaMesa(status)).toBe(false)
+    expect(ocupaMesa({ ...opened(), status: 'closed' as const })).toBe(false)
   })
 
   it('con todo anulado deja de ocuparla', () => {
-    const p = nuevoId()
+    const p = newId()
     const it = datosItem()
     const v = pedidosAbiertos([
-      local('PedidoAbierto', p, { ...apertura, mesa_id: nuevoId() }),
-      local('ItemAgregado', p, it),
-      local('ItemsEnviados', p, {
-        comandas: [{ comanda_id: nuevoId(), estacion_id: COCINA, item_ids: [it.item_id] }],
+      local('OrderOpened', p, { ...opening, table_id: newId() }),
+      local('ItemAdded', p, it),
+      local('ItemsSent', p, {
+        tickets: [{ ticket_id: newId(), station_id: COCINA, item_ids: [it.item_id] }],
       }),
       local(
-        'ItemAnulado',
+        'ItemVoided',
         p,
-        { item_id: it.item_id, cantidad: 1, ya_preparado: false, comanda_id: null },
-        'confirmado',
-        { motivo: 'x' },
+        { item_id: it.item_id, quantity: 1, already_prepared: false, ticket_id: null },
+        'confirmed',
+        { reason: 'x' },
       ),
     ] as EventoLocal[])
     expect(v).toHaveLength(1)
-    expect(ocupaMesa((v[0] as PedidoVisible).estado)).toBe(false)
+    expect(ocupaMesa((v[0] as PedidoVisible).status)).toBe(false)
   })
 
   it('quitar lo que aún no se enviaba no suelta la mesa: el mesero sigue tomando el pedido', () => {
     // Igual que en el hub (packages/sync/src/hub/hub.ts `ocupa`): solo lo pasado a otra mesa o lo
     // anulado la suelta.
-    expect(ocupaMesa(abierto({}, true, true))).toBe(true)
+    expect(ocupaMesa(opened({}, true, true))).toBe(true)
   })
 })
 
 describe('estadoMesa y mesas unidas', () => {
-  function grupo() {
-    const p = nuevoId()
-    const [m1, m2] = [nuevoId(), nuevoId()]
+  function group() {
+    const p = newId()
+    const [m1, m2] = [newId(), newId()]
     const it = datosItem()
-    const eventos = [
-      local('PedidoAbierto', p, { ...apertura, mesa_id: m1 }),
-      local('MesasUnidas', p, { mesa_ids: [m2] }),
-      local('ItemAgregado', p, it),
+    const events = [
+      local('OrderOpened', p, { ...opening, table_id: m1 }),
+      local('TablesMerged', p, { table_ids: [m2] }),
+      local('ItemAdded', p, it),
     ] as EventoLocal[]
-    return { p, m1, m2, it, eventos }
+    return { p, m1, m2, it, events }
   }
 
   it('el pedido de un grupo conserva sus mesas unidas en la proyección', () => {
-    const g = grupo()
-    const [v] = pedidosAbiertos(g.eventos)
-    expect(v?.estado.mesaId).toBe(g.m1)
-    expect(v?.estado.mesasUnidas).toEqual([g.m2])
+    const g = group()
+    const [v] = pedidosAbiertos(g.events)
+    expect(v?.status.tableId).toBe(g.m1)
+    expect(v?.status.mergedTables).toEqual([g.m2])
   })
 
   it('las mesas unidas comparten estado: tomando, en cocina, listo y servida', () => {
-    const g = grupo()
-    const estado = (extra: EventoLocal[]) => estadoMesa(pedidosAbiertos([...g.eventos, ...extra]))
-    expect(estado([])).toBe('tomando')
-    const enviar = local('ItemsEnviados', g.p, {
-      comandas: [{ comanda_id: nuevoId(), estacion_id: COCINA, item_ids: [g.it.item_id] }],
+    const g = group()
+    const status = (extra: EventoLocal[]) => estadoMesa(pedidosAbiertos([...g.events, ...extra]))
+    expect(status([])).toBe('taking')
+    const send = local('ItemsSent', g.p, {
+      tickets: [{ ticket_id: newId(), station_id: COCINA, item_ids: [g.it.item_id] }],
     })
-    expect(estado([enviar])).toBe('en_cocina')
-    expect(estado([enviar, local('ItemListo', g.p, { item_ids: [g.it.item_id] })])).toBe('listo')
-    expect(estado([enviar, local('ItemEntregado', g.p, { item_ids: [g.it.item_id] })])).toBe(
-      'servida',
-    )
+    expect(status([send])).toBe('in_kitchen')
+    expect(status([send, local('ItemReady', g.p, { item_ids: [g.it.item_id] })])).toBe('ready')
+    expect(status([send, local('ItemServed', g.p, { item_ids: [g.it.item_id] })])).toBe('served')
   })
 
   it('un grupo vacío (recién unido, sin productos) se ve libre', () => {
-    const g = grupo()
-    expect(estadoMesa(pedidosAbiertos(g.eventos.slice(0, 2)))).toBe('libre')
+    const g = group()
+    expect(estadoMesa(pedidosAbiertos(g.events.slice(0, 2)))).toBe('free')
   })
 
   it('separar las mesas deja la proyección sin unidas', () => {
-    const g = grupo()
-    const [v] = pedidosAbiertos([...g.eventos, local('MesasSeparadas', g.p, { mesa_ids: [g.m2] })])
-    expect(v?.estado.mesasUnidas).toEqual([])
+    const g = group()
+    const [v] = pedidosAbiertos([...g.events, local('TablesSeparated', g.p, { table_ids: [g.m2] })])
+    expect(v?.status.mergedTables).toEqual([])
   })
 
   it('una unión pendiente (sin conexión) ya se ve en la proyección', () => {
-    const g = grupo()
+    const g = group()
     const [v] = pedidosAbiertos([
-      ...g.eventos.slice(0, 1),
-      local('MesasUnidas', g.p, { mesa_ids: [g.m2] }, 'pendiente'),
+      ...g.events.slice(0, 1),
+      local('TablesMerged', g.p, { table_ids: [g.m2] }, 'pending'),
     ])
-    expect(v?.estado.mesasUnidas).toEqual([g.m2])
+    expect(v?.status.mergedTables).toEqual([g.m2])
     expect(v?.porConfirmar).toBe(true)
   })
 })

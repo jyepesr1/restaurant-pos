@@ -1,4 +1,4 @@
-import { type EventoPedido, nuevoId } from '@pos/core'
+import { newId, type OrderEvent } from '@pos/core'
 import { aplicarMigraciones } from '@pos/db'
 import { abrirBase } from '@pos/db/node'
 import { expect } from 'vitest'
@@ -16,9 +16,9 @@ export const AHORA = '2026-10-24T15:00:00.000Z'
 export function baseSqlite() {
   const db = abrirBase(':memory:')
   aplicarMigraciones(db)
-  const restauranteId = nuevoId()
+  const restauranteId = newId()
   db.prepare(
-    `INSERT INTO restaurante (id, restaurante_id, creado_en, actualizado_en, version, nombre, config)
+    `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
      VALUES (?, ?, ?, ?, 1, 'La Spritzzería', '{}')`,
   ).run(restauranteId, restauranteId, AHORA, AHORA)
   return { db, restauranteId }
@@ -38,7 +38,7 @@ export class AlmacenQueSeCae extends AlmacenSqlite {
     return super.transaccion(trabajo)
   }
 
-  override guardarEvento(...args: Parameters<AlmacenSqlite['guardarEvento']>) {
+  override saveEvent(...args: Parameters<AlmacenSqlite['saveEvent']>) {
     if (this.caerEn > 0) {
       this.caerEn -= 1
       if (this.caerEn === 0) {
@@ -46,59 +46,67 @@ export class AlmacenQueSeCae extends AlmacenSqlite {
         throw new Error('el hub se apagó')
       }
     }
-    super.guardarEvento(...args)
+    super.saveEvent(...args)
   }
 }
 
 /** Hub + red simulada. El hub siempre se levanta con el mismo almacén (la base sobrevive). */
-export function montar(opciones: { almacen?: 'sqlite' | 'memoria' } = {}) {
+export function montar(options: { almacen?: 'sqlite' | 'memory' } = {}) {
   const { db, restauranteId } = baseSqlite()
   const almacen =
-    opciones.almacen === 'memoria' ? new AlmacenMemoria() : new AlmacenQueSeCae(db, restauranteId)
-  const estado: { hub: HubSync | null; instancia: string } = { hub: null, instancia: 'hub-1' }
-  const red: RedSimulada = new RedSimulada(null as unknown as SalaSync)
+    options.almacen === 'memory' ? new AlmacenMemoria() : new AlmacenQueSeCae(db, restauranteId)
+  const status: { hub: HubSync | null; instancia: string } = { hub: null, instancia: 'hub-1' }
+  const network: RedSimulada = new RedSimulada(null as unknown as SalaSync)
   const crearSala = (almacenHub = almacen) => {
-    estado.hub = new HubSync(almacenHub, {
+    status.hub = new HubSync(almacenHub, {
       restauranteId,
-      zonaHoraria: 'America/Bogota',
+      timeZone: 'America/Bogota',
       inicioDiaOperativo: '06:00',
-      acceso: accesoLibre,
-      instancia: estado.instancia,
-      reloj: red.horaIso,
+      access: accesoLibre,
+      instancia: status.instancia,
+      clock: network.horaIso,
     })
-    return new SalaSync(estado.hub, red.autenticar)
+    return new SalaSync(status.hub, network.authenticate)
   }
-  red.sala = crearSala()
-  red.alCaerHub = () => {
+  network.sala = crearSala()
+  network.alCaerHub = () => {
     if (almacen instanceof AlmacenQueSeCae) almacen.caido = false
     return crearSala()
   }
-  return { red, db, almacen, hub: () => estado.hub as HubSync, crearSala, estado, restauranteId }
+  return {
+    network,
+    db,
+    almacen,
+    hub: () => status.hub as HubSync,
+    crearSala,
+    status,
+    restauranteId,
+  }
 }
 
 export type Montaje = ReturnType<typeof montar>
 
-export const abrirPedido = (nodo: Nodo, pedido = nuevoId(), mesa: string | null = nuevoId()) =>
-  nodo
-    .crear(pedido, 'PedidoAbierto', { canal: 'salon', mesa_id: mesa, comensales: 2 })
-    .then(() => pedido)
+export const abrirPedido = (node: Nodo, order = newId(), table: string | null = newId()) =>
+  node
+    .crear(order, 'OrderOpened', { channel: 'dine_in', table_id: table, guests: 2 })
+    .then(() => order)
 
-export const item = (precio = 40_900, campos = {}) => ({
-  item_id: nuevoId(),
-  producto_id: nuevoId(),
-  variante_id: null,
-  nombre: 'Garden Margarita',
-  precio_unitario: precio,
-  impuesto_tipo: 'inc' as const,
-  tarifa: 800,
-  cantidad: 1,
-  comensal: null,
-  curso: null,
-  modificadores: [],
-  notas: null,
-  catalogo_version: 1,
-  precio_canal_id: null,
-  ...campos,
+export const item = (price = 40_900, fields = {}) => ({
+  item_id: newId(),
+  product_id: newId(),
+  variant_id: null,
+  name: 'Garden Margarita',
+  unit_price: price,
+  tax_type: 'inc' as const,
+  rate: 800,
+  quantity: 1,
+  guest: null,
+  course: null,
+  modifiers: [],
+  notes: null,
+  catalog_version: 1,
+  price_channel_id: null,
+  ...fields,
 })
 
 export const eventosDe = (m: Montaje) => m.almacen.eventosDesde(0, 1_000_000)
@@ -106,21 +114,20 @@ export const eventosDe = (m: Montaje) => m.almacen.eventosDesde(0, 1_000_000)
 /** "Ven lo mismo": el hub tiene 1..N sin huecos y cada dispositivo, los mismos eventos y proyecciones. */
 export async function venLoMismo(
   hub: HubSync,
-  eventosHub: EventoPedido[],
+  eventosHub: OrderEvent[],
   nodos: Nodo[],
-  pedidos: string[],
+  orders: string[],
 ) {
-  expect(eventosHub.map((e) => e.secuencia)).toEqual(eventosHub.map((_, i) => i + 1))
+  expect(eventosHub.map((e) => e.sequence)).toEqual(eventosHub.map((_, i) => i + 1))
   expect(new Set(eventosHub.map((e) => e.id)).size).toBe(eventosHub.length)
-  for (const nodo of nodos) {
-    expect(await nodo.cliente.pendientes()).toBe(0)
-    const confirmados = (await nodo.cliente.locales())
-      .filter((l) => l.estado === 'confirmado')
-      .map((l) => l.evento.id)
+  for (const node of nodos) {
+    expect(await node.cliente.pendingList()).toBe(0)
+    const confirmados = (await node.cliente.locales())
+      .filter((l) => l.status === 'confirmed')
+      .map((l) => l.event.id)
     expect(new Set(confirmados)).toEqual(new Set(eventosHub.map((e) => e.id)))
     expect(confirmados).toHaveLength(eventosHub.length)
-    expect((await nodo.almacen.cursor()).hasta).toBe(eventosHub.length)
-    for (const pedido of pedidos)
-      expect(await nodo.cliente.pedido(pedido)).toEqual(hub.pedido(pedido))
+    expect((await node.almacen.cursor()).until).toBe(eventosHub.length)
+    for (const order of orders) expect(await node.cliente.order(order)).toEqual(hub.order(order))
   }
 }

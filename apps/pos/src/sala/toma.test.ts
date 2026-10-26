@@ -1,80 +1,76 @@
-import { nuevoId, reconstruir } from '@pos/core'
+import { newId, rebuild } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { comandasDeCurso, datosItem, lineaIgual } from './pedido'
 import { agotados, claveAgotado, masPedidos, pedidosAbiertos } from './proyeccion'
-import { apertura, catalogoDePrueba, datosItem as item, local } from './pruebas'
+import { catalogoDePrueba, datosItem as item, local, opening } from './pruebas'
 
 const simple = {
-  id: nuevoId(),
-  nombre: 'Limonada',
-  descripcion: null,
-  favorito: false,
-  precio: 9_900,
-  impuesto: { tipo: 'inc' as const, tarifa: 800 },
-  variantes: [],
-  grupos: [],
+  id: newId(),
+  name: 'Limonada',
+  description: null,
+  favorite: false,
+  price: 9_900,
+  tax: { type: 'inc' as const, rate: 800 },
+  variants: [],
+  groups: [],
 }
 const conPlatos = () =>
   catalogoDePrueba({
-    categorias: [{ id: nuevoId(), nombre: 'Bebidas', estacionId: 'E-BARRA', productos: [simple] }],
+    categories: [{ id: newId(), name: 'Bebidas', estacionId: 'E-BARRA', products: [simple] }],
   })
 
 // Toma de pedido de la 1.3: agotados, lo más pedido, la línea que suma, marchar un curso y los
 // datos del ítem con persona, curso y nota.
 
-const agotado = (
-  producto: string,
-  estado: 'confirmado' | 'pendiente' = 'confirmado',
-  variante: string | null = null,
+const soldOut = (
+  product: string,
+  status: 'confirmed' | 'pending' = 'confirmed',
+  variant: string | null = null,
 ) =>
-  local('ProductoAgotado', producto, { producto_id: producto, variante_id: variante }, estado, {
-    agregado_tipo: 'producto',
+  local('ProductSoldOut', product, { product_id: product, variant_id: variant }, status, {
+    aggregate_type: 'product',
   })
-const disponible = (producto: string, estado: 'confirmado' | 'pendiente' = 'confirmado') =>
-  local('ProductoDisponible', producto, { producto_id: producto, variante_id: null }, estado, {
-    agregado_tipo: 'producto',
+const available = (product: string, status: 'confirmed' | 'pending' = 'confirmed') =>
+  local('ProductAvailable', product, { product_id: product, variant_id: null }, status, {
+    aggregate_type: 'product',
   })
 
 describe('agotados (86)', () => {
   it('el último evento manda; lo propio pendiente va encima de lo confirmado', () => {
-    const p = nuevoId()
-    expect(agotados([agotado(p)])).toEqual(new Set([p]))
-    expect(agotados([agotado(p), disponible(p)])).toEqual(new Set())
+    const p = newId()
+    expect(agotados([soldOut(p)])).toEqual(new Set([p]))
+    expect(agotados([soldOut(p), available(p)])).toEqual(new Set())
     // Confirmado "disponible", pero este equipo lo acaba de marcar agotado sin conexión.
-    expect(agotados([disponible(p), agotado(p, 'pendiente')])).toEqual(new Set([p]))
+    expect(agotados([available(p), soldOut(p, 'pending')])).toEqual(new Set([p]))
   })
 
   it('una variante se agota sola (la botella, no la copa)', () => {
-    const p = nuevoId()
-    const botella = nuevoId()
-    expect(agotados([agotado(p, 'confirmado', botella)])).toEqual(
-      new Set([claveAgotado(p, botella)]),
-    )
+    const p = newId()
+    const bottle = newId()
+    expect(agotados([soldOut(p, 'confirmed', bottle)])).toEqual(new Set([claveAgotado(p, bottle)]))
   })
 
   it('un evento rechazado no cuenta, y los eventos de producto no se vuelven pedidos', () => {
-    const p = nuevoId()
-    const rechazado = { ...agotado(p), estado: 'rechazado' as const }
-    expect(agotados([rechazado])).toEqual(new Set())
-    const pedido = nuevoId()
+    const p = newId()
+    const rejected = { ...soldOut(p), status: 'rejected' as const }
+    expect(agotados([rejected])).toEqual(new Set())
+    const order = newId()
     expect(
-      pedidosAbiertos([agotado(p), local('PedidoAbierto', pedido, apertura)]).map(
-        (x) => x.estado.id,
-      ),
-    ).toEqual([pedido])
+      pedidosAbiertos([soldOut(p), local('OrderOpened', order, opening)]).map((x) => x.status.id),
+    ).toEqual([order])
   })
 })
 
 describe('lo más pedido', () => {
   it('cuenta unidades por producto, del más al menos', () => {
-    const pedido = nuevoId()
-    const a = nuevoId()
-    const b = nuevoId()
+    const order = newId()
+    const a = newId()
+    const b = newId()
     const locales = [
-      local('PedidoAbierto', pedido, apertura),
-      local('ItemAgregado', pedido, item({ producto_id: a, cantidad: 1 })),
-      local('ItemAgregado', pedido, item({ producto_id: b, cantidad: 3 })),
-      local('ItemAgregado', pedido, item({ producto_id: a, cantidad: 1 })),
+      local('OrderOpened', order, opening),
+      local('ItemAdded', order, item({ product_id: a, quantity: 1 })),
+      local('ItemAdded', order, item({ product_id: b, quantity: 3 })),
+      local('ItemAdded', order, item({ product_id: a, quantity: 1 })),
     ]
     expect(masPedidos(locales)).toEqual([b, a])
     expect(masPedidos(locales, 1)).toEqual([b])
@@ -82,84 +78,83 @@ describe('lo más pedido', () => {
 })
 
 describe('el mismo producto otra vez', () => {
-  const pedidoCon = (...datos: ReturnType<typeof item>[]) => {
-    const pedido = nuevoId()
-    return reconstruir(
-      [
-        local('PedidoAbierto', pedido, apertura),
-        ...datos.map((d) => local('ItemAgregado', pedido, d)),
-      ].map((l) => l.evento),
-      pedido,
+  const orderWith = (...data: ReturnType<typeof item>[]) => {
+    const order = newId()
+    return rebuild(
+      [local('OrderOpened', order, opening), ...data.map((d) => local('ItemAdded', order, d))].map(
+        (l) => l.event,
+      ),
+      order,
     )
   }
 
   it('suma a la línea sin enviar igual: mismo producto, persona, curso, sin nota', () => {
-    const producto = nuevoId()
-    const primera = item({ producto_id: producto })
-    const estado = pedidoCon(primera)
-    expect(lineaIgual(estado, item({ producto_id: producto }))?.id).toBe(primera.item_id)
+    const product = newId()
+    const first = item({ product_id: product })
+    const status = orderWith(first)
+    expect(lineaIgual(status, item({ product_id: product }))?.id).toBe(first.item_id)
   })
 
   it('no suma si cambia la persona, el curso, la nota o las opciones', () => {
-    const producto = nuevoId()
-    const estado = pedidoCon(item({ producto_id: producto }))
-    expect(lineaIgual(estado, item({ producto_id: producto, comensal: 2 }))).toBeNull()
-    expect(lineaIgual(estado, item({ producto_id: producto, curso: 'fuerte' }))).toBeNull()
-    expect(lineaIgual(estado, item({ producto_id: producto, notas: 'sin hielo' }))).toBeNull()
+    const product = newId()
+    const status = orderWith(item({ product_id: product }))
+    expect(lineaIgual(status, item({ product_id: product, guest: 2 }))).toBeNull()
+    expect(lineaIgual(status, item({ product_id: product, course: 'main' }))).toBeNull()
+    expect(lineaIgual(status, item({ product_id: product, notes: 'sin hielo' }))).toBeNull()
     expect(
       lineaIgual(
-        estado,
+        status,
         item({
-          producto_id: producto,
-          modificadores: [{ modificador_id: nuevoId(), nombre: 'Doble', precio_extra: 0 }],
+          product_id: product,
+          modifiers: [{ modifier_id: newId(), name: 'Doble', extra_price: 0 }],
         }),
       ),
     ).toBeNull()
-    expect(lineaIgual(null, item({ producto_id: producto }))).toBeNull()
+    expect(lineaIgual(null, item({ product_id: product }))).toBeNull()
   })
 })
 
 describe('marchar un curso', () => {
   it('manda solo lo del curso, por estación', () => {
-    const catalogo = conPlatos()
-    const pedido = nuevoId()
-    const entrada = item({ producto_id: simple.id, curso: 'entrada' })
-    const fuerte = item({ producto_id: simple.id, curso: 'fuerte' })
-    const estado = reconstruir(
+    const catalog = conPlatos()
+    const order = newId()
+    const entry = item({ product_id: simple.id, course: 'entry' })
+    const main = item({ product_id: simple.id, course: 'main' })
+    const status = rebuild(
       [
-        local('PedidoAbierto', pedido, apertura),
-        local('ItemAgregado', pedido, entrada),
-        local('ItemAgregado', pedido, fuerte),
-      ].map((l) => l.evento),
-      pedido,
+        local('OrderOpened', order, opening),
+        local('ItemAdded', order, entry),
+        local('ItemAdded', order, main),
+      ].map((l) => l.event),
+      order,
     )
-    if (!estado) throw new Error('falta')
-    const datos = comandasDeCurso(catalogo, estado, 'fuerte')
-    expect(datos?.comandas).toEqual([
-      expect.objectContaining({ estacion_id: 'E-BARRA', item_ids: [fuerte.item_id] }),
+    if (!status) throw new Error('falta')
+    const data = comandasDeCurso(catalog, status, 'main')
+    expect(data?.tickets).toEqual([
+      expect.objectContaining({ station_id: 'E-BARRA', item_ids: [main.item_id] }),
     ])
-    expect(comandasDeCurso(catalogo, estado, 'postre')).toBeNull()
+    expect(comandasDeCurso(catalog, status, 'dessert')).toBeNull()
   })
 })
 
 describe('datos del ítem', () => {
   it('llevan persona, curso, cantidad y la nota recortada (vacía es null)', () => {
-    const catalogo = conPlatos()
+    const catalog = conPlatos()
     const p = simple
     expect(
       datosItem(
-        catalogo,
+        catalog,
         p,
         null,
         {},
-        { comensal: 2, curso: 'postre', cantidad: 3, notas: '  sin azúcar ' },
+        { guest: 2, course: 'dessert', quantity: 3, notes: '  sin azúcar ' },
       ),
     ).toMatchObject({
-      comensal: 2,
-      curso: 'postre',
-      cantidad: 3,
-      notas: 'sin azúcar',
+      guest: 2,
+      course: 'dessert',
+      quantity: 3,
+      notes: 'sin azúcar',
     })
-    expect(datosItem(catalogo, p, null, {}, { notas: '   ' }).notas).toBeNull()
+    expect(datosItem(catalog, p, null, {}, { notes: '   ' }).notes).toBeNull()
   })
 })

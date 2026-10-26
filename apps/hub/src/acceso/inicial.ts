@@ -1,4 +1,4 @@
-import { type ClaveRol, nuevoId, ROLES_DE_FABRICA, ROLES_RETIRADOS } from '@pos/core'
+import { DEFAULT_ROLES, newId, RETIRED_ROLES, type RoleKey } from '@pos/core'
 import { type BaseSqlite, enTransaccion } from '@pos/db'
 import { actualizarVersionado, insertarVersionado, SISTEMA } from './registros'
 import { generarContrasena } from './secretos'
@@ -12,25 +12,23 @@ const ZONA_HORARIA = 'America/Bogota'
 /** El restaurante del hub; si no hay, lo crea con su sede principal. */
 export function asegurarRestaurante(db: BaseSqlite, ahora: string): string {
   const existente = db
-    .prepare('SELECT id FROM restaurante WHERE activo = 1 ORDER BY creado_en, id LIMIT 1')
+    .prepare('SELECT id FROM restaurants WHERE active = 1 ORDER BY created_at, id LIMIT 1')
     .get()
   if (existente) return String(existente.id)
 
   return enTransaccion(db, () => {
     // El contador de versiones pide que el restaurante exista: este primer registro toma la 1.
-    const id = nuevoId()
+    const id = newId()
     db.prepare(
-      `INSERT INTO restaurante (id, restaurante_id, creado_en, actualizado_en, version, nombre, config)
+      `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
        VALUES (?, ?, ?, ?, 1, 'Mi restaurante', '{}')`,
     ).run(id, id, ahora, ahora)
-    db.prepare(
-      "INSERT INTO contador (restaurante_id, nombre, valor) VALUES (?, 'catalogo', 1)",
-    ).run(id)
+    db.prepare("INSERT INTO counters (restaurant_id, name, value) VALUES (?, 'catalog', 1)").run(id)
     insertarVersionado(
       db,
-      'sede',
+      'locations',
       id,
-      { nombre: 'Principal', direccion: null, zona_horaria: ZONA_HORARIA },
+      { name: 'Principal', address: null, time_zone: ZONA_HORARIA },
       SISTEMA,
       ahora,
     )
@@ -47,73 +45,73 @@ export function asegurarRoles(
   db: BaseSqlite,
   restauranteId: string,
   ahora: string,
-): Record<ClaveRol, string> {
+): Record<RoleKey, string> {
   return enTransaccion(db, () => {
-    const delSistema = (nombre: string) =>
+    const delSistema = (name: string) =>
       db
         .prepare(
-          'SELECT id FROM rol WHERE restaurante_id = ? AND sistema = 1 AND nombre = ? ORDER BY creado_en LIMIT 1',
+          'SELECT id FROM roles WHERE restaurant_id = ? AND system = 1 AND name = ? ORDER BY created_at LIMIT 1',
         )
-        .get(restauranteId, nombre)
-    for (const [viejo, nuevo] of Object.entries(ROLES_RETIRADOS.renombrar)) {
-      const rol = delSistema(viejo)
-      if (rol && !delSistema(nuevo))
+        .get(restauranteId, name)
+    for (const [oldOne, fresh] of Object.entries(RETIRED_ROLES.rename)) {
+      const role = delSistema(oldOne)
+      if (role && !delSistema(fresh))
         actualizarVersionado(
           db,
-          'rol',
+          'roles',
           restauranteId,
-          String(rol.id),
-          { nombre: nuevo },
+          String(role.id),
+          { name: fresh },
           SISTEMA,
           ahora,
         )
     }
-    for (const nombre of ROLES_RETIRADOS.propios) {
-      const rol = delSistema(nombre)
-      if (rol)
+    for (const name of RETIRED_ROLES.ownOnes) {
+      const role = delSistema(name)
+      if (role)
         actualizarVersionado(
           db,
-          'rol',
+          'roles',
           restauranteId,
-          String(rol.id),
-          { sistema: 0 },
+          String(role.id),
+          { system: 0 },
           SISTEMA,
           ahora,
         )
     }
 
-    const roles = {} as Record<ClaveRol, string>
-    for (const [clave, rol] of Object.entries(ROLES_DE_FABRICA) as [
-      ClaveRol,
-      (typeof ROLES_DE_FABRICA)[ClaveRol],
+    const roles = {} as Record<RoleKey, string>
+    for (const [key, role] of Object.entries(DEFAULT_ROLES) as [
+      RoleKey,
+      (typeof DEFAULT_ROLES)[RoleKey],
     ][]) {
       const existente = db
         .prepare(
-          'SELECT id FROM rol WHERE restaurante_id = ? AND sistema = 1 AND nombre = ? ORDER BY creado_en LIMIT 1',
+          'SELECT id FROM roles WHERE restaurant_id = ? AND system = 1 AND name = ? ORDER BY created_at LIMIT 1',
         )
-        .get(restauranteId, rol.nombre)
+        .get(restauranteId, role.name)
       if (existente) {
-        roles[clave] = String(existente.id)
+        roles[key] = String(existente.id)
         continue
       }
       const rolId = insertarVersionado(
         db,
-        'rol',
+        'roles',
         restauranteId,
-        { nombre: rol.nombre, sistema: 1 },
+        { name: role.name, system: 1 },
         SISTEMA,
         ahora,
       )
-      for (const permiso of rol.permisos)
+      for (const permission of role.permissions)
         insertarVersionado(
           db,
-          'rol_permiso',
+          'role_permissions',
           restauranteId,
-          { rol_id: rolId, permiso },
+          { role_id: rolId, permission },
           SISTEMA,
           ahora,
         )
-      roles[clave] = rolId
+      roles[key] = rolId
     }
     return roles
   })
@@ -126,8 +124,8 @@ export interface Administrador {
   /** PIN nuevo (para autorizar), si se creó o regeneró en este arranque. */
   pin: string | null
   /** Usuario y contraseña nuevos, si se crearon en este arranque. */
-  usuario: string | null
-  contrasena: string | null
+  user: string | null
+  password: string | null
   avisos: string[]
 }
 
@@ -140,65 +138,65 @@ export interface Administrador {
  */
 export function asegurarAdministrador(
   db: BaseSqlite,
-  acceso: ServicioAcceso,
+  access: ServicioAcceso,
   rolAdmin: string,
   claveNueva: boolean,
 ): Administrador {
-  const restauranteId = acceso.restaurante
+  const restauranteId = access.restaurant
   // Alguien que puede administrar, tenga o no contraseña (uno de antes de ADR-013 no la tiene).
   const admin = db
     .prepare(
-      `SELECT u.id FROM usuario u
-       JOIN rol r ON r.id = u.rol_id AND r.activo = 1
-       JOIN rol_permiso rp ON rp.rol_id = r.id AND rp.activo = 1 AND rp.permiso = 'administrar_usuarios'
-       WHERE u.restaurante_id = ? AND u.activo = 1
-       ORDER BY u.creado_en, u.id LIMIT 1`,
+      `SELECT u.id FROM users u
+       JOIN roles r ON r.id = u.role_id AND r.active = 1
+       JOIN role_permissions rp ON rp.role_id = r.id AND rp.active = 1 AND rp.permission = 'manage_users'
+       WHERE u.restaurant_id = ? AND u.active = 1
+       ORDER BY u.created_at, u.id LIMIT 1`,
     )
     .get(restauranteId)
   if (!admin) {
-    const contrasena = generarContrasena()
-    const { pin } = acceso.crearUsuario({
-      nombre: 'Administrador',
+    const password = generarContrasena()
+    const { pin } = access.crearUsuario({
+      name: 'Administrador',
       rolId: rolAdmin,
-      usuario: USUARIO_ADMIN,
-      contrasena,
+      user: USUARIO_ADMIN,
+      password,
     })
-    return { pin, usuario: USUARIO_ADMIN, contrasena, avisos: [] }
+    return { pin, user: USUARIO_ADMIN, password, avisos: [] }
   }
-  const resultado: Administrador = { pin: null, usuario: null, contrasena: null, avisos: [] }
+  const result: Administrador = { pin: null, user: null, password: null, avisos: [] }
   const adminId = String(admin.id)
   const credenciales = db
-    .prepare('SELECT count(*) AS n FROM usuario_credencial WHERE restaurante_id = ?')
+    .prepare('SELECT count(*) AS n FROM user_credentials WHERE restaurant_id = ?')
     .get(restauranteId)
   if (claveNueva && Number(credenciales?.n) > 0) {
-    resultado.pin = acceso.regenerarPin(adminId)
-    resultado.avisos.push(
+    result.pin = access.regenerarPin(adminId)
+    result.avisos.push(
       'Falta la clave de los PIN (¿se restauró la base sin ella?). Los PIN anteriores ya no sirven:',
       'se generó uno nuevo para el administrador; con él, regenera el PIN de cada persona.',
     )
   }
-  if (!acceso.tieneContrasena(adminId)) {
-    const usuario = usuarioLibre(db, restauranteId, USUARIO_ADMIN)
-    const contrasena = generarContrasena()
-    acceso.ponerContrasena(adminId, usuario, contrasena)
-    resultado.usuario = usuario
-    resultado.contrasena = contrasena
-    resultado.avisos.push(
+  if (!access.tieneContrasena(adminId)) {
+    const user = usuarioLibre(db, restauranteId, USUARIO_ADMIN)
+    const password = generarContrasena()
+    access.ponerContrasena(adminId, user, password)
+    result.user = user
+    result.password = password
+    result.avisos.push(
       'Desde ahora el administrador entra a la caja con usuario y contraseña; su PIN sirve para autorizar.',
     )
   }
-  return resultado
+  return result
 }
 
 /** `admin`, o `admin2`, `admin3`… si ya lo tiene otra persona. */
 function usuarioLibre(db: BaseSqlite, restauranteId: string, base: string): string {
   for (let i = 1; ; i++) {
-    const nombre = i === 1 ? base : `${base}${i}`
-    const tomado = db
+    const name = i === 1 ? base : `${base}${i}`
+    const taken = db
       .prepare(
-        'SELECT 1 FROM usuario_credencial WHERE restaurante_id = ? AND nombre_usuario = ? AND vigente = 1',
+        'SELECT 1 FROM user_credentials WHERE restaurant_id = ? AND username = ? AND current = 1',
       )
-      .get(restauranteId, nombre)
-    if (!tomado) return nombre
+      .get(restauranteId, name)
+    if (!taken) return name
   }
 }

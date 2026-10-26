@@ -16,9 +16,9 @@ const correr = (script: string, dirDatos: string) => {
   const r = spawnSync(
     process.execPath,
     ['--disable-warning=ExperimentalWarning', '--import', 'tsx', script],
-    { cwd: DIR_HUB, env: { ...process.env, DIR_DATOS: dirDatos }, encoding: 'utf8' },
+    { cwd: DIR_HUB, env: { ...process.env, DATA_DIR: dirDatos }, encoding: 'utf8' },
   )
-  return { codigo: r.status, salida: `${r.stdout}${r.stderr}` }
+  return { code: r.status, output: `${r.stdout}${r.stderr}` }
 }
 
 describe('restablecer-admin con el hub abierto', { timeout: 90_000 }, () => {
@@ -27,27 +27,25 @@ describe('restablecer-admin con el hub abierto', { timeout: 90_000 }, () => {
 
   it('no cambia la contraseña, sale con código 1, explica que hay que cerrar el hub y no escribe archivos', () => {
     carpeta = mkdtempSync(join(tmpdir(), 'pos-restablecer-abierto-'))
-    expect(correr('src/seed/main.ts', carpeta).codigo).toBe(0)
-    const antes = readdirSync(carpeta).sort()
+    expect(correr('src/seed/main.ts', carpeta).code).toBe(0)
+    const before = readdirSync(carpeta).sort()
 
     // El «hub»: abre la base como lo hace main.ts (exclusiva) y la mantiene.
     const hub = abrirBase(join(carpeta, 'pos.sqlite'), { exclusiva: true })
-    const huella = () =>
+    const fingerprint = () =>
       String(
         hub
-          .prepare(
-            "SELECT contrasena_huella AS h FROM usuario_credencial WHERE nombre_usuario = 'admin'",
-          )
+          .prepare("SELECT password_hash AS h FROM user_credentials WHERE username = 'admin'")
           .get()?.h,
       )
-    const huellaAntes = huella()
+    const huellaAntes = fingerprint()
     try {
       const r = correr('src/restablecer.ts', carpeta)
-      expect(r.codigo).toBe(1)
-      expect(r.salida).toMatch(/el hub está abierto/)
-      expect(r.salida).toMatch(/No se cambió nada/)
-      expect(r.salida).not.toMatch(/Contraseña:/)
-      expect(huella()).toBe(huellaAntes)
+      expect(r.code).toBe(1)
+      expect(r.output).toMatch(/el hub está abierto/)
+      expect(r.output).toMatch(/No se cambió nada/)
+      expect(r.output).not.toMatch(/Contraseña:/)
+      expect(fingerprint()).toBe(huellaAntes)
     } finally {
       hub.close()
     }
@@ -57,26 +55,23 @@ describe('restablecer-admin con el hub abierto', { timeout: 90_000 }, () => {
       readdirSync(carpeta)
         .sort()
         .filter((f) => !f.startsWith('pos.sqlite')),
-    ).toEqual(antes.filter((f) => !f.startsWith('pos.sqlite')))
+    ).toEqual(before.filter((f) => !f.startsWith('pos.sqlite')))
   })
 
   it('al cerrar el hub, el mismo comando sí funciona y la contraseña anterior deja de servir', () => {
     carpeta = mkdtempSync(join(tmpdir(), 'pos-restablecer-abierto-'))
     correr('src/seed/main.ts', carpeta)
     const hub = abrirBase(join(carpeta, 'pos.sqlite'), { exclusiva: true })
-    expect(correr('src/restablecer.ts', carpeta).codigo).toBe(1)
+    expect(correr('src/restablecer.ts', carpeta).code).toBe(1)
     hub.close()
     const r = correr('src/restablecer.ts', carpeta)
-    expect(r.codigo).toBe(0)
+    expect(r.code).toBe(0)
     const db = abrirBase(join(carpeta, 'pos.sqlite'))
-    const huella = String(
-      db
-        .prepare(
-          "SELECT contrasena_huella AS h FROM usuario_credencial WHERE nombre_usuario = 'admin'",
-        )
-        .get()?.h,
+    const fingerprint = String(
+      db.prepare("SELECT password_hash AS h FROM user_credentials WHERE username = 'admin'").get()
+        ?.h,
     )
     ;(db as unknown as { close(): void }).close()
-    expect(contrasenaCoincide('no-es-esta-clave', huella)).toBe(false)
+    expect(contrasenaCoincide('no-es-esta-clave', fingerprint)).toBe(false)
   })
 })

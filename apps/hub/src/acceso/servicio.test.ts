@@ -1,51 +1,51 @@
-import { huellaAutorizable, nuevoId } from '@pos/core'
+import { authorizableFingerprint, newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { asegurarAdministrador, asegurarRestaurante, asegurarRoles } from './inicial'
 import { firmado, montarAcceso } from './montaje'
 import { VIGENCIA_AUTORIZACION_MS, VIGENCIA_CODIGO_MS } from './servicio'
 
-const abrir = { canal: 'salon', mesa_id: null, comensales: 2 }
+const open = { channel: 'dine_in', table_id: null, guests: 2 }
 
 describe('arranque', () => {
   it('crea restaurante, sede, roles y administrador una sola vez', () => {
     const m = montarAcceso()
-    const ahora = m.reloj()
+    const ahora = m.clock()
     expect(asegurarRestaurante(m.db, ahora)).toBe(m.restauranteId)
     expect(m.roles).toMatchObject(asegurarRoles(m.db, m.restauranteId, ahora))
-    expect(asegurarAdministrador(m.db, m.acceso, m.roles.admin, false)).toEqual({
+    expect(asegurarAdministrador(m.db, m.access, m.roles.admin, false)).toEqual({
       pin: null,
-      usuario: null,
-      contrasena: null,
+      user: null,
+      password: null,
       avisos: [],
     })
 
-    const cuenta = (tabla: string) =>
+    const check = (tabla: string) =>
       Number(m.db.prepare(`SELECT count(*) AS n FROM ${tabla}`).get()?.n)
-    expect(cuenta('restaurante')).toBe(1)
-    expect(cuenta('sede')).toBe(1)
-    expect(cuenta('rol')).toBe(6)
-    expect(m.acceso.permisosDe(m.personas.mesero.usuarioId)).toEqual([
-      'marcar_preparacion',
-      'quitar_item_no_enviado',
-      'tomar_pedido',
-      'ver_reportes_propios',
+    expect(check('restaurants')).toBe(1)
+    expect(check('locations')).toBe(1)
+    expect(check('roles')).toBe(6)
+    expect(m.access.permisosDe(m.people.waiter.userId)).toEqual([
+      'mark_preparation',
+      'remove_unsent_item',
+      'take_order',
+      'view_own_reports',
     ])
     // Cada registro de catálogo tomó una versión distinta del contador.
-    const versiones = m.db.prepare('SELECT version FROM rol_permiso').all()
+    const versiones = m.db.prepare('SELECT version FROM role_permissions').all()
     expect(new Set(versiones.map((f) => f.version)).size).toBe(versiones.length)
   })
 
   it('si se perdió la clave de los PIN, regenera el del administrador y avisa', () => {
     const m = montarAcceso()
-    const r = asegurarAdministrador(m.db, m.acceso, m.roles.admin, true)
+    const r = asegurarAdministrador(m.db, m.access, m.roles.admin, true)
 
     expect(r.pin).toMatch(/^\d{4}$/)
     expect(r.avisos.join(' ')).toMatch(/clave de los PIN/)
     expect(
-      m.acceso.crearEmparejamiento({ pin: m.personas.admin.pin, nombre: 'X', tipo: 'caja' }, null),
+      m.access.crearEmparejamiento({ pin: m.people.admin.pin, name: 'X', type: 'register' }, null),
     ).toMatchObject({ ok: false })
     expect(
-      m.acceso.crearEmparejamiento({ pin: r.pin as string, nombre: 'X', tipo: 'caja' }, null),
+      m.access.crearEmparejamiento({ pin: r.pin as string, name: 'X', type: 'register' }, null),
     ).toMatchObject({ ok: true })
   })
 })
@@ -53,252 +53,252 @@ describe('arranque', () => {
 describe('emparejar un dispositivo', () => {
   it('con PIN de administrador da un código; el código se cambia por un token una sola vez', () => {
     const m = montarAcceso()
-    const codigo = m.acceso.crearEmparejamiento(
-      { pin: m.personas.admin.pin, nombre: 'Celular Ana', tipo: 'mesero' },
+    const code = m.access.crearEmparejamiento(
+      { pin: m.people.admin.pin, name: 'Celular Ana', type: 'waiter' },
       null,
     )
-    if (!codigo.ok) throw new Error(codigo.mensaje)
-    const r = m.acceso.emparejar(codigo.codigo.toLowerCase(), '10.0.0.6')
-    if (!r.ok) throw new Error(r.mensaje)
+    if (!code.ok) throw new Error(code.message)
+    const r = m.access.emparejar(code.code.toLowerCase(), '10.0.0.6')
+    if (!r.ok) throw new Error(r.message)
 
-    expect(m.acceso.autenticar(r.token)).toEqual({
+    expect(m.access.authenticate(r.token)).toEqual({
       dispositivoId: r.dispositivoId,
-      tipo: 'mesero',
+      type: 'waiter',
       revocadoEn: null,
     })
-    expect(m.acceso.emparejar(codigo.codigo, '10.0.0.6')).toMatchObject({
+    expect(m.access.emparejar(code.code, '10.0.0.6')).toMatchObject({
       ok: false,
-      codigo: 'codigo_invalido',
+      code: 'invalid_code',
     })
     // En la base queda la huella del token, no el token.
-    const credencial = m.db.prepare('SELECT token_hash FROM dispositivo_credencial').get()
-    expect(credencial?.token_hash).not.toBe(r.token)
-    expect(m.acceso.autenticar('otro')).toBeNull()
+    const credential = m.db.prepare('SELECT token_hash FROM device_credentials').get()
+    expect(credential?.token_hash).not.toBe(r.token)
+    expect(m.access.authenticate('other')).toBeNull()
   })
 
   it('el PIN de un mesero no aprueba, con el mismo mensaje que un PIN que no existe', () => {
     const m = montarAcceso()
-    const conMesero = m.acceso.crearEmparejamiento(
-      { pin: m.personas.mesero.pin, nombre: 'X', tipo: 'mesero' },
+    const conMesero = m.access.crearEmparejamiento(
+      { pin: m.people.waiter.pin, name: 'X', type: 'waiter' },
       null,
     )
-    expect(conMesero).toMatchObject({ ok: false, codigo: 'pin_incorrecto' })
-    const inexistente = m.acceso.crearEmparejamiento(
-      { pin: '0001', nombre: 'X', tipo: 'mesero' },
+    expect(conMesero).toMatchObject({ ok: false, code: 'wrong_pin' })
+    const nonexistent = m.access.crearEmparejamiento(
+      { pin: '0001', name: 'X', type: 'waiter' },
       null,
     )
-    expect(inexistente).toMatchObject({ ok: false, codigo: 'pin_incorrecto' })
-    expect(conMesero).toEqual(inexistente)
+    expect(nonexistent).toMatchObject({ ok: false, code: 'wrong_pin' })
+    expect(conMesero).toEqual(nonexistent)
   })
 
   it('el código vence a los 5 minutos', () => {
     const m = montarAcceso()
-    const codigo = m.acceso.crearEmparejamiento(
-      { pin: m.personas.admin.pin, nombre: 'X', tipo: 'kds' },
+    const code = m.access.crearEmparejamiento(
+      { pin: m.people.admin.pin, name: 'X', type: 'kds' },
       null,
     )
-    if (!codigo.ok) throw new Error(codigo.mensaje)
+    if (!code.ok) throw new Error(code.message)
     m.avanzar(VIGENCIA_CODIGO_MS)
-    expect(m.acceso.emparejar(codigo.codigo, 'ip')).toMatchObject({ codigo: 'codigo_invalido' })
+    expect(m.access.emparejar(code.code, 'ip')).toMatchObject({ code: 'invalid_code' })
   })
 
   it('rechaza nombre vacío o tipo desconocido', () => {
     const m = montarAcceso()
-    const pin = m.personas.admin.pin
-    expect(m.acceso.crearEmparejamiento({ pin, nombre: '  ', tipo: 'caja' }, null)).toMatchObject({
-      codigo: 'datos_invalidos',
-    })
-    expect(
-      m.acceso.crearEmparejamiento({ pin, nombre: 'X', tipo: 'tostadora' }, null),
-    ).toMatchObject({ codigo: 'datos_invalidos' })
+    const pin = m.people.admin.pin
+    expect(m.access.crearEmparejamiento({ pin, name: '  ', type: 'register' }, null)).toMatchObject(
+      {
+        code: 'invalid_data',
+      },
+    )
+    expect(m.access.crearEmparejamiento({ pin, name: 'X', type: 'tostadora' }, null)).toMatchObject(
+      { code: 'invalid_data' },
+    )
   })
 
   it('probar códigos al azar desde una IP la hace esperar', () => {
     const m = montarAcceso()
-    for (let i = 0; i < 3; i++) m.acceso.emparejar('AAAAAAAA', '10.0.0.66')
-    expect(m.acceso.emparejar('AAAAAAAA', '10.0.0.66')).toMatchObject({ codigo: 'espera' })
-    expect(m.acceso.emparejar('AAAAAAAA', '10.0.0.67')).toMatchObject({ codigo: 'codigo_invalido' })
+    for (let i = 0; i < 3; i++) m.access.emparejar('AAAAAAAA', '10.0.0.66')
+    expect(m.access.emparejar('AAAAAAAA', '10.0.0.66')).toMatchObject({ code: 'wait' })
+    expect(m.access.emparejar('AAAAAAAA', '10.0.0.67')).toMatchObject({ code: 'invalid_code' })
   })
 })
 
 describe('sesiones con PIN', () => {
   it('el PIN identifica a la persona y trae sus permisos', () => {
     const m = montarAcceso()
-    const { conexion } = m.emparejar()
-    const r = m.entrar(conexion, 'cajero')
+    const { connection } = m.emparejar()
+    const r = m.entrar(connection, 'cashier')
 
-    expect(r.usuario).toMatchObject({ nombre: 'Carlos', rol: 'Cajero' })
-    expect(r.permisos).toContain('registrar_pago')
-    expect(r.secreto).not.toBe('')
-    const fila = m.db.prepare('SELECT secreto_hash FROM sesion').get()
-    expect(fila?.secreto_hash).not.toBe(r.secreto)
+    expect(r.user).toMatchObject({ name: 'Carlos', role: 'Cajero' })
+    expect(r.permissions).toContain('record_payment')
+    expect(r.secret).not.toBe('')
+    const fila = m.db.prepare('SELECT secret_hash FROM sessions').get()
+    expect(fila?.secret_hash).not.toBe(r.secret)
   })
 
   it('tres PIN errados en un dispositivo lo hacen esperar; a los demás no', () => {
     const m = montarAcceso()
-    const a = m.emparejar('mesero', 'A').conexion
-    const b = m.emparejar('mesero', 'B').conexion
+    const a = m.emparejar('waiter', 'A').connection
+    const b = m.emparejar('waiter', 'B').connection
     const errado = ['0001', '0002', '0003']
-    const r = errado.map((pin) => m.acceso.iniciarSesion(a, pin))
+    const r = errado.map((pin) => m.access.startSession(a, pin))
 
     expect(r.map((x) => (x.ok ? 'ok' : x.esperaMs))).toEqual([0, 0, 2000])
-    expect(m.acceso.iniciarSesion(a, m.personas.mesero.pin)).toMatchObject({ codigo: 'espera' })
-    expect(m.acceso.iniciarSesion(b, m.personas.mesero.pin)).toMatchObject({ ok: true })
+    expect(m.access.startSession(a, m.people.waiter.pin)).toMatchObject({ code: 'wait' })
+    expect(m.access.startSession(b, m.people.waiter.pin)).toMatchObject({ ok: true })
     m.avanzar(2000)
-    expect(m.acceso.iniciarSesion(a, m.personas.mesero.pin)).toMatchObject({ ok: true })
+    expect(m.access.startSession(a, m.people.waiter.pin)).toMatchObject({ ok: true })
   })
 
   it('escribir otro PIN cierra la sesión anterior del dispositivo', () => {
     const m = montarAcceso()
-    const { conexion } = m.emparejar()
-    const ana = m.entrar(conexion, 'mesero')
-    m.entrar(conexion, 'mesero2')
+    const { connection } = m.emparejar()
+    const ana = m.entrar(connection, 'waiter')
+    m.entrar(connection, 'waiter2')
 
-    expect(m.acceso.cerrarSesion(conexion, ana)).toMatchObject({ codigo: 'sesion_invalida' })
+    expect(m.access.cerrarSesion(connection, ana)).toMatchObject({ code: 'invalid_session' })
   })
 
   it('cerrar la sesión exige su secreto y el mismo dispositivo', () => {
     const m = montarAcceso()
-    const a = m.emparejar().conexion
-    const b = m.emparejar().conexion
-    const s = m.entrar(a, 'mesero')
+    const a = m.emparejar().connection
+    const b = m.emparejar().connection
+    const s = m.entrar(a, 'waiter')
 
-    expect(m.acceso.cerrarSesion(a, { ...s, secreto: 'x' })).toMatchObject({ ok: false })
-    expect(m.acceso.cerrarSesion(b, s)).toMatchObject({ ok: false })
-    expect(m.acceso.cerrarSesion(a, s)).toEqual({ ok: true })
+    expect(m.access.cerrarSesion(a, { ...s, secret: 'x' })).toMatchObject({ ok: false })
+    expect(m.access.cerrarSesion(b, s)).toMatchObject({ ok: false })
+    expect(m.access.cerrarSesion(a, s)).toEqual({ ok: true })
   })
 
   it('los PIN son únicos entre los activos; archivar libera el PIN y cierra sus sesiones', () => {
     const m = montarAcceso()
-    const pines = new Set<string>()
+    const pins = new Set<string>()
     for (let i = 0; i < 300; i++)
-      pines.add(m.acceso.crearUsuario({ nombre: `U${i}`, rolId: m.roles.mesero }).pin)
-    expect(pines.size).toBe(300)
+      pins.add(m.access.crearUsuario({ name: `U${i}`, rolId: m.roles.waiter }).pin)
+    expect(pins.size).toBe(300)
 
-    const { conexion } = m.emparejar()
-    const s = m.entrar(conexion, 'mesero')
-    m.acceso.archivarUsuario(m.personas.mesero.usuarioId)
-    expect(m.acceso.iniciarSesion(conexion, m.personas.mesero.pin)).toMatchObject({
-      codigo: 'pin_incorrecto',
+    const { connection } = m.emparejar()
+    const s = m.entrar(connection, 'waiter')
+    m.access.archivarUsuario(m.people.waiter.userId)
+    expect(m.access.startSession(connection, m.people.waiter.pin)).toMatchObject({
+      code: 'wrong_pin',
     })
-    expect(m.acceso.cerrarSesion(conexion, s)).toMatchObject({ codigo: 'sesion_invalida' })
+    expect(m.access.cerrarSesion(connection, s)).toMatchObject({ code: 'invalid_session' })
   })
 
   it('regenerar el PIN invalida el anterior', () => {
     const m = montarAcceso()
-    const { conexion } = m.emparejar()
-    const nuevo = m.acceso.regenerarPin(m.personas.mesero.usuarioId)
-    expect(m.acceso.iniciarSesion(conexion, m.personas.mesero.pin).ok).toBe(
-      nuevo === m.personas.mesero.pin,
+    const { connection } = m.emparejar()
+    const fresh = m.access.regenerarPin(m.people.waiter.userId)
+    expect(m.access.startSession(connection, m.people.waiter.pin).ok).toBe(
+      fresh === m.people.waiter.pin,
     )
-    expect(m.acceso.iniciarSesion(conexion, nuevo)).toMatchObject({ ok: true })
+    expect(m.access.startSession(connection, fresh)).toMatchObject({ ok: true })
   })
 })
 
 describe('qué eventos puede crear cada quien', () => {
   it('el mesero toma pedidos; anular un ítem enviado le pide autorización', () => {
     const m = montarAcceso()
-    const { conexion } = m.emparejar()
-    const s = m.entrar(conexion, 'mesero')
+    const { connection } = m.emparejar()
+    const s = m.entrar(connection, 'waiter')
 
-    expect(
-      m.acceso.verificar(conexion, m.evento(conexion, s, 'PedidoAbierto', abrir), null),
-    ).toEqual({
+    expect(m.access.verify(connection, m.event(connection, s, 'OrderOpened', open), null)).toEqual({
       ok: true,
-      autorizadoPorId: null,
+      authorizedById: null,
       autorizacionId: null,
     })
     expect(
-      m.acceso.verificar(conexion, m.evento(conexion, s, 'ItemAnulado', {}, { motivo: 'x' }), null),
-    ).toEqual({ ok: false, motivo: 'sin_permiso' })
+      m.access.verify(connection, m.event(connection, s, 'ItemVoided', {}, { reason: 'x' }), null),
+    ).toEqual({ ok: false, reason: 'no_permission' })
   })
 
   it('con el PIN de la gerente, el comprobante vale para ese evento, una vez', () => {
     const m = montarAcceso()
-    const { conexion } = m.emparejar()
-    const s = m.entrar(conexion, 'mesero')
-    const anular = m.evento(conexion, s, 'ItemAnulado', {}, { motivo: 'Se equivocó' })
-    const a = m.acceso.autorizar(conexion, {
+    const { connection } = m.emparejar()
+    const s = m.entrar(connection, 'waiter')
+    const voidItem = m.event(connection, s, 'ItemVoided', {}, { reason: 'Se equivocó' })
+    const a = m.access.autorizar(connection, {
       ...s,
-      pin: m.personas.gerente.pin,
-      accion: 'anular_item_enviado',
-      agregadoId: anular.agregado_id,
-      eventoId: anular.id,
-      huella: huellaAutorizable(anular),
+      pin: m.people.manager.pin,
+      action: 'void_sent_item',
+      agregadoId: voidItem.aggregate_id,
+      eventId: voidItem.id,
+      fingerprint: authorizableFingerprint(voidItem),
     })
-    if (!a.ok) throw new Error(a.mensaje)
-    expect(a.supervisor.nombre).toBe('Gloria')
-    const conComprobante = firmado(s, { ...anular, autorizacion_id: a.autorizacionId })
+    if (!a.ok) throw new Error(a.message)
+    expect(a.supervisor.name).toBe('Gloria')
+    const conComprobante = firmado(s, { ...voidItem, authorization_id: a.autorizacionId })
 
-    const v = m.acceso.verificar(conexion, conComprobante, null)
+    const v = m.access.verify(connection, conComprobante, null)
     expect(v).toEqual({
       ok: true,
-      autorizadoPorId: m.personas.gerente.usuarioId,
+      authorizedById: m.people.manager.userId,
       autorizacionId: a.autorizacionId,
     })
-    if (v.ok) m.acceso.registrarUso(conComprobante, v)
-    expect(m.acceso.verificar(conexion, conComprobante, null)).toEqual({
+    if (v.ok) m.access.registrarUso(conComprobante, v)
+    expect(m.access.verify(connection, conComprobante, null)).toEqual({
       ok: false,
-      motivo: 'autorizacion_invalida',
+      reason: 'invalid_authorization',
     })
     // La sesión del mesero sigue abierta.
-    expect(m.acceso.cerrarSesion(conexion, s)).toEqual({ ok: true })
+    expect(m.access.cerrarSesion(connection, s)).toEqual({ ok: true })
   })
 
   it('el comprobante no sirve para otro evento, otro pedido, otra acción ni pasados 2 minutos', () => {
     const m = montarAcceso()
-    const { conexion } = m.emparejar()
-    const s = m.entrar(conexion, 'mesero')
-    const anular = m.evento(conexion, s, 'ItemAnulado', {}, { motivo: 'x' })
-    const a = m.acceso.autorizar(conexion, {
+    const { connection } = m.emparejar()
+    const s = m.entrar(connection, 'waiter')
+    const voidItem = m.event(connection, s, 'ItemVoided', {}, { reason: 'x' })
+    const a = m.access.autorizar(connection, {
       ...s,
-      pin: m.personas.gerente.pin,
-      accion: 'anular_item_enviado',
-      agregadoId: anular.agregado_id,
-      eventoId: anular.id,
-      huella: huellaAutorizable(anular),
+      pin: m.people.manager.pin,
+      action: 'void_sent_item',
+      agregadoId: voidItem.aggregate_id,
+      eventId: voidItem.id,
+      fingerprint: authorizableFingerprint(voidItem),
     })
-    if (!a.ok) throw new Error(a.mensaje)
+    if (!a.ok) throw new Error(a.message)
     // Cada cambio se firma de nuevo, como lo haría un dispositivo modificado.
-    const con = (cambios: object) =>
-      m.acceso.verificar(
-        conexion,
-        firmado(s, { ...anular, autorizacion_id: a.autorizacionId, ...cambios }),
+    const withIt = (changes: object) =>
+      m.access.verify(
+        connection,
+        firmado(s, { ...voidItem, authorization_id: a.autorizacionId, ...changes }),
         null,
       )
 
-    expect(con({ id: nuevoId() })).toMatchObject({ motivo: 'autorizacion_invalida' })
-    expect(con({ agregado_id: nuevoId() })).toMatchObject({ motivo: 'autorizacion_invalida' })
-    expect(con({ tipo: 'PedidoCancelado' })).toMatchObject({ motivo: 'autorizacion_invalida' })
-    const tarde = new Date(Date.parse(m.reloj()) + VIGENCIA_AUTORIZACION_MS + 1).toISOString()
-    expect(con({ hora_estimada_hub: tarde })).toMatchObject({ motivo: 'autorizacion_invalida' })
-    expect(con({})).toMatchObject({ ok: true })
+    expect(withIt({ id: newId() })).toMatchObject({ reason: 'invalid_authorization' })
+    expect(withIt({ aggregate_id: newId() })).toMatchObject({ reason: 'invalid_authorization' })
+    expect(withIt({ type: 'OrderCanceled' })).toMatchObject({ reason: 'invalid_authorization' })
+    const tarde = new Date(Date.parse(m.clock()) + VIGENCIA_AUTORIZACION_MS + 1).toISOString()
+    expect(withIt({ hub_estimated_time: tarde })).toMatchObject({ reason: 'invalid_authorization' })
+    expect(withIt({})).toMatchObject({ ok: true })
   })
 
   it('nadie se autoriza a sí mismo, y un PIN sin el permiso no autoriza', () => {
     const m = montarAcceso()
-    const { conexion } = m.emparejar()
-    const s = m.entrar(conexion, 'gerente')
-    const datos = {
+    const { connection } = m.emparejar()
+    const s = m.entrar(connection, 'manager')
+    const data = {
       ...s,
       // El cajero puede autorizar anulaciones (ADR-013), no cortesías.
-      accion: 'cortesia',
-      agregadoId: nuevoId(),
-      eventoId: nuevoId(),
-      huella: 'a'.repeat(64),
+      action: 'comp',
+      agregadoId: newId(),
+      eventId: newId(),
+      fingerprint: 'a'.repeat(64),
     }
 
-    expect(m.acceso.autorizar(conexion, { ...datos, pin: m.personas.gerente.pin })).toMatchObject({
-      codigo: 'autoautorizacion',
+    expect(m.access.autorizar(connection, { ...data, pin: m.people.manager.pin })).toMatchObject({
+      code: 'self_authorization',
     })
-    expect(m.acceso.autorizar(conexion, { ...datos, pin: m.personas.cajero.pin })).toMatchObject({
-      codigo: 'pin_incorrecto',
+    expect(m.access.autorizar(connection, { ...data, pin: m.people.cashier.pin })).toMatchObject({
+      code: 'wrong_pin',
     })
-    expect(m.acceso.autorizar(conexion, { ...datos, pin: m.personas.admin.pin })).toMatchObject({
+    expect(m.access.autorizar(connection, { ...data, pin: m.people.admin.pin })).toMatchObject({
       ok: true,
     })
-    expect(m.acceso.autorizar(conexion, { ...datos, pin: m.personas.admin.pin })).toMatchObject({
-      codigo: 'ya_autorizado',
+    expect(m.access.autorizar(connection, { ...data, pin: m.people.admin.pin })).toMatchObject({
+      code: 'already_authorized',
     })
   })
 
@@ -306,19 +306,17 @@ describe('qué eventos puede crear cada quien', () => {
     const m = montarAcceso()
     // Un celular se vuelve de caja al entrar el cajero con contraseña (ADR-013); una pantalla de
     // cocina, no.
-    const celular = m.emparejar('kds').conexion
-    const caja = m.emparejar('caja').conexion
-    const enCelular = m.entrar(celular, 'cajero')
-    const enCaja = m.entrar(caja, 'cajero')
+    const phone = m.emparejar('kds').connection
+    const register = m.emparejar('register').connection
+    const enCelular = m.entrar(phone, 'cashier')
+    const enCaja = m.entrar(register, 'cashier')
 
-    expect(
-      m.acceso.verificar(celular, m.evento(celular, enCelular, 'PedidoCerrado', {}), null),
-    ).toEqual({
+    expect(m.access.verify(phone, m.event(phone, enCelular, 'OrderClosed', {}), null)).toEqual({
       ok: false,
-      motivo: 'solo_caja',
+      reason: 'register_only',
     })
     expect(
-      m.acceso.verificar(caja, m.evento(caja, enCaja, 'PedidoCerrado', {}), null),
+      m.access.verify(register, m.event(register, enCaja, 'OrderClosed', {}), null),
     ).toMatchObject({
       ok: true,
     })
@@ -326,75 +324,75 @@ describe('qué eventos puede crear cada quien', () => {
 
   it('el hub no cree lo que dice el evento: sesión, usuario y dispositivo deben cuadrar', () => {
     const m = montarAcceso()
-    const a = m.emparejar().conexion
-    const b = m.emparejar().conexion
-    const sa = m.entrar(a, 'mesero')
-    const ev = m.evento(a, sa, 'PedidoAbierto', abrir)
+    const a = m.emparejar().connection
+    const b = m.emparejar().connection
+    const sa = m.entrar(a, 'waiter')
+    const ev = m.event(a, sa, 'OrderOpened', open)
 
-    expect(m.acceso.verificar(a, { ...ev, sesion_id: null }, null)).toMatchObject({
-      motivo: 'sin_sesion',
+    expect(m.access.verify(a, { ...ev, session_id: null }, null)).toMatchObject({
+      reason: 'no_session',
     })
-    expect(m.acceso.verificar(b, ev, null)).toMatchObject({ motivo: 'sesion_ajena' })
-    expect(
-      m.acceso.verificar(a, { ...ev, usuario_id: m.personas.gerente.usuarioId }, null),
-    ).toMatchObject({ motivo: 'usuario_distinto' })
-    expect(m.acceso.verificar(a, { ...ev, sesion_id: nuevoId() }, null)).toEqual({
+    expect(m.access.verify(b, ev, null)).toMatchObject({ reason: 'foreign_session' })
+    expect(m.access.verify(a, { ...ev, user_id: m.people.manager.userId }, null)).toMatchObject({
+      reason: 'user_mismatch',
+    })
+    expect(m.access.verify(a, { ...ev, session_id: newId() }, null)).toEqual({
       ok: false,
-      motivo: 'sesion_desconocida',
-      cuarentena: true,
+      reason: 'unknown_session',
+      quarantine: true,
     })
     expect(
-      m.acceso.verificar(a, firmado(sa, { ...ev, tipo: 'PedidoRescateCreado' } as typeof ev), null),
-    ).toMatchObject({ motivo: 'solo_hub' })
+      m.access.verify(a, firmado(sa, { ...ev, type: 'RescueOrderCreated' } as typeof ev), null),
+    ).toMatchObject({ reason: 'hub_only' })
   })
 
   it('la sesión se juzga a la hora del evento: lo hecho sin conexión antes del cierre vale', () => {
     const m = montarAcceso()
-    const { conexion } = m.emparejar()
-    const s = m.entrar(conexion, 'mesero')
-    const antes = m.evento(conexion, s, 'PedidoAbierto', abrir)
+    const { connection } = m.emparejar()
+    const s = m.entrar(connection, 'waiter')
+    const before = m.event(connection, s, 'OrderOpened', open)
     m.avanzar(40 * 60_000)
-    m.acceso.cerrarSesion(conexion, s)
+    m.access.cerrarSesion(connection, s)
     m.avanzar(5 * 60_000)
-    const despues = m.evento(conexion, s, 'PedidoAbierto', abrir)
+    const after = m.event(connection, s, 'OrderOpened', open)
 
-    expect(m.acceso.verificar(conexion, antes, null)).toMatchObject({ ok: true })
-    expect(m.acceso.verificar(conexion, despues, null)).toMatchObject({ motivo: 'sesion_cerrada' })
+    expect(m.access.verify(connection, before, null)).toMatchObject({ ok: true })
+    expect(m.access.verify(connection, after, null)).toMatchObject({ reason: 'session_closed' })
   })
 
   it('el permiso se evalúa con el rol al recibir: un usuario archivado ya no crea nada', () => {
     const m = montarAcceso()
-    const { conexion } = m.emparejar()
-    const s = m.entrar(conexion, 'mesero')
-    const ev = m.evento(conexion, s, 'PedidoAbierto', abrir)
-    m.acceso.archivarUsuario(m.personas.mesero.usuarioId)
+    const { connection } = m.emparejar()
+    const s = m.entrar(connection, 'waiter')
+    const ev = m.event(connection, s, 'OrderOpened', open)
+    m.access.archivarUsuario(m.people.waiter.userId)
 
-    expect(m.acceso.verificar(conexion, ev, null)).toMatchObject({ motivo: 'usuario_inactivo' })
+    expect(m.access.verify(connection, ev, null)).toMatchObject({ reason: 'user_inactive' })
   })
 })
 
 describe('revocar un dispositivo', () => {
   it('solo el administrador, no el propio equipo, y avisa a la sala', () => {
     const m = montarAcceso()
-    const caja = m.emparejar('caja').conexion
-    const celular = m.emparejar('mesero')
-    const gerente = m.entrar(caja, 'gerente')
-    const datos = { dispositivoId: celular.conexion.dispositivoId }
+    const register = m.emparejar('register').connection
+    const phone = m.emparejar('waiter')
+    const manager = m.entrar(register, 'manager')
+    const data = { dispositivoId: phone.connection.dispositivoId }
 
-    expect(m.acceso.revocarDispositivo(caja, { ...gerente, ...datos })).toMatchObject({
-      codigo: 'sin_permiso',
+    expect(m.access.revocarDispositivo(register, { ...manager, ...data })).toMatchObject({
+      code: 'no_permission',
     })
-    const admin = m.entrar(caja, 'admin')
+    const admin = m.entrar(register, 'admin')
     expect(
-      m.acceso.revocarDispositivo(caja, { ...admin, dispositivoId: caja.dispositivoId }),
-    ).toMatchObject({ codigo: 'datos_invalidos' })
-    const r = m.acceso.revocarDispositivo(caja, { ...admin, ...datos })
+      m.access.revocarDispositivo(register, { ...admin, dispositivoId: register.dispositivoId }),
+    ).toMatchObject({ code: 'invalid_data' })
+    const r = m.access.revocarDispositivo(register, { ...admin, ...data })
 
-    expect(r).toEqual({ ok: true, revocadoEn: m.reloj() })
-    expect(m.revocados).toEqual([celular.conexion.dispositivoId])
-    expect(m.acceso.autenticar(celular.token)?.revocadoEn).toBe(m.reloj())
+    expect(r).toEqual({ ok: true, revocadoEn: m.clock() })
+    expect(m.revocados).toEqual([phone.connection.dispositivoId])
+    expect(m.access.authenticate(phone.token)?.revocadoEn).toBe(m.clock())
     expect(
-      m.acceso.iniciarSesion(m.acceso.autenticar(celular.token) as never, m.personas.mesero.pin),
-    ).toMatchObject({ codigo: 'dispositivo_revocado' })
+      m.access.startSession(m.access.authenticate(phone.token) as never, m.people.waiter.pin),
+    ).toMatchObject({ code: 'revoked_device' })
   })
 })

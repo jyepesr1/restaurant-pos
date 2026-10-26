@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { esIdValido, nuevoId } from '@pos/core'
+import { isValidId, newId } from '@pos/core'
 import { aplicarMigraciones, type BaseSqlite, TABLAS_VERSIONADAS } from '@pos/db'
 import { abrirBase } from '@pos/db/node'
 import { describe, expect, it } from 'vitest'
@@ -9,8 +9,8 @@ import { asegurarRoles } from '../acceso/inicial'
 import type { Cambio } from '../acceso/registros'
 import { idEstable, insertarVersionado, SISTEMA } from '../acceso/registros'
 import { ServicioAcceso } from '../acceso/servicio'
-import { leerCarta, reglasSinPlato } from './carta'
-import { MESAS, PERSONAL, sembrar } from './sembrar'
+import { leerCarta, rulesWithoutDish } from './carta'
+import { PERSONAL, sembrar, TABLES } from './sembrar'
 
 // Pruebas adicionales de la tarea 0.8: repetir el seed, varios hubs y restaurantes, registros
 // archivados, cambios en la carta, variantes, sabores, secciones ocultas e interrupciones.
@@ -24,21 +24,21 @@ const MAS_TARDE = '2026-10-25T09:30:00.000Z'
 
 /** Tablas que el seed llena con IDs estables (sin personal ni roles, que crea el hub). */
 const TABLAS_SEED = [
-  'restaurante',
-  'zona',
-  'mesa',
-  'estacion',
-  'impuesto',
-  'categoria',
-  'producto',
-  'variante',
-  'grupo_modificador',
-  'modificador',
-  'producto_grupo_modificador',
+  'restaurants',
+  'zones',
+  'dining_tables',
+  'stations',
+  'taxes',
+  'categories',
+  'products',
+  'variants',
+  'modifier_groups',
+  'modifiers',
+  'product_modifier_groups',
 ] as const
 
-const volcar = (db: BaseSqlite, tablas: readonly string[]) =>
-  Object.fromEntries(tablas.map((t) => [t, db.prepare(`SELECT * FROM ${t} ORDER BY 1`).all()]))
+const volcar = (db: BaseSqlite, sqlTables: readonly string[]) =>
+  Object.fromEntries(sqlTables.map((t) => [t, db.prepare(`SELECT * FROM ${t} ORDER BY 1`).all()]))
 
 const contar = (db: BaseSqlite, sql: string, ...p: string[]) => Number(db.prepare(sql).get(...p)?.n)
 
@@ -46,35 +46,33 @@ const contar = (db: BaseSqlite, sql: string, ...p: string[]) => Number(db.prepar
  * Un hub recién instalado con un restaurante de ID dado (o nuevo). La sede también lleva un ID
  * estable para poder comparar dos hubs del mismo restaurante fila por fila.
  */
-function hub(restauranteId = nuevoId(), compartida?: BaseSqlite) {
+function hub(restauranteId = newId(), compartida?: BaseSqlite) {
   const db = compartida ?? abrirBase(':memory:')
   if (!compartida) aplicarMigraciones(db)
   agregarRestaurante(db, restauranteId)
   const roles = asegurarRoles(db, restauranteId, AHORA)
-  const acceso = new ServicioAcceso({
+  const access = new ServicioAcceso({
     db,
     restauranteId,
-    clave: Buffer.alloc(32, 3),
-    reloj: () => AHORA,
+    key: Buffer.alloc(32, 3),
+    clock: () => AHORA,
   })
-  const cargar = (texto = TEXTO_CARTA, ahora = AHORA, con: ServicioAcceso = acceso) =>
-    sembrar(db, con, { restauranteId, roles, carta: leerCarta(texto) }, ahora)
-  return { db, acceso, roles, restauranteId, cargar }
+  const cargar = (text = TEXTO_CARTA, ahora = AHORA, withIt: ServicioAcceso = access) =>
+    sembrar(db, withIt, { restauranteId, roles, menu: leerCarta(text) }, ahora)
+  return { db, access, roles, restauranteId, cargar }
 }
 
 function agregarRestaurante(db: BaseSqlite, id: string) {
   db.prepare(
-    `INSERT INTO restaurante (id, restaurante_id, creado_en, actualizado_en, version, nombre, config)
+    `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
      VALUES (?, ?, ?, ?, 1, 'Mi restaurante', '{}')`,
   ).run(id, id, AHORA, AHORA)
-  db.prepare("INSERT INTO contador (restaurante_id, nombre, valor) VALUES (?, 'catalogo', 1)").run(
-    id,
-  )
+  db.prepare("INSERT INTO counters (restaurant_id, name, value) VALUES (?, 'catalog', 1)").run(id)
   insertarVersionado(
     db,
-    'sede',
+    'locations',
     id,
-    { nombre: 'Principal', direccion: null, zona_horaria: 'America/Bogota' },
+    { name: 'Principal', address: null, time_zone: 'America/Bogota' },
     SISTEMA,
     AHORA,
     idEstable(id, 'sede:principal'),
@@ -82,20 +80,20 @@ function agregarRestaurante(db: BaseSqlite, id: string) {
 }
 
 // Cartas pequeñas para los casos borde.
-const plato = (nombre: string, precio: number, descripcion?: string) => ({
-  nombre: { es: nombre },
-  descripcion: descripcion === undefined ? undefined : { es: descripcion },
-  precio,
+const dish = (name: string, price: number, description?: string) => ({
+  nombre: { es: name },
+  descripcion: description === undefined ? undefined : { es: description },
+  precio: price,
 })
-const seccion = (clave: string, platos: ReturnType<typeof plato>[], extra = {}) => ({
-  clave,
-  nombre: clave,
+const section = (key: string, dishes: ReturnType<typeof dish>[], extra = {}) => ({
+  clave: key,
+  nombre: key,
   grupo: 'barra',
-  boton: { es: clave },
-  platos,
+  boton: { es: key },
+  platos: dishes,
   ...extra,
 })
-const cartaDe = (...secciones: ReturnType<typeof seccion>[]) => stringify({ secciones })
+const cartaDe = (...sections: ReturnType<typeof section>[]) => stringify({ secciones: sections })
 
 const ID_FIJO = '01JB0000000000000000000000'
 
@@ -103,49 +101,49 @@ describe('repetir el seed', () => {
   it('cinco corridas con relojes distintos dejan la base idéntica, con versiones y PIN', () => {
     const h = hub()
     h.cargar(TEXTO_CARTA, AHORA)
-    const tablas = [...TABLAS_VERSIONADAS, 'contador', 'usuario_credencial']
-    const referencia = volcar(h.db, tablas)
+    const sqlTables = [...TABLAS_VERSIONADAS, 'counters', 'user_credentials']
+    const referencia = volcar(h.db, sqlTables)
 
-    for (const hora of [MAS_TARDE, '2026-10-26T01:00:00.000Z', '2027-01-01T00:00:00.000Z']) {
-      const r = h.cargar(TEXTO_CARTA, hora)
-      expect(r.pines).toEqual([])
-      for (const [tabla, c] of Object.entries(r.tablas))
-        expect({ tabla, ...c, igual: 0, respetado: 0 }).toEqual({
+    for (const time of [MAS_TARDE, '2026-10-26T01:00:00.000Z', '2027-01-01T00:00:00.000Z']) {
+      const r = h.cargar(TEXTO_CARTA, time)
+      expect(r.pins).toEqual([])
+      for (const [tabla, c] of Object.entries(r.sqlTables))
+        expect({ tabla, ...c, equal: 0, respected: 0 }).toEqual({
           tabla,
-          creado: 0,
-          actualizado: 0,
-          igual: 0,
-          respetado: 0,
-          archivado: 0,
+          created: 0,
+          updated: 0,
+          equal: 0,
+          respected: 0,
+          archived: 0,
         })
     }
     h.cargar(TEXTO_CARTA, '2027-06-30T12:00:00.000Z')
-    expect(volcar(h.db, tablas)).toEqual(referencia)
+    expect(volcar(h.db, sqlTables)).toEqual(referencia)
   })
 
   it('el resumen de la primera corrida cuenta todo como creado y el de la segunda todo como igual', () => {
     const h = hub()
-    const primera = h.cargar()
+    const first = h.cargar()
     const segunda = h.cargar(TEXTO_CARTA, MAS_TARDE)
-    const cuentas = (c: Partial<Record<Cambio, number>>) => ({
-      creado: 0,
-      actualizado: 0,
-      igual: 0,
-      respetado: 0,
-      archivado: 0,
+    const checks = (c: Partial<Record<Cambio, number>>) => ({
+      created: 0,
+      updated: 0,
+      equal: 0,
+      respected: 0,
+      archived: 0,
       ...c,
     })
 
-    expect(primera.tablas.mesa).toEqual(cuentas({ creado: MESAS }))
-    expect(primera.tablas.producto).toEqual(cuentas({ creado: 98 }))
-    expect(primera.tablas.usuario).toEqual(cuentas({ creado: PERSONAL.length }))
-    expect(primera.tablas.impuesto).toEqual(cuentas({ creado: 1 }))
-    expect(segunda.tablas.mesa).toEqual(cuentas({ igual: MESAS }))
-    expect(segunda.tablas.producto).toEqual(cuentas({ igual: 98 }))
-    expect(segunda.tablas.usuario).toEqual(cuentas({ igual: PERSONAL.length }))
-    expect(segunda.tablas.restaurante).toEqual(cuentas({ igual: 1 }))
+    expect(first.sqlTables.dining_tables).toEqual(checks({ created: TABLES }))
+    expect(first.sqlTables.products).toEqual(checks({ created: 98 }))
+    expect(first.sqlTables.users).toEqual(checks({ created: PERSONAL.length }))
+    expect(first.sqlTables.taxes).toEqual(checks({ created: 1 }))
+    expect(segunda.sqlTables.dining_tables).toEqual(checks({ equal: TABLES }))
+    expect(segunda.sqlTables.products).toEqual(checks({ equal: 98 }))
+    expect(segunda.sqlTables.users).toEqual(checks({ equal: PERSONAL.length }))
+    expect(segunda.sqlTables.restaurants).toEqual(checks({ equal: 1 }))
     // El impuesto se crea una sola vez: después el seed lo respeta, no lo compara.
-    expect(segunda.tablas.impuesto).toEqual(cuentas({ respetado: 1 }))
+    expect(segunda.sqlTables.taxes).toEqual(checks({ respected: 1 }))
   })
 
   it('el contador de catálogo es el mayor `version` y ninguna versión se repite', () => {
@@ -157,10 +155,10 @@ describe('repetir el seed', () => {
         .all()
         .map((f) => Number(f.version)),
     )
-    const contador = Number(
-      h.db.prepare("SELECT valor FROM contador WHERE nombre = 'catalogo'").get()?.valor,
+    const counter = Number(
+      h.db.prepare("SELECT value FROM counters WHERE name = 'catalog'").get()?.value,
     )
-    expect(Math.max(...versiones)).toBe(contador)
+    expect(Math.max(...versiones)).toBe(counter)
     // Una versión por cambio: dos filas con la misma versión harían ambiguo el "cambios desde N".
     expect(new Set(versiones).size).toBe(versiones.length)
   })
@@ -172,10 +170,10 @@ describe('repetir el seed', () => {
     b.cargar()
     expect(volcar(a.db, TABLAS_SEED)).toEqual(volcar(b.db, TABLAS_SEED))
     // Y las personas del seed tienen los mismos IDs (no los PIN).
-    expect(volcar(a.db, ['sede'])).toEqual(volcar(b.db, ['sede']))
+    expect(volcar(a.db, ['locations'])).toEqual(volcar(b.db, ['locations']))
     const ids = (h: ReturnType<typeof hub>) =>
       h.db
-        .prepare("SELECT id FROM usuario WHERE nombre <> 'Administrador' ORDER BY id")
+        .prepare("SELECT id FROM users WHERE name <> 'Administrador' ORDER BY id")
         .all()
         .map((f) => f.id)
     expect(ids(a)).toEqual(ids(b))
@@ -194,11 +192,11 @@ describe('repetir el seed', () => {
     b.cargar(barajada)
     const idsProductos = (h: ReturnType<typeof hub>) =>
       h.db
-        .prepare('SELECT id, nombre, precio FROM producto ORDER BY id')
+        .prepare('SELECT id, name, price FROM products ORDER BY id')
         .all()
-        .map((f) => `${f.id}:${f.nombre}:${f.precio}`)
+        .map((f) => `${f.id}:${f.name}:${f.price}`)
     expect(idsProductos(b)).toEqual(idsProductos(a))
-    expect(original.flatMap((c) => c.productos)).toHaveLength(98)
+    expect(original.flatMap((c) => c.products)).toHaveLength(98)
   })
 
   it('todos los IDs del seed son ULID válidos y no se repiten entre tablas', () => {
@@ -210,23 +208,23 @@ describe('repetir el seed', () => {
         .all()
         .map((f) => String(f.id)),
     )
-    for (const id of ids) expect(esIdValido(id)).toBe(true)
+    for (const id of ids) expect(isValidId(id)).toBe(true)
     expect(new Set(ids).size).toBe(ids.length)
   })
 })
 
 describe('restaurantes distintos', () => {
   it('dos restaurantes con la misma marca de tiempo en la misma base no chocan en ningún ID', () => {
-    const otro = `${ID_FIJO.slice(0, 10)}ZZZZZZZZZZZZZZZZ`
+    const other = `${ID_FIJO.slice(0, 10)}ZZZZZZZZZZZZZZZZ`
     const a = hub(ID_FIJO)
-    const b = hub(otro, a.db)
+    const b = hub(other, a.db)
     a.cargar()
     b.cargar()
 
     expect(
-      contar(a.db, 'SELECT count(*) AS n FROM producto WHERE restaurante_id = ?', ID_FIJO),
+      contar(a.db, 'SELECT count(*) AS n FROM products WHERE restaurant_id = ?', ID_FIJO),
     ).toBe(98)
-    expect(contar(a.db, 'SELECT count(*) AS n FROM producto WHERE restaurante_id = ?', otro)).toBe(
+    expect(contar(a.db, 'SELECT count(*) AS n FROM products WHERE restaurant_id = ?', other)).toBe(
       98,
     )
     for (const tabla of TABLAS_VERSIONADAS) {
@@ -237,9 +235,9 @@ describe('restaurantes distintos', () => {
       expect(new Set(ids).size).toBe(ids.length)
     }
     // Repetir el seed de uno no toca al otro.
-    const antes = volcar(a.db, ['producto'])
+    const before = volcar(a.db, ['products'])
     b.cargar(TEXTO_CARTA, MAS_TARDE)
-    expect(volcar(a.db, ['producto'])).toEqual(antes)
+    expect(volcar(a.db, ['products'])).toEqual(before)
   })
 
   it('con ULID de restaurantes distintos, la misma clave da IDs distintos aunque el prefijo sea igual', () => {
@@ -247,8 +245,8 @@ describe('restaurantes distintos', () => {
     const b = idEstable(`${ID_FIJO.slice(0, 10)}ZZZZZZZZZZZZZZZZ`, 'mesa:1')
     expect(a.slice(0, 10)).toBe(b.slice(0, 10))
     expect(a).not.toBe(b)
-    expect(esIdValido(a)).toBe(true)
-    expect(esIdValido(b)).toBe(true)
+    expect(isValidId(a)).toBe(true)
+    expect(isValidId(b)).toBe(true)
   })
 
   it('el ID depende de la clave exacta: mayúsculas y espacios dan IDs distintos', () => {
@@ -260,50 +258,50 @@ describe('restaurantes distintos', () => {
 })
 
 describe('registros archivados a mano', () => {
-  const idDe = (h: ReturnType<typeof hub>, clave: string) => idEstable(h.restauranteId, clave)
-  const estado = (h: ReturnType<typeof hub>, tabla: string, id: string) =>
-    h.db.prepare(`SELECT activo, version FROM ${tabla} WHERE id = ?`).get(id)
+  const idDe = (h: ReturnType<typeof hub>, key: string) => idEstable(h.restauranteId, key)
+  const status = (h: ReturnType<typeof hub>, tabla: string, id: string) =>
+    h.db.prepare(`SELECT active, version FROM ${tabla} WHERE id = ?`).get(id)
 
   it('el seed reactiva un producto, una mesa, una categoría y una opción archivados', () => {
     const h = hub()
     h.cargar()
     const objetivos = [
-      ['producto', idDe(h, 'producto:PIZZAS:quattro-formaggi')],
-      ['mesa', idDe(h, 'mesa:7')],
-      ['categoria', idDe(h, 'categoria:PIZZAS')],
-      ['modificador', idDe(h, 'modificador:sabor:BEBIDAS:te-hatsu:Rojo')],
+      ['products', idDe(h, 'producto:PIZZAS:quattro-formaggi')],
+      ['dining_tables', idDe(h, 'mesa:7')],
+      ['categories', idDe(h, 'categoria:PIZZAS')],
+      ['modifiers', idDe(h, 'modificador:sabor:BEBIDAS:te-hatsu:Rojo')],
     ] as const
     const contadorAntes = Number(
-      h.db.prepare("SELECT valor FROM contador WHERE nombre = 'catalogo'").get()?.valor,
+      h.db.prepare("SELECT value FROM counters WHERE name = 'catalog'").get()?.value,
     )
     for (const [tabla, id] of objetivos)
-      h.db.prepare(`UPDATE ${tabla} SET activo = 0 WHERE id = ?`).run(id)
+      h.db.prepare(`UPDATE ${tabla} SET active = 0 WHERE id = ?`).run(id)
 
     const r = h.cargar(TEXTO_CARTA, MAS_TARDE)
     for (const [tabla, id] of objetivos) {
-      expect({ tabla, ...estado(h, tabla, id) }).toMatchObject({ tabla, activo: 1 })
-      expect(Number(estado(h, tabla, id)?.version)).toBeGreaterThan(contadorAntes)
+      expect({ tabla, ...status(h, tabla, id) }).toMatchObject({ tabla, active: 1 })
+      expect(Number(status(h, tabla, id)?.version)).toBeGreaterThan(contadorAntes)
     }
-    expect(r.tablas.producto).toMatchObject({ creado: 0, actualizado: 1 })
-    expect(r.tablas.mesa).toMatchObject({ creado: 0, actualizado: 1 })
+    expect(r.sqlTables.products).toMatchObject({ created: 0, updated: 1 })
+    expect(r.sqlTables.dining_tables).toMatchObject({ created: 0, updated: 1 })
     // No se duplicó nada.
-    expect(contar(h.db, 'SELECT count(*) AS n FROM producto')).toBe(98)
-    expect(contar(h.db, 'SELECT count(*) AS n FROM mesa')).toBe(MESAS)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM products')).toBe(98)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM dining_tables')).toBe(TABLES)
 
     // La corrida siguiente ya no cambia nada.
     const tercera = h.cargar(TEXTO_CARTA, '2026-10-26T09:00:00.000Z')
-    expect(tercera.tablas.producto).toMatchObject({ actualizado: 0 })
+    expect(tercera.sqlTables.products).toMatchObject({ updated: 0 })
   })
 
   it('un producto archivado que además cambió de precio vuelve con el precio de la carta', () => {
     const h = hub()
     h.cargar()
     const id = idDe(h, 'producto:PIZZAS:quattro-formaggi')
-    h.db.prepare('UPDATE producto SET activo = 0, precio = 1 WHERE id = ?').run(id)
+    h.db.prepare('UPDATE products SET active = 0, price = 1 WHERE id = ?').run(id)
     h.cargar(TEXTO_CARTA, MAS_TARDE)
-    expect(h.db.prepare('SELECT activo, precio FROM producto WHERE id = ?').get(id)).toEqual({
-      activo: 1,
-      precio: 44_900,
+    expect(h.db.prepare('SELECT active, price FROM products WHERE id = ?').get(id)).toEqual({
+      active: 1,
+      price: 44_900,
     })
   })
 
@@ -311,30 +309,27 @@ describe('registros archivados a mano', () => {
     const h = hub()
     h.cargar()
     const id = idDe(h, 'usuario:caja')
-    const huella = h.db
-      .prepare('SELECT pin_huella FROM usuario_credencial WHERE usuario_id = ?')
+    const fingerprint = h.db
+      .prepare('SELECT pin_hash FROM user_credentials WHERE user_id = ?')
       .get(id)
-    h.db.prepare('UPDATE usuario SET activo = 0 WHERE id = ?').run(id)
+    h.db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(id)
 
     const r = h.cargar(TEXTO_CARTA, MAS_TARDE)
-    expect(r.pines).toEqual([])
-    expect(r.tablas.usuario?.creado).toBe(0)
-    expect(contar(h.db, 'SELECT count(*) AS n FROM usuario WHERE id = ?', id)).toBe(1)
-    expect(
-      h.db.prepare('SELECT pin_huella FROM usuario_credencial WHERE usuario_id = ?').get(id),
-    ).toEqual(huella)
+    expect(r.pins).toEqual([])
+    expect(r.sqlTables.users?.created).toBe(0)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM users WHERE id = ?', id)).toBe(1)
+    expect(h.db.prepare('SELECT pin_hash FROM user_credentials WHERE user_id = ?').get(id)).toEqual(
+      fingerprint,
+    )
   })
 })
 
 describe('cambios en la carta', () => {
-  const nombres = (
-    h: ReturnType<typeof hub>,
-    sql = 'SELECT nombre FROM producto WHERE activo = 1',
-  ) =>
+  const names = (h: ReturnType<typeof hub>, sql = 'SELECT name FROM products WHERE active = 1') =>
     h.db
       .prepare(sql)
       .all()
-      .map((f) => String(f.nombre))
+      .map((f) => String(f.name))
 
   it('cambiar solo mayúsculas o acentos del nombre conserva el producto y actualiza el nombre', () => {
     const h = hub()
@@ -344,60 +339,58 @@ describe('cambios en la carta', () => {
       TEXTO_CARTA.replace('es: Quattro Formaggi', 'es: Quattro formaggi'),
       MAS_TARDE,
     )
-    expect(h.db.prepare('SELECT nombre FROM producto WHERE id = ?').get(id)?.nombre).toBe(
+    expect(h.db.prepare('SELECT name FROM products WHERE id = ?').get(id)?.name).toBe(
       'Quattro formaggi',
     )
-    expect(r.tablas.producto).toMatchObject({ creado: 0, actualizado: 1 })
-    expect(contar(h.db, 'SELECT count(*) AS n FROM producto')).toBe(98)
+    expect(r.sqlTables.products).toMatchObject({ created: 0, updated: 1 })
+    expect(contar(h.db, 'SELECT count(*) AS n FROM products')).toBe(98)
 
     // "Té Hatsu" → "Te Hatsu": mismo producto (la clave quita los acentos), con sus sabores.
     const hatsu = idEstable(h.restauranteId, 'producto:BEBIDAS:te-hatsu')
     h.cargar(TEXTO_CARTA.replace('es: Té Hatsu', 'es: Te Hatsu'), '2026-10-26T09:00:00.000Z')
-    expect(h.db.prepare('SELECT nombre FROM producto WHERE id = ?').get(hatsu)?.nombre).toBe(
-      'Te Hatsu',
-    )
-    expect(contar(h.db, 'SELECT count(*) AS n FROM producto')).toBe(98)
+    expect(h.db.prepare('SELECT name FROM products WHERE id = ?').get(hatsu)?.name).toBe('Te Hatsu')
+    expect(contar(h.db, 'SELECT count(*) AS n FROM products')).toBe(98)
   })
 
   it('renombrar un plato crea el nuevo y archiva el viejo: la carta del mesero no queda duplicada', () => {
     const h = hub()
     h.cargar()
-    const viejo = idEstable(h.restauranteId, 'producto:PIZZAS:quattro-formaggi')
-    const antes = Number(
-      h.db.prepare('SELECT version FROM producto WHERE id = ?').get(viejo)?.version,
+    const oldOne = idEstable(h.restauranteId, 'producto:PIZZAS:quattro-formaggi')
+    const before = Number(
+      h.db.prepare('SELECT version FROM products WHERE id = ?').get(oldOne)?.version,
     )
     const r = h.cargar(TEXTO_CARTA.replace('es: Quattro Formaggi', 'es: Cuatro Quesos'), MAS_TARDE)
 
-    expect(r.tablas.producto).toMatchObject({ creado: 1, actualizado: 0, archivado: 1 })
+    expect(r.sqlTables.products).toMatchObject({ created: 1, updated: 0, archived: 1 })
     const fila = h.db
-      .prepare('SELECT activo, precio, version FROM producto WHERE id = ?')
-      .get(viejo)
-    expect(fila).toMatchObject({ activo: 0, precio: 44_900 })
+      .prepare('SELECT active, price, version FROM products WHERE id = ?')
+      .get(oldOne)
+    expect(fila).toMatchObject({ active: 0, price: 44_900 })
     // Archivar es un cambio más del catálogo: sube la versión para que los dispositivos lo reciban.
-    expect(Number(fila?.version)).toBeGreaterThan(antes)
-    expect(nombres(h)).toContain('Cuatro Quesos')
-    expect(nombres(h)).not.toContain('Quattro Formaggi')
-    expect(contar(h.db, 'SELECT count(*) AS n FROM producto WHERE activo = 1')).toBe(98)
+    expect(Number(fila?.version)).toBeGreaterThan(before)
+    expect(names(h)).toContain('Cuatro Quesos')
+    expect(names(h)).not.toContain('Quattro Formaggi')
+    expect(contar(h.db, 'SELECT count(*) AS n FROM products WHERE active = 1')).toBe(98)
 
     // Y la corrida siguiente ya no archiva nada más.
-    const otra = h.cargar(
+    const another = h.cargar(
       TEXTO_CARTA.replace('es: Quattro Formaggi', 'es: Cuatro Quesos'),
       '2026-10-26T09:00:00.000Z',
     )
-    expect(otra.tablas.producto).toMatchObject({ creado: 0, actualizado: 0, archivado: 0 })
+    expect(another.sqlTables.products).toMatchObject({ created: 0, updated: 0, archived: 0 })
   })
 
   it('si el nombre vuelve a ser el de antes, el producto archivado se reactiva con su mismo ID', () => {
     const h = hub()
     h.cargar()
-    const viejo = idEstable(h.restauranteId, 'producto:PIZZAS:quattro-formaggi')
+    const oldOne = idEstable(h.restauranteId, 'producto:PIZZAS:quattro-formaggi')
     h.cargar(TEXTO_CARTA.replace('es: Quattro Formaggi', 'es: Cuatro Quesos'), MAS_TARDE)
     h.cargar(TEXTO_CARTA, '2026-10-26T09:00:00.000Z')
-    expect(h.db.prepare('SELECT activo FROM producto WHERE id = ?').get(viejo)?.activo).toBe(1)
+    expect(h.db.prepare('SELECT active FROM products WHERE id = ?').get(oldOne)?.active).toBe(1)
     expect(
       contar(
         h.db,
-        "SELECT count(*) AS n FROM producto WHERE nombre = 'Cuatro Quesos' AND activo = 1",
+        "SELECT count(*) AS n FROM products WHERE name = 'Cuatro Quesos' AND active = 1",
       ),
     ).toBe(0)
   })
@@ -407,28 +400,28 @@ describe('cambios en la carta', () => {
     h.cargar()
     const recortada = TEXTO_CARTA.replace('es: Rojo/Amarillo/Blanco', 'es: Rojo/Amarillo/Verde')
     const r = h.cargar(recortada, MAS_TARDE)
-    const sabores = (activo: number) =>
-      nombres(
+    const flavors = (active: number) =>
+      names(
         h,
-        `SELECT m.nombre FROM modificador m JOIN grupo_modificador g ON g.id = m.grupo_id
-         WHERE g.nombre = 'Sabor' AND m.activo = ${activo} AND m.nombre IN ('Rojo','Amarillo','Blanco','Verde')`,
+        `SELECT m.name FROM modifiers m JOIN modifier_groups g ON g.id = m.group_id
+         WHERE g.name = 'Sabor' AND m.active = ${active} AND m.name IN ('Rojo','Amarillo','Blanco','Verde')`,
       ).sort()
-    expect(sabores(1)).toEqual(['Amarillo', 'Rojo', 'Verde'])
-    expect(sabores(0)).toEqual(['Blanco'])
-    expect(r.tablas.modificador).toMatchObject({ creado: 1, archivado: 1 })
+    expect(flavors(1)).toEqual(['Amarillo', 'Rojo', 'Verde'])
+    expect(flavors(0)).toEqual(['Blanco'])
+    expect(r.sqlTables.modifiers).toMatchObject({ created: 1, archived: 1 })
 
-    const carta = parse(TEXTO_CARTA) as { secciones: { clave: string; platos: unknown[] }[] }
-    const pizzas = carta.secciones.find((s) => s.clave === 'PIZZAS')?.platos.length ?? 0
-    const sinPizzas = stringify({ secciones: carta.secciones.filter((s) => s.clave !== 'PIZZAS') })
+    const menu = parse(TEXTO_CARTA) as { secciones: { clave: string; platos: unknown[] }[] }
+    const pizzas = menu.secciones.find((s) => s.clave === 'PIZZAS')?.platos.length ?? 0
+    const sinPizzas = stringify({ secciones: menu.secciones.filter((s) => s.clave !== 'PIZZAS') })
     const r2 = h.cargar(sinPizzas, '2026-10-26T09:00:00.000Z')
     expect(
-      contar(h.db, "SELECT count(*) AS n FROM categoria WHERE nombre = 'Pizzas' AND activo = 1"),
+      contar(h.db, "SELECT count(*) AS n FROM categories WHERE name = 'Pizzas' AND active = 1"),
     ).toBe(0)
-    expect(r2.tablas.categoria).toMatchObject({ archivado: 1 })
-    expect(r2.tablas.producto).toMatchObject({ archivado: pizzas })
-    expect(contar(h.db, 'SELECT count(*) AS n FROM producto WHERE activo = 1')).toBe(98 - pizzas)
+    expect(r2.sqlTables.categories).toMatchObject({ archived: 1 })
+    expect(r2.sqlTables.products).toMatchObject({ archived: pizzas })
+    expect(contar(h.db, 'SELECT count(*) AS n FROM products WHERE active = 1')).toBe(98 - pizzas)
     // Nada se borró: sigue todo en la base, archivado.
-    expect(contar(h.db, 'SELECT count(*) AS n FROM producto')).toBe(98)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM products')).toBe(98)
   })
 
   it('lo que una persona editó o creó (usuario_id) no se pisa ni se archiva', () => {
@@ -436,284 +429,282 @@ describe('cambios en la carta', () => {
     h.cargar()
     const quattro = idEstable(h.restauranteId, 'producto:PIZZAS:quattro-formaggi')
     const margarita = idEstable(h.restauranteId, 'producto:PIZZAS:garden-margarita')
-    const gerente = idEstable(h.restauranteId, 'usuario:gerente')
+    const manager = idEstable(h.restauranteId, 'usuario:gerente')
     // El gerente cambió un precio desde el editor; el seed no debe devolverlo.
     h.db
-      .prepare('UPDATE producto SET precio = 50000, usuario_id = ? WHERE id = ?')
-      .run(gerente, quattro)
+      .prepare('UPDATE products SET price = 50000, user_id = ? WHERE id = ?')
+      .run(manager, quattro)
     // Y creó un producto propio que no está en la carta.
-    const propio = nuevoId()
+    const own = newId()
     h.db
       .prepare(
-        `INSERT INTO producto (id, restaurante_id, creado_en, actualizado_en, version, usuario_id, categoria_id, nombre, precio, impuesto_id)
-         SELECT ?, restaurante_id, creado_en, actualizado_en, 9999, ?, categoria_id, 'Plato del día', 25000, impuesto_id FROM producto WHERE id = ?`,
+        `INSERT INTO products (id, restaurant_id, created_at, updated_at, version, user_id, category_id, name, price, tax_id)
+         SELECT ?, restaurant_id, created_at, updated_at, 9999, ?, category_id, 'Plato del día', 25000, tax_id FROM products WHERE id = ?`,
       )
-      .run(propio, gerente, quattro)
+      .run(own, manager, quattro)
 
     const r = h.cargar(TEXTO_CARTA, MAS_TARDE)
-    expect(h.db.prepare('SELECT precio, activo FROM producto WHERE id = ?').get(quattro)).toEqual({
-      precio: 50_000,
-      activo: 1,
+    expect(h.db.prepare('SELECT price, active FROM products WHERE id = ?').get(quattro)).toEqual({
+      price: 50_000,
+      active: 1,
     })
-    expect(h.db.prepare('SELECT activo FROM producto WHERE id = ?').get(propio)?.activo).toBe(1)
-    expect(r.tablas.producto).toMatchObject({ respetado: 1, archivado: 0, actualizado: 0 })
-    expect(h.db.prepare('SELECT activo FROM producto WHERE id = ?').get(margarita)?.activo).toBe(1)
+    expect(h.db.prepare('SELECT active FROM products WHERE id = ?').get(own)?.active).toBe(1)
+    expect(r.sqlTables.products).toMatchObject({ respected: 1, archived: 0, updated: 0 })
+    expect(h.db.prepare('SELECT active FROM products WHERE id = ?').get(margarita)?.active).toBe(1)
 
     // Un producto de una persona que sale de la carta tampoco se archiva.
     h.cargar(
       TEXTO_CARTA.replace('es: Quattro Formaggi', 'es: Cuatro Quesos'),
       '2026-10-26T09:00:00.000Z',
     )
-    expect(h.db.prepare('SELECT activo FROM producto WHERE id = ?').get(quattro)?.activo).toBe(1)
+    expect(h.db.prepare('SELECT active FROM products WHERE id = ?').get(quattro)?.active).toBe(1)
   })
 
   it('el impuesto que el contador cambió no se devuelve a la tarifa del seed', () => {
     const h = hub()
     h.cargar()
-    h.db.prepare("UPDATE impuesto SET tarifa = 1900 WHERE tipo = 'inc'").run()
+    h.db.prepare("UPDATE taxes SET rate = 1900 WHERE type = 'inc'").run()
     const r = h.cargar(TEXTO_CARTA, MAS_TARDE)
-    expect(h.db.prepare('SELECT tarifa FROM impuesto').get()?.tarifa).toBe(1900)
-    expect(r.tablas.impuesto).toMatchObject({ respetado: 1, actualizado: 0 })
+    expect(h.db.prepare('SELECT rate FROM taxes').get()?.rate).toBe(1900)
+    expect(r.sqlTables.taxes).toMatchObject({ respected: 1, updated: 0 })
   })
 
   it('un plato con disponible: false no se carga, y si ya estaba se archiva', () => {
     const h = hub()
     h.cargar()
     const id = idEstable(h.restauranteId, 'producto:PIZZAS:quattro-formaggi')
-    const texto = (carta: string) => carta
-    const agotado = texto(
+    const text = (menu: string) => menu
+    const soldOut = text(
       TEXTO_CARTA.replace(/(es: Quattro Formaggi[\s\S]*?disponible: )true/, '$1false'),
     )
-    expect(agotado).not.toBe(TEXTO_CARTA)
-    expect(leerCarta(agotado).flatMap((c) => c.productos)).toHaveLength(97)
-    const r = h.cargar(agotado, MAS_TARDE)
-    expect(r.tablas.producto).toMatchObject({ archivado: 1, creado: 0 })
-    expect(h.db.prepare('SELECT activo FROM producto WHERE id = ?').get(id)?.activo).toBe(0)
+    expect(soldOut).not.toBe(TEXTO_CARTA)
+    expect(leerCarta(soldOut).flatMap((c) => c.products)).toHaveLength(97)
+    const r = h.cargar(soldOut, MAS_TARDE)
+    expect(r.sqlTables.products).toMatchObject({ archived: 1, created: 0 })
+    expect(h.db.prepare('SELECT active FROM products WHERE id = ?').get(id)?.active).toBe(0)
 
     // En un hub limpio ni siquiera se crea.
-    const limpio = hub()
-    limpio.cargar(agotado)
-    expect(contar(limpio.db, 'SELECT count(*) AS n FROM producto')).toBe(97)
+    const clean = hub()
+    clean.cargar(soldOut)
+    expect(contar(clean.db, 'SELECT count(*) AS n FROM products')).toBe(97)
   })
 
   it('mover un plato a otra sección lo siembra en la nueva y archiva el de la vieja', () => {
     const h = hub()
-    h.cargar(cartaDe(seccion('A', [plato('Agua', 3000)]), seccion('B', [plato('Jugo', 5000)])))
+    h.cargar(cartaDe(section('A', [dish('Agua', 3000)]), section('B', [dish('Jugo', 5000)])))
     const r = h.cargar(
-      cartaDe(seccion('A', []), seccion('B', [plato('Jugo', 5000), plato('Agua', 3000)])),
+      cartaDe(section('A', []), section('B', [dish('Jugo', 5000), dish('Agua', 3000)])),
       MAS_TARDE,
     )
-    expect(r.tablas.producto).toMatchObject({ creado: 1, archivado: 1 })
+    expect(r.sqlTables.products).toMatchObject({ created: 1, archived: 1 })
     expect(
-      contar(h.db, "SELECT count(*) AS n FROM producto WHERE nombre = 'Agua' AND activo = 1"),
+      contar(h.db, "SELECT count(*) AS n FROM products WHERE name = 'Agua' AND active = 1"),
     ).toBe(1)
     expect(
       h.db
         .prepare(
-          `SELECT c.nombre FROM producto p JOIN categoria c ON c.id = p.categoria_id
-           WHERE p.nombre = 'Agua' AND p.activo = 1`,
+          `SELECT c.name FROM products p JOIN categories c ON c.id = p.category_id
+           WHERE p.name = 'Agua' AND p.active = 1`,
         )
-        .get()?.nombre,
+        .get()?.name,
     ).toBe('B')
   })
 
   it('cambiar el precio de una variante actualiza la variante y el precio base solo si era la más barata', () => {
-    const texto = cartaDe(
-      seccion('VINOS', [plato('Malbec Botella', 120_000), plato('Malbec Copa', 30_000)]),
+    const text = cartaDe(
+      section('VINOS', [dish('Malbec Botella', 120_000), dish('Malbec Copa', 30_000)]),
     )
     const h = hub()
-    h.cargar(texto)
-    const producto = idEstable(h.restauranteId, 'producto:VINOS:malbec')
+    h.cargar(text)
+    const product = idEstable(h.restauranteId, 'producto:VINOS:malbec')
 
-    const subeBotella = h.cargar(texto.replace('120000', '125000'), MAS_TARDE)
-    expect(subeBotella.tablas.variante).toMatchObject({ actualizado: 1, igual: 1 })
-    expect(subeBotella.tablas.producto).toMatchObject({ actualizado: 0 })
+    const subeBotella = h.cargar(text.replace('120000', '125000'), MAS_TARDE)
+    expect(subeBotella.sqlTables.variants).toMatchObject({ updated: 1, equal: 1 })
+    expect(subeBotella.sqlTables.products).toMatchObject({ updated: 0 })
 
     const subeCopa = h.cargar(
-      texto.replace('120000', '125000').replace('30000', '31000'),
+      text.replace('120000', '125000').replace('30000', '31000'),
       '2026-10-26T09:00:00.000Z',
     )
-    expect(subeCopa.tablas.variante).toMatchObject({ actualizado: 1, igual: 1 })
-    expect(subeCopa.tablas.producto).toMatchObject({ actualizado: 1 })
-    expect(h.db.prepare('SELECT precio FROM producto WHERE id = ?').get(producto)?.precio).toBe(
-      31_000,
-    )
+    expect(subeCopa.sqlTables.variants).toMatchObject({ updated: 1, equal: 1 })
+    expect(subeCopa.sqlTables.products).toMatchObject({ updated: 1 })
+    expect(h.db.prepare('SELECT price FROM products WHERE id = ?').get(product)?.price).toBe(31_000)
   })
 })
 
 describe('variantes copa y botella', () => {
-  const productosDe = (texto: string) => leerCarta(texto).flatMap((c) => c.productos)
+  const productsOf = (text: string) => leerCarta(text).flatMap((c) => c.products)
 
   it('una copa sola, sin su botella, queda como producto suelto con su nombre completo', () => {
-    const [p] = productosDe(cartaDe(seccion('VINOS', [plato('Malbec Copa', 30_000)])))
-    expect(p).toMatchObject({ nombre: 'Malbec Copa', precio: 30_000, variantes: [] })
+    const [p] = productsOf(cartaDe(section('VINOS', [dish('Malbec Copa', 30_000)])))
+    expect(p).toMatchObject({ name: 'Malbec Copa', price: 30_000, variants: [] })
   })
 
   it('una botella sola queda como producto suelto, con el tamaño al inicio o al final', () => {
-    const ps = productosDe(
+    const ps = productsOf(
       cartaDe(
-        seccion('VINOS', [plato('Botella Lambrusco', 99_000), plato('Merlot Botella', 90_000)]),
+        section('VINOS', [dish('Botella Lambrusco', 99_000), dish('Merlot Botella', 90_000)]),
       ),
     )
-    expect(ps.map((p) => [p.nombre, p.variantes.length])).toEqual([
+    expect(ps.map((p) => [p.name, p.variants.length])).toEqual([
       ['Botella Lambrusco', 0],
       ['Merlot Botella', 0],
     ])
   })
 
   it('el tamaño al inicio también junta copa y botella en un producto', () => {
-    const [p] = productosDe(
-      cartaDe(seccion('VINOS', [plato('Botella Malbec', 120_000), plato('Copa Malbec', 30_000)])),
+    const [p] = productsOf(
+      cartaDe(section('VINOS', [dish('Botella Malbec', 120_000), dish('Copa Malbec', 30_000)])),
     )
     expect(p).toMatchObject({
-      nombre: 'Malbec',
-      precio: 30_000,
-      variantes: [
-        { nombre: 'Copa', precio: 30_000 },
-        { nombre: 'Botella', precio: 120_000 },
+      name: 'Malbec',
+      price: 30_000,
+      variants: [
+        { name: 'Copa', price: 30_000 },
+        { name: 'Botella', price: 120_000 },
       ],
     })
   })
 
   it('el vino sin tamaño más su copa y su botella no se junta: tres productos', () => {
-    const ps = productosDe(
+    const ps = productsOf(
       cartaDe(
-        seccion('VINOS', [
-          plato('Malbec', 10_000),
-          plato('Malbec Copa', 30_000),
-          plato('Malbec Botella', 120_000),
+        section('VINOS', [
+          dish('Malbec', 10_000),
+          dish('Malbec Copa', 30_000),
+          dish('Malbec Botella', 120_000),
         ]),
       ),
     )
-    expect(ps.map((p) => p.nombre)).toEqual(['Malbec', 'Malbec Copa', 'Malbec Botella'])
-    expect(ps.every((p) => p.variantes.length === 0)).toBe(true)
+    expect(ps.map((p) => p.name)).toEqual(['Malbec', 'Malbec Copa', 'Malbec Botella'])
+    expect(ps.every((p) => p.variants.length === 0)).toBe(true)
   })
 
   it('dos copas del mismo vino son un plato repetido y la lectura falla', () => {
     expect(() =>
       leerCarta(
-        cartaDe(seccion('VINOS', [plato('Malbec Copa', 30_000), plato('Malbec Copa', 31_000)])),
+        cartaDe(section('VINOS', [dish('Malbec Copa', 30_000), dish('Malbec Copa', 31_000)])),
       ),
     ).toThrow(/repetido/)
   })
 
   it('dos platos que solo difieren en mayúsculas o acentos son un plato repetido', () => {
     expect(() =>
-      leerCarta(cartaDe(seccion('X', [plato('Café', 1000), plato('cafe', 2000)]))),
+      leerCarta(cartaDe(section('X', [dish('Café', 1000), dish('cafe', 2000)]))),
     ).toThrow(/repetido/)
   })
 
   it('la carta lista botella primero pero en la base la copa queda con orden 0', () => {
     const h = hub()
     h.cargar(
-      cartaDe(seccion('VINOS', [plato('Malbec Botella', 120_000), plato('Malbec Copa', 30_000)])),
+      cartaDe(section('VINOS', [dish('Malbec Botella', 120_000), dish('Malbec Copa', 30_000)])),
     )
-    expect(h.db.prepare('SELECT nombre, orden FROM variante ORDER BY orden').all()).toEqual([
-      { nombre: 'Copa', orden: 0 },
-      { nombre: 'Botella', orden: 1 },
+    expect(h.db.prepare('SELECT name, position FROM variants ORDER BY position').all()).toEqual([
+      { name: 'Copa', position: 0 },
+      { name: 'Botella', position: 1 },
     ])
   })
 
   it('si la carta deja de tener la botella, el producto con variantes se archiva con sus dos variantes', () => {
     const h = hub()
     h.cargar(
-      cartaDe(seccion('VINOS', [plato('Malbec Botella', 120_000), plato('Malbec Copa', 30_000)])),
+      cartaDe(section('VINOS', [dish('Malbec Botella', 120_000), dish('Malbec Copa', 30_000)])),
     )
-    const r = h.cargar(cartaDe(seccion('VINOS', [plato('Malbec Copa', 30_000)])), MAS_TARDE)
+    const r = h.cargar(cartaDe(section('VINOS', [dish('Malbec Copa', 30_000)])), MAS_TARDE)
     // La copa suelta es otro producto ("Malbec Copa"); el viejo, con sus variantes, se archiva.
-    expect(r.tablas.producto).toMatchObject({ creado: 1, archivado: 1 })
-    expect(r.tablas.variante).toMatchObject({ archivado: 2 })
-    expect(contar(h.db, 'SELECT count(*) AS n FROM variante WHERE activo = 1')).toBe(0)
+    expect(r.sqlTables.products).toMatchObject({ created: 1, archived: 1 })
+    expect(r.sqlTables.variants).toMatchObject({ archived: 2 })
+    expect(contar(h.db, 'SELECT count(*) AS n FROM variants WHERE active = 1')).toBe(0)
     expect(
       h.db
-        .prepare('SELECT nombre FROM producto WHERE activo = 1')
+        .prepare('SELECT name FROM products WHERE active = 1')
         .all()
-        .map((f) => f.nombre),
+        .map((f) => f.name),
     ).toEqual(['Malbec Copa'])
   })
 
   it('con variantes, la descripción es la del primer plato que la traiga', () => {
     const [p] = leerCarta(
       cartaDe(
-        seccion('VINOS', [
-          plato('Malbec Copa', 30_000),
-          plato('Malbec Botella', 120_000, 'Mendoza, 2021'),
+        section('VINOS', [
+          dish('Malbec Copa', 30_000),
+          dish('Malbec Botella', 120_000, 'Mendoza, 2021'),
         ]),
       ),
-    ).flatMap((c) => c.productos)
-    expect(p?.variantes).toHaveLength(2)
-    expect(p?.descripcion).toBe('Mendoza, 2021')
+    ).flatMap((c) => c.products)
+    expect(p?.variants).toHaveLength(2)
+    expect(p?.description).toBe('Mendoza, 2021')
   })
 })
 
 describe('sabores', () => {
-  const hatsu = (descripcion: string, nombre = 'Té Hatsu') =>
-    cartaDe(seccion('BEBIDAS', [plato(nombre, 13_900, descripcion)]))
+  const hatsu = (description: string, name = 'Té Hatsu') =>
+    cartaDe(section('BEBIDAS', [dish(name, 13_900, description)]))
 
   it('los sabores con acentos son opciones del grupo, estables entre corridas', () => {
     const h = hub()
-    const texto = hatsu('Limón/Piña/Maracuyá', 'Soda Hatsu')
-    h.cargar(texto)
-    const nombres = h.db
-      .prepare('SELECT nombre FROM modificador ORDER BY orden')
+    const text = hatsu('Limón/Piña/Maracuyá', 'Soda Hatsu')
+    h.cargar(text)
+    const names = h.db
+      .prepare('SELECT name FROM modifiers ORDER BY position')
       .all()
-      .map((f) => f.nombre)
-    expect(nombres).toEqual(['Limón', 'Piña', 'Maracuyá'])
-    const r = h.cargar(texto, MAS_TARDE)
-    expect(r.tablas.modificador).toEqual({
-      creado: 0,
-      actualizado: 0,
-      igual: 3,
-      respetado: 0,
-      archivado: 0,
+      .map((f) => f.name)
+    expect(names).toEqual(['Limón', 'Piña', 'Maracuyá'])
+    const r = h.cargar(text, MAS_TARDE)
+    expect(r.sqlTables.modifiers).toEqual({
+      created: 0,
+      updated: 0,
+      equal: 3,
+      respected: 0,
+      archived: 0,
     })
   })
 
   it('los espacios alrededor de la barra se ignoran: "Rojo / Amarillo" vale', () => {
-    const [p] = leerCarta(hatsu('  Rojo / Amarillo /Blanco ')).flatMap((c) => c.productos)
-    expect(p?.grupos[0]?.opciones.map((o) => o.nombre)).toEqual(['Rojo', 'Amarillo', 'Blanco'])
-    expect(p?.descripcion).toBeNull()
+    const [p] = leerCarta(hatsu('  Rojo / Amarillo /Blanco ')).flatMap((c) => c.products)
+    expect(p?.groups[0]?.options.map((o) => o.name)).toEqual(['Rojo', 'Amarillo', 'Blanco'])
+    expect(p?.description).toBeNull()
   })
 
   it('un sabor con espacio interno es un solo sabor', () => {
-    const [p] = leerCarta(hatsu('Fresa Limón/Maracuyá')).flatMap((c) => c.productos)
-    expect(p?.grupos[0]?.opciones.map((o) => o.nombre)).toEqual(['Fresa Limón', 'Maracuyá'])
+    const [p] = leerCarta(hatsu('Fresa Limón/Maracuyá')).flatMap((c) => c.products)
+    expect(p?.groups[0]?.options.map((o) => o.name)).toEqual(['Fresa Limón', 'Maracuyá'])
   })
 
   it('sabores obligatorios y sin costo', () => {
-    const [p] = leerCarta(hatsu('Rojo/Blanco')).flatMap((c) => c.productos)
-    expect(p?.grupos[0]).toMatchObject({ minimo: 1, maximo: 1 })
-    expect(p?.grupos[0]?.opciones.every((o) => o.precioExtra === 0)).toBe(true)
+    const [p] = leerCarta(hatsu('Rojo/Blanco')).flatMap((c) => c.products)
+    expect(p?.groups[0]).toMatchObject({ minimum: 1, maximum: 1 })
+    expect(p?.groups[0]?.options.every((o) => o.extraPrice === 0)).toBe(true)
   })
 
   it('el Té Hatsu o la Soda Hatsu con menos de dos sabores es un error de la carta', () => {
-    for (const descripcion of ['Natural', 'Rojo', 'Rojo/', '/Rojo', 'Rojo//', ' / ', ''])
-      expect(() => leerCarta(hatsu(descripcion)), descripcion).toThrow(/sabores/)
-    expect(() => leerCarta(cartaDe(seccion('B', [plato('Té Hatsu', 1)])))).toThrow(/sabores/)
+    for (const description of ['Natural', 'Rojo', 'Rojo/', '/Rojo', 'Rojo//', ' / ', ''])
+      expect(() => leerCarta(hatsu(description)), description).toThrow(/sabores/)
+    expect(() => leerCarta(cartaDe(section('B', [dish('Té Hatsu', 1)])))).toThrow(/sabores/)
     expect(() => leerCarta(hatsu('Rojo', 'Soda Hatsu'))).toThrow(/sabores/)
   })
 
   it('un sabor repetido ("Rojo/Rojo") es un error de la carta, con o sin acentos y mayúsculas', () => {
-    for (const descripcion of ['Rojo/Rojo/Blanco', 'Rojo/rojo', 'Limón/Limon', ' Rojo /Rojo '])
-      expect(() => leerCarta(hatsu(descripcion)), descripcion).toThrow(/repite/)
+    for (const description of ['Rojo/Rojo/Blanco', 'Rojo/rojo', 'Limón/Limon', ' Rojo /Rojo '])
+      expect(() => leerCarta(hatsu(description)), description).toThrow(/repite/)
   })
 
   it('otro plato con barras en la descripción no se vuelve sabor', () => {
-    for (const descripcion of ['Jamón/Queso', 'Rojo/Amarillo', 'Aguacate / Tomate']) {
-      const [p] = leerCarta(cartaDe(seccion('S', [plato('Sándwich', 9000, descripcion)]))).flatMap(
-        (c) => c.productos,
+    for (const description of ['Jamón/Queso', 'Rojo/Amarillo', 'Aguacate / Tomate']) {
+      const [p] = leerCarta(cartaDe(section('S', [dish('Sándwich', 9000, description)]))).flatMap(
+        (c) => c.products,
       )
-      expect({ descripcion, grupos: p?.grupos.length, texto: p?.descripcion }).toEqual({
-        descripcion,
-        grupos: 0,
-        texto: descripcion,
+      expect({ description, groups: p?.groups.length, text: p?.description }).toEqual({
+        description,
+        groups: 0,
+        text: description,
       })
     }
   })
 
   it('si la carta ya no trae el Té Hatsu o la Tagliata, `reglasSinPlato` lo avisa', () => {
-    expect(reglasSinPlato(leerCarta(TEXTO_CARTA))).toEqual([])
-    expect(reglasSinPlato(leerCarta(cartaDe(seccion('S', [plato('Agua', 1)]))))).toEqual([
+    expect(rulesWithoutDish(leerCarta(TEXTO_CARTA))).toEqual([])
+    expect(rulesWithoutDish(leerCarta(cartaDe(section('S', [dish('Agua', 1)]))))).toEqual([
       'Tagliata di Manzo',
       'Té Hatsu',
       'Soda Hatsu',
@@ -724,22 +715,19 @@ describe('sabores', () => {
     const h = hub()
     h.cargar()
     expect(
-      contar(
-        h.db,
-        "SELECT count(*) AS n FROM grupo_modificador WHERE nombre = 'Término de la carne'",
-      ),
+      contar(h.db, "SELECT count(*) AS n FROM modifier_groups WHERE name = 'Término de la carne'"),
     ).toBe(1)
     expect(
       contar(
         h.db,
-        'SELECT count(*) AS n FROM modificador WHERE grupo_id = ?',
+        'SELECT count(*) AS n FROM modifiers WHERE group_id = ?',
         idEstable(h.restauranteId, 'grupo:termino'),
       ),
     ).toBe(4)
     expect(
       contar(
         h.db,
-        'SELECT count(*) AS n FROM producto_grupo_modificador WHERE grupo_id = ?',
+        'SELECT count(*) AS n FROM product_modifier_groups WHERE group_id = ?',
         idEstable(h.restauranteId, 'grupo:termino'),
       ),
     ).toBeGreaterThan(1)
@@ -749,48 +737,48 @@ describe('sabores', () => {
 describe('secciones ocultas', () => {
   const dosSecciones = (visibleA: boolean, visibleB = true) =>
     cartaDe(
-      seccion('A', [plato('Agua', 3000)], { visible: visibleA }),
-      seccion('B', [plato('Jugo', 5000)], { visible: visibleB }),
+      section('A', [dish('Agua', 3000)], { visible: visibleA }),
+      section('B', [dish('Jugo', 5000)], { visible: visibleB }),
     )
 
   it('una sección invisible no se siembra y el orden de las visibles queda seguido', () => {
-    const carta = leerCarta(
+    const menu = leerCarta(
       cartaDe(
-        seccion('A', [plato('a', 1)], { visible: false }),
-        seccion('B', [plato('b', 1)]),
-        seccion('C', [plato('c', 1)], { visible: false }),
-        seccion('D', [plato('d', 1)]),
+        section('A', [dish('a', 1)], { visible: false }),
+        section('B', [dish('b', 1)]),
+        section('C', [dish('c', 1)], { visible: false }),
+        section('D', [dish('d', 1)]),
       ),
     )
-    expect(carta.map((c) => [c.clave, c.orden])).toEqual([
+    expect(menu.map((c) => [c.key, c.position])).toEqual([
       ['B', 0],
       ['D', 1],
     ])
     const h = hub()
     h.cargar(
-      cartaDe(seccion('A', [plato('a', 1)], { visible: false }), seccion('B', [plato('b', 1)])),
+      cartaDe(section('A', [dish('a', 1)], { visible: false }), section('B', [dish('b', 1)])),
     )
-    expect(contar(h.db, 'SELECT count(*) AS n FROM categoria')).toBe(1)
-    expect(contar(h.db, 'SELECT count(*) AS n FROM producto')).toBe(1)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM categories')).toBe(1)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM products')).toBe(1)
   })
 
   it('las claves de sección son únicas en toda la carta, también las de secciones invisibles', () => {
     expect(() =>
       leerCarta(
-        cartaDe(seccion('A', [plato('x', 1)], { visible: false }), seccion('A', [plato('y', 1)])),
+        cartaDe(section('A', [dish('x', 1)], { visible: false }), section('A', [dish('y', 1)])),
       ),
     ).toThrow(/repetida/)
   })
 
   it('una clave de sección con espacios, ":" o "|" se rechaza porque va dentro de los IDs', () => {
-    for (const clave of ['A B', 'A:B', 'A|B', '', ' A'])
-      expect(() => leerCarta(cartaDe(seccion(clave, [plato('x', 1)]))), clave).toThrow()
+    for (const key of ['A B', 'A:B', 'A|B', '', ' A'])
+      expect(() => leerCarta(cartaDe(section(key, [dish('x', 1)]))), key).toThrow()
   })
 
   it('una sección invisible con un precio inválido sí falla: la carta se valida entera', () => {
     expect(() =>
       leerCarta(
-        cartaDe(seccion('A', [plato('x', 1.5)], { visible: false }), seccion('B', [plato('y', 1)])),
+        cartaDe(section('A', [dish('x', 1.5)], { visible: false }), section('B', [dish('y', 1)])),
       ),
     ).toThrow()
   })
@@ -799,23 +787,23 @@ describe('secciones ocultas', () => {
     const h = hub()
     h.cargar(dosSecciones(true))
     const r = h.cargar(dosSecciones(false), MAS_TARDE)
-    expect(r.tablas.categoria).toMatchObject({ archivado: 1, actualizado: 1 })
-    expect(r.tablas.producto).toMatchObject({ archivado: 1 })
-    expect(contar(h.db, 'SELECT count(*) AS n FROM categoria WHERE activo = 1')).toBe(1)
-    expect(h.db.prepare("SELECT orden FROM categoria WHERE nombre = 'B'").get()?.orden).toBe(0)
-    expect(h.db.prepare("SELECT activo FROM producto WHERE nombre = 'Agua'").get()?.activo).toBe(0)
+    expect(r.sqlTables.categories).toMatchObject({ archived: 1, updated: 1 })
+    expect(r.sqlTables.products).toMatchObject({ archived: 1 })
+    expect(contar(h.db, 'SELECT count(*) AS n FROM categories WHERE active = 1')).toBe(1)
+    expect(h.db.prepare("SELECT position FROM categories WHERE name = 'B'").get()?.position).toBe(0)
+    expect(h.db.prepare("SELECT active FROM products WHERE name = 'Agua'").get()?.active).toBe(0)
     // Mostrarla otra vez la reactiva.
     h.cargar(dosSecciones(true), '2026-10-26T09:00:00.000Z')
-    expect(contar(h.db, 'SELECT count(*) AS n FROM producto WHERE activo = 1')).toBe(2)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM products WHERE active = 1')).toBe(2)
   })
 
   it('una carta con todas las secciones ocultas no deja categorías ni productos', () => {
     const h = hub()
     h.cargar(dosSecciones(true))
     h.cargar(dosSecciones(false, false), MAS_TARDE)
-    expect(contar(h.db, 'SELECT count(*) AS n FROM producto WHERE activo = 1')).toBe(0)
-    expect(contar(h.db, 'SELECT count(*) AS n FROM categoria WHERE activo = 1')).toBe(0)
-    expect(contar(h.db, 'SELECT count(*) AS n FROM mesa WHERE activo = 1')).toBe(MESAS)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM products WHERE active = 1')).toBe(0)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM categories WHERE active = 1')).toBe(0)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM dining_tables WHERE active = 1')).toBe(TABLES)
   })
 })
 
@@ -834,104 +822,104 @@ describe('seed interrumpido', () => {
 
   it('si muere a mitad del catálogo no queda nada a medias y la siguiente corrida deja el resultado limpio', () => {
     const h = hub(ID_FIJO)
-    const todas = [...TABLAS_VERSIONADAS, 'contador', 'usuario_credencial']
-    const antes = volcar(h.db, todas)
+    const allRows = [...TABLAS_VERSIONADAS, 'counters', 'user_credentials']
+    const before = volcar(h.db, allRows)
 
     let insertados = 0
-    const roto = conFalla(
+    const faulty = conFalla(
       h.db,
-      (sql) => sql.startsWith('INSERT INTO producto ') && ++insertados === 50,
+      (sql) => sql.startsWith('INSERT INTO products ') && ++insertados === 50,
     )
     expect(() =>
       sembrar(
-        roto,
-        h.acceso,
-        { restauranteId: h.restauranteId, roles: h.roles, carta: leerCarta(TEXTO_CARTA) },
+        faulty,
+        h.access,
+        { restauranteId: h.restauranteId, roles: h.roles, menu: leerCarta(TEXTO_CARTA) },
         AHORA,
       ),
     ).toThrow('el proceso murió')
 
     // Ni salón, ni estaciones, ni impuesto, ni el nombre del restaurante: nada se guardó.
-    expect(volcar(h.db, todas)).toEqual(antes)
-    expect(h.db.prepare('SELECT nombre FROM restaurante').get()?.nombre).toBe('Mi restaurante')
-    expect(contar(h.db, 'SELECT count(*) AS n FROM mesa')).toBe(0)
+    expect(volcar(h.db, allRows)).toEqual(before)
+    expect(h.db.prepare('SELECT name FROM restaurants').get()?.name).toBe('Mi restaurante')
+    expect(contar(h.db, 'SELECT count(*) AS n FROM dining_tables')).toBe(0)
 
     // Sin restos que estorben: queda igual que en un hub que corrió el seed sin interrupción.
-    const limpio = hub(ID_FIJO)
-    limpio.cargar()
+    const clean = hub(ID_FIJO)
+    clean.cargar()
     h.cargar()
-    expect(volcar(h.db, TABLAS_SEED)).toEqual(volcar(limpio.db, TABLAS_SEED))
+    expect(volcar(h.db, TABLAS_SEED)).toEqual(volcar(clean.db, TABLAS_SEED))
   })
 
   it('si falla al crear al personal no queda nada: ni catálogo ni usuarios, y la siguiente corrida lo crea todo', () => {
     const h = hub(ID_FIJO)
-    const todas = [...TABLAS_VERSIONADAS, 'contador', 'usuario_credencial']
-    const antes = volcar(h.db, todas)
+    const allRows = [...TABLAS_VERSIONADAS, 'counters', 'user_credentials']
+    const before = volcar(h.db, allRows)
     let llamadas = 0
     const quebradiza = {
-      insertarUsuario: (...args: Parameters<ServicioAcceso['insertarUsuario']>) => {
+      insertUser: (...args: Parameters<ServicioAcceso['insertUser']>) => {
         if (++llamadas === 4) throw new Error('el proceso murió')
-        return h.acceso.insertarUsuario(...args)
+        return h.access.insertUser(...args)
       },
     } as unknown as ServicioAcceso
 
     expect(() => h.cargar(TEXTO_CARTA, AHORA, quebradiza)).toThrow('el proceso murió')
     expect(llamadas).toBe(4)
     // Los tres usuarios que se alcanzaron a crear también se deshicieron, con sus PIN.
-    expect(volcar(h.db, todas)).toEqual(antes)
+    expect(volcar(h.db, allRows)).toEqual(before)
 
     const r = h.cargar(TEXTO_CARTA, MAS_TARDE)
-    expect(r.pines.map((p) => p.nombre)).toEqual(PERSONAL.map((p) => p.nombre))
-    expect(contar(h.db, 'SELECT count(*) AS n FROM usuario')).toBe(PERSONAL.length)
-    expect(contar(h.db, 'SELECT count(*) AS n FROM producto')).toBe(98)
-    const limpio = hub(ID_FIJO)
-    limpio.cargar(TEXTO_CARTA, MAS_TARDE)
-    expect(volcar(h.db, TABLAS_SEED)).toEqual(volcar(limpio.db, TABLAS_SEED))
+    expect(r.pins.map((p) => p.name)).toEqual(PERSONAL.map((p) => p.name))
+    expect(contar(h.db, 'SELECT count(*) AS n FROM users')).toBe(PERSONAL.length)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM products')).toBe(98)
+    const clean = hub(ID_FIJO)
+    clean.cargar(TEXTO_CARTA, MAS_TARDE)
+    expect(volcar(h.db, TABLAS_SEED)).toEqual(volcar(clean.db, TABLAS_SEED))
   })
 
   it('con `sinPersonal` se carga el catálogo sin crear a nadie ni entregar PIN', () => {
     const h = hub()
     const r = sembrar(
       h.db,
-      h.acceso,
+      h.access,
       {
         restauranteId: h.restauranteId,
         roles: h.roles,
-        carta: leerCarta(TEXTO_CARTA),
+        menu: leerCarta(TEXTO_CARTA),
         sinPersonal: true,
       },
       AHORA,
     )
-    expect(r.pines).toEqual([])
-    expect(r.tablas.usuario).toBeUndefined()
-    expect(contar(h.db, 'SELECT count(*) AS n FROM usuario')).toBe(0)
-    expect(contar(h.db, 'SELECT count(*) AS n FROM producto')).toBe(98)
+    expect(r.pins).toEqual([])
+    expect(r.sqlTables.users).toBeUndefined()
+    expect(contar(h.db, 'SELECT count(*) AS n FROM users')).toBe(0)
+    expect(contar(h.db, 'SELECT count(*) AS n FROM products')).toBe(98)
     // Y una corrida normal después completa el personal.
-    expect(h.cargar(TEXTO_CARTA, MAS_TARDE).pines).toHaveLength(PERSONAL.length)
+    expect(h.cargar(TEXTO_CARTA, MAS_TARDE).pins).toHaveLength(PERSONAL.length)
   })
 
   it('una configuración del restaurante inválida detiene el seed sin escribir nada', () => {
     const h = hub()
-    h.db.prepare('UPDATE restaurante SET config = \'{"campo_raro":1}\'').run()
-    const todas = [...TABLAS_VERSIONADAS, 'contador']
-    const antes = volcar(h.db, todas)
+    h.db.prepare('UPDATE restaurants SET config = \'{"odd_field":1}\'').run()
+    const allRows = [...TABLAS_VERSIONADAS, 'counters']
+    const before = volcar(h.db, allRows)
     expect(() => h.cargar()).toThrow()
-    expect(volcar(h.db, todas)).toEqual(antes)
+    expect(volcar(h.db, allRows)).toEqual(before)
   })
 
   it('un restaurante sin sede detiene el seed con un mensaje claro y sin cambiar su nombre', () => {
     const h = hub()
-    h.db.exec('DROP TRIGGER sede_sin_delete')
-    h.db.exec('DELETE FROM sede')
+    h.db.exec('DROP TRIGGER locations_no_delete')
+    h.db.exec('DELETE FROM locations')
     expect(() => h.cargar()).toThrow(/sede/)
-    expect(h.db.prepare('SELECT nombre FROM restaurante').get()?.nombre).toBe('Mi restaurante')
-    expect(contar(h.db, 'SELECT count(*) AS n FROM mesa')).toBe(0)
+    expect(h.db.prepare('SELECT name FROM restaurants').get()?.name).toBe('Mi restaurante')
+    expect(contar(h.db, 'SELECT count(*) AS n FROM dining_tables')).toBe(0)
   })
 
   it('una carta con un precio inválido falla antes de tocar la base', () => {
     const h = hub()
-    const antes = volcar(h.db, TABLAS_VERSIONADAS)
+    const before = volcar(h.db, TABLAS_VERSIONADAS)
     expect(() => h.cargar(TEXTO_CARTA.replace('precio: 44900', 'precio: 44900.5'))).toThrow()
-    expect(volcar(h.db, TABLAS_VERSIONADAS)).toEqual(antes)
+    expect(volcar(h.db, TABLAS_VERSIONADAS)).toEqual(before)
   })
 })

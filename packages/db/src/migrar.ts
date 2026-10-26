@@ -2,11 +2,11 @@ import { MIGRACIONES, type Migracion } from './migraciones'
 import { type BaseSqlite, enTransaccion } from './sqlite'
 
 const CREAR_REGISTRO = `
-  CREATE TABLE IF NOT EXISTS migracion (
+  CREATE TABLE IF NOT EXISTS migrations (
     version INTEGER NOT NULL PRIMARY KEY,
-    nombre TEXT NOT NULL,
+    name TEXT NOT NULL,
     hash TEXT NOT NULL,
-    aplicada_en TEXT NOT NULL
+    applied_at TEXT NOT NULL
   ) STRICT
 `
 
@@ -22,46 +22,49 @@ export function huellaSql(sql: string): string {
 
 export function versionActual(db: BaseSqlite): number {
   db.exec(CREAR_REGISTRO)
-  const fila = db.prepare('SELECT max(version) AS version FROM migracion').get()
+  const fila = db.prepare('SELECT max(version) AS version FROM migrations').get()
   return Number(fila?.version ?? 0)
 }
 
 function verificarNumeracion(migraciones: readonly Migracion[]) {
-  migraciones.forEach((migracion, indice) => {
-    if (migracion.version !== indice + 1) {
-      throw new Error(`Las migraciones deben ir numeradas 1, 2, 3…; falla en "${migracion.nombre}"`)
+  migraciones.forEach((migration, indice) => {
+    if (migration.version !== indice + 1) {
+      throw new Error(`Las migraciones deben ir numeradas 1, 2, 3…; falla en "${migration.name}"`)
     }
   })
 }
 
 function verificarAplicadas(db: BaseSqlite, migraciones: readonly Migracion[]) {
-  const aplicadas = db.prepare('SELECT version, nombre, hash FROM migracion ORDER BY version').all()
+  const aplicadas = db.prepare('SELECT version, name, hash FROM migrations ORDER BY version').all()
   for (const fila of aplicadas) {
-    const migracion = migraciones[Number(fila.version) - 1]
-    if (migracion && huellaSql(migracion.sql) !== fila.hash) {
+    const migration = migraciones[Number(fila.version) - 1]
+    if (migration && huellaSql(migration.sql) !== fila.hash) {
       throw new Error(
-        `La migración ${fila.version} ("${fila.nombre}") cambió después de aplicarse. Las migraciones publicadas no se editan: crea una nueva.`,
+        `La migración ${fila.version} ("${fila.name}") cambió después de aplicarse. Las migraciones publicadas no se editan: crea una nueva.`,
       )
     }
   }
 }
 
-function aplicarUna(db: BaseSqlite, migracion: Migracion, ahora: () => string): boolean {
+function aplicarUna(db: BaseSqlite, migration: Migracion, ahora: () => string): boolean {
   return enTransaccion(db, () => {
     // Se vuelve a leer dentro de la transacción: otro proceso pudo aplicarla mientras tanto.
-    if (versionActual(db) >= migracion.version) return false
-    db.exec(migracion.sql)
-    if (migracion.sinClavesForaneas) {
+    if (versionActual(db) >= migration.version) return false
+    db.exec(migration.sql)
+    if (migration.sinClavesForaneas) {
       const violaciones = db.prepare('PRAGMA foreign_key_check').all()
       if (violaciones.length > 0) {
         throw new Error(
-          `La migración ${migracion.version} deja ${violaciones.length} referencias rotas`,
+          `La migración ${migration.version} deja ${violaciones.length} referencias rotas`,
         )
       }
     }
-    db.prepare(
-      'INSERT INTO migracion (version, nombre, hash, aplicada_en) VALUES (?, ?, ?, ?)',
-    ).run(migracion.version, migracion.nombre, huellaSql(migracion.sql), ahora())
+    db.prepare('INSERT INTO migrations (version, name, hash, applied_at) VALUES (?, ?, ?, ?)').run(
+      migration.version,
+      migration.name,
+      huellaSql(migration.sql),
+      ahora(),
+    )
     return true
   })
 }
@@ -77,23 +80,23 @@ export function aplicarMigraciones(
 ): number[] {
   verificarNumeracion(migraciones)
 
-  const actual = versionActual(db)
-  if (actual > migraciones.length) {
+  const current = versionActual(db)
+  if (current > migraciones.length) {
     throw new Error(
-      `La base está en la versión ${actual}, más nueva que esta aplicación (${migraciones.length}). Actualiza el hub.`,
+      `La base está en la versión ${current}, más nueva que esta aplicación (${migraciones.length}). Actualiza el hub.`,
     )
   }
   verificarAplicadas(db, migraciones)
 
   const aplicadas: number[] = []
-  for (const migracion of migraciones.slice(actual)) {
+  for (const migration of migraciones.slice(current)) {
     // Reconstruir una tabla (el procedimiento de SQLite para cambiarla) exige apagar las claves
     // foráneas, y eso solo funciona fuera de una transacción.
-    if (migracion.sinClavesForaneas) db.exec('PRAGMA foreign_keys = OFF')
+    if (migration.sinClavesForaneas) db.exec('PRAGMA foreign_keys = OFF')
     try {
-      if (aplicarUna(db, migracion, ahora)) aplicadas.push(migracion.version)
+      if (aplicarUna(db, migration, ahora)) aplicadas.push(migration.version)
     } finally {
-      if (migracion.sinClavesForaneas) db.exec('PRAGMA foreign_keys = ON')
+      if (migration.sinClavesForaneas) db.exec('PRAGMA foreign_keys = ON')
     }
   }
   return aplicadas

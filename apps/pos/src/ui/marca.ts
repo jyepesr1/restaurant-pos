@@ -7,22 +7,22 @@ import { useState } from 'react'
 
 export type Marca = 'faro' | 'la-spritzzeria'
 
-export const MARCAS: readonly { marca: Marca; nombre: string; descripcion: string }[] = [
+export const BRANDS: readonly { brand: Marca; name: string; description: string }[] = [
   {
-    marca: 'faro',
-    nombre: 'Faro',
-    descripcion: 'El estilo del sistema: claro, verde azulado, para cualquier restaurante.',
+    brand: 'faro',
+    name: 'Faro',
+    description: 'El estilo del sistema: claro, verde azulado, para cualquier restaurante.',
   },
   {
-    marca: 'la-spritzzeria',
-    nombre: 'La Spritzzería',
-    descripcion: 'Arena y marino de día, la terraza de noche; títulos en League Gothic.',
+    brand: 'la-spritzzeria',
+    name: 'La Spritzzería',
+    description: 'Arena y marino de día, la terraza de noche; títulos en League Gothic.',
   },
 ]
 export const MARCA_POR_DEFECTO: Marca = 'faro'
-const CLAVE = 'pos-marca'
+const CLAVE = 'pos-brand'
 
-export const esMarca = (valor: unknown): valor is Marca => MARCAS.some((m) => m.marca === valor)
+export const esMarca = (value: unknown): value is Marca => BRANDS.some((m) => m.brand === value)
 
 function leer(): Marca {
   try {
@@ -34,21 +34,21 @@ function leer(): Marca {
 }
 
 /** Pone la marca en la página y la recuerda en el equipo (para pintarla antes de cargar). */
-export function aplicarMarca(marca: Marca = leer()) {
-  if (marca === 'faro') delete document.documentElement.dataset.marca
-  else document.documentElement.dataset.marca = marca
+export function aplicarMarca(brand: Marca = leer()) {
+  if (brand === 'faro') delete document.documentElement.dataset.marca
+  else document.documentElement.dataset.marca = brand
   try {
-    localStorage.setItem(CLAVE, marca)
+    localStorage.setItem(CLAVE, brand)
   } catch {
     // Sin almacenamiento: vale mientras la página esté abierta.
   }
 }
 
-export function useMarca(): [Marca, (marca: Marca) => void] {
-  const [marca, setMarca] = useState<Marca>(leer)
-  const elegir = (nueva: Marca) => {
-    aplicarMarca(nueva)
-    setMarca(nueva)
+export function useMarca(): [Marca, (brand: Marca) => void] {
+  const [brand, setMarca] = useState<Marca>(leer)
+  const select = (newOne: Marca) => {
+    aplicarMarca(newOne)
+    setMarca(newOne)
   }
-  return [marca, elegir]
+  return [brand, select]
 }

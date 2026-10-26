@@ -1,4 +1,4 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { MIGRACIONES } from './migraciones'
 import { aplicarMigraciones } from './migrar'
@@ -15,30 +15,30 @@ function base(hastaVersion: number) {
     MIGRACIONES.filter((m) => m.version <= hastaVersion),
   )
   const s = sembrar(db)
-  const impresora = insertarVersionado(db, 'impresora', s.restaurante, {
-    nombre: 'Caja',
-    conexion: 'red',
-    direccion: '192.168.1.60',
-    puerto: 9100,
-    ancho: 80,
+  const printer = insertarVersionado(db, 'printers', s.restaurant, {
+    name: 'Caja',
+    connection: 'network',
+    address: '192.168.1.60',
+    port: 9100,
+    width: 80,
   })
-  const trabajo = (campos: Record<string, string | number | null> = {}) =>
-    insertarEnTabla(db, 'trabajo_impresion', {
-      id: nuevoId(),
-      restaurante_id: s.restaurante,
-      impresora_id: impresora,
-      tipo: 'comanda',
-      contenido: '{}',
-      creado_en: AHORA,
-      ...campos,
+  const trabajo = (fields: Record<string, string | number | null> = {}) =>
+    insertarEnTabla(db, 'print_jobs', {
+      id: newId(),
+      restaurant_id: s.restaurant,
+      printer_id: printer,
+      type: 'ticket',
+      content: '{}',
+      created_at: AHORA,
+      ...fields,
     })
-  return { db, s, impresora, trabajo }
+  return { db, s, printer, trabajo }
 }
 
-const lista = (db: ReturnType<typeof abrirBase>, tipo: string) =>
+const list = (db: ReturnType<typeof abrirBase>, type: string) =>
   db
     .prepare('SELECT name FROM sqlite_master WHERE type = ? AND tbl_name = ? ORDER BY name')
-    .all(tipo, 'trabajo_impresion')
+    .all(type, 'print_jobs')
     .map((f) => String(f.name))
 
 describe('migración 8: lo que conserva', () => {
@@ -48,16 +48,16 @@ describe('migración 8: lo que conserva', () => {
     expect(aplicarMigraciones(db)).toEqual([8])
     expect(aplicarMigraciones(db)).toEqual([])
     expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
-    expect(db.prepare('SELECT count(*) AS n FROM trabajo_impresion').get()?.n).toBe(1)
+    expect(db.prepare('SELECT count(*) AS n FROM print_jobs').get()?.n).toBe(1)
   })
 
   it('conserva los índices y disparadores que tenía la tabla', () => {
-    const antes = base(7)
-    const indicesAntes = lista(antes.db, 'index').filter((n) => !n.startsWith('sqlite_'))
-    const disparadoresAntes = lista(antes.db, 'trigger')
-    aplicarMigraciones(antes.db)
-    expect(lista(antes.db, 'index').filter((n) => !n.startsWith('sqlite_'))).toEqual(indicesAntes)
-    expect(lista(antes.db, 'trigger')).toEqual(disparadoresAntes)
+    const before = base(7)
+    const indicesAntes = list(before.db, 'index').filter((n) => !n.startsWith('sqlite_'))
+    const disparadoresAntes = list(before.db, 'trigger')
+    aplicarMigraciones(before.db)
+    expect(list(before.db, 'index').filter((n) => !n.startsWith('sqlite_'))).toEqual(indicesAntes)
+    expect(list(before.db, 'trigger')).toEqual(disparadoresAntes)
     expect(disparadoresAntes.length).toBeGreaterThanOrEqual(2)
   })
 
@@ -65,75 +65,75 @@ describe('migración 8: lo que conserva', () => {
     const { db } = base(7)
     aplicarMigraciones(db)
     const sql = String(
-      db.prepare("SELECT sql FROM sqlite_master WHERE name = 'trabajo_impresion'").get()?.sql,
+      db.prepare("SELECT sql FROM sqlite_master WHERE name = 'print_jobs'").get()?.sql,
     )
     expect(sql).toMatch(/STRICT/)
-    expect(sql).toContain("'informe'")
+    expect(sql).toContain("'report'")
     expect(
-      db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'trabajo_impresion_nueva'").get(),
+      db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'print_jobs_new'").get(),
     ).toBeUndefined()
   })
 
   it('las demás restricciones siguen: estado, terminado y quien imprimió', () => {
-    const { db, impresora, trabajo } = base(7)
+    const { db, printer, trabajo } = base(7)
     aplicarMigraciones(db)
-    expect(() => trabajo({ tipo: 'informe', estado: 'raro' })).toThrow()
+    expect(() => trabajo({ type: 'report', status: 'raro' })).toThrow()
     // Pendiente con fecha de término, o terminado sin ella, no vale.
-    expect(() => trabajo({ tipo: 'informe', terminado_en: AHORA })).toThrow()
-    expect(() => trabajo({ tipo: 'informe', estado: 'descartado' })).toThrow()
+    expect(() => trabajo({ type: 'report', finished_at: AHORA })).toThrow()
+    expect(() => trabajo({ type: 'report', status: 'discarded' })).toThrow()
     // Impreso sin decir en qué impresora, tampoco.
-    expect(() => trabajo({ tipo: 'informe', estado: 'impreso', terminado_en: AHORA })).toThrow()
+    expect(() => trabajo({ type: 'report', status: 'printed', finished_at: AHORA })).toThrow()
     expect(() =>
       trabajo({
-        tipo: 'informe',
-        estado: 'impreso',
-        terminado_en: AHORA,
-        impreso_en_id: impresora,
+        type: 'report',
+        status: 'printed',
+        finished_at: AHORA,
+        printed_on_id: printer,
       }),
     ).not.toThrow()
     // El contenido es JSON.
-    expect(() => trabajo({ tipo: 'informe', contenido: 'no es json' })).toThrow()
+    expect(() => trabajo({ type: 'report', content: 'no es json' })).toThrow()
     // Una impresora que no existe.
-    expect(() => trabajo({ tipo: 'informe', impresora_id: nuevoId() })).toThrow()
+    expect(() => trabajo({ type: 'report', printer_id: newId() })).toThrow()
   })
 
   it('el mismo evento puede dar un cierre Z y una comanda en la misma impresora sin chocar', () => {
     const { db, trabajo } = base(8)
-    const evento = nuevoId()
-    trabajo({ tipo: 'informe', evento_id: evento, comanda_id: 'cierre' })
-    trabajo({ tipo: 'comanda', evento_id: evento, comanda_id: nuevoId() })
-    expect(() => trabajo({ tipo: 'informe', evento_id: evento, comanda_id: 'cierre' })).toThrow()
+    const event = newId()
+    trabajo({ type: 'report', event_id: event, ticket_id: 'closeout' })
+    trabajo({ type: 'ticket', event_id: event, ticket_id: newId() })
+    expect(() => trabajo({ type: 'report', event_id: event, ticket_id: 'closeout' })).toThrow()
     // INSERT OR REPLACE no reescribe el registro (SQLite no dispara el borrado en ese caso).
-    const id = nuevoId()
-    trabajo({ id, tipo: 'informe', comanda_id: 'cierre' })
+    const id = newId()
+    trabajo({ id, type: 'report', ticket_id: 'closeout' })
     expect(() =>
       db
         .prepare(
-          `INSERT OR REPLACE INTO trabajo_impresion (id, restaurante_id, impresora_id, tipo, contenido, creado_en)
-           SELECT id, restaurante_id, impresora_id, tipo, '{"otro":1}', creado_en FROM trabajo_impresion WHERE id = ?`,
+          `INSERT OR REPLACE INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
+           SELECT id, restaurant_id, printer_id, type, '{"other":1}', created_at FROM print_jobs WHERE id = ?`,
         )
         .run(id),
     ).toThrow(/no se reemplazan|no se borra/)
   })
 
   it('las filas viejas conservan estado, intentos, errores y fechas exactamente', () => {
-    const { db, impresora, trabajo } = base(7)
+    const { db, printer, trabajo } = base(7)
     trabajo({
-      intentos: 3,
-      ultimo_error: 'La impresora rechazó la conexión',
-      tipo: 'precuenta',
-      comanda_id: 'precuenta',
-      evento_id: nuevoId(),
+      attempts: 3,
+      last_error: 'La impresora rechazó la conexión',
+      type: 'preBill',
+      ticket_id: 'preBill',
+      event_id: newId(),
     })
     trabajo({
-      estado: 'impreso',
-      terminado_en: AHORA,
-      impreso_en_id: impresora,
-      intentos: 1,
-      contenido: '{"a":[1,2,3]}',
+      status: 'printed',
+      finished_at: AHORA,
+      printed_on_id: printer,
+      attempts: 1,
+      content: '{"a":[1,2,3]}',
     })
-    const antes = db.prepare('SELECT * FROM trabajo_impresion ORDER BY id').all()
+    const before = db.prepare('SELECT * FROM print_jobs ORDER BY id').all()
     aplicarMigraciones(db)
-    expect(db.prepare('SELECT * FROM trabajo_impresion ORDER BY id').all()).toEqual(antes)
+    expect(db.prepare('SELECT * FROM print_jobs ORDER BY id').all()).toEqual(before)
   })
 })

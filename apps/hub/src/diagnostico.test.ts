@@ -7,7 +7,7 @@ import { ARCHIVO_DIAGNOSTICOS } from './diagnostico'
 import { crearServidor } from './servidor'
 
 function siguienteMensaje(socket: WebSocket): Promise<string> {
-  return new Promise((resolver) => socket.once('message', (datos) => resolver(datos.toString())))
+  return new Promise((resolver) => socket.once('message', (data) => resolver(data.toString())))
 }
 
 describe('diagnóstico del dispositivo', () => {
@@ -26,7 +26,7 @@ describe('diagnóstico del dispositivo', () => {
   it('responde el ping por WebSocket con la misma marca', async () => {
     const { app } = crear()
     await app.ready()
-    const socket = await app.injectWS('/api/diagnostico/ws')
+    const socket = await app.injectWS('/api/diagnostics/ws')
 
     const respuesta = siguienteMensaje(socket)
     socket.send('ping:1234')
@@ -38,10 +38,10 @@ describe('diagnóstico del dispositivo', () => {
   it('envía latidos numerados mientras el socket está abierto', async () => {
     const { app } = crear(10)
     await app.ready()
-    const socket = await app.injectWS('/api/diagnostico/ws')
+    const socket = await app.injectWS('/api/diagnostics/ws')
 
-    expect(await siguienteMensaje(socket)).toBe('latido:1')
-    expect(await siguienteMensaje(socket)).toBe('latido:2')
+    expect(await siguienteMensaje(socket)).toBe('heartbeat:1')
+    expect(await siguienteMensaje(socket)).toBe('heartbeat:2')
     socket.terminate()
   })
 
@@ -50,22 +50,22 @@ describe('diagnóstico del dispositivo', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/diagnostico',
-      payload: { dispositivo: 'Pixel 7', contextoSeguro: false },
+      url: '/api/diagnostics',
+      payload: { device: 'Pixel 7', contextoSeguro: false },
     })
 
     expect(res.statusCode).toBe(200)
-    const lineas = readFileSync(join(dirDatos, ARCHIVO_DIAGNOSTICOS), 'utf8').trim().split('\n')
-    expect(lineas).toHaveLength(1)
-    const registro = JSON.parse(lineas[0] ?? '')
-    expect(registro.datos).toEqual({ dispositivo: 'Pixel 7', contextoSeguro: false })
+    const lines = readFileSync(join(dirDatos, ARCHIVO_DIAGNOSTICOS), 'utf8').trim().split('\n')
+    expect(lines).toHaveLength(1)
+    const registro = JSON.parse(lines[0] ?? '')
+    expect(registro.data).toEqual({ device: 'Pixel 7', contextoSeguro: false })
     expect(typeof registro.recibidoEn).toBe('string')
   })
 
   it('rechaza un cuerpo que no es un objeto JSON', async () => {
     const { app } = crear()
 
-    const res = await app.inject({ method: 'POST', url: '/api/diagnostico', payload: [1, 2] })
+    const res = await app.inject({ method: 'POST', url: '/api/diagnostics', payload: [1, 2] })
 
     expect(res.statusCode).toBe(400)
   })
@@ -73,19 +73,19 @@ describe('diagnóstico del dispositivo', () => {
   it('deja de guardar cuando el archivo llega al límite de tamaño', async () => {
     const dirDatos = mkdtempSync(join(tmpdir(), 'pos-datos-'))
     app = crearServidor({ diagnostico: { dirDatos, limiteBytes: 50 } })
-    const enviar = () =>
-      app?.inject({ method: 'POST', url: '/api/diagnostico', payload: { relleno: 'x'.repeat(60) } })
+    const send = () =>
+      app?.inject({ method: 'POST', url: '/api/diagnostics', payload: { relleno: 'x'.repeat(60) } })
 
-    expect((await enviar())?.statusCode).toBe(200)
-    expect((await enviar())?.statusCode).toBe(507)
-    const lineas = readFileSync(join(dirDatos, ARCHIVO_DIAGNOSTICOS), 'utf8').trim().split('\n')
-    expect(lineas).toHaveLength(1)
+    expect((await send())?.statusCode).toBe(200)
+    expect((await send())?.statusCode).toBe(507)
+    const lines = readFileSync(join(dirDatos, ARCHIVO_DIAGNOSTICOS), 'utf8').trim().split('\n')
+    expect(lines).toHaveLength(1)
   })
 
   it('sin la opción de diagnóstico no expone las rutas', async () => {
     app = crearServidor()
 
-    const res = await app.inject({ method: 'POST', url: '/api/diagnostico', payload: {} })
+    const res = await app.inject({ method: 'POST', url: '/api/diagnostics', payload: {} })
 
     expect(res.statusCode).toBe(404)
   })

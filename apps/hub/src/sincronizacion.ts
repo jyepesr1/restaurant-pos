@@ -11,28 +11,28 @@ export interface OpcionesSincronizacion {
   intervaloLatidoMs?: number
   /** Una conexión que no dice nada en este tiempo se cierra: no ocupa un lugar sin saludar. */
   esperaSaludoMs?: number
-  alFallo?: (error: unknown) => void
+  onFailure?: (error: unknown) => void
 }
 
 const ABIERTO = 1
 
 export async function rutasSincronizacion(
   app: FastifyInstance,
-  { sala, intervaloLatidoMs = 5000, esperaSaludoMs = 10_000, alFallo }: OpcionesSincronizacion,
+  { sala, intervaloLatidoMs = 5000, esperaSaludoMs = 10_000, onFailure }: OpcionesSincronizacion,
 ) {
-  const latido = setInterval(() => sala.latir(), intervaloLatidoMs)
-  app.addHook('onClose', async () => clearInterval(latido))
+  const heartbeat = setInterval(() => sala.latir(), intervaloLatidoMs)
+  app.addHook('onClose', async () => clearInterval(heartbeat))
 
   app.get('/api/sync/ws', { websocket: true }, (socket) => {
-    const enlace = sala.conectar((mensaje) => {
-      if (socket.readyState === ABIERTO) socket.send(JSON.stringify(mensaje))
+    const enlace = sala.connect((message) => {
+      if (socket.readyState === ABIERTO) socket.send(JSON.stringify(message))
     })
     const sinSaludo = setTimeout(() => socket.close(1008, 'Sin saludo'), esperaSaludoMs)
-    socket.on('message', (datos) => {
+    socket.on('message', (data) => {
       clearTimeout(sinSaludo)
       let crudo: unknown = null
       try {
-        crudo = JSON.parse(datos.toString())
+        crudo = JSON.parse(data.toString())
       } catch {
         // La sala responde "mensaje_invalido" a lo que no es un mensaje.
       }
@@ -41,13 +41,13 @@ export async function rutasSincronizacion(
       } catch (error) {
         // El almacén del hub no responde (HubSync ya rechazó lo que era culpa de un evento): se
         // corta esta conexión; el dispositivo reconecta y reenvía.
-        alFallo?.(error)
+        onFailure?.(error)
         socket.close(1011, 'Error del hub')
       }
     })
     socket.on('close', () => {
       clearTimeout(sinSaludo)
-      enlace.cerrar()
+      enlace.close()
     })
   })
 }

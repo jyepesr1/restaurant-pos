@@ -1,78 +1,78 @@
-import { type CobradoPorMedio, type CuadreTurno, nuevoId } from '@pos/core'
+import { type ChargedByMethod, newId, type ShiftReconciliation } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { conSigno, mediosDelCierre } from './Caja'
-import { nombreDeMedio, type ReglasCobro } from './cuentas'
+import { methodName, type ReglasCobro } from './cuentas'
 import { catalogoDePrueba } from './pruebas'
 
 // Los medios que pide el cierre de caja (tarea 1.8): `mediosDelCierre`, el texto con signo de lo
 // escrito y el nombre de un medio propio archivado.
 
-const SODEXO = nuevoId()
-const QR = nuevoId()
-const VIEJO = nuevoId()
+const SODEXO = newId()
+const QR = newId()
+const VIEJO = newId()
 
-const reglas = (campos: Partial<ReglasCobro> = {}): ReglasCobro => ({
-  mediosPago: ['efectivo', 'tarjeta', 'nequi'],
-  propinaSugerida: 1000,
-  redondeoModo: 'mitad_arriba',
+const reglas = (fields: Partial<ReglasCobro> = {}): ReglasCobro => ({
+  mediosPago: ['cash', 'card', 'nequi'],
+  suggestedTip: 1000,
+  redondeoModo: 'half_up',
   redondeoEfectivo: 100,
-  redondeoEfectivoModo: 'cercano_mitad_abajo',
+  cashRoundingMode: 'nearest_half_down',
   imprimePrecuenta: false,
-  ...campos,
+  ...fields,
 })
 
-const cobrado = (
-  medio: CobradoPorMedio['medio'],
-  venta = 1_000,
-  medioPropioId: string | null = null,
-): CobradoPorMedio => ({ medio, medioPropioId, venta, propina: 0, pagos: 1 })
+const charged = (
+  method: ChargedByMethod['method'],
+  sale = 1_000,
+  customMethodId: string | null = null,
+): ChargedByMethod => ({ method, customMethodId, sale, tip: 0, payments: 1 })
 
-const cuadreCon = (porMedio: CobradoPorMedio[] = []): CuadreTurno => ({
-  turnoId: nuevoId(),
-  cajaId: nuevoId(),
+const cuadreCon = (byMethod: ChargedByMethod[] = []): ShiftReconciliation => ({
+  shiftId: newId(),
+  registerId: newId(),
   base: 0,
-  abiertoEn: '2026-10-26T13:00:00Z',
-  porMedio,
-  movimientos: [],
-  arqueos: [],
-  efectivo: { cobrado: 0, devoluciones: 0, entradas: 0, salidas: 0, pagosPropinas: 0, esperado: 0 },
-  cerrado: null,
+  openedAt: '2026-10-26T13:00:00Z',
+  byMethod,
+  movements: [],
+  cashCounts: [],
+  cash: { charged: 0, refunds: 0, entries: 0, outflows: 0, tipPayouts: 0, expected: 0 },
+  closed: null,
 })
 
 const catalogoCon = (proveedores: (string | undefined)[]) =>
   catalogoDePrueba({
-    datafonos: proveedores.map((proveedor, i) => ({
-      id: nuevoId(),
-      nombre: `Datáfono ${i + 1}`,
-      ...(proveedor ? { proveedor } : {}),
+    cardTerminals: proveedores.map((provider, i) => ({
+      id: newId(),
+      name: `Datáfono ${i + 1}`,
+      ...(provider ? { provider } : {}),
     })),
   })
 
-const claves = (m: ReturnType<typeof mediosDelCierre>) => m.map((x) => x.clave)
+const keys = (m: ReturnType<typeof mediosDelCierre>) => m.map((x) => x.key)
 
 describe('mediosDelCierre: la tarjeta en una sola línea', () => {
   it('con dos datáfonos del mismo proveedor, una sola línea de tarjeta', () => {
     const m = mediosDelCierre(reglas(), cuadreCon(), catalogoCon(['bold', 'bold']))
-    expect(m.filter((x) => x.medio === 'tarjeta')).toHaveLength(1)
+    expect(m.filter((x) => x.method === 'card')).toHaveLength(1)
   })
 
   it('con tarjeta crédito y débito cobradas, sigue una sola línea de tarjeta', () => {
     const m = mediosDelCierre(
       reglas(),
-      cuadreCon([cobrado('tarjeta', 5_000), cobrado('tarjeta', 7_000)]),
+      cuadreCon([charged('card', 5_000), charged('card', 7_000)]),
       catalogoCon(['bold']),
     )
-    expect(claves(m)).toEqual(['tarjeta:', 'nequi:'])
+    expect(keys(m)).toEqual(['card:', 'nequi:'])
   })
 
   it('la clave de la tarjeta es «tarjeta:» y la del medio propio «otro:<id>»', () => {
     const m = mediosDelCierre(
-      reglas({ mediosPropios: [{ id: SODEXO, nombre: 'Sodexo' }] }),
+      reglas({ mediosPropios: [{ id: SODEXO, name: 'Sodexo' }] }),
       cuadreCon(),
       null,
     )
-    expect(claves(m)).toEqual(['tarjeta:', 'nequi:', `otro:${SODEXO}`])
-    expect(m.at(-1)).toMatchObject({ medio: 'otro', medioPropioId: SODEXO, nombre: 'Sodexo' })
+    expect(keys(m)).toEqual(['card:', 'nequi:', `other:${SODEXO}`])
+    expect(m.at(-1)).toMatchObject({ method: 'other', customMethodId: SODEXO, name: 'Sodexo' })
   })
 })
 
@@ -81,14 +81,14 @@ describe('mediosDelCierre: la etiqueta de la tarjeta', () => {
     ['bold', 'Cierre de Bold (total con propinas)'],
     ['redeban', 'Cierre de Redeban (total con propinas)'],
     ['credibanco', 'Cierre de Credibanco (total con propinas)'],
-  ])('un proveedor (%s): «Cierre de …»', (proveedor, etiqueta) => {
-    const m = mediosDelCierre(reglas(), cuadreCon(), catalogoCon([proveedor, proveedor]))
-    expect(m.find((x) => x.medio === 'tarjeta')?.etiqueta).toBe(etiqueta)
+  ])('un proveedor (%s): «Cierre de …»', (provider, etiqueta) => {
+    const m = mediosDelCierre(reglas(), cuadreCon(), catalogoCon([provider, provider]))
+    expect(m.find((x) => x.method === 'card')?.etiqueta).toBe(etiqueta)
   })
 
   it('varios proveedores: la etiqueta genérica, con la suma', () => {
     const m = mediosDelCierre(reglas(), cuadreCon(), catalogoCon(['bold', 'redeban']))
-    expect(m.find((x) => x.medio === 'tarjeta')?.etiqueta).toBe(
+    expect(m.find((x) => x.method === 'card')?.etiqueta).toBe(
       'Cierre de los datáfonos (la suma, con propinas)',
     )
   })
@@ -97,29 +97,29 @@ describe('mediosDelCierre: la etiqueta de la tarjeta', () => {
     for (const proveedores of [['wompi'], [undefined], [undefined, undefined]])
       expect(
         mediosDelCierre(reglas(), cuadreCon(), catalogoCon(proveedores)).find(
-          (x) => x.medio === 'tarjeta',
+          (x) => x.method === 'card',
         )?.etiqueta,
       ).toBe('Cierre de los datáfonos (la suma, con propinas)')
   })
 
   it('un proveedor conocido y otro sin proveedor son dos: la genérica', () => {
     const m = mediosDelCierre(reglas(), cuadreCon(), catalogoCon(['bold', undefined]))
-    expect(m.find((x) => x.medio === 'tarjeta')?.etiqueta).toContain('datáfonos')
+    expect(m.find((x) => x.method === 'card')?.etiqueta).toContain('datáfonos')
   })
 
   it('sin datáfonos o sin catálogo: la genérica', () => {
     expect(
-      mediosDelCierre(reglas(), cuadreCon(), catalogoCon([])).find((x) => x.medio === 'tarjeta')
+      mediosDelCierre(reglas(), cuadreCon(), catalogoCon([])).find((x) => x.method === 'card')
         ?.etiqueta,
     ).toBe('Cierre de los datáfonos (la suma, con propinas)')
     expect(
-      mediosDelCierre(reglas(), cuadreCon(), null).find((x) => x.medio === 'tarjeta')?.etiqueta,
+      mediosDelCierre(reglas(), cuadreCon(), null).find((x) => x.method === 'card')?.etiqueta,
     ).toBe('Cierre de los datáfonos (la suma, con propinas)')
   })
 
   it('las apps dicen «Llegó por …» con su nombre', () => {
     const m = mediosDelCierre(
-      reglas({ mediosPago: ['efectivo', 'nequi', 'daviplata', 'breb', 'transferencia'] }),
+      reglas({ mediosPago: ['cash', 'nequi', 'daviplata', 'breb', 'transfer'] }),
       cuadreCon(),
       null,
     )
@@ -134,130 +134,120 @@ describe('mediosDelCierre: la etiqueta de la tarjeta', () => {
 
 describe('mediosDelCierre: qué medios entran', () => {
   it('el efectivo nunca entra', () => {
-    const m = mediosDelCierre(reglas(), cuadreCon([cobrado('efectivo', 50_000)]), null)
-    expect(
-      m.some((x) => (x.medio as string) === 'efectivo' || x.clave.startsWith('efectivo')),
-    ).toBe(false)
+    const m = mediosDelCierre(reglas(), cuadreCon([charged('cash', 50_000)]), null)
+    expect(m.some((x) => (x.method as string) === 'cash' || x.key.startsWith('cash'))).toBe(false)
   })
 
   it('un medio apagado con pagos en el turno entra, y uno apagado sin pagos no', () => {
     // Daviplata ya no se recibe, pero se cobró en este turno.
-    const m = mediosDelCierre(reglas(), cuadreCon([cobrado('daviplata', 8_000)]), null)
-    expect(claves(m)).toEqual(['tarjeta:', 'nequi:', 'daviplata:'])
-    expect(mediosDelCierre(reglas(), cuadreCon(), null).some((x) => x.medio === 'daviplata')).toBe(
+    const m = mediosDelCierre(reglas(), cuadreCon([charged('daviplata', 8_000)]), null)
+    expect(keys(m)).toEqual(['card:', 'nequi:', 'daviplata:'])
+    expect(mediosDelCierre(reglas(), cuadreCon(), null).some((x) => x.method === 'daviplata')).toBe(
       false,
     )
   })
 
   it('un medio propio archivado con pagos entra con su nombre; sin pagos, no', () => {
-    const r = reglas({ mediosPropiosArchivados: [{ id: VIEJO, nombre: 'Bono de la casa' }] })
-    const con = mediosDelCierre(r, cuadreCon([cobrado('otro', 4_000, VIEJO)]), null)
-    expect(con.at(-1)).toMatchObject({
-      clave: `otro:${VIEJO}`,
-      nombre: 'Bono de la casa',
+    const r = reglas({ mediosPropiosArchivados: [{ id: VIEJO, name: 'Bono de la casa' }] })
+    const withIt = mediosDelCierre(r, cuadreCon([charged('other', 4_000, VIEJO)]), null)
+    expect(withIt.at(-1)).toMatchObject({
+      key: `other:${VIEJO}`,
+      name: 'Bono de la casa',
       etiqueta: 'Llegó por Bono de la casa',
     })
-    expect(mediosDelCierre(r, cuadreCon(), null).some((x) => x.medioPropioId === VIEJO)).toBe(false)
+    expect(mediosDelCierre(r, cuadreCon(), null).some((x) => x.customMethodId === VIEJO)).toBe(
+      false,
+    )
   })
 
   it('un medio propio que ya no está ni archivado (no se conoce) entra como «Otro»', () => {
-    const m = mediosDelCierre(reglas(), cuadreCon([cobrado('otro', 4_000, VIEJO)]), null)
+    const m = mediosDelCierre(reglas(), cuadreCon([charged('other', 4_000, VIEJO)]), null)
     expect(m.at(-1)).toMatchObject({
-      clave: `otro:${VIEJO}`,
-      nombre: 'Otro',
+      key: `other:${VIEJO}`,
+      name: 'Otro',
       etiqueta: 'Llegó por Otro',
     })
   })
 
   it('un «otro» sin id de medio propio no entra (un reembolso sin su pago aquí)', () => {
-    const m = mediosDelCierre(reglas(), cuadreCon([cobrado('otro', -2_000, null)]), null)
-    expect(m.some((x) => x.medio === 'otro')).toBe(false)
+    const m = mediosDelCierre(reglas(), cuadreCon([charged('other', -2_000, null)]), null)
+    expect(m.some((x) => x.method === 'other')).toBe(false)
   })
 
   it('varios medios propios: cada uno en su línea, activos primero y luego los de los pagos', () => {
     const r = reglas({
       mediosPropios: [
-        { id: SODEXO, nombre: 'Sodexo' },
-        { id: QR, nombre: 'QR del banco' },
+        { id: SODEXO, name: 'Sodexo' },
+        { id: QR, name: 'QR del banco' },
       ],
     })
     const m = mediosDelCierre(
       r,
-      cuadreCon([cobrado('otro', 1_000, VIEJO), cobrado('otro', 1_000, QR)]),
+      cuadreCon([charged('other', 1_000, VIEJO), charged('other', 1_000, QR)]),
       null,
     )
-    expect(claves(m)).toEqual([
-      'tarjeta:',
-      'nequi:',
-      `otro:${SODEXO}`,
-      `otro:${QR}`,
-      `otro:${VIEJO}`,
-    ])
+    expect(keys(m)).toEqual(['card:', 'nequi:', `other:${SODEXO}`, `other:${QR}`, `other:${VIEJO}`])
   })
 
   it('sin repetidos: un medio que está en las reglas y en los pagos sale una vez', () => {
     const m = mediosDelCierre(
       reglas(),
-      cuadreCon([cobrado('nequi'), cobrado('nequi', 3_000), cobrado('tarjeta')]),
+      cuadreCon([charged('nequi'), charged('nequi', 3_000), charged('card')]),
       null,
     )
-    expect(claves(m)).toEqual(['tarjeta:', 'nequi:'])
+    expect(keys(m)).toEqual(['card:', 'nequi:'])
   })
 
   it('sin reglas de cobro (un hub viejo): solo los medios de los pagos', () => {
     expect(mediosDelCierre(null, cuadreCon(), null)).toEqual([])
-    expect(claves(mediosDelCierre(null, cuadreCon([cobrado('nequi')]), null))).toEqual(['nequi:'])
+    expect(keys(mediosDelCierre(null, cuadreCon([charged('nequi')]), null))).toEqual(['nequi:'])
   })
 
   it('el orden de las reglas manda: los medios en el orden en que el restaurante los recibe', () => {
-    const m = mediosDelCierre(
-      reglas({ mediosPago: ['nequi', 'efectivo', 'tarjeta'] }),
-      cuadreCon(),
-      null,
-    )
-    expect(claves(m)).toEqual(['nequi:', 'tarjeta:'])
+    const m = mediosDelCierre(reglas({ mediosPago: ['nequi', 'cash', 'card'] }), cuadreCon(), null)
+    expect(keys(m)).toEqual(['nequi:', 'card:'])
   })
 
   it('los nombres de cada medio', () => {
     const m = mediosDelCierre(
-      reglas({ mediosPago: ['efectivo', 'tarjeta', 'nequi', 'bono'] }),
+      reglas({ mediosPago: ['cash', 'card', 'nequi', 'voucher'] }),
       cuadreCon(),
       null,
     )
-    expect(m.map((x) => x.nombre)).toEqual(['Tarjeta', 'Nequi', 'Bono'])
+    expect(m.map((x) => x.name)).toEqual(['Tarjeta', 'Nequi', 'Bono'])
   })
 })
 
 describe('nombreDeMedio: medios propios archivados', () => {
   it('un medio propio activo, uno archivado y uno desconocido', () => {
     const r = reglas({
-      mediosPropios: [{ id: SODEXO, nombre: 'Sodexo' }],
-      mediosPropiosArchivados: [{ id: VIEJO, nombre: 'Bono de la casa' }],
+      mediosPropios: [{ id: SODEXO, name: 'Sodexo' }],
+      mediosPropiosArchivados: [{ id: VIEJO, name: 'Bono de la casa' }],
     })
-    expect(nombreDeMedio('otro', SODEXO, r)).toBe('Sodexo')
-    expect(nombreDeMedio('otro', VIEJO, r)).toBe('Bono de la casa')
-    expect(nombreDeMedio('otro', QR, r)).toBe('Otro')
-    expect(nombreDeMedio('otro', null, r)).toBe('Otro')
-    expect(nombreDeMedio('otro', undefined, null)).toBe('Otro')
+    expect(methodName('other', SODEXO, r)).toBe('Sodexo')
+    expect(methodName('other', VIEJO, r)).toBe('Bono de la casa')
+    expect(methodName('other', QR, r)).toBe('Otro')
+    expect(methodName('other', null, r)).toBe('Otro')
+    expect(methodName('other', undefined, null)).toBe('Otro')
   })
 
   it('un hub que no manda los archivados: el medio se llama «Otro»', () => {
     expect(
-      nombreDeMedio('otro', VIEJO, reglas({ mediosPropios: [{ id: SODEXO, nombre: 'Sodexo' }] })),
+      methodName('other', VIEJO, reglas({ mediosPropios: [{ id: SODEXO, name: 'Sodexo' }] })),
     ).toBe('Otro')
   })
 
   it('los medios estándar no dependen de los propios', () => {
-    expect(nombreDeMedio('nequi', null, reglas())).toBe('Nequi')
-    expect(nombreDeMedio('tarjeta', null, null)).toBe('Tarjeta')
+    expect(methodName('nequi', null, reglas())).toBe('Nequi')
+    expect(methodName('card', null, null)).toBe('Tarjeta')
   })
 
   it('un id que está en los dos (activo y archivado): gana el activo', () => {
     const r = reglas({
-      mediosPropios: [{ id: SODEXO, nombre: 'Sodexo' }],
-      mediosPropiosArchivados: [{ id: SODEXO, nombre: 'Sodexo viejo' }],
+      mediosPropios: [{ id: SODEXO, name: 'Sodexo' }],
+      mediosPropiosArchivados: [{ id: SODEXO, name: 'Sodexo viejo' }],
     })
-    expect(nombreDeMedio('otro', SODEXO, r)).toBe('Sodexo')
+    expect(methodName('other', SODEXO, r)).toBe('Sodexo')
   })
 })
 
@@ -278,8 +268,8 @@ describe('conSigno: lo escrito en el cierre de un medio', () => {
     ['abc', 0],
     ['5-000', 5_000],
     ['-$ 2.500', -2_500],
-  ])('«%s» → %s', (texto, esperado) => {
-    expect(conSigno(texto)).toBe(esperado)
+  ])('«%s» → %s', (text, expected) => {
+    expect(conSigno(text)).toBe(expected)
   })
 
   it('nunca da -0', () => {

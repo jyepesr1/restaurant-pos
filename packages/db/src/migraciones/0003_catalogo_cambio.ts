@@ -1,6 +1,6 @@
 // Tarea 1.1: historial del catálogo (`CatalogoCambiado`, docs/MODELO_DATOS.md). Cada cambio de
 // un registro del catálogo deja una fila con cómo quedó (y cómo estaba), en la versión que tomó
-// del contador. Con él, el hub sabe qué precio valía en la `catalogo_version` que copió un ítem
+// del contador. Con él, el hub sabe qué precio valía en la `catalog_version` que copió un ítem
 // (docs/DINERO.md#precio-copiado). Solo se agregan filas.
 //
 // La migración llena el historial con el estado actual de cada registro: lo anterior a esta
@@ -8,26 +8,26 @@
 
 const COLUMNAS_COMUNES = [
   'id',
-  'restaurante_id',
-  'creado_en',
-  'actualizado_en',
+  'restaurant_id',
+  'created_at',
+  'updated_at',
   'version',
-  'usuario_id',
-  'dispositivo_id',
-  'activo',
+  'user_id',
+  'device_id',
+  'active',
 ]
 
 /** Columnas de cada tabla del catálogo tal como están en la versión 2 del esquema. */
 const COLUMNAS: Record<string, string[]> = {
-  impuesto: ['nombre', 'tipo', 'tarifa'],
-  estacion: ['nombre', 'orden'],
-  categoria: ['nombre', 'orden', 'estacion_id', 'foto'],
-  producto: ['categoria_id', 'nombre', 'descripcion', 'precio', 'impuesto_id', 'foto', 'favorito'],
-  variante: ['producto_id', 'nombre', 'precio', 'orden'],
-  grupo_modificador: ['nombre', 'minimo', 'maximo'],
-  producto_grupo_modificador: ['producto_id', 'grupo_id', 'orden'],
-  modificador: ['grupo_id', 'nombre', 'precio_extra', 'orden'],
-  producto_estacion: ['producto_id', 'estacion_id'],
+  taxes: ['name', 'type', 'rate'],
+  stations: ['name', 'position'],
+  categories: ['name', 'position', 'station_id', 'photo'],
+  products: ['category_id', 'name', 'description', 'price', 'tax_id', 'photo', 'favorite'],
+  variants: ['product_id', 'name', 'price', 'position'],
+  modifier_groups: ['name', 'minimum', 'maximum'],
+  product_modifier_groups: ['product_id', 'group_id', 'position'],
+  modifiers: ['group_id', 'name', 'extra_price', 'position'],
+  product_stations: ['product_id', 'station_id'],
 }
 
 const ENTIDADES = Object.keys(COLUMNAS)
@@ -35,35 +35,35 @@ const ENTIDADES = Object.keys(COLUMNAS)
   .join(', ')
 
 const copiarEstadoActual = (tabla: string, columnas: string[]) => `
-INSERT INTO catalogo_cambio
-  (restaurante_id, version, entidad, registro_id, antes, despues, usuario_id, dispositivo_id, hecho_en)
-SELECT restaurante_id, version, '${tabla}', id, NULL,
+INSERT INTO catalog_changes
+  (restaurant_id, version, entity, record_id, before, after, user_id, device_id, done_at)
+SELECT restaurant_id, version, '${tabla}', id, NULL,
   json_object(${[...COLUMNAS_COMUNES, ...columnas].map((c) => `'${c}', ${c}`).join(', ')}),
-  usuario_id, dispositivo_id, actualizado_en
+  user_id, device_id, updated_at
 FROM ${tabla};`
 
 export const sql = `
-CREATE TABLE catalogo_cambio (
-  restaurante_id TEXT NOT NULL REFERENCES restaurante (id),
+CREATE TABLE catalog_changes (
+  restaurant_id TEXT NOT NULL REFERENCES restaurants (id),
   version INTEGER NOT NULL CHECK (version >= 0),
-  entidad TEXT NOT NULL CHECK (entidad IN (${ENTIDADES})),
-  registro_id TEXT NOT NULL CHECK (length(registro_id) = 26),
-  antes TEXT CHECK (antes IS NULL OR json_valid(antes)),
-  despues TEXT NOT NULL CHECK (json_valid(despues)),
-  usuario_id TEXT,
-  dispositivo_id TEXT,
-  hecho_en TEXT NOT NULL,
-  PRIMARY KEY (restaurante_id, version)
+  entity TEXT NOT NULL CHECK (entity IN (${ENTIDADES})),
+  record_id TEXT NOT NULL CHECK (length(record_id) = 26),
+  before TEXT CHECK (before IS NULL OR json_valid(before)),
+  after TEXT NOT NULL CHECK (json_valid(after)),
+  user_id TEXT,
+  device_id TEXT,
+  done_at TEXT NOT NULL,
+  PRIMARY KEY (restaurant_id, version)
 ) STRICT;
-CREATE INDEX catalogo_cambio_por_registro ON catalogo_cambio (restaurante_id, registro_id, version);
+CREATE INDEX catalog_changes_by_record ON catalog_changes (restaurant_id, record_id, version);
 
-CREATE TRIGGER catalogo_cambio_sin_update BEFORE UPDATE ON catalogo_cambio
+CREATE TRIGGER catalog_changes_no_update BEFORE UPDATE ON catalog_changes
 BEGIN SELECT RAISE(ABORT, 'catalogo_cambio: los registros no se modifican'); END;
-CREATE TRIGGER catalogo_cambio_sin_delete BEFORE DELETE ON catalogo_cambio
+CREATE TRIGGER catalog_changes_no_delete BEFORE DELETE ON catalog_changes
 BEGIN SELECT RAISE(ABORT, 'catalogo_cambio: los registros no se borran'); END;
-CREATE TRIGGER catalogo_cambio_sin_reemplazo BEFORE INSERT ON catalogo_cambio
+CREATE TRIGGER catalog_changes_no_replace BEFORE INSERT ON catalog_changes
 WHEN EXISTS (
-  SELECT 1 FROM catalogo_cambio WHERE restaurante_id = NEW.restaurante_id AND version = NEW.version
+  SELECT 1 FROM catalog_changes WHERE restaurant_id = NEW.restaurant_id AND version = NEW.version
 )
 BEGIN SELECT RAISE(ABORT, 'catalogo_cambio: los registros no se reemplazan'); END;
 ${Object.entries(COLUMNAS)
@@ -72,6 +72,6 @@ ${Object.entries(COLUMNAS)
 
 -- Desde qué versión hay historial completo: para una versión anterior solo se conoce el estado
 -- que se copió aquí.
-INSERT INTO contador (restaurante_id, nombre, valor)
-SELECT restaurante_id, 'historial_desde', valor FROM contador WHERE nombre = 'catalogo';
+INSERT INTO counters (restaurant_id, name, value)
+SELECT restaurant_id, 'history_since', value FROM counters WHERE name = 'catalog';
 `

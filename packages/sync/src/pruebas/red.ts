@@ -1,4 +1,4 @@
-import { type EventoNuevo, nuevoId, type TipoEventoPedido } from '@pos/core'
+import { type NewEvent, newId, type OrderEventType } from '@pos/core'
 import { AlmacenDispositivoMemoria } from '../dispositivo/almacen'
 import { ClienteSync } from '../dispositivo/cliente'
 import type { Conexion } from '../hub/hub'
@@ -9,9 +9,9 @@ import type { MensajeDispositivo, MensajeHub } from '../protocolo'
 // con mensajes que se pueden cortar, perder o duplicar, y un hub que se puede caer y volver.
 
 type Regla = {
-  direccion: 'al_hub' | 'al_dispositivo'
-  tipo: string
-  accion: 'perder' | 'duplicar'
+  direction: 'to_hub' | 'to_device'
+  type: string
+  action: 'drop' | 'duplicate'
   veces: number
 }
 
@@ -19,35 +19,35 @@ type Regla = {
 const porLaRed = <T>(m: T): T => JSON.parse(JSON.stringify(m))
 
 export class Nodo {
-  readonly nombre: string
+  readonly name: string
   readonly dispositivoId: string
-  readonly usuarioId = nuevoId()
+  readonly userId = newId()
   readonly cliente: ClienteSync
   readonly almacen: AlmacenDispositivoMemoria
   /** Desfase del reloj del dispositivo, en ms. */
   desfaseMs = 0
   aHub: MensajeDispositivo[] = []
   aDispositivo: MensajeHub[] = []
-  enlace: { recibir: (crudo: unknown) => void; cerrar: () => void } | null = null
+  enlace: { recibir: (crudo: unknown) => void; close: () => void } | null = null
   reglas: Regla[] = []
-  private readonly red: RedSimulada
+  private readonly network: RedSimulada
 
   constructor(
-    red: RedSimulada,
-    nombre: string,
+    network: RedSimulada,
+    name: string,
     token: string,
     almacen = new AlmacenDispositivoMemoria(),
   ) {
-    this.red = red
-    this.nombre = nombre
-    this.dispositivoId = red.tokens.get(token)?.dispositivoId ?? nuevoId()
+    this.network = network
+    this.name = name
+    this.dispositivoId = network.tokens.get(token)?.dispositivoId ?? newId()
     this.almacen = almacen
     this.cliente = new ClienteSync({
       almacen,
       token,
       versionApp: 'pruebas',
-      ahora: () => this.red.ahora() + this.desfaseMs,
-      enviar: (m) => {
+      ahora: () => this.network.ahora() + this.desfaseMs,
+      send: (m) => {
         if (this.enlace) this.aHub.push(porLaRed(m))
       },
     })
@@ -57,13 +57,13 @@ export class Nodo {
     return this.enlace !== null
   }
 
-  async conectar() {
-    this.enlace = this.red.sala.conectar((m) => this.aDispositivo.push(porLaRed(m)))
+  async connect() {
+    this.enlace = this.network.sala.connect((m) => this.aDispositivo.push(porLaRed(m)))
     await this.cliente.alConectar()
   }
 
-  desconectar() {
-    this.enlace?.cerrar()
+  disconnect() {
+    this.enlace?.close()
     this.enlace = null
     this.aHub = []
     this.aDispositivo = []
@@ -71,50 +71,50 @@ export class Nodo {
   }
 
   /** Crea y registra un evento como lo haría la app del dispositivo. */
-  async crear<T extends TipoEventoPedido>(
-    pedidoId: string,
-    tipo: T,
-    datos: Extract<EventoNuevo, { tipo: T }>['datos'],
-    extras: Partial<EventoNuevo> = {},
-  ): Promise<EventoNuevo> {
-    const hora = new Date(this.red.ahora() + this.desfaseMs).toISOString()
+  async crear<T extends OrderEventType>(
+    orderId: string,
+    type: T,
+    data: Extract<NewEvent, { type: T }>['data'],
+    extras: Partial<NewEvent> = {},
+  ): Promise<NewEvent> {
+    const time = new Date(this.network.ahora() + this.desfaseMs).toISOString()
     const estimada = this.cliente.horaEstimadaHub()
-    const evento = {
-      id: nuevoId(),
-      tipo,
-      version_esquema: 1,
-      agregado_tipo: 'pedido',
-      agregado_id: pedidoId,
-      relacionados: [],
-      datos,
-      sesion_id: null,
-      usuario_id: this.usuarioId,
-      dispositivo_id: this.dispositivoId,
-      autorizacion_id: null,
-      motivo: null,
-      hora_dispositivo: hora,
-      hora_estimada_hub: estimada,
-      secuencia_base: await this.cliente.conocido(),
+    const event = {
+      id: newId(),
+      type,
+      schema_version: 1,
+      aggregate_type: 'order',
+      aggregate_id: orderId,
+      related: [],
+      data,
+      session_id: null,
+      user_id: this.userId,
+      device_id: this.dispositivoId,
+      authorization_id: null,
+      reason: null,
+      device_time: time,
+      hub_estimated_time: estimada,
+      base_sequence: await this.cliente.conocido(),
       ...extras,
-    } as EventoNuevo
-    const r = await this.cliente.registrar(evento)
-    if (!r.ok) throw new Error(`Evento inválido en la prueba: ${r.errores.join('; ')}`)
-    return evento
+    } as NewEvent
+    const r = await this.cliente.record(event)
+    if (!r.ok) throw new Error(`Evento inválido en la prueba: ${r.errors.join('; ')}`)
+    return event
   }
 
   /** La próxima vez que pase un mensaje de ese tipo, se pierde o se duplica. */
-  regla(direccion: Regla['direccion'], tipo: string, accion: Regla['accion'], veces = 1) {
-    this.reglas.push({ direccion, tipo, accion, veces })
+  rule(direction: Regla['direction'], type: string, action: Regla['action'], veces = 1) {
+    this.reglas.push({ direction, type, action, veces })
   }
 
   /** Aplica las reglas a un mensaje: cuántas copias se entregan (0, 1 o 2). */
-  copias(direccion: Regla['direccion'], tipo: string): number {
-    const regla = this.reglas.find(
-      (r) => r.direccion === direccion && r.tipo === tipo && r.veces > 0,
+  copias(direction: Regla['direction'], type: string): number {
+    const rule = this.reglas.find(
+      (r) => r.direction === direction && r.type === type && r.veces > 0,
     )
-    if (!regla) return 1
-    regla.veces -= 1
-    return regla.accion === 'perder' ? 0 : 2
+    if (!rule) return 1
+    rule.veces -= 1
+    return rule.action === 'drop' ? 0 : 2
   }
 }
 
@@ -122,7 +122,7 @@ export class RedSimulada {
   sala: SalaSync
   readonly nodos: Nodo[] = []
   readonly tokens = new Map<string, Conexion>()
-  private reloj = Date.parse('2026-10-24T20:00:00.000Z')
+  private clock = Date.parse('2026-10-24T20:00:00.000Z')
   /** Se llama si el hub lanza al procesar un mensaje: simula que el proceso del hub se cayó. */
   alCaerHub: (() => SalaSync) | null = null
 
@@ -130,86 +130,86 @@ export class RedSimulada {
     this.sala = sala
   }
 
-  ahora = () => this.reloj
-  horaIso = () => new Date(this.reloj).toISOString()
+  ahora = () => this.clock
+  horaIso = () => new Date(this.clock).toISOString()
   avanzar(ms: number) {
-    this.reloj += ms
+    this.clock += ms
   }
 
   /** Autenticador para el hub de las pruebas. */
-  autenticar = (token: string): Conexion | null => this.tokens.get(token) ?? null
+  authenticate = (token: string): Conexion | null => this.tokens.get(token) ?? null
 
-  dispositivo(nombre: string, almacen?: AlmacenDispositivoMemoria): Nodo {
-    const token = `token-${nombre}`
+  device(name: string, almacen?: AlmacenDispositivoMemoria): Nodo {
+    const token = `token-${name}`
     if (!this.tokens.has(token))
-      this.tokens.set(token, { dispositivoId: nuevoId(), tipo: 'mesero', revocadoEn: null })
-    const nodo = new Nodo(this, nombre, token, almacen)
-    this.nodos.push(nodo)
-    return nodo
+      this.tokens.set(token, { dispositivoId: newId(), type: 'waiter', revocadoEn: null })
+    const node = new Nodo(this, name, token, almacen)
+    this.nodos.push(node)
+    return node
   }
 
   /** Entrega un mensaje al hub (con las reglas de pérdida y duplicado). Si el hub lanza, se cae. */
-  private entregarAlHub(nodo: Nodo, m: MensajeDispositivo) {
-    for (let i = 0; i < nodo.copias('al_hub', m.tipo); i++) {
+  private entregarAlHub(node: Nodo, m: MensajeDispositivo) {
+    for (let i = 0; i < node.copias('to_hub', m.type); i++) {
       try {
-        nodo.enlace?.recibir(m)
+        node.enlace?.recibir(m)
       } catch {
-        this.caerHub()
+        this.crashHub()
         return
       }
     }
   }
 
-  private async entregarAlDispositivo(nodo: Nodo, m: MensajeHub) {
-    for (let i = 0; i < nodo.copias('al_dispositivo', m.tipo); i++) await nodo.cliente.recibir(m)
+  private async entregarAlDispositivo(node: Nodo, m: MensajeHub) {
+    for (let i = 0; i < node.copias('to_device', m.type); i++) await node.cliente.recibir(m)
   }
 
   /**
    * Entrega un solo mensaje en vuelo (el primero, o el de la posición `indice`, lo que permite
    * reordenar). Devuelve `false` si no había ninguno.
    */
-  async entregarUno(nodo: Nodo, direccion: Regla['direccion'], indice = 0): Promise<boolean> {
-    if (direccion === 'al_hub') {
-      if (!nodo.enlace || nodo.aHub.length === 0) return false
-      const [m] = nodo.aHub.splice(indice % nodo.aHub.length, 1)
-      this.entregarAlHub(nodo, m as MensajeDispositivo)
+  async entregarUno(node: Nodo, direction: Regla['direction'], indice = 0): Promise<boolean> {
+    if (direction === 'to_hub') {
+      if (!node.enlace || node.aHub.length === 0) return false
+      const [m] = node.aHub.splice(indice % node.aHub.length, 1)
+      this.entregarAlHub(node, m as MensajeDispositivo)
       return true
     }
-    if (nodo.aDispositivo.length === 0) return false
-    const [m] = nodo.aDispositivo.splice(indice % nodo.aDispositivo.length, 1)
-    await this.entregarAlDispositivo(nodo, m as MensajeHub)
+    if (node.aDispositivo.length === 0) return false
+    const [m] = node.aDispositivo.splice(indice % node.aDispositivo.length, 1)
+    await this.entregarAlDispositivo(node, m as MensajeHub)
     return true
   }
 
   /** Entrega mensajes en ambos sentidos hasta que no quede ninguno en vuelo. */
-  async estabilizar(maxRondas = 1000) {
+  async settle(maxRondas = 1000) {
     for (let ronda = 0; ronda < maxRondas; ronda++) {
       let hubo = false
-      for (const nodo of this.nodos) {
-        while (nodo.aHub.length > 0 && nodo.enlace) {
+      for (const node of this.nodos) {
+        while (node.aHub.length > 0 && node.enlace) {
           hubo = true
-          this.entregarAlHub(nodo, nodo.aHub.shift() as MensajeDispositivo)
+          this.entregarAlHub(node, node.aHub.shift() as MensajeDispositivo)
         }
-        while (nodo.aDispositivo.length > 0) {
+        while (node.aDispositivo.length > 0) {
           hubo = true
-          await this.entregarAlDispositivo(nodo, nodo.aDispositivo.shift() as MensajeHub)
+          await this.entregarAlDispositivo(node, node.aDispositivo.shift() as MensajeHub)
         }
       }
-      await Promise.all(this.nodos.map((n) => n.cliente.listo()))
+      await Promise.all(this.nodos.map((n) => n.cliente.ready()))
       if (!hubo) return
     }
     throw new Error('La red no se estabilizó')
   }
 
   /** El proceso del hub se cae: todas las conexiones se cortan y vuelve con lo que guardó. */
-  caerHub() {
-    for (const nodo of this.nodos) nodo.desconectar()
+  crashHub() {
+    for (const node of this.nodos) node.disconnect()
     if (!this.alCaerHub) throw new Error('El hub se cayó y la prueba no dijo cómo levantarlo')
     this.sala = this.alCaerHub()
   }
 
   async conectarTodos() {
-    for (const nodo of this.nodos) if (!nodo.enLinea) await nodo.conectar()
-    await this.estabilizar()
+    for (const node of this.nodos) if (!node.enLinea) await node.connect()
+    await this.settle()
   }
 }

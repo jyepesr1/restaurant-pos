@@ -1,4 +1,4 @@
-import { agregadoDe, cuadreDeOtrosMedios, nuevoId } from '@pos/core'
+import { aggregateOf, newId, otherMethodsReconciliation } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { AlmacenSqlite } from './hub/almacen-sqlite'
 import { HubSync } from './hub/hub'
@@ -11,347 +11,347 @@ import type { Nodo } from './pruebas/red'
 // sin turno o en el de otra caja, los cuatro rechazos del cierre, lo que pasa después de cerrar, el
 // reinicio con un turno a medias y el multirestaurante.
 
-const SODEXO = nuevoId()
-const DATAFONO = nuevoId()
+const SODEXO = newId()
+const DATAFONO = newId()
 const REGLAS = {
-  multiplo: 100,
-  modo: 'cercano_mitad_abajo',
-  medios: ['efectivo', 'tarjeta', 'nequi', 'daviplata', 'breb', 'transferencia'],
+  multiple: 100,
+  mode: 'nearest_half_down',
+  medios: ['cash', 'card', 'nequi', 'daviplata', 'breb', 'transfer'],
   mediosPropios: [SODEXO],
-  datafonos: [DATAFONO],
+  cardTerminals: [DATAFONO],
 }
 
-const conexionDe = (m: Montaje, nodo: Nodo) => {
-  const conexion = m.red.tokens.get(`token-${nodo.nombre}`)
-  if (!conexion) throw new Error(`Sin token para ${nodo.nombre}`)
-  return conexion
+const conexionDe = (m: Montaje, node: Nodo) => {
+  const connection = m.network.tokens.get(`token-${node.name}`)
+  if (!connection) throw new Error(`Sin token para ${node.name}`)
+  return connection
 }
 
-const motivo = (r: unknown) => {
-  const x = r as { estado: string; motivo?: string }
-  return x.estado === 'rechazado' ? x.motivo : x.estado
+const reason = (r: unknown) => {
+  const x = r as { status: string; reason?: string }
+  return x.status === 'rejected' ? x.reason : x.status
 }
 
-function entorno(opciones: { umbral?: number } = {}) {
+function entorno(options: { umbral?: number } = {}) {
   const m = montar()
-  const caja = m.red.dispositivo('caja')
-  const caja2 = m.red.dispositivo('caja2')
-  const ana = m.red.dispositivo('ana')
-  const cfg = { umbral: opciones.umbral ?? 1000 }
+  const register = m.network.device('register')
+  const register2 = m.network.device('register2')
+  const ana = m.network.device('ana')
+  const cfg = { umbral: options.umbral ?? 1000 }
   const nuevoHub = () =>
     new HubSync(m.almacen, {
       restauranteId: m.restauranteId,
-      zonaHoraria: 'America/Bogota',
+      timeZone: 'America/Bogota',
       inicioDiaOperativo: '06:00',
-      acceso: accesoLibre,
+      access: accesoLibre,
       instancia: 'hub-1',
-      reloj: m.red.horaIso,
+      clock: m.network.horaIso,
       reglasCobro: () => ({ ...REGLAS, umbralDiferencia: cfg.umbral }),
     })
-  const estado = { hub: nuevoHub() }
+  const status = { hub: nuevoHub() }
 
   const crudo = (
-    nodo: Nodo,
-    tipo: string,
-    agregado: string,
-    datos: unknown,
+    node: Nodo,
+    type: string,
+    aggregate: string,
+    data: unknown,
     extras: Record<string, unknown> = {},
   ): Record<string, unknown> => ({
-    id: nuevoId(),
-    tipo,
-    version_esquema: 1,
-    agregado_tipo: agregadoDe(tipo as never),
-    agregado_id: agregado,
-    relacionados: [],
-    datos,
-    sesion_id: null,
-    usuario_id: nodo.usuarioId,
-    dispositivo_id: nodo.dispositivoId,
-    autorizacion_id: null,
-    motivo: tipo === 'PagoAnulado' || tipo === 'ReembolsoRegistrado' ? 'Prueba' : null,
-    hora_dispositivo: AHORA,
-    hora_estimada_hub: AHORA,
-    secuencia_base: m.almacen.maxSecuencia(),
+    id: newId(),
+    type,
+    schema_version: 1,
+    aggregate_type: aggregateOf(type as never),
+    aggregate_id: aggregate,
+    related: [],
+    data,
+    session_id: null,
+    user_id: node.userId,
+    device_id: node.dispositivoId,
+    authorization_id: null,
+    reason: type === 'PaymentVoided' || type === 'RefundRecorded' ? 'Prueba' : null,
+    device_time: AHORA,
+    hub_estimated_time: AHORA,
+    base_sequence: m.almacen.maxSecuencia(),
     ...extras,
   })
-  const enviar = (nodo: Nodo, eventos: Record<string, unknown>[], hub = estado.hub) =>
-    hub.recibirLote(conexionDe(m, nodo), eventos)
-  const uno = (nodo: Nodo, evento: Record<string, unknown>, hub = estado.hub) =>
-    enviar(nodo, [evento], hub).resultados[0]
+  const send = (node: Nodo, events: Record<string, unknown>[], hub = status.hub) =>
+    hub.recibirLote(conexionDe(m, node), events)
+  const one = (node: Nodo, event: Record<string, unknown>, hub = status.hub) =>
+    send(node, [event], hub).resultados[0]
 
-  const abrirTurno = (nodo: Nodo, base = 100_000, turno = nuevoId()) => {
-    const resultado = uno(
-      nodo,
-      crudo(nodo, 'TurnoAbierto', turno, { caja_id: nodo.dispositivoId, base }),
+  const abrirTurno = (node: Nodo, base = 100_000, shift = newId()) => {
+    const result = one(
+      node,
+      crudo(node, 'ShiftOpened', shift, { register_id: node.dispositivoId, base }),
     )
-    expect(motivo(resultado)).toBe('confirmado')
-    return turno
+    expect(reason(result)).toBe('confirmed')
+    return shift
   }
-  const abrirPedido = (nodo: Nodo, precio = 40_900) => {
-    const pedido = nuevoId()
-    uno(
-      nodo,
-      crudo(nodo, 'PedidoAbierto', pedido, { canal: 'salon', mesa_id: null, comensales: 2 }),
-    )
-    uno(nodo, crudo(nodo, 'ItemAgregado', pedido, item(precio)))
-    return pedido
+  const abrirPedido = (node: Nodo, price = 40_900) => {
+    const order = newId()
+    one(node, crudo(node, 'OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 }))
+    one(node, crudo(node, 'ItemAdded', order, item(price)))
+    return order
   }
   /** Efectivo parcial (el saldo no queda en 0): sin ajuste de redondeo. */
-  const pagoEf = (turno: string, monto: number, propina = 0) => ({
-    pago_id: nuevoId(),
-    cuenta_id: null,
-    turno_caja_id: turno,
-    medio: 'efectivo',
-    monto,
-    propina,
-    recibido: monto + propina,
-    cambio: 0,
-    ajuste_redondeo: 0,
-    redondeo: null,
-    datafono: null,
-    referencia_cobro: null,
+  const pagoEf = (shift: string, amount: number, tip = 0) => ({
+    payment_id: newId(),
+    check_id: null,
+    register_shift_id: shift,
+    method: 'cash',
+    amount,
+    tip,
+    tendered: amount + tip,
+    change: 0,
+    rounding_adjustment: 0,
+    rounding: null,
+    cardTerminal: null,
+    charge_reference: null,
   })
-  const pagoNequi = (turno: string, monto: number, propina = 0) => ({
-    ...pagoEf(turno, monto, propina),
-    medio: 'nequi',
-    recibido: null,
-    cambio: null,
+  const pagoNequi = (shift: string, amount: number, tip = 0) => ({
+    ...pagoEf(shift, amount, tip),
+    method: 'nequi',
+    tendered: null,
+    change: null,
   })
-  const pagoPropio = (turno: string, monto: number) => ({
-    ...pagoNequi(turno, monto),
-    medio: 'otro',
-    medio_propio_id: SODEXO,
+  const pagoPropio = (shift: string, amount: number) => ({
+    ...pagoNequi(shift, amount),
+    method: 'other',
+    custom_method_id: SODEXO,
   })
-  const cobrar = (nodo: Nodo, pedido: string, datos: { pago_id: string }) => {
-    const r = uno(nodo, crudo(nodo, 'PagoRegistrado', pedido, datos))
-    expect(motivo(r)).toBe('confirmado')
-    return datos.pago_id
+  const cobrar = (node: Nodo, order: string, data: { payment_id: string }) => {
+    const r = one(node, crudo(node, 'PaymentRecorded', order, data))
+    expect(reason(r)).toBe('confirmed')
+    return data.payment_id
   }
-  const movimiento = (
-    nodo: Nodo,
-    turno: string,
-    tipo: 'entrada' | 'salida' | 'pago_propinas',
-    monto: number,
+  const movement = (
+    node: Nodo,
+    shift: string,
+    type: 'entry' | 'output' | 'tip_payout',
+    amount: number,
   ) =>
-    uno(
-      nodo,
-      crudo(nodo, 'MovimientoCajaRegistrado', turno, {
-        movimiento_id: nuevoId(),
-        tipo,
-        monto,
-        descripcion: `Prueba ${tipo}`,
-        a_quien: tipo === 'pago_propinas' ? 'Equipo' : null,
-        dias: tipo === 'pago_propinas' ? ['2026-10-24'] : [],
+    one(
+      node,
+      crudo(node, 'CashMovementRecorded', shift, {
+        movement_id: newId(),
+        type,
+        amount,
+        description: `Prueba ${type}`,
+        to_whom: type === 'tip_payout' ? 'Equipo' : null,
+        days: type === 'tip_payout' ? ['2026-10-24'] : [],
       }),
     )
   /** El conteo de `contado` pesos: billetes de $1.000 y, si sobra, monedas de $1 (cualquier monto). */
-  const conteoDe = (contado: number) =>
+  const conteoDe = (counted: number) =>
     [
-      { valor: 1_000, cantidad: Math.floor(contado / 1_000) },
-      { valor: 1, cantidad: contado % 1_000 },
-    ].filter((c) => c.cantidad > 0)
+      { value: 1_000, quantity: Math.floor(counted / 1_000) },
+      { value: 1, quantity: counted % 1_000 },
+    ].filter((c) => c.quantity > 0)
   /** Registra un conteo que suma `contado`. */
-  const contar = (nodo: Nodo, turno: string, contado: number) => {
-    const arqueo = nuevoId()
-    const r = uno(
-      nodo,
-      crudo(nodo, 'ArqueoRegistrado', turno, {
-        arqueo_id: arqueo,
-        conteo: conteoDe(contado),
-        contado_efectivo: contado,
+  const contar = (node: Nodo, shift: string, counted: number) => {
+    const cashCount = newId()
+    const r = one(
+      node,
+      crudo(node, 'CashCountRecorded', shift, {
+        cash_count_id: cashCount,
+        tally: conteoDe(counted),
+        counted_cash: counted,
       }),
     )
-    return { arqueo, resultado: r }
+    return { cashCount, result: r }
   }
   const datosCierre = (
-    arqueo: string,
-    esperado: number,
-    contado: number,
-    justificacion: string | null = null,
+    cashCount: string,
+    expected: number,
+    counted: number,
+    justification: string | null = null,
   ) => ({
-    arqueo_id: arqueo,
-    esperado_efectivo: esperado,
-    contado_efectivo: contado,
-    diferencia: contado - esperado,
-    justificacion,
+    cash_count_id: cashCount,
+    expected_cash: expected,
+    counted_cash: counted,
+    variance: counted - expected,
+    justification,
   })
   // Desde la 1.8 el cierre trae los demás medios tal como los calcula el hub con el conteo.
-  const otrosDe = (turno: string, arqueo: string) => {
-    const cuadre = estado.hub.cuadre(turno)
-    const conteo = cuadre?.arqueos.find((a) => a.id === arqueo)
-    return cuadre && conteo
-      ? cuadreDeOtrosMedios(cuadre, conteo).map((o) => ({
-          medio: o.medio,
-          medio_propio_id: o.medioPropioId,
-          esperado: o.esperado,
-          reportado: o.reportado,
-          diferencia: o.diferencia,
+  const otrosDe = (shift: string, cashCount: string) => {
+    const reconciliation = status.hub.reconciliation(shift)
+    const tally = reconciliation?.cashCounts.find((a) => a.id === cashCount)
+    return reconciliation && tally
+      ? otherMethodsReconciliation(reconciliation, tally).map((o) => ({
+          method: o.method,
+          custom_method_id: o.customMethodId,
+          expected: o.expected,
+          reported: o.reported,
+          variance: o.variance,
         }))
       : []
   }
-  const cerrar = (
-    nodo: Nodo,
-    turno: string,
-    arqueo: string,
-    esperado: number,
-    contado: number,
-    justificacion: string | null = null,
+  const close = (
+    node: Nodo,
+    shift: string,
+    cashCount: string,
+    expected: number,
+    counted: number,
+    justification: string | null = null,
   ) =>
-    uno(
-      nodo,
-      crudo(nodo, 'TurnoCerrado', turno, {
-        ...datosCierre(arqueo, esperado, contado, justificacion),
-        otros_medios: otrosDe(turno, arqueo),
+    one(
+      node,
+      crudo(node, 'ShiftClosed', shift, {
+        ...datosCierre(cashCount, expected, counted, justification),
+        other_methods: otrosDe(shift, cashCount),
       }),
     )
-  const anular = (nodo: Nodo, pedido: string, pagoId: string, turno: string) =>
-    uno(nodo, crudo(nodo, 'PagoAnulado', pedido, { pago_id: pagoId, turno_caja_id: turno }))
+  const voidItem = (node: Nodo, order: string, paymentId: string, shift: string) =>
+    one(
+      node,
+      crudo(node, 'PaymentVoided', order, { payment_id: paymentId, register_shift_id: shift }),
+    )
 
   return {
     m,
-    caja,
-    caja2,
+    register,
+    register2,
     ana,
     cfg,
-    estado,
+    status,
     nuevoHub,
     crudo,
-    enviar,
-    uno,
+    send,
+    one,
     abrirTurno,
     abrirPedido,
     pagoEf,
     pagoNequi,
     pagoPropio,
     cobrar,
-    movimiento,
+    movement,
     contar,
     conteoDe,
-    cerrar,
-    anular,
+    close,
+    voidItem,
     datosCierre,
   }
 }
 
 describe('movimiento, arqueo y cierre: turno y caja', () => {
-  const tres = (e: ReturnType<typeof entorno>, nodo: Nodo, turno: string) => ({
-    movimiento: e.movimiento(nodo, turno, 'entrada', 1_000),
-    arqueo: e.contar(nodo, turno, 1_000).resultado,
-    cierre: e.cerrar(nodo, turno, nuevoId(), 1_000, 1_000),
+  const tres = (e: ReturnType<typeof entorno>, node: Nodo, shift: string) => ({
+    movement: e.movement(node, shift, 'entry', 1_000),
+    cashCount: e.contar(node, shift, 1_000).result,
+    closeout: e.close(node, shift, newId(), 1_000, 1_000),
   })
 
   it('sin turno (id inventado): los tres se rechazan con sin_turno y no dejan huella', () => {
     const e = entorno()
-    const antes = e.m.almacen.maxSecuencia()
-    const r = tres(e, e.caja, nuevoId())
-    expect(motivo(r.movimiento)).toBe('sin_turno')
-    expect(motivo(r.arqueo)).toBe('sin_turno')
-    expect(motivo(r.cierre)).toBe('sin_turno')
-    expect(e.m.almacen.maxSecuencia()).toBe(antes)
+    const before = e.m.almacen.maxSecuencia()
+    const r = tres(e, e.register, newId())
+    expect(reason(r.movement)).toBe('no_shift')
+    expect(reason(r.cashCount)).toBe('no_shift')
+    expect(reason(r.closeout)).toBe('no_shift')
+    expect(e.m.almacen.maxSecuencia()).toBe(before)
   })
 
   it('el id de un pedido tampoco es un turno: sin_turno', () => {
     const e = entorno()
-    e.abrirTurno(e.caja)
-    const pedido = e.abrirPedido(e.caja)
-    expect(motivo(e.movimiento(e.caja, pedido, 'entrada', 1_000))).toBe('sin_turno')
+    e.abrirTurno(e.register)
+    const order = e.abrirPedido(e.register)
+    expect(reason(e.movement(e.register, order, 'entry', 1_000))).toBe('no_shift')
   })
 
   it('el turno de OTRA caja: turno_de_otra_caja en los tres, y el turno sigue intacto', () => {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja, 50_000)
-    e.abrirTurno(e.caja2, 7_000)
-    const antes = e.m.almacen.maxSecuencia()
-    const r = tres(e, e.caja2, turno)
-    expect(motivo(r.movimiento)).toBe('turno_de_otra_caja')
-    expect(motivo(r.arqueo)).toBe('turno_de_otra_caja')
-    expect(motivo(r.cierre)).toBe('turno_de_otra_caja')
-    expect(e.m.almacen.maxSecuencia()).toBe(antes)
-    expect(e.estado.hub.turnoAbierto(e.caja.dispositivoId)?.id).toBe(turno)
-    expect(e.estado.hub.cuadre(turno)?.efectivo.esperado).toBe(50_000)
+    const shift = e.abrirTurno(e.register, 50_000)
+    e.abrirTurno(e.register2, 7_000)
+    const before = e.m.almacen.maxSecuencia()
+    const r = tres(e, e.register2, shift)
+    expect(reason(r.movement)).toBe('other_register_shift')
+    expect(reason(r.cashCount)).toBe('other_register_shift')
+    expect(reason(r.closeout)).toBe('other_register_shift')
+    expect(e.m.almacen.maxSecuencia()).toBe(before)
+    expect(e.status.hub.turnoAbierto(e.register.dispositivoId)?.id).toBe(shift)
+    expect(e.status.hub.reconciliation(shift)?.cash.expected).toBe(50_000)
   })
 
   it('un equipo sin turno propio (el mesero) tampoco mueve ni cierra el turno de la caja', () => {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja)
-    const r = tres(e, e.ana, turno)
-    expect(Object.values(r).map(motivo)).toEqual([
-      'turno_de_otra_caja',
-      'turno_de_otra_caja',
-      'turno_de_otra_caja',
+    const shift = e.abrirTurno(e.register)
+    const r = tres(e, e.ana, shift)
+    expect(Object.values(r).map(reason)).toEqual([
+      'other_register_shift',
+      'other_register_shift',
+      'other_register_shift',
     ])
   })
 
   it('el rechazo se repite igual si se reenvía el mismo evento', () => {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja)
-    const mov = e.crudo(e.caja2, 'MovimientoCajaRegistrado', turno, {
-      movimiento_id: nuevoId(),
-      tipo: 'entrada',
-      monto: 5,
-      descripcion: 'x',
-      a_quien: null,
-      dias: [],
+    const shift = e.abrirTurno(e.register)
+    const mov = e.crudo(e.register2, 'CashMovementRecorded', shift, {
+      movement_id: newId(),
+      type: 'entry',
+      amount: 5,
+      description: 'x',
+      to_whom: null,
+      days: [],
     })
-    const a = e.uno(e.caja2, mov)
-    const b = e.uno(e.caja2, mov)
-    expect(motivo(a)).toBe('turno_de_otra_caja')
+    const a = e.one(e.register2, mov)
+    const b = e.one(e.register2, mov)
+    expect(reason(a)).toBe('other_register_shift')
     expect(b).toEqual(a)
   })
 
   it('movimientos y arqueos del turno propio se aceptan y el cuadre los refleja', () => {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja, 100_000)
-    expect(motivo(e.movimiento(e.caja, turno, 'entrada', 20_000))).toBe('confirmado')
-    expect(motivo(e.movimiento(e.caja, turno, 'salida', 5_000))).toBe('confirmado')
-    expect(motivo(e.movimiento(e.caja, turno, 'pago_propinas', 3_000))).toBe('confirmado')
-    const primero = e.contar(e.caja, turno, 110_000)
-    const segundo = e.contar(e.caja, turno, 112_000)
-    expect(motivo(primero.resultado)).toBe('confirmado')
-    expect(motivo(segundo.resultado)).toBe('confirmado')
-    const c = e.estado.hub.cuadre(turno)
-    expect(c?.efectivo).toMatchObject({
-      entradas: 20_000,
-      salidas: 5_000,
-      pagosPropinas: 3_000,
-      esperado: 112_000,
+    const shift = e.abrirTurno(e.register, 100_000)
+    expect(reason(e.movement(e.register, shift, 'entry', 20_000))).toBe('confirmed')
+    expect(reason(e.movement(e.register, shift, 'output', 5_000))).toBe('confirmed')
+    expect(reason(e.movement(e.register, shift, 'tip_payout', 3_000))).toBe('confirmed')
+    const firstOne = e.contar(e.register, shift, 110_000)
+    const secondOne = e.contar(e.register, shift, 112_000)
+    expect(reason(firstOne.result)).toBe('confirmed')
+    expect(reason(secondOne.result)).toBe('confirmed')
+    const c = e.status.hub.reconciliation(shift)
+    expect(c?.cash).toMatchObject({
+      entries: 20_000,
+      outflows: 5_000,
+      tipPayouts: 3_000,
+      expected: 112_000,
     })
-    expect(c?.arqueos.map((a) => a.contado)).toEqual([110_000, 112_000])
-    expect(c?.movimientos.map((x) => x.tipo)).toEqual(['entrada', 'salida', 'pago_propinas'])
+    expect(c?.cashCounts.map((a) => a.counted)).toEqual([110_000, 112_000])
+    expect(c?.movements.map((x) => x.type)).toEqual(['entry', 'output', 'tip_payout'])
   })
 
   it('la hora del cuadre es la del hub, no la del reloj del dispositivo', () => {
     const e = entorno()
-    e.caja.desfaseMs = -3 * 60 * 60 * 1000
-    const turno = e.abrirTurno(e.caja)
-    e.movimiento(e.caja, turno, 'entrada', 1_000)
-    const guardado = eventosDe(e.m).find((x) => x.tipo === 'MovimientoCajaRegistrado')
-    const c = e.estado.hub.cuadre(turno)
-    expect(c?.movimientos[0]?.hora).toBe(guardado?.recibido_en)
-    expect(c?.abiertoEn).toBe(eventosDe(e.m)[0]?.recibido_en)
+    e.register.desfaseMs = -3 * 60 * 60 * 1000
+    const shift = e.abrirTurno(e.register)
+    e.movement(e.register, shift, 'entry', 1_000)
+    const saved = eventosDe(e.m).find((x) => x.type === 'CashMovementRecorded')
+    const c = e.status.hub.reconciliation(shift)
+    expect(c?.movements[0]?.time).toBe(saved?.received_at)
+    expect(c?.openedAt).toBe(eventosDe(e.m)[0]?.received_at)
   })
 
   it('un movimiento con el esquema roto (salida con a_quien) se rechaza antes de tocar el turno', () => {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja)
-    const r = e.uno(
-      e.caja,
-      e.crudo(e.caja, 'MovimientoCajaRegistrado', turno, {
-        movimiento_id: nuevoId(),
-        tipo: 'salida',
-        monto: 100,
-        descripcion: 'x',
-        a_quien: 'Ana',
-        dias: [],
+    const shift = e.abrirTurno(e.register)
+    const r = e.one(
+      e.register,
+      e.crudo(e.register, 'CashMovementRecorded', shift, {
+        movement_id: newId(),
+        type: 'output',
+        amount: 100,
+        description: 'x',
+        to_whom: 'Ana',
+        days: [],
       }),
     )
-    expect(motivo(r)).toMatch(/^esquema:/)
-    expect(e.estado.hub.cuadre(turno)?.movimientos).toEqual([])
+    expect(reason(r)).toMatch(/^esquema:/)
+    expect(e.status.hub.reconciliation(shift)?.movements).toEqual([])
   })
 
   it('cuadre de un turno que no existe o ya cerrado: null', () => {
     const e = entorno()
-    expect(e.estado.hub.cuadre(nuevoId())).toBeNull()
+    expect(e.status.hub.reconciliation(newId())).toBeNull()
   })
 })
 
@@ -359,164 +359,169 @@ describe('cierre de caja: las cuatro reglas y el cierre correcto', () => {
   /** Base 100.000, cobro en efectivo de 30.000 con 2.000 de propina y un conteo de 132.000. */
   function turnoCobrado(umbral = 1000) {
     const e = entorno({ umbral })
-    const turno = e.abrirTurno(e.caja, 100_000)
-    const pedido = e.abrirPedido(e.caja)
-    e.cobrar(e.caja, pedido, e.pagoEf(turno, 30_000, 2_000))
-    return { ...e, turno, pedido, esperado: 132_000 }
+    const shift = e.abrirTurno(e.register, 100_000)
+    const order = e.abrirPedido(e.register)
+    e.cobrar(e.register, order, e.pagoEf(shift, 30_000, 2_000))
+    return { ...e, shift, order, expected: 132_000 }
   }
 
   it('arqueo_inexistente: cierra sin haber contado', () => {
     const t = turnoCobrado()
-    expect(motivo(t.cerrar(t.caja, t.turno, nuevoId(), t.esperado, t.esperado))).toBe(
-      'arqueo_inexistente',
+    expect(reason(t.close(t.register, t.shift, newId(), t.expected, t.expected))).toBe(
+      'cash_count_not_found',
     )
-    expect(t.estado.hub.turnoAbierto(t.caja.dispositivoId)).not.toBeNull()
+    expect(t.status.hub.turnoAbierto(t.register.dispositivoId)).not.toBeNull()
   })
 
   it('arqueo_inexistente: el conteo es de otro turno (otra caja)', () => {
     const t = turnoCobrado()
-    const turno2 = t.abrirTurno(t.caja2, 0)
-    const ajeno = t.contar(t.caja2, turno2, 132_000)
-    expect(motivo(ajeno.resultado)).toBe('confirmado')
-    expect(motivo(t.cerrar(t.caja, t.turno, ajeno.arqueo, t.esperado, 132_000))).toBe(
-      'arqueo_inexistente',
+    const shift2 = t.abrirTurno(t.register2, 0)
+    const ajeno = t.contar(t.register2, shift2, 132_000)
+    expect(reason(ajeno.result)).toBe('confirmed')
+    expect(reason(t.close(t.register, t.shift, ajeno.cashCount, t.expected, 132_000))).toBe(
+      'cash_count_not_found',
     )
   })
 
   it('arqueo_inexistente: el id del arqueo es el de un movimiento', () => {
     const t = turnoCobrado()
-    const mov = t.crudo(t.caja, 'MovimientoCajaRegistrado', t.turno, {
-      movimiento_id: nuevoId(),
-      tipo: 'entrada',
-      monto: 1_000,
-      descripcion: 'x',
-      a_quien: null,
-      dias: [],
+    const mov = t.crudo(t.register, 'CashMovementRecorded', t.shift, {
+      movement_id: newId(),
+      type: 'entry',
+      amount: 1_000,
+      description: 'x',
+      to_whom: null,
+      days: [],
     })
-    t.uno(t.caja, mov)
-    const id = (mov.datos as { movimiento_id: string }).movimiento_id
-    expect(motivo(t.cerrar(t.caja, t.turno, id, 133_000, 1_000))).toBe('arqueo_inexistente')
+    t.one(t.register, mov)
+    const id = (mov.data as { movement_id: string }).movement_id
+    expect(reason(t.close(t.register, t.shift, id, 133_000, 1_000))).toBe('cash_count_not_found')
   })
 
   it('contado_distinto: el cierre dice otro contado que el del arqueo (aunque la diferencia sea consecuente)', () => {
     const t = turnoCobrado()
-    const { arqueo } = t.contar(t.caja, t.turno, 132_000)
-    expect(motivo(t.cerrar(t.caja, t.turno, arqueo, t.esperado, 131_000, 'Faltó'))).toBe(
-      'contado_distinto',
+    const { cashCount } = t.contar(t.register, t.shift, 132_000)
+    expect(reason(t.close(t.register, t.shift, cashCount, t.expected, 131_000, 'Faltó'))).toBe(
+      'counted_mismatch',
     )
-    expect(motivo(t.cerrar(t.caja, t.turno, arqueo, t.esperado, 133_000, 'Sobró'))).toBe(
-      'contado_distinto',
+    expect(reason(t.close(t.register, t.shift, cashCount, t.expected, 133_000, 'Sobró'))).toBe(
+      'counted_mismatch',
     )
   })
 
   it('esperado_distinto: el cierre dice otro esperado que el del hub', () => {
     const t = turnoCobrado()
-    const { arqueo } = t.contar(t.caja, t.turno, 132_000)
+    const { cashCount } = t.contar(t.register, t.shift, 132_000)
     // Un esperado viejo (sin la propina) y uno inventado.
-    expect(motivo(t.cerrar(t.caja, t.turno, arqueo, 130_000, 132_000, 'x'))).toBe(
-      'esperado_distinto',
+    expect(reason(t.close(t.register, t.shift, cashCount, 130_000, 132_000, 'x'))).toBe(
+      'expected_mismatch',
     )
-    expect(motivo(t.cerrar(t.caja, t.turno, arqueo, 0, 132_000, 'x'))).toBe('esperado_distinto')
+    expect(reason(t.close(t.register, t.shift, cashCount, 0, 132_000, 'x'))).toBe(
+      'expected_mismatch',
+    )
   })
 
   describe('arqueo_desactualizado: hubo dinero después del último conteo', () => {
     it('un movimiento (entrada, salida o pago de propinas) después de contar', () => {
-      for (const tipo of ['entrada', 'salida', 'pago_propinas'] as const) {
+      for (const type of ['entry', 'output', 'tip_payout'] as const) {
         const t = turnoCobrado()
-        const { arqueo } = t.contar(t.caja, t.turno, 132_000)
-        t.movimiento(t.caja, t.turno, tipo, 1_000)
-        const nuevoEsperado = tipo === 'entrada' ? 133_000 : 131_000
-        expect(motivo(t.cerrar(t.caja, t.turno, arqueo, nuevoEsperado, 132_000, 'x')), tipo).toBe(
-          'arqueo_desactualizado',
-        )
-        expect(t.estado.hub.turnoAbierto(t.caja.dispositivoId), tipo).not.toBeNull()
+        const { cashCount } = t.contar(t.register, t.shift, 132_000)
+        t.movement(t.register, t.shift, type, 1_000)
+        const nuevoEsperado = type === 'entry' ? 133_000 : 131_000
+        expect(
+          reason(t.close(t.register, t.shift, cashCount, nuevoEsperado, 132_000, 'x')),
+          type,
+        ).toBe('stale_cash_count')
+        expect(t.status.hub.turnoAbierto(t.register.dispositivoId), type).not.toBeNull()
       }
     })
 
     it('un pago, aunque sea de otro medio, después de contar', () => {
       const t = turnoCobrado()
-      const { arqueo } = t.contar(t.caja, t.turno, 132_000)
-      t.cobrar(t.caja, t.pedido, t.pagoNequi(t.turno, 500))
-      expect(motivo(t.cerrar(t.caja, t.turno, arqueo, 132_000, 132_000))).toBe(
-        'arqueo_desactualizado',
+      const { cashCount } = t.contar(t.register, t.shift, 132_000)
+      t.cobrar(t.register, t.order, t.pagoNequi(t.shift, 500))
+      expect(reason(t.close(t.register, t.shift, cashCount, 132_000, 132_000))).toBe(
+        'stale_cash_count',
       )
     })
 
     it('una anulación y un reembolso después de contar', () => {
       const t = turnoCobrado()
-      const otro = t.cobrar(t.caja, t.pedido, t.pagoNequi(t.turno, 500))
-      const { arqueo } = t.contar(t.caja, t.turno, 132_000)
-      t.anular(t.caja, t.pedido, otro, t.turno)
-      expect(motivo(t.cerrar(t.caja, t.turno, arqueo, 132_000, 132_000))).toBe(
-        'arqueo_desactualizado',
+      const other = t.cobrar(t.register, t.order, t.pagoNequi(t.shift, 500))
+      const { cashCount } = t.contar(t.register, t.shift, 132_000)
+      t.voidItem(t.register, t.order, other, t.shift)
+      expect(reason(t.close(t.register, t.shift, cashCount, 132_000, 132_000))).toBe(
+        'stale_cash_count',
       )
       const t2 = turnoCobrado()
-      const pago = t2.cobrar(t2.caja, t2.pedido, t2.pagoNequi(t2.turno, 500))
-      const a2 = t2.contar(t2.caja, t2.turno, 132_000)
-      const r = t2.uno(
-        t2.caja,
-        t2.crudo(t2.caja, 'ReembolsoRegistrado', t2.pedido, {
-          pago_id: pago,
-          reembolso_id: nuevoId(),
-          monto_venta: 100,
-          monto_propina: 0,
-          medio: 'nequi',
-          turno_caja_id: t2.turno,
+      const payment = t2.cobrar(t2.register, t2.order, t2.pagoNequi(t2.shift, 500))
+      const a2 = t2.contar(t2.register, t2.shift, 132_000)
+      const r = t2.one(
+        t2.register,
+        t2.crudo(t2.register, 'RefundRecorded', t2.order, {
+          payment_id: payment,
+          refund_id: newId(),
+          sale_amount: 100,
+          tip_amount: 0,
+          method: 'nequi',
+          register_shift_id: t2.shift,
         }),
       )
-      expect(motivo(r)).toBe('confirmado')
-      expect(motivo(t2.cerrar(t2.caja, t2.turno, a2.arqueo, 132_000, 132_000))).toBe(
-        'arqueo_desactualizado',
+      expect(reason(r)).toBe('confirmed')
+      expect(reason(t2.close(t2.register, t2.shift, a2.cashCount, 132_000, 132_000))).toBe(
+        'stale_cash_count',
       )
     })
 
     it('anular después de contar un pago de un turno anterior también desactualiza el conteo', () => {
       const e = entorno()
-      const t1 = e.abrirTurno(e.caja, 0)
-      const pedido = e.abrirPedido(e.caja)
-      const pago = e.cobrar(e.caja, pedido, e.pagoEf(t1, 10_000))
-      const a1 = e.contar(e.caja, t1, 10_000)
-      e.cerrar(e.caja, t1, a1.arqueo, 10_000, 10_000)
-      const t2 = e.abrirTurno(e.caja, 50_000)
-      const { arqueo } = e.contar(e.caja, t2, 50_000)
-      e.anular(e.caja, pedido, pago, t2)
-      expect(motivo(e.cerrar(e.caja, t2, arqueo, 40_000, 50_000, 'x'))).toBe(
-        'arqueo_desactualizado',
+      const t1 = e.abrirTurno(e.register, 0)
+      const order = e.abrirPedido(e.register)
+      const payment = e.cobrar(e.register, order, e.pagoEf(t1, 10_000))
+      const a1 = e.contar(e.register, t1, 10_000)
+      e.close(e.register, t1, a1.cashCount, 10_000, 10_000)
+      const t2 = e.abrirTurno(e.register, 50_000)
+      const { cashCount } = e.contar(e.register, t2, 50_000)
+      e.voidItem(e.register, order, payment, t2)
+      expect(reason(e.close(e.register, t2, cashCount, 40_000, 50_000, 'x'))).toBe(
+        'stale_cash_count',
       )
     })
 
     it('volver a contar lo arregla: el conteo nuevo es el último y el esperado es el nuevo', () => {
       const t = turnoCobrado()
-      const viejo = t.contar(t.caja, t.turno, 132_000)
-      t.movimiento(t.caja, t.turno, 'salida', 12_000)
-      const nuevo = t.contar(t.caja, t.turno, 120_000)
-      expect(motivo(t.cerrar(t.caja, t.turno, viejo.arqueo, 120_000, 132_000, 'x'))).toBe(
-        'arqueo_no_es_el_ultimo',
+      const oldOne = t.contar(t.register, t.shift, 132_000)
+      t.movement(t.register, t.shift, 'output', 12_000)
+      const fresh = t.contar(t.register, t.shift, 120_000)
+      expect(reason(t.close(t.register, t.shift, oldOne.cashCount, 120_000, 132_000, 'x'))).toBe(
+        'cash_count_not_latest',
       )
-      expect(motivo(t.cerrar(t.caja, t.turno, nuevo.arqueo, 120_000, 120_000))).toBe('confirmado')
+      expect(reason(t.close(t.register, t.shift, fresh.cashCount, 120_000, 120_000))).toBe(
+        'confirmed',
+      )
     })
 
     it('un movimiento rechazado (de otra caja) o un pago del turno de otra caja no desactualizan', () => {
       const t = turnoCobrado()
-      t.abrirTurno(t.caja2, 0)
-      const { arqueo } = t.contar(t.caja, t.turno, 132_000)
-      expect(motivo(t.movimiento(t.caja2, t.turno, 'entrada', 1_000))).toBe('turno_de_otra_caja')
-      const otroPedido = t.abrirPedido(t.caja2)
+      t.abrirTurno(t.register2, 0)
+      const { cashCount } = t.contar(t.register, t.shift, 132_000)
+      expect(reason(t.movement(t.register2, t.shift, 'entry', 1_000))).toBe('other_register_shift')
+      const anotherOrder = t.abrirPedido(t.register2)
       t.cobrar(
-        t.caja2,
-        otroPedido,
-        t.pagoNequi(t.estado.hub.turnoAbierto(t.caja2.dispositivoId)?.id ?? '', 500),
+        t.register2,
+        anotherOrder,
+        t.pagoNequi(t.status.hub.turnoAbierto(t.register2.dispositivoId)?.id ?? '', 500),
       )
-      expect(motivo(t.cerrar(t.caja, t.turno, arqueo, 132_000, 132_000))).toBe('confirmado')
+      expect(reason(t.close(t.register, t.shift, cashCount, 132_000, 132_000))).toBe('confirmed')
     })
 
     it('tras reiniciar el hub, el conteo sigue desactualizado', () => {
       const t = turnoCobrado()
-      const { arqueo } = t.contar(t.caja, t.turno, 132_000)
-      t.movimiento(t.caja, t.turno, 'entrada', 1_000)
-      t.estado.hub = t.nuevoHub()
-      expect(motivo(t.cerrar(t.caja, t.turno, arqueo, 133_000, 132_000, 'x'))).toBe(
-        'arqueo_desactualizado',
+      const { cashCount } = t.contar(t.register, t.shift, 132_000)
+      t.movement(t.register, t.shift, 'entry', 1_000)
+      t.status.hub = t.nuevoHub()
+      expect(reason(t.close(t.register, t.shift, cashCount, 133_000, 132_000, 'x'))).toBe(
+        'stale_cash_count',
       )
     })
   })
@@ -524,94 +529,98 @@ describe('cierre de caja: las cuatro reglas y el cierre correcto', () => {
   describe('arqueo_no_es_el_ultimo', () => {
     it('cerrar con el primero de dos conteos se rechaza; con el último se acepta', () => {
       const t = turnoCobrado()
-      const a1 = t.contar(t.caja, t.turno, 130_000)
-      const a2 = t.contar(t.caja, t.turno, 132_000)
-      expect(motivo(t.cerrar(t.caja, t.turno, a1.arqueo, t.esperado, 130_000, 'Faltó'))).toBe(
-        'arqueo_no_es_el_ultimo',
+      const a1 = t.contar(t.register, t.shift, 130_000)
+      const a2 = t.contar(t.register, t.shift, 132_000)
+      expect(reason(t.close(t.register, t.shift, a1.cashCount, t.expected, 130_000, 'Faltó'))).toBe(
+        'cash_count_not_latest',
       )
-      expect(t.estado.hub.turnoAbierto(t.caja.dispositivoId)).not.toBeNull()
-      expect(motivo(t.cerrar(t.caja, t.turno, a2.arqueo, t.esperado, 132_000))).toBe('confirmado')
+      expect(t.status.hub.turnoAbierto(t.register.dispositivoId)).not.toBeNull()
+      expect(reason(t.close(t.register, t.shift, a2.cashCount, t.expected, 132_000))).toBe(
+        'confirmed',
+      )
     })
 
     it('con tres conteos solo vale el tercero', () => {
       const t = turnoCobrado()
-      const a = [130_000, 131_000, 132_000].map((c) => t.contar(t.caja, t.turno, c).arqueo)
-      expect(motivo(t.cerrar(t.caja, t.turno, a[0] ?? '', t.esperado, 130_000, 'x'))).toBe(
-        'arqueo_no_es_el_ultimo',
+      const a = [130_000, 131_000, 132_000].map((c) => t.contar(t.register, t.shift, c).cashCount)
+      expect(reason(t.close(t.register, t.shift, a[0] ?? '', t.expected, 130_000, 'x'))).toBe(
+        'cash_count_not_latest',
       )
-      expect(motivo(t.cerrar(t.caja, t.turno, a[1] ?? '', t.esperado, 131_000, 'x'))).toBe(
-        'arqueo_no_es_el_ultimo',
+      expect(reason(t.close(t.register, t.shift, a[1] ?? '', t.expected, 131_000, 'x'))).toBe(
+        'cash_count_not_latest',
       )
-      expect(motivo(t.cerrar(t.caja, t.turno, a[2] ?? '', t.esperado, 132_000))).toBe('confirmado')
+      expect(reason(t.close(t.register, t.shift, a[2] ?? '', t.expected, 132_000))).toBe(
+        'confirmed',
+      )
     })
 
     it('un conteo repetido con el mismo contado no engaña: se compara el id, no el monto', () => {
       const t = turnoCobrado()
-      const a1 = t.contar(t.caja, t.turno, 132_000)
-      t.contar(t.caja, t.turno, 132_000)
-      expect(motivo(t.cerrar(t.caja, t.turno, a1.arqueo, t.esperado, 132_000))).toBe(
-        'arqueo_no_es_el_ultimo',
+      const a1 = t.contar(t.register, t.shift, 132_000)
+      t.contar(t.register, t.shift, 132_000)
+      expect(reason(t.close(t.register, t.shift, a1.cashCount, t.expected, 132_000))).toBe(
+        'cash_count_not_latest',
       )
     })
   })
 
   it('el orden de las reglas: inexistente, no es el último, desactualizado, contado, esperado, justificación', () => {
     const t = turnoCobrado(0)
-    const a1 = t.contar(t.caja, t.turno, 131_000)
-    const a2 = t.contar(t.caja, t.turno, 132_000)
+    const a1 = t.contar(t.register, t.shift, 131_000)
+    const a2 = t.contar(t.register, t.shift, 132_000)
     // Todo mal a la vez, y sin justificación.
-    expect(motivo(t.cerrar(t.caja, t.turno, nuevoId(), 1, 2))).toBe('arqueo_inexistente')
-    expect(motivo(t.cerrar(t.caja, t.turno, a1.arqueo, 1, 2))).toBe('arqueo_no_es_el_ultimo')
-    t.movimiento(t.caja, t.turno, 'entrada', 1_000)
-    expect(motivo(t.cerrar(t.caja, t.turno, a2.arqueo, 1, 2))).toBe('arqueo_desactualizado')
-    const a3 = t.contar(t.caja, t.turno, 133_000)
-    expect(motivo(t.cerrar(t.caja, t.turno, a3.arqueo, 1, 2))).toBe('contado_distinto')
-    expect(motivo(t.cerrar(t.caja, t.turno, a3.arqueo, 1, 133_000))).toBe('esperado_distinto')
-    expect(motivo(t.cerrar(t.caja, t.turno, a3.arqueo, 133_000, 133_000))).toBe('confirmado')
+    expect(reason(t.close(t.register, t.shift, newId(), 1, 2))).toBe('cash_count_not_found')
+    expect(reason(t.close(t.register, t.shift, a1.cashCount, 1, 2))).toBe('cash_count_not_latest')
+    t.movement(t.register, t.shift, 'entry', 1_000)
+    expect(reason(t.close(t.register, t.shift, a2.cashCount, 1, 2))).toBe('stale_cash_count')
+    const a3 = t.contar(t.register, t.shift, 133_000)
+    expect(reason(t.close(t.register, t.shift, a3.cashCount, 1, 2))).toBe('counted_mismatch')
+    expect(reason(t.close(t.register, t.shift, a3.cashCount, 1, 133_000))).toBe('expected_mismatch')
+    expect(reason(t.close(t.register, t.shift, a3.cashCount, 133_000, 133_000))).toBe('confirmed')
   })
 
   describe('falta_justificacion', () => {
     /** Un turno de base 100.000 sin cobros; cuenta `contado` y cierra con `justificacion`. */
-    function cierraCon(umbral: number, contado: number, justificacion: string | null) {
+    function cierraCon(umbral: number, counted: number, justification: string | null) {
       const e = entorno({ umbral })
-      const turno = e.abrirTurno(e.caja, 100_000)
-      const { arqueo } = e.contar(e.caja, turno, contado)
-      return motivo(e.cerrar(e.caja, turno, arqueo, 100_000, contado, justificacion))
+      const shift = e.abrirTurno(e.register, 100_000)
+      const { cashCount } = e.contar(e.register, shift, counted)
+      return reason(e.close(e.register, shift, cashCount, 100_000, counted, justification))
     }
 
     it('umbral 0: cualquier diferencia pide justificación; sin diferencia, no', () => {
-      expect(cierraCon(0, 100_000, null)).toBe('confirmado')
-      expect(cierraCon(0, 99_999, null)).toBe('falta_justificacion')
-      expect(cierraCon(0, 100_001, null)).toBe('falta_justificacion')
-      expect(cierraCon(0, 99_000, null)).toBe('falta_justificacion')
-      expect(cierraCon(0, 101_000, null)).toBe('falta_justificacion')
-      expect(cierraCon(0, 99_000, 'Falta un billete')).toBe('confirmado')
+      expect(cierraCon(0, 100_000, null)).toBe('confirmed')
+      expect(cierraCon(0, 99_999, null)).toBe('missing_justification')
+      expect(cierraCon(0, 100_001, null)).toBe('missing_justification')
+      expect(cierraCon(0, 99_000, null)).toBe('missing_justification')
+      expect(cierraCon(0, 101_000, null)).toBe('missing_justification')
+      expect(cierraCon(0, 99_000, 'Falta un billete')).toBe('confirmed')
     })
 
     it('umbral 1.000: por debajo se cierra sin más; desde 1.000 (faltante o sobrante) pide justificación', () => {
-      expect(cierraCon(1000, 100_000, null)).toBe('confirmado')
-      expect(cierraCon(1000, 99_999, null)).toBe('confirmado')
-      expect(cierraCon(1000, 100_001, null)).toBe('confirmado')
-      expect(cierraCon(1000, 99_001, null)).toBe('confirmado')
-      expect(cierraCon(1000, 100_999, null)).toBe('confirmado')
-      expect(cierraCon(1000, 99_000, null)).toBe('falta_justificacion')
-      expect(cierraCon(1000, 101_000, null)).toBe('falta_justificacion')
-      expect(cierraCon(1000, 98_999, null)).toBe('falta_justificacion')
-      expect(cierraCon(1000, 99_000, null)).toBe('falta_justificacion')
-      expect(cierraCon(1000, 101_000, null)).toBe('falta_justificacion')
-      expect(cierraCon(1000, 98_000, null)).toBe('falta_justificacion')
-      expect(cierraCon(1000, 99_000, 'Propina de la mesa 4')).toBe('confirmado')
+      expect(cierraCon(1000, 100_000, null)).toBe('confirmed')
+      expect(cierraCon(1000, 99_999, null)).toBe('confirmed')
+      expect(cierraCon(1000, 100_001, null)).toBe('confirmed')
+      expect(cierraCon(1000, 99_001, null)).toBe('confirmed')
+      expect(cierraCon(1000, 100_999, null)).toBe('confirmed')
+      expect(cierraCon(1000, 99_000, null)).toBe('missing_justification')
+      expect(cierraCon(1000, 101_000, null)).toBe('missing_justification')
+      expect(cierraCon(1000, 98_999, null)).toBe('missing_justification')
+      expect(cierraCon(1000, 99_000, null)).toBe('missing_justification')
+      expect(cierraCon(1000, 101_000, null)).toBe('missing_justification')
+      expect(cierraCon(1000, 98_000, null)).toBe('missing_justification')
+      expect(cierraCon(1000, 99_000, 'Propina de la mesa 4')).toBe('confirmed')
     })
 
     it('umbral 2.000: una diferencia de 1.000 no pide justificación; de 2.000 sí (el borde es inclusivo)', () => {
-      expect(cierraCon(2000, 99_000, null)).toBe('confirmado')
-      expect(cierraCon(2000, 101_000, null)).toBe('confirmado')
-      expect(cierraCon(2000, 98_000, null)).toBe('falta_justificacion')
-      expect(cierraCon(2000, 102_000, null)).toBe('falta_justificacion')
+      expect(cierraCon(2000, 99_000, null)).toBe('confirmed')
+      expect(cierraCon(2000, 101_000, null)).toBe('confirmed')
+      expect(cierraCon(2000, 98_000, null)).toBe('missing_justification')
+      expect(cierraCon(2000, 102_000, null)).toBe('missing_justification')
     })
 
     it('una justificación presente se acepta aunque no hiciera falta', () => {
-      expect(cierraCon(1000, 100_000, 'Todo bien')).toBe('confirmado')
+      expect(cierraCon(1000, 100_000, 'Todo bien')).toBe('confirmed')
     })
 
     it('una justificación vacía o de espacios no llega: el esquema la rechaza', () => {
@@ -620,227 +629,239 @@ describe('cierre de caja: las cuatro reglas y el cierre correcto', () => {
 
     it('el umbral que vale es el vigente al cerrar: si el administrador lo cambia con el hub andando', () => {
       const e = entorno({ umbral: 5_000 })
-      const turno = e.abrirTurno(e.caja, 100_000)
-      const { arqueo } = e.contar(e.caja, turno, 99_000)
+      const shift = e.abrirTurno(e.register, 100_000)
+      const { cashCount } = e.contar(e.register, shift, 99_000)
       e.cfg.umbral = 1_000
-      expect(motivo(e.cerrar(e.caja, turno, arqueo, 100_000, 99_000))).toBe('falta_justificacion')
+      expect(reason(e.close(e.register, shift, cashCount, 100_000, 99_000))).toBe(
+        'missing_justification',
+      )
       e.cfg.umbral = 5_000
-      expect(motivo(e.cerrar(e.caja, turno, arqueo, 100_000, 99_000))).toBe('confirmado')
+      expect(reason(e.close(e.register, shift, cashCount, 100_000, 99_000))).toBe('confirmed')
     })
 
     it('un hub sin reglas de cobro usa el umbral de fábrica ($1.000)', () => {
       const e = entorno()
       const sinReglas = e.m.hub()
-      const turno = nuevoId()
-      const conexion = conexionDe(e.m, e.caja)
-      sinReglas.recibirLote(conexion, [
-        e.crudo(e.caja, 'TurnoAbierto', turno, { caja_id: e.caja.dispositivoId, base: 10_000 }),
+      const shift = newId()
+      const connection = conexionDe(e.m, e.register)
+      sinReglas.recibirLote(connection, [
+        e.crudo(e.register, 'ShiftOpened', shift, {
+          register_id: e.register.dispositivoId,
+          base: 10_000,
+        }),
       ])
-      const intentar = (contado: number, justificacion: string | null = null) => {
-        const arqueo = nuevoId()
-        sinReglas.recibirLote(conexion, [
-          e.crudo(e.caja, 'ArqueoRegistrado', turno, {
-            arqueo_id: arqueo,
-            conteo: e.conteoDe(contado),
-            contado_efectivo: contado,
+      const tryAction = (counted: number, justification: string | null = null) => {
+        const cashCount = newId()
+        sinReglas.recibirLote(connection, [
+          e.crudo(e.register, 'CashCountRecorded', shift, {
+            cash_count_id: cashCount,
+            tally: e.conteoDe(counted),
+            counted_cash: counted,
           }),
         ])
-        return motivo(
-          sinReglas.recibirLote(conexion, [
+        return reason(
+          sinReglas.recibirLote(connection, [
             e.crudo(
-              e.caja,
-              'TurnoCerrado',
-              turno,
-              e.datosCierre(arqueo, 10_000, contado, justificacion),
+              e.register,
+              'ShiftClosed',
+              shift,
+              e.datosCierre(cashCount, 10_000, counted, justification),
             ),
           ]).resultados[0],
         )
       }
-      expect(intentar(9_000)).toBe('falta_justificacion')
-      expect(intentar(9_001)).toBe('confirmado')
+      expect(tryAction(9_000)).toBe('missing_justification')
+      expect(tryAction(9_001)).toBe('confirmed')
     })
   })
 
   it('el cierre correcto: se confirma, el turno ya no está abierto y el cuadre queda cerrado', () => {
     const t = turnoCobrado()
-    const { arqueo } = t.contar(t.caja, t.turno, t.esperado)
-    const r = t.cerrar(t.caja, t.turno, arqueo, t.esperado, t.esperado)
-    expect(motivo(r)).toBe('confirmado')
-    expect(t.estado.hub.turnoAbierto(t.caja.dispositivoId)).toBeNull()
-    expect(t.estado.hub.cuadre(t.turno)?.cerrado).not.toBeNull()
-    const cierre = eventosDe(t.m).find((x) => x.tipo === 'TurnoCerrado')
-    expect(cierre?.agregado_id).toBe(t.turno)
-    expect(cierre?.datos).toMatchObject({ esperado_efectivo: 132_000, diferencia: 0 })
+    const { cashCount } = t.contar(t.register, t.shift, t.expected)
+    const r = t.close(t.register, t.shift, cashCount, t.expected, t.expected)
+    expect(reason(r)).toBe('confirmed')
+    expect(t.status.hub.turnoAbierto(t.register.dispositivoId)).toBeNull()
+    expect(t.status.hub.reconciliation(t.shift)?.closed).not.toBeNull()
+    const closeout = eventosDe(t.m).find((x) => x.type === 'ShiftClosed')
+    expect(closeout?.aggregate_id).toBe(t.shift)
+    expect(closeout?.data).toMatchObject({ expected_cash: 132_000, variance: 0 })
   })
 
   it('con varios conteos, cada uno queda guardado', () => {
     const t = turnoCobrado()
-    t.contar(t.caja, t.turno, 130_000)
-    t.contar(t.caja, t.turno, 132_000)
-    expect(t.estado.hub.cuadre(t.turno)?.arqueos.map((a) => a.contado)).toEqual([130_000, 132_000])
-    expect(eventosDe(t.m).filter((x) => x.tipo === 'ArqueoRegistrado')).toHaveLength(2)
+    t.contar(t.register, t.shift, 130_000)
+    t.contar(t.register, t.shift, 132_000)
+    expect(t.status.hub.reconciliation(t.shift)?.cashCounts.map((a) => a.counted)).toEqual([
+      130_000, 132_000,
+    ])
+    expect(eventosDe(t.m).filter((x) => x.type === 'CashCountRecorded')).toHaveLength(2)
   })
 
   it('un faltante con la diferencia y la justificación queda guardado tal cual', () => {
     const t = turnoCobrado(0)
-    const { arqueo } = t.contar(t.caja, t.turno, 130_000)
-    expect(motivo(t.cerrar(t.caja, t.turno, arqueo, t.esperado, 130_000, 'Falta un vale'))).toBe(
-      'confirmado',
-    )
-    const cierre = eventosDe(t.m).find((x) => x.tipo === 'TurnoCerrado')
-    expect(cierre?.datos).toMatchObject({ diferencia: -2_000, justificacion: 'Falta un vale' })
+    const { cashCount } = t.contar(t.register, t.shift, 130_000)
+    expect(
+      reason(t.close(t.register, t.shift, cashCount, t.expected, 130_000, 'Falta un vale')),
+    ).toBe('confirmed')
+    const closeout = eventosDe(t.m).find((x) => x.type === 'ShiftClosed')
+    expect(closeout?.data).toMatchObject({ variance: -2_000, justification: 'Falta un vale' })
   })
 
   it('reenviar el mismo cierre confirmado es idempotente; un segundo cierre con otro id, sin_turno', () => {
     const t = turnoCobrado()
-    const { arqueo } = t.contar(t.caja, t.turno, t.esperado)
-    const cierre = t.crudo(
-      t.caja,
-      'TurnoCerrado',
-      t.turno,
-      t.datosCierre(arqueo, t.esperado, t.esperado),
+    const { cashCount } = t.contar(t.register, t.shift, t.expected)
+    const closeout = t.crudo(
+      t.register,
+      'ShiftClosed',
+      t.shift,
+      t.datosCierre(cashCount, t.expected, t.expected),
     )
-    const a = t.uno(t.caja, cierre)
-    const b = t.uno(t.caja, cierre)
-    expect(motivo(a)).toBe('confirmado')
-    expect(motivo(b)).toBe('confirmado')
-    expect(eventosDe(t.m).filter((x) => x.tipo === 'TurnoCerrado')).toHaveLength(1)
-    expect(motivo(t.cerrar(t.caja, t.turno, arqueo, t.esperado, t.esperado))).toBe('sin_turno')
+    const a = t.one(t.register, closeout)
+    const b = t.one(t.register, closeout)
+    expect(reason(a)).toBe('confirmed')
+    expect(reason(b)).toBe('confirmed')
+    expect(eventosDe(t.m).filter((x) => x.type === 'ShiftClosed')).toHaveLength(1)
+    expect(reason(t.close(t.register, t.shift, cashCount, t.expected, t.expected))).toBe('no_shift')
   })
 
   it('un cierre rechazado se rechaza igual al reenviarlo; con el esperado corregido y otro id se acepta', () => {
     const t = turnoCobrado()
-    const { arqueo } = t.contar(t.caja, t.turno, t.esperado)
-    const viejo = t.crudo(
-      t.caja,
-      'TurnoCerrado',
-      t.turno,
-      t.datosCierre(arqueo, 130_000, 132_000, 'x'),
+    const { cashCount } = t.contar(t.register, t.shift, t.expected)
+    const oldOne = t.crudo(
+      t.register,
+      'ShiftClosed',
+      t.shift,
+      t.datosCierre(cashCount, 130_000, 132_000, 'x'),
     )
-    expect(motivo(t.uno(t.caja, viejo))).toBe('esperado_distinto')
-    expect(motivo(t.uno(t.caja, viejo))).toBe('esperado_distinto')
-    expect(motivo(t.cerrar(t.caja, t.turno, arqueo, t.esperado, t.esperado))).toBe('confirmado')
+    expect(reason(t.one(t.register, oldOne))).toBe('expected_mismatch')
+    expect(reason(t.one(t.register, oldOne))).toBe('expected_mismatch')
+    expect(reason(t.close(t.register, t.shift, cashCount, t.expected, t.expected))).toBe(
+      'confirmed',
+    )
   })
 
   it('en un lote: el cierre antes de su arqueo se rechaza y lo que sigue del turno depende de él (depende_de_rechazado)', () => {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja, 10_000)
-    const arqueo = nuevoId()
-    const r = e.enviar(e.caja, [
-      e.crudo(e.caja, 'TurnoCerrado', turno, e.datosCierre(arqueo, 10_000, 10_000)),
-      e.crudo(e.caja, 'ArqueoRegistrado', turno, {
-        arqueo_id: arqueo,
-        conteo: [{ valor: 1_000, cantidad: 10 }],
-        contado_efectivo: 10_000,
+    const shift = e.abrirTurno(e.register, 10_000)
+    const cashCount = newId()
+    const r = e.send(e.register, [
+      e.crudo(e.register, 'ShiftClosed', shift, e.datosCierre(cashCount, 10_000, 10_000)),
+      e.crudo(e.register, 'CashCountRecorded', shift, {
+        cash_count_id: cashCount,
+        tally: [{ value: 1_000, quantity: 10 }],
+        counted_cash: 10_000,
       }),
     ])
-    expect(r.resultados.map(motivo)).toEqual(['arqueo_inexistente', 'depende_de_rechazado'])
-    expect(e.estado.hub.turnoAbierto(e.caja.dispositivoId)).not.toBeNull()
+    expect(r.resultados.map(reason)).toEqual(['cash_count_not_found', 'depends_on_rejected'])
+    expect(e.status.hub.turnoAbierto(e.register.dispositivoId)).not.toBeNull()
   })
 
   it('en un lote: arqueo y cierre en orden se confirman juntos', () => {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja, 10_000)
-    const arqueo = nuevoId()
-    const r = e.enviar(e.caja, [
-      e.crudo(e.caja, 'ArqueoRegistrado', turno, {
-        arqueo_id: arqueo,
-        conteo: [{ valor: 1_000, cantidad: 10 }],
-        contado_efectivo: 10_000,
+    const shift = e.abrirTurno(e.register, 10_000)
+    const cashCount = newId()
+    const r = e.send(e.register, [
+      e.crudo(e.register, 'CashCountRecorded', shift, {
+        cash_count_id: cashCount,
+        tally: [{ value: 1_000, quantity: 10 }],
+        counted_cash: 10_000,
       }),
-      e.crudo(e.caja, 'TurnoCerrado', turno, e.datosCierre(arqueo, 10_000, 10_000)),
+      e.crudo(e.register, 'ShiftClosed', shift, e.datosCierre(cashCount, 10_000, 10_000)),
     ])
-    expect(r.resultados.map(motivo)).toEqual(['confirmado', 'confirmado'])
-    expect(e.estado.hub.turnoAbierto(e.caja.dispositivoId)).toBeNull()
+    expect(r.resultados.map(reason)).toEqual(['confirmed', 'confirmed'])
+    expect(e.status.hub.turnoAbierto(e.register.dispositivoId)).toBeNull()
   })
 
   it('el cierre no toca a los demás turnos abiertos', () => {
     const t = turnoCobrado()
-    const otro = t.abrirTurno(t.caja2, 5_000)
-    const { arqueo } = t.contar(t.caja, t.turno, t.esperado)
-    t.cerrar(t.caja, t.turno, arqueo, t.esperado, t.esperado)
-    expect(t.estado.hub.turnoAbierto(t.caja2.dispositivoId)?.id).toBe(otro)
-    expect(t.estado.hub.cuadre(otro)?.efectivo.esperado).toBe(5_000)
+    const other = t.abrirTurno(t.register2, 5_000)
+    const { cashCount } = t.contar(t.register, t.shift, t.expected)
+    t.close(t.register, t.shift, cashCount, t.expected, t.expected)
+    expect(t.status.hub.turnoAbierto(t.register2.dispositivoId)?.id).toBe(other)
+    expect(t.status.hub.reconciliation(other)?.cash.expected).toBe(5_000)
   })
 })
 
 describe('después del cierre', () => {
-  function cerrado() {
+  function closed() {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja, 100_000)
-    const pedido = e.abrirPedido(e.caja)
-    const pago = e.cobrar(e.caja, pedido, e.pagoEf(turno, 10_000))
-    const { arqueo } = e.contar(e.caja, turno, 110_000)
-    expect(motivo(e.cerrar(e.caja, turno, arqueo, 110_000, 110_000))).toBe('confirmado')
-    return { ...e, turno, pedido, pago }
+    const shift = e.abrirTurno(e.register, 100_000)
+    const order = e.abrirPedido(e.register)
+    const payment = e.cobrar(e.register, order, e.pagoEf(shift, 10_000))
+    const { cashCount } = e.contar(e.register, shift, 110_000)
+    expect(reason(e.close(e.register, shift, cashCount, 110_000, 110_000))).toBe('confirmed')
+    return { ...e, shift, order, payment }
   }
 
   it('un pago, una anulación y un reembolso a ese turno se rechazan con sin_turno', () => {
-    const c = cerrado()
-    const antes = c.m.almacen.maxSecuencia()
-    const pago = c.uno(
-      c.caja,
-      c.crudo(c.caja, 'PagoRegistrado', c.pedido, c.pagoEf(c.turno, 5_000)),
+    const c = closed()
+    const before = c.m.almacen.maxSecuencia()
+    const payment = c.one(
+      c.register,
+      c.crudo(c.register, 'PaymentRecorded', c.order, c.pagoEf(c.shift, 5_000)),
     )
-    expect(motivo(pago)).toBe('sin_turno')
-    expect(motivo(c.anular(c.caja, c.pedido, c.pago, c.turno))).toBe('sin_turno')
-    const reembolso = c.uno(
-      c.caja,
-      c.crudo(c.caja, 'ReembolsoRegistrado', c.pedido, {
-        pago_id: c.pago,
-        reembolso_id: nuevoId(),
-        monto_venta: 1_000,
-        monto_propina: 0,
-        medio: 'efectivo',
-        turno_caja_id: c.turno,
+    expect(reason(payment)).toBe('no_shift')
+    expect(reason(c.voidItem(c.register, c.order, c.payment, c.shift))).toBe('no_shift')
+    const refund = c.one(
+      c.register,
+      c.crudo(c.register, 'RefundRecorded', c.order, {
+        payment_id: c.payment,
+        refund_id: newId(),
+        sale_amount: 1_000,
+        tip_amount: 0,
+        method: 'cash',
+        register_shift_id: c.shift,
       }),
     )
-    expect(motivo(reembolso)).toBe('sin_turno')
-    expect(c.m.almacen.maxSecuencia()).toBe(antes)
-    expect(Object.keys(c.estado.hub.pedido(c.pedido)?.pagos ?? {})).toHaveLength(1)
+    expect(reason(refund)).toBe('no_shift')
+    expect(c.m.almacen.maxSecuencia()).toBe(before)
+    expect(Object.keys(c.status.hub.order(c.order)?.payments ?? {})).toHaveLength(1)
   })
 
   it('un movimiento, otro arqueo y otro cierre al turno cerrado: sin_turno', () => {
-    const c = cerrado()
-    expect(motivo(c.movimiento(c.caja, c.turno, 'entrada', 1_000))).toBe('sin_turno')
-    expect(motivo(c.contar(c.caja, c.turno, 1_000).resultado)).toBe('sin_turno')
-    expect(motivo(c.cerrar(c.caja, c.turno, nuevoId(), 0, 0))).toBe('sin_turno')
+    const c = closed()
+    expect(reason(c.movement(c.register, c.shift, 'entry', 1_000))).toBe('no_shift')
+    expect(reason(c.contar(c.register, c.shift, 1_000).result)).toBe('no_shift')
+    expect(reason(c.close(c.register, c.shift, newId(), 0, 0))).toBe('no_shift')
   })
 
   it('el id del turno cerrado no se puede reabrir (turno_ya_existe)', () => {
-    const c = cerrado()
-    const r = c.uno(
-      c.caja,
-      c.crudo(c.caja, 'TurnoAbierto', c.turno, { caja_id: c.caja.dispositivoId, base: 1 }),
+    const c = closed()
+    const r = c.one(
+      c.register,
+      c.crudo(c.register, 'ShiftOpened', c.shift, {
+        register_id: c.register.dispositivoId,
+        base: 1,
+      }),
     )
-    expect(motivo(r)).toBe('turno_ya_existe')
+    expect(reason(r)).toBe('shift_already_exists')
   })
 
   it('la misma caja abre otro turno, con su propia base, y el cuadre del nuevo no hereda nada', () => {
-    const c = cerrado()
-    const nuevo = c.abrirTurno(c.caja, 30_000)
-    expect(nuevo).not.toBe(c.turno)
-    expect(c.estado.hub.turnoAbierto(c.caja.dispositivoId)).toMatchObject({
-      id: nuevo,
+    const c = closed()
+    const fresh = c.abrirTurno(c.register, 30_000)
+    expect(fresh).not.toBe(c.shift)
+    expect(c.status.hub.turnoAbierto(c.register.dispositivoId)).toMatchObject({
+      id: fresh,
       base: 30_000,
     })
-    expect(c.estado.hub.cuadre(nuevo)?.efectivo).toMatchObject({
-      cobrado: 0,
-      entradas: 0,
-      esperado: 30_000,
+    expect(c.status.hub.reconciliation(fresh)?.cash).toMatchObject({
+      charged: 0,
+      entries: 0,
+      expected: 30_000,
     })
-    expect(c.estado.hub.cuadre(nuevo)?.porMedio).toEqual([])
+    expect(c.status.hub.reconciliation(fresh)?.byMethod).toEqual([])
   })
 
   it('en el turno nuevo se cobra con normalidad y el cierre cuadra solo con lo suyo', () => {
-    const c = cerrado()
-    const nuevo = c.abrirTurno(c.caja, 30_000)
-    c.cobrar(c.caja, c.pedido, c.pagoEf(nuevo, 8_000, 500))
+    const c = closed()
+    const fresh = c.abrirTurno(c.register, 30_000)
+    c.cobrar(c.register, c.order, c.pagoEf(fresh, 8_000, 500))
     // Lo del turno anterior (110.000) no cuenta: el esperado es 30.000 + 8.500.
-    expect(c.estado.hub.cuadre(nuevo)?.efectivo.esperado).toBe(38_500)
-    const { arqueo } = c.contar(c.caja, nuevo, 38_500)
-    expect(motivo(c.cerrar(c.caja, nuevo, arqueo, 38_500, 38_500))).toBe('confirmado')
-    expect(c.estado.hub.turnoAbierto(c.caja.dispositivoId)).toBeNull()
+    expect(c.status.hub.reconciliation(fresh)?.cash.expected).toBe(38_500)
+    const { cashCount } = c.contar(c.register, fresh, 38_500)
+    expect(reason(c.close(c.register, fresh, cashCount, 38_500, 38_500))).toBe('confirmed')
+    expect(c.status.hub.turnoAbierto(c.register.dispositivoId)).toBeNull()
   })
 })
 
@@ -848,98 +869,102 @@ describe('anular, en este turno, el pago de un turno anterior', () => {
   /** Turno 1 con un pago de 30.000 (+2.000 de propina) ya cerrado; turno 2 abierto con base 100.000. */
   function dosTurnos() {
     const e = entorno()
-    const t1 = e.abrirTurno(e.caja, 0)
-    const pedido = e.abrirPedido(e.caja)
-    const pago = e.cobrar(e.caja, pedido, e.pagoEf(t1, 30_000, 2_000))
-    const { arqueo } = e.contar(e.caja, t1, 32_000)
-    expect(motivo(e.cerrar(e.caja, t1, arqueo, 32_000, 32_000))).toBe('confirmado')
-    const t2 = e.abrirTurno(e.caja, 100_000)
-    return { ...e, t1, t2, pedido, pago }
+    const t1 = e.abrirTurno(e.register, 0)
+    const order = e.abrirPedido(e.register)
+    const payment = e.cobrar(e.register, order, e.pagoEf(t1, 30_000, 2_000))
+    const { cashCount } = e.contar(e.register, t1, 32_000)
+    expect(reason(e.close(e.register, t1, cashCount, 32_000, 32_000))).toBe('confirmed')
+    const t2 = e.abrirTurno(e.register, 100_000)
+    return { ...e, t1, t2, order, payment }
   }
 
   it('la anulación cae en el turno 2: devuelve lo cobrado (monto + propina) y el esperado baja', () => {
     const d = dosTurnos()
-    expect(motivo(d.anular(d.caja, d.pedido, d.pago, d.t2))).toBe('confirmado')
-    const c = d.estado.hub.cuadre(d.t2)
-    expect(c?.efectivo).toMatchObject({ cobrado: 0, devoluciones: 32_000, esperado: 68_000 })
-    expect(c?.porMedio).toEqual([
-      { medio: 'efectivo', medioPropioId: null, venta: -30_000, propina: -2_000, pagos: -1 },
+    expect(reason(d.voidItem(d.register, d.order, d.payment, d.t2))).toBe('confirmed')
+    const c = d.status.hub.reconciliation(d.t2)
+    expect(c?.cash).toMatchObject({ charged: 0, refunds: 32_000, expected: 68_000 })
+    expect(c?.byMethod).toEqual([
+      { method: 'cash', customMethodId: null, sale: -30_000, tip: -2_000, payments: -1 },
     ])
   })
 
   it('el cierre del turno 2 debe traer ese esperado: con el de antes de anular, esperado_distinto', () => {
     const d = dosTurnos()
-    d.anular(d.caja, d.pedido, d.pago, d.t2)
-    const { arqueo } = d.contar(d.caja, d.t2, 68_000)
-    expect(motivo(d.cerrar(d.caja, d.t2, arqueo, 100_000, 68_000, 'x'))).toBe('esperado_distinto')
-    expect(motivo(d.cerrar(d.caja, d.t2, arqueo, 68_000, 68_000))).toBe('confirmado')
+    d.voidItem(d.register, d.order, d.payment, d.t2)
+    const { cashCount } = d.contar(d.register, d.t2, 68_000)
+    expect(reason(d.close(d.register, d.t2, cashCount, 100_000, 68_000, 'x'))).toBe(
+      'expected_mismatch',
+    )
+    expect(reason(d.close(d.register, d.t2, cashCount, 68_000, 68_000))).toBe('confirmed')
   })
 
   it('con otros movimientos del turno 2 todo suma: base + entrada + cobro − reversa − salida', () => {
     const d = dosTurnos()
-    d.movimiento(d.caja, d.t2, 'entrada', 5_000)
-    d.cobrar(d.caja, d.pedido, d.pagoEf(d.t2, 10_000))
-    d.anular(d.caja, d.pedido, d.pago, d.t2)
-    d.movimiento(d.caja, d.t2, 'salida', 1_000)
-    expect(d.estado.hub.cuadre(d.t2)?.efectivo.esperado).toBe(
+    d.movement(d.register, d.t2, 'entry', 5_000)
+    d.cobrar(d.register, d.order, d.pagoEf(d.t2, 10_000))
+    d.voidItem(d.register, d.order, d.payment, d.t2)
+    d.movement(d.register, d.t2, 'output', 1_000)
+    expect(d.status.hub.reconciliation(d.t2)?.cash.expected).toBe(
       100_000 + 5_000 + 10_000 - 32_000 - 1_000,
     )
   })
 
   it('anular un pago de OTRA caja en este turno es turno_de_otra_caja solo si el turno no es de esta caja', () => {
     const d = dosTurnos()
-    const turno2Ajeno = d.abrirTurno(d.caja2, 0)
+    const turno2Ajeno = d.abrirTurno(d.register2, 0)
     // La caja 2 anula, en su propio turno, un pago que cobró la caja 1 en su turno 1 ya cerrado.
-    expect(motivo(d.anular(d.caja2, d.pedido, d.pago, turno2Ajeno))).toBe('confirmado')
-    expect(d.estado.hub.cuadre(turno2Ajeno)?.efectivo).toMatchObject({ devoluciones: 32_000 })
+    expect(reason(d.voidItem(d.register2, d.order, d.payment, turno2Ajeno))).toBe('confirmed')
+    expect(d.status.hub.reconciliation(turno2Ajeno)?.cash).toMatchObject({ refunds: 32_000 })
     // La caja 1 no puede anularlo en el turno de la caja 2.
-    expect(motivo(d.anular(d.caja, d.pedido, nuevoId(), turno2Ajeno))).toBe('turno_de_otra_caja')
+    expect(reason(d.voidItem(d.register, d.order, newId(), turno2Ajeno))).toBe(
+      'other_register_shift',
+    )
   })
 
   it('un reembolso en efectivo en el turno 2 de un pago del turno 1 resta del cajón del turno 2', () => {
     const d = dosTurnos()
-    const r = d.uno(
-      d.caja,
-      d.crudo(d.caja, 'ReembolsoRegistrado', d.pedido, {
-        pago_id: d.pago,
-        reembolso_id: nuevoId(),
-        monto_venta: 4_000,
-        monto_propina: 500,
-        medio: 'efectivo',
-        turno_caja_id: d.t2,
+    const r = d.one(
+      d.register,
+      d.crudo(d.register, 'RefundRecorded', d.order, {
+        payment_id: d.payment,
+        refund_id: newId(),
+        sale_amount: 4_000,
+        tip_amount: 500,
+        method: 'cash',
+        register_shift_id: d.t2,
       }),
     )
-    expect(motivo(r)).toBe('confirmado')
-    expect(d.estado.hub.cuadre(d.t2)?.efectivo).toMatchObject({
-      devoluciones: 4_500,
-      esperado: 95_500,
+    expect(reason(r)).toBe('confirmed')
+    expect(d.status.hub.reconciliation(d.t2)?.cash).toMatchObject({
+      refunds: 4_500,
+      expected: 95_500,
     })
   })
 
   // El reembolso trae al turno el pago original (como la anulación), así que no se pierde el medio propio.
   it('un reembolso de un pago de medio propio de otro turno queda en el renglón de ese medio propio', () => {
     const e = entorno()
-    const t1 = e.abrirTurno(e.caja, 0)
-    const pedido = e.abrirPedido(e.caja)
-    const pago = e.cobrar(e.caja, pedido, e.pagoPropio(t1, 20_000))
-    const { arqueo } = e.contar(e.caja, t1, 0)
+    const t1 = e.abrirTurno(e.register, 0)
+    const order = e.abrirPedido(e.register)
+    const payment = e.cobrar(e.register, order, e.pagoPropio(t1, 20_000))
+    const { cashCount } = e.contar(e.register, t1, 0)
     // El Sodexo no se reportó en el conteo (1.8): el cierre lo marca y pide justificarlo.
-    e.cerrar(e.caja, t1, arqueo, 0, 0, 'Sodexo sin reporte')
-    const t2 = e.abrirTurno(e.caja, 0)
-    const r = e.uno(
-      e.caja,
-      e.crudo(e.caja, 'ReembolsoRegistrado', pedido, {
-        pago_id: pago,
-        reembolso_id: nuevoId(),
-        monto_venta: 5_000,
-        monto_propina: 0,
-        medio: 'otro',
-        turno_caja_id: t2,
+    e.close(e.register, t1, cashCount, 0, 0, 'Sodexo sin reporte')
+    const t2 = e.abrirTurno(e.register, 0)
+    const r = e.one(
+      e.register,
+      e.crudo(e.register, 'RefundRecorded', order, {
+        payment_id: payment,
+        refund_id: newId(),
+        sale_amount: 5_000,
+        tip_amount: 0,
+        method: 'other',
+        register_shift_id: t2,
       }),
     )
-    expect(motivo(r)).toBe('confirmado')
-    expect(e.estado.hub.cuadre(t2)?.porMedio).toEqual([
-      { medio: 'otro', medioPropioId: SODEXO, venta: -5_000, propina: 0, pagos: 0 },
+    expect(reason(r)).toBe('confirmed')
+    expect(e.status.hub.reconciliation(t2)?.byMethod).toEqual([
+      { method: 'other', customMethodId: SODEXO, sale: -5_000, tip: 0, payments: 0 },
     ])
   })
 })
@@ -948,425 +973,437 @@ describe('reinicio del hub con un turno a medias', () => {
   /** Turno 1 cerrado y turno 2 con cobro, entrada, salida, anulación del pago del turno 1 y un conteo. */
   function aMedias() {
     const e = entorno()
-    const t1 = e.abrirTurno(e.caja, 0)
-    const pedido = e.abrirPedido(e.caja)
-    const pago1 = e.cobrar(e.caja, pedido, e.pagoEf(t1, 30_000, 2_000))
-    const a1 = e.contar(e.caja, t1, 32_000)
-    e.cerrar(e.caja, t1, a1.arqueo, 32_000, 32_000)
-    const t2 = e.abrirTurno(e.caja, 100_000)
-    e.movimiento(e.caja, t2, 'entrada', 5_000)
-    e.cobrar(e.caja, pedido, e.pagoEf(t2, 10_000))
-    e.cobrar(e.caja, pedido, e.pagoNequi(t2, 800, 100))
-    e.anular(e.caja, pedido, pago1, t2)
-    e.movimiento(e.caja, t2, 'salida', 1_000)
-    e.contar(e.caja, t2, 82_000)
-    return { ...e, t1, t2, pedido, pago1 }
+    const t1 = e.abrirTurno(e.register, 0)
+    const order = e.abrirPedido(e.register)
+    const pago1 = e.cobrar(e.register, order, e.pagoEf(t1, 30_000, 2_000))
+    const a1 = e.contar(e.register, t1, 32_000)
+    e.close(e.register, t1, a1.cashCount, 32_000, 32_000)
+    const t2 = e.abrirTurno(e.register, 100_000)
+    e.movement(e.register, t2, 'entry', 5_000)
+    e.cobrar(e.register, order, e.pagoEf(t2, 10_000))
+    e.cobrar(e.register, order, e.pagoNequi(t2, 800, 100))
+    e.voidItem(e.register, order, pago1, t2)
+    e.movement(e.register, t2, 'output', 1_000)
+    e.contar(e.register, t2, 82_000)
+    return { ...e, t1, t2, order, pago1 }
   }
   const ESPERADO = 100_000 + 5_000 + 10_000 - 32_000 - 1_000
 
   it('el cuadre se reconstruye idéntico: lo cobrado, las devoluciones, los movimientos y los conteos', () => {
     const a = aMedias()
-    const antes = a.estado.hub.cuadre(a.t2)
-    expect(antes?.efectivo.esperado).toBe(ESPERADO)
+    const before = a.status.hub.reconciliation(a.t2)
+    expect(before?.cash.expected).toBe(ESPERADO)
     const reiniciado = a.nuevoHub()
-    expect(reiniciado.cuadre(a.t2)).toEqual(antes)
-    expect(reiniciado.turnoAbierto(a.caja.dispositivoId)?.id).toBe(a.t2)
+    expect(reiniciado.reconciliation(a.t2)).toEqual(before)
+    expect(reiniciado.turnoAbierto(a.register.dispositivoId)?.id).toBe(a.t2)
     // El turno cerrado no reaparece.
-    expect(reiniciado.cuadre(a.t1)?.cerrado).not.toBeNull()
+    expect(reiniciado.reconciliation(a.t1)?.closed).not.toBeNull()
   })
 
   it('tras el reinicio el cierre se acepta con el esperado reconstruido y se rechaza con otro', () => {
     const a = aMedias()
-    a.estado.hub = a.nuevoHub()
-    const arqueo = a.estado.hub.cuadre(a.t2)?.arqueos[0]?.id ?? ''
-    expect(motivo(a.cerrar(a.caja, a.t2, arqueo, ESPERADO + 1_000, 82_000, 'x'))).toBe(
-      'esperado_distinto',
+    a.status.hub = a.nuevoHub()
+    const cashCount = a.status.hub.reconciliation(a.t2)?.cashCounts[0]?.id ?? ''
+    expect(reason(a.close(a.register, a.t2, cashCount, ESPERADO + 1_000, 82_000, 'x'))).toBe(
+      'expected_mismatch',
     )
-    expect(motivo(a.cerrar(a.caja, a.t2, arqueo, ESPERADO, 82_000))).toBe('confirmado')
+    expect(reason(a.close(a.register, a.t2, cashCount, ESPERADO, 82_000))).toBe('confirmed')
   })
 
   it('un turno cerrado sigue cerrado tras el reinicio: nada se le puede agregar y la caja abre otro', () => {
     const a = aMedias()
-    const arqueo = a.estado.hub.cuadre(a.t2)?.arqueos[0]?.id ?? ''
-    a.cerrar(a.caja, a.t2, arqueo, ESPERADO, 82_000)
-    a.estado.hub = a.nuevoHub()
-    expect(a.estado.hub.turnoAbierto(a.caja.dispositivoId)).toBeNull()
-    expect(a.estado.hub.cuadre(a.t2)?.cerrado).not.toBeNull()
-    expect(motivo(a.movimiento(a.caja, a.t2, 'entrada', 1_000))).toBe('sin_turno')
-    expect(motivo(a.contar(a.caja, a.t2, 1_000).resultado)).toBe('sin_turno')
-    const siguiente = a.abrirTurno(a.caja, 5_000)
-    expect(a.estado.hub.cuadre(siguiente)?.efectivo.esperado).toBe(5_000)
+    const cashCount = a.status.hub.reconciliation(a.t2)?.cashCounts[0]?.id ?? ''
+    a.close(a.register, a.t2, cashCount, ESPERADO, 82_000)
+    a.status.hub = a.nuevoHub()
+    expect(a.status.hub.turnoAbierto(a.register.dispositivoId)).toBeNull()
+    expect(a.status.hub.reconciliation(a.t2)?.closed).not.toBeNull()
+    expect(reason(a.movement(a.register, a.t2, 'entry', 1_000))).toBe('no_shift')
+    expect(reason(a.contar(a.register, a.t2, 1_000).result)).toBe('no_shift')
+    const next = a.abrirTurno(a.register, 5_000)
+    expect(a.status.hub.reconciliation(next)?.cash.expected).toBe(5_000)
   })
 
   it('los conteos o movimientos rechazados no reaparecen tras el reinicio', () => {
     const a = aMedias()
-    a.movimiento(a.caja2, a.t2, 'entrada', 99_000) // de otra caja: rechazado
-    a.cerrar(a.caja, a.t2, nuevoId(), 0, 0) // sin conteo: rechazado
+    a.movement(a.register2, a.t2, 'entry', 99_000) // de otra caja: rechazado
+    a.close(a.register, a.t2, newId(), 0, 0) // sin conteo: rechazado
     const reiniciado = a.nuevoHub()
-    expect(reiniciado.cuadre(a.t2)?.efectivo.entradas).toBe(5_000)
-    expect(reiniciado.cuadre(a.t2)?.efectivo.esperado).toBe(ESPERADO)
+    expect(reiniciado.reconciliation(a.t2)?.cash.entries).toBe(5_000)
+    expect(reiniciado.reconciliation(a.t2)?.cash.expected).toBe(ESPERADO)
   })
 
   it('con eventos de más de una página entre medias, el turno se reconstruye completo', () => {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja, 1_000)
-    const pedido = e.abrirPedido(e.caja, 1_000_000)
-    e.cobrar(e.caja, pedido, e.pagoEf(turno, 20_000))
+    const shift = e.abrirTurno(e.register, 1_000)
+    const order = e.abrirPedido(e.register, 1_000_000)
+    e.cobrar(e.register, order, e.pagoEf(shift, 20_000))
     // Más de una página de eventos de pedidos ajenos al turno, en un solo lote.
     const relleno: Record<string, unknown>[] = []
     for (let i = 0; i < TAMANO_PAGINA + 20; i++) {
-      const p = nuevoId()
+      const p = newId()
       relleno.push(
-        e.crudo(e.ana, 'PedidoAbierto', p, { canal: 'salon', mesa_id: null, comensales: 1 }),
+        e.crudo(e.ana, 'OrderOpened', p, { channel: 'dine_in', table_id: null, guests: 1 }),
       )
     }
-    for (let i = 0; i < relleno.length; i += 100) e.enviar(e.ana, relleno.slice(i, i + 100))
-    e.movimiento(e.caja, turno, 'entrada', 2_000)
-    e.estado.hub = e.nuevoHub()
+    for (let i = 0; i < relleno.length; i += 100) e.send(e.ana, relleno.slice(i, i + 100))
+    e.movement(e.register, shift, 'entry', 2_000)
+    e.status.hub = e.nuevoHub()
     expect(eventosDe(e.m).length).toBeGreaterThan(TAMANO_PAGINA)
-    expect(e.estado.hub.cuadre(turno)?.efectivo).toMatchObject({
-      cobrado: 20_000,
-      entradas: 2_000,
-      esperado: 23_000,
+    expect(e.status.hub.reconciliation(shift)?.cash).toMatchObject({
+      charged: 20_000,
+      entries: 2_000,
+      expected: 23_000,
     })
   })
 
   it('el hub se cae al guardar el cierre: al volver sigue a medias, y el cierre reenviado se acepta una vez', () => {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja, 10_000)
-    const { arqueo } = e.contar(e.caja, turno, 10_000)
-    const cierre = e.crudo(e.caja, 'TurnoCerrado', turno, e.datosCierre(arqueo, 10_000, 10_000))
+    const shift = e.abrirTurno(e.register, 10_000)
+    const { cashCount } = e.contar(e.register, shift, 10_000)
+    const closeout = e.crudo(
+      e.register,
+      'ShiftClosed',
+      shift,
+      e.datosCierre(cashCount, 10_000, 10_000),
+    )
     const almacen = e.m.almacen as AlmacenQueSeCae
     almacen.caerEn = 1
-    expect(() => e.uno(e.caja, cierre)).toThrow('apag')
+    expect(() => e.one(e.register, closeout)).toThrow('apag')
     expect(almacen.caido).toBe(true)
     almacen.caido = false
-    e.estado.hub = e.nuevoHub()
-    expect(e.estado.hub.turnoAbierto(e.caja.dispositivoId)?.id).toBe(turno)
-    expect(eventosDe(e.m).filter((x) => x.tipo === 'TurnoCerrado')).toHaveLength(0)
-    expect(motivo(e.uno(e.caja, cierre))).toBe('confirmado')
-    expect(motivo(e.uno(e.caja, cierre))).toBe('confirmado')
-    expect(eventosDe(e.m).filter((x) => x.tipo === 'TurnoCerrado')).toHaveLength(1)
+    e.status.hub = e.nuevoHub()
+    expect(e.status.hub.turnoAbierto(e.register.dispositivoId)?.id).toBe(shift)
+    expect(eventosDe(e.m).filter((x) => x.type === 'ShiftClosed')).toHaveLength(0)
+    expect(reason(e.one(e.register, closeout))).toBe('confirmed')
+    expect(reason(e.one(e.register, closeout))).toBe('confirmed')
+    expect(eventosDe(e.m).filter((x) => x.type === 'ShiftClosed')).toHaveLength(1)
   })
 })
 
 describe('multirestaurante: el cuadre es de cada restaurante', () => {
-  function dos() {
+  function two() {
     const e = entorno()
-    const otroId = nuevoId()
+    const otroId = newId()
     e.m.db
       .prepare(
-        `INSERT INTO restaurante (id, restaurante_id, creado_en, actualizado_en, version, nombre, config)
+        `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
          VALUES (?, ?, ?, ?, 1, 'Otro restaurante', '{}')`,
       )
       .run(otroId, otroId, AHORA, AHORA)
     const nuevoHubB = () =>
       new HubSync(new AlmacenSqlite(e.m.db, otroId), {
         restauranteId: otroId,
-        zonaHoraria: 'America/Bogota',
+        timeZone: 'America/Bogota',
         inicioDiaOperativo: '06:00',
-        acceso: accesoLibre,
+        access: accesoLibre,
         instancia: 'hub-b',
-        reloj: e.m.red.horaIso,
+        clock: e.m.network.horaIso,
         reglasCobro: () => ({ ...REGLAS, umbralDiferencia: 0 }),
       })
     return { ...e, otroId, hubB: nuevoHubB(), nuevoHubB }
   }
 
   it('el movimiento, el arqueo y el cierre del turno de A no existen en B (sin_turno)', () => {
-    const d = dos()
-    const turno = d.abrirTurno(d.caja, 50_000)
-    const enB = (tipo: string, datos: unknown) =>
-      motivo(
-        d.enviar(d.caja, [d.crudo(d.caja, tipo, turno, datos, { secuencia_base: 0 })], d.hubB)
+    const d = two()
+    const shift = d.abrirTurno(d.register, 50_000)
+    const enB = (type: string, data: unknown) =>
+      reason(
+        d.send(d.register, [d.crudo(d.register, type, shift, data, { base_sequence: 0 })], d.hubB)
           .resultados[0],
       )
     expect(
-      enB('MovimientoCajaRegistrado', {
-        movimiento_id: nuevoId(),
-        tipo: 'entrada',
-        monto: 1_000,
-        descripcion: 'x',
-        a_quien: null,
-        dias: [],
+      enB('CashMovementRecorded', {
+        movement_id: newId(),
+        type: 'entry',
+        amount: 1_000,
+        description: 'x',
+        to_whom: null,
+        days: [],
       }),
-    ).toBe('sin_turno')
-    expect(enB('ArqueoRegistrado', { arqueo_id: nuevoId(), conteo: [], contado_efectivo: 0 })).toBe(
-      'sin_turno',
+    ).toBe('no_shift')
+    expect(enB('CashCountRecorded', { cash_count_id: newId(), tally: [], counted_cash: 0 })).toBe(
+      'no_shift',
     )
-    expect(enB('TurnoCerrado', d.datosCierre(nuevoId(), 0, 0))).toBe('sin_turno')
-    expect(d.hubB.cuadre(turno)).toBeNull()
-    expect(d.estado.hub.cuadre(turno)?.efectivo.esperado).toBe(50_000)
+    expect(enB('ShiftClosed', d.datosCierre(newId(), 0, 0))).toBe('no_shift')
+    expect(d.hubB.reconciliation(shift)).toBeNull()
+    expect(d.status.hub.reconciliation(shift)?.cash.expected).toBe(50_000)
   })
 
   it('cada restaurante tiene su turno y su cuadre aunque sea la misma caja y haya cierres en uno', () => {
-    const d = dos()
-    const turnoA = d.abrirTurno(d.caja, 10_000)
-    const turnoB = nuevoId()
-    const rB = d.enviar(
-      d.caja,
+    const d = two()
+    const turnoA = d.abrirTurno(d.register, 10_000)
+    const turnoB = newId()
+    const rB = d.send(
+      d.register,
       [
         d.crudo(
-          d.caja,
-          'TurnoAbierto',
+          d.register,
+          'ShiftOpened',
           turnoB,
-          { caja_id: d.caja.dispositivoId, base: 20_000 },
-          { secuencia_base: 0 },
+          { register_id: d.register.dispositivoId, base: 20_000 },
+          { base_sequence: 0 },
         ),
         d.crudo(
-          d.caja,
-          'MovimientoCajaRegistrado',
+          d.register,
+          'CashMovementRecorded',
           turnoB,
           {
-            movimiento_id: nuevoId(),
-            tipo: 'entrada',
-            monto: 3_000,
-            descripcion: 'x',
-            a_quien: null,
-            dias: [],
+            movement_id: newId(),
+            type: 'entry',
+            amount: 3_000,
+            description: 'x',
+            to_whom: null,
+            days: [],
           },
-          { secuencia_base: 0 },
+          { base_sequence: 0 },
         ),
       ],
       d.hubB,
     )
-    expect(rB.resultados.map(motivo)).toEqual(['confirmado', 'confirmado'])
-    d.movimiento(d.caja, turnoA, 'salida', 4_000)
-    expect(d.estado.hub.cuadre(turnoA)?.efectivo.esperado).toBe(6_000)
-    expect(d.hubB.cuadre(turnoB)?.efectivo.esperado).toBe(23_000)
+    expect(rB.resultados.map(reason)).toEqual(['confirmed', 'confirmed'])
+    d.movement(d.register, turnoA, 'output', 4_000)
+    expect(d.status.hub.reconciliation(turnoA)?.cash.expected).toBe(6_000)
+    expect(d.hubB.reconciliation(turnoB)?.cash.expected).toBe(23_000)
 
     // Cerrar el de A no cierra el de B.
-    const { arqueo } = d.contar(d.caja, turnoA, 6_000)
-    expect(motivo(d.cerrar(d.caja, turnoA, arqueo, 6_000, 6_000))).toBe('confirmado')
-    expect(d.estado.hub.turnoAbierto(d.caja.dispositivoId)).toBeNull()
-    expect(d.hubB.turnoAbierto(d.caja.dispositivoId)?.id).toBe(turnoB)
+    const { cashCount } = d.contar(d.register, turnoA, 6_000)
+    expect(reason(d.close(d.register, turnoA, cashCount, 6_000, 6_000))).toBe('confirmed')
+    expect(d.status.hub.turnoAbierto(d.register.dispositivoId)).toBeNull()
+    expect(d.hubB.turnoAbierto(d.register.dispositivoId)?.id).toBe(turnoB)
 
     // Reiniciar cada hub reconstruye solo lo suyo.
-    expect(d.nuevoHub().turnoAbierto(d.caja.dispositivoId)).toBeNull()
+    expect(d.nuevoHub().turnoAbierto(d.register.dispositivoId)).toBeNull()
     const reiniciadoB = d.nuevoHubB()
-    expect(reiniciadoB.cuadre(turnoB)?.efectivo).toMatchObject({
-      entradas: 3_000,
-      esperado: 23_000,
+    expect(reiniciadoB.reconciliation(turnoB)?.cash).toMatchObject({
+      entries: 3_000,
+      expected: 23_000,
     })
-    expect(reiniciadoB.cuadre(turnoA)).toBeNull()
+    expect(reiniciadoB.reconciliation(turnoA)).toBeNull()
   })
 
   it('el umbral es de cada restaurante: un faltante de $500 se cierra solo en A (umbral 1.000), no en B (umbral 0)', () => {
-    const d = dos()
-    const enB = (evento: Record<string, unknown>) =>
-      motivo(d.enviar(d.caja, [evento], d.hubB).resultados[0])
-    const turnoB = nuevoId()
+    const d = two()
+    const enB = (event: Record<string, unknown>) =>
+      reason(d.send(d.register, [event], d.hubB).resultados[0])
+    const turnoB = newId()
     expect(
       enB(
         d.crudo(
-          d.caja,
-          'TurnoAbierto',
+          d.register,
+          'ShiftOpened',
           turnoB,
-          { caja_id: d.caja.dispositivoId, base: 10_000 },
-          { secuencia_base: 0 },
+          { register_id: d.register.dispositivoId, base: 10_000 },
+          { base_sequence: 0 },
         ),
       ),
-    ).toBe('confirmado')
-    const arqueoB = nuevoId()
+    ).toBe('confirmed')
+    const arqueoB = newId()
     enB(
       d.crudo(
-        d.caja,
-        'ArqueoRegistrado',
+        d.register,
+        'CashCountRecorded',
         turnoB,
-        { arqueo_id: arqueoB, conteo: d.conteoDe(9_500), contado_efectivo: 9_500 },
-        { secuencia_base: 0 },
+        { cash_count_id: arqueoB, tally: d.conteoDe(9_500), counted_cash: 9_500 },
+        { base_sequence: 0 },
       ),
     )
     expect(
       enB(
-        d.crudo(d.caja, 'TurnoCerrado', turnoB, d.datosCierre(arqueoB, 10_000, 9_500), {
-          secuencia_base: 0,
+        d.crudo(d.register, 'ShiftClosed', turnoB, d.datosCierre(arqueoB, 10_000, 9_500), {
+          base_sequence: 0,
         }),
       ),
-    ).toBe('falta_justificacion')
+    ).toBe('missing_justification')
 
-    const turnoA = d.abrirTurno(d.caja, 10_000)
-    const { arqueo } = d.contar(d.caja, turnoA, 9_500)
-    expect(motivo(d.cerrar(d.caja, turnoA, arqueo, 10_000, 9_500))).toBe('confirmado')
+    const turnoA = d.abrirTurno(d.register, 10_000)
+    const { cashCount } = d.contar(d.register, turnoA, 9_500)
+    expect(reason(d.close(d.register, turnoA, cashCount, 10_000, 9_500))).toBe('confirmed')
   })
 })
 
 describe('con la red simulada: la caja cierra sin conexión, el hub se apaga y llegan duplicados', () => {
   /** La caja abre turno, mueve efectivo, cuenta y cierra; cada evento se guarda en el dispositivo. */
-  async function cajaCierra(caja: Nodo, base = 100_000) {
-    const turno = nuevoId()
-    const arqueo = nuevoId()
-    const turnoCaja = { agregado_tipo: 'turno_caja' } as never
-    await caja.crear(turno, 'TurnoAbierto', { caja_id: caja.dispositivoId, base }, turnoCaja)
-    await caja.crear(
-      turno,
-      'MovimientoCajaRegistrado',
+  async function cajaCierra(register: Nodo, base = 100_000) {
+    const shift = newId()
+    const cashCount = newId()
+    const turnoCaja = { aggregate_type: 'register_shift' } as never
+    await register.crear(
+      shift,
+      'ShiftOpened',
+      { register_id: register.dispositivoId, base },
+      turnoCaja,
+    )
+    await register.crear(
+      shift,
+      'CashMovementRecorded',
       {
-        movimiento_id: nuevoId(),
-        tipo: 'entrada',
-        monto: 20_000,
-        descripcion: 'Cambio',
-        a_quien: null,
-        dias: [],
+        movement_id: newId(),
+        type: 'entry',
+        amount: 20_000,
+        description: 'Cambio',
+        to_whom: null,
+        days: [],
       },
       turnoCaja,
     )
-    await caja.crear(
-      turno,
-      'ArqueoRegistrado',
-      { arqueo_id: arqueo, conteo: [{ valor: 20_000, cantidad: 6 }], contado_efectivo: 120_000 },
+    await register.crear(
+      shift,
+      'CashCountRecorded',
+      { cash_count_id: cashCount, tally: [{ value: 20_000, quantity: 6 }], counted_cash: 120_000 },
       turnoCaja,
     )
-    await caja.crear(
-      turno,
-      'TurnoCerrado',
+    await register.crear(
+      shift,
+      'ShiftClosed',
       {
-        arqueo_id: arqueo,
-        esperado_efectivo: base + 20_000,
-        contado_efectivo: 120_000,
-        diferencia: 120_000 - (base + 20_000),
-        justificacion: 'Se pagó un domicilio',
+        cash_count_id: cashCount,
+        expected_cash: base + 20_000,
+        counted_cash: 120_000,
+        variance: 120_000 - (base + 20_000),
+        justification: 'Se pagó un domicilio',
       },
       turnoCaja,
     )
-    return turno
+    return shift
   }
-  const tipos = (m: Montaje) => eventosDe(m).map((x) => x.tipo)
-  const CUATRO = ['TurnoAbierto', 'MovimientoCajaRegistrado', 'ArqueoRegistrado', 'TurnoCerrado']
+  const types = (m: Montaje) => eventosDe(m).map((x) => x.type)
+  const CUATRO = ['ShiftOpened', 'CashMovementRecorded', 'CashCountRecorded', 'ShiftClosed']
 
   it('todo sin conexión: al reconectar los cuatro se confirman en orden y el turno queda cerrado', async () => {
     const m = montar()
-    const caja = m.red.dispositivo('caja')
-    const ana = m.red.dispositivo('ana')
-    const turno = await cajaCierra(caja)
-    expect(await caja.cliente.pendientes()).toBe(4)
-    await m.red.conectarTodos()
-    expect(tipos(m)).toEqual(CUATRO)
-    expect(m.hub().turnoAbierto(caja.dispositivoId)).toBeNull()
-    expect(m.hub().cuadre(turno)?.cerrado).not.toBeNull()
-    expect(await caja.cliente.pendientes()).toBe(0)
-    expect((await ana.cliente.locales()).map((l) => l.evento.tipo)).toEqual(CUATRO)
+    const register = m.network.device('register')
+    const ana = m.network.device('ana')
+    const shift = await cajaCierra(register)
+    expect(await register.cliente.pendingList()).toBe(4)
+    await m.network.conectarTodos()
+    expect(types(m)).toEqual(CUATRO)
+    expect(m.hub().turnoAbierto(register.dispositivoId)).toBeNull()
+    expect(m.hub().reconciliation(shift)?.closed).not.toBeNull()
+    expect(await register.cliente.pendingList()).toBe(0)
+    expect((await ana.cliente.locales()).map((l) => l.event.type)).toEqual(CUATRO)
   })
 
   it('un lote duplicado por la red no repite movimientos ni cierres', async () => {
     const m = montar()
-    const caja = m.red.dispositivo('caja')
-    await m.red.conectarTodos()
-    caja.regla('al_hub', 'empujar', 'duplicar', 4)
-    await cajaCierra(caja)
-    await m.red.estabilizar()
-    expect(tipos(m)).toEqual(CUATRO)
-    expect(await caja.cliente.pendientes()).toBe(0)
+    const register = m.network.device('register')
+    await m.network.conectarTodos()
+    register.rule('to_hub', 'push', 'duplicate', 4)
+    await cajaCierra(register)
+    await m.network.settle()
+    expect(types(m)).toEqual(CUATRO)
+    expect(await register.cliente.pendingList()).toBe(0)
   })
 
   it('el hub se apaga justo al guardar el conteo: al volver, el arqueo y el cierre se completan sin duplicar', async () => {
     const m = montar()
-    const caja = m.red.dispositivo('caja')
-    await m.red.conectarTodos()
+    const register = m.network.device('register')
+    await m.network.conectarTodos()
     if (m.almacen instanceof AlmacenQueSeCae) m.almacen.caerEn = 3
-    const turno = await cajaCierra(caja)
-    await m.red.estabilizar()
-    await m.red.conectarTodos()
-    await m.red.estabilizar()
-    expect(tipos(m)).toEqual(CUATRO)
-    expect(m.hub().turnoAbierto(caja.dispositivoId)).toBeNull()
-    expect(eventosDe(m).every((x) => x.agregado_id === turno)).toBe(true)
+    const shift = await cajaCierra(register)
+    await m.network.settle()
+    await m.network.conectarTodos()
+    await m.network.settle()
+    expect(types(m)).toEqual(CUATRO)
+    expect(m.hub().turnoAbierto(register.dispositivoId)).toBeNull()
+    expect(eventosDe(m).every((x) => x.aggregate_id === shift)).toBe(true)
   })
 
   it('el hub se apaga justo al guardar el cierre: el turno vuelve abierto y el cierre llega una sola vez', async () => {
     const m = montar()
-    const caja = m.red.dispositivo('caja')
-    await m.red.conectarTodos()
+    const register = m.network.device('register')
+    await m.network.conectarTodos()
     if (m.almacen instanceof AlmacenQueSeCae) m.almacen.caerEn = 4
-    await cajaCierra(caja)
-    await m.red.estabilizar()
-    await m.red.conectarTodos()
-    await m.red.estabilizar()
-    expect(tipos(m).filter((x) => x === 'TurnoCerrado')).toHaveLength(1)
-    expect(m.hub().turnoAbierto(caja.dispositivoId)).toBeNull()
+    await cajaCierra(register)
+    await m.network.settle()
+    await m.network.conectarTodos()
+    await m.network.settle()
+    expect(types(m).filter((x) => x === 'ShiftClosed')).toHaveLength(1)
+    expect(m.hub().turnoAbierto(register.dispositivoId)).toBeNull()
   })
 
   it('con el reloj de la caja 3 horas atrasado el cierre se acepta igual', async () => {
     const m = montar()
-    const caja = m.red.dispositivo('caja')
-    caja.desfaseMs = -3 * 60 * 60 * 1000
-    await m.red.conectarTodos()
-    await cajaCierra(caja)
-    await m.red.estabilizar()
-    expect(tipos(m)).toEqual(CUATRO)
+    const register = m.network.device('register')
+    register.desfaseMs = -3 * 60 * 60 * 1000
+    await m.network.conectarTodos()
+    await cajaCierra(register)
+    await m.network.settle()
+    expect(types(m)).toEqual(CUATRO)
   })
 
   it('con el reloj adelantado un día, también', async () => {
     const m = montar()
-    const caja = m.red.dispositivo('caja')
-    caja.desfaseMs = 24 * 60 * 60 * 1000
-    await m.red.conectarTodos()
-    await cajaCierra(caja)
-    await m.red.estabilizar()
-    expect(tipos(m)).toEqual(CUATRO)
-    expect(m.hub().turnoAbierto(caja.dispositivoId)).toBeNull()
+    const register = m.network.device('register')
+    register.desfaseMs = 24 * 60 * 60 * 1000
+    await m.network.conectarTodos()
+    await cajaCierra(register)
+    await m.network.settle()
+    expect(types(m)).toEqual(CUATRO)
+    expect(m.hub().turnoAbierto(register.dispositivoId)).toBeNull()
   })
 })
 
 describe('informe del hub (tarea 1.9): datosDeInforme y cierreDeTurno', () => {
-  const DIA = '2026-10-24'
+  const DAY = '2026-10-24'
 
   it('junta los pedidos cerrados, los pagos del día y el cierre del turno con su cuadre', () => {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja, 50_000)
-    const cerrado = e.abrirPedido(e.caja, 30_000)
-    e.cobrar(e.caja, cerrado, e.pagoEf(turno, 30_000, 3_000))
-    expect(motivo(e.uno(e.caja, e.crudo(e.caja, 'PedidoCerrado', cerrado, {})))).toBe('confirmado')
+    const shift = e.abrirTurno(e.register, 50_000)
+    const closed = e.abrirPedido(e.register, 30_000)
+    e.cobrar(e.register, closed, e.pagoEf(shift, 30_000, 3_000))
+    expect(reason(e.one(e.register, e.crudo(e.register, 'OrderClosed', closed, {})))).toBe(
+      'confirmed',
+    )
     // Un abono de una mesa que sigue abierta: cuenta por medio, no en ventas.
-    const abierto = e.abrirPedido(e.caja, 20_000)
-    const abono = e.cobrar(e.caja, abierto, e.pagoNequi(turno, 5_000))
-    e.anular(e.caja, abierto, abono, turno)
-    e.movimiento(e.caja, turno, 'pago_propinas', 1_000)
-    const { arqueo } = e.contar(e.caja, turno, 82_000)
-    expect(motivo(e.cerrar(e.caja, turno, arqueo, 82_000, 82_000))).toBe('confirmado')
+    const opened = e.abrirPedido(e.register, 20_000)
+    const abono = e.cobrar(e.register, opened, e.pagoNequi(shift, 5_000))
+    e.voidItem(e.register, opened, abono, shift)
+    e.movement(e.register, shift, 'tip_payout', 1_000)
+    const { cashCount } = e.contar(e.register, shift, 82_000)
+    expect(reason(e.close(e.register, shift, cashCount, 82_000, 82_000))).toBe('confirmed')
 
-    const datos = e.estado.hub.datosDeInforme(DIA, DIA)
-    expect(datos.cierres?.map((c) => [c.antes, c.despues.id])).toEqual([[null, cerrado]])
+    const data = e.status.hub.datosDeInforme(DAY, DAY)
+    expect(data.closings?.map((c) => [c.before, c.after.id])).toEqual([[null, closed]])
     // El pago de Nequi se anuló el mismo día: aparece con su anulación.
-    expect(datos.eventos.map((x) => x.tipo)).toEqual([
-      'PagoRegistrado',
-      'PagoRegistrado',
-      'PagoAnulado',
-      'MovimientoCajaRegistrado',
+    expect(data.events.map((x) => x.type)).toEqual([
+      'PaymentRecorded',
+      'PaymentRecorded',
+      'PaymentVoided',
+      'CashMovementRecorded',
     ])
-    expect(datos.cierresDeCaja).toHaveLength(1)
-    expect(datos.cierresDeCaja[0]).toMatchObject({
-      diaOperativo: DIA,
-      abiertoPor: e.caja.usuarioId,
-      cerradoPor: e.caja.usuarioId,
+    expect(data.cierresDeCaja).toHaveLength(1)
+    expect(data.cierresDeCaja[0]).toMatchObject({
+      businessDay: DAY,
+      abiertoPor: e.register.userId,
+      cerradoPor: e.register.userId,
     })
-    expect(datos.cierresDeCaja[0]?.cuadre.cerrado).toMatchObject({
-      esperado: 82_000,
-      diferencia: 0,
+    expect(data.cierresDeCaja[0]?.reconciliation.closed).toMatchObject({
+      expected: 82_000,
+      variance: 0,
     })
     // Ya cerrado, el cuadre sale de la base y es el mismo que vio la caja al cerrar.
-    expect(e.estado.hub.cuadre(turno)?.efectivo.esperado).toBe(82_000)
-    expect(e.estado.hub.datosDeInforme('2026-10-25', '2026-10-25')).toMatchObject({
-      cierres: [],
-      eventos: [],
+    expect(e.status.hub.reconciliation(shift)?.cash.expected).toBe(82_000)
+    expect(e.status.hub.datosDeInforme('2026-10-25', '2026-10-25')).toMatchObject({
+      closings: [],
+      events: [],
       cierresDeCaja: [],
     })
   })
 
   it('una anulación de hoy trae el pago original de otro día, y un reinicio da lo mismo', () => {
     const e = entorno()
-    const turno = e.abrirTurno(e.caja)
-    const pedido = e.abrirPedido(e.caja, 30_000)
-    const pago = e.cobrar(e.caja, pedido, e.pagoNequi(turno, 10_000))
+    const shift = e.abrirTurno(e.register)
+    const order = e.abrirPedido(e.register, 30_000)
+    const payment = e.cobrar(e.register, order, e.pagoNequi(shift, 10_000))
     // Al otro día operativo (después de las 6:00 a. m.).
-    e.m.red.avanzar(24 * 60 * 60 * 1000)
-    e.anular(e.caja, pedido, pago, turno)
-    const hoy = e.estado.hub.datosDeInforme('2026-10-25', '2026-10-25')
-    expect(hoy.eventos.map((x) => `${x.tipo}:${x.dia_operativo}`)).toEqual([
-      `PagoRegistrado:${DIA}`,
-      'PagoAnulado:2026-10-25',
+    e.m.network.avanzar(24 * 60 * 60 * 1000)
+    e.voidItem(e.register, order, payment, shift)
+    const today = e.status.hub.datosDeInforme('2026-10-25', '2026-10-25')
+    expect(today.events.map((x) => `${x.type}:${x.business_day}`)).toEqual([
+      `PaymentRecorded:${DAY}`,
+      'PaymentVoided:2026-10-25',
     ])
-    expect(e.nuevoHub().datosDeInforme('2026-10-25', '2026-10-25')).toEqual(hoy)
-    expect(e.estado.hub.cierreDeTurno(turno)).toBeNull()
+    expect(e.nuevoHub().datosDeInforme('2026-10-25', '2026-10-25')).toEqual(today)
+    expect(e.status.hub.cierreDeTurno(shift)).toBeNull()
   })
 })

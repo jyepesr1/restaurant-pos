@@ -5,8 +5,8 @@ import type { Conexion, HubSync } from './hub'
 export type Autenticador = (token: string) => Conexion | null
 
 interface Participante {
-  conexion: Conexion | null
-  enviar: (mensaje: MensajeHub) => void
+  connection: Conexion | null
+  send: (message: MensajeHub) => void
 }
 
 /**
@@ -16,26 +16,26 @@ interface Participante {
  */
 export class SalaSync {
   private readonly hub: HubSync
-  private readonly autenticar: Autenticador
+  private readonly authenticate: Autenticador
   private readonly participantes = new Set<Participante>()
   /** Lo último que se supo de las impresoras: se le cuenta a cada equipo que se conecta. */
-  private impresoras: EstadoImpresora[] = []
+  private printers: EstadoImpresora[] = []
 
-  constructor(hub: HubSync, autenticar: Autenticador) {
+  constructor(hub: HubSync, authenticate: Autenticador) {
     this.hub = hub
-    this.autenticar = autenticar
+    this.authenticate = authenticate
   }
 
   /** Abre una conexión. Devuelve cómo entregarle mensajes del dispositivo y cómo cerrarla. */
-  conectar(enviar: (mensaje: MensajeHub) => void): {
+  connect(send: (message: MensajeHub) => void): {
     recibir: (crudo: unknown) => void
-    cerrar: () => void
+    close: () => void
   } {
-    const participante: Participante = { conexion: null, enviar }
+    const participante: Participante = { connection: null, send }
     this.participantes.add(participante)
     return {
       recibir: (crudo) => this.recibir(participante, crudo),
-      cerrar: () => this.participantes.delete(participante),
+      close: () => this.participantes.delete(participante),
     }
   }
 
@@ -43,15 +43,15 @@ export class SalaSync {
    * Se revocó un dispositivo: sus conexiones abiertas dejan de recibir el salón desde ya y se
    * le avisa. Lo que tenga pendiente todavía puede entregarlo (va a cuarentena).
    */
-  revocar(dispositivoId: string, revocadoEn: string) {
+  revoke(dispositivoId: string, revocadoEn: string) {
     for (const p of this.participantes) {
-      if (p.conexion?.dispositivoId !== dispositivoId) continue
-      p.conexion = { ...p.conexion, revocadoEn }
+      if (p.connection?.dispositivoId !== dispositivoId) continue
+      p.connection = { ...p.connection, revocadoEn }
       try {
-        p.enviar({
-          tipo: 'error',
-          codigo: 'token_revocado',
-          mensaje: 'Este equipo fue retirado del restaurante',
+        p.send({
+          type: 'error',
+          code: 'revoked_token',
+          message: 'Este equipo fue retirado del restaurante',
         })
       } catch {
         this.participantes.delete(p)
@@ -60,32 +60,32 @@ export class SalaSync {
   }
 
   /** Si la mesa tiene un pedido abierto. */
-  tienePedidoAbierto(mesaId: string): boolean {
-    return this.hub.tienePedidoAbierto(mesaId)
+  tienePedidoAbierto(tableId: string): boolean {
+    return this.hub.tienePedidoAbierto(tableId)
   }
 
   /** Latido para todas las conexiones (docs/SYNC.md: cada 5 s). */
   latir() {
-    for (const p of this.participantes) if (p.conexion) p.enviar({ tipo: 'latido' })
+    for (const p of this.participantes) if (p.connection) p.send({ type: 'heartbeat' })
   }
 
   /** Se editó el catálogo: los conectados lo vuelven a pedir (docs/SYNC.md#catálogo-y-configuración). */
   avisarCatalogo(version: number) {
     for (const p of this.participantes)
-      if (p.conexion && !p.conexion.revocadoEn) p.enviar({ tipo: 'catalogo', version })
+      if (p.connection && !p.connection.revocadoEn) p.send({ type: 'catalog', version })
   }
 
   /** Cambió el estado de alguna impresora de comandas (ADR-015): lo ven todos los conectados. */
-  avisarImpresoras(impresoras: EstadoImpresora[]) {
-    this.impresoras = impresoras
+  avisarImpresoras(printers: EstadoImpresora[]) {
+    this.printers = printers
     for (const p of this.participantes)
-      if (p.conexion && !p.conexion.revocadoEn)
-        this.enviarSeguro(p, { tipo: 'impresoras', impresoras })
+      if (p.connection && !p.connection.revocadoEn)
+        this.enviarSeguro(p, { type: 'printers', printers })
   }
 
-  private enviarSeguro(participante: Participante, mensaje: MensajeHub) {
+  private enviarSeguro(participante: Participante, message: MensajeHub) {
     try {
-      participante.enviar(mensaje)
+      participante.send(message)
     } catch {
       this.participantes.delete(participante)
     }
@@ -94,71 +94,71 @@ export class SalaSync {
   private recibir(participante: Participante, crudo: unknown) {
     const lectura = MensajeDispositivo.safeParse(crudo)
     if (!lectura.success) {
-      participante.enviar({
-        tipo: 'error',
-        codigo: 'mensaje_invalido',
-        mensaje: 'Mensaje con formato inesperado',
+      participante.send({
+        type: 'error',
+        code: 'invalid_message',
+        message: 'Mensaje con formato inesperado',
       })
       return
     }
-    const mensaje = lectura.data
+    const message = lectura.data
 
-    if (mensaje.tipo === 'hola') {
-      const conexion = this.autenticar(mensaje.token)
-      if (!conexion) {
-        participante.enviar({
-          tipo: 'error',
-          codigo: 'token_invalido',
-          mensaje: 'Este equipo ya no tiene acceso al restaurante: hay que entrar otra vez',
+    if (message.type === 'hello') {
+      const connection = this.authenticate(message.token)
+      if (!connection) {
+        participante.send({
+          type: 'error',
+          code: 'invalid_token',
+          message: 'Este equipo ya no tiene acceso al restaurante: hay que entrar otra vez',
         })
         return
       }
-      participante.conexion = conexion
-      participante.enviar(this.hub.bienvenida())
-      if (this.impresoras.length > 0 && !conexion.revocadoEn)
-        participante.enviar({ tipo: 'impresoras', impresoras: this.impresoras })
+      participante.connection = connection
+      participante.send(this.hub.bienvenida())
+      if (this.printers.length > 0 && !connection.revocadoEn)
+        participante.send({ type: 'printers', printers: this.printers })
       return
     }
-    if (mensaje.tipo === 'ping') {
-      participante.enviar({ tipo: 'pong', marca: mensaje.marca })
+    if (message.type === 'ping') {
+      participante.send({ type: 'pong', brand: message.brand })
       return
     }
-    const conexion = participante.conexion
-    if (!conexion) {
-      participante.enviar({
-        tipo: 'error',
-        codigo: 'token_invalido',
-        mensaje: 'Primero hay que saludar',
+    const connection = participante.connection
+    if (!connection) {
+      participante.send({
+        type: 'error',
+        code: 'invalid_token',
+        message: 'Primero hay que saludar',
       })
       return
     }
 
-    if (mensaje.tipo === 'traer') {
+    if (message.type === 'pull') {
       // Un dispositivo revocado puede entregar lo que tenga pendiente (va a cuarentena), pero ya
       // no lee nada del salón.
-      if (conexion.revocadoEn) {
-        participante.enviar({
-          tipo: 'error',
-          codigo: 'token_revocado',
-          mensaje: 'Este equipo fue retirado del restaurante',
+      if (connection.revocadoEn) {
+        participante.send({
+          type: 'error',
+          code: 'revoked_token',
+          message: 'Este equipo fue retirado del restaurante',
         })
         return
       }
-      participante.enviar(this.hub.traer(mensaje.desde, conexion.tipo, conexion.dispositivoId))
+      participante.send(this.hub.pull(message.from, connection.type, connection.dispositivoId))
       return
     }
 
-    const { resultados, aceptados } = this.hub.recibirLote(conexion, mensaje.eventos)
-    participante.enviar({ tipo: 'resultado', lote_id: mensaje.lote_id, resultados })
-    for (const evento of aceptados) {
-      for (const otro of this.participantes) {
-        const c = otro.conexion
-        if (!c || c.revocadoEn || !this.hub.ve(c.tipo, evento)) continue
+    const { resultados, aceptados } = this.hub.recibirLote(connection, message.events)
+    participante.send({ type: 'result', lote_id: message.lote_id, resultados })
+    for (const event of aceptados) {
+      for (const other of this.participantes) {
+        const c = other.connection
+        if (!c || c.revocadoEn || !this.hub.ve(c.type, event)) continue
         try {
-          otro.enviar(this.hub.nuevo(evento, c.dispositivoId))
+          other.send(this.hub.fresh(event, c.dispositivoId))
         } catch {
           // Una conexión rota no debe dejar sin el evento a las demás; volverá a ponerse al día.
-          this.participantes.delete(otro)
+          this.participantes.delete(other)
         }
       }
     }

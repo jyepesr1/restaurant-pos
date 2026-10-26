@@ -25,7 +25,7 @@ export function Grupo({
 export function Opcion({
   elegida,
   alElegir,
-  forma = 'pastilla',
+  shape = 'pastilla',
   detalle,
   etiqueta,
   children,
@@ -33,7 +33,7 @@ export function Opcion({
   elegida: boolean
   alElegir: () => void
   /** Pastilla (filtros, categorías) o tarjeta (opciones con precio). */
-  forma?: 'pastilla' | 'tarjeta'
+  shape?: 'pastilla' | 'card'
   detalle?: string
   /** Nombre para el lector de pantalla si el texto visible no basta. */
   etiqueta?: string
@@ -44,8 +44,8 @@ export function Opcion({
   const color = elegida
     ? 'border-accion-fuerte bg-accion-fuerte text-white'
     : 'border-borde bg-superficie text-texto'
-  const tamano =
-    forma === 'pastilla'
+  const size =
+    shape === 'pastilla'
       ? 'min-h-12 min-w-12 rounded-full px-4'
       : 'min-h-14 w-full rounded-xl px-3 py-2 text-left'
   return (
@@ -54,9 +54,9 @@ export function Opcion({
       aria-pressed={elegida}
       aria-label={etiqueta}
       onClick={alElegir}
-      className={`${base} ${color} ${tamano}`}
+      className={`${base} ${color} ${size}`}
     >
-      {elegida && <Icono nombre="check" />}
+      {elegida && <Icono name="check" />}
       <span className="flex flex-1 flex-col">
         <span>{children}</span>
         {detalle && <span className="cifras text-sm font-normal">{detalle}</span>}

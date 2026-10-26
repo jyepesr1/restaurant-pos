@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { HubSync } from '@pos/sync'
 import { AlmacenSqlite } from '@pos/sync/sqlite'
 import { describe, expect, it } from 'vitest'
@@ -25,240 +25,238 @@ function montar() {
   const m = montarAcceso()
   sembrar(
     m.db,
-    m.acceso,
-    { restauranteId: m.restauranteId, roles: m.roles, carta: CARTA, sinPersonal: true },
-    m.reloj(),
+    m.access,
+    { restauranteId: m.restauranteId, roles: m.roles, menu: CARTA, sinPersonal: true },
+    m.clock(),
   )
-  const catalogo = leerCatalogo(m.db, m.restauranteId)
-  const productos = catalogo.categorias.flatMap((c) => c.productos)
-  const producto = (nombre: string) => {
-    const p = productos.find((x) => x.nombre === nombre)
-    if (!p) throw new Error(`No está ${nombre}`)
+  const catalog = leerCatalogo(m.db, m.restauranteId)
+  const products = catalog.categories.flatMap((c) => c.products)
+  const product = (name: string) => {
+    const p = products.find((x) => x.name === name)
+    if (!p) throw new Error(`No está ${name}`)
     return p
   }
   const historial = new HistorialCatalogo(m.db, m.restauranteId)
-  return { ...m, catalogo, producto, historial }
+  return { ...m, catalog, product, historial }
 }
 
 type Montaje = ReturnType<typeof montar>
-type Producto = ReturnType<Montaje['producto']>
+type Product = ReturnType<Montaje['product']>
 
-const datos = (m: Montaje, p: Producto, campos: Record<string, unknown> = {}) => ({
-  item_id: nuevoId(),
-  producto_id: p.id,
-  variante_id: null as string | null,
-  nombre: p.nombre,
-  precio_unitario: p.precio,
-  impuesto_tipo: p.impuesto.tipo,
-  tarifa: p.impuesto.tarifa,
-  cantidad: 1,
-  comensal: null,
-  curso: null,
-  modificadores: [] as { modificador_id: string; nombre: string; precio_extra: number }[],
-  notas: null,
-  catalogo_version: m.catalogo.version,
-  precio_canal_id: null,
-  ...campos,
+const data = (m: Montaje, p: Product, fields: Record<string, unknown> = {}) => ({
+  item_id: newId(),
+  product_id: p.id,
+  variant_id: null as string | null,
+  name: p.name,
+  unit_price: p.price,
+  tax_type: p.tax.type,
+  rate: p.tax.rate,
+  quantity: 1,
+  guest: null,
+  course: null,
+  modifiers: [] as { modifier_id: string; name: string; extra_price: number }[],
+  notes: null,
+  catalog_version: m.catalog.version,
+  price_channel_id: null,
+  ...fields,
 })
 
-const item = (d: ReturnType<typeof datos>) =>
-  ({ tipo: 'ItemAgregado', datos: d }) as Parameters<HistorialCatalogo['diferencia']>[0]
+const item = (d: ReturnType<typeof data>) =>
+  ({ type: 'ItemAdded', data: d }) as Parameters<HistorialCatalogo['variance']>[0]
 
 describe('precio copiado contra el historial del catálogo', () => {
   it('un ítem igual a la carta no tiene diferencias', () => {
     const m = montar()
-    expect(m.historial.diferencia(item(datos(m, m.producto('Burrata Spritz'))))).toBeNull()
+    expect(m.historial.variance(item(data(m, m.product('Burrata Spritz'))))).toBeNull()
   })
 
   it('con copa y botella: exige la variante y su precio, no el del producto', () => {
     const m = montar()
-    const vino = m.producto('Ramón Bilbao Crianza')
-    const [copa, botella] = vino.variantes as [Producto['variantes'][0], Producto['variantes'][0]]
-    expect(m.historial.diferencia(item(datos(m, vino)))).toMatch(/sin elegir una de sus opciones/)
-    const conBotella = datos(m, vino, { variante_id: botella.id, precio_unitario: botella.precio })
-    expect(m.historial.diferencia(item(conBotella))).toBeNull()
+    const vino = m.product('Ramón Bilbao Crianza')
+    const [glass, bottle] = vino.variants as [Product['variants'][0], Product['variants'][0]]
+    expect(m.historial.variance(item(data(m, vino)))).toMatch(/sin elegir una de sus opciones/)
+    const conBotella = data(m, vino, { variant_id: bottle.id, unit_price: bottle.price })
+    expect(m.historial.variance(item(conBotella))).toBeNull()
     // La botella cobrada al precio de la copa.
-    const barata = datos(m, vino, { variante_id: botella.id, precio_unitario: copa.precio })
-    expect(m.historial.diferencia(item(barata))).toMatch(/se cobró a \$/)
+    const barata = data(m, vino, { variant_id: bottle.id, unit_price: glass.price })
+    expect(m.historial.variance(item(barata))).toMatch(/se cobró a \$/)
   })
 
   it('una variante en un producto sin variantes, o de otro producto, no cuadra', () => {
     const m = montar()
-    const vino = m.producto('Ramón Bilbao Crianza')
-    const pizza = m.producto('Burrata Spritz')
-    const ajena = datos(m, pizza, { variante_id: vino.variantes[0]?.id })
-    expect(m.historial.diferencia(item(ajena))).toMatch(/opción que el producto no tiene/)
+    const vino = m.product('Ramón Bilbao Crianza')
+    const pizza = m.product('Burrata Spritz')
+    const ajena = data(m, pizza, { variant_id: vino.variants[0]?.id })
+    expect(m.historial.variance(item(ajena))).toMatch(/opción que el producto no tiene/)
   })
 
   it('el precio, el impuesto y los extras se comparan', () => {
     const m = montar()
-    const tagliata = m.producto('Tagliata di Manzo')
-    const termino = tagliata.grupos[0]?.opciones[0]
+    const tagliata = m.product('Tagliata di Manzo')
+    const termino = tagliata.groups[0]?.options[0]
     if (!termino) throw new Error('La Tagliata debe tener término')
-    const conTermino = (precio_extra: number) =>
-      datos(m, tagliata, {
-        modificadores: [{ modificador_id: termino.id, nombre: termino.nombre, precio_extra }],
+    const conTermino = (extra_price: number) =>
+      data(m, tagliata, {
+        modifiers: [{ modifier_id: termino.id, name: termino.name, extra_price }],
       })
-    expect(m.historial.diferencia(item(conTermino(termino.precioExtra)))).toBeNull()
-    expect(m.historial.diferencia(item(conTermino(termino.precioExtra + 500)))).toMatch(
+    expect(m.historial.variance(item(conTermino(termino.extraPrice)))).toBeNull()
+    expect(m.historial.variance(item(conTermino(termino.extraPrice + 500)))).toMatch(
       /La opción «.+» se cobró/,
     )
-    const otroImpuesto = datos(m, tagliata, { tarifa: 1900 })
-    expect(m.historial.diferencia(item(otroImpuesto))).toMatch(/impuesto/)
-    const masBarato = datos(m, tagliata, { precio_unitario: tagliata.precio - 100 })
-    expect(m.historial.diferencia(item(masBarato))).toMatch(/la carta decía/)
-    const fantasma = datos(m, tagliata, {
-      modificadores: [{ modificador_id: nuevoId(), nombre: 'Trufa', precio_extra: 0 }],
+    const otroImpuesto = data(m, tagliata, { rate: 1900 })
+    expect(m.historial.variance(item(otroImpuesto))).toMatch(/impuesto/)
+    const masBarato = data(m, tagliata, { unit_price: tagliata.price - 100 })
+    expect(m.historial.variance(item(masBarato))).toMatch(/la carta decía/)
+    const ghost = data(m, tagliata, {
+      modifiers: [{ modifier_id: newId(), name: 'Trufa', extra_price: 0 }],
     })
-    expect(m.historial.diferencia(item(fantasma))).toMatch(/no estaba en la carta/)
+    expect(m.historial.variance(item(ghost))).toMatch(/no estaba en la carta/)
   })
 
   it('cuenta la versión que vio el equipo: el precio de antes vale con la versión de antes', () => {
     const m = montar()
-    const burrata = m.producto('Burrata Spritz')
-    const antes = m.catalogo.version
+    const burrata = m.product('Burrata Spritz')
+    const before = m.catalog.version
     actualizarVersionado(
       m.db,
-      'producto',
+      'products',
       m.restauranteId,
       burrata.id,
-      { precio: burrata.precio + 2_000 },
-      { usuarioId: null, dispositivoId: null },
-      m.reloj(),
+      { price: burrata.price + 2_000 },
+      { userId: null, dispositivoId: null },
+      m.clock(),
     )
-    const despues = m.historial.versionActual()
-    expect(despues).toBeGreaterThan(antes)
+    const after = m.historial.versionActual()
+    expect(after).toBeGreaterThan(before)
     // Equipo sin conexión con la carta vieja: su precio era el correcto.
-    expect(m.historial.diferencia(item(datos(m, burrata)))).toBeNull()
+    expect(m.historial.variance(item(data(m, burrata)))).toBeNull()
     // Con la carta nueva, el precio viejo ya no cuadra.
-    const tarde = datos(m, burrata, { catalogo_version: despues })
-    expect(m.historial.diferencia(item(tarde))).toMatch(/la carta decía/)
-    const nuevo = datos(m, burrata, {
-      catalogo_version: despues,
-      precio_unitario: burrata.precio + 2_000,
+    const tarde = data(m, burrata, { catalog_version: after })
+    expect(m.historial.variance(item(tarde))).toMatch(/la carta decía/)
+    const fresh = data(m, burrata, {
+      catalog_version: after,
+      unit_price: burrata.price + 2_000,
     })
-    expect(m.historial.diferencia(item(nuevo))).toBeNull()
+    expect(m.historial.variance(item(fresh))).toBeNull()
   })
 
   it('un producto archivado o una versión que el hub no tiene no cuadran', () => {
     const m = montar()
-    const burrata = m.producto('Burrata Spritz')
+    const burrata = m.product('Burrata Spritz')
     expect(
-      m.historial.diferencia(item(datos(m, burrata, { catalogo_version: m.catalogo.version + 1 }))),
+      m.historial.variance(item(data(m, burrata, { catalog_version: m.catalog.version + 1 }))),
     ).toMatch(/versión del catálogo/)
     actualizarVersionado(
       m.db,
-      'producto',
+      'products',
       m.restauranteId,
       burrata.id,
-      { activo: 0 },
-      { usuarioId: null, dispositivoId: null },
-      m.reloj(),
+      { active: 0 },
+      { userId: null, dispositivoId: null },
+      m.clock(),
     )
     const v = m.historial.versionActual()
-    expect(m.historial.diferencia(item(datos(m, burrata, { catalogo_version: v })))).toMatch(
+    expect(m.historial.variance(item(data(m, burrata, { catalog_version: v })))).toMatch(
       /no estaba en la carta/,
     )
-    expect(m.historial.diferencia(item(datos(m, burrata, { catalogo_version: 0 })))).toMatch(
+    expect(m.historial.variance(item(data(m, burrata, { catalog_version: 0 })))).toMatch(
       /no estaba en la carta/,
     )
   })
 
   it('una opción de otro producto, repetida o un precio especial no cuadran', () => {
     const m = montar()
-    const tagliata = m.producto('Tagliata di Manzo')
-    const te = m.producto('Té Hatsu')
-    const sabor = te.grupos[0]?.opciones[0]
-    const termino = tagliata.grupos[0]?.opciones[0]
-    if (!sabor || !termino) throw new Error('falta')
-    const mod = (o: { id: string; nombre: string; precioExtra: number }) => ({
-      modificador_id: o.id,
-      nombre: o.nombre,
-      precio_extra: o.precioExtra,
+    const tagliata = m.product('Tagliata di Manzo')
+    const te = m.product('Té Hatsu')
+    const flavor = te.groups[0]?.options[0]
+    const termino = tagliata.groups[0]?.options[0]
+    if (!flavor || !termino) throw new Error('falta')
+    const mod = (o: { id: string; name: string; extraPrice: number }) => ({
+      modifier_id: o.id,
+      name: o.name,
+      extra_price: o.extraPrice,
     })
+    expect(m.historial.variance(item(data(m, tagliata, { modifiers: [mod(flavor)] })))).toMatch(
+      /no es de «Tagliata/,
+    )
     expect(
-      m.historial.diferencia(item(datos(m, tagliata, { modificadores: [mod(sabor)] }))),
-    ).toMatch(/no es de «Tagliata/)
-    expect(
-      m.historial.diferencia(
-        item(datos(m, tagliata, { modificadores: [mod(termino), mod(termino)] })),
-      ),
+      m.historial.variance(item(data(m, tagliata, { modifiers: [mod(termino), mod(termino)] }))),
     ).toMatch(/dos veces/)
     expect(
-      m.historial.diferencia(
-        item(datos(m, tagliata, { modificadores: [mod(termino)], precio_canal_id: nuevoId() })),
+      m.historial.variance(
+        item(data(m, tagliata, { modifiers: [mod(termino)], price_channel_id: newId() })),
       ),
     ).toMatch(/precio especial/)
   })
 
   it('un impuesto archivado no cuadra', () => {
     const m = montar()
-    const burrata = m.producto('Burrata Spritz')
-    const impuesto = String(
-      m.db.prepare('SELECT impuesto_id FROM producto WHERE id = ?').get(burrata.id)?.impuesto_id,
+    const burrata = m.product('Burrata Spritz')
+    const tax = String(
+      m.db.prepare('SELECT tax_id FROM products WHERE id = ?').get(burrata.id)?.tax_id,
     )
     actualizarVersionado(
       m.db,
-      'impuesto',
+      'taxes',
       m.restauranteId,
-      impuesto,
-      { activo: 0 },
-      { usuarioId: null, dispositivoId: null },
-      m.reloj(),
+      tax,
+      { active: 0 },
+      { userId: null, dispositivoId: null },
+      m.clock(),
     )
     const v = m.historial.versionActual()
-    expect(m.historial.diferencia(item(datos(m, burrata, { catalogo_version: v })))).toMatch(
-      /impuesto/,
-    )
+    expect(m.historial.variance(item(data(m, burrata, { catalog_version: v })))).toMatch(/impuesto/)
   })
 
   it('en el hub: el ítem con precio distinto se acepta y queda como conflicto', () => {
     const m = montar()
     const hub = new HubSync(new AlmacenSqlite(m.db, m.restauranteId), {
       restauranteId: m.restauranteId,
-      zonaHoraria: 'America/Bogota',
+      timeZone: 'America/Bogota',
       inicioDiaOperativo: '06:00',
       instancia: 'hub-1',
-      reloj: m.reloj,
-      acceso: {
-        verificar: () => ({ ok: true, autorizadoPorId: null, autorizacionId: null }),
+      clock: m.clock,
+      access: {
+        verify: () => ({ ok: true, authorizedById: null, autorizacionId: null }),
         registrarUso: () => {},
       },
-      precios: revisorPrecios(m.db, m.restauranteId),
+      prices: revisorPrecios(m.db, m.restauranteId),
     })
-    const { conexion } = m.emparejar('mesero')
-    const pedido = nuevoId()
-    const burrata = m.producto('Burrata Spritz')
-    const sobre = (tipo: string, d: unknown, secuencia_base: number) => ({
-      id: nuevoId(),
-      tipo,
-      version_esquema: 1,
-      agregado_tipo: 'pedido',
-      agregado_id: pedido,
-      relacionados: [],
-      datos: d,
-      sesion_id: null,
-      usuario_id: nuevoId(),
-      dispositivo_id: conexion.dispositivoId,
-      autorizacion_id: null,
-      motivo: null,
-      hora_dispositivo: m.reloj(),
-      hora_estimada_hub: m.reloj(),
-      secuencia_base,
+    const { connection } = m.emparejar('waiter')
+    const order = newId()
+    const burrata = m.product('Burrata Spritz')
+    const envelope = (type: string, d: unknown, base_sequence: number) => ({
+      id: newId(),
+      type,
+      schema_version: 1,
+      aggregate_type: 'order',
+      aggregate_id: order,
+      related: [],
+      data: d,
+      session_id: null,
+      user_id: newId(),
+      device_id: connection.dispositivoId,
+      authorization_id: null,
+      reason: null,
+      device_time: m.clock(),
+      hub_estimated_time: m.clock(),
+      base_sequence,
     })
-    const r = hub.recibirLote(conexion, [
-      sobre('PedidoAbierto', { canal: 'salon', mesa_id: null, comensales: 2 }, 0),
-      sobre('ItemAgregado', datos(m, burrata), 1),
-      sobre('ItemAgregado', datos(m, burrata, { precio_unitario: 1_000 }), 1),
+    const r = hub.recibirLote(connection, [
+      envelope('OrderOpened', { channel: 'dine_in', table_id: null, guests: 2 }, 0),
+      envelope('ItemAdded', data(m, burrata), 1),
+      envelope('ItemAdded', data(m, burrata, { unit_price: 1_000 }), 1),
     ])
-    expect(r.resultados.map((x) => x.estado)).toEqual(['confirmado', 'confirmado', 'confirmado'])
-    expect(r.resultados.map((x) => (x as { conflicto?: string | null }).conflicto ?? null)).toEqual(
-      [null, null, 'precio_distinto'],
-    )
+    expect(r.resultados.map((x) => x.status)).toEqual(['confirmed', 'confirmed', 'confirmed'])
+    expect(r.resultados.map((x) => (x as { conflict?: string | null }).conflict ?? null)).toEqual([
+      null,
+      null,
+      'price_mismatch',
+    ])
     expect(hub.conflictos()).toEqual([
       expect.objectContaining({
-        tipo: 'precio_distinto',
-        descripcion: expect.stringMatching(/\$1\.000/),
+        type: 'price_mismatch',
+        description: expect.stringMatching(/\$1\.000/),
       }),
     ])
   })

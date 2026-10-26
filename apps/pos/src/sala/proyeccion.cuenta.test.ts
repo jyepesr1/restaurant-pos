@@ -1,131 +1,128 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import type { EventoLocal } from '@pos/sync'
 import { describe, expect, it } from 'vitest'
 import { estadoMesa, pedidosAbiertos as proyectar } from './proyeccion'
-import { apertura, datosItem, enOrden, local } from './pruebas'
+import { datosItem, inOrder, local, opening } from './pruebas'
 
 // Estado de mesa «cuenta» (tarea 1.6): se pidió la precuenta o ya hay un pago parcial. Gana a
 // «en cocina» y «servida», y pierde ante «tomando» y «listo».
 
-const COCINA = nuevoId()
-const TURNO = nuevoId()
-const pago = (monto: number) => ({
-  pago_id: nuevoId(),
-  cuenta_id: null,
-  turno_caja_id: TURNO,
-  medio: 'nequi' as const,
-  monto,
-  propina: 0,
-  recibido: null,
-  cambio: null,
-  ajuste_redondeo: 0,
-  redondeo: null,
-  datafono: null,
-  referencia_cobro: null,
+const COCINA = newId()
+const SHIFT = newId()
+const payment = (amount: number) => ({
+  payment_id: newId(),
+  check_id: null,
+  register_shift_id: SHIFT,
+  method: 'nequi' as const,
+  amount,
+  tip: 0,
+  tendered: null,
+  change: null,
+  rounding_adjustment: 0,
+  rounding: null,
+  cardTerminal: null,
+  charge_reference: null,
 })
 
 /** Un pedido con un plato; `enviado` lo manda a cocina; `estadoItem` lo lleva al estado pedido. */
-function mesa(
-  opciones: { enviado?: boolean; listo?: boolean; entregado?: boolean } = {},
-  mas: (id: string) => EventoLocal[] = () => [],
+function table(
+  options: { sent?: boolean; ready?: boolean; served?: boolean } = {},
+  more: (id: string) => EventoLocal[] = () => [],
 ) {
-  const id = nuevoId()
-  const plato = datosItem({ precio_unitario: 20_000 })
-  const eventos: EventoLocal[] = [
-    local('PedidoAbierto', id, { ...apertura, mesa_id: nuevoId() }),
-    local('ItemAgregado', id, plato),
+  const id = newId()
+  const dish = datosItem({ unit_price: 20_000 })
+  const events: EventoLocal[] = [
+    local('OrderOpened', id, { ...opening, table_id: newId() }),
+    local('ItemAdded', id, dish),
   ]
-  if (opciones.enviado || opciones.listo || opciones.entregado)
-    eventos.push(
-      local('ItemsEnviados', id, {
-        comandas: [{ comanda_id: nuevoId(), estacion_id: COCINA, item_ids: [plato.item_id] }],
+  if (options.sent || options.ready || options.served)
+    events.push(
+      local('ItemsSent', id, {
+        tickets: [{ ticket_id: newId(), station_id: COCINA, item_ids: [dish.item_id] }],
       }),
     )
-  if (opciones.listo || opciones.entregado)
-    eventos.push(local('ItemListo', id, { item_ids: [plato.item_id] }))
-  if (opciones.entregado) eventos.push(local('ItemEntregado', id, { item_ids: [plato.item_id] }))
-  eventos.push(...mas(id))
-  return estadoMesa(proyectar(enOrden(eventos)))
+  if (options.ready || options.served)
+    events.push(local('ItemReady', id, { item_ids: [dish.item_id] }))
+  if (options.served) events.push(local('ItemServed', id, { item_ids: [dish.item_id] }))
+  events.push(...more(id))
+  return estadoMesa(proyectar(inOrder(events)))
 }
 
-const precuenta = (id: string) =>
-  local('PrecuentaImpresa', id, { cuenta_id: null, subtotal: 20_000, propina_sugerida: 1_852 })
+const preBill = (id: string) =>
+  local('PreBillPrinted', id, { check_id: null, subtotal: 20_000, suggested_tip: 1_852 })
 
 describe('estadoMesa: cuenta', () => {
   it('una mesa sin pedidos es libre', () => {
-    expect(estadoMesa([])).toBe('libre')
+    expect(estadoMesa([])).toBe('free')
   })
 
   it('servida y con la precuenta pedida: «cuenta»', () => {
-    expect(mesa({ entregado: true })).toBe('servida')
-    expect(mesa({ entregado: true }, (id) => [precuenta(id)])).toBe('cuenta')
+    expect(table({ served: true })).toBe('served')
+    expect(table({ served: true }, (id) => [preBill(id)])).toBe('check')
   })
 
   it('con la precuenta pedida aunque aún haya algo en cocina: «cuenta» gana a «en cocina»', () => {
-    expect(mesa({ enviado: true })).toBe('en_cocina')
-    expect(mesa({ enviado: true }, (id) => [precuenta(id)])).toBe('cuenta')
+    expect(table({ sent: true })).toBe('in_kitchen')
+    expect(table({ sent: true }, (id) => [preBill(id)])).toBe('check')
   })
 
   it('un pago parcial deja la mesa en «cuenta» (sin precuenta)', () => {
-    expect(mesa({ entregado: true }, (id) => [local('PagoRegistrado', id, pago(5_000))])).toBe(
-      'cuenta',
+    expect(table({ served: true }, (id) => [local('PaymentRecorded', id, payment(5_000))])).toBe(
+      'check',
     )
-    expect(mesa({ enviado: true }, (id) => [local('PagoRegistrado', id, pago(5_000))])).toBe(
-      'cuenta',
+    expect(table({ sent: true }, (id) => [local('PaymentRecorded', id, payment(5_000))])).toBe(
+      'check',
     )
   })
 
   it('un pago parcial anulado ya no cuenta', () => {
-    const e = mesa({ entregado: true }, (id) => {
-      const p = pago(5_000)
+    const e = table({ served: true }, (id) => {
+      const p = payment(5_000)
       return [
-        local('PagoRegistrado', id, p),
-        local('PagoAnulado', id, { pago_id: p.pago_id, turno_caja_id: TURNO }),
+        local('PaymentRecorded', id, p),
+        local('PaymentVoided', id, { payment_id: p.payment_id, register_shift_id: SHIFT }),
       ]
     })
-    expect(e).toBe('servida')
+    expect(e).toBe('served')
   })
 
   it('algo listo para llevar gana a «cuenta»', () => {
-    expect(mesa({ listo: true }, (id) => [precuenta(id)])).toBe('listo')
+    expect(table({ ready: true }, (id) => [preBill(id)])).toBe('ready')
   })
 
   it('algo sin enviar gana a «cuenta»: «tomando»', () => {
-    expect(
-      mesa({ enviado: true }, (id) => [precuenta(id), local('ItemAgregado', id, datosItem())]),
-    ).toBe('tomando')
+    expect(table({ sent: true }, (id) => [preBill(id), local('ItemAdded', id, datosItem())])).toBe(
+      'taking',
+    )
   })
 
   it('agregar un producto después de pedir la precuenta la invalida: vuelve a su estado', () => {
-    const e = mesa({ entregado: true }, (id) => [
-      precuenta(id),
-      local('ItemAgregado', id, datosItem()),
-    ])
-    expect(e).toBe('tomando')
+    const e = table({ served: true }, (id) => [preBill(id), local('ItemAdded', id, datosItem())])
+    expect(e).toBe('taking')
   })
 
   it('con un pedido unido a la mesa (varios pedidos), basta que uno pida la cuenta', () => {
-    const a = nuevoId()
-    const b = nuevoId()
-    const mesaId = nuevoId()
+    const a = newId()
+    const b = newId()
+    const tableId = newId()
     const pa = datosItem()
     const pb = datosItem()
     const base: EventoLocal[] = [
-      local('PedidoAbierto', a, { ...apertura, mesa_id: mesaId }),
-      local('ItemAgregado', a, pa),
-      local('PedidoAbierto', b, { ...apertura, mesa_id: mesaId }),
-      local('ItemAgregado', b, pb),
+      local('OrderOpened', a, { ...opening, table_id: tableId }),
+      local('ItemAdded', a, pa),
+      local('OrderOpened', b, { ...opening, table_id: tableId }),
+      local('ItemAdded', b, pb),
     ]
-    const todos = enOrden([
+    const all = inOrder([
       ...base,
-      local('ItemsEnviados', a, {
-        comandas: [{ comanda_id: nuevoId(), estacion_id: COCINA, item_ids: [pa.item_id] }],
+      local('ItemsSent', a, {
+        tickets: [{ ticket_id: newId(), station_id: COCINA, item_ids: [pa.item_id] }],
       }),
-      local('ItemsEnviados', b, {
-        comandas: [{ comanda_id: nuevoId(), estacion_id: COCINA, item_ids: [pb.item_id] }],
+      local('ItemsSent', b, {
+        tickets: [{ ticket_id: newId(), station_id: COCINA, item_ids: [pb.item_id] }],
       }),
-      precuenta(a),
+      preBill(a),
     ])
-    expect(estadoMesa(proyectar(todos))).toBe('cuenta')
+    expect(estadoMesa(proyectar(all))).toBe('check')
   })
 })

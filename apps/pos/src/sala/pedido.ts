@@ -1,10 +1,10 @@
 import {
-  descuentoDeItem,
-  type EstadoPedido,
-  type EventoNuevo,
-  type ItemPedido,
-  nuevoId,
-  precioConExtras,
+  itemDiscount,
+  type NewEvent,
+  newId,
+  type OrderItem,
+  type OrderState,
+  priceWithExtras,
 } from '@pos/core'
 import type { Catalogo } from '@pos/sync'
 import { itemsVigentes } from './proyeccion'
@@ -13,19 +13,19 @@ import { itemsVigentes } from './proyeccion'
 // el precio y el impuesto vigentes (docs/MODELO_DATOS.md): si la carta cambia después, el pedido
 // no cambia.
 
-export type ProductoCatalogo = Catalogo['categorias'][number]['productos'][number]
-export type GrupoCatalogo = ProductoCatalogo['grupos'][number]
-export type OpcionCatalogo = GrupoCatalogo['opciones'][number]
+export type ProductoCatalogo = Catalogo['categories'][number]['products'][number]
+export type GrupoCatalogo = ProductoCatalogo['groups'][number]
+export type OpcionCatalogo = GrupoCatalogo['options'][number]
 
-type DatosItem = Extract<EventoNuevo, { tipo: 'ItemAgregado' }>['datos']
-type DatosEnvio = Extract<EventoNuevo, { tipo: 'ItemsEnviados' }>['datos']
+type DatosItem = Extract<NewEvent, { type: 'ItemAdded' }>['data']
+type DatosEnvio = Extract<NewEvent, { type: 'ItemsSent' }>['data']
 
 /** Las opciones del grupo que están elegidas; un id que no es del grupo no cuenta. */
 const elegidasDe = (g: GrupoCatalogo, elegidas: Record<string, string[]>) =>
-  g.opciones.filter((o) => elegidas[g.id]?.includes(o.id))
+  g.options.filter((o) => elegidas[g.id]?.includes(o.id))
 
 /** Si el producto pide elegir algo antes de agregarlo (tamaño o un grupo obligatorio). */
-export const pideOpciones = (p: ProductoCatalogo) => p.variantes.length > 0 || p.grupos.length > 0
+export const pideOpciones = (p: ProductoCatalogo) => p.variants.length > 0 || p.groups.length > 0
 
 /**
  * Lo que falta elegir, en minúsculas para "Elige …". La variante es obligatoria si el producto
@@ -33,59 +33,59 @@ export const pideOpciones = (p: ProductoCatalogo) => p.variantes.length > 0 || p
  */
 export function faltaElegir(
   p: ProductoCatalogo,
-  varianteId: string | null,
+  variantId: string | null,
   elegidas: Record<string, string[]>,
 ): string[] {
   return [
-    ...(p.variantes.length > 0 && !p.variantes.some((v) => v.id === varianteId) ? ['tamaño'] : []),
-    ...p.grupos
-      .filter((g) => elegidasDe(g, elegidas).length < g.minimo)
-      .map((g) => g.nombre.toLowerCase()),
+    ...(p.variants.length > 0 && !p.variants.some((v) => v.id === variantId) ? ['tamaño'] : []),
+    ...p.groups
+      .filter((g) => elegidasDe(g, elegidas).length < g.minimum)
+      .map((g) => g.name.toLowerCase()),
   ]
 }
 
 export function datosItem(
-  catalogo: Catalogo,
+  catalog: Catalogo,
   p: ProductoCatalogo,
-  varianteId: string | null,
+  variantId: string | null,
   elegidas: Record<string, string[]>,
   /** Para quién, en qué curso, cuántos y la nota para cocina. */
   extras: {
-    cantidad?: number
-    comensal?: number | null
-    curso?: Curso | null
-    notas?: string
+    quantity?: number
+    guest?: number | null
+    course?: Course | null
+    notes?: string
   } = {},
 ): DatosItem {
-  const faltan = faltaElegir(p, varianteId, elegidas)
-  if (faltan.length > 0) throw new Error(`Falta elegir: ${faltan.join(', ')}`)
-  const variante = p.variantes.find((v) => v.id === varianteId) ?? null
-  const modificadores = p.grupos.flatMap((g) => {
+  const missingOnes = faltaElegir(p, variantId, elegidas)
+  if (missingOnes.length > 0) throw new Error(`Falta elegir: ${missingOnes.join(', ')}`)
+  const variant = p.variants.find((v) => v.id === variantId) ?? null
+  const modifiers = p.groups.flatMap((g) => {
     const elegidasGrupo = elegidasDe(g, elegidas)
     // Recortar en silencio cobraría distinto de lo que mostró el panel: mejor no guardar.
-    if (elegidasGrupo.length > g.maximo)
-      throw new Error(`En ${g.nombre.toLowerCase()} se eligen máximo ${g.maximo}`)
+    if (elegidasGrupo.length > g.maximum)
+      throw new Error(`En ${g.name.toLowerCase()} se eligen máximo ${g.maximum}`)
     return elegidasGrupo.map((o) => ({
-      modificador_id: o.id,
-      nombre: o.nombre,
-      precio_extra: o.precioExtra,
+      modifier_id: o.id,
+      name: o.name,
+      extra_price: o.extraPrice,
     }))
   })
   return {
-    item_id: nuevoId(),
-    producto_id: p.id,
-    variante_id: variante?.id ?? null,
-    nombre: variante ? `${p.nombre} · ${variante.nombre}` : p.nombre,
-    precio_unitario: variante?.precio ?? p.precio,
-    impuesto_tipo: p.impuesto.tipo,
-    tarifa: p.impuesto.tipo === 'exento' ? 0 : p.impuesto.tarifa,
-    cantidad: extras.cantidad ?? 1,
-    comensal: extras.comensal ?? null,
-    curso: extras.curso ?? null,
-    modificadores,
-    notas: extras.notas?.trim() || null,
-    catalogo_version: catalogo.version,
-    precio_canal_id: null,
+    item_id: newId(),
+    product_id: p.id,
+    variant_id: variant?.id ?? null,
+    name: variant ? `${p.name} · ${variant.name}` : p.name,
+    unit_price: variant?.price ?? p.price,
+    tax_type: p.tax.type,
+    rate: p.tax.type === 'exempt' ? 0 : p.tax.rate,
+    quantity: extras.quantity ?? 1,
+    guest: extras.guest ?? null,
+    course: extras.course ?? null,
+    modifiers,
+    notes: extras.notes?.trim() || null,
+    catalog_version: catalog.version,
+    price_channel_id: null,
   }
 }
 
@@ -95,79 +95,79 @@ export function datosItem(
  */
 export function precioElegido(
   p: ProductoCatalogo,
-  varianteId: string | null,
+  variantId: string | null,
   elegidas: Record<string, string[]>,
 ): number {
-  const base = p.variantes.find((v) => v.id === varianteId)?.precio ?? p.precio
-  return precioConExtras(
+  const base = p.variants.find((v) => v.id === variantId)?.price ?? p.price
+  return priceWithExtras(
     base,
-    p.grupos.flatMap((g) => elegidasDe(g, elegidas).map((o) => o.precioExtra)),
+    p.groups.flatMap((g) => elegidasDe(g, elegidas).map((o) => o.extraPrice)),
   )
 }
 
 /** Los datos para volver a agregar un ítem quitado, igual pero con un id nuevo. */
-export function copiaDe(item: ItemPedido, catalogoVersion: number): DatosItem {
+export function copiaDe(item: OrderItem, catalogoVersion: number): DatosItem {
   return {
-    item_id: nuevoId(),
-    producto_id: item.productoId,
-    variante_id: item.varianteId,
-    nombre: item.nombre,
-    precio_unitario: item.precioUnitario,
-    impuesto_tipo: item.impuestoTipo,
-    tarifa: item.tarifa,
-    cantidad: item.cantidad,
-    comensal: item.comensal,
-    curso: item.curso,
-    modificadores: item.modificadores.map((m) => ({
-      modificador_id: m.modificadorId,
-      nombre: m.nombre,
-      precio_extra: m.precioExtra,
+    item_id: newId(),
+    product_id: item.productId,
+    variant_id: item.variantId,
+    name: item.name,
+    unit_price: item.unitPrice,
+    tax_type: item.taxType,
+    rate: item.rate,
+    quantity: item.quantity,
+    guest: item.guest,
+    course: item.course,
+    modifiers: item.modifiers.map((m) => ({
+      modifier_id: m.modifierId,
+      name: m.name,
+      extra_price: m.extraPrice,
     })),
-    notas: item.notas,
-    catalogo_version: catalogoVersion,
-    precio_canal_id: null,
+    notes: item.notes,
+    catalog_version: catalogoVersion,
+    price_channel_id: null,
   }
 }
 
 /** Ítems que faltan por enviar a cocina o barra. */
-export const porEnviar = (estado: EstadoPedido) =>
-  itemsVigentes(estado).filter((i) => i.estado === 'pendiente')
+export const porEnviar = (status: OrderState) =>
+  itemsVigentes(status).filter((i) => i.status === 'pending')
 
 /** Unidades por enviar (3 Aperol son 3, no 1 línea): lo que dice «Enviar» y el aviso. */
-export const unidadesPorEnviar = (estado: EstadoPedido) =>
-  porEnviar(estado).reduce((n, i) => n + i.cantidad - i.cantidadAnulada, 0)
+export const unidadesPorEnviar = (status: OrderState) =>
+  porEnviar(status).reduce((n, i) => n + i.quantity - i.voidedQuantity, 0)
 
 /**
  * Una comanda por estación con lo que falta enviar. La estación es la de la categoría del
  * producto; si no tiene, la primera del restaurante. Sin estaciones no hay a dónde enviar.
  */
-export function comandasPorEstacion(catalogo: Catalogo, estado: EstadoPedido): DatosEnvio | null {
+export function comandasPorEstacion(catalog: Catalogo, status: OrderState): DatosEnvio | null {
   const estacionDe = new Map(
-    catalogo.categorias.flatMap((c) => c.productos.map((p) => [p.id, c.estacionId] as const)),
+    catalog.categories.flatMap((c) => c.products.map((p) => [p.id, c.estacionId] as const)),
   )
-  const porDefecto = catalogo.estaciones[0]?.id ?? null
-  const grupos = new Map<string, string[]>()
-  for (const item of porEnviar(estado)) {
-    const estacion = estacionDe.get(item.productoId) ?? porDefecto
-    if (!estacion) return null
-    grupos.set(estacion, [...(grupos.get(estacion) ?? []), item.id])
+  const porDefecto = catalog.stations[0]?.id ?? null
+  const groups = new Map<string, string[]>()
+  for (const item of porEnviar(status)) {
+    const station = estacionDe.get(item.productId) ?? porDefecto
+    if (!station) return null
+    groups.set(station, [...(groups.get(station) ?? []), item.id])
   }
-  if (grupos.size === 0) return null
+  if (groups.size === 0) return null
   return {
-    comandas: [...grupos].map(([estacion_id, item_ids]) => ({
-      comanda_id: nuevoId(),
-      estacion_id,
+    tickets: [...groups].map(([station_id, item_ids]) => ({
+      ticket_id: newId(),
+      station_id,
       item_ids,
     })),
   }
 }
 
-export type Curso = 'entrada' | 'fuerte' | 'postre'
-export const CURSOS: { curso: Curso | null; nombre: string }[] = [
-  { curso: null, nombre: 'Sin curso' },
-  { curso: 'entrada', nombre: 'Entrada' },
-  { curso: 'fuerte', nombre: 'Fuerte' },
-  { curso: 'postre', nombre: 'Postre' },
+export type Course = 'entry' | 'main' | 'dessert'
+export const COURSES: { course: Course | null; name: string }[] = [
+  { course: null, name: 'Sin curso' },
+  { course: 'entry', name: 'Entrada' },
+  { course: 'main', name: 'Fuerte' },
+  { course: 'dessert', name: 'Postre' },
 ]
 
 /**
@@ -177,58 +177,55 @@ export const CURSOS: { curso: Curso | null; nombre: string }[] = [
  * cambió entre un toque y otro, va en otra línea con su precio (docs/DINERO.md#precio-copiado).
  * No se suma a una línea con descuento ni en un pedido dividido: el reductor no lo dejaría.
  */
-export function lineaIgual(estado: EstadoPedido | null, d: DatosItem): ItemPedido | null {
-  if (!estado || d.notas || estado.cuentas) return null
-  const opciones = (mods: { id: string; precio: number }[]) =>
+export function lineaIgual(status: OrderState | null, d: DatosItem): OrderItem | null {
+  if (!status || d.notes || status.checks) return null
+  const options = (mods: { id: string; price: number }[]) =>
     mods
-      .map((m) => `${m.id}:${m.precio}`)
+      .map((m) => `${m.id}:${m.price}`)
       .sort()
       .join()
-  const buscadas = opciones(
-    d.modificadores.map((m) => ({ id: m.modificador_id, precio: m.precio_extra })),
-  )
+  const buscadas = options(d.modifiers.map((m) => ({ id: m.modifier_id, price: m.extra_price })))
   return (
-    itemsVigentes(estado).find(
+    itemsVigentes(status).find(
       (i) =>
-        (i.estado === 'pendiente' || i.estado === 'retenido') &&
-        i.cantidadAnulada === 0 &&
-        !i.notas &&
-        i.productoId === d.producto_id &&
-        i.varianteId === d.variante_id &&
-        i.comensal === d.comensal &&
-        i.curso === d.curso &&
-        i.precioUnitario === d.precio_unitario &&
-        i.impuestoTipo === d.impuesto_tipo &&
-        i.tarifa === d.tarifa &&
-        descuentoDeItem(estado, i.id) === 0 &&
-        opciones(i.modificadores.map((m) => ({ id: m.modificadorId, precio: m.precioExtra }))) ===
-          buscadas,
+        (i.status === 'pending' || i.status === 'held') &&
+        i.voidedQuantity === 0 &&
+        !i.notes &&
+        i.productId === d.product_id &&
+        i.variantId === d.variant_id &&
+        i.guest === d.guest &&
+        i.course === d.course &&
+        i.unitPrice === d.unit_price &&
+        i.taxType === d.tax_type &&
+        i.rate === d.rate &&
+        itemDiscount(status, i.id) === 0 &&
+        options(i.modifiers.map((m) => ({ id: m.modifierId, price: m.extraPrice }))) === buscadas,
     ) ?? null
   )
 }
 
 /** Comandas solo con lo de un curso (al marcharlo), por estación. */
 export function comandasDeCurso(
-  catalogo: Catalogo,
-  estado: EstadoPedido,
-  curso: Curso,
+  catalog: Catalogo,
+  status: OrderState,
+  course: Course,
 ): DatosEnvio | null {
   const soloCurso = {
-    ...estado,
-    items: Object.fromEntries(Object.entries(estado.items).filter(([, i]) => i.curso === curso)),
+    ...status,
+    items: Object.fromEntries(Object.entries(status.items).filter(([, i]) => i.course === course)),
   }
-  return comandasPorEstacion(catalogo, soloCurso)
+  return comandasPorEstacion(catalog, soloCurso)
 }
 
 /** Pedidos sin mesa: para llevar, domicilio o barra. */
 export const CANALES = {
-  para_llevar: 'Para llevar',
-  domicilio: 'Domicilio',
-  barra: 'Barra',
+  takeout: 'Para llevar',
+  delivery: 'Domicilio',
+  bar: 'Barra',
 } as const
 
 /** "la entrada", "el fuerte": para los avisos. */
-export const elCurso = (c: Curso) => (c === 'entrada' ? 'la entrada' : `el ${c}`)
+export const elCurso = (c: Course) => (c === 'entry' ? 'la entrada' : `el ${c}`)
 
 /**
  * Motivos de anulación y de cancelación (tarea 1.5, decisión del dueño). Siempre se puede
@@ -241,18 +238,18 @@ export const MOTIVOS_ANULACION = [
   'Producto dañado o mal hecho',
 ] as const
 
-type DatosMovido = Extract<EventoNuevo, { tipo: 'ItemsMovidos' }>['datos']['items'][number]
+type DatosMovido = Extract<NewEvent, { type: 'ItemsMoved' }>['data']['items'][number]
 
 /**
  * Un ítem tal como se pasa a otro pedido: la copia exacta, su estado, lo anulado y quién lo
  * agregó (el reductor la compara con el ítem real, docs/MODELO_DATOS.md).
  */
-export function movidoDe(i: ItemPedido): DatosMovido {
-  const { catalogo_version: _v, precio_canal_id: _c, ...copia } = copiaDe(i, 0)
+export function movidoDe(i: OrderItem): DatosMovido {
+  const { catalog_version: _v, price_channel_id: _c, ...copy } = copiaDe(i, 0)
   return {
-    item: { ...copia, item_id: i.id },
-    estado: i.estado as DatosMovido['estado'],
-    cantidad_anulada: i.cantidadAnulada,
-    agregado_por: i.agregadoPor,
+    item: { ...copy, item_id: i.id },
+    status: i.status as DatosMovido['status'],
+    voided_quantity: i.voidedQuantity,
+    added_by: i.addedBy,
   }
 }

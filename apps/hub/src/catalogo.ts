@@ -1,4 +1,4 @@
-import { configCompleta, jsonCanonico, MARCAS } from '@pos/core'
+import { BRANDS, canonicalJson, fullConfig } from '@pos/core'
 import type { BaseSqlite, Fila } from '@pos/db'
 import type { Catalogo } from '@pos/sync'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
@@ -19,161 +19,161 @@ import { ErrorFoto, guardarFoto, leerFoto, urlFoto } from './fotos'
 // 1 se sincroniza por versión (`catalogo desde: N`, docs/SYNC.md#catálogo-y-configuración); por
 // ahora se entrega entero: es pequeño.
 
-const texto = (v: unknown) => String(v)
+const text = (v: unknown) => String(v)
 const numero = (v: unknown) => Number(v)
 
 export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
-  const todas = (sql: string): Fila[] => db.prepare(sql).all(restauranteId)
-  const activos = (tabla: string, orden = 'orden, nombre') =>
-    todas(`SELECT * FROM ${tabla} WHERE restaurante_id = ? AND activo = 1 ORDER BY ${orden}`)
+  const allRows = (sql: string): Fila[] => db.prepare(sql).all(restauranteId)
+  const activeRows = (tabla: string, position = 'position, name') =>
+    allRows(`SELECT * FROM ${tabla} WHERE restaurant_id = ? AND active = 1 ORDER BY ${position}`)
 
   const version = numero(
     db
-      .prepare("SELECT valor FROM contador WHERE restaurante_id = ? AND nombre = 'catalogo'")
-      .get(restauranteId)?.valor ?? 0,
+      .prepare("SELECT value FROM counters WHERE restaurant_id = ? AND name = 'catalog'")
+      .get(restauranteId)?.value ?? 0,
   )
-  const restaurante = db
-    .prepare('SELECT nombre, config FROM restaurante WHERE id = ?')
+  const restaurant = db
+    .prepare('SELECT name, config FROM restaurants WHERE id = ?')
     .get(restauranteId)
-  const config = configCompleta(JSON.parse(String(restaurante?.config ?? '{}')))
-  const impuestos = new Map(activos('impuesto', 'nombre').map((f) => [texto(f.id), f]))
-  const variantes = activos('variante')
-  const enlaces = activos('producto_grupo_modificador', 'orden')
-  const grupos = new Map(activos('grupo_modificador', 'nombre').map((f) => [texto(f.id), f]))
-  const modificadores = activos('modificador')
-  const productos = activos('producto', 'nombre')
-  const zonas = activos('zona', 'piso, orden, nombre')
-  const idsZonas = new Set(zonas.map((f) => texto(f.id)))
+  const config = fullConfig(JSON.parse(String(restaurant?.config ?? '{}')))
+  const taxes = new Map(activeRows('taxes', 'name').map((f) => [text(f.id), f]))
+  const variants = activeRows('variants')
+  const links = activeRows('product_modifier_groups', 'position')
+  const groups = new Map(activeRows('modifier_groups', 'name').map((f) => [text(f.id), f]))
+  const modifiers = activeRows('modifiers')
+  const products = activeRows('products', 'name')
+  const zones = activeRows('zones', 'level, position, name')
+  const idsZonas = new Set(zones.map((f) => text(f.id)))
   const listaJson = (v: unknown): string[] => {
-    const lista = JSON.parse(String(v ?? '[]'))
-    return Array.isArray(lista) ? lista.map(String) : []
+    const list = JSON.parse(String(v ?? '[]'))
+    return Array.isArray(list) ? list.map(String) : []
   }
-  const impresas = new Set(activos('impresora', 'nombre').flatMap((f) => listaJson(f.estacion_ids)))
-  const pantallas = todas(
-    `SELECT id, nombre, estacion_ids FROM dispositivo
-     WHERE restaurante_id = ? AND activo = 1 AND tipo = 'kds' AND revocado_en IS NULL
-     ORDER BY nombre, id`,
+  const impresas = new Set(activeRows('printers', 'name').flatMap((f) => listaJson(f.station_ids)))
+  const pantallas = allRows(
+    `SELECT id, name, station_ids FROM devices
+     WHERE restaurant_id = ? AND active = 1 AND type = 'kds' AND revoked_at IS NULL
+     ORDER BY name, id`,
   ).map((f) => ({
-    dispositivoId: texto(f.id),
-    nombre: texto(f.nombre),
-    estacionIds: listaJson(f.estacion_ids),
+    dispositivoId: text(f.id),
+    name: text(f.name),
+    estacionIds: listaJson(f.station_ids),
   }))
 
   return {
     version,
-    restaurante: {
-      nombre: texto(restaurante?.nombre ?? ''),
-      sesionInactividadMin: config.sesion_inactividad_min,
-      marca: config.marca,
-      cocinaAmarilloMin: config.cocina_amarillo_min,
-      cocinaRojoMin: config.cocina_rojo_min,
-      usarCursos: config.usar_cursos,
-      cobro: {
-        mediosPago: config.medios_pago,
-        mediosPropios: config.medios_propios
-          .filter((m) => m.activo)
-          .map(({ id, nombre }) => ({ id, nombre })),
-        mediosPropiosArchivados: config.medios_propios
-          .filter((m) => !m.activo)
-          .map(({ id, nombre }) => ({ id, nombre })),
-        propinaSugerida: config.propina_sugerida,
-        redondeoModo: config.redondeo_modo,
-        redondeoEfectivo: config.redondeo_efectivo,
-        redondeoEfectivoModo: config.redondeo_efectivo_modo,
-        umbralDiferencia: config.umbral_diferencia_caja,
-        zonaHoraria: zonaHorariaDe(db, restauranteId),
-        inicioDiaOperativo: config.inicio_dia_operativo,
+    restaurant: {
+      name: text(restaurant?.name ?? ''),
+      sesionInactividadMin: config.session_idle_min,
+      brand: config.brand,
+      cocinaAmarilloMin: config.kitchen_yellow_min,
+      cocinaRojoMin: config.kitchen_red_min,
+      usarCursos: config.courses_enabled,
+      checkout: {
+        mediosPago: config.payment_methods,
+        mediosPropios: config.custom_methods
+          .filter((m) => m.active)
+          .map(({ id, name }) => ({ id, name })),
+        mediosPropiosArchivados: config.custom_methods
+          .filter((m) => !m.active)
+          .map(({ id, name }) => ({ id, name })),
+        suggestedTip: config.suggested_tip,
+        redondeoModo: config.rounding_mode,
+        redondeoEfectivo: config.cash_rounding,
+        cashRoundingMode: config.cash_rounding_mode,
+        umbralDiferencia: config.register_variance_threshold,
+        timeZone: zonaHorariaDe(db, restauranteId),
+        inicioDiaOperativo: config.business_day_start,
         // Solo si la impresora elegida sigue activa.
         imprimePrecuenta:
-          config.impresora_precuenta_id !== null &&
-          todas('SELECT id FROM impresora WHERE restaurante_id = ? AND activo = 1').some(
-            (f) => texto(f.id) === config.impresora_precuenta_id,
+          config.pre_bill_printer_id !== null &&
+          allRows('SELECT id FROM printers WHERE restaurant_id = ? AND active = 1').some(
+            (f) => text(f.id) === config.pre_bill_printer_id,
           ),
       },
     },
-    datafonos: activos('datafono', 'nombre').map((f) => ({
-      id: texto(f.id),
-      nombre: texto(f.nombre),
-      proveedor: texto(f.proveedor),
+    cardTerminals: activeRows('card_terminals', 'name').map((f) => ({
+      id: text(f.id),
+      name: text(f.name),
+      provider: text(f.provider),
     })),
-    zonas: zonas.map((f) => ({ id: texto(f.id), nombre: texto(f.nombre), piso: numero(f.piso) })),
-    mesas: activos('mesa', 'zona_id, y, x')
-      .filter((f) => idsZonas.has(texto(f.zona_id)))
+    zones: zones.map((f) => ({ id: text(f.id), name: text(f.name), level: numero(f.level) })),
+    tables: activeRows('dining_tables', 'zone_id, y, x')
+      .filter((f) => idsZonas.has(text(f.zone_id)))
       .map((f) => ({
-        id: texto(f.id),
-        zonaId: texto(f.zona_id),
-        nombre: texto(f.nombre),
+        id: text(f.id),
+        zonaId: text(f.zone_id),
+        name: text(f.name),
         x: numero(f.x),
         y: numero(f.y),
-        ancho: numero(f.ancho),
-        alto: numero(f.alto),
-        rotacion: numero(f.rotacion),
-        forma: texto(f.forma) as Catalogo['mesas'][number]['forma'],
-        capacidad: numero(f.capacidad),
+        width: numero(f.width),
+        height: numero(f.height),
+        rotation: numero(f.rotation),
+        shape: text(f.shape) as Catalogo['tables'][number]['shape'],
+        capacity: numero(f.capacity),
       })),
-    elementos: activos('elemento_plano', 'zona_id, version')
-      .filter((f) => idsZonas.has(texto(f.zona_id)))
+    elements: activeRows('floor_plan_elements', 'zone_id, version')
+      .filter((f) => idsZonas.has(text(f.zone_id)))
       .map((f) => ({
-        id: texto(f.id),
-        zonaId: texto(f.zona_id),
-        tipo: texto(f.tipo) as Catalogo['elementos'][number]['tipo'],
-        texto: f.texto === null ? null : texto(f.texto),
+        id: text(f.id),
+        zonaId: text(f.zone_id),
+        type: text(f.type) as Catalogo['elements'][number]['type'],
+        text: f.text === null ? null : text(f.text),
         x: numero(f.x),
         y: numero(f.y),
-        ancho: numero(f.ancho),
-        alto: numero(f.alto),
-        rotacion: numero(f.rotacion),
+        width: numero(f.width),
+        height: numero(f.height),
+        rotation: numero(f.rotation),
       })),
-    personal: activos('usuario', 'nombre')
-      .filter((f) => f.pantalla !== 1)
+    staff: activeRows('users', 'name')
+      .filter((f) => f.screen !== 1)
       .map((f) => ({
-        id: texto(f.id),
-        nombre: texto(f.nombre),
+        id: text(f.id),
+        name: text(f.name),
       })),
-    estaciones: activos('estacion').map((f) => ({
-      id: texto(f.id),
-      nombre: texto(f.nombre),
-      imprime: impresas.has(texto(f.id)),
-      pantalla: pantallas.some((p) => p.estacionIds.includes(texto(f.id))),
+    stations: activeRows('stations').map((f) => ({
+      id: text(f.id),
+      name: text(f.name),
+      imprime: impresas.has(text(f.id)),
+      screen: pantallas.some((p) => p.estacionIds.includes(text(f.id))),
     })),
     pantallas,
-    categorias: activos('categoria').map((c) => ({
-      id: texto(c.id),
-      nombre: texto(c.nombre),
-      estacionId: c.estacion_id === null ? null : texto(c.estacion_id),
-      productos: productos
-        .filter((p) => p.categoria_id === c.id && impuestos.has(texto(p.impuesto_id)))
+    categories: activeRows('categories').map((c) => ({
+      id: text(c.id),
+      name: text(c.name),
+      estacionId: c.station_id === null ? null : text(c.station_id),
+      products: products
+        .filter((p) => p.category_id === c.id && taxes.has(text(p.tax_id)))
         .map((p) => {
-          const impuesto = impuestos.get(texto(p.impuesto_id)) as Fila
+          const tax = taxes.get(text(p.tax_id)) as Fila
           return {
-            id: texto(p.id),
-            nombre: texto(p.nombre),
-            descripcion: p.descripcion === null ? null : texto(p.descripcion),
-            favorito: p.favorito === 1,
-            foto: urlFoto(p.foto),
-            precio: numero(p.precio),
-            impuesto: {
-              tipo: texto(impuesto.tipo) as 'inc' | 'iva' | 'exento',
-              tarifa: numero(impuesto.tarifa),
+            id: text(p.id),
+            name: text(p.name),
+            description: p.description === null ? null : text(p.description),
+            favorite: p.favorite === 1,
+            photo: urlFoto(p.photo),
+            price: numero(p.price),
+            tax: {
+              type: text(tax.type) as 'inc' | 'iva' | 'exempt',
+              rate: numero(tax.rate),
             },
-            variantes: variantes
-              .filter((v) => v.producto_id === p.id)
-              .map((v) => ({ id: texto(v.id), nombre: texto(v.nombre), precio: numero(v.precio) })),
-            grupos: enlaces
-              .filter((e) => e.producto_id === p.id && grupos.has(texto(e.grupo_id)))
+            variants: variants
+              .filter((v) => v.product_id === p.id)
+              .map((v) => ({ id: text(v.id), name: text(v.name), price: numero(v.price) })),
+            groups: links
+              .filter((e) => e.product_id === p.id && groups.has(text(e.group_id)))
               .map((e) => {
-                const g = grupos.get(texto(e.grupo_id)) as Fila
+                const g = groups.get(text(e.group_id)) as Fila
                 return {
-                  id: texto(g.id),
-                  nombre: texto(g.nombre),
-                  minimo: numero(g.minimo),
-                  maximo: numero(g.maximo),
-                  opciones: modificadores
-                    .filter((m) => m.grupo_id === g.id)
+                  id: text(g.id),
+                  name: text(g.name),
+                  minimum: numero(g.minimum),
+                  maximum: numero(g.maximum),
+                  options: modifiers
+                    .filter((m) => m.group_id === g.id)
                     .map((m) => ({
-                      id: texto(m.id),
-                      nombre: texto(m.nombre),
-                      precioExtra: numero(m.precio_extra),
+                      id: text(m.id),
+                      name: text(m.name),
+                      extraPrice: numero(m.extra_price),
                     })),
                 }
               }),
@@ -186,25 +186,25 @@ export function leerCatalogo(db: BaseSqlite, restauranteId: string): Catalogo {
 export interface OpcionesCatalogo {
   db: BaseSqlite
   restauranteId: string
-  acceso: ServicioAcceso
+  access: ServicioAcceso
   /** El catálogo cambió (lo editaron desde la caja): avisar a los equipos conectados. */
-  alCambiar?: (version: number) => void
+  onChange?: (version: number) => void
   /** Si una mesa tiene un pedido abierto (no se puede archivar). */
-  mesaOcupada?: (mesaId: string) => boolean
+  mesaOcupada?: (tableId: string) => boolean
   /** Carpeta de las fotos de los productos (`datos/fotos`). Sin ella no se suben ni se sirven. */
   dirFotos?: string
-  reloj?: () => string
+  clock?: () => string
 }
 
 const SesionEdicion = z.strictObject({
-  sesion_id: z.string().length(26),
-  secreto: z.string().min(1).max(100),
+  session_id: z.string().length(26),
+  secret: z.string().min(1).max(100),
 })
 
 /**
  * `GET /api/catalogo` (lo vigente, para tomar pedidos), `GET /api/catalogo/edicion` (todo, también
  * lo archivado, para el editor) y `POST /api/catalogo/cambios` (editar, con la sesión y el
- * permiso `editar_catalogo`, o `editar_precios` si solo cambian precios). Todo pide un equipo
+ * permiso `edit_catalog`, o `edit_prices` si solo cambian precios). Todo pide un equipo
  * emparejado.
  */
 export async function rutasCatalogo(
@@ -212,69 +212,65 @@ export async function rutasCatalogo(
   {
     db,
     restauranteId,
-    acceso,
-    alCambiar,
+    access,
+    onChange,
     mesaOcupada,
     dirFotos,
-    reloj = () => new Date().toISOString(),
+    clock = () => new Date().toISOString(),
   }: OpcionesCatalogo,
 ) {
-  const equipo = (req: FastifyRequest, reply: FastifyReply) => {
+  const device = (req: FastifyRequest, reply: FastifyReply) => {
     const [esquema, token] = (req.headers.authorization ?? '').split(' ')
-    const conexion = esquema === 'Bearer' && token ? acceso.autenticar(token) : null
-    if (conexion && !conexion.revocadoEn) return conexion
+    const connection = esquema === 'Bearer' && token ? access.authenticate(token) : null
+    if (connection && !connection.revocadoEn) return connection
     reply
       .code(401)
-      .send({ error: 'token_invalido', mensaje: 'Este equipo ya no tiene acceso: vuelve a entrar' })
+      .send({ error: 'invalid_token', message: 'Este equipo ya no tiene acceso: vuelve a entrar' })
     return null
   }
 
-  app.get('/api/catalogo', async (req, reply) => {
-    if (!equipo(req, reply)) return reply
+  app.get('/api/catalog', async (req, reply) => {
+    if (!device(req, reply)) return reply
     return leerCatalogo(db, restauranteId)
   })
 
-  app.get('/api/catalogo/edicion', async (req, reply) => {
-    if (!equipo(req, reply)) return reply
+  app.get('/api/catalog/editing', async (req, reply) => {
+    if (!device(req, reply)) return reply
     return catalogoParaEditar(db, restauranteId)
   })
 
-  app.post('/api/catalogo/cambios', async (req, reply) => {
-    const conexion = equipo(req, reply)
-    if (!conexion) return reply
+  app.post('/api/catalog/changes', async (req, reply) => {
+    const connection = device(req, reply)
+    if (!connection) return reply
     const cuerpo = PedidoEdicion.merge(SesionEdicion).safeParse(req.body)
     if (!cuerpo.success)
       return reply
         .code(400)
-        .send({ error: 'datos_invalidos', mensaje: 'Datos con formato inesperado' })
-    const { sesion_id, secreto, cambios } = cuerpo.data
-    const permiso = soloPrecios(db, restauranteId, cambios) ? 'editar_precios' : 'editar_catalogo'
-    let quien = acceso.usuarioConPermiso(conexion, { sesionId: sesion_id, secreto }, permiso)
+        .send({ error: 'invalid_data', message: 'Datos con formato inesperado' })
+    const { session_id, secret, changes } = cuerpo.data
+    const permission = soloPrecios(db, restauranteId, changes) ? 'edit_prices' : 'edit_catalog'
+    let quien = access.usuarioConPermiso(connection, { sesionId: session_id, secret }, permission)
     // Quien edita el catálogo también puede cambiar precios.
-    if (!quien.ok && quien.codigo === 'sin_permiso' && permiso === 'editar_precios')
-      quien = acceso.usuarioConPermiso(
-        conexion,
-        { sesionId: sesion_id, secreto },
-        'editar_catalogo',
-      )
+    if (!quien.ok && quien.code === 'no_permission' && permission === 'edit_prices')
+      quien = access.usuarioConPermiso(connection, { sesionId: session_id, secret }, 'edit_catalog')
     if (!quien.ok) {
-      const estado = quien.codigo === 'sin_permiso' ? 403 : 401
-      return reply.code(estado).send({ error: quien.codigo, mensaje: quien.mensaje })
+      const status = quien.code === 'no_permission' ? 403 : 401
+      return reply.code(status).send({ error: quien.code, message: quien.message })
     }
     try {
       const { version, cambiados } = aplicarCambios(
         db,
         restauranteId,
-        cambios,
-        { usuarioId: quien.usuarioId, dispositivoId: conexion.dispositivoId },
-        reloj(),
+        changes,
+        { userId: quien.userId, dispositivoId: connection.dispositivoId },
+        clock(),
         mesaOcupada,
       )
-      if (cambiados > 0) alCambiar?.(version)
+      if (cambiados > 0) onChange?.(version)
       return reply.code(200).send({ version, cambiados })
     } catch (error) {
       if (error instanceof ErrorEdicion)
-        return reply.code(400).send({ error: 'datos_invalidos', mensaje: error.message })
+        return reply.code(400).send({ error: 'invalid_data', message: error.message })
       throw error
     }
   })
@@ -283,113 +279,113 @@ export async function rutasCatalogo(
   const conPermiso = (
     req: FastifyRequest,
     reply: FastifyReply,
-    cuerpo: { sesion_id: string; secreto: string },
-    permiso: 'editar_catalogo' | 'administrar_usuarios',
+    cuerpo: { session_id: string; secret: string },
+    permission: 'edit_catalog' | 'manage_users',
   ) => {
-    const conexion = equipo(req, reply)
-    if (!conexion) return null
-    const quien = acceso.usuarioConPermiso(
-      conexion,
-      { sesionId: cuerpo.sesion_id, secreto: cuerpo.secreto },
-      permiso,
+    const connection = device(req, reply)
+    if (!connection) return null
+    const quien = access.usuarioConPermiso(
+      connection,
+      { sesionId: cuerpo.session_id, secret: cuerpo.secret },
+      permission,
     )
     if (!quien.ok) {
       reply
-        .code(quien.codigo === 'sin_permiso' ? 403 : 401)
-        .send({ error: quien.codigo, mensaje: quien.mensaje })
+        .code(quien.code === 'no_permission' ? 403 : 401)
+        .send({ error: quien.code, message: quien.message })
       return null
     }
-    return { usuarioId: quien.usuarioId, dispositivoId: conexion.dispositivoId }
+    return { userId: quien.userId, dispositivoId: connection.dispositivoId }
   }
   const versionActual = () =>
     Number(
       db
-        .prepare("SELECT valor FROM contador WHERE restaurante_id = ? AND nombre = 'catalogo'")
-        .get(restauranteId)?.valor ?? 0,
+        .prepare("SELECT value FROM counters WHERE restaurant_id = ? AND name = 'catalog'")
+        .get(restauranteId)?.value ?? 0,
     )
-  const datosInvalidos = (reply: FastifyReply, mensaje = 'Datos con formato inesperado') =>
-    reply.code(400).send({ error: 'datos_invalidos', mensaje })
+  const datosInvalidos = (reply: FastifyReply, message = 'Datos con formato inesperado') =>
+    reply.code(400).send({ error: 'invalid_data', message })
 
   // La marca con que se ve el POS en todos los equipos (tarea 1.3c).
   // El equipo se comprueba antes de leer el cuerpo: sin token no se recibe ni se valida nada.
   const conEquipo = {
     onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
-      if (!equipo(req, reply)) return reply
+      if (!device(req, reply)) return reply
     },
   }
 
-  app.post('/api/restaurante/marca', conEquipo, async (req, reply) => {
-    const cuerpo = SesionEdicion.extend({ marca: z.enum(MARCAS) }).safeParse(req.body)
+  app.post('/api/restaurant/brand', conEquipo, async (req, reply) => {
+    const cuerpo = SesionEdicion.extend({ brand: z.enum(BRANDS) }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply, 'Esa marca no existe')
-    const autor = conPermiso(req, reply, cuerpo.data, 'administrar_usuarios')
+    const autor = conPermiso(req, reply, cuerpo.data, 'manage_users')
     if (!autor) return reply
-    const fila = db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)
-    const actual = JSON.parse(String(fila?.config ?? '{}')) as Record<string, unknown>
-    if (actual.marca !== cuerpo.data.marca) {
+    const fila = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)
+    const current = JSON.parse(String(fila?.config ?? '{}')) as Record<string, unknown>
+    if (current.brand !== cuerpo.data.brand) {
       actualizarVersionado(
         db,
-        'restaurante',
+        'restaurants',
         restauranteId,
         restauranteId,
-        { config: jsonCanonico(configCompleta({ ...actual, marca: cuerpo.data.marca })) },
+        { config: canonicalJson(fullConfig({ ...current, brand: cuerpo.data.brand })) },
         autor,
-        reloj(),
+        clock(),
       )
-      alCambiar?.(versionActual())
+      onChange?.(versionActual())
     }
-    return reply.send({ marca: cuerpo.data.marca })
+    return reply.send({ brand: cuerpo.data.brand })
   })
 
   if (!dirFotos) return
 
   // Subir o quitar la foto de un producto, con el permiso de editar la carta.
   app.post(
-    '/api/catalogo/fotos',
+    '/api/catalog/photos',
     { ...conEquipo, bodyLimit: 2 * 1024 * 1024 },
     async (req, reply) => {
       const cuerpo = SesionEdicion.extend({
-        producto_id: z.string().length(26),
+        product_id: z.string().length(26),
         imagen: z.string().max(1_500_000).nullable(),
       }).safeParse(req.body)
       if (!cuerpo.success) return datosInvalidos(reply)
-      const autor = conPermiso(req, reply, cuerpo.data, 'editar_catalogo')
+      const autor = conPermiso(req, reply, cuerpo.data, 'edit_catalog')
       if (!autor) return reply
-      const producto = db
-        .prepare('SELECT foto FROM producto WHERE restaurante_id = ? AND id = ?')
-        .get(restauranteId, cuerpo.data.producto_id)
-      if (!producto) return datosInvalidos(reply, 'Ese producto no existe')
-      let nombre: string | null = null
+      const product = db
+        .prepare('SELECT photo FROM products WHERE restaurant_id = ? AND id = ?')
+        .get(restauranteId, cuerpo.data.product_id)
+      if (!product) return datosInvalidos(reply, 'Ese producto no existe')
+      let name: string | null = null
       try {
-        nombre = cuerpo.data.imagen === null ? null : guardarFoto(dirFotos, cuerpo.data.imagen)
+        name = cuerpo.data.imagen === null ? null : guardarFoto(dirFotos, cuerpo.data.imagen)
       } catch (e) {
         if (e instanceof ErrorFoto) return datosInvalidos(reply, e.message)
         throw e
       }
-      if (producto.foto !== nombre) {
+      if (product.photo !== name) {
         actualizarVersionado(
           db,
-          'producto',
+          'products',
           restauranteId,
-          cuerpo.data.producto_id,
-          { foto: nombre },
+          cuerpo.data.product_id,
+          { photo: name },
           autor,
-          reloj(),
+          clock(),
         )
-        alCambiar?.(versionActual())
+        onChange?.(versionActual())
       }
-      return reply.send({ foto: urlFoto(nombre) })
+      return reply.send({ photo: urlFoto(name) })
     },
   )
 
   // Las fotos son de la carta, no de nadie: se sirven sin token (una <img> no lo puede mandar) y
   // nunca cambian, porque su nombre es la huella de su contenido.
-  app.get<{ Params: { nombre: string } }>('/fotos/:nombre', async (req, reply) => {
-    const foto = leerFoto(dirFotos, req.params.nombre)
-    if (!foto) return reply.code(404).send({ error: 'No encontrado' })
+  app.get<{ Params: { name: string } }>('/photos/:name', async (req, reply) => {
+    const photo = leerFoto(dirFotos, req.params.name)
+    if (!photo) return reply.code(404).send({ error: 'No encontrado' })
     return reply
-      .header('content-type', foto.mime)
+      .header('content-type', photo.mime)
       .header('cache-control', 'public, max-age=31536000, immutable')
       .header('x-content-type-options', 'nosniff')
-      .send(foto.bytes)
+      .send(photo.bytes)
   })
 }

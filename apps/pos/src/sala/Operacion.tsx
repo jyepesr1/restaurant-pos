@@ -3,10 +3,10 @@ import { Boton } from '../ui/Boton'
 import { aplicarMarca, esMarca } from '../ui/marca'
 import { Caja } from './Caja'
 import { CajaAjustes } from './CajaAjustes'
-import { Carta } from './Carta'
+import { Menu } from './Carta'
 import { AvisoListos, PantallaCocina, PedidosEnCocina } from './Cocina'
 import { CocinaAjustes } from './CocinaAjustes'
-import { Cuenta } from './Cuenta'
+import { Check } from './Cuenta'
 import { sala, useSala } from './contexto'
 import { Entrar } from './Entrar'
 import { Marca } from './Marca'
@@ -24,14 +24,14 @@ import { TomaPedido } from './TomaPedido'
 const REVISAR_SESION_MS = 30_000
 
 export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLSearchParams }) {
-  const estado = useSala()
+  const status = useSala()
   // La marca del restaurante llega con la carta: cuando cambia, todo el equipo se ve con ella.
   // Sin carta todavía (se está leyendo, o el equipo recién entra) se deja la que pintó index.html.
-  const conCarta = estado.catalogo !== null
-  const marca = estado.catalogo?.restaurante.marca
+  const conCarta = status.catalog !== null
+  const brand = status.catalog?.restaurant.brand
   useEffect(() => {
-    if (conCarta) aplicarMarca(esMarca(marca) ? marca : 'faro')
-  }, [conCarta, marca])
+    if (conCarta) aplicarMarca(esMarca(brand) ? brand : 'faro')
+  }, [conCarta, brand])
 
   useEffect(() => {
     sala.cargar().catch((e) => console.error('No se pudo abrir la base del equipo:', e))
@@ -47,18 +47,18 @@ export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLS
     }
   }, [])
 
-  if (!estado.cargado) return <p className="p-6 text-texto-suave">Cargando…</p>
-  if (estado.errorHub && estado.errorHub.codigo !== 'mensaje_invalido')
-    return <EquipoRechazado mensaje={estado.errorHub.mensaje} codigo={estado.errorHub.codigo} />
+  if (!status.cargado) return <p className="p-6 text-texto-suave">Cargando…</p>
+  if (status.errorHub && status.errorHub.code !== 'invalid_message')
+    return <EquipoRechazado message={status.errorHub.message} code={status.errorHub.code} />
   // Sin equipo todavía, entrar lo registra en el hub (ya no se empareja antes).
-  if (!estado.equipo || !estado.sesion) return <Entrar />
-  if (!estado.catalogo) return <SinCatalogo />
+  if (!status.device || !status.session) return <Entrar />
+  if (!status.catalog) return <SinCatalogo />
   // Una pantalla de cocina no ve nada más (ADR-015).
-  if (estado.equipo.tipo === 'kds') return <PantallaCocina />
+  if (status.device.type === 'kds') return <PantallaCocina />
   return (
     <>
       <AvisoListos />
-      <Pantalla ruta={ruta} parametros={parametros} permisos={estado.sesion.permisos} />
+      <Pantalla ruta={ruta} parametros={parametros} permissions={status.session.permissions} />
     </>
   )
 }
@@ -66,30 +66,30 @@ export function Operacion({ ruta, parametros }: { ruta: string; parametros: URLS
 function Pantalla({
   ruta,
   parametros,
-  permisos,
+  permissions,
 }: {
   ruta: string
   parametros: URLSearchParams
-  permisos: string[]
+  permissions: string[]
 }) {
-  if (ruta === '/cocina/ajustes' && permisos.includes('administrar_dispositivos'))
+  if (ruta === '/kitchen/settings' && permissions.includes('manage_devices'))
     return <CocinaAjustes />
-  if (ruta === '/caja/ajustes' && permisos.includes('administrar_dispositivos'))
+  if (ruta === '/register/settings' && permissions.includes('manage_devices'))
     return <CajaAjustes />
-  if (ruta === '/caja') return <Caja />
-  if (ruta === '/reportes' && permisos.includes('ver_reportes')) return <Reportes />
-  if (ruta === '/cuenta') return <Cuenta key={parametros.get('pedido')} />
-  if (ruta === '/cocina') return <PedidosEnCocina />
-  if (ruta === '/personal' && permisos.includes('administrar_usuarios')) return <Personal />
-  if (ruta === '/marca' && permisos.includes('administrar_usuarios')) return <Marca />
-  if (ruta === '/carta') return <Carta />
-  if (ruta === '/plano') return <PlanoEditor />
-  if (ruta === '/pedido') return <TomaPedido key={parametros.get('mesa')} />
+  if (ruta === '/register') return <Caja />
+  if (ruta === '/reports' && permissions.includes('view_reports')) return <Reportes />
+  if (ruta === '/check') return <Check key={parametros.get('order')} />
+  if (ruta === '/kitchen') return <PedidosEnCocina />
+  if (ruta === '/staff' && permissions.includes('manage_users')) return <Personal />
+  if (ruta === '/brand' && permissions.includes('manage_users')) return <Marca />
+  if (ruta === '/menu') return <Menu />
+  if (ruta === '/floor-plan') return <PlanoEditor />
+  if (ruta === '/order') return <TomaPedido key={parametros.get('table')} />
   return <Mesas />
 }
 
-function EquipoRechazado({ codigo, mensaje }: { codigo: string; mensaje: string }) {
-  const { pendientes } = useSala()
+function EquipoRechazado({ code, message }: { code: string; message: string }) {
+  const { pendingList } = useSala()
   const [confirmando, setConfirmando] = useState(false)
   useEffect(() => {
     document.title = 'Equipo rechazado · Faro'
@@ -100,30 +100,30 @@ function EquipoRechazado({ codigo, mensaje }: { codigo: string; mensaje: string 
       <h1 className="font-titulo text-3xl font-semibold">
         Este equipo no puede entrar al POS del restaurante
       </h1>
-      <p role="alert">{mensaje}</p>
-      {codigo === 'app_vieja' ? (
-        <Boton variante="principal" grande onClick={() => location.reload()}>
+      <p role="alert">{message}</p>
+      {code === 'outdated_app' ? (
+        <Boton variant="main" large onClick={() => location.reload()}>
           Recargar la app
         </Boton>
-      ) : pendientes === 0 ? (
-        <Boton variante="principal" grande onClick={olvidar}>
+      ) : pendingList === 0 ? (
+        <Boton variant="main" large onClick={olvidar}>
           Entrar de nuevo
         </Boton>
       ) : (
         <>
           {/* Lo pendiente lleva el equipo viejo: entrar de nuevo registra otro y el hub lo rechaza. */}
           <p>
-            {`Hay ${pendientes === 1 ? 'un cambio' : `${pendientes} cambios`} de este equipo (pedidos, cobros) que la caja todavía no recibe. `}
-            {codigo === 'token_revocado'
+            {`Hay ${pendingList === 1 ? 'un cambio' : `${pendingList} cambios`} de este equipo (pedidos, cobros) que la caja todavía no recibe. `}
+            {code === 'revoked_token'
               ? 'Si hay Wi-Fi, se siguen enviando para que un administrador los revise: espera a que el número llegue a 0.'
               : 'Si entras de nuevo, no llegarán a la caja. Avisa a un administrador antes.'}
           </p>
           {confirmando ? (
-            <Boton variante="peligro" grande onClick={olvidar}>
-              {`Entrar de nuevo sin ${pendientes === 1 ? 'ese cambio' : `esos ${pendientes}`}`}
+            <Boton variant="danger" large onClick={olvidar}>
+              {`Entrar de nuevo sin ${pendingList === 1 ? 'ese cambio' : `esos ${pendingList}`}`}
             </Boton>
           ) : (
-            <Boton variante="secundario" grande onClick={() => setConfirmando(true)}>
+            <Boton variant="secondary" large onClick={() => setConfirmando(true)}>
               Entrar de nuevo de todas formas
             </Boton>
           )}
@@ -144,7 +144,7 @@ function SinCatalogo() {
           {error ?? ''}
         </p>
         <Boton
-          variante="principal"
+          variant="main"
           onClick={() =>
             sala
               .actualizarCatalogo()

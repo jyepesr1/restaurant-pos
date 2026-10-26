@@ -8,48 +8,48 @@ import type { Geometria, TipoElemento } from './motor'
 export interface Caja {
   x: number
   y: number
-  ancho: number
-  alto: number
+  width: number
+  height: number
 }
 
 /** La escala que hace caber la caja en el ancho del contenedor (sin agrandar de más). */
-export function useEscala(caja: Caja, maxima = 1.5) {
+export function useEscala(register: Caja, maxima = 1.5) {
   const ref = useRef<HTMLDivElement>(null)
-  const [ancho, setAncho] = useState(0)
+  const [width, setAncho] = useState(0)
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const medir = () => setAncho(el.clientWidth)
-    medir()
-    const observador = new ResizeObserver(medir)
+    const measure = () => setAncho(el.clientWidth)
+    measure()
+    const observador = new ResizeObserver(measure)
     observador.observe(el)
     return () => observador.disconnect()
   }, [])
-  const escala = ancho > 0 ? Math.min(maxima, ancho / caja.ancho) : 0
+  const escala = width > 0 ? Math.min(maxima, width / register.width) : 0
   return { ref, escala }
 }
 
 /** Estilo para poner algo con su geometría dentro del lienzo. */
-export function posicion(g: Geometria, caja: Caja, escala: number): CSSProperties {
+export function posicion(g: Geometria, register: Caja, escala: number): CSSProperties {
   return {
     position: 'absolute',
-    left: (g.x - caja.x) * escala,
-    top: (g.y - caja.y) * escala,
-    width: g.ancho * escala,
-    height: g.alto * escala,
-    transform: g.rotacion ? `rotate(${g.rotacion}deg)` : undefined,
+    left: (g.x - register.x) * escala,
+    top: (g.y - register.y) * escala,
+    width: g.width * escala,
+    height: g.height * escala,
+    transform: g.rotation ? `rotate(${g.rotation}deg)` : undefined,
   }
 }
 
 export function Lienzo({
-  caja,
+  register,
   escala,
   refContenedor,
   etiqueta,
   children,
   alTocarFondo,
 }: {
-  caja: Caja
+  register: Caja
   escala: number
   refContenedor: React.RefObject<HTMLDivElement | null>
   etiqueta: string
@@ -64,7 +64,7 @@ export function Lienzo({
         aria-label={etiqueta}
         className="relative overflow-hidden rounded-2xl border border-linea bg-superficie [background-image:radial-gradient(var(--color-linea)_1.5px,transparent_1.5px)]"
         style={{
-          height: Math.max(200, caja.alto * escala),
+          height: Math.max(200, register.height * escala),
           backgroundSize: `${50 * escala}px ${50 * escala}px`,
         }}
         onClick={(e) => {
@@ -83,44 +83,44 @@ export function Lienzo({
  * si es un puesto de barra. Son dibujo: el botón de la mesa dice los puestos al lector.
  */
 export function Sillas({
-  forma,
-  ancho,
-  alto,
-  puestos,
-  clase,
+  shape,
+  width,
+  height,
+  places,
+  cssClass,
 }: {
-  forma: string
+  shape: string
   /** Medidas de la mesa en pantalla (px). */
-  ancho: number
-  alto: number
-  puestos: number
-  clase: string
+  width: number
+  height: number
+  places: number
+  cssClass: string
 }) {
-  if (puestos <= 0) return null
-  const largo = Math.max(8, Math.min(26, Math.min(ancho, alto) * 0.32))
-  const fondo = Math.max(5, largo * 0.42)
-  const aire = Math.max(3, largo * 0.18)
+  if (places <= 0) return null
+  const length = Math.max(8, Math.min(26, Math.min(width, height) * 0.32))
+  const fondo = Math.max(5, length * 0.42)
+  const aire = Math.max(3, length * 0.18)
   const sillas: { x: number; y: number; giro: number }[] = []
-  if (forma === 'redonda') {
-    const radio = Math.max(ancho, alto) / 2 + aire + fondo / 2
-    for (let i = 0; i < puestos; i++) {
-      const angulo = -Math.PI / 2 + (2 * Math.PI * i) / puestos
+  if (shape === 'round') {
+    const radio = Math.max(width, height) / 2 + aire + fondo / 2
+    for (let i = 0; i < places; i++) {
+      const angulo = -Math.PI / 2 + (2 * Math.PI * i) / places
       sillas.push({
-        x: ancho / 2 + radio * Math.cos(angulo),
-        y: alto / 2 + radio * Math.sin(angulo),
+        x: width / 2 + radio * Math.cos(angulo),
+        y: height / 2 + radio * Math.sin(angulo),
         giro: (angulo * 180) / Math.PI + 90,
       })
     }
-  } else if (forma === 'barra') {
-    for (let i = 0; i < puestos; i++)
-      sillas.push({ x: (ancho * (i + 0.5)) / puestos, y: alto + aire + fondo / 2, giro: 0 })
+  } else if (shape === 'bar') {
+    for (let i = 0; i < places; i++)
+      sillas.push({ x: (width * (i + 0.5)) / places, y: height + aire + fondo / 2, giro: 0 })
   } else {
-    const horizontal = ancho >= alto
-    const [lado, cabecera] = horizontal ? [ancho, alto] : [alto, ancho]
-    const cabeceras = puestos >= 6 && cabecera >= largo * 1.3 ? 2 : 0
-    const enLados = puestos - cabeceras
-    const arriba = Math.ceil(enLados / 2)
-    const abajo = enLados - arriba
+    const horizontal = width >= height
+    const [lado, cabecera] = horizontal ? [width, height] : [height, width]
+    const cabeceras = places >= 6 && cabecera >= length * 1.3 ? 2 : 0
+    const enLados = places - cabeceras
+    const above = Math.ceil(enLados / 2)
+    const below = enLados - above
     const fila = (cuantas: number, lejos: boolean) => {
       for (let i = 0; i < cuantas; i++) {
         const a = (lado * (i + 0.5)) / cuantas
@@ -132,15 +132,15 @@ export function Sillas({
         )
       }
     }
-    fila(arriba, false)
-    fila(abajo, true)
+    fila(above, false)
+    fila(below, true)
     if (cabeceras) {
-      const medio = cabecera / 2
-      const antes = -aire - fondo / 2
-      const despues = lado + aire + fondo / 2
+      const method = cabecera / 2
+      const before = -aire - fondo / 2
+      const after = lado + aire + fondo / 2
       sillas.push(
-        horizontal ? { x: antes, y: medio, giro: 270 } : { x: medio, y: antes, giro: 0 },
-        horizontal ? { x: despues, y: medio, giro: 90 } : { x: medio, y: despues, giro: 180 },
+        horizontal ? { x: before, y: method, giro: 270 } : { x: method, y: before, giro: 0 },
+        horizontal ? { x: after, y: method, giro: 90 } : { x: method, y: after, giro: 180 },
       )
     }
   }
@@ -150,11 +150,11 @@ export function Sillas({
         <span
           key={`${s.x.toFixed(1)}-${s.y.toFixed(1)}`}
           aria-hidden="true"
-          className={`pointer-events-none absolute rounded-md ${clase}`}
+          className={`pointer-events-none absolute rounded-md ${cssClass}`}
           style={{
-            width: largo,
+            width: length,
             height: fondo,
-            left: s.x - largo / 2,
+            left: s.x - length / 2,
             top: s.y - fondo / 2,
             transform: `rotate(${s.giro}deg)`,
           }}
@@ -165,33 +165,29 @@ export function Sillas({
 }
 
 const CLASE_ELEMENTO: Record<TipoElemento, string> = {
-  pared: 'bg-texto/70',
-  puerta: 'border-2 border-dashed border-texto-suave bg-superficie',
-  planta: 'rounded-full bg-libre-suave border-2 border-libre-fuerte/50',
-  barra: 'rounded-lg bg-neutro-suave border-2 border-neutro-fuerte/40',
-  texto: 'text-texto-suave',
+  wall: 'bg-texto/70',
+  door: 'border-2 border-dashed border-texto-suave bg-superficie',
+  plant: 'rounded-full bg-libre-suave border-2 border-libre-fuerte/50',
+  bar: 'rounded-lg bg-neutro-suave border-2 border-neutro-fuerte/40',
+  text: 'text-texto-suave',
 }
 
 /** Lo que no es mesa: decoración del plano, con su forma reconocible. */
 export function FiguraElemento({
-  tipo,
-  texto,
+  type,
+  text,
   escala,
 }: {
-  tipo: TipoElemento
-  texto: string | null
+  type: TipoElemento
+  text: string | null
   escala: number
 }) {
   return (
     <span
-      className={`flex h-full w-full items-center justify-center overflow-hidden text-center ${CLASE_ELEMENTO[tipo]}`}
-      style={tipo === 'texto' ? { fontSize: Math.max(14, 20 * escala) } : undefined}
+      className={`flex h-full w-full items-center justify-center overflow-hidden text-center ${CLASE_ELEMENTO[type]}`}
+      style={type === 'text' ? { fontSize: Math.max(14, 20 * escala) } : undefined}
     >
-      {tipo === 'texto' ? (
-        texto
-      ) : tipo === 'barra' ? (
-        <span className="text-sm">Mostrador</span>
-      ) : null}
+      {type === 'text' ? text : type === 'bar' ? <span className="text-sm">Mostrador</span> : null}
     </span>
   )
 }

@@ -12,14 +12,14 @@ import { MarcoSala } from './MarcoSala'
 export const claseCampo =
   'min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 text-lg disabled:opacity-60 focus-visible:outline-3 focus-visible:outline-foco'
 
-type Modo = 'pin' | 'contrasena'
+type Modo = 'pin' | 'password'
 
 /** Cómo se entró la última vez en este equipo: la próxima vez abre igual. */
-const CLAVE_MODO = 'pos:entrar-con'
+const CLAVE_MODO = 'pos:sign-in-with'
 function modoRecordado(): Modo | null {
   try {
     const m = localStorage.getItem(CLAVE_MODO)
-    return m === 'pin' || m === 'contrasena' ? m : null
+    return m === 'pin' || m === 'password' ? m : null
   } catch {
     return null
   }
@@ -33,21 +33,21 @@ function recordarModo(m: Modo) {
 }
 
 export function Entrar() {
-  const { equipo, sesionCerradaPor, catalogo } = useSala()
+  const { device, sessionClosedBy, catalog } = useSala()
   // Como la última vez en este equipo; si no hay, en la caja con contraseña y en un celular con PIN.
-  const [modo, setModo] = useState<Modo>(
-    () => modoRecordado() ?? (equipo?.tipo === 'caja' ? 'contrasena' : 'pin'),
+  const [mode, setModo] = useState<Modo>(
+    () => modoRecordado() ?? (device?.type === 'register' ? 'password' : 'pin'),
   )
   const [error, setError] = useState<string | null>(null)
   const [intento, setIntento] = useState(0)
   const [esperaMs, setEsperaMs] = useState(0)
   const [ocupado, setOcupado] = useState(false)
 
-  const intentar = async (datos: string | { usuario: string; contrasena: string }) => {
+  const tryAction = async (data: string | { user: string; password: string }) => {
     setOcupado(true)
     try {
-      await sala.entrar(datos)
-      recordarModo(typeof datos === 'string' ? 'pin' : 'contrasena')
+      await sala.entrar(data)
+      recordarModo(typeof data === 'string' ? 'pin' : 'password')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
       setEsperaMs(e instanceof ErrorApi ? e.esperaMs : 0)
@@ -61,11 +61,11 @@ export function Entrar() {
     setEsperaMs(0)
   }
 
-  const porInactividad = sesionCerradaPor === 'inactividad'
+  const porInactividad = sessionClosedBy === 'inactivity'
   return (
-    <MarcoSala titulo={catalogo?.restaurante.nombre ?? equipo?.nombre ?? 'Entrar'}>
+    <MarcoSala titulo={catalog?.restaurant.name ?? device?.name ?? 'Entrar'}>
       <div className="mx-3 my-4 flex max-w-md sm:mx-auto flex-col gap-6 rounded-3xl border border-linea bg-superficie p-5 shadow-flota sm:my-10 sm:p-8">
-        {modo === 'pin' ? (
+        {mode === 'pin' ? (
           <>
             <TecladoPin
               titulo={
@@ -77,9 +77,9 @@ export function Entrar() {
               intento={intento}
               esperaMs={esperaMs}
               ocupado={ocupado}
-              alCompletar={(pin) => void intentar(pin)}
+              alCompletar={(pin) => void tryAction(pin)}
             />
-            <Boton variante="fantasma" onClick={() => cambiarModo('contrasena')}>
+            <Boton variant="ghost" onClick={() => cambiarModo('password')}>
               Caja, administración o reportes: entrar con usuario y contraseña
             </Boton>
           </>
@@ -91,9 +91,9 @@ export function Entrar() {
               intento={intento}
               esperaMs={esperaMs}
               ocupado={ocupado}
-              alEnviar={(usuario, contrasena) => void intentar({ usuario, contrasena })}
+              alEnviar={(user, password) => void tryAction({ user, password })}
             />
-            <Boton variante="fantasma" onClick={() => cambiarModo('pin')}>
+            <Boton variant="ghost" onClick={() => cambiarModo('pin')}>
               Mesero: entrar con PIN
             </Boton>
             <p className="text-sm text-texto-suave">
@@ -121,25 +121,25 @@ function ConContrasena({
   intento: number
   esperaMs: number
   ocupado: boolean
-  alEnviar: (usuario: string, contrasena: string) => void
+  alEnviar: (user: string, password: string) => void
 }) {
-  const [usuario, setUsuario] = useState('')
-  const [contrasena, setContrasena] = useState('')
+  const [user, setUsuario] = useState('')
+  const [password, setContrasena] = useState('')
   const [restante, setRestante] = useState(0)
   const campoContrasena = useRef<HTMLInputElement>(null)
-  const [falta, setFalta] = useState<string | null>(null)
+  const [missing, setFalta] = useState<string | null>(null)
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `intento` reinicia la espera aunque dure lo mismo
   useEffect(() => {
     setRestante(esperaMs)
     if (esperaMs <= 0) return
     const fin = Date.now() + esperaMs
-    const reloj = setInterval(() => {
+    const clock = setInterval(() => {
       const queda = Math.max(0, fin - Date.now())
       setRestante(queda)
-      if (queda === 0) clearInterval(reloj)
+      if (queda === 0) clearInterval(clock)
     }, 250)
-    return () => clearInterval(reloj)
+    return () => clearInterval(clock)
   }, [esperaMs, intento])
 
   // Tras un error se vuelve a escribir la contraseña; el usuario se conserva.
@@ -150,27 +150,27 @@ function ConContrasena({
   }, [intento])
 
   const bloqueado = ocupado || restante > 0
-  const enviar = (e: FormEvent) => {
+  const send = (e: FormEvent) => {
     e.preventDefault()
     if (bloqueado) return
-    if (!usuario.trim() || !contrasena) {
-      setFalta(!usuario.trim() ? 'Escribe tu usuario' : 'Escribe tu contraseña')
+    if (!user.trim() || !password) {
+      setFalta(!user.trim() ? 'Escribe tu usuario' : 'Escribe tu contraseña')
       return
     }
     setFalta(null)
-    alEnviar(usuario, contrasena)
+    alEnviar(user, password)
   }
 
   return (
-    <form className="flex flex-col gap-4" onSubmit={enviar} aria-labelledby="titulo-entrar">
-      <h2 id="titulo-entrar" className="text-center text-xl font-semibold">
+    <form className="flex flex-col gap-4" onSubmit={send} aria-labelledby="title-sign-in">
+      <h2 id="title-sign-in" className="text-center text-xl font-semibold">
         {titulo}
       </h2>
       <label className="flex flex-col gap-1">
         <span className="font-semibold">Usuario</span>
         <input
           className={claseCampo}
-          value={usuario}
+          value={user}
           onChange={(e) => setUsuario(e.target.value)}
           autoComplete="username"
           // biome-ignore lint/a11y/noAutofocus: es lo único que hay que hacer en esta pantalla
@@ -187,7 +187,7 @@ function ConContrasena({
           className={claseCampo}
           ref={campoContrasena}
           type="password"
-          value={contrasena}
+          value={password}
           onChange={(e) => setContrasena(e.target.value)}
           autoComplete="current-password"
           enterKeyHint="go"
@@ -196,14 +196,18 @@ function ConContrasena({
       </label>
       {/* Solo se anuncia el cambio de mensaje, no cada segundo de la cuenta atrás. */}
       <p key={intento} className="min-h-6 text-center text-alerta-texto" role="alert">
-        {restante > 0 ? 'Demasiados intentos.' : ocupado ? 'Comprobando…' : (falta ?? error ?? '')}
+        {restante > 0
+          ? 'Demasiados intentos.'
+          : ocupado
+            ? 'Comprobando…'
+            : (missing ?? error ?? '')}
       </p>
       {restante > 0 && (
         <p className="cifras text-center text-texto-suave" aria-hidden="true">
           {`Espera ${Math.ceil(restante / 1000)} s`}
         </p>
       )}
-      <Boton type="submit" variante="principal" grande disabled={bloqueado}>
+      <Boton type="submit" variant="main" large disabled={bloqueado}>
         {ocupado ? 'Entrando…' : 'Entrar'}
       </Boton>
     </form>

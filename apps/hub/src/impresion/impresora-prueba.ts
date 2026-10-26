@@ -9,28 +9,28 @@ import { leerEscpos } from '@pos/printing'
 // Cada comanda que llega se muestra en la ventana como texto.
 
 export interface ImpresoraDePrueba {
-  puerto: number
+  port: number
   /** Lo recibido en cada conexión (una por trabajo). */
   recibidos: Uint8Array[]
   /** Apagada deja de escuchar: el hub recibe «conexión rechazada», como con una real apagada. */
-  apagar(si: boolean): Promise<void>
+  apagar(yes: boolean): Promise<void>
   /** Espera a tener al menos `n` trabajos recibidos (lo recibido llega un instante después). */
   esperar(n: number): Promise<void>
-  cerrar(): Promise<void>
+  close(): Promise<void>
 }
 
 export function abrirImpresoraDePrueba(
-  puerto = 0,
+  port = 0,
   alRecibir?: (bytes: Uint8Array) => void,
 ): Promise<ImpresoraDePrueba> {
   const recibidos: Uint8Array[] = []
   const conexiones = new Set<Socket>()
   const servidor = createServer((socket) => {
     conexiones.add(socket)
-    const partes: Buffer[] = []
-    socket.on('data', (d) => partes.push(d))
+    const parts: Buffer[] = []
+    socket.on('data', (d) => parts.push(d))
     socket.on('end', () => {
-      const bytes = new Uint8Array(Buffer.concat(partes))
+      const bytes = new Uint8Array(Buffer.concat(parts))
       recibidos.push(bytes)
       alRecibir?.(bytes)
       socket.end()
@@ -38,17 +38,17 @@ export function abrirImpresoraDePrueba(
     socket.on('error', () => {})
     socket.on('close', () => conexiones.delete(socket))
   })
-  return new Promise((resolver, rechazar) => {
-    servidor.once('error', rechazar)
-    servidor.listen(puerto, '127.0.0.1', () => {
-      const direccion = servidor.address()
-      const real = typeof direccion === 'object' && direccion ? direccion.port : puerto
+  return new Promise((resolver, reject) => {
+    servidor.once('error', reject)
+    servidor.listen(port, '127.0.0.1', () => {
+      const address = servidor.address()
+      const real = typeof address === 'object' && address ? address.port : port
       resolver({
-        puerto: real,
+        port: real,
         recibidos,
-        apagar: (si) =>
+        apagar: (yes) =>
           new Promise((fin) => {
-            if (si) servidor.close(() => fin())
+            if (yes) servidor.close(() => fin())
             else servidor.listen(real, '127.0.0.1', () => fin())
           }),
         esperar: async (n) => {
@@ -56,7 +56,7 @@ export function abrirImpresoraDePrueba(
           while (recibidos.length < n && Date.now() < limite)
             await new Promise((r) => setTimeout(r, 10))
         },
-        cerrar: () =>
+        close: () =>
           new Promise((fin) => {
             for (const s of conexiones) s.destroy()
             if (servidor.listening) servidor.close(() => fin())
@@ -68,12 +68,12 @@ export function abrirImpresoraDePrueba(
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const puerto = Number(process.argv[2] ?? 9100)
-  const impresora = await abrirImpresoraDePrueba(puerto, (bytes) => {
-    const { texto } = leerEscpos(bytes)
-    console.log(`\n${texto}\n`)
+  const port = Number(process.argv[2] ?? 9100)
+  const printer = await abrirImpresoraDePrueba(port, (bytes) => {
+    const { text } = leerEscpos(bytes)
+    console.log(`\n${text}\n`)
   })
   console.log(
-    `Impresora de prueba lista en 127.0.0.1:${impresora.puerto}. En «Cocina e impresoras» ponle la IP 127.0.0.1 y el puerto ${impresora.puerto}.`,
+    `Impresora de prueba lista en 127.0.0.1:${printer.port}. En «Cocina e impresoras» ponle la IP 127.0.0.1 y el puerto ${printer.port}.`,
   )
 }

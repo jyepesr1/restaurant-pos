@@ -16,7 +16,7 @@ import {
 // Hace falta estar en el PC del hub y con el hub cerrado: usa la base en exclusiva.
 
 const dirDatos = dirDatosDe()
-const mensaje = (error: unknown) => (error instanceof Error ? error.message : String(error))
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 function correr(): number {
   let db: BaseSqlite
@@ -26,43 +26,43 @@ function correr(): number {
     console.error(
       error instanceof BaseOcupadaError
         ? 'No se cambió nada: el hub está abierto. Ciérralo y vuelve a correr esto.'
-        : `No se cambió nada: ${mensaje(error)}`,
+        : `No se cambió nada: ${message(error)}`,
     )
     return 1
   }
   try {
-    const { acceso, restauranteId, admin, avisos } = prepararAcceso(db, dirDatos)
-    for (const aviso of avisos) console.warn(`⚠ ${aviso}`)
+    const { access, restauranteId, admin, avisos } = prepararAcceso(db, dirDatos)
+    for (const alert of avisos) console.warn(`⚠ ${alert}`)
     // Lo que el arranque acaba de crear o regenerar (un PIN nuevo si se perdió la clave) también
     // se muestra: si no, se perdería.
-    let lineas = lineasAdministrador(admin)
-    if (!admin.contrasena) {
+    let lines = lineasAdministrador(admin)
+    if (!admin.password) {
       // El arranque deja al administrador con usuario: es el primero de la lista.
       const id = administradores(db, restauranteId)[0]
       if (!id) throw new Error('No hay ningún administrador activo')
-      const usuario = acceso.usuarioDe(id) ?? USUARIO_ADMIN
-      const contrasena = generarContrasena()
-      acceso.ponerContrasena(id, usuario, contrasena)
-      lineas = [
-        `  Usuario:          ${usuario}`,
-        `  Contraseña:       ${contrasena}`,
-        ...lineas.filter((l) => l.includes('PIN')),
+      const user = access.usuarioDe(id) ?? USUARIO_ADMIN
+      const password = generarContrasena()
+      access.ponerContrasena(id, user, password)
+      lines = [
+        `  Usuario:          ${user}`,
+        `  Contraseña:       ${password}`,
+        ...lines.filter((l) => l.includes('PIN')),
       ]
     }
     mostrarPines(dirDatos, {
       ventana: [
         '\nContraseña nueva del administrador:',
-        ...lineas,
+        ...lines,
         'Anótala en un lugar seguro: no se vuelve a mostrar. La anterior ya no sirve.',
       ],
       archivo: `restablecer-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`,
-      contenido: `${lineas.join('\n')}\n`,
-      aviso: (ruta) =>
+      content: `${lines.join('\n')}\n`,
+      alert: (ruta) =>
         `\nLa contraseña nueva quedó en ${ruta} (solo la puede leer el hub): anótala y borra ese archivo.`,
     })
     return 0
   } catch (error) {
-    console.error(`No se cambió nada: ${mensaje(error)}`)
+    console.error(`No se cambió nada: ${message(error)}`)
     return 1
   } finally {
     db.close()

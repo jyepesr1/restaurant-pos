@@ -6,9 +6,9 @@ export type Fila = Record<string, unknown>
 
 export interface Sql {
   /** Una consulta con parámetros posicionales ($1, $2…). Nunca se arma SQL con texto del usuario. */
-  query<T extends Fila = Fila>(texto: string, parametros?: readonly unknown[]): Promise<T[]>
+  query<T extends Fila = Fila>(text: string, parametros?: readonly unknown[]): Promise<T[]>
   /** Un guion de varias sentencias sin parámetros (las migraciones). */
-  ejecutar(guion: string): Promise<void>
+  execute(guion: string): Promise<void>
   /** Corre el trabajo en una transacción: si lanza, no queda nada. */
   transaccion<T>(trabajo: (sql: Sql) => Promise<T>): Promise<T>
 }

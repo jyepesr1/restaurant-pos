@@ -1,4 +1,4 @@
-import { PERMISOS } from '@pos/core'
+import { PERMISSIONS } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { crearServidor } from '../servidor'
 import { asegurarAdministrador, asegurarRoles } from './inicial'
@@ -11,8 +11,8 @@ import { insertarVersionado, SISTEMA } from './registros'
 function montarApi() {
   const m = montarAcceso()
   const app = crearServidor({
-    acceso: m.acceso,
-    catalogo: { db: m.db, restauranteId: m.restauranteId, acceso: m.acceso, reloj: m.reloj },
+    access: m.access,
+    catalog: { db: m.db, restauranteId: m.restauranteId, access: m.access, clock: m.clock },
   })
   const post = (url: string, cuerpo: unknown, token?: string, ip = '10.0.0.20') =>
     app.inject({
@@ -22,215 +22,203 @@ function montarApi() {
       remoteAddress: ip,
       headers: token ? { authorization: `Bearer ${token}` } : {},
     })
-  const admin = { usuario: m.personas.admin.usuario, contrasena: m.personas.admin.contrasena }
+  const admin = { user: m.people.admin.user, password: m.people.admin.password }
   return { ...m, app, post, admin }
 }
 
 const tipoGuardado = (m: ReturnType<typeof montarAcceso>, id: string) =>
-  m.db.prepare('SELECT tipo, nombre FROM dispositivo WHERE id = ?').get(id)
+  m.db.prepare('SELECT type, name FROM devices WHERE id = ?').get(id)
 
 describe('entrar sin emparejar', () => {
   it('un mesero con su PIN: el hub registra el navegador como equipo de mesero y abre la sesión', async () => {
     const api = montarApi()
-    const r = await api.post('/api/entrar', { pin: api.personas.mesero.pin })
+    const r = await api.post('/api/sign-in', { pin: api.people.waiter.pin })
     expect(r.statusCode).toBe(201)
     const cuerpo = r.json()
     expect(cuerpo).toMatchObject({
-      tipo: 'mesero',
-      usuario: { nombre: 'Ana', rol: 'Mesero' },
-      equipo: { tipo: 'mesero', nombre: 'Equipo de Ana' },
+      type: 'waiter',
+      user: { name: 'Ana', role: 'Mesero' },
+      device: { type: 'waiter', name: 'Equipo de Ana' },
     })
-    expect(cuerpo.permisos).toContain('tomar_pedido')
-    expect(tipoGuardado(api, cuerpo.equipo.dispositivo_id)).toMatchObject({ tipo: 'mesero' })
+    expect(cuerpo.permissions).toContain('take_order')
+    expect(tipoGuardado(api, cuerpo.device.device_id)).toMatchObject({ type: 'waiter' })
     // Con ese token ya es un equipo: la vez siguiente no registra otro.
-    const otra = await api.post(
-      '/api/entrar',
-      { pin: api.personas.mesero2.pin },
-      cuerpo.equipo.token,
+    const another = await api.post(
+      '/api/sign-in',
+      { pin: api.people.waiter2.pin },
+      cuerpo.device.token,
     )
-    expect(otra.json()).toMatchObject({ equipo: null, usuario: { nombre: 'Luis' } })
+    expect(another.json()).toMatchObject({ device: null, user: { name: 'Luis' } })
     // Y cerró la sesión de Ana en ese equipo.
-    const cerrar = await api.post(
-      '/api/sesiones/cerrar',
-      { sesion_id: cuerpo.sesion_id, secreto: cuerpo.secreto },
-      cuerpo.equipo.token,
+    const close = await api.post(
+      '/api/sessions/close',
+      { session_id: cuerpo.session_id, secret: cuerpo.secret },
+      cuerpo.device.token,
     )
-    expect(cerrar.statusCode).toBe(401)
+    expect(close.statusCode).toBe(401)
   })
 
   it('el PIN de quien tiene usuario no abre sesión: solo autoriza', async () => {
     const api = montarApi()
-    const r = await api.post('/api/entrar', { pin: api.personas.admin.pin })
+    const r = await api.post('/api/sign-in', { pin: api.people.admin.pin })
     expect(r.statusCode).toBe(401)
-    expect(r.json()).toMatchObject({ error: 'pin_incorrecto', mensaje: 'PIN incorrecto' })
-    expect(Number(api.db.prepare('SELECT count(*) AS n FROM dispositivo').get()?.n)).toBe(0)
+    expect(r.json()).toMatchObject({ error: 'wrong_pin', message: 'PIN incorrecto' })
+    expect(Number(api.db.prepare('SELECT count(*) AS n FROM devices').get()?.n)).toBe(0)
   })
 
   it('con usuario y contraseña: equipo de caja, sin importar mayúsculas ni espacios en el usuario', async () => {
     const api = montarApi()
-    const r = await api.post('/api/entrar', {
-      usuario: `  ${String(api.admin.usuario).toUpperCase()} `,
-      contrasena: api.admin.contrasena,
+    const r = await api.post('/api/sign-in', {
+      user: `  ${String(api.admin.user).toUpperCase()} `,
+      password: api.admin.password,
     })
     expect(r.statusCode).toBe(201)
     expect(r.json()).toMatchObject({
-      tipo: 'caja',
-      usuario: { rol: 'Administrador' },
-      equipo: { tipo: 'caja' },
+      type: 'register',
+      user: { role: 'Administrador' },
+      device: { type: 'register' },
     })
-    expect(r.json().permisos).toContain('administrar_usuarios')
+    expect(r.json().permissions).toContain('manage_users')
   })
 
   it('contraseña errada y usuario inexistente dan la misma respuesta, sin registrar equipos', async () => {
     const api = montarApi()
-    const mala = await api.post('/api/entrar', {
-      usuario: api.admin.usuario,
-      contrasena: 'no-es-esta',
+    const mala = await api.post('/api/sign-in', {
+      user: api.admin.user,
+      password: 'no-es-esta',
     })
-    const nadie = await api.post('/api/entrar', { usuario: 'nadie', contrasena: 'no-es-esta' })
+    const nadie = await api.post('/api/sign-in', { user: 'nadie', password: 'no-es-esta' })
     for (const r of [mala, nadie]) {
       expect(r.statusCode).toBe(401)
       expect(r.json()).toMatchObject({
-        error: 'credenciales_incorrectas',
-        mensaje: 'Usuario o contraseña incorrectos',
+        error: 'invalid_credentials',
+        message: 'Usuario o contraseña incorrectos',
       })
     }
-    expect(Number(api.db.prepare('SELECT count(*) AS n FROM dispositivo').get()?.n)).toBe(0)
+    expect(Number(api.db.prepare('SELECT count(*) AS n FROM devices').get()?.n)).toBe(0)
   })
 
   it('probar contraseñas de una cuenta desde varias IP también espera', async () => {
     const api = montarApi()
     for (const [i, ip] of ['10.0.0.31', '10.0.0.32', '10.0.0.33'].entries())
       await api.post(
-        '/api/entrar',
-        { usuario: api.admin.usuario, contrasena: `mala-${i}-xxx` },
+        '/api/sign-in',
+        { user: api.admin.user, password: `mala-${i}-xxx` },
         undefined,
         ip,
       )
-    const otraIp = await api.post('/api/entrar', api.admin, undefined, '10.0.0.34')
+    const otraIp = await api.post('/api/sign-in', api.admin, undefined, '10.0.0.34')
     expect(otraIp.statusCode).toBe(429)
     expect(Number(otraIp.headers['retry-after'])).toBeGreaterThan(0)
     api.avanzar(61_000)
-    expect((await api.post('/api/entrar', api.admin, undefined, '10.0.0.34')).statusCode).toBe(201)
+    expect((await api.post('/api/sign-in', api.admin, undefined, '10.0.0.34')).statusCode).toBe(201)
   })
 
   it('probar PIN sin token espera por IP; otra IP no hereda la espera', async () => {
     const api = montarApi()
-    for (const pin of ['0001', '0002', '0003']) await api.post('/api/entrar', { pin })
-    expect((await api.post('/api/entrar', { pin: api.personas.mesero.pin })).statusCode).toBe(429)
-    const otra = await api.post(
-      '/api/entrar',
-      { pin: api.personas.mesero.pin },
+    for (const pin of ['0001', '0002', '0003']) await api.post('/api/sign-in', { pin })
+    expect((await api.post('/api/sign-in', { pin: api.people.waiter.pin })).statusCode).toBe(429)
+    const another = await api.post(
+      '/api/sign-in',
+      { pin: api.people.waiter.pin },
       undefined,
       '10.0.0.99',
     )
-    expect(otra.statusCode).toBe(201)
+    expect(another.statusCode).toBe(201)
   })
 
   it('con contraseña en un celular de mesero, el equipo pasa a ser de caja', async () => {
     const api = montarApi()
-    const celular = (await api.post('/api/entrar', { pin: api.personas.mesero.pin })).json()
-    const r = await api.post('/api/entrar', api.admin, celular.equipo.token)
-    expect(r.json()).toMatchObject({ equipo: null, tipo: 'caja' })
-    expect(tipoGuardado(api, celular.equipo.dispositivo_id)).toMatchObject({ tipo: 'caja' })
+    const phone = (await api.post('/api/sign-in', { pin: api.people.waiter.pin })).json()
+    const r = await api.post('/api/sign-in', api.admin, phone.device.token)
+    expect(r.json()).toMatchObject({ device: null, type: 'register' })
+    expect(tipoGuardado(api, phone.device.device_id)).toMatchObject({ type: 'register' })
     // Un PIN de mesero después no lo devuelve a mesero.
-    const luego = await api.post(
-      '/api/entrar',
-      { pin: api.personas.mesero.pin },
-      celular.equipo.token,
-    )
-    expect(luego.json()).toMatchObject({ tipo: 'caja' })
+    const luego = await api.post('/api/sign-in', { pin: api.people.waiter.pin }, phone.device.token)
+    expect(luego.json()).toMatchObject({ type: 'register' })
   })
 
   it('con un token falso responde 401 y no registra otro equipo; con uno retirado, 403', async () => {
     const api = montarApi()
-    const falso = await api.post('/api/entrar', { pin: api.personas.mesero.pin }, 'inventado')
+    const falso = await api.post('/api/sign-in', { pin: api.people.waiter.pin }, 'inventado')
     expect(falso.statusCode).toBe(401)
-    expect(falso.json()).toMatchObject({ error: 'token_invalido' })
+    expect(falso.json()).toMatchObject({ error: 'invalid_token' })
 
-    const caja = (await api.post('/api/entrar', api.admin)).json()
-    const celular = (
-      await api.post('/api/entrar', { pin: api.personas.mesero.pin }, undefined, '10.0.0.50')
+    const register = (await api.post('/api/sign-in', api.admin)).json()
+    const phone = (
+      await api.post('/api/sign-in', { pin: api.people.waiter.pin }, undefined, '10.0.0.50')
     ).json()
-    const revocar = await api.post(
-      `/api/dispositivos/${celular.equipo.dispositivo_id}/revocar`,
-      { sesion_id: caja.sesion_id, secreto: caja.secreto },
-      caja.equipo.token,
+    const revoke = await api.post(
+      `/api/devices/${phone.device.device_id}/revoke`,
+      { session_id: register.session_id, secret: register.secret },
+      register.device.token,
     )
-    expect(revocar.statusCode).toBe(200)
-    const despues = await api.post(
-      '/api/entrar',
-      { pin: api.personas.mesero.pin },
-      celular.equipo.token,
-    )
-    expect(despues.statusCode).toBe(403)
-    expect(despues.json()).toMatchObject({ error: 'dispositivo_revocado' })
+    expect(revoke.statusCode).toBe(200)
+    const after = await api.post('/api/sign-in', { pin: api.people.waiter.pin }, phone.device.token)
+    expect(after.statusCode).toBe(403)
+    expect(after.json()).toMatchObject({ error: 'revoked_device' })
   })
 
   it('un cuerpo con PIN y contraseña a la vez, o con campos de más, se rechaza', async () => {
     const api = montarApi()
     for (const cuerpo of [
-      { pin: '1234', usuario: 'admin', contrasena: 'x' },
-      { usuario: 'admin' },
+      { pin: '1234', user: 'admin', password: 'x' },
+      { user: 'admin' },
       { pin: 1234 },
       {},
     ])
-      expect((await api.post('/api/entrar', cuerpo)).statusCode, JSON.stringify(cuerpo)).toBe(400)
+      expect((await api.post('/api/sign-in', cuerpo)).statusCode, JSON.stringify(cuerpo)).toBe(400)
   })
 })
 
 describe('arranque de un hub de antes de ADR-013', () => {
   it('Contador pasa a ser Reportes; Gerente y Cocina quedan como roles propios, con su gente', () => {
     const m = montarAcceso()
-    const viejo = (nombre: string) =>
-      insertarVersionado(m.db, 'rol', m.restauranteId, { nombre, sistema: 1 }, SISTEMA, m.reloj())
+    const oldOne = (name: string) =>
+      insertarVersionado(m.db, 'roles', m.restauranteId, { name, system: 1 }, SISTEMA, m.clock())
     // Una base vieja: sin Reportes y con los tres de antes.
-    m.db.prepare("UPDATE rol SET nombre = 'Contador' WHERE id = ?").run(m.roles.reportes)
-    const gerente = viejo('Gerente')
-    const cocina = viejo('Cocina')
-    const gloria = m.acceso.crearUsuario({ nombre: 'Gloria V', rolId: gerente })
+    m.db.prepare("UPDATE roles SET name = 'Contador' WHERE id = ?").run(m.roles.reports)
+    const manager = oldOne('Gerente')
+    const kitchen = oldOne('Cocina')
+    const gloria = m.access.crearUsuario({ name: 'Gloria V', rolId: manager })
 
-    const roles = asegurarRoles(m.db, m.restauranteId, m.reloj())
-    expect(roles.reportes).toBe(m.roles.reportes)
+    const roles = asegurarRoles(m.db, m.restauranteId, m.clock())
+    expect(roles.reports).toBe(m.roles.reports)
     const fila = (id: string) =>
-      m.db.prepare('SELECT nombre, sistema, activo FROM rol WHERE id = ?').get(id)
-    expect(fila(m.roles.reportes)).toEqual({ nombre: 'Reportes', sistema: 1, activo: 1 })
-    expect(fila(gerente)).toEqual({ nombre: 'Gerente', sistema: 0, activo: 1 })
-    expect(fila(cocina)).toEqual({ nombre: 'Cocina', sistema: 0, activo: 1 })
-    expect(m.acceso.permisosDe(gloria.usuarioId)).toEqual([])
+      m.db.prepare('SELECT name, system, active FROM roles WHERE id = ?').get(id)
+    expect(fila(m.roles.reports)).toEqual({ name: 'Reportes', system: 1, active: 1 })
+    expect(fila(manager)).toEqual({ name: 'Gerente', system: 0, active: 1 })
+    expect(fila(kitchen)).toEqual({ name: 'Cocina', system: 0, active: 1 })
+    expect(m.access.permisosDe(gloria.userId)).toEqual([])
     // Correrlo otra vez no cambia nada.
-    expect(asegurarRoles(m.db, m.restauranteId, m.reloj())).toEqual(roles)
+    expect(asegurarRoles(m.db, m.restauranteId, m.clock())).toEqual(roles)
   })
 
   it('un administrador que entraba con PIN recibe usuario y contraseña al arrancar', () => {
     const m = montarAcceso()
-    m.acceso.quitarContrasena(m.personas.admin.usuarioId)
-    const r = asegurarAdministrador(m.db, m.acceso, m.roles.admin, false)
-    expect(r.usuario).toBe('admin')
-    expect(r.contrasena).toMatch(/^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/)
+    m.access.quitarContrasena(m.people.admin.userId)
+    const r = asegurarAdministrador(m.db, m.access, m.roles.admin, false)
+    expect(r.user).toBe('admin')
+    expect(r.password).toMatch(/^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/)
     expect(r.pin).toBeNull()
     expect(r.avisos.join(' ')).toMatch(/usuario y contraseña/)
-    const caja = m.acceso.entrar(
-      { usuario: 'admin', contrasena: r.contrasena as string },
-      null,
-      'ip',
-    )
-    expect(caja).toMatchObject({ ok: true, usuario: { nombre: 'Administrador' } })
+    const register = m.access.entrar({ user: 'admin', password: r.password as string }, null, 'ip')
+    expect(register).toMatchObject({ ok: true, user: { name: 'Administrador' } })
   })
 
   it('si «admin» ya lo tiene otra persona, le da «admin2»', () => {
     const m = montarAcceso()
-    m.acceso.quitarContrasena(m.personas.admin.usuarioId)
-    m.acceso.ponerContrasena(m.personas.cajero.usuarioId, 'admin', 'otra-clave-123')
-    expect(asegurarAdministrador(m.db, m.acceso, m.roles.admin, false).usuario).toBe('admin2')
+    m.access.quitarContrasena(m.people.admin.userId)
+    m.access.ponerContrasena(m.people.cashier.userId, 'admin', 'otra-clave-123')
+    expect(asegurarAdministrador(m.db, m.access, m.roles.admin, false).user).toBe('admin2')
   })
 })
 
 describe('todos los permisos existen en la pantalla de roles', () => {
   it('el rol Administrador de fábrica tiene todo menos «sus propias ventas»', () => {
     const m = montarAcceso()
-    expect(m.acceso.permisosDe(m.personas.admin.usuarioId)).toEqual(
-      PERMISOS.filter((p) => p !== 'ver_reportes_propios').sort(),
+    expect(m.access.permisosDe(m.people.admin.userId)).toEqual(
+      PERMISSIONS.filter((p) => p !== 'view_own_reports').sort(),
     )
   })
 })

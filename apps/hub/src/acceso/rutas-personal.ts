@@ -4,36 +4,36 @@ import type { OpcionesCatalogo } from '../catalogo'
 import { ErrorPersonal, guardarPersona, guardarRol, leerPersonal } from './personal'
 
 // API de personal y roles (tarea 1.3b): solo con una sesión abierta cuyo rol tenga
-// `administrar_usuarios`. Las contraseñas van en el cuerpo, que Fastify no registra en el log.
+// `manage_users`. Las contraseñas van en el cuerpo, que Fastify no registra en el log.
 
-const Sesion = { sesion_id: z.string().length(26), secreto: z.string().min(1).max(100) }
+const Sesion = { session_id: z.string().length(26), secret: z.string().min(1).max(100) }
 const Id = z.string().length(26)
 
 const Cuerpos = {
   leer: z.strictObject(Sesion),
-  rol: z.strictObject({
+  role: z.strictObject({
     ...Sesion,
-    rol: z.strictObject({
+    role: z.strictObject({
       id: Id.optional(),
-      nombre: z.string().max(100),
-      permisos: z.array(z.string().max(50)).max(100),
-      activo: z.boolean().optional(),
+      name: z.string().max(100),
+      permissions: z.array(z.string().max(50)).max(100),
+      active: z.boolean().optional(),
     }),
   }),
   persona: z.strictObject({
     ...Sesion,
     persona: z.strictObject({
       id: Id.optional(),
-      nombre: z.string().max(100),
-      rol_id: Id,
-      activo: z.boolean().optional(),
-      acceso: z
+      name: z.string().max(100),
+      role_id: Id,
+      active: z.boolean().optional(),
+      access: z
         .union([
-          z.strictObject({ tipo: z.literal('pin') }),
+          z.strictObject({ type: z.literal('pin') }),
           z.strictObject({
-            tipo: z.literal('contrasena'),
-            usuario: z.string().max(100),
-            contrasena: z.string().max(200).optional(),
+            type: z.literal('password'),
+            user: z.string().max(100),
+            password: z.string().max(200).optional(),
           }),
         ])
         .optional(),
@@ -44,57 +44,51 @@ const Cuerpos = {
 
 export async function rutasPersonal(
   app: FastifyInstance,
-  {
-    db,
-    restauranteId,
-    acceso,
-    alCambiar,
-    reloj = () => new Date().toISOString(),
-  }: OpcionesCatalogo,
+  { db, restauranteId, access, onChange, clock = () => new Date().toISOString() }: OpcionesCatalogo,
 ) {
   /** Quién hace el cambio, o responde el error. */
-  const administrador = <T extends z.ZodType<{ sesion_id: string; secreto: string }>>(
+  const administrador = <T extends z.ZodType<{ session_id: string; secret: string }>>(
     esquema: T,
     req: FastifyRequest,
     reply: FastifyReply,
   ) => {
-    const [tipo, token] = (req.headers.authorization ?? '').split(' ')
-    const conexion = tipo === 'Bearer' && token ? acceso.autenticar(token) : null
-    if (!conexion) {
+    const [type, token] = (req.headers.authorization ?? '').split(' ')
+    const connection = type === 'Bearer' && token ? access.authenticate(token) : null
+    if (!connection) {
       reply.code(401).send({
-        error: 'token_invalido',
-        mensaje: 'Este equipo ya no tiene acceso: vuelve a entrar',
+        error: 'invalid_token',
+        message: 'Este equipo ya no tiene acceso: vuelve a entrar',
       })
       return null
     }
     const cuerpo = esquema.safeParse(req.body)
     if (!cuerpo.success) {
-      reply.code(400).send({ error: 'datos_invalidos', mensaje: 'Datos con formato inesperado' })
+      reply.code(400).send({ error: 'invalid_data', message: 'Datos con formato inesperado' })
       return null
     }
-    const quien = acceso.usuarioConPermiso(
-      conexion,
-      { sesionId: cuerpo.data.sesion_id, secreto: cuerpo.data.secreto },
-      'administrar_usuarios',
+    const quien = access.usuarioConPermiso(
+      connection,
+      { sesionId: cuerpo.data.session_id, secret: cuerpo.data.secret },
+      'manage_users',
     )
     if (!quien.ok) {
       reply
-        .code(quien.codigo === 'sin_permiso' ? 403 : 401)
-        .send({ error: quien.codigo, mensaje: quien.mensaje })
+        .code(quien.code === 'no_permission' ? 403 : 401)
+        .send({ error: quien.code, message: quien.message })
       return null
     }
     return {
-      datos: cuerpo.data as z.infer<T>,
-      autor: { usuarioId: quien.usuarioId, dispositivoId: conexion.dispositivoId },
+      data: cuerpo.data as z.infer<T>,
+      autor: { userId: quien.userId, dispositivoId: connection.dispositivoId },
     }
   }
 
   /** Los equipos traen la carta de nuevo: ahí va el nombre de cada persona. */
   const avisar = () => {
     const f = db
-      .prepare("SELECT valor FROM contador WHERE restaurante_id = ? AND nombre = 'catalogo'")
+      .prepare("SELECT value FROM counters WHERE restaurant_id = ? AND name = 'catalog'")
       .get(restauranteId)
-    alCambiar?.(Number(f?.valor ?? 0))
+    onChange?.(Number(f?.value ?? 0))
   }
 
   const conErrores = async (reply: FastifyReply, trabajo: () => unknown) => {
@@ -104,45 +98,45 @@ export async function rutasPersonal(
       return reply.code(200).send(r)
     } catch (e) {
       if (e instanceof ErrorPersonal)
-        return reply.code(400).send({ error: 'datos_invalidos', mensaje: e.message })
+        return reply.code(400).send({ error: 'invalid_data', message: e.message })
       throw e
     }
   }
 
-  app.post('/api/personal/leer', async (req, reply) => {
+  app.post('/api/staff/read', async (req, reply) => {
     if (!administrador(Cuerpos.leer, req, reply)) return reply
-    return leerPersonal(db, restauranteId, acceso)
+    return leerPersonal(db, restauranteId, access)
   })
 
-  app.post('/api/personal/roles', async (req, reply) => {
-    const a = administrador(Cuerpos.rol, req, reply)
+  app.post('/api/staff/roles', async (req, reply) => {
+    const a = administrador(Cuerpos.role, req, reply)
     if (!a) return reply
     return conErrores(reply, () => ({
-      id: guardarRol(db, restauranteId, acceso, a.datos.rol, a.autor, reloj()),
+      id: guardarRol(db, restauranteId, access, a.data.role, a.autor, clock()),
     }))
   })
 
-  app.post('/api/personal/personas', async (req, reply) => {
+  app.post('/api/staff/people', async (req, reply) => {
     const a = administrador(Cuerpos.persona, req, reply)
     if (!a) return reply
-    const p = a.datos.persona
+    const p = a.data.persona
     return conErrores(reply, () => {
       const r = guardarPersona(
         db,
         restauranteId,
-        acceso,
+        access,
         {
           id: p.id,
-          nombre: p.nombre,
-          rolId: p.rol_id,
-          activo: p.activo,
-          acceso: p.acceso,
+          name: p.name,
+          rolId: p.role_id,
+          active: p.active,
+          access: p.access,
           regenerarPin: p.regenerar_pin,
         },
         a.autor,
-        reloj(),
+        clock(),
       )
-      return { id: r.usuarioId, pin: r.pin }
+      return { id: r.userId, pin: r.pin }
     })
   })
 }

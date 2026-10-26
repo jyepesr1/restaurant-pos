@@ -1,4 +1,4 @@
-import { type ClaveRol, configCompleta, jsonCanonico } from '@pos/core'
+import { canonicalJson, fullConfig, type RoleKey } from '@pos/core'
 import { type BaseSqlite, enTransaccion, type ValorSql } from '@pos/db'
 import {
   actualizarVersionado,
@@ -9,7 +9,7 @@ import {
 } from '../acceso/registros'
 import { generarContrasena } from '../acceso/secretos'
 import type { ServicioAcceso } from '../acceso/servicio'
-import type { CategoriaCarta, Estacion, GrupoCarta } from './carta'
+import type { MenuCategory, MenuGroup, Station } from './carta'
 
 // Carga los datos del piloto (tarea 0.8): restaurante, salón, estaciones, impuesto, carta y
 // personal, todo en una transacción. Cada registro tiene un ID estable (`idEstable`): correrlo
@@ -23,10 +23,10 @@ export const NOMBRE_RESTAURANTE = 'La Spritzzería'
 export const NOMBRE_SEDE = 'Envigado'
 
 /** INC del 8 % en restaurantes y bares. (validar) con el contador. */
-export const IMPUESTO = { nombre: 'INC 8 %', tipo: 'inc', tarifa: 800 } as const
+export const IMPUESTO = { name: 'INC 8 %', type: 'inc', rate: 800 } as const
 
 /** Plano provisional: 25 mesas en una zona, en cuadrícula. El real se dibuja en la Fase 1. */
-export const MESAS = 25
+export const TABLES = 25
 const COLUMNAS = 5
 const PASO = 120
 
@@ -35,186 +35,185 @@ const PASO = 120
  * la caja con usuario y contraseña; sin él, con su PIN (ADR-013).
  */
 export const PERSONAL: readonly {
-  clave: string
-  nombre: string
-  rol: ClaveRol
-  usuario?: string
+  key: string
+  name: string
+  role: RoleKey
+  user?: string
 }[] = [
-  { clave: 'caja', nombre: 'Caja', rol: 'cajero', usuario: 'caja' },
-  { clave: 'reportes', nombre: 'Reportes', rol: 'reportes', usuario: 'reportes' },
-  { clave: 'mesero-1', nombre: 'Mesero 1', rol: 'mesero' },
-  { clave: 'mesero-2', nombre: 'Mesero 2', rol: 'mesero' },
-  { clave: 'mesero-3', nombre: 'Mesero 3', rol: 'mesero' },
+  { key: 'caja', name: 'Caja', role: 'cashier', user: 'caja' },
+  { key: 'reportes', name: 'Reportes', role: 'reports', user: 'reportes' },
+  { key: 'mesero-1', name: 'Mesero 1', role: 'waiter' },
+  { key: 'mesero-2', name: 'Mesero 2', role: 'waiter' },
+  { key: 'mesero-3', name: 'Mesero 3', role: 'waiter' },
 ]
 
 /** Tablas que llena el seed y en las que archiva lo que ya no está en la carta. */
 const SEMBRADAS = [
-  'zona',
-  'mesa',
-  'estacion',
-  'grupo_modificador',
-  'modificador',
-  'categoria',
-  'producto',
-  'variante',
-  'producto_grupo_modificador',
+  'zones',
+  'dining_tables',
+  'stations',
+  'modifier_groups',
+  'modifiers',
+  'categories',
+  'products',
+  'variants',
+  'product_modifier_groups',
 ] as const
 
-const ESTACIONES: Record<Estacion, { nombre: string; orden: number }> = {
-  cocina: { nombre: 'Cocina', orden: 0 },
-  barra: { nombre: 'Barra', orden: 1 },
+const ESTACIONES: Record<Station, { name: string; position: number }> = {
+  cocina: { name: 'Cocina', position: 0 },
+  barra: { name: 'Barra', position: 1 },
 }
 
 export interface Resumen {
   /** Por tabla: cuántos registros se crearon, cambiaron, quedaron igual, se respetaron o se archivaron. */
-  tablas: Record<string, Record<Cambio, number>>
+  sqlTables: Record<string, Record<Cambio, number>>
   /**
    * PIN de las personas creadas en esta corrida (las que ya existían conservan el suyo), y usuario
    * y contraseña de quien entra con ellos. A quien ya existía sin usuario y ahora lo lleva (una
    * base de antes de ADR-013), se le dan usuario y contraseña, sin PIN nuevo.
    */
-  pines: {
-    nombre: string
-    rol: ClaveRol
+  pins: {
+    name: string
+    role: RoleKey
     pin: string | null
-    usuario?: string
-    contrasena?: string
+    user?: string
+    password?: string
   }[]
 }
 
 export function sembrar(
   db: BaseSqlite,
-  acceso: ServicioAcceso,
-  datos: {
+  access: ServicioAcceso,
+  data: {
     restauranteId: string
-    roles: Record<ClaveRol, string>
-    carta: CategoriaCarta[]
+    roles: Record<RoleKey, string>
+    menu: MenuCategory[]
     /** Sin el personal de ejemplo (para un restaurante que crea sus propios usuarios). */
     sinPersonal?: boolean
   },
   ahora: string,
 ): Resumen {
-  const { restauranteId, roles, carta } = datos
-  const tablas: Resumen['tablas'] = {}
-  const contar = (tabla: string, cambio: Cambio) => {
-    tablas[tabla] ??= { creado: 0, actualizado: 0, igual: 0, respetado: 0, archivado: 0 }
-    tablas[tabla][cambio] += 1
+  const { restauranteId, roles, menu } = data
+  const sqlTables: Resumen['sqlTables'] = {}
+  const contar = (tabla: string, change: Cambio) => {
+    sqlTables[tabla] ??= { created: 0, updated: 0, equal: 0, respected: 0, archived: 0 }
+    sqlTables[tabla][change] += 1
   }
-  const id = (clave: string) => idEstable(restauranteId, clave)
-  const vigentes = new Map<string, Set<string>>()
+  const id = (key: string) => idEstable(restauranteId, key)
+  const currentOnes = new Map<string, Set<string>>()
   const guardar = (
     tabla: string,
     idRegistro: string,
-    campos: Record<string, ValorSql>,
-    opciones: { soloCrear?: boolean } = {},
+    fields: Record<string, ValorSql>,
+    options: { soloCrear?: boolean } = {},
   ) => {
-    vigentes.set(tabla, (vigentes.get(tabla) ?? new Set()).add(idRegistro))
+    currentOnes.set(tabla, (currentOnes.get(tabla) ?? new Set()).add(idRegistro))
     contar(
       tabla,
-      guardarVersionado(db, tabla, restauranteId, idRegistro, campos, SISTEMA, ahora, opciones),
+      guardarVersionado(db, tabla, restauranteId, idRegistro, fields, SISTEMA, ahora, options),
     )
   }
-  const pines: Resumen['pines'] = []
+  const pins: Resumen['pins'] = []
 
   enTransaccion(db, () => {
-    const restaurante = db.prepare('SELECT config FROM restaurante WHERE id = ?').get(restauranteId)
+    const restaurant = db.prepare('SELECT config FROM restaurants WHERE id = ?').get(restauranteId)
     // Lo que el restaurante ya configuró se respeta; lo que falte toma el valor del piloto. Se
     // compara como objeto: el mismo contenido con las claves en otro orden no es un cambio.
-    const actual = String(restaurante?.config ?? '{}')
+    const current = String(restaurant?.config ?? '{}')
     // El piloto se ve con su marca, salvo que el restaurante haya elegido otra (tarea 1.3c).
-    const config = jsonCanonico(configCompleta({ marca: 'la-spritzzeria', ...JSON.parse(actual) }))
-    guardar('restaurante', restauranteId, {
-      nombre: NOMBRE_RESTAURANTE,
-      config: jsonCanonico(JSON.parse(actual)) === config ? actual : config,
+    const config = canonicalJson(fullConfig({ brand: 'la-spritzzeria', ...JSON.parse(current) }))
+    guardar('restaurants', restauranteId, {
+      name: NOMBRE_RESTAURANTE,
+      config: canonicalJson(JSON.parse(current)) === config ? current : config,
     })
-    const sede = db
-      .prepare('SELECT id FROM sede WHERE restaurante_id = ? ORDER BY creado_en, id LIMIT 1')
+    const location = db
+      .prepare('SELECT id FROM locations WHERE restaurant_id = ? ORDER BY created_at, id LIMIT 1')
       .get(restauranteId)
-    if (!sede) throw new Error('El restaurante no tiene sede: arranca el hub una vez primero')
-    const sedeId = String(sede.id)
-    guardar('sede', sedeId, { nombre: NOMBRE_SEDE, zona_horaria: 'America/Bogota' })
+    if (!location) throw new Error('El restaurante no tiene sede: arranca el hub una vez primero')
+    const sedeId = String(location.id)
+    guardar('locations', sedeId, { name: NOMBRE_SEDE, time_zone: 'America/Bogota' })
 
     // Salón.
     const zonaId = id('zona:salon')
-    guardar('zona', zonaId, { sede_id: sedeId, nombre: 'Salón', orden: 0, piso: 1 })
-    for (let n = 1; n <= MESAS; n++) {
-      guardar('mesa', id(`mesa:${n}`), {
-        zona_id: zonaId,
-        nombre: String(n),
-        forma: 'cuadrada',
+    guardar('zones', zonaId, { location_id: sedeId, name: 'Salón', position: 0, level: 1 })
+    for (let n = 1; n <= TABLES; n++) {
+      guardar('dining_tables', id(`mesa:${n}`), {
+        zone_id: zonaId,
+        name: String(n),
+        shape: 'square',
         x: ((n - 1) % COLUMNAS) * PASO,
         y: Math.floor((n - 1) / COLUMNAS) * PASO,
-        ancho: 80,
-        alto: 80,
-        rotacion: 0,
-        capacidad: 4,
+        width: 80,
+        height: 80,
+        rotation: 0,
+        capacity: 4,
       })
     }
 
     // Estaciones e impuesto.
-    for (const [clave, e] of Object.entries(ESTACIONES))
-      guardar('estacion', id(`estacion:${clave}`), { nombre: e.nombre, orden: e.orden })
+    for (const [key, e] of Object.entries(ESTACIONES))
+      guardar('stations', id(`estacion:${key}`), { name: e.name, position: e.position })
     const impuestoId = id('impuesto:inc')
-    guardar('impuesto', impuestoId, { ...IMPUESTO }, { soloCrear: true })
+    guardar('taxes', impuestoId, { ...IMPUESTO }, { soloCrear: true })
     // Datáfonos Bold del piloto (tarea 1.6). Solo se crean: el administrador los renombra, agrega
     // o archiva en «Caja y pagos», y el seed lo respeta.
     for (const n of [1, 2])
       guardar(
-        'datafono',
+        'card_terminals',
         id(`datafono:bold-${n}`),
-        { nombre: `Bold ${n}`, proveedor: 'bold' },
+        { name: `Bold ${n}`, provider: 'bold' },
         { soloCrear: true },
       )
 
     // Carta. Primero los grupos de modificadores, que los productos comparten.
-    const grupos = new Map<string, GrupoCarta>()
-    for (const p of carta.flatMap((c) => c.productos))
-      for (const g of p.grupos) grupos.set(g.clave, g)
-    for (const g of grupos.values()) {
-      guardar('grupo_modificador', id(`grupo:${g.clave}`), {
-        nombre: g.nombre,
-        minimo: g.minimo,
-        maximo: g.maximo,
+    const groups = new Map<string, MenuGroup>()
+    for (const p of menu.flatMap((c) => c.products)) for (const g of p.groups) groups.set(g.key, g)
+    for (const g of groups.values()) {
+      guardar('modifier_groups', id(`grupo:${g.key}`), {
+        name: g.name,
+        minimum: g.minimum,
+        maximum: g.maximum,
       })
-      for (const [orden, o] of g.opciones.entries())
-        guardar('modificador', id(`modificador:${g.clave}:${o.nombre}`), {
-          grupo_id: id(`grupo:${g.clave}`),
-          nombre: o.nombre,
-          precio_extra: o.precioExtra,
-          orden,
+      for (const [position, o] of g.options.entries())
+        guardar('modifiers', id(`modificador:${g.key}:${o.name}`), {
+          group_id: id(`grupo:${g.key}`),
+          name: o.name,
+          extra_price: o.extraPrice,
+          position,
         })
     }
-    for (const categoria of carta) {
-      const categoriaId = id(`categoria:${categoria.clave}`)
-      guardar('categoria', categoriaId, {
-        nombre: categoria.nombre,
-        orden: categoria.orden,
-        estacion_id: id(`estacion:${categoria.estacion}`),
-        foto: categoria.foto,
+    for (const category of menu) {
+      const categoriaId = id(`categoria:${category.key}`)
+      guardar('categories', categoriaId, {
+        name: category.name,
+        position: category.position,
+        station_id: id(`estacion:${category.station}`),
+        photo: category.photo,
       })
-      for (const p of categoria.productos) {
-        const productoId = id(`producto:${p.clave}`)
-        guardar('producto', productoId, {
-          categoria_id: categoriaId,
-          nombre: p.nombre,
-          descripcion: p.descripcion,
-          precio: p.precio,
-          impuesto_id: impuestoId,
-          foto: null,
-          favorito: 0,
+      for (const p of category.products) {
+        const productId = id(`producto:${p.key}`)
+        guardar('products', productId, {
+          category_id: categoriaId,
+          name: p.name,
+          description: p.description,
+          price: p.price,
+          tax_id: impuestoId,
+          photo: null,
+          favorite: 0,
         })
-        for (const [orden, v] of p.variantes.entries())
-          guardar('variante', id(`variante:${p.clave}:${v.nombre}`), {
-            producto_id: productoId,
-            nombre: v.nombre,
-            precio: v.precio,
-            orden,
+        for (const [position, v] of p.variants.entries())
+          guardar('variants', id(`variante:${p.key}:${v.name}`), {
+            product_id: productId,
+            name: v.name,
+            price: v.price,
+            position,
           })
-        for (const [orden, g] of p.grupos.entries()) {
-          guardar('producto_grupo_modificador', id(`producto-grupo:${p.clave}:${g.clave}`), {
-            producto_id: productoId,
-            grupo_id: id(`grupo:${g.clave}`),
-            orden,
+        for (const [position, g] of p.groups.entries()) {
+          guardar('product_modifier_groups', id(`producto-grupo:${p.key}:${g.key}`), {
+            product_id: productId,
+            group_id: id(`grupo:${g.key}`),
+            position,
           })
         }
       }
@@ -223,64 +222,59 @@ export function sembrar(
     // Lo que el seed cargó antes y ya no está en la carta se archiva (nunca se borra). Solo lo
     // del sistema: lo que creó una persona no es del seed.
     for (const tabla of SEMBRADAS) {
-      const quedan = vigentes.get(tabla) ?? new Set<string>()
+      const quedan = currentOnes.get(tabla) ?? new Set<string>()
       const sobran = db
         .prepare(
-          `SELECT id FROM ${tabla} WHERE restaurante_id = ? AND activo = 1 AND usuario_id IS NULL`,
+          `SELECT id FROM ${tabla} WHERE restaurant_id = ? AND active = 1 AND user_id IS NULL`,
         )
         .all(restauranteId)
         .map((f) => String(f.id))
         .filter((x) => !quedan.has(x))
       for (const x of sobran) {
-        actualizarVersionado(db, tabla, restauranteId, x, { activo: 0 }, SISTEMA, ahora)
-        contar(tabla, 'archivado')
+        actualizarVersionado(db, tabla, restauranteId, x, { active: 0 }, SISTEMA, ahora)
+        contar(tabla, 'archived')
       }
     }
 
     // Personal de ejemplo, en la misma transacción: o queda todo con sus PIN, o nada.
-    if (datos.sinPersonal) return
+    if (data.sinPersonal) return
     for (const persona of PERSONAL) {
-      const usuarioId = id(`usuario:${persona.clave}`)
+      const userId = id(`usuario:${persona.key}`)
       const existe = db
-        .prepare('SELECT activo FROM usuario WHERE restaurante_id = ? AND id = ?')
-        .get(restauranteId, usuarioId)
-      const contrasena = persona.usuario ? generarContrasena() : undefined
+        .prepare('SELECT active FROM users WHERE restaurant_id = ? AND id = ?')
+        .get(restauranteId, userId)
+      const password = persona.user ? generarContrasena() : undefined
       if (existe) {
         // Quien se archivó no vuelve, ni recibe una contraseña que no le serviría.
-        if (
-          existe.activo !== 1 ||
-          !persona.usuario ||
-          acceso.tieneContrasena(usuarioId) ||
-          !contrasena
-        ) {
-          contar('usuario', 'igual')
+        if (existe.active !== 1 || !persona.user || access.tieneContrasena(userId) || !password) {
+          contar('users', 'equal')
           continue
         }
-        acceso.fijarContrasena(usuarioId, persona.usuario, contrasena)
-        contar('usuario', 'actualizado')
-        pines.push({
-          nombre: persona.nombre,
-          rol: persona.rol,
+        access.fijarContrasena(userId, persona.user, password)
+        contar('users', 'updated')
+        pins.push({
+          name: persona.name,
+          role: persona.role,
           pin: null,
-          usuario: persona.usuario,
-          contrasena,
+          user: persona.user,
+          password,
         })
         continue
       }
-      const { pin } = acceso.insertarUsuario({
-        id: usuarioId,
-        nombre: persona.nombre,
-        rolId: roles[persona.rol],
-        ...(persona.usuario && contrasena ? { usuario: persona.usuario, contrasena } : {}),
+      const { pin } = access.insertUser({
+        id: userId,
+        name: persona.name,
+        rolId: roles[persona.role],
+        ...(persona.user && password ? { user: persona.user, password } : {}),
       })
-      contar('usuario', 'creado')
-      pines.push({
-        nombre: persona.nombre,
-        rol: persona.rol,
+      contar('users', 'created')
+      pins.push({
+        name: persona.name,
+        role: persona.role,
         pin,
-        ...(persona.usuario ? { usuario: persona.usuario, contrasena } : {}),
+        ...(persona.user ? { user: persona.user, password } : {}),
       })
     }
   })
-  return { tablas, pines }
+  return { sqlTables, pins }
 }

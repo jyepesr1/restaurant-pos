@@ -14,42 +14,42 @@ import {
 } from './cuenta'
 import { cambiarMesa, useMesaDeLaRuta, useMesas } from './estado'
 import { Marco } from './Marco'
-import { lineaDe, nombreItem, saldoMesa, totalMesa, vigentes } from './totales'
+import { currentOnes, lineaDe, nombreItem, saldoMesa, totalMesa } from './totales'
 
 // Precuenta y división (brief §4.5, docs/DINERO.md#división-de-la-cuenta). Se divide el SALDO: lo
 // ya pagado queda aparte. Los montos y la propina de cada cuenta los calcula `@pos/core`, y cada
 // cuenta se cobra por separado.
 
-type Modo = 'una' | 'iguales' | 'items'
+type Modo = 'single' | 'even' | 'items'
 
 export function Precuenta() {
   const numero = useMesaDeLaRuta(12)
-  const mesa = useMesas().find((m) => m.numero === numero)
+  const table = useMesas().find((m) => m.numero === numero)
   const avisar = useAvisar()
-  const [modo, setModo] = useState<Modo>('una')
-  const [personas, setPersonas] = useState(2)
-  const [cuentas, setCuentas] = useState(2)
+  const [mode, setModo] = useState<Modo>('single')
+  const [people, setPersonas] = useState(2)
+  const [checks, setCuentas] = useState(2)
   // Ítem → cuentas que lo pagan (más de una = compartido en partes iguales).
   const [asignadas, setAsignadas] = useState<Map<string, number[]>>(new Map())
-  if (!mesa) return null
+  if (!table) return null
 
-  const items = vigentes(mesa)
-  const total = totalMesa(mesa)
-  const saldo = saldoMesa(mesa)
-  const pagado = total - saldo
-  const propina = propinaSobre(saldo)
+  const items = currentOnes(table)
+  const total = totalMesa(table)
+  const balance = saldoMesa(table)
+  const paid = total - balance
+  const tip = propinaSobre(balance)
   // Por ítems solo antes de cobrar algo: después, lo que queda se divide por partes.
-  const porItemsPosible = pagado === 0
+  const porItemsPosible = paid === 0
 
-  const tocarItem = (id: string, cuenta: number) =>
+  const tocarItem = (id: string, check: number) =>
     setAsignadas((a) => {
       const b = new Map(a)
       const actuales = b.get(id) ?? []
-      const nuevas = actuales.includes(cuenta)
-        ? actuales.filter((c) => c !== cuenta)
-        : [...actuales, cuenta].sort((x, y) => x - y)
-      if (nuevas.length === 0) b.delete(id)
-      else b.set(id, nuevas)
+      const newOnes = actuales.includes(check)
+        ? actuales.filter((c) => c !== check)
+        : [...actuales, check].sort((x, y) => x - y)
+      if (newOnes.length === 0) b.delete(id)
+      else b.set(id, newOnes)
       return b
     })
 
@@ -58,75 +58,75 @@ export function Precuenta() {
     setAsignadas((a) => recortarAsignaciones(a, n))
   }
 
-  const montos =
-    modo === 'iguales'
-      ? enPartesIguales(saldo, personas)
-      : modo === 'items' && porItemsPosible
-        ? porItems(items.map(lineaDe), asignadas, cuentas).montos
-        : [saldo]
-  const sinAsignar =
-    modo === 'items' && porItemsPosible
-      ? porItems(items.map(lineaDe), asignadas, cuentas).sinAsignar
+  const amounts =
+    mode === 'even'
+      ? enPartesIguales(balance, people)
+      : mode === 'items' && porItemsPosible
+        ? porItems(items.map(lineaDe), asignadas, checks).amounts
+        : [balance]
+  const unassigned =
+    mode === 'items' && porItemsPosible
+      ? porItems(items.map(lineaDe), asignadas, checks).unassigned
       : 0
-  const propinas = propinasDeCuentas(montos)
+  const tips = propinasDeCuentas(amounts)
 
-  const cobrar = (monto: number, propinaCuenta: number) =>
-    navegar(`/bocetos/cobro?mesa=${numero}&monto=${monto}&propina=${propinaCuenta}`)
+  const cobrar = (amount: number, propinaCuenta: number) =>
+    navegar(`/mockups/checkout?table=${numero}&amount=${amount}&tip=${propinaCuenta}`)
 
-  const acciones = (
+  const actions = (
     <>
       <Boton
-        variante="secundario"
-        grande
-        icono="recibo"
+        variant="secondary"
+        large
+        icono="receipt"
         className="flex-1"
         onClick={() => {
-          cambiarMesa(numero, (m) => ({ ...m, estado: 'precuenta' }))
+          cambiarMesa(numero, (m) => ({ ...m, status: 'preBill' }))
           avisar('Precuenta enviada a la impresora')
         }}
       >
         Imprimir
       </Boton>
-      {modo === 'una' && (
+      {mode === 'single' && (
         <Boton
-          variante="principal"
-          grande
-          icono="billete"
+          variant="main"
+          large
+          icono="bill"
           className="flex-1"
-          disabled={saldo === 0}
-          onClick={() => cobrar(saldo, propina)}
+          disabled={balance === 0}
+          onClick={() => cobrar(balance, tip)}
         >
-          {`Cobrar ${pesos(saldo)}`}
+          {`Cobrar ${pesos(balance)}`}
         </Boton>
       )}
     </>
   )
 
   return (
-    <Marco titulo={`Precuenta · Mesa ${numero}`} usuario="Caja" volver="/bocetos/plano">
+    <Marco titulo={`Precuenta · Mesa ${numero}`} user="Caja" back="/mockups/floor-plan">
       <div className="mx-auto grid max-w-5xl gap-4 p-3 pb-28 md:grid-cols-[1fr_22rem] md:pb-3">
         <section className="rounded-2xl border border-borde bg-superficie" aria-label="Ítems">
           <ul>
             {items.map((i) => (
               <li key={i.id} className="border-b border-borde px-4 py-3">
                 <div className="flex items-start gap-3">
-                  <span className="cifras w-6 font-semibold">{i.cantidad}</span>
+                  <span className="cifras w-6 font-semibold">{i.quantity}</span>
                   <span className="flex-1">
                     <span className="font-semibold">{nombreItem(i)}</span>
-                    {i.opciones.length > 0 && (
+                    {i.options.length > 0 && (
                       <span className="block text-sm text-texto-suave">
-                        {i.opciones.map((o) => o.nombre).join(' · ')}
+                        {i.options.map((o) => o.name).join(' · ')}
                       </span>
                     )}
                   </span>
                   <span className="cifras">{pesos(netoLinea(lineaDe(i)))}</span>
                 </div>
-                {modo === 'items' && porItemsPosible && (
+                {mode === 'items' && porItemsPosible && (
                   <Grupo
                     etiqueta={`Quién paga ${nombreItem(i)}`}
                     className="mt-2 flex flex-wrap gap-2 pl-9"
                   >
-                    {Array.from({ length: cuentas }, (_, c) => (
+                    {Array.from({ length: checks }, (_, c) => (
                       <Opcion
                         // biome-ignore lint/suspicious/noArrayIndexKey: las cuentas son posiciones
                         key={c}
@@ -144,18 +144,18 @@ export function Precuenta() {
           <dl className="cifras grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 p-4">
             <dt>Total</dt>
             <dd className="text-right">{pesos(total)}</dd>
-            {pagado > 0 && (
+            {paid > 0 && (
               <>
                 <dt className="text-libre-texto">Ya pagado</dt>
-                <dd className="text-right text-libre-texto">{`-${pesos(pagado)}`}</dd>
+                <dd className="text-right text-libre-texto">{`-${pesos(paid)}`}</dd>
                 <dt className="font-semibold">Saldo</dt>
-                <dd className="text-right font-semibold">{pesos(saldo)}</dd>
+                <dd className="text-right font-semibold">{pesos(balance)}</dd>
               </>
             )}
             <dt className="text-texto-suave">Propina sugerida (10 %, voluntaria)</dt>
-            <dd className="text-right text-texto-suave">{pesos(propina)}</dd>
+            <dd className="text-right text-texto-suave">{pesos(tip)}</dd>
             <dt className="font-titulo text-2xl font-bold">Con propina</dt>
-            <dd className="font-titulo text-right text-2xl font-bold">{pesos(saldo + propina)}</dd>
+            <dd className="font-titulo text-right text-2xl font-bold">{pesos(balance + tip)}</dd>
           </dl>
           <p className="px-4 pb-4 text-sm text-texto-suave">Precios con INC incluido.</p>
         </section>
@@ -164,35 +164,35 @@ export function Precuenta() {
           <Grupo etiqueta="Cómo se paga" className="grid grid-cols-3 gap-2">
             {(
               [
-                ['una', 'Una cuenta'],
-                ['iguales', 'Partes iguales'],
+                ['single', 'Una cuenta'],
+                ['even', 'Partes iguales'],
                 ['items', 'Por ítems'],
               ] as const
-            ).map(([m, texto]) => (
-              <Opcion key={m} forma="tarjeta" elegida={modo === m} alElegir={() => setModo(m)}>
-                {texto}
+            ).map(([m, text]) => (
+              <Opcion key={m} shape="card" elegida={mode === m} alElegir={() => setModo(m)}>
+                {text}
               </Opcion>
             ))}
           </Grupo>
 
-          {modo === 'iguales' && (
-            <Contador
-              nombre="Personas"
-              valor={personas}
-              minimo={2}
-              maximo={20}
-              alCambiar={setPersonas}
+          {mode === 'even' && (
+            <Accountant
+              name="Personas"
+              value={people}
+              minimum={2}
+              maximum={20}
+              onChange={setPersonas}
             />
           )}
-          {modo === 'items' &&
+          {mode === 'items' &&
             (porItemsPosible ? (
               <>
-                <Contador
-                  nombre="Cuentas"
-                  valor={cuentas}
-                  minimo={2}
-                  maximo={10}
-                  alCambiar={cambiarCuentas}
+                <Accountant
+                  name="Cuentas"
+                  value={checks}
+                  minimum={2}
+                  maximum={10}
+                  onChange={cambiarCuentas}
                 />
                 <p className="text-sm text-texto-suave">
                   Toca en cada ítem quién lo paga. Si lo tocan dos o más, se reparte entre ellos.
@@ -204,9 +204,9 @@ export function Precuenta() {
               </p>
             ))}
 
-          {modo !== 'una' && (
+          {mode !== 'single' && (
             <ul className="flex flex-col gap-2">
-              {montos.map((monto, c) => (
+              {amounts.map((amount, c) => (
                 <li
                   // biome-ignore lint/suspicious/noArrayIndexKey: las cuentas son posiciones
                   key={c}
@@ -215,67 +215,67 @@ export function Precuenta() {
                   <span className="flex-1">
                     <span className="block font-semibold">{`Cuenta ${c + 1}`}</span>
                     <span className="cifras text-sm text-texto-suave">
-                      {`${pesos(monto)} + propina ${pesos(propinas[c] ?? 0)}`}
+                      {`${pesos(amount)} + propina ${pesos(tips[c] ?? 0)}`}
                     </span>
                   </span>
                   <Boton
-                    variante="principal"
-                    disabled={monto === 0}
-                    onClick={() => cobrar(monto, propinas[c] ?? 0)}
+                    variant="main"
+                    disabled={amount === 0}
+                    onClick={() => cobrar(amount, tips[c] ?? 0)}
                   >
-                    {`Cobrar ${pesos(monto)}`}
+                    {`Cobrar ${pesos(amount)}`}
                   </Boton>
                 </li>
               ))}
-              {sinAsignar > 0 && (
+              {unassigned > 0 && (
                 <li className="cifras flex justify-between rounded-xl bg-proceso-suave p-3 text-proceso-texto">
                   <span>Sin asignar</span>
-                  <span className="font-semibold">{pesos(sinAsignar)}</span>
+                  <span className="font-semibold">{pesos(unassigned)}</span>
                 </li>
               )}
             </ul>
           )}
 
-          <div className="hidden gap-2 md:flex">{acciones}</div>
+          <div className="hidden gap-2 md:flex">{actions}</div>
         </section>
       </div>
 
       {/* Celular: las acciones abajo, al alcance del pulgar. */}
       <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-borde bg-superficie p-3 md:hidden">
-        {acciones}
+        {actions}
       </div>
     </Marco>
   )
 }
 
-function Contador({
-  nombre,
-  valor,
-  minimo,
-  maximo,
-  alCambiar,
+function Accountant({
+  name,
+  value,
+  minimum,
+  maximum,
+  onChange,
 }: {
-  nombre: string
-  valor: number
-  minimo: number
-  maximo: number
-  alCambiar: (n: number) => void
+  name: string
+  value: number
+  minimum: number
+  maximum: number
+  onChange: (n: number) => void
 }) {
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-borde bg-superficie p-3">
-      <span className="flex-1 font-semibold">{nombre}</span>
+      <span className="flex-1 font-semibold">{name}</span>
       <Boton
-        icono="menos"
-        aria-label={`Quitar ${nombre.toLowerCase()}: quedan ${valor - 1}`}
-        disabled={valor <= minimo}
-        onClick={() => alCambiar(valor - 1)}
+        icono="minus"
+        aria-label={`Quitar ${name.toLowerCase()}: quedan ${value - 1}`}
+        disabled={value <= minimum}
+        onClick={() => onChange(value - 1)}
       />
-      <span className="cifras w-8 text-center text-xl font-semibold">{valor}</span>
+      <span className="cifras w-8 text-center text-xl font-semibold">{value}</span>
       <Boton
-        icono="mas"
-        aria-label={`Agregar ${nombre.toLowerCase()}: quedan ${valor + 1}`}
-        disabled={valor >= maximo}
-        onClick={() => alCambiar(valor + 1)}
+        icono="more"
+        aria-label={`Agregar ${name.toLowerCase()}: quedan ${value + 1}`}
+        disabled={value >= maximum}
+        onClick={() => onChange(value + 1)}
       />
     </div>
   )

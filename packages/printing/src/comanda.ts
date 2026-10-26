@@ -7,132 +7,132 @@ import { aLosLados, type Formato, type Linea, parrafo } from './documento'
 
 /** `nota`: cambió la nota de todo el pedido con platos ya en cocina (alergias: que no se pierda). */
 export type TipoComanda =
-  | 'nueva'
-  | 'reimpresion'
-  | 'modificacion'
-  | 'anulacion'
-  | 'nota'
+  | 'newOne'
+  | 'reprinting'
+  | 'modification'
+  | 'voidEntry'
+  | 'note'
   /** Platos ya en cocina que pasaron a otra mesa: la cocina debe llevarlos a la nueva. */
-  | 'traslado'
-export type CursoComanda = 'entrada' | 'fuerte' | 'postre'
+  | 'move'
+export type CursoComanda = 'entry' | 'main' | 'dessert'
 
 export interface ItemComanda {
-  cantidad: number
-  nombre: string
-  comensal: number | null
-  curso: CursoComanda | null
+  quantity: number
+  name: string
+  guest: number | null
+  course: CursoComanda | null
   /** Opciones elegidas (término, sin cebolla, adicionales): van resaltadas. */
-  opciones: string[]
-  notas: string | null
+  options: string[]
+  notes: string | null
 }
 
 export interface Comanda {
-  tipo: TipoComanda
+  type: TipoComanda
   /** «Cocina», «Barra»… */
-  estacion: string
+  station: string
   /** Número del día; la reimpresión y la anulación llevan el de la comanda original. */
   numero: number | null
   /** «Mesa 6», «Para llevar», «Domicilio», «Barra». */
-  destino: string
+  target: string
   /** Número de pedido del día. */
-  pedido: number | null
-  mesero: string
+  order: number | null
+  waiter: string
   /** Ya formateada en la zona horaria del restaurante («8:42 p. m.»). */
-  hora: string
-  comensales: number | null
+  time: string
+  guests: number | null
   items: ItemComanda[]
   /** Cursos que siguen retenidos en el pedido: la cocina sabe que vienen después. */
   retenidos?: CursoComanda[]
   /** La nota de todo el pedido («alérgico al maní»): sale arriba, resaltada. */
   notaPedido?: string | null
   /** En un cambio de mesa, dónde estaba antes («Mesa 5»). */
-  antes?: string | null
+  before?: string | null
 }
 
 const TITULO: Record<TipoComanda, string | null> = {
-  nueva: null,
-  reimpresion: 'REIMPRESIÓN',
-  modificacion: 'CAMBIO',
-  anulacion: 'ANULAR',
-  nota: 'NOTA NUEVA',
-  traslado: 'CAMBIO DE MESA',
+  newOne: null,
+  reprinting: 'REIMPRESIÓN',
+  modification: 'CAMBIO',
+  voidEntry: 'ANULAR',
+  note: 'NOTA NUEVA',
+  move: 'CAMBIO DE MESA',
 }
 
 const NOMBRE_CURSO: Record<CursoComanda, string> = {
-  entrada: 'Entrada',
-  fuerte: 'Fuerte',
-  postre: 'Postre',
+  entry: 'Entrada',
+  main: 'Fuerte',
+  dessert: 'Postre',
 }
 
-const ORDEN_CURSO: (CursoComanda | null)[] = [null, 'entrada', 'fuerte', 'postre']
+const ORDEN_CURSO: (CursoComanda | null)[] = [null, 'entry', 'main', 'dessert']
 
-function lineasItem(item: ItemComanda, formato: Formato, anulacion: boolean): Linea[] {
-  const persona = item.comensal ? `  P${item.comensal}` : ''
-  const lineas: Linea[] = aLosLados(
-    `${anulacion ? '-' : ''}${item.cantidad} x ${item.nombre}`,
+function lineasItem(item: ItemComanda, format: Formato, voidEntry: boolean): Linea[] {
+  const persona = item.guest ? `  P${item.guest}` : ''
+  const lines: Linea[] = aLosLados(
+    `${voidEntry ? '-' : ''}${item.quantity} x ${item.name}`,
     persona.trim(),
-    formato,
-    { grande: true },
+    format,
+    { large: true },
   )
-  for (const opcion of item.opciones)
-    lineas.push(...parrafo(`> ${opcion}`, formato, { negrita: true }))
-  if (item.notas) lineas.push(...parrafo(`NOTA: ${item.notas}`, formato, { invertido: true }))
-  return lineas
+  for (const opcion of item.options)
+    lines.push(...parrafo(`> ${opcion}`, format, { negrita: true }))
+  if (item.notes) lines.push(...parrafo(`NOTA: ${item.notes}`, format, { reversed: true }))
+  return lines
 }
 
 /** La comanda partida en líneas para una impresora de ese ancho y esa tabla de caracteres. */
 export function lineasComanda(
-  comanda: Comanda,
-  formato: { columnas: number; pagina: PaginaCodigos },
+  ticket: Comanda,
+  format: { columnas: number; pagina: PaginaCodigos },
 ): Linea[] {
-  const titulo = TITULO[comanda.tipo]
-  const encabezado = titulo ? `${titulo} · ${comanda.estacion}` : comanda.estacion
-  const datos = [
-    comanda.pedido ? `Pedido ${comanda.pedido}` : null,
-    comanda.mesero,
-    comanda.hora,
-    comanda.comensales ? `${comanda.comensales} pers.` : null,
+  const titulo = TITULO[ticket.type]
+  const encabezado = titulo ? `${titulo} · ${ticket.station}` : ticket.station
+  const data = [
+    ticket.order ? `Pedido ${ticket.order}` : null,
+    ticket.waiter,
+    ticket.time,
+    ticket.guests ? `${ticket.guests} pers.` : null,
   ].filter((d): d is string => !!d)
 
-  const lineas: Linea[] = [
-    ...parrafo(encabezado.toUpperCase(), formato, { grande: true, invertido: true, centro: true }),
-    { espacio: true },
-    ...aLosLados(comanda.destino, comanda.numero ? `#${comanda.numero}` : '', formato, {
-      grande: true,
+  const lines: Linea[] = [
+    ...parrafo(encabezado.toUpperCase(), format, { large: true, reversed: true, centro: true }),
+    { space: true },
+    ...aLosLados(ticket.target, ticket.numero ? `#${ticket.numero}` : '', format, {
+      large: true,
     }),
-    ...parrafo(datos.join(' · '), formato),
-    ...(comanda.antes ? parrafo(`Antes: ${comanda.antes}`, formato, { negrita: true }) : []),
-    ...(comanda.notaPedido
-      ? parrafo(`NOTA DEL PEDIDO: ${comanda.notaPedido}`, formato, {
-          invertido: true,
+    ...parrafo(data.join(' · '), format),
+    ...(ticket.before ? parrafo(`Antes: ${ticket.before}`, format, { negrita: true }) : []),
+    ...(ticket.notaPedido
+      ? parrafo(`NOTA DEL PEDIDO: ${ticket.notaPedido}`, format, {
+          reversed: true,
           negrita: true,
         })
-      : comanda.tipo === 'nota'
-        ? parrafo('SE QUITÓ LA NOTA DEL PEDIDO', formato, { invertido: true, negrita: true })
+      : ticket.type === 'note'
+        ? parrafo('SE QUITÓ LA NOTA DEL PEDIDO', format, { reversed: true, negrita: true })
         : []),
-    { separador: true },
+    { separator: true },
   ]
 
-  const anulacion = comanda.tipo === 'anulacion'
-  const conCurso = comanda.items.some((i) => i.curso)
-  for (const curso of ORDEN_CURSO) {
-    const items = comanda.items.filter((i) => i.curso === curso)
+  const voidEntry = ticket.type === 'voidEntry'
+  const conCurso = ticket.items.some((i) => i.course)
+  for (const course of ORDEN_CURSO) {
+    const items = ticket.items.filter((i) => i.course === course)
     if (items.length === 0) continue
-    if (conCurso && curso)
-      lineas.push(...parrafo(NOMBRE_CURSO[curso].toUpperCase(), formato, { negrita: true }))
-    for (const item of items) lineas.push(...lineasItem(item, formato, anulacion))
-    lineas.push({ separador: true })
+    if (conCurso && course)
+      lines.push(...parrafo(NOMBRE_CURSO[course].toUpperCase(), format, { negrita: true }))
+    for (const item of items) lines.push(...lineasItem(item, format, voidEntry))
+    lines.push({ separator: true })
   }
 
-  const retenidos = comanda.retenidos ?? []
+  const retenidos = ticket.retenidos ?? []
   if (retenidos.length > 0)
-    lineas.push(
+    lines.push(
       ...parrafo(
         `En espera: ${retenidos.map((c) => NOMBRE_CURSO[c]).join(', ')}. Sale cuando el mesero lo marche.`,
-        formato,
+        format,
       ),
     )
-  return lineas
+  return lines
 }
 
 /**
@@ -140,31 +140,31 @@ export function lineasComanda(
  * debe llenar justo una línea) y que la tabla de caracteres imprime las tildes.
  */
 export function lineasPrueba(
-  datos: { impresora: string; estaciones: string[]; hora: string },
-  formato: { columnas: number; pagina: PaginaCodigos },
+  data: { printer: string; stations: string[]; time: string },
+  format: { columnas: number; pagina: PaginaCodigos },
 ): Linea[] {
-  const regla = '1234567890'.repeat(Math.ceil(formato.columnas / 10)).slice(0, formato.columnas)
+  const rule = '1234567890'.repeat(Math.ceil(format.columnas / 10)).slice(0, format.columnas)
   return [
-    ...parrafo('PRUEBA DE IMPRESIÓN', formato, { grande: true, invertido: true, centro: true }),
-    { espacio: true },
-    ...parrafo(datos.impresora, formato, { grande: true }),
+    ...parrafo('PRUEBA DE IMPRESIÓN', format, { large: true, reversed: true, centro: true }),
+    { space: true },
+    ...parrafo(data.printer, format, { large: true }),
     ...parrafo(
-      datos.estaciones.length > 0
-        ? `Imprime: ${datos.estaciones.join(', ')}`
+      data.stations.length > 0
+        ? `Imprime: ${data.stations.join(', ')}`
         : 'Todavía no imprime ninguna estación',
-      formato,
+      format,
     ),
-    ...parrafo(datos.hora, formato),
-    { separador: true },
-    ...parrafo('La regla debe llenar una sola línea:', formato),
-    { texto: regla },
-    { espacio: true },
-    ...parrafo('Tildes y eñes: ñ Ñ á é í ó ú Á É Í Ó Ú ü ¿¡', formato, { negrita: true }),
+    ...parrafo(data.time, format),
+    { separator: true },
+    ...parrafo('La regla debe llenar una sola línea:', format),
+    { text: rule },
+    { space: true },
+    ...parrafo('Tildes y eñes: ñ Ñ á é í ó ú Á É Í Ó Ú ü ¿¡', format, { negrita: true }),
     ...parrafo(
       'Si salen símbolos raros en vez de tildes, cambia la tabla de caracteres de esta impresora.',
-      formato,
+      format,
     ),
-    { separador: true },
-    ...parrafo('Faro', formato, { centro: true }),
+    { separator: true },
+    ...parrafo('Faro', format, { centro: true }),
   ]
 }

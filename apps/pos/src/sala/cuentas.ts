@@ -1,22 +1,22 @@
 import {
-  type CobradoPorMedio,
-  cobradoDelTurno,
-  cobradoEnEfectivo,
-  cuadreDeTurno,
-  dividirPorItems,
-  type EstadoPedido,
-  exigirPesos,
-  type MedioPago,
-  type ModoRedondeoEfectivo,
-  NOMBRE_MEDIO,
-  nombreDeMedio as nombreDelMedio,
-  partesIguales,
-  propinaDelPedido,
-  propinaPendienteDeCuenta,
-  repartirPropina,
-  saldoCuenta,
-  totalesItem,
-  totalesPedido,
+  allocateTip,
+  type CashRoundingMode,
+  type ChargedByMethod,
+  chargedInCash,
+  chargedInShift,
+  checkBalance,
+  checkPendingTip,
+  equalParts,
+  itemTotals,
+  METHOD_NAME,
+  methodName as nombreDelMedio,
+  type OrderState,
+  orderTip,
+  orderTotals,
+  type PaymentMethod,
+  requirePesos,
+  shiftReconciliation,
+  splitByItems,
 } from '@pos/core'
 import type { Catalogo, EventoLocal } from '@pos/sync'
 
@@ -24,15 +24,15 @@ import type { Catalogo, EventoLocal } from '@pos/sync'
 // de `@pos/core` con las reglas del restaurante que trae la carta. Las pantallas solo muestran lo
 // que se calcula aquí.
 
-export type ReglasCobro = NonNullable<Catalogo['restaurante']['cobro']>
+export type ReglasCobro = NonNullable<Catalogo['restaurant']['checkout']>
 
 /** Una opción del cobro: un medio, la tarjeta crédito o débito, o un medio propio. */
 export interface OpcionCobro {
-  clave: string
-  nombre: string
-  medio: MedioPago
-  tipoTarjeta: 'credito' | 'debito' | null
-  medioPropioId: string | null
+  key: string
+  name: string
+  method: PaymentMethod
+  tipoTarjeta: 'credit' | 'debit' | null
+  customMethodId: string | null
 }
 
 /**
@@ -40,57 +40,57 @@ export interface OpcionCobro {
  * débito) y después los propios del restaurante (tarea 1.6).
  */
 export function opcionesDeCobro(reglas: ReglasCobro): OpcionCobro[] {
-  const opciones: OpcionCobro[] = []
-  const base = { tipoTarjeta: null, medioPropioId: null }
-  for (const medio of reglas.mediosPago) {
-    if (medio === 'tarjeta') {
-      opciones.push(
-        { ...base, clave: 'credito', nombre: 'Tarjeta crédito', medio, tipoTarjeta: 'credito' },
-        { ...base, clave: 'debito', nombre: 'Tarjeta débito', medio, tipoTarjeta: 'debito' },
+  const options: OpcionCobro[] = []
+  const base = { tipoTarjeta: null, customMethodId: null }
+  for (const method of reglas.mediosPago) {
+    if (method === 'card') {
+      options.push(
+        { ...base, key: 'credit', name: 'Tarjeta crédito', method, tipoTarjeta: 'credit' },
+        { ...base, key: 'debit', name: 'Tarjeta débito', method, tipoTarjeta: 'debit' },
       )
-    } else opciones.push({ ...base, clave: medio, nombre: NOMBRE_MEDIO[medio], medio })
+    } else options.push({ ...base, key: method, name: METHOD_NAME[method], method })
   }
   for (const m of reglas.mediosPropios ?? [])
-    opciones.push({ ...base, clave: m.id, nombre: m.nombre, medio: 'otro', medioPropioId: m.id })
-  return opciones
+    options.push({ ...base, key: m.id, name: m.name, method: 'other', customMethodId: m.id })
+  return options
 }
 
 /** El nombre de un medio en un pago: el propio por su nombre (aunque esté archivado, «Otro»). */
-export const nombreDeMedio = (
-  medio: MedioPago,
-  medioPropioId: string | null | undefined,
+export const methodName = (
+  method: PaymentMethod,
+  customMethodId: string | null | undefined,
   reglas: ReglasCobro | null,
 ) =>
-  nombreDelMedio(medio, medioPropioId, [
+  nombreDelMedio(method, customMethodId, [
     ...(reglas?.mediosPropios ?? []),
     ...(reglas?.mediosPropiosArchivados ?? []),
   ])
 
 /** «INC 8 %», «IVA 19 %», «Exento» (el mismo nombre que la precuenta impresa). */
-export function nombreImpuesto(tipo: 'inc' | 'iva' | 'exento', tarifa: number): string {
-  if (tipo === 'exento' || tarifa === 0) return 'Exento'
-  return `${tipo.toUpperCase()} ${`${tarifa / 100}`.replace('.', ',')} %`
+export function nombreImpuesto(type: 'inc' | 'iva' | 'exempt', rate: number): string {
+  if (type === 'exempt' || rate === 0) return 'Exento'
+  return `${type.toUpperCase()} ${`${rate / 100}`.replace('.', ',')} %`
 }
 
 /** Las reglas del cobro del restaurante; un hub de antes de la 1.6 no las manda. */
-export const reglasDe = (catalogo: Catalogo | null): ReglasCobro | null =>
-  catalogo?.restaurante.cobro ?? null
+export const reglasDe = (catalog: Catalogo | null): ReglasCobro | null =>
+  catalog?.restaurant.checkout ?? null
 
 const configDe = (r: ReglasCobro) => ({
-  propina_sugerida: r.propinaSugerida,
-  redondeo_modo: r.redondeoModo,
+  suggested_tip: r.suggestedTip,
+  rounding_mode: r.redondeoModo,
 })
 
 /** Propina sugerida de `monto` del pedido (el saldo, una cuenta o lo que se cobra ahora). */
-export const propinaSugeridaDe = (pedido: EstadoPedido, monto: number, reglas: ReglasCobro) =>
-  monto <= 0 ? 0 : propinaDelPedido(pedido, monto, configDe(reglas))
+export const propinaSugeridaDe = (order: OrderState, amount: number, reglas: ReglasCobro) =>
+  amount <= 0 ? 0 : orderTip(order, amount, configDe(reglas))
 
 /**
  * En efectivo, la propina se sugiere redondeada al múltiplo del efectivo para que se pueda pagar
  * con billetes; el cajero la puede cambiar. Con los demás medios va exacta (DINERO.md).
  */
-export const propinaParaEfectivo = (propina: number, reglas: ReglasCobro) =>
-  cobradoEnEfectivo(propina, reglas.redondeoEfectivo, reglas.redondeoEfectivoModo)
+export const propinaParaEfectivo = (tip: number, reglas: ReglasCobro) =>
+  chargedInCash(tip, reglas.redondeoEfectivo, reglas.cashRoundingMode)
 
 /**
  * La propina sugerida de un pago de `valor` sobre lo que falta (`disponible`): la propina de lo
@@ -98,16 +98,16 @@ export const propinaParaEfectivo = (propina: number, reglas: ReglasCobro) =>
  * propina entera, sin un peso de más por redondeo (docs/DINERO.md#propina-sugerida).
  */
 export function propinaDePago(
-  pedido: EstadoPedido,
-  cuenta: { monto: number; propinaSugerida: number } | null,
-  disponible: number,
-  valor: number,
+  order: OrderState,
+  check: { amount: number; suggestedTip: number } | null,
+  available: number,
+  value: number,
   reglas: ReglasCobro,
 ): number {
-  if (valor <= 0 || valor > disponible) return 0
-  const pendiente = (saldo: number) =>
-    cuenta ? propinaPendienteDeCuenta(cuenta, saldo) : propinaSugeridaDe(pedido, saldo, reglas)
-  return Math.max(0, pendiente(disponible) - pendiente(disponible - valor))
+  if (value <= 0 || value > available) return 0
+  const pending = (balance: number) =>
+    check ? checkPendingTip(check, balance) : propinaSugeridaDe(order, balance, reglas)
+  return Math.max(0, pending(available) - pending(available - value))
 }
 
 /**
@@ -115,43 +115,43 @@ export function propinaDePago(
  * que la sugerida: sobre la base sin impuestos de lo que se cobra.
  */
 export const propinaConPorcentaje = (
-  pedido: EstadoPedido,
-  disponible: number,
-  valor: number,
+  order: OrderState,
+  available: number,
+  value: number,
   puntos: number,
   reglas: ReglasCobro,
-) => propinaDePago(pedido, null, disponible, valor, { ...reglas, propinaSugerida: puntos })
+) => propinaDePago(order, null, available, value, { ...reglas, suggestedTip: puntos })
 
 /** Una línea de la precuenta: lo que sigue en pie, con su neto. */
 export interface LineaCuenta {
   id: string
-  cantidad: number
-  nombre: string
-  opciones: string[]
-  neto: number
+  quantity: number
+  name: string
+  options: string[]
+  net: number
 }
 
-export function lineasDe(pedido: EstadoPedido): LineaCuenta[] {
-  return Object.values(pedido.items)
-    .filter((i) => i.estado !== 'anulado' && i.cantidad > i.cantidadAnulada)
-    .sort((a, b) => a.orden - b.orden)
+export function lineasDe(order: OrderState): LineaCuenta[] {
+  return Object.values(order.items)
+    .filter((i) => i.status !== 'voided' && i.quantity > i.voidedQuantity)
+    .sort((a, b) => a.position - b.position)
     .map((i) => ({
       id: i.id,
-      cantidad: i.cantidad - i.cantidadAnulada,
-      nombre: i.nombre,
-      opciones: i.modificadores.map((m) => m.nombre),
-      neto: totalesItem(pedido, i).neto,
+      quantity: i.quantity - i.voidedQuantity,
+      name: i.name,
+      options: i.modifiers.map((m) => m.name),
+      net: itemTotals(order, i).net,
     }))
 }
 
 /** Una cuenta de un pedido dividido, con lo que le falta pagar. */
 export interface CuentaVisible {
   id: string
-  nombre: string
-  monto: number
-  saldo: number
+  name: string
+  amount: number
+  balance: number
   /** La propina fijada al dividir. */
-  propinaSugerida: number
+  suggestedTip: number
   /** Lo que falta de esa propina, según lo que falta de la cuenta. */
   propinaPendiente: number
 }
@@ -160,65 +160,61 @@ export interface CuentaVisible {
  * Lo que queda por cobrar: las cuentas de la división con su saldo y, aparte, lo que no quedó en
  * ninguna cuenta (agregado después de dividir, o lo que no se repartió).
  */
-export function porCobrar(pedido: EstadoPedido): {
-  saldo: number
-  cuentas: CuentaVisible[]
-  sinAsignar: number
+export function porCobrar(order: OrderState): {
+  balance: number
+  checks: CuentaVisible[]
+  unassigned: number
 } {
-  const { saldo } = totalesPedido(pedido)
-  if (!pedido.cuentas) return { saldo, cuentas: [], sinAsignar: 0 }
-  const cuentas = pedido.cuentas
+  const { balance } = orderTotals(order)
+  if (!order.checks) return { balance, checks: [], unassigned: 0 }
+  const checks = order.checks
     .map((c) => ({
       id: c.id,
-      nombre: c.nombre,
-      monto: c.monto,
-      saldo: Math.max(0, saldoCuenta(pedido, c.id) ?? 0),
-      propinaSugerida: c.propinaSugerida,
+      name: c.name,
+      amount: c.amount,
+      balance: Math.max(0, checkBalance(order, c.id) ?? 0),
+      suggestedTip: c.suggestedTip,
     }))
-    .map((c) => ({ ...c, propinaPendiente: propinaPendienteDeCuenta(c, c.saldo) }))
-  const enCuentas = cuentas.reduce((a, c) => a + c.saldo, 0)
-  return { saldo, cuentas, sinAsignar: Math.max(0, saldo - enCuentas) }
+    .map((c) => ({ ...c, propinaPendiente: checkPendingTip(c, c.balance) }))
+  const inChecks = checks.reduce((a, c) => a + c.balance, 0)
+  return { balance, checks, unassigned: Math.max(0, balance - inChecks) }
 }
 
-/** Los datos de `CuentaDividida`: montos fijos y la propina de cada cuenta. */
+/** Los datos de `CheckSplit`: montos fijos y la propina de cada cuenta. */
 export interface CuentaNueva {
-  cuenta_id: string
-  nombre: string
-  monto: number
-  propina_sugerida: number
-  items: { item_id: string; fraccion: { n: number; d: number } }[]
+  check_id: string
+  name: string
+  amount: number
+  suggested_tip: number
+  items: { item_id: string; fraction: { n: number; d: number } }[]
 }
 
 /**
  * La propina de cada cuenta: la de lo que se divide, repartida en proporción a lo que paga cada
  * una (DINERO.md#propina-sugerida).
  */
-function conPropinas(
-  pedido: EstadoPedido,
-  montos: readonly number[],
-  reglas: ReglasCobro,
-): number[] {
-  const total = montos.reduce((a, m) => a + m, 0)
+function conPropinas(order: OrderState, amounts: readonly number[], reglas: ReglasCobro): number[] {
+  const total = amounts.reduce((a, m) => a + m, 0)
   return total === 0
-    ? montos.map(() => 0)
-    : repartirPropina(propinaSugeridaDe(pedido, total, reglas), montos)
+    ? amounts.map(() => 0)
+    : allocateTip(propinaSugeridaDe(order, total, reglas), amounts)
 }
 
 /** El saldo en `personas` partes iguales por mayor residuo (100.000 ÷ 3 = 33.334 + 33.333 + 33.333). */
 export function enPartesIguales(
-  pedido: EstadoPedido,
-  personas: number,
+  order: OrderState,
+  people: number,
   reglas: ReglasCobro,
-  nuevoId: () => string,
+  newId: () => string,
 ): CuentaNueva[] {
-  const { saldo } = totalesPedido(pedido)
-  const montos = partesIguales(saldo, personas)
-  const propinas = conPropinas(pedido, montos, reglas)
-  return montos.map((monto, i) => ({
-    cuenta_id: nuevoId(),
-    nombre: `Persona ${i + 1}`,
-    monto,
-    propina_sugerida: propinas[i] ?? 0,
+  const { balance } = orderTotals(order)
+  const amounts = equalParts(balance, people)
+  const tips = conPropinas(order, amounts, reglas)
+  return amounts.map((amount, i) => ({
+    check_id: newId(),
+    name: `Persona ${i + 1}`,
+    amount,
+    suggested_tip: tips[i] ?? 0,
     items: [],
   }))
 }
@@ -229,146 +225,149 @@ export function enPartesIguales(
  * pago: después se divide el saldo en partes iguales (DINERO.md#división-de-la-cuenta).
  */
 export function porProductos(
-  pedido: EstadoPedido,
+  order: OrderState,
   asignadas: ReadonlyMap<string, readonly number[]>,
-  cuentas: number,
+  checks: number,
   reglas: ReglasCobro,
-  nuevoId: () => string,
-): { cuentas: CuentaNueva[]; sinAsignar: number } {
-  const lineas = lineasDe(pedido)
+  newId: () => string,
+): { checks: CuentaNueva[]; unassigned: number } {
+  const lines = lineasDe(order)
   // Un producto que otro equipo anuló mientras se dividía ya no cuenta.
-  const vigentes = new Set(lineas.map((l) => l.id))
-  const asignaciones = [...asignadas]
-    .filter(([itemId]) => vigentes.has(itemId))
+  const currentOnes = new Set(lines.map((l) => l.id))
+  const assignments = [...asignadas]
+    .filter(([itemId]) => currentOnes.has(itemId))
     .flatMap(([itemId, de]) =>
       de
-        .filter((c) => c < cuentas)
-        .map((cuenta, _i, todas) => ({ cuenta, itemId, fraccion: { n: 1, d: todas.length } })),
+        .filter((c) => c < checks)
+        .map((check, _i, allRows) => ({ check, itemId, fraction: { n: 1, d: allRows.length } })),
     )
-  const { montos, sinAsignar } = dividirPorItems(
-    lineas.map((l) => ({ itemId: l.id, neto: l.neto })),
-    asignaciones,
-    cuentas,
+  const { amounts, unassigned } = splitByItems(
+    lines.map((l) => ({ itemId: l.id, net: l.net })),
+    assignments,
+    checks,
   )
-  const propinas = conPropinas(pedido, montos, reglas)
+  const tips = conPropinas(order, amounts, reglas)
   return {
-    cuentas: montos.map((monto, i) => ({
-      cuenta_id: nuevoId(),
-      nombre: `Cuenta ${i + 1}`,
-      monto,
-      propina_sugerida: propinas[i] ?? 0,
-      items: asignaciones
-        .filter((a) => a.cuenta === i)
-        .map((a) => ({ item_id: a.itemId, fraccion: a.fraccion })),
+    checks: amounts.map((amount, i) => ({
+      check_id: newId(),
+      name: `Cuenta ${i + 1}`,
+      amount,
+      suggested_tip: tips[i] ?? 0,
+      items: assignments
+        .filter((a) => a.check === i)
+        .map((a) => ({ item_id: a.itemId, fraction: a.fraction })),
     })),
-    sinAsignar,
+    unassigned,
   }
 }
 
 /** Al quitar cuentas, lo de las que ya no existen vuelve a «sin asignar». */
 export function recortarAsignaciones(
   asignadas: ReadonlyMap<string, readonly number[]>,
-  cuentas: number,
+  checks: number,
 ): Map<string, number[]> {
-  const nuevas = new Map<string, number[]>()
+  const newOnes = new Map<string, number[]>()
   for (const [item, de] of asignadas) {
-    const quedan = de.filter((c) => c < cuentas)
-    if (quedan.length > 0) nuevas.set(item, quedan)
+    const quedan = de.filter((c) => c < checks)
+    if (quedan.length > 0) newOnes.set(item, quedan)
   }
-  return nuevas
+  return newOnes
 }
 
 export interface CalculoEfectivo {
   /** Lo que se cobra por la venta: el monto, redondeado solo si deja el saldo en 0. */
-  cobrado: number
-  ajuste: number
+  charged: number
+  adjustment: number
   /** Venta + propina: lo mínimo que entrega el cliente. */
   aEntregar: number
-  cambio: number
+  change: number
   /** Lo que falta si lo recibido no alcanza (0 si alcanza). */
-  falta: number
+  missing: number
   /** La regla de redondeo que va en el evento, solo en el pago que deja el saldo en 0. */
-  redondeo: { multiplo: number; modo: ModoRedondeoEfectivo } | null
+  rounding: { multiple: number; mode: CashRoundingMode } | null
 }
 
 /**
- * Un pago en efectivo (DINERO.md#pagos): `recibido = monto + ajuste_redondeo + propina + cambio`.
+ * Un pago en efectivo (DINERO.md#pagos): `recibido = monto + rounding_adjustment + propina + cambio`.
  * El redondeo va solo en el pago que deja el saldo en 0 (`saldo` es el disponible de la cuenta).
  */
 export function pagoEnEfectivo(
-  p: { saldo: number; monto: number; propina: number; recibido: number },
+  p: { balance: number; amount: number; tip: number; tendered: number },
   reglas: ReglasCobro,
 ): CalculoEfectivo {
-  for (const [nombre, valor] of Object.entries(p)) exigirPesos(valor, nombre)
-  if (p.monto <= 0 || p.monto > p.saldo)
-    throw new RangeError(`El monto debe ser mayor que 0 y no pasar del saldo (${p.saldo})`)
-  const cierra = p.monto === p.saldo
-  const cobrado = cierra
-    ? cobradoEnEfectivo(p.saldo, reglas.redondeoEfectivo, reglas.redondeoEfectivoModo)
-    : p.monto
-  const aEntregar = cobrado + p.propina
-  const sobra = p.recibido - aEntregar
+  for (const [name, value] of Object.entries(p)) requirePesos(value, name)
+  if (p.amount <= 0 || p.amount > p.balance)
+    throw new RangeError(`El monto debe ser mayor que 0 y no pasar del saldo (${p.balance})`)
+  const closes = p.amount === p.balance
+  const charged = closes
+    ? chargedInCash(p.balance, reglas.redondeoEfectivo, reglas.cashRoundingMode)
+    : p.amount
+  const aEntregar = charged + p.tip
+  const sobra = p.tendered - aEntregar
   return {
-    cobrado,
-    ajuste: cobrado - p.monto,
+    charged,
+    adjustment: charged - p.amount,
     aEntregar,
-    cambio: Math.max(0, sobra),
-    falta: Math.max(0, -sobra),
-    redondeo:
-      cierra && cobrado !== p.monto
-        ? { multiplo: reglas.redondeoEfectivo, modo: reglas.redondeoEfectivoModo }
+    change: Math.max(0, sobra),
+    missing: Math.max(0, -sobra),
+    rounding:
+      closes && charged !== p.amount
+        ? { multiple: reglas.redondeoEfectivo, mode: reglas.cashRoundingMode }
         : null,
   }
 }
 
-/** El turno abierto de una caja (tarea 1.6): el último `TurnoAbierto` vigente de ese equipo. */
+/** El turno abierto de una caja (tarea 1.6): el último `ShiftOpened` vigente de ese equipo. */
 export interface TurnoVisible {
   id: string
   base: number
-  abiertoEn: string
+  openedAt: string
   /** Aún no lo confirma el hub. */
   porConfirmar: boolean
 }
 
-export function turnoDeCaja(locales: readonly EventoLocal[], cajaId: string): TurnoVisible | null {
+export function turnoDeCaja(
+  locales: readonly EventoLocal[],
+  registerId: string,
+): TurnoVisible | null {
   // Un turno con su cierre confirmado ya no está abierto (tarea 1.7); uno pendiente sigue abierto
   // hasta que el hub lo acepte, por si lo rechaza.
-  const cerrados = new Set(
+  const closedIds = new Set(
     locales
-      .filter((l) => l.evento.tipo === 'TurnoCerrado' && l.estado === 'confirmado')
-      .map((l) => l.evento.agregado_id),
+      .filter((l) => l.event.type === 'ShiftClosed' && l.status === 'confirmed')
+      .map((l) => l.event.aggregate_id),
   )
-  let turno: TurnoVisible | null = null
+  let shift: TurnoVisible | null = null
   for (const l of locales) {
-    if (cerrados.has(l.evento.agregado_id)) continue
-    const e = l.evento
-    if (e.tipo !== 'TurnoAbierto' || e.datos.caja_id !== cajaId) continue
-    if (l.estado !== 'confirmado' && l.estado !== 'pendiente') continue
+    if (closedIds.has(l.event.aggregate_id)) continue
+    const e = l.event
+    if (e.type !== 'ShiftOpened' || e.data.register_id !== registerId) continue
+    if (l.status !== 'confirmed' && l.status !== 'pending') continue
     const candidato = {
-      id: e.agregado_id,
-      base: e.datos.base,
-      abiertoEn: e.recibido_en ?? e.hora_estimada_hub,
-      porConfirmar: l.estado === 'pendiente',
+      id: e.aggregate_id,
+      base: e.data.base,
+      openedAt: e.received_at ?? e.hub_estimated_time,
+      porConfirmar: l.status === 'pending',
     }
-    if (!turno || candidato.abiertoEn > turno.abiertoEn) turno = candidato
+    if (!shift || candidato.openedAt > shift.openedAt) shift = candidato
   }
-  return turno
+  return shift
 }
 
 /** Lo cobrado en un turno, por medio de pago (el cálculo es de `@pos/core`, igual al del hub). */
 export interface ResumenTurno {
-  porMedio: CobradoPorMedio[]
-  pagos: number
+  byMethod: ChargedByMethod[]
+  payments: number
 }
 
-export function resumenTurno(locales: readonly EventoLocal[], turnoId: string): ResumenTurno {
-  const porMedio = cobradoDelTurno(vigentesDe(locales), turnoId)
-  return { porMedio, pagos: porMedio.reduce((a, m) => a + m.pagos, 0) }
+export function resumenTurno(locales: readonly EventoLocal[], shiftId: string): ResumenTurno {
+  const byMethod = chargedInShift(vigentesDe(locales), shiftId)
+  return { byMethod, payments: byMethod.reduce((a, m) => a + m.payments, 0) }
 }
 
 /** El cuadre del turno con lo guardado aquí (confirmado y pendiente). */
-export const cuadreDeCaja = (locales: readonly EventoLocal[], turnoId: string) =>
-  cuadreDeTurno(vigentesDe(locales), turnoId)
+export const cuadreDeCaja = (locales: readonly EventoLocal[], shiftId: string) =>
+  shiftReconciliation(vigentesDe(locales), shiftId)
 
 const vigentesDe = (locales: readonly EventoLocal[]) =>
-  locales.filter((l) => l.estado === 'confirmado' || l.estado === 'pendiente').map((l) => l.evento)
+  locales.filter((l) => l.status === 'confirmed' || l.status === 'pending').map((l) => l.event)

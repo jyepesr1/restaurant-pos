@@ -1,42 +1,42 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MensajeDispositivo } from '../protocolo'
-import { type Canal, GestorConexion, type Manejadores } from './conexion'
+import { type Channel, GestorConexion, type Manejadores } from './conexion'
 
 // Escenario 13 de docs/SYNC.md: reconexión al volver a la pantalla con reloj simulado.
 
-class CanalFalso implements Canal {
+class CanalFalso implements Channel {
   enviados: MensajeDispositivo[] = []
-  cerrado = false
+  closed = false
   readonly manejadores: Manejadores
   constructor(manejadores: Manejadores) {
     this.manejadores = manejadores
   }
-  enviar(m: MensajeDispositivo) {
+  send(m: MensajeDispositivo) {
     this.enviados.push(m)
   }
-  cerrar() {
-    this.cerrado = true
+  close() {
+    this.closed = true
   }
 }
 
 function montar() {
   const canales: CanalFalso[] = []
-  const estados: string[] = []
-  const eventos = { conectado: 0, desconectado: 0 }
+  const statuses: string[] = []
+  const events = { connected: 0, disconnected: 0 }
   const gestor = new GestorConexion({
-    abrir: (m) => {
-      const canal = new CanalFalso(m)
-      canales.push(canal)
-      return canal
+    open: (m) => {
+      const channel = new CanalFalso(m)
+      canales.push(channel)
+      return channel
     },
     alConectar: () => {
-      eventos.conectado += 1
+      events.connected += 1
     },
     alDesconectar: () => {
-      eventos.desconectado += 1
+      events.disconnected += 1
     },
     alMensaje: () => {},
-    alCambiarEstado: (e) => estados.push(e),
+    alCambiarEstado: (e) => statuses.push(e),
     temporizadores: {
       ahora: () => Date.now(),
       setTimeout: (t, ms) => setTimeout(t, ms),
@@ -46,7 +46,7 @@ function montar() {
     },
   })
   const ultimo = () => canales.at(-1) as CanalFalso
-  return { gestor, canales, estados, eventos, ultimo }
+  return { gestor, canales, statuses, events, ultimo }
 }
 
 describe('gestor de conexión', () => {
@@ -54,12 +54,12 @@ describe('gestor de conexión', () => {
   afterEach(() => vi.useRealTimers())
 
   it('conecta y avisa', () => {
-    const { gestor, ultimo, eventos, estados } = montar()
+    const { gestor, ultimo, events, statuses } = montar()
     gestor.iniciar()
     ultimo().manejadores.alAbrir()
 
-    expect(eventos.conectado).toBe(1)
-    expect(estados).toEqual(['conectando', 'conectado'])
+    expect(events.connected).toBe(1)
+    expect(statuses).toEqual(['connecting', 'connected'])
   })
 
   it('un intento que no abre en 4 s se abandona y se reintenta con espera creciente', () => {
@@ -69,7 +69,7 @@ describe('gestor de conexión', () => {
     vi.advanceTimersByTime(3999)
     expect(canales).toHaveLength(1)
     vi.advanceTimersByTime(1) // 4 s: se abandona
-    expect(canales[0]?.cerrado).toBe(true)
+    expect(canales[0]?.closed).toBe(true)
     vi.advanceTimersByTime(1000) // primer reintento al segundo
     expect(canales).toHaveLength(2)
     vi.advanceTimersByTime(4000 + 1999)
@@ -84,9 +84,9 @@ describe('gestor de conexión', () => {
     const esperas: number[] = []
     for (let i = 0; i < 7; i++) {
       ultimo().manejadores.alCerrar()
-      const antes = canales.length
+      const before = canales.length
       let ms = 0
-      while (canales.length === antes) {
+      while (canales.length === before) {
         vi.advanceTimersByTime(100)
         ms += 100
       }
@@ -101,27 +101,27 @@ describe('gestor de conexión', () => {
     ultimo().manejadores.alAbrir()
     gestor.cambiarVisibilidad(false)
     for (let i = 0; i < 4; i++) ultimo().manejadores.alCerrar() // varios cierres: espera de 4 s
-    const antes = canales.length
+    const before = canales.length
 
     gestor.cambiarVisibilidad(true)
 
-    expect(canales.length).toBe(antes + 1)
+    expect(canales.length).toBe(before + 1)
   })
 
   it('al volver con un canal que parece abierto pero no responde, lo descarta a los 3 s', () => {
-    const { gestor, canales, ultimo, eventos } = montar()
+    const { gestor, canales, ultimo, events } = montar()
     gestor.iniciar()
     ultimo().manejadores.alAbrir()
     gestor.cambiarVisibilidad(false)
     vi.advanceTimersByTime(60_000)
 
     gestor.cambiarVisibilidad(true)
-    expect(ultimo().enviados.at(-1)).toMatchObject({ tipo: 'ping' })
+    expect(ultimo().enviados.at(-1)).toMatchObject({ type: 'ping' })
     vi.advanceTimersByTime(2999)
     expect(canales).toHaveLength(1)
     vi.advanceTimersByTime(1)
-    expect(canales[0]?.cerrado).toBe(true)
-    expect(eventos.desconectado).toBe(1)
+    expect(canales[0]?.closed).toBe(true)
+    expect(events.disconnected).toBe(1)
     // Recién volvió: el reintento sale de inmediato.
     vi.advanceTimersByTime(1)
     expect(canales).toHaveLength(2)
@@ -135,11 +135,11 @@ describe('gestor de conexión', () => {
     vi.advanceTimersByTime(10_000)
     gestor.cambiarVisibilidad(true)
     vi.advanceTimersByTime(100)
-    ultimo().manejadores.alMensaje({ tipo: 'pong', marca: 'x' })
+    ultimo().manejadores.alMensaje({ type: 'pong', brand: 'x' })
     vi.advanceTimersByTime(5000)
 
     expect(canales).toHaveLength(1)
-    expect(canales[0]?.cerrado).toBe(false)
+    expect(canales[0]?.closed).toBe(false)
   })
 
   it('un cierre justo después de volver se reintenta de inmediato', () => {
@@ -172,25 +172,25 @@ describe('gestor de conexión', () => {
   })
 
   it('detener avisa que quedó desconectado', () => {
-    const { gestor, ultimo, estados, eventos } = montar()
+    const { gestor, ultimo, statuses, events } = montar()
     gestor.iniciar()
     ultimo().manejadores.alAbrir()
     gestor.detener()
     gestor.detener()
 
-    expect(estados).toEqual(['conectando', 'conectado', 'desconectado'])
-    expect(eventos.desconectado).toBe(1)
+    expect(statuses).toEqual(['connecting', 'connected', 'disconnected'])
+    expect(events.disconnected).toBe(1)
   })
 
   it('un canal que avisa que abrió dentro de `abrir` se atiende igual', () => {
-    const conectados: Canal[] = []
+    const conectados: Channel[] = []
     const gestor = new GestorConexion({
-      abrir: (m) => {
-        const canal = new CanalFalso(m)
+      open: (m) => {
+        const channel = new CanalFalso(m)
         m.alAbrir()
-        return canal
+        return channel
       },
-      alConectar: (canal) => conectados.push(canal),
+      alConectar: (channel) => conectados.push(channel),
       alDesconectar: () => {},
       alMensaje: () => {},
     })
@@ -206,11 +206,11 @@ describe('gestor de conexión', () => {
     ultimo().manejadores.alAbrir()
 
     vi.advanceTimersByTime(14_000)
-    ultimo().manejadores.alMensaje({ tipo: 'latido' })
+    ultimo().manejadores.alMensaje({ type: 'heartbeat' })
     vi.advanceTimersByTime(14_000)
     expect(canales).toHaveLength(1)
     vi.advanceTimersByTime(1000)
-    expect(canales[0]?.cerrado).toBe(true)
+    expect(canales[0]?.closed).toBe(true)
 
     vi.advanceTimersByTime(1000)
     ultimo().manejadores.alAbrir()
@@ -220,18 +220,18 @@ describe('gestor de conexión', () => {
   })
 
   it('un canal viejo que avisa tarde no afecta al actual, y detener corta todo', () => {
-    const { gestor, canales, ultimo, eventos } = montar()
+    const { gestor, canales, ultimo, events } = montar()
     gestor.iniciar()
-    const viejo = ultimo()
+    const oldOne = ultimo()
     vi.advanceTimersByTime(4000 + 1000)
     ultimo().manejadores.alAbrir()
-    viejo.manejadores.alAbrir()
-    viejo.manejadores.alCerrar()
-    expect(eventos.conectado).toBe(1)
+    oldOne.manejadores.alAbrir()
+    oldOne.manejadores.alCerrar()
+    expect(events.connected).toBe(1)
 
     gestor.detener()
     vi.advanceTimersByTime(60_000)
     expect(canales).toHaveLength(2)
-    expect(canales[1]?.cerrado).toBe(true)
+    expect(canales[1]?.closed).toBe(true)
   })
 })

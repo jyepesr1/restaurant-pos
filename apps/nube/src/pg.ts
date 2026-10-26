@@ -6,11 +6,11 @@ import type { Fila, Sql } from './sql'
 
 export function sqlDePg(cliente: Pick<Client, 'query'>, enTransaccion = false): Sql {
   const sql: Sql = {
-    async query<T extends Fila = Fila>(texto: string, parametros: readonly unknown[] = []) {
-      const r = await cliente.query(texto, [...parametros])
+    async query<T extends Fila = Fila>(text: string, parametros: readonly unknown[] = []) {
+      const r = await cliente.query(text, [...parametros])
       return r.rows as T[]
     },
-    async ejecutar(guion: string) {
+    async execute(guion: string) {
       // Sin parámetros, pg manda el guion entero (varias sentencias) en una sola consulta.
       await cliente.query(guion)
     },
@@ -36,15 +36,15 @@ export function sqlDePg(cliente: Pick<Client, 'query'>, enTransaccion = false): 
  * Un `Sql` que se conecta recién en la primera consulta: las rutas que no tocan la base (salud,
  * rutas que no existen) no abren conexión.
  */
-export function sqlPerezoso(conectar: () => Promise<Sql>): Sql {
-  let conexion: Promise<Sql> | null = null
+export function sqlPerezoso(connect: () => Promise<Sql>): Sql {
+  let connection: Promise<Sql> | null = null
   const sql = () => {
-    conexion ??= conectar()
-    return conexion
+    connection ??= connect()
+    return connection
   }
   return {
-    query: async (texto, parametros) => (await sql()).query(texto, parametros),
-    ejecutar: async (guion) => (await sql()).ejecutar(guion),
+    query: async (text, parametros) => (await sql()).query(text, parametros),
+    execute: async (guion) => (await sql()).execute(guion),
     transaccion: async (trabajo) => (await sql()).transaccion(trabajo),
   }
 }

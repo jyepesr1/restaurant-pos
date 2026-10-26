@@ -1,11 +1,11 @@
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { crearServidor } from '../servidor'
 import { montarAcceso } from './montaje'
 
 function montarApi() {
   const m = montarAcceso()
-  const app = crearServidor({ acceso: m.acceso })
+  const app = crearServidor({ access: m.access })
   const post = (url: string, cuerpo: unknown, token?: string) =>
     app.inject({
       method: 'POST',
@@ -21,26 +21,26 @@ function montarApi() {
  * entra con la contraseña del administrador; el celular, con el PIN de Luis (Ana queda libre para
  * cada prueba). Una pantalla de cocina sí se empareja, desde un equipo ya registrado.
  */
-async function emparejarPorApi(api: ReturnType<typeof montarApi>, tipo = 'mesero', desde?: string) {
-  if (tipo === 'kds') {
-    const codigo = await api.post(
-      '/api/emparejamientos',
-      { pin: api.personas.admin.pin, nombre: 'Cocina', tipo },
-      desde,
+async function emparejarPorApi(api: ReturnType<typeof montarApi>, type = 'waiter', from?: string) {
+  if (type === 'kds') {
+    const code = await api.post(
+      '/api/pairings',
+      { pin: api.people.admin.pin, name: 'Cocina', type },
+      from,
     )
-    expect(codigo.statusCode).toBe(201)
-    const r = await api.post('/api/emparejar', { codigo: codigo.json().codigo })
+    expect(code.statusCode).toBe(201)
+    const r = await api.post('/api/pair', { code: code.json().code })
     expect(r.statusCode).toBe(201)
-    return r.json() as { token: string; dispositivo_id: string }
+    return r.json() as { token: string; device_id: string }
   }
   const r = await api.post(
-    '/api/entrar',
-    tipo === 'caja'
-      ? { usuario: api.personas.admin.usuario, contrasena: api.personas.admin.contrasena }
-      : { pin: api.personas.mesero2.pin },
+    '/api/sign-in',
+    type === 'register'
+      ? { user: api.people.admin.user, password: api.people.admin.password }
+      : { pin: api.people.waiter2.pin },
   )
   expect(r.statusCode).toBe(201)
-  return r.json().equipo as { token: string; dispositivo_id: string }
+  return r.json().device as { token: string; device_id: string }
 }
 
 describe('API de acceso', () => {
@@ -48,86 +48,86 @@ describe('API de acceso', () => {
     const api = montarApi()
     const { token } = await emparejarPorApi(api)
 
-    const sesion = await api.post('/api/sesiones', { pin: api.personas.mesero.pin }, token)
-    expect(sesion.statusCode).toBe(201)
-    expect(sesion.json()).toMatchObject({ usuario: { nombre: 'Ana', rol: 'Mesero' } })
-    expect(sesion.json().permisos).toContain('tomar_pedido')
+    const session = await api.post('/api/sessions', { pin: api.people.waiter.pin }, token)
+    expect(session.statusCode).toBe(201)
+    expect(session.json()).toMatchObject({ user: { name: 'Ana', role: 'Mesero' } })
+    expect(session.json().permissions).toContain('take_order')
 
-    const { sesion_id, secreto } = sesion.json()
-    const cerrar = await api.post('/api/sesiones/cerrar', { sesion_id, secreto }, token)
-    expect(cerrar.statusCode).toBe(204)
+    const { session_id, secret } = session.json()
+    const close = await api.post('/api/sessions/close', { session_id, secret }, token)
+    expect(close.statusCode).toBe(204)
   })
 
   it('sin token, o con uno falso, responde 401', async () => {
     const api = montarApi()
-    expect((await api.post('/api/sesiones', { pin: '4821' })).statusCode).toBe(401)
-    const falso = await api.post('/api/sesiones', { pin: '4821' }, 'inventado')
+    expect((await api.post('/api/sessions', { pin: '4821' })).statusCode).toBe(401)
+    const falso = await api.post('/api/sessions', { pin: '4821' }, 'inventado')
     expect(falso.statusCode).toBe(401)
-    expect(falso.json()).toMatchObject({ error: 'token_invalido' })
+    expect(falso.json()).toMatchObject({ error: 'invalid_token' })
   })
 
   it('PIN errado: 401; tras tres, 429 con Retry-After', async () => {
     const api = montarApi()
     const { token } = await emparejarPorApi(api)
-    const r1 = await api.post('/api/sesiones', { pin: '0001' }, token)
-    await api.post('/api/sesiones', { pin: '0002' }, token)
-    const r3 = await api.post('/api/sesiones', { pin: '0003' }, token)
-    const r4 = await api.post('/api/sesiones', { pin: api.personas.mesero.pin }, token)
+    const r1 = await api.post('/api/sessions', { pin: '0001' }, token)
+    await api.post('/api/sessions', { pin: '0002' }, token)
+    const r3 = await api.post('/api/sessions', { pin: '0003' }, token)
+    const r4 = await api.post('/api/sessions', { pin: api.people.waiter.pin }, token)
 
     expect(r1.statusCode).toBe(401)
-    expect(r3.json()).toMatchObject({ error: 'pin_incorrecto', espera_ms: 2000 })
+    expect(r3.json()).toMatchObject({ error: 'wrong_pin', espera_ms: 2000 })
     expect(r4.statusCode).toBe(429)
     expect(r4.headers['retry-after']).toBe('2')
   })
 
   it('autorización de supervisor y revocación por API', async () => {
     const api = montarApi()
-    const caja = await emparejarPorApi(api, 'caja')
-    const celular = await emparejarPorApi(api, 'mesero', caja.token)
-    const mesero = (
-      await api.post('/api/sesiones', { pin: api.personas.mesero.pin }, celular.token)
+    const register = await emparejarPorApi(api, 'register')
+    const phone = await emparejarPorApi(api, 'waiter', register.token)
+    const waiter = (
+      await api.post('/api/sessions', { pin: api.people.waiter.pin }, phone.token)
     ).json()
 
-    const autorizacion = await api.post(
-      '/api/autorizaciones',
+    const authorization = await api.post(
+      '/api/authorizations',
       {
-        sesion_id: mesero.sesion_id,
-        secreto: mesero.secreto,
-        pin: api.personas.gerente.pin,
-        accion: 'anular_item_enviado',
-        agregado_id: nuevoId(),
-        evento_id: nuevoId(),
-        huella: 'b'.repeat(64),
+        session_id: waiter.session_id,
+        secret: waiter.secret,
+        pin: api.people.manager.pin,
+        action: 'void_sent_item',
+        aggregate_id: newId(),
+        event_id: newId(),
+        fingerprint: 'b'.repeat(64),
       },
-      celular.token,
+      phone.token,
     )
-    expect(autorizacion.statusCode).toBe(201)
-    expect(autorizacion.json().supervisor.nombre).toBe('Gloria')
+    expect(authorization.statusCode).toBe(201)
+    expect(authorization.json().supervisor.name).toBe('Gloria')
 
     const admin = (
       await api.post(
-        '/api/entrar',
-        { usuario: api.personas.admin.usuario, contrasena: api.personas.admin.contrasena },
-        caja.token,
+        '/api/sign-in',
+        { user: api.people.admin.user, password: api.people.admin.password },
+        register.token,
       )
     ).json()
-    const revocar = await api.post(
-      `/api/dispositivos/${celular.dispositivo_id}/revocar`,
-      { sesion_id: admin.sesion_id, secreto: admin.secreto },
-      caja.token,
+    const revoke = await api.post(
+      `/api/devices/${phone.device_id}/revoke`,
+      { session_id: admin.session_id, secret: admin.secret },
+      register.token,
     )
-    expect(revocar.statusCode).toBe(200)
-    const despues = await api.post('/api/sesiones', { pin: api.personas.mesero.pin }, celular.token)
-    expect(despues.statusCode).toBe(403)
-    expect(despues.json()).toMatchObject({ error: 'dispositivo_revocado' })
+    expect(revoke.statusCode).toBe(200)
+    const after = await api.post('/api/sessions', { pin: api.people.waiter.pin }, phone.token)
+    expect(after.statusCode).toBe(403)
+    expect(after.json()).toMatchObject({ error: 'revoked_device' })
   })
 
   it('un cuerpo con formato inesperado responde 400 sin tocar nada', async () => {
     const api = montarApi()
-    const r = await api.post('/api/emparejamientos', { pin: 1234, nombre: 'X', tipo: 'caja' })
+    const r = await api.post('/api/pairings', { pin: 1234, name: 'X', type: 'register' })
     expect(r.statusCode).toBe(400)
-    expect(r.json()).toMatchObject({ error: 'datos_invalidos' })
-    const extra = await api.post('/api/emparejar', { codigo: 'X', otro: 1 })
+    expect(r.json()).toMatchObject({ error: 'invalid_data' })
+    const extra = await api.post('/api/pair', { code: 'X', other: 1 })
     expect(extra.statusCode).toBe(400)
   })
 })

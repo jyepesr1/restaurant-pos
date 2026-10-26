@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import type { MensajeHub } from '@pos/sync'
 import { afterEach, describe, expect, it } from 'vitest'
 import { montarAcceso } from './acceso/montaje'
@@ -20,267 +20,265 @@ afterEach(() => {
 
 function mundo() {
   const m = montarAcceso()
-  const dir = mkdtempSync(join(tmpdir(), 'hub-cobro-'))
+  const dir = mkdtempSync(join(tmpdir(), 'hub-checkout-'))
   carpetas.push(dir)
-  const sala = prepararSincronizacion(m.db, dir, m.restauranteId, m.acceso)
-  const caja = m.emparejar('caja')
-  const sesion = m.entrar(caja.conexion, 'cajero')
+  const sala = prepararSincronizacion(m.db, dir, m.restauranteId, m.access)
+  const register = m.emparejar('register')
+  const session = m.entrar(register.connection, 'cashier')
   const recibidos: MensajeHub[] = []
-  const enlace = sala.conectar((mensaje) => recibidos.push(mensaje))
+  const enlace = sala.connect((message) => recibidos.push(message))
   enlace.recibir({
-    tipo: 'hola',
-    token: caja.token,
+    type: 'hello',
+    token: register.token,
     hub_instancia: null,
-    hasta: 0,
+    until: 0,
     version_app: 'pruebas',
   })
-  let lote = 0
+  let batch = 0
   const maxSecuencia = () =>
     Number(
       m.db
-        .prepare('SELECT coalesce(max(secuencia), 0) AS s FROM evento WHERE restaurante_id = ?')
+        .prepare('SELECT coalesce(max(sequence), 0) AS s FROM events WHERE restaurant_id = ?')
         .get(m.restauranteId)?.s,
     )
   /** Manda eventos al hub real y devuelve cómo le fue a cada uno. */
   const mandar = (
-    eventos: { tipo: string; agregado: string; datos: unknown; extras?: object }[],
+    events: { type: string; aggregate: string; data: unknown; extras?: object }[],
   ): string[] => {
-    lote += 1
+    batch += 1
     enlace.recibir({
-      tipo: 'empujar',
-      lote_id: `lote-${lote}`,
-      eventos: eventos.map((e) =>
-        m.evento(caja.conexion, sesion, e.tipo, e.datos, {
-          agregado_id: e.agregado,
-          secuencia_base: maxSecuencia(),
+      type: 'push',
+      lote_id: `lote-${batch}`,
+      events: events.map((e) =>
+        m.event(register.connection, session, e.type, e.data, {
+          aggregate_id: e.aggregate,
+          base_sequence: maxSecuencia(),
           ...(e.extras ?? {}),
         } as never),
       ),
     })
-    const ultimo = recibidos.filter((x) => x.tipo === 'resultado').at(-1)
-    if (ultimo?.tipo !== 'resultado') throw new Error('Sin resultado')
-    return ultimo.resultados.map((r) => (r.estado === 'rechazado' ? r.motivo : r.estado))
+    const ultimo = recibidos.filter((x) => x.type === 'result').at(-1)
+    if (ultimo?.type !== 'result') throw new Error('Sin resultado')
+    return ultimo.resultados.map((r) => (r.status === 'rejected' ? r.reason : r.status))
   }
 
-  const turno = nuevoId()
+  const shift = newId()
   expect(
     mandar([
       {
-        tipo: 'TurnoAbierto',
-        agregado: turno,
-        datos: { caja_id: caja.conexion.dispositivoId, base: 100_000 },
-        extras: { agregado_tipo: 'turno_caja' },
+        type: 'ShiftOpened',
+        aggregate: shift,
+        data: { register_id: register.connection.dispositivoId, base: 100_000 },
+        extras: { aggregate_type: 'register_shift' },
       },
     ]),
-  ).toEqual(['confirmado'])
+  ).toEqual(['confirmed'])
 
-  const pedidoCon = (precio: number) => {
-    const pedido = nuevoId()
+  const orderWith = (price: number) => {
+    const order = newId()
     expect(
       mandar([
-        { tipo: 'PedidoAbierto', agregado: pedido, datos: ABRIR },
-        { tipo: 'ItemAgregado', agregado: pedido, datos: { ...item(), precio_unitario: precio } },
+        { type: 'OrderOpened', aggregate: order, data: ABRIR },
+        { type: 'ItemAdded', aggregate: order, data: { ...item(), unit_price: price } },
       ]),
-    ).toEqual(['confirmado', 'confirmado'])
-    return pedido
+    ).toEqual(['confirmed', 'confirmed'])
+    return order
   }
-  const datafono = (nombre = 'Bold 1', extra: Record<string, string | number> = {}) =>
+  const cardTerminal = (name = 'Bold 1', extra: Record<string, string | number> = {}) =>
     insertarVersionado(
       m.db,
-      'datafono',
+      'card_terminals',
       m.restauranteId,
-      { nombre, proveedor: 'bold', ...extra },
+      { name, provider: 'bold', ...extra },
       SISTEMA,
-      m.reloj(),
+      m.clock(),
     )
   const ponerConfig = (config: object) =>
     m.db
-      .prepare('UPDATE restaurante SET config = ? WHERE id = ?')
+      .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
       .run(JSON.stringify(config), m.restauranteId)
 
   const base = {
-    cuenta_id: null,
-    turno_caja_id: turno,
-    propina: 0,
-    referencia_cobro: null,
+    check_id: null,
+    register_shift_id: shift,
+    tip: 0,
+    charge_reference: null,
   }
-  const nequi = (monto: number) => ({
+  const nequi = (amount: number) => ({
     ...base,
-    pago_id: nuevoId(),
-    medio: 'nequi',
-    monto,
-    recibido: null,
-    cambio: null,
-    ajuste_redondeo: 0,
-    redondeo: null,
-    datafono: null,
+    payment_id: newId(),
+    method: 'nequi',
+    amount,
+    tendered: null,
+    change: null,
+    rounding_adjustment: 0,
+    rounding: null,
+    cardTerminal: null,
   })
-  const tarjeta = (monto: number, datafonoId: string, aprobacion: string | null = null) => ({
+  const card = (amount: number, datafonoId: string, approval_code: string | null = null) => ({
     ...base,
-    pago_id: nuevoId(),
-    medio: 'tarjeta',
-    monto,
-    recibido: null,
-    cambio: null,
-    ajuste_redondeo: 0,
-    redondeo: null,
-    datafono: {
-      datafono_id: datafonoId,
-      franquicia: null,
-      ultimos4: null,
-      aprobacion,
-      recibo: null,
+    payment_id: newId(),
+    method: 'card',
+    amount,
+    tendered: null,
+    change: null,
+    rounding_adjustment: 0,
+    rounding: null,
+    cardTerminal: {
+      card_terminal_id: datafonoId,
+      franchise: null,
+      last4: null,
+      approval_code,
+      receipt: null,
     },
   })
   /** Efectivo que cancela el saldo de $36.810: se cobra $36.800 (−10) con la regla que se diga. */
-  const efectivo = (redondeo: { multiplo: number; modo: string } | null, monto = 36_810) => ({
+  const cash = (rounding: { multiple: number; mode: string } | null, amount = 36_810) => ({
     ...base,
-    pago_id: nuevoId(),
-    medio: 'efectivo',
-    monto,
-    recibido: monto - 10,
-    cambio: 0,
-    ajuste_redondeo: -10,
-    redondeo,
-    datafono: null,
+    payment_id: newId(),
+    method: 'cash',
+    amount,
+    tendered: amount - 10,
+    change: 0,
+    rounding_adjustment: -10,
+    rounding,
+    cardTerminal: null,
   })
-  const pagar = (pedido: string, datos: unknown) =>
-    mandar([{ tipo: 'PagoRegistrado', agregado: pedido, datos }])[0]
-  return { m, mandar, pedidoCon, datafono, ponerConfig, nequi, tarjeta, efectivo, pagar, turno }
+  const pay = (order: string, data: unknown) =>
+    mandar([{ type: 'PaymentRecorded', aggregate: order, data }])[0]
+  return { m, mandar, orderWith, cardTerminal, ponerConfig, nequi, card, cash, pay, shift }
 }
 
 describe('reglas de cobro del hub real', () => {
   it('de fábrica acepta Nequi y el efectivo con la regla del restaurante (100, mitad abajo)', () => {
-    const { pedidoCon, pagar, nequi, efectivo } = mundo()
-    expect(pagar(pedidoCon(10_000), nequi(10_000))).toBe('confirmado')
-    expect(pagar(pedidoCon(36_810), efectivo({ multiplo: 100, modo: 'cercano_mitad_abajo' }))).toBe(
-      'confirmado',
+    const { orderWith, pay, nequi, cash } = mundo()
+    expect(pay(orderWith(10_000), nequi(10_000))).toBe('confirmed')
+    expect(pay(orderWith(36_810), cash({ multiple: 100, mode: 'nearest_half_down' }))).toBe(
+      'confirmed',
     )
   })
 
   it('el administrador quita Nequi con el hub andando: el siguiente pago ya no pasa', () => {
-    const { pedidoCon, pagar, nequi, ponerConfig } = mundo()
-    const pedido = pedidoCon(20_000)
-    expect(pagar(pedido, nequi(5_000))).toBe('confirmado')
-    ponerConfig({ medios_pago: ['efectivo', 'tarjeta'] })
-    expect(pagar(pedido, nequi(5_000))).toBe('medio_no_habilitado')
-    ponerConfig({ medios_pago: ['efectivo', 'tarjeta', 'nequi'] })
-    expect(pagar(pedido, nequi(5_000))).toBe('confirmado')
+    const { orderWith, pay, nequi, ponerConfig } = mundo()
+    const order = orderWith(20_000)
+    expect(pay(order, nequi(5_000))).toBe('confirmed')
+    ponerConfig({ payment_methods: ['cash', 'card'] })
+    expect(pay(order, nequi(5_000))).toBe('method_not_enabled')
+    ponerConfig({ payment_methods: ['cash', 'card', 'nequi'] })
+    expect(pay(order, nequi(5_000))).toBe('confirmed')
   })
 
   it('el bono solo se acepta si el restaurante lo incluye', () => {
-    const { pedidoCon, pagar, nequi, ponerConfig } = mundo()
-    const pedido = pedidoCon(20_000)
-    const bono = { ...nequi(5_000), medio: 'bono' }
-    expect(pagar(pedido, bono)).toBe('medio_no_habilitado')
-    ponerConfig({ medios_pago: ['efectivo', 'bono'] })
-    expect(pagar(pedido, bono)).toBe('confirmado')
+    const { orderWith, pay, nequi, ponerConfig } = mundo()
+    const order = orderWith(20_000)
+    const voucher = { ...nequi(5_000), method: 'voucher' }
+    expect(pay(order, voucher)).toBe('method_not_enabled')
+    ponerConfig({ payment_methods: ['cash', 'voucher'] })
+    expect(pay(order, voucher)).toBe('confirmed')
   })
 
   it('tarjeta con un datáfono activo del restaurante, sin número de aprobación: se acepta', () => {
-    const { pedidoCon, pagar, tarjeta, datafono } = mundo()
-    const bold = datafono()
-    expect(pagar(pedidoCon(10_000), tarjeta(10_000, bold))).toBe('confirmado')
-    expect(pagar(pedidoCon(10_000), tarjeta(10_000, bold, '123456'))).toBe('confirmado')
+    const { orderWith, pay, card, cardTerminal } = mundo()
+    const bold = cardTerminal()
+    expect(pay(orderWith(10_000), card(10_000, bold))).toBe('confirmed')
+    expect(pay(orderWith(10_000), card(10_000, bold, '123456'))).toBe('confirmed')
   })
 
   it('tarjeta con un datáfono que no existe: datafono_desconocido', () => {
-    const { pedidoCon, pagar, tarjeta, datafono } = mundo()
-    datafono()
-    expect(pagar(pedidoCon(10_000), tarjeta(10_000, nuevoId()))).toBe('datafono_desconocido')
+    const { orderWith, pay, card, cardTerminal } = mundo()
+    cardTerminal()
+    expect(pay(orderWith(10_000), card(10_000, newId()))).toBe('unknown_card_terminal')
   })
 
   it('tarjeta sin ningún datáfono registrado: datafono_desconocido', () => {
-    const { pedidoCon, pagar, tarjeta } = mundo()
-    expect(pagar(pedidoCon(10_000), tarjeta(10_000, nuevoId()))).toBe('datafono_desconocido')
+    const { orderWith, pay, card } = mundo()
+    expect(pay(orderWith(10_000), card(10_000, newId()))).toBe('unknown_card_terminal')
   })
 
   it('un datáfono archivado ya no sirve, y vuelve a servir al reactivarlo', () => {
-    const { m, pedidoCon, pagar, tarjeta, datafono } = mundo()
-    const bold = datafono()
-    const pedido = pedidoCon(20_000)
-    m.db.prepare('UPDATE datafono SET activo = 0 WHERE id = ?').run(bold)
-    expect(pagar(pedido, tarjeta(5_000, bold))).toBe('datafono_desconocido')
-    m.db.prepare('UPDATE datafono SET activo = 1 WHERE id = ?').run(bold)
-    expect(pagar(pedido, tarjeta(5_000, bold))).toBe('confirmado')
+    const { m, orderWith, pay, card, cardTerminal } = mundo()
+    const bold = cardTerminal()
+    const order = orderWith(20_000)
+    m.db.prepare('UPDATE card_terminals SET active = 0 WHERE id = ?').run(bold)
+    expect(pay(order, card(5_000, bold))).toBe('unknown_card_terminal')
+    m.db.prepare('UPDATE card_terminals SET active = 1 WHERE id = ?').run(bold)
+    expect(pay(order, card(5_000, bold))).toBe('confirmed')
   })
 
   it('el datáfono de otro restaurante no sirve en este', () => {
-    const { m, pedidoCon, pagar, tarjeta } = mundo()
-    const otro = nuevoId()
+    const { m, orderWith, pay, card } = mundo()
+    const other = newId()
     m.db
       .prepare(
-        `INSERT INTO restaurante (id, restaurante_id, creado_en, actualizado_en, version, nombre, config)
+        `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
          VALUES (?, ?, ?, ?, 1, 'Otro', '{}')`,
       )
-      .run(otro, otro, m.reloj(), m.reloj())
-    const ajeno = nuevoId()
+      .run(other, other, m.clock(), m.clock())
+    const ajeno = newId()
     m.db
       .prepare(
-        `INSERT INTO datafono (id, restaurante_id, creado_en, actualizado_en, version, nombre, proveedor)
+        `INSERT INTO card_terminals (id, restaurant_id, created_at, updated_at, version, name, provider)
          VALUES (?, ?, ?, ?, 1, 'Bold ajeno', 'bold')`,
       )
-      .run(ajeno, otro, m.reloj(), m.reloj())
-    expect(pagar(pedidoCon(10_000), tarjeta(10_000, ajeno))).toBe('datafono_desconocido')
+      .run(ajeno, other, m.clock(), m.clock())
+    expect(pay(orderWith(10_000), card(10_000, ajeno))).toBe('unknown_card_terminal')
   })
 
   it('la regla de redondeo viene de la configuración: otro múltiplo, redondeo_distinto', () => {
-    const { pedidoCon, pagar, efectivo } = mundo()
-    expect(pagar(pedidoCon(36_810), efectivo({ multiplo: 50, modo: 'cercano_mitad_abajo' }))).toBe(
-      'redondeo_distinto',
+    const { orderWith, pay, cash } = mundo()
+    expect(pay(orderWith(36_810), cash({ multiple: 50, mode: 'nearest_half_down' }))).toBe(
+      'rounding_mismatch',
     )
-    expect(pagar(pedidoCon(36_810), efectivo({ multiplo: 100, modo: 'arriba' }))).toBe(
-      'redondeo_distinto',
-    )
+    expect(pay(orderWith(36_810), cash({ multiple: 100, mode: 'up' }))).toBe('rounding_mismatch')
   })
 
   it('si el restaurante cambia el múltiplo a 50, la regla de 100 deja de valer y la de 50 vale', () => {
-    const { pedidoCon, pagar, efectivo, ponerConfig } = mundo()
-    ponerConfig({ redondeo_efectivo: 50 })
-    expect(pagar(pedidoCon(36_810), efectivo({ multiplo: 100, modo: 'cercano_mitad_abajo' }))).toBe(
-      'redondeo_distinto',
+    const { orderWith, pay, cash, ponerConfig } = mundo()
+    ponerConfig({ cash_rounding: 50 })
+    expect(pay(orderWith(36_810), cash({ multiple: 100, mode: 'nearest_half_down' }))).toBe(
+      'rounding_mismatch',
     )
     // Con múltiplo 50, $36.810 se cobra a $36.800 (−10) igual: la regla nueva se acepta.
-    expect(pagar(pedidoCon(36_810), efectivo({ multiplo: 50, modo: 'cercano_mitad_abajo' }))).toBe(
-      'confirmado',
+    expect(pay(orderWith(36_810), cash({ multiple: 50, mode: 'nearest_half_down' }))).toBe(
+      'confirmed',
     )
   })
 
   it('si cambia el modo del efectivo, también', () => {
-    const { pedidoCon, pagar, efectivo, ponerConfig } = mundo()
-    ponerConfig({ redondeo_efectivo_modo: 'cercano_mitad_arriba' })
-    expect(pagar(pedidoCon(36_810), efectivo({ multiplo: 100, modo: 'cercano_mitad_abajo' }))).toBe(
-      'redondeo_distinto',
+    const { orderWith, pay, cash, ponerConfig } = mundo()
+    ponerConfig({ cash_rounding_mode: 'nearest_half_up' })
+    expect(pay(orderWith(36_810), cash({ multiple: 100, mode: 'nearest_half_down' }))).toBe(
+      'rounding_mismatch',
     )
-    expect(
-      pagar(pedidoCon(36_810), efectivo({ multiplo: 100, modo: 'cercano_mitad_arriba' })),
-    ).toBe('confirmado')
+    expect(pay(orderWith(36_810), cash({ multiple: 100, mode: 'nearest_half_up' }))).toBe(
+      'confirmed',
+    )
   })
 
   it('un medio propio activo se acepta; archivado o inexistente, medio_no_habilitado', () => {
-    const { pedidoCon, pagar, nequi, ponerConfig } = mundo()
-    const sodexo = nuevoId()
-    const pedido = pedidoCon(30_000)
-    const conPropio = (id: string) => ({ ...nequi(5_000), medio: 'otro', medio_propio_id: id })
-    ponerConfig({ medios_propios: [{ id: sodexo, nombre: 'Sodexo', activo: true }] })
-    expect(pagar(pedido, conPropio(sodexo))).toBe('confirmado')
-    expect(pagar(pedido, conPropio(nuevoId()))).toBe('medio_no_habilitado')
-    ponerConfig({ medios_propios: [{ id: sodexo, nombre: 'Sodexo', activo: false }] })
-    expect(pagar(pedido, conPropio(sodexo))).toBe('medio_no_habilitado')
+    const { orderWith, pay, nequi, ponerConfig } = mundo()
+    const sodexo = newId()
+    const order = orderWith(30_000)
+    const conPropio = (id: string) => ({ ...nequi(5_000), method: 'other', custom_method_id: id })
+    ponerConfig({ custom_methods: [{ id: sodexo, name: 'Sodexo', active: true }] })
+    expect(pay(order, conPropio(sodexo))).toBe('confirmed')
+    expect(pay(order, conPropio(newId()))).toBe('method_not_enabled')
+    ponerConfig({ custom_methods: [{ id: sodexo, name: 'Sodexo', active: false }] })
+    expect(pay(order, conPropio(sodexo))).toBe('method_not_enabled')
   })
 
   it('un pago sin turno sigue rechazándose antes que el medio', () => {
-    const { m, pedidoCon, pagar, nequi, ponerConfig } = mundo()
-    ponerConfig({ medios_pago: ['efectivo'] })
-    const pedido = pedidoCon(10_000)
-    const sinTurno = { ...nequi(10_000), turno_caja_id: nuevoId() }
-    expect(pagar(pedido, sinTurno)).toBe('sin_turno')
-    expect(m.db.prepare('SELECT count(*) AS n FROM evento_rechazado').get()?.n).toBeGreaterThan(0)
+    const { m, orderWith, pay, nequi, ponerConfig } = mundo()
+    ponerConfig({ payment_methods: ['cash'] })
+    const order = orderWith(10_000)
+    const withoutShift = { ...nequi(10_000), register_shift_id: newId() }
+    expect(pay(order, withoutShift)).toBe('no_shift')
+    expect(m.db.prepare('SELECT count(*) AS n FROM rejected_events').get()?.n).toBeGreaterThan(0)
   })
 
   it('una configuración dañada no deja sin servicio: toma los valores de fábrica', () => {
-    const { m, pedidoCon, pagar, nequi } = mundo()
-    m.db.prepare("UPDATE restaurante SET config = '{}' WHERE id = ?").run(m.restauranteId)
-    expect(pagar(pedidoCon(10_000), nequi(10_000))).toBe('confirmado')
+    const { m, orderWith, pay, nequi } = mundo()
+    m.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.restauranteId)
+    expect(pay(orderWith(10_000), nequi(10_000))).toBe('confirmed')
   })
 })

@@ -1,4 +1,4 @@
-import type { CuadreTurno } from '@pos/core'
+import type { ShiftReconciliation } from '@pos/core'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { type ComandaEnCocina, comandasEnCocina } from './comandas'
 import { cuadreDeCaja, type TurnoVisible, turnoDeCaja } from './cuentas'
@@ -14,51 +14,51 @@ export function useSala(): Instantanea {
 }
 
 export interface VistaLocal {
-  pedidos: PedidoVisible[]
+  orders: PedidoVisible[]
   /** Productos (o variantes) agotados: claves de `claveAgotado`. */
   agotados: Set<string>
   /** Ids de los productos más pedidos. */
   masPedidos: string[]
   /** Lo enviado a cocina que falta entregar, de lo más viejo a lo más nuevo (ADR-015). */
-  comandas: ComandaEnCocina[]
+  tickets: ComandaEnCocina[]
   /** El turno abierto de la caja de este equipo, si tiene (tarea 1.6). */
-  turno: TurnoVisible | null
+  shift: TurnoVisible | null
   /** El cuadre de ese turno: lo cobrado por medio, los movimientos, los conteos y lo esperado. */
-  cuadre: CuadreTurno | null
+  reconciliation: ShiftReconciliation | null
 }
 
 /** Lo que sale de los eventos guardados aquí; se relee cada vez que algo cambia. */
 export function useVistaLocal(): VistaLocal | null {
-  const { cambios, equipo: deEquipo } = useSala()
-  const equipo = deEquipo?.dispositivoId ?? null
+  const { changes, device: deEquipo } = useSala()
+  const device = deEquipo?.dispositivoId ?? null
   const [vista, setVista] = useState<VistaLocal | null>(null)
   // biome-ignore lint/correctness/useExhaustiveDependencies: `cambios` avisa que hay que releer
   useEffect(() => {
-    let vigente = true
+    let current = true
     sala.sync
       ?.locales()
       .then((locales) => {
-        if (!vigente) return
-        const pedidos = pedidosAbiertos(locales)
-        const turno = equipo ? turnoDeCaja(locales, equipo) : null
+        if (!current) return
+        const orders = pedidosAbiertos(locales)
+        const shift = device ? turnoDeCaja(locales, device) : null
         setVista({
-          pedidos,
+          orders,
           agotados: agotados(locales),
           masPedidos: masPedidos(locales),
-          comandas: comandasEnCocina(locales, pedidos),
-          turno,
-          cuadre: turno ? cuadreDeCaja(locales, turno.id) : null,
+          tickets: comandasEnCocina(locales, orders),
+          shift,
+          reconciliation: shift ? cuadreDeCaja(locales, shift.id) : null,
         })
       })
       .catch((error) => console.error('No se pudieron leer los pedidos:', error))
     return () => {
-      vigente = false
+      current = false
     }
-  }, [cambios, equipo])
+  }, [changes, device])
   return vista
 }
 
 /** Los pedidos abiertos según lo guardado aquí. */
 export function usePedidos(): PedidoVisible[] | null {
-  return useVistaLocal()?.pedidos ?? null
+  return useVistaLocal()?.orders ?? null
 }

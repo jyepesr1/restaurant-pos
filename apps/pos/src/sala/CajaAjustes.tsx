@@ -1,4 +1,4 @@
-import { type MedioPago, NOMBRE_MEDIO } from '@pos/core'
+import { METHOD_NAME, type PaymentMethod } from '@pos/core'
 import { useCallback, useEffect, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
@@ -20,45 +20,45 @@ import type {
 // «Caja y pagos» (tarea 1.6): qué medios de pago recibe el restaurante, dónde sale la precuenta
 // y sus datáfonos. Para quien administra los equipos; cada restaurante decide lo suyo.
 
-const MEDIOS: MedioPago[] = [
-  'efectivo',
-  'tarjeta',
+const MEDIOS: PaymentMethod[] = [
+  'cash',
+  'card',
   'nequi',
   'daviplata',
   'breb',
-  'transferencia',
-  'bono',
+  'transfer',
+  'voucher',
 ]
 
-const PROVEEDORES: { valor: ProveedorDatafono; nombre: string }[] = [
-  { valor: 'bold', nombre: 'Bold' },
-  { valor: 'redeban', nombre: 'Redeban' },
-  { valor: 'credibanco', nombre: 'Credibanco' },
-  { valor: 'otro', nombre: 'Otro' },
+const PROVEEDORES: { value: ProveedorDatafono; name: string }[] = [
+  { value: 'bold', name: 'Bold' },
+  { value: 'redeban', name: 'Redeban' },
+  { value: 'credibanco', name: 'Credibanco' },
+  { value: 'other', name: 'Otro' },
 ]
 
-const mensaje = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
+const message = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
 
 export function CajaAjustes() {
   const avisar = useAvisar()
-  const [caja, setCaja] = useState<ConfiguracionCaja | null>(null)
-  const [cocina, setCocina] = useState<ConfiguracionCocina | null>(null)
+  const [register, setCaja] = useState<ConfiguracionCaja | null>(null)
+  const [kitchen, setCocina] = useState<ConfiguracionCocina | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editando, setEditando] = useState<Datafono | null>(null)
   const [editandoMedio, setEditandoMedio] = useState<MedioPropio | null>(null)
 
   const cargar = useCallback(() => {
-    Promise.all([sala.configuracionCaja(), sala.configuracionCocina()])
+    Promise.all([sala.registerConfig(), sala.kitchenConfig()])
       .then(([c, k]) => {
         setCaja(c)
         setCocina(k)
         setError(null)
       })
-      .catch((e) => setError(mensaje(e)))
+      .catch((e) => setError(message(e)))
   }, [])
   useEffect(cargar, [cargar])
 
-  if (error && !caja)
+  if (error && !register)
     return (
       <MarcoSala titulo="Caja y pagos">
         <div className="mx-auto flex max-w-3xl flex-col items-start gap-3 p-6">
@@ -67,22 +67,22 @@ export function CajaAjustes() {
         </div>
       </MarcoSala>
     )
-  if (!caja || !cocina)
+  if (!register || !kitchen)
     return (
       <MarcoSala titulo="Caja y pagos">
         <p className="p-6 text-texto-suave">Leyendo la configuración de la caja…</p>
       </MarcoSala>
     )
 
-  const cambiarMedio = async (m: MedioPago) => {
-    const medios = caja.medios_pago.includes(m)
-      ? caja.medios_pago.filter((x) => x !== m)
-      : MEDIOS.filter((x) => x === m || caja.medios_pago.includes(x))
+  const cambiarMedio = async (m: PaymentMethod) => {
+    const medios = register.payment_methods.includes(m)
+      ? register.payment_methods.filter((x) => x !== m)
+      : MEDIOS.filter((x) => x === m || register.payment_methods.includes(x))
     try {
-      await sala.mediosDePago(medios)
+      await sala.savePaymentMethods(medios)
       cargar()
     } catch (e) {
-      avisar(mensaje(e))
+      avisar(message(e))
     }
   }
 
@@ -92,59 +92,59 @@ export function CajaAjustes() {
       avisar(v === 0 ? 'Toda diferencia se justifica' : `Se justifica desde ${pesos(v)}`)
       cargar()
     } catch (e) {
-      avisar(mensaje(e))
+      avisar(message(e))
     }
   }
 
   const cambiarPropina = async (puntos: number) => {
     try {
-      await sala.propinaSugerida(puntos)
+      await sala.suggestedTip(puntos)
       avisar(puntos === 0 ? 'Sin propina sugerida' : `Propina sugerida: ${puntos / 100} %`)
       cargar()
     } catch (e) {
-      avisar(mensaje(e))
+      avisar(message(e))
     }
   }
 
-  const impresoras = cocina.impresoras.filter((i) => i.activo)
-  const elegida = cocina.impresora_precuenta_id ?? null
+  const printers = kitchen.printers.filter((i) => i.active)
+  const elegida = kitchen.pre_bill_printer_id ?? null
   const elegirImpresora = async (id: string | null) => {
     try {
-      await sala.impresoraPrecuenta(id)
+      await sala.preBillPrinter(id)
       avisar(id ? 'La precuenta saldrá impresa' : 'La precuenta solo se verá en pantalla')
       cargar()
     } catch (e) {
-      avisar(mensaje(e))
+      avisar(message(e))
     }
   }
 
   const guardarMedio = async (m: MedioPropio) => {
     try {
-      const medios_propios = await sala.guardarMedioPropio(m)
-      setCaja({ ...caja, medios_propios })
+      const custom_methods = await sala.guardarMedioPropio(m)
+      setCaja({ ...register, custom_methods })
       setEditandoMedio(null)
-      avisar(m.activo ? `Guardaste ${m.nombre}` : `Archivaste ${m.nombre}`)
+      avisar(m.active ? `Guardaste ${m.name}` : `Archivaste ${m.name}`)
     } catch (e) {
-      avisar(mensaje(e))
+      avisar(message(e))
     }
   }
 
   const guardarDatafono = async (d: Datafono) => {
     try {
-      const datafonos = await sala.guardarDatafono(d)
-      setCaja({ ...caja, datafonos })
+      const cardTerminals = await sala.guardarDatafono(d)
+      setCaja({ ...register, cardTerminals })
       setEditando(null)
-      avisar(d.activo ? `Guardaste ${d.nombre}` : `Archivaste ${d.nombre}`)
+      avisar(d.active ? `Guardaste ${d.name}` : `Archivaste ${d.name}`)
     } catch (e) {
-      avisar(mensaje(e))
+      avisar(message(e))
     }
   }
 
   return (
     <MarcoSala titulo="Caja y pagos">
       <div className="mx-auto flex max-w-3xl flex-col gap-8 p-3 md:p-5">
-        <section aria-labelledby="titulo-medios" className="flex flex-col gap-3">
-          <h2 id="titulo-medios" className="text-xl font-bold tracking-tight">
+        <section aria-labelledby="title-methods" className="flex flex-col gap-3">
+          <h2 id="title-methods" className="text-xl font-bold tracking-tight">
             Medios de pago
           </h2>
           <p className="text-texto-suave">Los que salen al cobrar. El efectivo siempre está.</p>
@@ -152,21 +152,21 @@ export function CajaAjustes() {
             {MEDIOS.map((m) => (
               <Opcion
                 key={m}
-                elegida={caja.medios_pago.includes(m)}
-                alElegir={() => m !== 'efectivo' && cambiarMedio(m)}
-                etiqueta={m === 'efectivo' ? 'Efectivo: siempre se recibe' : undefined}
+                elegida={register.payment_methods.includes(m)}
+                alElegir={() => m !== 'cash' && cambiarMedio(m)}
+                etiqueta={m === 'cash' ? 'Efectivo: siempre se recibe' : undefined}
               >
-                {m === 'efectivo'
+                {m === 'cash'
                   ? 'Efectivo (siempre)'
-                  : m === 'tarjeta'
+                  : m === 'card'
                     ? 'Tarjeta crédito y débito'
-                    : NOMBRE_MEDIO[m]}
+                    : METHOD_NAME[m]}
               </Opcion>
             ))}
           </Grupo>
           <div className="mt-2 flex items-center justify-between gap-2">
             <h3 className="font-semibold">Medios propios</h3>
-            <Boton icono="mas" onClick={() => setEditandoMedio({ nombre: '', activo: true })}>
+            <Boton icono="more" onClick={() => setEditandoMedio({ name: '', active: true })}>
               Agregar
             </Boton>
           </div>
@@ -174,23 +174,23 @@ export function CajaAjustes() {
             Los que recibe este restaurante con su nombre: Sodexo, QR Bancolombia, Rappi…
           </p>
           <ul className="flex flex-col gap-2">
-            {caja.medios_propios.map((m) => (
+            {register.custom_methods.map((m) => (
               <li key={m.id}>
                 <button
                   type="button"
                   onClick={() => setEditandoMedio(m)}
                   className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-linea bg-superficie px-4 text-left hover:border-borde focus-visible:outline-3 focus-visible:outline-foco"
                 >
-                  <span className="flex-1 font-semibold">{m.nombre}</span>
-                  {!m.activo && <Etiqueta tono="neutro">Archivado</Etiqueta>}
+                  <span className="flex-1 font-semibold">{m.name}</span>
+                  {!m.active && <Etiqueta tono="neutral">Archivado</Etiqueta>}
                 </button>
               </li>
             ))}
           </ul>
         </section>
 
-        <section aria-labelledby="titulo-propina" className="flex flex-col gap-3">
-          <h2 id="titulo-propina" className="text-xl font-bold tracking-tight">
+        <section aria-labelledby="title-tip" className="flex flex-col gap-3">
+          <h2 id="title-tip" className="text-xl font-bold tracking-tight">
             Propina sugerida
           </h2>
           <p className="text-texto-suave">
@@ -201,7 +201,7 @@ export function CajaAjustes() {
             {[0, 500, 800, 1000].map((p) => (
               <Opcion
                 key={p}
-                elegida={caja.propina_sugerida === p}
+                elegida={register.suggested_tip === p}
                 alElegir={() => cambiarPropina(p)}
               >
                 {p === 0 ? 'Sin propina' : `${p / 100} %`}
@@ -210,8 +210,8 @@ export function CajaAjustes() {
           </Grupo>
         </section>
 
-        <section aria-labelledby="titulo-umbral" className="flex flex-col gap-3">
-          <h2 id="titulo-umbral" className="text-xl font-bold tracking-tight">
+        <section aria-labelledby="title-threshold" className="flex flex-col gap-3">
+          <h2 id="title-threshold" className="text-xl font-bold tracking-tight">
             Cierre de caja
           </h2>
           <p className="text-texto-suave">
@@ -221,7 +221,7 @@ export function CajaAjustes() {
             {[0, 1000, 5000, 10_000].map((v) => (
               <Opcion
                 key={v}
-                elegida={(caja.umbral_diferencia_caja ?? 1000) === v}
+                elegida={(register.register_variance_threshold ?? 1000) === v}
                 alElegir={() => cambiarUmbral(v)}
               >
                 {v === 0 ? 'Cualquier diferencia' : `Desde ${pesos(v)}`}
@@ -230,8 +230,8 @@ export function CajaAjustes() {
           </Grupo>
         </section>
 
-        <section aria-labelledby="titulo-precuenta" className="flex flex-col gap-3">
-          <h2 id="titulo-precuenta" className="text-xl font-bold tracking-tight">
+        <section aria-labelledby="title-pre-bill" className="flex flex-col gap-3">
+          <h2 id="title-pre-bill" className="text-xl font-bold tracking-tight">
             Impresora de precuentas
           </h2>
           <p className="text-texto-suave">
@@ -239,40 +239,36 @@ export function CajaAjustes() {
             pantalla.
           </p>
           <Grupo etiqueta="Impresora de precuentas" className="flex flex-col gap-2">
-            <Opcion
-              forma="tarjeta"
-              elegida={elegida === null}
-              alElegir={() => elegirImpresora(null)}
-            >
+            <Opcion shape="card" elegida={elegida === null} alElegir={() => elegirImpresora(null)}>
               Solo en pantalla
             </Opcion>
-            {impresoras.map((i) => (
+            {printers.map((i) => (
               <Opcion
                 key={i.id}
-                forma="tarjeta"
+                shape="card"
                 elegida={elegida === i.id}
                 alElegir={() => elegirImpresora(i.id)}
-                detalle={i.conexion === 'red' ? i.direccion : 'USB'}
+                detalle={i.connection === 'network' ? i.address : 'USB'}
               >
-                {i.nombre}
+                {i.name}
               </Opcion>
             ))}
           </Grupo>
-          {impresoras.length === 0 && (
+          {printers.length === 0 && (
             <p className="text-sm text-texto-suave">
               Agrega la impresora en «Cocina e impresoras» y luego elígela aquí.
             </p>
           )}
         </section>
 
-        <section aria-labelledby="titulo-datafonos" className="flex flex-col gap-3">
+        <section aria-labelledby="title-card-terminals" className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
-            <h2 id="titulo-datafonos" className="text-xl font-bold tracking-tight">
+            <h2 id="title-card-terminals" className="text-xl font-bold tracking-tight">
               Datáfonos
             </h2>
             <Boton
-              icono="mas"
-              onClick={() => setEditando({ nombre: '', proveedor: 'bold', activo: true })}
+              icono="more"
+              onClick={() => setEditando({ name: '', provider: 'bold', active: true })}
             >
               Agregar
             </Boton>
@@ -283,22 +279,22 @@ export function CajaAjustes() {
             proveedor.
           </p>
           <ul className="flex flex-col gap-2">
-            {caja.datafonos.map((d) => (
+            {register.cardTerminals.map((d) => (
               <li key={d.id}>
                 <button
                   type="button"
                   onClick={() => setEditando(d)}
                   className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-linea bg-superficie px-4 text-left hover:border-borde focus-visible:outline-3 focus-visible:outline-foco"
                 >
-                  <span className="flex-1 font-semibold">{d.nombre}</span>
+                  <span className="flex-1 font-semibold">{d.name}</span>
                   <span className="text-texto-suave">
-                    {PROVEEDORES.find((p) => p.valor === d.proveedor)?.nombre}
+                    {PROVEEDORES.find((p) => p.value === d.provider)?.name}
                   </span>
-                  {!d.activo && <Etiqueta tono="neutro">Archivado</Etiqueta>}
+                  {!d.active && <Etiqueta tono="neutral">Archivado</Etiqueta>}
                 </button>
               </li>
             ))}
-            {caja.datafonos.length === 0 && (
+            {register.cardTerminals.length === 0 && (
               <li className="text-texto-suave">
                 Sin datáfonos: no se puede cobrar con tarjeta hasta agregar uno.
               </li>
@@ -308,47 +304,47 @@ export function CajaAjustes() {
       </div>
 
       <EditarMedio
-        key={editandoMedio?.id ?? (editandoMedio ? 'nuevo' : 'cerrado')}
-        medio={editandoMedio}
+        key={editandoMedio?.id ?? (editandoMedio ? 'new' : 'closed')}
+        method={editandoMedio}
         alCerrar={() => setEditandoMedio(null)}
-        alGuardar={guardarMedio}
+        onSave={guardarMedio}
       />
       <EditarDatafono
-        key={editando?.id ?? (editando ? 'nuevo' : 'cerrado')}
-        datafono={editando}
+        key={editando?.id ?? (editando ? 'new' : 'closed')}
+        cardTerminal={editando}
         alCerrar={() => setEditando(null)}
-        alGuardar={guardarDatafono}
+        onSave={guardarDatafono}
       />
     </MarcoSala>
   )
 }
 
 function EditarDatafono({
-  datafono,
+  cardTerminal,
   alCerrar,
-  alGuardar,
+  onSave,
 }: {
-  datafono: Datafono | null
+  cardTerminal: Datafono | null
   alCerrar: () => void
-  alGuardar: (d: Datafono) => void
+  onSave: (d: Datafono) => void
 }) {
-  const [nombre, setNombre] = useState(datafono?.nombre ?? '')
-  const [proveedor, setProveedor] = useState<ProveedorDatafono>(datafono?.proveedor ?? 'bold')
-  const valido = nombre.trim().length > 0
-  const guardar = (activo: boolean) =>
-    datafono && alGuardar({ ...datafono, nombre: nombre.trim(), proveedor, activo })
+  const [name, setNombre] = useState(cardTerminal?.name ?? '')
+  const [provider, setProveedor] = useState<ProveedorDatafono>(cardTerminal?.provider ?? 'bold')
+  const valid = name.trim().length > 0
+  const guardar = (active: boolean) =>
+    cardTerminal && onSave({ ...cardTerminal, name: name.trim(), provider, active })
   return (
     <PanelLateral
-      abierto={datafono !== null}
-      titulo={datafono?.id ? 'Datáfono' : 'Datáfono nuevo'}
+      opened={cardTerminal !== null}
+      titulo={cardTerminal?.id ? 'Datáfono' : 'Datáfono nuevo'}
       alCerrar={alCerrar}
       pie={
         <div className="flex flex-col gap-2">
-          <Boton variante="principal" grande disabled={!valido} onClick={() => guardar(true)}>
-            {datafono?.id && !datafono.activo ? 'Volver a usarlo' : 'Guardar'}
+          <Boton variant="main" large disabled={!valid} onClick={() => guardar(true)}>
+            {cardTerminal?.id && !cardTerminal.active ? 'Volver a usarlo' : 'Guardar'}
           </Boton>
-          {datafono?.id && datafono.activo && (
-            <Boton variante="fantasma" onClick={() => guardar(false)}>
+          {cardTerminal?.id && cardTerminal.active && (
+            <Boton variant="ghost" onClick={() => guardar(false)}>
               Archivar
             </Boton>
           )}
@@ -361,7 +357,7 @@ function EditarDatafono({
           <input
             className={`${claseCampo} mt-1`}
             maxLength={60}
-            value={nombre}
+            value={name}
             placeholder="Bold de la barra"
             onChange={(e) => setNombre(e.target.value)}
           />
@@ -369,11 +365,11 @@ function EditarDatafono({
         <Grupo etiqueta="Proveedor" className="flex flex-wrap gap-2">
           {PROVEEDORES.map((p) => (
             <Opcion
-              key={p.valor}
-              elegida={proveedor === p.valor}
-              alElegir={() => setProveedor(p.valor)}
+              key={p.value}
+              elegida={provider === p.value}
+              alElegir={() => setProveedor(p.value)}
             >
-              {p.nombre}
+              {p.name}
             </Opcion>
           ))}
         </Grupo>
@@ -383,30 +379,29 @@ function EditarDatafono({
 }
 
 function EditarMedio({
-  medio,
+  method,
   alCerrar,
-  alGuardar,
+  onSave,
 }: {
-  medio: MedioPropio | null
+  method: MedioPropio | null
   alCerrar: () => void
-  alGuardar: (m: MedioPropio) => void
+  onSave: (m: MedioPropio) => void
 }) {
-  const [nombre, setNombre] = useState(medio?.nombre ?? '')
-  const valido = nombre.trim().length > 0
-  const guardar = (activo: boolean) =>
-    medio && alGuardar({ ...medio, nombre: nombre.trim(), activo })
+  const [name, setNombre] = useState(method?.name ?? '')
+  const valid = name.trim().length > 0
+  const guardar = (active: boolean) => method && onSave({ ...method, name: name.trim(), active })
   return (
     <PanelLateral
-      abierto={medio !== null}
-      titulo={medio?.id ? 'Medio de pago' : 'Medio de pago nuevo'}
+      opened={method !== null}
+      titulo={method?.id ? 'Medio de pago' : 'Medio de pago nuevo'}
       alCerrar={alCerrar}
       pie={
         <div className="flex flex-col gap-2">
-          <Boton variante="principal" grande disabled={!valido} onClick={() => guardar(true)}>
-            {medio?.id && !medio.activo ? 'Volver a usarlo' : 'Guardar'}
+          <Boton variant="main" large disabled={!valid} onClick={() => guardar(true)}>
+            {method?.id && !method.active ? 'Volver a usarlo' : 'Guardar'}
           </Boton>
-          {medio?.id && medio.activo && (
-            <Boton variante="fantasma" onClick={() => guardar(false)}>
+          {method?.id && method.active && (
+            <Boton variant="ghost" onClick={() => guardar(false)}>
               Archivar
             </Boton>
           )}
@@ -418,7 +413,7 @@ function EditarMedio({
         <input
           className={`${claseCampo} mt-1`}
           maxLength={30}
-          value={nombre}
+          value={name}
           placeholder="Sodexo"
           onChange={(e) => setNombre(e.target.value)}
         />

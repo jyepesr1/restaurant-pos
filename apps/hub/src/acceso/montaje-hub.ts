@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { type EventoNuevo, huellaAutorizable, nuevoId } from '@pos/core'
+import { authorizableFingerprint, type NewEvent, newId } from '@pos/core'
 import { aplicarMigraciones } from '@pos/db'
 import { abrirBase } from '@pos/db/node'
 import { type Conexion, type ControlAcceso, HubSync } from '@pos/sync'
@@ -16,36 +16,36 @@ import { ServicioAcceso } from './servicio'
 // sobre una carpeta de datos real que se puede "apagar" y volver a levantar.
 
 export const item = (
-  modificadores: { modificador_id: string; nombre: string; precio_extra: number }[] = [],
+  modifiers: { modifier_id: string; name: string; extra_price: number }[] = [],
 ) => ({
-  item_id: nuevoId(),
-  producto_id: nuevoId(),
-  variante_id: null,
-  nombre: 'Aperol Spritz',
-  precio_unitario: 32_000,
-  impuesto_tipo: 'inc' as const,
-  tarifa: 800,
-  cantidad: 1,
-  comensal: null,
-  curso: null,
-  modificadores,
-  notas: null,
-  catalogo_version: 1,
-  precio_canal_id: null,
+  item_id: newId(),
+  product_id: newId(),
+  variant_id: null,
+  name: 'Aperol Spritz',
+  unit_price: 32_000,
+  tax_type: 'inc' as const,
+  rate: 800,
+  quantity: 1,
+  guest: null,
+  course: null,
+  modifiers,
+  notes: null,
+  catalog_version: 1,
+  price_channel_id: null,
 })
 
-export const ABRIR = { canal: 'salon', mesa_id: null, comensales: 2 }
+export const ABRIR = { channel: 'dine_in', table_id: null, guests: 2 }
 
 /** El montaje de acceso con un `HubSync` sobre la misma base. */
 export function montarHub(envolver: (a: ControlAcceso) => ControlAcceso = (a) => a) {
   const m = montarAcceso()
   const hub = new HubSync(new AlmacenSqlite(m.db, m.restauranteId), {
     restauranteId: m.restauranteId,
-    zonaHoraria: 'America/Bogota',
+    timeZone: 'America/Bogota',
     inicioDiaOperativo: '06:00',
     instancia: 'hub-1',
-    reloj: m.reloj,
-    acceso: envolver(m.acceso),
+    clock: m.clock,
+    access: envolver(m.access),
   })
   return { ...m, hub }
 }
@@ -54,34 +54,34 @@ export type MontajeHub = ReturnType<typeof montarHub>
 /** Un pedido abierto por el mesero con un ítem ya enviado a cocina. */
 export function pedidoConItemEnviado(
   m: MontajeAcceso & { hub: HubSync },
-  modificadores: { modificador_id: string; nombre: string; precio_extra: number }[] = [],
+  modifiers: { modifier_id: string; name: string; extra_price: number }[] = [],
 ) {
-  const { conexion, token } = m.emparejar('mesero')
-  const sesion = m.entrar(conexion, 'mesero')
-  const pedido = nuevoId()
-  const it = item(modificadores)
-  const comandaId = nuevoId()
-  const en = { agregado_id: pedido }
-  const r = m.hub.recibirLote(conexion, [
-    m.evento(conexion, sesion, 'PedidoAbierto', ABRIR, en),
-    m.evento(conexion, sesion, 'ItemAgregado', it, { ...en, secuencia_base: 1 }),
-    m.evento(
-      conexion,
-      sesion,
-      'ItemsEnviados',
-      { comandas: [{ comanda_id: comandaId, estacion_id: nuevoId(), item_ids: [it.item_id] }] },
-      { ...en, secuencia_base: 2 },
+  const { connection, token } = m.emparejar('waiter')
+  const session = m.entrar(connection, 'waiter')
+  const order = newId()
+  const it = item(modifiers)
+  const comandaId = newId()
+  const en = { aggregate_id: order }
+  const r = m.hub.recibirLote(connection, [
+    m.event(connection, session, 'OrderOpened', ABRIR, en),
+    m.event(connection, session, 'ItemAdded', it, { ...en, base_sequence: 1 }),
+    m.event(
+      connection,
+      session,
+      'ItemsSent',
+      { tickets: [{ ticket_id: comandaId, station_id: newId(), item_ids: [it.item_id] }] },
+      { ...en, base_sequence: 2 },
     ),
   ])
-  expect(r.resultados.map((x) => x.estado)).toEqual(['confirmado', 'confirmado', 'confirmado'])
-  return { conexion, token, sesion, pedido, itemId: it.item_id, comandaId }
+  expect(r.resultados.map((x) => x.status)).toEqual(['confirmed', 'confirmed', 'confirmed'])
+  return { connection, token, session, order, itemId: it.item_id, comandaId }
 }
 
 export const datosAnular = (itemId: string) => ({
   item_id: itemId,
-  cantidad: 1,
-  ya_preparado: false,
-  comanda_id: null,
+  quantity: 1,
+  already_prepared: false,
+  ticket_id: null,
 })
 
 type Sesion = Parameters<typeof firmado>[0]
@@ -91,33 +91,33 @@ export const firmar = firmado
 
 /**
  * El supervisor autoriza ese evento exacto: devuelve el comprobante y el evento con su
- * `autorizacion_id`, ya firmado de nuevo.
+ * `authorization_id`, ya firmado de nuevo.
  */
 export function autorizarEvento(
-  m: Pick<MontajeAcceso, 'acceso'>,
-  conexion: Conexion,
-  sesion: Sesion & { secreto: string; sesionId: string },
+  m: Pick<MontajeAcceso, 'access'>,
+  connection: Conexion,
+  session: Sesion & { secret: string; sesionId: string },
   pin: string,
-  evento: EventoNuevo,
-  accion = 'anular_item_enviado',
+  event: NewEvent,
+  action = 'void_sent_item',
 ) {
-  const a = m.acceso.autorizar(conexion, {
-    sesionId: sesion.sesionId,
-    secreto: sesion.secreto,
+  const a = m.access.autorizar(connection, {
+    sesionId: session.sesionId,
+    secret: session.secret,
     pin,
-    accion,
-    agregadoId: evento.agregado_id,
-    eventoId: evento.id,
-    huella: huellaAutorizable(evento),
+    action,
+    agregadoId: event.aggregate_id,
+    eventId: event.id,
+    fingerprint: authorizableFingerprint(event),
   })
-  if (!a.ok) throw new Error(a.mensaje)
+  if (!a.ok) throw new Error(a.message)
   return {
     comprobante: a,
-    evento: firmar(sesion, { ...evento, autorizacion_id: a.autorizacionId }),
+    event: firmar(session, { ...event, authorization_id: a.autorizacionId }),
   }
 }
 
-export const sumar = (iso: string, ms: number) => new Date(Date.parse(iso) + ms).toISOString()
+export const add = (iso: string, ms: number) => new Date(Date.parse(iso) + ms).toISOString()
 
 /**
  * Un hub sobre una carpeta de datos real, como lo arma `main.ts`: base en archivo y clave de los
@@ -126,48 +126,48 @@ export const sumar = (iso: string, ms: number) => new Date(Date.parse(iso) + ms)
  */
 export function hubEnCarpeta(dirDatos: string) {
   let ms = INICIO
-  const reloj = () => new Date(ms).toISOString()
+  const clock = () => new Date(ms).toISOString()
   let abiertas: { close(): void }[] = []
   // El reloj de la prueba es manual: la clave cuenta desde la hora (manual) en que se creó.
   let claveDesde = ''
 
-  function levantar() {
+  function spinUp() {
     mkdirSync(dirDatos, { recursive: true })
     const db = abrirBase(join(dirDatos, 'pos.sqlite'))
     abiertas.push(db as unknown as { close(): void })
     aplicarMigraciones(db)
-    const { clave, nueva } = cargarClave(dirDatos)
-    if (nueva) claveDesde = reloj()
-    const restauranteId = asegurarRestaurante(db, reloj())
-    const roles = asegurarRoles(db, restauranteId, reloj())
-    const acceso = new ServicioAcceso({
+    const { key, newOne } = cargarClave(dirDatos)
+    if (newOne) claveDesde = clock()
+    const restauranteId = asegurarRestaurante(db, clock())
+    const roles = asegurarRoles(db, restauranteId, clock())
+    const access = new ServicioAcceso({
       db,
       restauranteId,
-      clave,
-      reloj,
-      intentos: new Intentos(() => ms),
+      key,
+      clock,
+      attempts: new Intentos(() => ms),
       claveDesde,
       costoContrasena: 1,
     })
-    const admin = asegurarAdministrador(db, acceso, roles.admin, nueva)
+    const admin = asegurarAdministrador(db, access, roles.admin, newOne)
     const hub = new HubSync(new AlmacenSqlite(db, restauranteId), {
       restauranteId,
-      zonaHoraria: 'America/Bogota',
+      timeZone: 'America/Bogota',
       inicioDiaOperativo: '06:00',
       instancia: 'hub-1',
-      reloj,
-      acceso,
+      clock,
+      access,
     })
-    return { db, acceso, hub, roles, restauranteId, admin, claveNueva: nueva }
+    return { db, access, hub, roles, restauranteId, admin, claveNueva: newOne }
   }
 
   return {
-    levantar,
+    spinUp,
     apagar() {
       for (const b of abiertas) b.close()
       abiertas = []
     },
-    reloj,
+    clock,
     avanzar: (n: number) => {
       ms += n
     },

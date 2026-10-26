@@ -15,9 +15,9 @@ import {
 // Propiedades de lo que calcula la pantalla Reportes (tarea 1.9): los períodos y el CSV para Excel.
 
 const CONFIG = { seed: 20_261_061, numRuns: 300 }
-const ATAJOS: Atajo[] = ['hoy', 'ayer', 'semana', 'mes', 'mesPasado']
+const ATAJOS: Atajo[] = ['today', 'yesterday', 'week', 'month', 'lastMonth']
 
-const dia = fc
+const day = fc
   .date({
     min: new Date('2019-01-01T12:00:00Z'),
     max: new Date('2036-12-31T12:00:00Z'),
@@ -31,7 +31,7 @@ const entreDias = (a: string, b: string) =>
 describe('períodos', () => {
   it('sumar y restar los mismos días vuelve al mismo día, y avanza uno a uno', () => {
     fc.assert(
-      fc.property(dia, fc.integer({ min: -4_000, max: 4_000 }), (d, n) => {
+      fc.property(day, fc.integer({ min: -4_000, max: 4_000 }), (d, n) => {
         expect(sumarDias(sumarDias(d, n), -n)).toBe(d)
         expect(sumarDias(d, n)).toMatch(/^\d{4}-\d{2}-\d{2}$/)
         expect(entreDias(d, sumarDias(d, n))).toBe(n)
@@ -42,21 +42,21 @@ describe('períodos', () => {
 
   it('todos los atajos dan fechas válidas, en orden y dentro de lo que acepta el hub', () => {
     fc.assert(
-      fc.property(dia, (hoy) => {
+      fc.property(day, (today) => {
         for (const atajo of ATAJOS) {
-          const { desde, hasta } = periodoDe(atajo, hoy)
-          expect(desde).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-          expect(hasta).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-          expect(desde <= hasta, atajo).toBe(true)
-          expect(entreDias(desde, hasta) + 1, atajo).toBeLessThanOrEqual(MAX_DIAS)
+          const { from, until } = periodoDe(atajo, today)
+          expect(from).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+          expect(until).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+          expect(from <= until, atajo).toBe(true)
+          expect(entreDias(from, until) + 1, atajo).toBeLessThanOrEqual(MAX_DIAS)
           // Ningún atajo mira al futuro.
-          expect(hasta <= hoy, atajo).toBe(true)
+          expect(until <= today, atajo).toBe(true)
         }
-        expect(periodoDe('hoy', hoy)).toEqual({ desde: hoy, hasta: hoy })
-        expect(periodoDe('ayer', hoy).hasta).toBe(sumarDias(hoy, -1))
-        const semana = periodoDe('semana', hoy)
-        expect(entreDias(semana.desde, semana.hasta) + 1).toBe(7)
-        expect(semana.hasta).toBe(hoy)
+        expect(periodoDe('today', today)).toEqual({ from: today, until: today })
+        expect(periodoDe('yesterday', today).until).toBe(sumarDias(today, -1))
+        const week = periodoDe('week', today)
+        expect(entreDias(week.from, week.until) + 1).toBe(7)
+        expect(week.until).toBe(today)
       }),
       CONFIG,
     )
@@ -64,39 +64,42 @@ describe('períodos', () => {
 
   it('el mes va del 1 a hoy y el mes pasado del 1 al último día, sin huecos entre los dos', () => {
     fc.assert(
-      fc.property(dia, (hoy) => {
-        const mes = periodoDe('mes', hoy)
-        const pasado = periodoDe('mesPasado', hoy)
-        expect(mes.desde.slice(0, 7)).toBe(hoy.slice(0, 7))
-        expect(mes.desde.endsWith('-01')).toBe(true)
-        expect(mes.hasta).toBe(hoy)
-        expect(pasado.desde.endsWith('-01')).toBe(true)
+      fc.property(day, (today) => {
+        const month = periodoDe('month', today)
+        const pasado = periodoDe('lastMonth', today)
+        expect(month.from.slice(0, 7)).toBe(today.slice(0, 7))
+        expect(month.from.endsWith('-01')).toBe(true)
+        expect(month.until).toBe(today)
+        expect(pasado.from.endsWith('-01')).toBe(true)
         // El mes pasado termina el día antes de que empiece este, y es de un solo mes.
-        expect(sumarDias(pasado.hasta, 1)).toBe(mes.desde)
-        expect(pasado.desde.slice(0, 7)).toBe(pasado.hasta.slice(0, 7))
+        expect(sumarDias(pasado.until, 1)).toBe(month.from)
+        expect(pasado.from.slice(0, 7)).toBe(pasado.until.slice(0, 7))
         // El día siguiente al último no sigue en el mismo mes.
-        expect(sumarDias(pasado.hasta, 1).slice(0, 7)).not.toBe(pasado.hasta.slice(0, 7))
+        expect(sumarDias(pasado.until, 1).slice(0, 7)).not.toBe(pasado.until.slice(0, 7))
       }),
       CONFIG,
     )
   })
 
   it('casos de calendario: enero, año bisiesto, fin de mes y mes de 31 días', () => {
-    expect(periodoDe('mesPasado', '2026-01-15')).toEqual({
-      desde: '2025-12-01',
-      hasta: '2025-12-31',
+    expect(periodoDe('lastMonth', '2026-01-15')).toEqual({
+      from: '2025-12-01',
+      until: '2025-12-31',
     })
-    expect(periodoDe('mesPasado', '2028-03-01')).toEqual({
-      desde: '2028-02-01',
-      hasta: '2028-02-29',
+    expect(periodoDe('lastMonth', '2028-03-01')).toEqual({
+      from: '2028-02-01',
+      until: '2028-02-29',
     })
-    expect(periodoDe('mesPasado', '2026-03-31')).toEqual({
-      desde: '2026-02-01',
-      hasta: '2026-02-28',
+    expect(periodoDe('lastMonth', '2026-03-31')).toEqual({
+      from: '2026-02-01',
+      until: '2026-02-28',
     })
-    expect(periodoDe('mes', '2026-10-01')).toEqual({ desde: '2026-10-01', hasta: '2026-10-01' })
-    expect(periodoDe('semana', '2026-01-03')).toEqual({ desde: '2025-12-28', hasta: '2026-01-03' })
-    expect(periodoDe('ayer', '2026-03-01')).toEqual({ desde: '2026-02-28', hasta: '2026-02-28' })
+    expect(periodoDe('month', '2026-10-01')).toEqual({ from: '2026-10-01', until: '2026-10-01' })
+    expect(periodoDe('week', '2026-01-03')).toEqual({ from: '2025-12-28', until: '2026-01-03' })
+    expect(periodoDe('yesterday', '2026-03-01')).toEqual({
+      from: '2026-02-28',
+      until: '2026-02-28',
+    })
   })
 
   it('los puntos básicos salen en porcentaje con coma', () => {
@@ -112,7 +115,7 @@ describe('períodos', () => {
 
 /** Lee un CSV con punto y coma, comillas dobles (con saltos de línea dentro) y CRLF. */
 function leerCsv(csv: string): string[][] {
-  const filas: string[][] = []
+  const rows: string[][] = []
   let fila: string[] = []
   let celdaActual = ''
   let entreComillas = false
@@ -130,7 +133,7 @@ function leerCsv(csv: string): string[][] {
       celdaActual = ''
     } else if (c === '\r' && csv[i + 1] === '\n') {
       fila.push(celdaActual)
-      filas.push(fila)
+      rows.push(fila)
       fila = []
       celdaActual = ''
       i += 1
@@ -138,20 +141,20 @@ function leerCsv(csv: string): string[][] {
   }
   if (celdaActual !== '' || fila.length > 0) {
     fila.push(celdaActual)
-    filas.push(fila)
+    rows.push(fila)
   }
-  return filas
+  return rows
 }
 
 /** Las secciones: grupos de filas separados por una fila vacía. */
-function secciones(csv: string): string[][][] {
-  const todas = leerCsv(csv.replace('﻿', ''))
-  const grupos: string[][][] = [[]]
-  for (const f of todas) {
-    if (f.length === 1 && f[0] === '') grupos.push([])
-    else grupos[grupos.length - 1]?.push(f)
+function sections(csv: string): string[][][] {
+  const allRows = leerCsv(csv.replace('﻿', ''))
+  const groups: string[][][] = [[]]
+  for (const f of allRows) {
+    if (f.length === 1 && f[0] === '') groups.push([])
+    else groups[groups.length - 1]?.push(f)
   }
-  return grupos.filter((g) => g.length > 0)
+  return groups.filter((g) => g.length > 0)
 }
 
 const HOSTILES = [
@@ -172,13 +175,13 @@ const HOSTILES = [
   "'=ya tenía apóstrofo",
   'ñandú café 🍕',
 ]
-const texto = fc.oneof(
+const text = fc.oneof(
   fc.constantFrom(...HOSTILES),
   fc.string({ unit: 'grapheme', maxLength: 30 }),
   fc.string({ unit: 'binary', maxLength: 20 }),
 )
-const monto = fc.integer({ min: -9_999_999_999, max: 9_999_999_999 })
-const hora = fc
+const amount = fc.integer({ min: -9_999_999_999, max: 9_999_999_999 })
+const time = fc
   .date({
     min: new Date('2026-01-01T00:00:00Z'),
     max: new Date('2026-12-31T00:00:00Z'),
@@ -186,28 +189,28 @@ const hora = fc
   })
   .map((d) => d.toISOString())
 
-const reporte = fc.record({
-  producto: fc.array(texto, { maxLength: 5 }),
-  mesero: fc.array(texto, { maxLength: 3 }),
-  motivo: fc.array(texto, { maxLength: 3 }),
-  justificacion: fc.option(texto, { nil: null }),
-  restaurante: texto,
-  medioPropio: texto,
-  netos: fc.array(monto, { minLength: 8, maxLength: 8 }),
-  hora,
-  tarifa: fc.constantFrom(0, 800, 1900, 1250),
+const report = fc.record({
+  product: fc.array(text, { maxLength: 5 }),
+  waiter: fc.array(text, { maxLength: 3 }),
+  reason: fc.array(text, { maxLength: 3 }),
+  justification: fc.option(text, { nil: null }),
+  restaurant: text,
+  medioPropio: text,
+  nets: fc.array(amount, { minLength: 8, maxLength: 8 }),
+  time,
+  rate: fc.constantFrom(0, 800, 1900, 1250),
 })
-type Caso = typeof reporte extends fc.Arbitrary<infer T> ? T : never
+type Caso = typeof report extends fc.Arbitrary<infer T> ? T : never
 
 const ID_PROPIO = '01JB0000000000000000000099'
 const REGLAS = (c: Caso) =>
   ({
-    zonaHoraria: 'America/Bogota',
-    mediosPropios: [{ id: ID_PROPIO, nombre: c.medioPropio }],
+    timeZone: 'America/Bogota',
+    mediosPropios: [{ id: ID_PROPIO, name: c.medioPropio }],
   }) as unknown as ReglasCobro
 
-function armar(c: Caso): Reporte {
-  const [n0, n1, n2, n3, n4, n5, n6, n7] = c.netos as [
+function build(c: Caso): Reporte {
+  const [n0, n1, n2, n3, n4, n5, n6, n7] = c.nets as [
     number,
     number,
     number,
@@ -217,96 +220,96 @@ function armar(c: Caso): Reporte {
     number,
     number,
   ]
-  const usuarios = Object.fromEntries(c.mesero.map((n, i) => [`u${i}`, n]))
-  const cierre: CierreReporte = {
-    turnoId: 't1',
-    diaOperativo: '2026-10-24',
-    abiertoEn: c.hora,
+  const usuarios = Object.fromEntries(c.waiter.map((n, i) => [`u${i}`, n]))
+  const closeout: CierreReporte = {
+    shiftId: 't1',
+    businessDay: '2026-10-24',
+    openedAt: c.time,
     abiertoPor: 'u0',
     cerradoPor: 'u0',
     base: n0,
-    porMedio: [],
-    cerrado: {
-      esperado: n1,
-      contado: n2,
-      diferencia: n3,
-      justificacion: c.justificacion,
-      otrosMedios: [
-        { medio: 'otro', medioPropioId: ID_PROPIO, esperado: n4, reportado: n5, diferencia: n6 },
+    byMethod: [],
+    closed: {
+      expected: n1,
+      counted: n2,
+      variance: n3,
+      justification: c.justification,
+      otherMethods: [
+        { method: 'other', customMethodId: ID_PROPIO, expected: n4, reported: n5, variance: n6 },
       ] as never,
-      hora: c.hora,
+      time: c.time,
     },
   }
   return {
-    hoy: '2026-10-24',
+    today: '2026-10-24',
     usuarios,
-    impresora: false,
-    cierres: [cierre],
-    informe: {
-      desde: '2026-10-24',
-      hasta: '2026-10-24',
-      ventas: {
-        bruto: n0,
-        anulado: n1,
-        descuentos: n2,
-        neto: n3,
-        ajustes: n4,
-        impuestos: [{ tipo: 'inc', tarifa: c.tarifa, base: n5, impuesto: n6 }],
-        propinas: n7,
-        cuentas: 3,
-        comensales: 5,
-        ticketPromedio: n0,
-        gastoPorComensal: n1,
+    printer: false,
+    closings: [closeout],
+    report: {
+      from: '2026-10-24',
+      until: '2026-10-24',
+      sales: {
+        gross: n0,
+        voided: n1,
+        discounts: n2,
+        net: n3,
+        settings: n4,
+        taxes: [{ type: 'inc', rate: c.rate, base: n5, tax: n6 }],
+        tips: n7,
+        checks: 3,
+        guests: 5,
+        averageTicket: n0,
+        spendPerGuest: n1,
       },
-      porMedio: [{ medio: 'otro', medioPropioId: ID_PROPIO, venta: n2, propina: n3, pagos: 2 }],
-      porMesero: c.mesero.map((_, i) => ({
-        usuarioId: `u${i}`,
-        neto: n0,
-        cuentas: 1,
-        ticketPromedio: n0,
+      byMethod: [{ method: 'other', customMethodId: ID_PROPIO, sale: n2, tip: n3, payments: 2 }],
+      byWaiter: c.waiter.map((_, i) => ({
+        userId: `u${i}`,
+        net: n0,
+        checks: 1,
+        averageTicket: n0,
       })),
-      porProducto: c.producto.map((nombre, i) => ({
-        productoId: `p${i}`,
-        varianteId: null,
-        nombre,
-        unidades: i + 1,
-        neto: n1,
+      byProduct: c.product.map((name, i) => ({
+        productId: `p${i}`,
+        variantId: null,
+        name,
+        units: i + 1,
+        net: n1,
       })),
-      anulaciones: c.motivo.map((m, i) => ({
-        eventoId: `e${i}`,
-        pedidoId: 'x',
-        pedidoNumero: i % 2 === 0 ? i + 1 : null,
-        nombre: c.producto[0] ?? 'Producto',
-        unidades: 1,
-        valor: n2,
-        motivo: m,
-        yaPreparado: i % 2 === 0,
-        usuarioId: 'u0',
-        autorizadoPorId: i % 2 === 0 ? 'u0' : null,
-        hora: c.hora,
+      voids: c.reason.map((m, i) => ({
+        eventId: `e${i}`,
+        orderId: 'x',
+        orderNumber: i % 2 === 0 ? i + 1 : null,
+        name: c.product[0] ?? 'Producto',
+        units: 1,
+        value: n2,
+        reason: m,
+        alreadyPrepared: i % 2 === 0,
+        userId: 'u0',
+        authorizedById: i % 2 === 0 ? 'u0' : null,
+        time: c.time,
       })),
-      cancelaciones: c.motivo.map((m, i) => ({
-        eventoId: `c${i}`,
-        pedidoId: 'x',
-        pedidoNumero: null,
-        valor: n3,
-        motivo: m,
-        usuarioId: 'u0',
-        autorizadoPorId: null,
-        hora: c.hora,
+      cancellations: c.reason.map((m, i) => ({
+        eventId: `c${i}`,
+        orderId: 'x',
+        orderNumber: null,
+        value: n3,
+        reason: m,
+        userId: 'u0',
+        authorizedById: null,
+        time: c.time,
       })),
-      descuentos: [
+      discounts: [
         {
-          pedidoId: 'x',
-          pedidoNumero: 4,
-          regla: 'porcentaje',
-          valor: c.tarifa,
-          monto: n4,
-          motivo: c.motivo[0] ?? null,
+          orderId: 'x',
+          orderNumber: 4,
+          rule: 'percent',
+          value: c.rate,
+          amount: n4,
+          reason: c.reason[0] ?? null,
         },
-        { pedidoId: 'x', pedidoNumero: null, regla: 'valor', valor: n5, monto: n5, motivo: null },
+        { orderId: 'x', orderNumber: null, rule: 'value', value: n5, amount: n5, reason: null },
       ],
-      fondoPropinas: { propinas: n5, pagadas: n6, saldo: n7 },
+      tipPool: { tips: n5, paidOut: n6, balance: n7 },
     },
   }
 }
@@ -317,11 +320,11 @@ const neutralizado = (t: string) => (/^[=+\-@\t\r]/.test(t) ? `'${t}` : t)
 describe('CSV: una celda', () => {
   it('un texto nunca queda como fórmula y se lee igual que se escribió', () => {
     fc.assert(
-      fc.property(texto, (t) => {
-        const filas = leerCsv(`${celda(t)}\r\n`)
-        const leida = filas[0]?.[0] ?? ''
-        expect(filas).toHaveLength(1)
-        expect(filas[0]).toHaveLength(1)
+      fc.property(text, (t) => {
+        const rows = leerCsv(`${celda(t)}\r\n`)
+        const leida = rows[0]?.[0] ?? ''
+        expect(rows).toHaveLength(1)
+        expect(rows[0]).toHaveLength(1)
         expect(leida).toBe(neutralizado(t))
         expect(/^[=+\-@\t\r]/.test(leida)).toBe(false)
         // Lo que va sin comillas no tiene nada que parta la fila.
@@ -357,33 +360,33 @@ describe('CSV: una celda', () => {
 })
 
 describe('CSV: el reporte entero', () => {
-  const periodo = { desde: '2026-10-24', hasta: '2026-10-24' }
+  const period = { from: '2026-10-24', until: '2026-10-24' }
 
   it('con cualquier texto: BOM al inicio, mismas secciones, filas parejas y nada que sea fórmula', () => {
     fc.assert(
-      fc.property(reporte, (c) => {
-        const csv = csvDeReporte(armar(c), periodo, REGLAS(c), c.restaurante)
+      fc.property(report, (c) => {
+        const csv = csvDeReporte(build(c), period, REGLAS(c), c.restaurant)
         expect(csv.startsWith('﻿')).toBe(true)
         expect(csv.indexOf('﻿', 1)).toBe(-1)
         expect(csv.endsWith('\r\n')).toBe(true)
-        const grupos = secciones(csv)
+        const groups = sections(csv)
         // Tantas secciones como en un reporte vacío de textos (los textos no crean ni quitan).
-        const referencia = secciones(
+        const referencia = sections(
           csvDeReporte(
-            armar({ ...c, producto: [], mesero: [], motivo: [] }),
-            periodo,
+            build({ ...c, product: [], waiter: [], reason: [] }),
+            period,
             REGLAS(c),
             'R',
           ),
         )
         // Las secciones con filas de datos pueden quedar solo con encabezado, pero siguen ahí.
-        expect(grupos.length).toBe(referencia.length)
-        for (const g of grupos) {
-          const ancho = g[0]?.length
-          for (const f of g) expect(f.length, g[0]?.[0]).toBe(ancho)
+        expect(groups.length).toBe(referencia.length)
+        for (const g of groups) {
+          const width = g[0]?.length
+          for (const f of g) expect(f.length, g[0]?.[0]).toBe(width)
         }
         // Ninguna celda leída empieza como fórmula, salvo números con signo.
-        for (const g of grupos)
+        for (const g of groups)
           for (const f of g)
             for (const x of f)
               if (!/^-?\d+$/.test(x)) expect(/^[=+\-@\t\r]/.test(x), JSON.stringify(x)).toBe(false)
@@ -394,21 +397,21 @@ describe('CSV: el reporte entero', () => {
 
   it('los textos del restaurante vuelven iguales (con apóstrofo si parecían fórmula)', () => {
     fc.assert(
-      fc.property(reporte, (c) => {
-        const r = armar(c)
-        const grupos = secciones(csvDeReporte(r, periodo, REGLAS(c), c.restaurante))
-        expect(grupos[0]?.[0]).toEqual(['Reporte', neutralizado(c.restaurante)].map((x) => x))
-        const productos = grupos.find((g) => g[0]?.[0] === 'Producto') ?? []
-        expect(productos.slice(1).map((f) => f[0])).toEqual(c.producto.map(neutralizado))
-        const meseros = grupos.find((g) => g[0]?.[0] === 'Mesero') ?? []
-        expect(meseros.slice(1).map((f) => f[0])).toEqual(c.mesero.map(neutralizado))
-        const anulaciones = grupos.find((g) => g[0]?.[0] === 'Anulación') ?? []
-        expect(anulaciones.slice(1).map((f) => f[4])).toEqual(c.motivo.map(neutralizado))
-        const medios = grupos.find((g) => g[0]?.[0] === 'Medio de pago') ?? []
+      fc.property(report, (c) => {
+        const r = build(c)
+        const groups = sections(csvDeReporte(r, period, REGLAS(c), c.restaurant))
+        expect(groups[0]?.[0]).toEqual(['Reporte', neutralizado(c.restaurant)].map((x) => x))
+        const products = groups.find((g) => g[0]?.[0] === 'Producto') ?? []
+        expect(products.slice(1).map((f) => f[0])).toEqual(c.product.map(neutralizado))
+        const waiters = groups.find((g) => g[0]?.[0] === 'Mesero') ?? []
+        expect(waiters.slice(1).map((f) => f[0])).toEqual(c.waiter.map(neutralizado))
+        const voids = groups.find((g) => g[0]?.[0] === 'Anulación') ?? []
+        expect(voids.slice(1).map((f) => f[4])).toEqual(c.reason.map(neutralizado))
+        const medios = groups.find((g) => g[0]?.[0] === 'Medio de pago') ?? []
         expect(medios[1]?.[0]).toBe(neutralizado(c.medioPropio))
-        const cierres =
-          grupos.find((g) => g[0]?.[0] === 'Cierre de caja' && g[0]?.[1] === 'Abrió') ?? []
-        expect(cierres[1]?.[7]).toBe(neutralizado(c.justificacion ?? ''))
+        const closings =
+          groups.find((g) => g[0]?.[0] === 'Cierre de caja' && g[0]?.[1] === 'Abrió') ?? []
+        expect(closings[1]?.[7]).toBe(neutralizado(c.justification ?? ''))
       }),
       CONFIG,
     )
@@ -416,33 +419,33 @@ describe('CSV: el reporte entero', () => {
 
   it('los montos salen como enteros en pesos, sin separador de miles ni decimales', () => {
     fc.assert(
-      fc.property(reporte, (c) => {
-        const r = armar(c)
-        const v = r.informe.ventas
-        const grupos = secciones(csvDeReporte(r, periodo, REGLAS(c), 'R'))
-        const ventas = new Map(
-          (grupos.find((g) => g[0]?.[0] === 'Ventas') ?? []).map((f) => [f[0], f[1]]),
+      fc.property(report, (c) => {
+        const r = build(c)
+        const v = r.report.sales
+        const groups = sections(csvDeReporte(r, period, REGLAS(c), 'R'))
+        const sales = new Map(
+          (groups.find((g) => g[0]?.[0] === 'Ventas') ?? []).map((f) => [f[0], f[1]]),
         )
-        expect(ventas.get('Neto')).toBe(String(v.neto))
-        expect(ventas.get('Bruto')).toBe(String(v.bruto))
-        expect(ventas.get('Ajuste por redondeo')).toBe(String(v.ajustes))
-        expect(ventas.get('Propinas')).toBe(String(v.propinas))
-        expect(ventas.get('Ticket promedio')).toBe(String(v.ticketPromedio))
+        expect(sales.get('Neto')).toBe(String(v.net))
+        expect(sales.get('Bruto')).toBe(String(v.gross))
+        expect(sales.get('Ajuste por redondeo')).toBe(String(v.settings))
+        expect(sales.get('Propinas')).toBe(String(v.tips))
+        expect(sales.get('Ticket promedio')).toBe(String(v.averageTicket))
         // Las filas de cifras (todas menos el encabezado y los nombres de la sección) son enteros.
-        for (const g of grupos)
+        for (const g of groups)
           if (['Ventas', 'Fondo de propinas'].includes(g[0]?.[0] ?? ''))
             for (const f of g.slice(1)) expect(f[1], f[0]).toMatch(/^-?\d+$/)
-        const medios = grupos.find((g) => g[0]?.[0] === 'Medio de pago') ?? []
+        const medios = groups.find((g) => g[0]?.[0] === 'Medio de pago') ?? []
         for (const f of medios.slice(1)) for (const x of f.slice(1)) expect(x).toMatch(/^-?\d+$/)
-        const cierre =
-          grupos.find((g) => g[0]?.[0] === 'Cierre de caja' && g[0]?.[1] === 'Abrió') ?? []
-        for (const x of (cierre[1] ?? []).slice(3, 7)) expect(x).toMatch(/^-?\d+$/)
-        const otros = grupos.find((g) => g[0]?.[1] === 'Otro medio') ?? []
-        expect(otros).toHaveLength(2)
-        for (const x of (otros[1] ?? []).slice(2)) expect(x).toMatch(/^-?\d+$/)
+        const closeout =
+          groups.find((g) => g[0]?.[0] === 'Cierre de caja' && g[0]?.[1] === 'Abrió') ?? []
+        for (const x of (closeout[1] ?? []).slice(3, 7)) expect(x).toMatch(/^-?\d+$/)
+        const others = groups.find((g) => g[0]?.[1] === 'Otro medio') ?? []
+        expect(others).toHaveLength(2)
+        for (const x of (others[1] ?? []).slice(2)) expect(x).toMatch(/^-?\d+$/)
         // Los impuestos llevan la tarifa con coma en el nombre, no en el monto.
-        expect(ventas.get(`Impuesto INC ${puntosEnPorcentaje(c.tarifa)}`)).toBe(
-          String(r.informe.ventas.impuestos[0]?.impuesto),
+        expect(sales.get(`Impuesto INC ${puntosEnPorcentaje(c.rate)}`)).toBe(
+          String(r.report.sales.taxes[0]?.tax),
         )
       }),
       CONFIG,
@@ -451,11 +454,11 @@ describe('CSV: el reporte entero', () => {
 
   it('el descuento por porcentaje lleva el valor en porcentaje con coma y trae su pedido', () => {
     fc.assert(
-      fc.property(reporte, (c) => {
-        const grupos = secciones(csvDeReporte(armar(c), periodo, REGLAS(c), 'R'))
-        const d = grupos.find((g) => g[0]?.[0] === 'Descuento') ?? []
+      fc.property(report, (c) => {
+        const groups = sections(csvDeReporte(build(c), period, REGLAS(c), 'R'))
+        const d = groups.find((g) => g[0]?.[0] === 'Descuento') ?? []
         expect(d[0]).toEqual(['Descuento', 'Pedido', 'Valor', 'Monto', 'Motivo'])
-        expect(d[1]?.slice(0, 3)).toEqual(['Porcentaje', '4', puntosEnPorcentaje(c.tarifa)])
+        expect(d[1]?.slice(0, 3)).toEqual(['Porcentaje', '4', puntosEnPorcentaje(c.rate)])
         expect(d[2]?.slice(0, 2)).toEqual(['Valor', ''])
       }),
       { ...CONFIG, numRuns: 100 },
@@ -463,37 +466,37 @@ describe('CSV: el reporte entero', () => {
   })
 
   it('un reporte vacío sigue siendo un CSV válido, con BOM', () => {
-    const vacio: Reporte = {
-      hoy: '2026-10-24',
+    const empty: Reporte = {
+      today: '2026-10-24',
       usuarios: {},
-      impresora: false,
-      cierres: [],
-      informe: {
-        desde: '2026-10-24',
-        hasta: '2026-10-24',
-        ventas: {
-          bruto: 0,
-          anulado: 0,
-          descuentos: 0,
-          neto: 0,
-          ajustes: 0,
-          impuestos: [],
-          propinas: 0,
-          cuentas: 0,
-          comensales: 0,
-          ticketPromedio: 0,
-          gastoPorComensal: 0,
+      printer: false,
+      closings: [],
+      report: {
+        from: '2026-10-24',
+        until: '2026-10-24',
+        sales: {
+          gross: 0,
+          voided: 0,
+          discounts: 0,
+          net: 0,
+          settings: 0,
+          taxes: [],
+          tips: 0,
+          checks: 0,
+          guests: 0,
+          averageTicket: 0,
+          spendPerGuest: 0,
         },
-        porMedio: [],
-        porMesero: [],
-        porProducto: [],
-        anulaciones: [],
-        cancelaciones: [],
-        descuentos: [],
-        fondoPropinas: { propinas: 0, pagadas: 0, saldo: 0 },
+        byMethod: [],
+        byWaiter: [],
+        byProduct: [],
+        voids: [],
+        cancellations: [],
+        discounts: [],
+        tipPool: { tips: 0, paidOut: 0, balance: 0 },
       },
     }
-    const csv = csvDeReporte(vacio, periodo, null, '')
+    const csv = csvDeReporte(empty, period, null, '')
     expect(csv.startsWith('﻿Reporte;')).toBe(true)
     expect(csv).toContain('Neto;0')
     expect(csv).not.toMatch(/NaN|undefined|null/)

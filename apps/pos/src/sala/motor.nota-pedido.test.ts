@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
-import { type EventoNuevo, firmarEvento, nuevoId } from '@pos/core'
-import { AlmacenMemoria, type Canal, type ControlAcceso, HubSync } from '@pos/sync'
+import { type NewEvent, newId, signEvent } from '@pos/core'
+import { AlmacenMemoria, type Channel, type ControlAcceso, HubSync } from '@pos/sync'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BaseDispositivo } from './almacen'
 import { type Equipo, Sala, type Sesion } from './motor'
@@ -19,31 +19,31 @@ afterEach(async () => {
   for (const b of bases.splice(0)) await b.delete()
 })
 
-const sinRed = (): Canal => ({ enviar: () => {}, cerrar: () => {} })
+const sinRed = (): Channel => ({ send: () => {}, close: () => {} })
 const json = (cuerpo: unknown, status = 200) =>
   new Response(JSON.stringify(cuerpo), { status, headers: { 'content-type': 'application/json' } })
 
-const equipo: Equipo = {
-  dispositivoId: nuevoId(),
+const device: Equipo = {
+  dispositivoId: newId(),
   token: 'token-mesero',
-  nombre: 'Celular',
-  tipo: 'mesero',
+  name: 'Celular',
+  type: 'waiter',
 }
-const sesion = (): Sesion => ({
-  sesionId: nuevoId(),
-  secreto: 'secreto-ana',
-  usuario: { id: nuevoId(), nombre: 'Ana', rol: 'Mesero' },
-  permisos: ['tomar_pedido', 'administrar_dispositivos'],
+const session = (): Sesion => ({
+  sesionId: newId(),
+  secret: 'secreto-ana',
+  user: { id: newId(), name: 'Ana', role: 'Mesero' },
+  permissions: ['take_order', 'manage_devices'],
   ultimoUso: Date.now(),
 })
 
-async function abrir(catalogo = catalogoDePrueba(), sinConexion = true) {
-  const db = new BaseDispositivo(`nota-${nuevoId()}`)
+async function open(catalog = catalogoDePrueba(), sinConexion = true) {
+  const db = new BaseDispositivo(`nota-${newId()}`)
   bases.push(db)
-  await db.guardarAjuste('equipo', equipo)
-  await db.guardarAjuste('sesion', sesion())
-  await db.guardarAjuste('catalogo', catalogo)
-  const sala = new Sala({ db, abrir: sinRed })
+  await db.saveSetting('device', device)
+  await db.saveSetting('session', session())
+  await db.saveSetting('catalog', catalog)
+  const sala = new Sala({ db, open: sinRed })
   salas.push(sala)
   if (sinConexion) sala.simularSinConexion(true)
   await sala.cargar()
@@ -51,102 +51,102 @@ async function abrir(catalogo = catalogoDePrueba(), sinConexion = true) {
 }
 
 const locales = async (s: Sala) => (await s.sync?.locales()) ?? []
-const estadoDe = async (s: Sala, id: string) =>
-  pedidosAbiertos(await locales(s)).find((p) => p.estado.id === id)?.estado ?? null
+const stateOf = async (s: Sala, id: string) =>
+  pedidosAbiertos(await locales(s)).find((p) => p.status.id === id)?.status ?? null
 
 async function pedidoConLimonadas(
   sala: Sala,
-  cantidad: number,
-  campos: Record<string, unknown> = {},
+  quantity: number,
+  fields: Record<string, unknown> = {},
 ) {
-  const pedido = nuevoId()
-  await sala.registrar('PedidoAbierto', pedido, { canal: 'salon', mesa_id: null, comensales: 2 })
-  const it = datosItem({ cantidad, ...campos })
-  await sala.registrar('ItemAgregado', pedido, it)
-  return { pedido, it }
+  const order = newId()
+  await sala.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
+  const it = datosItem({ quantity, ...fields })
+  await sala.record('ItemAdded', order, it)
+  return { order, it }
 }
 
 describe('NotaPedidoCambiada sobre el motor', () => {
   it('se guarda antes de mostrarse, firmada, y la proyección la muestra sin conexión', async () => {
-    const { sala } = await abrir()
-    const pedido = nuevoId()
-    await sala.registrar('PedidoAbierto', pedido, { canal: 'salon', mesa_id: null, comensales: 2 })
-    const e = await sala.registrar('NotaPedidoCambiada', pedido, { notas: 'alérgico al maní' })
-    const { firma, ...sinFirma } = e
-    expect(firma).toBe(firmarEvento(sinFirma as EventoNuevo, 'secreto-ana'))
+    const { sala } = await open()
+    const order = newId()
+    await sala.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
+    const e = await sala.record('OrderNoteChanged', order, { notes: 'alérgico al maní' })
+    const { signature, ...sinFirma } = e
+    expect(signature).toBe(signEvent(sinFirma as NewEvent, 'secreto-ana'))
     expect(e).toMatchObject({
-      tipo: 'NotaPedidoCambiada',
-      agregado_tipo: 'pedido',
-      agregado_id: pedido,
+      type: 'OrderNoteChanged',
+      aggregate_type: 'order',
+      aggregate_id: order,
     })
-    expect((await estadoDe(sala, pedido))?.notas).toBe('alérgico al maní')
-    expect(sala.instantanea().pendientes).toBe(2)
-    expect(sala.instantanea().conexion).not.toBe('conectado')
+    expect((await stateOf(sala, order))?.notes).toBe('alérgico al maní')
+    expect(sala.instantanea().pendingList).toBe(2)
+    expect(sala.instantanea().connection).not.toBe('connected')
   })
 
   it('rechaza en el cliente una nota de más de 500 caracteres (no se guarda)', async () => {
-    const { sala } = await abrir()
-    const pedido = nuevoId()
-    await sala.registrar('PedidoAbierto', pedido, { canal: 'salon', mesa_id: null, comensales: 2 })
+    const { sala } = await open()
+    const order = newId()
+    await sala.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
     await expect(
-      sala.registrar('NotaPedidoCambiada', pedido, { notas: 'a'.repeat(501) }),
+      sala.record('OrderNoteChanged', order, { notes: 'a'.repeat(501) }),
     ).rejects.toThrow('Evento inválido')
-    expect((await estadoDe(sala, pedido))?.notas).toBeNull()
-    expect(sala.instantanea().pendientes).toBe(1)
+    expect((await stateOf(sala, order))?.notes).toBeNull()
+    expect(sala.instantanea().pendingList).toBe(1)
   })
 
   it('quitar la nota la deja en null; el último evento manda', async () => {
-    const { sala } = await abrir()
-    const pedido = nuevoId()
-    await sala.registrar('PedidoAbierto', pedido, { canal: 'salon', mesa_id: null, comensales: 2 })
-    await sala.registrar('NotaPedidoCambiada', pedido, { notas: 'uno' })
-    await sala.registrar('NotaPedidoCambiada', pedido, { notas: '  dos  ' })
-    expect((await estadoDe(sala, pedido))?.notas).toBe('dos')
-    await sala.registrar('NotaPedidoCambiada', pedido, { notas: null })
-    expect((await estadoDe(sala, pedido))?.notas).toBeNull()
+    const { sala } = await open()
+    const order = newId()
+    await sala.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
+    await sala.record('OrderNoteChanged', order, { notes: 'uno' })
+    await sala.record('OrderNoteChanged', order, { notes: '  dos  ' })
+    expect((await stateOf(sala, order))?.notes).toBe('dos')
+    await sala.record('OrderNoteChanged', order, { notes: null })
+    expect((await stateOf(sala, order))?.notes).toBeNull()
   })
 
   it('al reiniciar la app la nota sigue ahí (viene de IndexedDB)', async () => {
-    const { sala, db } = await abrir()
-    const pedido = nuevoId()
-    await sala.registrar('PedidoAbierto', pedido, { canal: 'salon', mesa_id: null, comensales: 2 })
-    await sala.registrar('NotaPedidoCambiada', pedido, { notas: 'todo junto' })
+    const { sala, db } = await open()
+    const order = newId()
+    await sala.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
+    await sala.record('OrderNoteChanged', order, { notes: 'todo junto' })
     sala.simularSinConexion(true)
-    const otra = new Sala({ db, abrir: sinRed })
-    salas.push(otra)
-    otra.simularSinConexion(true)
-    await otra.cargar()
-    expect((await estadoDe(otra, pedido))?.notas).toBe('todo junto')
+    const another = new Sala({ db, open: sinRed })
+    salas.push(another)
+    another.simularSinConexion(true)
+    await another.cargar()
+    expect((await stateOf(another, order))?.notes).toBe('todo junto')
   })
 
   it('al volver la conexión, el hub acepta el pedido, los ítems y la nota en orden', async () => {
-    const { sala } = await abrir()
-    const { pedido } = await pedidoConLimonadas(sala, 1)
-    await sala.registrar('NotaPedidoCambiada', pedido, { notas: 'cumpleaños' })
+    const { sala } = await open()
+    const { order } = await pedidoConLimonadas(sala, 1)
+    await sala.record('OrderNoteChanged', order, { notes: 'cumpleaños' })
 
     // Un hub en memoria que revisa la firma, como el real.
-    const acceso: ControlAcceso = {
-      verificar: (_c, ev) =>
-        ev.sesion_id && ev.firma === firmarEvento(ev, 'secreto-ana')
-          ? { ok: true, autorizadoPorId: null, autorizacionId: null }
-          : { ok: false, motivo: 'firma_invalida' },
+    const access: ControlAcceso = {
+      verify: (_c, ev) =>
+        ev.session_id && ev.signature === signEvent(ev, 'secreto-ana')
+          ? { ok: true, authorizedById: null, autorizacionId: null }
+          : { ok: false, reason: 'invalid_signature' },
       registrarUso: () => {},
     }
     const hub = new HubSync(new AlmacenMemoria(), {
-      restauranteId: nuevoId(),
-      zonaHoraria: 'America/Bogota',
+      restauranteId: newId(),
+      timeZone: 'America/Bogota',
       inicioDiaOperativo: '06:00',
-      instancia: 'hub-prueba',
-      reloj: () => new Date().toISOString(),
-      acceso,
+      instancia: 'hub-test',
+      clock: () => new Date().toISOString(),
+      access,
     })
-    const eventos = (await locales(sala)).map((l) => l.evento as EventoNuevo)
+    const events = (await locales(sala)).map((l) => l.event as NewEvent)
     const r = hub.recibirLote(
-      { dispositivoId: equipo.dispositivoId, tipo: 'mesero' } as never,
-      eventos,
+      { dispositivoId: device.dispositivoId, type: 'waiter' } as never,
+      events,
     )
-    expect(r.resultados.map((x) => x.estado)).toEqual(['confirmado', 'confirmado', 'confirmado'])
-    expect(hub.pedido(pedido)?.notas).toBe('cumpleaños')
+    expect(r.resultados.map((x) => x.status)).toEqual(['confirmed', 'confirmed', 'confirmed'])
+    expect(hub.order(order)?.notes).toBe('cumpleaños')
   })
 })
 
@@ -166,64 +166,63 @@ describe('cursos apagados', () => {
           cuerpo: init?.body ? JSON.parse(String(init.body)) : null,
           token: headers.authorization?.replace('Bearer ', '') ?? null,
         })
-        return url === '/api/catalogo'
+        return url === '/api/catalog'
           ? json(catalogoDePrueba({ version: 9 }))
           : new Response(null, { status: 204 })
       }),
     )
-    const { sala } = await abrir(catalogoDePrueba(), false)
+    const { sala } = await open(catalogoDePrueba(), false)
     await sala.usarCursos(true)
     await sala.usarCursos(false)
-    const mias = llamadas.filter((l) => l.url === '/api/cocina/cursos')
+    const mias = llamadas.filter((l) => l.url === '/api/kitchen/courses')
     expect(mias.map((l) => l.cuerpo?.usar)).toEqual([true, false])
     expect(mias[0]).toMatchObject({
       token: 'token-mesero',
-      cuerpo: { secreto: 'secreto-ana', usar: true },
+      cuerpo: { secret: 'secreto-ana', usar: true },
     })
   })
 
   it('un error del hub (sin permiso) llega como error y no cambia el catálogo local', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => json({ error: 'sin_permiso', mensaje: 'No tienes permiso' }, 403)),
+      vi.fn(async () => json({ error: 'no_permission', message: 'No tienes permiso' }, 403)),
     )
-    const { sala } = await abrir(catalogoDePrueba(), false)
-    await expect(sala.usarCursos(true)).rejects.toMatchObject({ codigo: 'sin_permiso' })
-    expect(sala.instantanea().catalogo?.restaurante.usarCursos ?? false).toBe(false)
+    const { sala } = await open(catalogoDePrueba(), false)
+    await expect(sala.usarCursos(true)).rejects.toMatchObject({ code: 'no_permission' })
+    expect(sala.instantanea().catalog?.restaurant.usarCursos ?? false).toBe(false)
   })
 
   it('sin conexión con la caja, usarCursos falla con sin_conexion y no llama al hub', async () => {
     const fetchFalso = vi.fn(async () => new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchFalso)
-    const { sala } = await abrir()
-    await expect(sala.usarCursos(true)).rejects.toMatchObject({ codigo: 'sin_conexion' })
+    const { sala } = await open()
+    await expect(sala.usarCursos(true)).rejects.toMatchObject({ code: 'offline' })
     expect(fetchFalso).not.toHaveBeenCalled()
   })
 
   it('un catálogo guardado de antes (sin usarCursos) se lee como cursos apagados', async () => {
-    const { sala } = await abrir()
-    expect(sala.instantanea().catalogo?.restaurante.usarCursos ?? false).toBe(false)
+    const { sala } = await open()
+    expect(sala.instantanea().catalog?.restaurant.usarCursos ?? false).toBe(false)
   })
 
   it('el catálogo con usarCursos: true sobrevive a guardarse y cargarse', async () => {
     const base = catalogoDePrueba()
-    const { sala } = await abrir({
+    const { sala } = await open({
       ...base,
-      restaurante: { ...base.restaurante, usarCursos: true },
+      restaurant: { ...base.restaurant, usarCursos: true },
     })
-    expect(sala.instantanea().catalogo?.restaurante.usarCursos).toBe(true)
+    expect(sala.instantanea().catalog?.restaurant.usarCursos).toBe(true)
   })
 
   it('sin cursos, lo que se agrega no lleva curso y nada queda retenido ni se separa por curso', async () => {
-    const { sala } = await abrir()
-    const pedido = nuevoId()
-    await sala.registrar('PedidoAbierto', pedido, { canal: 'salon', mesa_id: null, comensales: 2 })
-    for (let i = 0; i < 4; i++)
-      await sala.registrar('ItemAgregado', pedido, datosItem({ curso: null }))
-    const estado = await estadoDe(sala, pedido)
-    const lineas = itemsVigentes(estado as never)
-    expect(lineas).toHaveLength(4)
-    expect(lineas.every((i) => i.curso === null && i.estado === 'pendiente')).toBe(true)
-    expect(estado?.cursosRetenidos).toEqual([])
+    const { sala } = await open()
+    const order = newId()
+    await sala.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
+    for (let i = 0; i < 4; i++) await sala.record('ItemAdded', order, datosItem({ course: null }))
+    const status = await stateOf(sala, order)
+    const lines = itemsVigentes(status as never)
+    expect(lines).toHaveLength(4)
+    expect(lines.every((i) => i.course === null && i.status === 'pending')).toBe(true)
+    expect(status?.heldCourses).toEqual([])
   })
 })

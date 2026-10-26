@@ -1,93 +1,93 @@
-import { type EventoAplicable, type EventoNuevo, nuevoId, type TipoEventoPedido } from '@pos/core'
+import { type ApplicableEvent, type NewEvent, newId, type OrderEventType } from '@pos/core'
 import type { Catalogo, EstadoLocal, EventoLocal } from '@pos/sync'
 
 // Utilidades de las pruebas de la sala: eventos locales y un catálogo mínimo, sin red ni base.
 
-export const HORA = '2026-10-24T15:00:00.000Z'
+export const TIME = '2026-10-24T15:00:00.000Z'
 
-let orden = 0
-let secuencia = 0
+let position = 0
+let sequence = 0
 
 /** Un evento local. Con `estado: 'confirmado'` lleva los campos del hub y su secuencia. */
-export function local<T extends TipoEventoPedido>(
-  tipo: T,
-  pedidoId: string,
-  datos: Extract<EventoNuevo, { tipo: T }>['datos'],
-  estado: EstadoLocal = 'confirmado',
-  extras: Partial<EventoNuevo> = {},
+export function local<T extends OrderEventType>(
+  type: T,
+  orderId: string,
+  data: Extract<NewEvent, { type: T }>['data'],
+  status: EstadoLocal = 'confirmed',
+  extras: Partial<NewEvent> = {},
 ): EventoLocal {
   const base = {
-    id: nuevoId(),
-    tipo,
-    version_esquema: 1,
-    agregado_tipo: 'pedido',
-    agregado_id: pedidoId,
-    relacionados: [],
-    datos,
-    sesion_id: null,
-    usuario_id: nuevoId(),
-    dispositivo_id: nuevoId(),
-    autorizacion_id: null,
-    motivo: null,
-    hora_dispositivo: HORA,
-    hora_estimada_hub: HORA,
-    secuencia_base: 0,
+    id: newId(),
+    type,
+    schema_version: 1,
+    aggregate_type: 'order',
+    aggregate_id: orderId,
+    related: [],
+    data,
+    session_id: null,
+    user_id: newId(),
+    device_id: newId(),
+    authorization_id: null,
+    reason: null,
+    device_time: TIME,
+    hub_estimated_time: TIME,
+    base_sequence: 0,
     ...extras,
   }
-  const aceptado =
-    estado === 'confirmado'
+  const accepted =
+    status === 'confirmed'
       ? {
-          secuencia: ++secuencia,
-          recibido_en: HORA,
-          dia_operativo: '2026-10-24',
-          asignaciones: tipo === 'PedidoAbierto' ? { numero_dia: 1 } : {},
-          afecta: [],
-          autorizado_por_id: null,
+          sequence: ++sequence,
+          received_at: TIME,
+          business_day: '2026-10-24',
+          assignments: type === 'OrderOpened' ? { day_number: 1 } : {},
+          affects: [],
+          authorized_by_id: null,
         }
       : {}
   return {
-    evento: { ...base, ...aceptado } as EventoAplicable,
-    estado,
-    propio: true,
-    orden: ++orden,
+    event: { ...base, ...accepted } as ApplicableEvent,
+    status,
+    own: true,
+    position: ++position,
   }
 }
 
-export const datosItem = (campos: Record<string, unknown> = {}) => ({
-  item_id: nuevoId(),
-  producto_id: nuevoId(),
-  variante_id: null,
-  nombre: 'Limonada',
-  precio_unitario: 9_900,
-  impuesto_tipo: 'inc' as const,
-  tarifa: 800,
-  cantidad: 1,
-  comensal: null,
-  curso: null,
-  modificadores: [],
-  notas: null,
-  catalogo_version: 1,
-  precio_canal_id: null,
-  ...campos,
+export const datosItem = (fields: Record<string, unknown> = {}) => ({
+  item_id: newId(),
+  product_id: newId(),
+  variant_id: null,
+  name: 'Limonada',
+  unit_price: 9_900,
+  tax_type: 'inc' as const,
+  rate: 800,
+  quantity: 1,
+  guest: null,
+  course: null,
+  modifiers: [],
+  notes: null,
+  catalog_version: 1,
+  price_channel_id: null,
+  ...fields,
 })
 
-export const apertura = { canal: 'salon' as const, mesa_id: null, comensales: 2 }
+export const opening = { channel: 'dine_in' as const, table_id: null, guests: 2 }
 
 /** Catálogo mínimo: Cocina y Barra, una categoría de cada una y otra sin estación. */
-export function catalogoDePrueba(campos: Partial<Catalogo> = {}): Catalogo {
+export function catalogoDePrueba(fields: Partial<Catalogo> = {}): Catalogo {
   return {
     version: 4,
-    restaurante: { nombre: 'Prueba', sesionInactividadMin: 30 },
-    zonas: [],
-    mesas: [],
-    elementos: [],
-    personal: [],
-    estaciones: [
-      { id: 'E-COCINA', nombre: 'Cocina' },
-      { id: 'E-BARRA', nombre: 'Barra' },
+    restaurant: { name: 'Prueba', sesionInactividadMin: 30 },
+    zones: [],
+    tables: [],
+    elements: [],
+    staff: [],
+    stations: [
+      { id: 'E-COCINA', name: 'Cocina' },
+      { id: 'E-BARRA', name: 'Barra' },
     ],
-    categorias: [],
-    ...campos,
+    categories: [],
+    ...fields,
   }
 }
 
@@ -95,9 +95,9 @@ export function catalogoDePrueba(campos: Partial<Catalogo> = {}): Catalogo {
  * Numera de nuevo la secuencia de los confirmados según su posición: las pruebas arman los
  * eventos en cualquier orden, pero el hub los numera en el orden en que los acepta.
  */
-export function enOrden(locales: readonly EventoLocal[]): EventoLocal[] {
+export function inOrder(locales: readonly EventoLocal[]): EventoLocal[] {
   let n = 0
   return locales.map((l) =>
-    l.estado === 'confirmado' ? { ...l, evento: { ...l.evento, secuencia: ++n } } : l,
+    l.status === 'confirmed' ? { ...l, event: { ...l.event, sequence: ++n } } : l,
   )
 }

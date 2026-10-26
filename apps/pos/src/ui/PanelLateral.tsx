@@ -17,7 +17,7 @@ let desplazamientoPrevio = ''
 function bloquearFondo(panel: object) {
   pila.push(panel)
   if (pila.length > 1) return
-  document.getElementById('raiz')?.setAttribute('inert', '')
+  document.getElementById('root')?.setAttribute('inert', '')
   desplazamientoPrevio = document.body.style.overflow
   document.body.style.overflow = 'hidden'
 }
@@ -26,12 +26,12 @@ function liberarFondo(panel: object) {
   const i = pila.lastIndexOf(panel)
   if (i >= 0) pila.splice(i, 1)
   if (pila.length > 0) return
-  document.getElementById('raiz')?.removeAttribute('inert')
+  document.getElementById('root')?.removeAttribute('inert')
   document.body.style.overflow = desplazamientoPrevio
 }
 
 export function PanelLateral({
-  abierto,
+  opened,
   titulo,
   alCerrar,
   pie,
@@ -39,7 +39,7 @@ export function PanelLateral({
   idDescripcion,
   children,
 }: {
-  abierto: boolean
+  opened: boolean
   titulo: string
   alCerrar: () => void
   /** Acciones fijas abajo (p. ej. "Agregar"). */
@@ -57,29 +57,29 @@ export function PanelLateral({
   const panel = useRef<HTMLDivElement>(null)
   // Quien llama suele pasar una función nueva en cada render: si el efecto dependiera de ella, se
   // repetiría con cada tecla y el campo que se está escribiendo perdería el foco.
-  const cerrar = useRef(alCerrar)
-  cerrar.current = alCerrar
+  const close = useRef(alCerrar)
+  close.current = alCerrar
   const soloRef = useRef(soloConBoton)
   soloRef.current = soloConBoton
 
   useEffect(() => {
-    if (!abierto) return
-    const previo = document.activeElement as HTMLElement | null
-    const este = {}
-    bloquearFondo(este)
+    if (!opened) return
+    const previous = document.activeElement as HTMLElement | null
+    const thisOne = {}
+    bloquearFondo(thisOne)
     panel.current?.focus()
     const alTeclear = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && pila.at(-1) === este && !soloRef.current) cerrar.current()
+      if (e.key === 'Escape' && pila.at(-1) === thisOne && !soloRef.current) close.current()
     }
     window.addEventListener('keydown', alTeclear)
     return () => {
       window.removeEventListener('keydown', alTeclear)
-      liberarFondo(este)
-      previo?.focus()
+      liberarFondo(thisOne)
+      previous?.focus()
     }
-  }, [abierto])
+  }, [opened])
 
-  if (!abierto) return null
+  if (!opened) return null
   return createPortal(
     <div className="fixed inset-0 z-40">
       {/* El fondo cierra al tocarlo; para el lector de pantalla ya está la X del panel. */}
@@ -89,7 +89,7 @@ export function PanelLateral({
         tabIndex={-1}
         className="absolute inset-0 bg-black/40"
         onClick={() => {
-          if (!soloConBoton) cerrar.current()
+          if (!soloConBoton) close.current()
         }}
       />
       <div
@@ -107,10 +107,10 @@ export function PanelLateral({
           </h2>
           {!soloConBoton && (
             <Boton
-              variante="fantasma"
-              icono="cerrar"
+              variant="ghost"
+              icono="close"
               aria-label="Cerrar"
-              onClick={() => cerrar.current()}
+              onClick={() => close.current()}
             />
           )}
         </div>

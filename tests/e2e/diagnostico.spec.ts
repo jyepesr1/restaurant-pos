@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, type Page, test, type WebSocketRoute } from '@playwright/test'
-import { DIR_DATOS_E2E } from './rutas'
+import { DATA_DIR_E2E } from './rutas'
 
-const ARCHIVO = join(DIR_DATOS_E2E, 'diagnosticos.jsonl')
+const ARCHIVO = join(DATA_DIR_E2E, 'diagnostics.jsonl')
 const MENSAJE_ERROR = '✕ No llegó al hub. Revisa que el equipo esté en el Wi-Fi del local.'
 
 /**
@@ -12,7 +12,7 @@ const MENSAJE_ERROR = '✕ No llegó al hub. Revisa que el equipo esté en el Wi
  */
 async function interceptarWs(page: Page) {
   const conexiones: WebSocketRoute[] = []
-  await page.routeWebSocket('**/api/diagnostico/ws', (ws) => {
+  await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
     ws.connectToServer()
     conexiones.push(ws)
   })
@@ -36,10 +36,10 @@ async function relojSinEmpates(page: Page) {
 }
 
 /** Simula que el celular bloquea o desbloquea la pantalla (visibilitychange). */
-async function cambiarVisibilidad(page: Page, oculta: boolean) {
+async function cambiarVisibilidad(page: Page, isHidden: boolean) {
   // Se evalúa como texto porque este proyecto de pruebas no incluye los tipos del DOM.
   await page.evaluate(`(() => {
-    const oculta = ${oculta}
+    const oculta = ${isHidden}
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => oculta })
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -55,7 +55,7 @@ async function cambiarVisibilidad(page: Page, oculta: boolean) {
  */
 async function hubControlable(page: Page) {
   const hub = { caido: false, conexiones: [] as WebSocketRoute[] }
-  await page.routeWebSocket('**/api/diagnostico/ws', (ws) => {
+  await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
     if (hub.caido) {
       ws.close({ code: 1011 })
       return
@@ -97,10 +97,10 @@ async function instrumentarWs(page: Page) {
 }
 
 interface SocketsEnPagina {
-  vivos: number
+  live: number
   maximoSimultaneos: number
   /** readyState de cada socket creado, en orden. */
-  estados: number[]
+  statuses: number[]
 }
 
 const leerSockets = (page: Page) =>
@@ -120,9 +120,9 @@ const wsConectado = (page: Page) => expect(fila(page, CANAL)).toContainText('✓
 const wsDesconectado = (page: Page) =>
   expect(fila(page, CANAL)).toContainText('✕ Desconectado, reintentando')
 /** Valor (columna derecha) de una fila del diagnóstico. */
-const valor = (page: Page, titulo: string) => fila(page, titulo).locator(':scope > span').last()
-const ponerNombre = (page: Page, nombre = 'Equipo de pruebas') =>
-  page.getByLabel('Nombre de este equipo').fill(nombre)
+const value = (page: Page, titulo: string) => fila(page, titulo).locator(':scope > span').last()
+const ponerNombre = (page: Page, name = 'Equipo de pruebas') =>
+  page.getByLabel('Nombre de este equipo').fill(name)
 
 const envio = (page: Page) =>
   page.getByRole('button', { name: /Enviar resultados al hub|Enviando/ })
@@ -131,7 +131,7 @@ test.describe('pantalla de diagnóstico', () => {
   test('muestra el canal conectado, el tiempo de respuesta y datos locales funcionando', async ({
     page,
   }) => {
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
 
     await expect(page.getByRole('heading', { name: 'Diagnóstico del dispositivo' })).toBeVisible()
     await wsConectado(page)
@@ -151,7 +151,7 @@ test.describe('pantalla de diagnóstico', () => {
 
   test('si el canal se corta muestra "Desconectado" y se reconecta solo', async ({ page }) => {
     const conexiones = await interceptarWs(page)
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
     expect(conexiones).toHaveLength(1)
 
@@ -162,7 +162,7 @@ test.describe('pantalla de diagnóstico', () => {
     await wsConectado(page)
     expect(conexiones).toHaveLength(2)
     // La reconexión se refleja en el contador del resumen (se refresca cada 3 s).
-    await expect(valor(page, 'Veces que se reconectó')).toHaveText('1', { timeout: 10_000 })
+    await expect(value(page, 'Veces que se reconectó')).toHaveText('1', { timeout: 10_000 })
   })
 
   test('sigue reintentando mientras el hub rechaza la conexión y se recupera al volver', async ({
@@ -170,7 +170,7 @@ test.describe('pantalla de diagnóstico', () => {
   }) => {
     let hubCaido = false
     const conexiones: WebSocketRoute[] = []
-    await page.routeWebSocket('**/api/diagnostico/ws', (ws) => {
+    await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
       if (hubCaido) {
         ws.close({ code: 1011 })
         return
@@ -179,7 +179,7 @@ test.describe('pantalla de diagnóstico', () => {
       conexiones.push(ws)
     })
 
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
 
     hubCaido = true
@@ -196,7 +196,7 @@ test.describe('pantalla de diagnóstico', () => {
     page,
   }) => {
     await relojSinEmpates(page)
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
     const bloqueo = fila(page, BLOQUEO)
     await expect(bloqueo).toContainText('Aún no ha pasado')
@@ -216,7 +216,7 @@ test.describe('pantalla de diagnóstico', () => {
   }) => {
     const conexiones = await interceptarWs(page)
     await relojSinEmpates(page)
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
 
     await cambiarVisibilidad(page, true)
@@ -250,7 +250,7 @@ test.describe('pantalla de diagnóstico', () => {
       Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 })
     })()`)
 
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await expect(fila(page, CANAL)).toContainText('Conectando')
     // Se abandona a los 4 s y el siguiente intento sale al segundo.
     await expect(fila(page, CANAL)).toContainText('✓ Conectado', { timeout: 10_000 })
@@ -261,7 +261,7 @@ test.describe('pantalla de diagnóstico', () => {
   }) => {
     let hubCaido = false
     const conexiones: WebSocketRoute[] = []
-    await page.routeWebSocket('**/api/diagnostico/ws', (ws) => {
+    await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
       if (hubCaido) {
         ws.close({ code: 1011 })
         return
@@ -270,7 +270,7 @@ test.describe('pantalla de diagnóstico', () => {
       conexiones.push(ws)
     })
     await relojSinEmpates(page)
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
 
     // Con la pantalla bloqueada se corta y los reintentos fallan: la espera entre ellos crece.
@@ -291,7 +291,7 @@ test.describe('pantalla de diagnóstico', () => {
     const hub = await hubControlable(page)
     await instrumentarWs(page)
     await relojSinEmpates(page)
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
 
     // Se corta con la pantalla bloqueada y los reintentos fallan: queda un reintento programado.
@@ -309,7 +309,7 @@ test.describe('pantalla de diagnóstico', () => {
     await page.waitForTimeout(6000)
     await wsConectado(page)
     const sockets = await leerSockets(page)
-    expect(sockets.vivos).toBe(1)
+    expect(sockets.live).toBe(1)
     expect(sockets.maximoSimultaneos).toBe(1)
   })
 
@@ -319,14 +319,14 @@ test.describe('pantalla de diagnóstico', () => {
     const hub = await hubControlable(page)
     await instrumentarWs(page)
     await relojSinEmpates(page)
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
 
     // Pantalla bloqueada: se corta y el reintento (al segundo) queda colgado en CONNECTING.
     await cambiarVisibilidad(page, true)
     await colgarSocketsNuevos(page, true)
     await hub.conexiones[0]?.close({ code: 1006 })
-    await expect.poll(async () => (await leerSockets(page)).estados).toEqual([3, 0])
+    await expect.poll(async () => (await leerSockets(page)).statuses).toEqual([3, 0])
 
     // El hub está bien: el usuario vuelve cuando el intento lleva poco tiempo colgado.
     await colgarSocketsNuevos(page, false)
@@ -335,8 +335,8 @@ test.describe('pantalla de diagnóstico', () => {
     // Debe reconectar antes de que el límite de 4 s abandone el intento por su cuenta.
     await expect(fila(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
     const sockets = await leerSockets(page)
-    expect(sockets.estados).toEqual([3, 3, 1])
-    expect(sockets.vivos).toBe(1)
+    expect(sockets.statuses).toEqual([3, 3, 1])
+    expect(sockets.live).toBe(1)
     expect(hub.conexiones).toHaveLength(2)
     await expect(fila(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
   })
@@ -346,7 +346,7 @@ test.describe('pantalla de diagnóstico', () => {
   }) => {
     const hub = await hubControlable(page)
     await relojSinEmpates(page)
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
 
     await cambiarVisibilidad(page, true)
@@ -362,7 +362,7 @@ test.describe('pantalla de diagnóstico', () => {
     await wsConectado(page)
     // El hub no manda nada nada más abrir (el primer latido sale a los 5 s): eso no es "mudo".
     expect(hub.conexiones).toHaveLength(2)
-    await expect(valor(page, 'Veces que se reconectó')).toHaveText('1', { timeout: 10_000 })
+    await expect(value(page, 'Veces que se reconectó')).toHaveText('1', { timeout: 10_000 })
   })
 
   test('ocultar y volver varias veces seguidas sin conexión no duplica sockets y termina conectado', async ({
@@ -371,7 +371,7 @@ test.describe('pantalla de diagnóstico', () => {
     const hub = await hubControlable(page)
     await instrumentarWs(page)
     await relojSinEmpates(page)
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
 
     await cambiarVisibilidad(page, true)
@@ -390,7 +390,7 @@ test.describe('pantalla de diagnóstico', () => {
     await page.waitForTimeout(6000)
     await wsConectado(page)
     const sockets = await leerSockets(page)
-    expect(sockets.vivos).toBe(1)
+    expect(sockets.live).toBe(1)
     expect(sockets.maximoSimultaneos).toBe(1)
 
     const bloqueo = fila(page, BLOQUEO)
@@ -407,7 +407,7 @@ test.describe('pantalla de diagnóstico', () => {
   }) => {
     const hub = await hubControlable(page)
     await relojSinEmpates(page)
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
 
     await cambiarVisibilidad(page, true)
@@ -431,7 +431,7 @@ test.describe('pantalla de diagnóstico', () => {
   test('si al volver tarda más de 3 s en reconectar, el veredicto lo avisa', async ({ page }) => {
     const hub = await hubControlable(page)
     await relojSinEmpates(page)
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
 
     await cambiarVisibilidad(page, true)
@@ -455,17 +455,17 @@ test.describe('pantalla de diagnóstico', () => {
   }) => {
     let silenciar = false
     const conexiones: WebSocketRoute[] = []
-    await page.routeWebSocket('**/api/diagnostico/ws', (ws) => {
+    await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
       const servidor = ws.connectToServer()
       conexiones.push(ws)
       // Con `silenciar` la primera conexión deja de recibir del hub, pero sigue abierta.
       const esLaPrimera = conexiones.length === 1
-      servidor.onMessage((mensaje) => {
-        if (!(esLaPrimera && silenciar)) ws.send(mensaje)
+      servidor.onMessage((message) => {
+        if (!(esLaPrimera && silenciar)) ws.send(message)
       })
     })
     await relojSinEmpates(page)
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
 
     await cambiarVisibilidad(page, true)
@@ -483,7 +483,7 @@ test.describe('pantalla de diagnóstico', () => {
   }) => {
     let silenciar = true
     const conexiones: WebSocketRoute[] = []
-    await page.routeWebSocket('**/api/diagnostico/ws', (ws) => {
+    await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
       const servidor = ws.connectToServer()
       conexiones.push(ws)
       // La primera conexión queda "muerta": el hub no entrega nada pero el canal sigue abierto.
@@ -493,7 +493,7 @@ test.describe('pantalla de diagnóstico', () => {
       }
     })
 
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await wsConectado(page)
     await expect(fila(page, CANAL)).toContainText('Sin respuesta, reconectando', {
       timeout: 25_000,
@@ -503,11 +503,11 @@ test.describe('pantalla de diagnóstico', () => {
   })
 
   test('el nombre del equipo se conserva al recargar', async ({ page }) => {
-    await page.goto('/diagnostico')
-    const campo = page.getByLabel('Nombre de este equipo')
-    await expect(campo).toHaveValue('')
+    await page.goto('/diagnostics')
+    const field = page.getByLabel('Nombre de este equipo')
+    await expect(field).toHaveValue('')
 
-    await campo.fill('Android mesero 1')
+    await field.fill('Android mesero 1')
     await page.reload()
 
     await expect(page.getByLabel('Nombre de este equipo')).toHaveValue('Android mesero 1')
@@ -518,35 +518,35 @@ test.describe('pantalla de diagnóstico', () => {
   }) => {
     // El envío se atiende en la prueba para no escribir en la carpeta de datos del hub.
     let cuerpo: Record<string, unknown> | undefined
-    await page.route('**/api/diagnostico', async (ruta) => {
+    await page.route('**/api/diagnostics', async (ruta) => {
       if (ruta.request().method() !== 'POST') return ruta.fallback()
       cuerpo = ruta.request().postDataJSON()
-      return ruta.fulfill({ json: { guardado: true } })
+      return ruta.fulfill({ json: { saved: true } })
     })
 
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await expect(fila(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
     await page.getByLabel('Nombre de este equipo').fill('Caja principal')
     await envio(page).click()
 
     await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
     expect(cuerpo).toMatchObject({
-      nombre: 'Caja principal',
+      name: 'Caja principal',
       indexedDb: true,
       capacidades: expect.objectContaining({ contextoSeguro: true }),
       resumen: expect.objectContaining({ cargas: 1 }),
     })
-    const tipos = ((cuerpo?.eventos ?? []) as { tipo: string }[]).map((evento) => evento.tipo)
-    expect(tipos).toContain('carga')
+    const types = ((cuerpo?.events ?? []) as { type: string }[]).map((event) => event.type)
+    expect(types).toContain('load')
   })
 
   test('si el hub rechaza el envío (500) muestra el mensaje de error', async ({ page }) => {
-    await page.route('**/api/diagnostico', (ruta) =>
+    await page.route('**/api/diagnostics', (ruta) =>
       ruta.request().method() === 'POST'
         ? ruta.fulfill({ status: 500, json: { error: 'falló' } })
         : ruta.fallback(),
     )
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await ponerNombre(page)
     await envio(page).click()
 
@@ -557,20 +557,20 @@ test.describe('pantalla de diagnóstico', () => {
   test('si el envío falla por red muestra el error y permite reintentar con éxito', async ({
     page,
   }) => {
-    await page.route('**/api/diagnostico', (ruta) =>
+    await page.route('**/api/diagnostics', (ruta) =>
       ruta.request().method() === 'POST' ? ruta.abort('connectionrefused') : ruta.fallback(),
     )
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await ponerNombre(page)
     await envio(page).click()
     await expect(page.getByRole('status')).toHaveText(MENSAJE_ERROR)
     // El botón vuelve a quedar disponible.
     await expect(envio(page)).toBeEnabled()
 
-    await page.unroute('**/api/diagnostico')
-    await page.route('**/api/diagnostico', (ruta) =>
+    await page.unroute('**/api/diagnostics')
+    await page.route('**/api/diagnostics', (ruta) =>
       ruta.request().method() === 'POST'
-        ? ruta.fulfill({ json: { guardado: true } })
+        ? ruta.fulfill({ json: { saved: true } })
         : ruta.fallback(),
     )
     await envio(page).click()
@@ -579,11 +579,11 @@ test.describe('pantalla de diagnóstico', () => {
 
   test('sin nombre no envía y pide escribirlo', async ({ page }) => {
     let enviados = 0
-    await page.route('**/api/diagnostico', (ruta) => {
+    await page.route('**/api/diagnostics', (ruta) => {
       if (ruta.request().method() === 'POST') enviados += 1
       return ruta.fallback()
     })
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await envio(page).click()
 
     await expect(page.getByRole('status')).toHaveText(
@@ -594,16 +594,16 @@ test.describe('pantalla de diagnóstico', () => {
   })
 
   test('"Borrar registro" pide confirmación y luego limpia el resumen', async ({ page }) => {
-    await page.route('**/api/diagnostico', (ruta) =>
+    await page.route('**/api/diagnostics', (ruta) =>
       ruta.request().method() === 'POST'
-        ? ruta.fulfill({ json: { guardado: true } })
+        ? ruta.fulfill({ json: { saved: true } })
         : ruta.fallback(),
     )
-    await page.goto('/diagnostico')
+    await page.goto('/diagnostics')
     await ponerNombre(page)
     await envio(page).click()
     await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
-    const recargas = valor(page, 'El navegador recargó la página solo')
+    const recargas = value(page, 'El navegador recargó la página solo')
     await expect(recargas).toContainText('0 veces en 1 carga')
 
     // Cancelar no borra nada.
@@ -623,19 +623,19 @@ test.describe('pantalla de diagnóstico', () => {
 test('el hub guarda el informe enviado desde la pantalla en diagnosticos.jsonl', async ({
   page,
 }, testInfo) => {
-  test.skip(testInfo.project.name !== 'caja', 'Una sola ejecución basta')
+  test.skip(testInfo.project.name !== 'register', 'Una sola ejecución basta')
 
-  const nombre = `e2e-diagnostico-${Date.now()}`
-  await page.goto('/diagnostico')
+  const name = `e2e-diagnostics-${Date.now()}`
+  await page.goto('/diagnostics')
   await expect(fila(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
-  await page.getByLabel('Nombre de este equipo').fill(nombre)
+  await page.getByLabel('Nombre de este equipo').fill(name)
   await envio(page).click()
   await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
 
-  const lineas = (await readFile(ARCHIVO, 'utf8')).split('\n').filter(Boolean)
-  const mio = lineas.map((linea) => JSON.parse(linea)).find((r) => r.datos?.nombre === nombre)
+  const lines = (await readFile(ARCHIVO, 'utf8')).split('\n').filter(Boolean)
+  const mio = lines.map((line) => JSON.parse(line)).find((r) => r.data?.name === name)
   expect(mio).toBeDefined()
-  expect(mio.datos.indexedDb).toBe(true)
+  expect(mio.data.indexedDb).toBe(true)
   expect(new Date(mio.recibidoEn).getTime()).not.toBeNaN()
-  expect(mio.datos.eventos.length).toBeGreaterThan(0)
+  expect(mio.data.events.length).toBeGreaterThan(0)
 })

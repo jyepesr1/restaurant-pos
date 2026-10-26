@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite'
-import { nuevoId } from '@pos/core'
+import { newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
-import { copiaItem, evento } from '../../../packages/core/src/pruebas/fabrica'
+import { event, itemCopy } from '../../../packages/core/src/testing/factory'
 import { migrar } from './migraciones'
 import { Nube } from './nube'
 import { sqlDePg } from './pg'
@@ -11,13 +11,13 @@ import { sqlDePg } from './pg'
 
 function clienteDe(db: PGlite) {
   return {
-    async query(texto: string, parametros?: unknown[]) {
+    async query(text: string, parametros?: unknown[]) {
       if (parametros === undefined) {
         // Como pg: sin parámetros, el texto puede traer varias sentencias.
-        const r = await db.exec(texto)
+        const r = await db.exec(text)
         return { rows: r.at(-1)?.rows ?? [] }
       }
-      return db.query(texto, parametros)
+      return db.query(text, parametros)
     },
   }
 }
@@ -28,42 +28,42 @@ describe('sqlDePg', () => {
     const sql = sqlDePg(clienteDe(db) as never)
     expect(await migrar(sql)).toEqual([1])
     const nube = new Nube(sql, () => new Date('2026-10-26T15:00:00Z'))
-    const restaurante = nuevoId()
-    await nube.crearRestaurante({ id: restaurante, nombre: 'R' })
-    const codigo = await nube.crearCodigo(restaurante)
-    if (!codigo) throw new Error('sin código')
-    const hubId = nuevoId()
+    const restaurant = newId()
+    await nube.crearRestaurante({ id: restaurant, name: 'R' })
+    const code = await nube.crearCodigo(restaurant)
+    if (!code) throw new Error('sin código')
+    const hubId = newId()
     const r = await nube.registrarHub({
-      codigo: codigo.codigo,
+      code: code.code,
       hub_id: hubId,
-      sede_id: nuevoId(),
-      nombre: 'Caja',
+      location_id: newId(),
+      name: 'Caja',
       instancia: 'i',
     })
-    if (!r.ok) throw new Error(r.motivo)
-    const hub = await nube.autenticar(r.credencial)
+    if (!r.ok) throw new Error(r.reason)
+    const hub = await nube.authenticate(r.credential)
     if (!hub) throw new Error('sin hub')
-    const pedido = nuevoId()
-    const eventos = [
-      evento(pedido, 'PedidoAbierto', { canal: 'salon', mesa_id: null, comensales: 2 }),
-      evento(pedido, 'ItemAgregado', copiaItem()),
+    const order = newId()
+    const events = [
+      event(order, 'OrderOpened', { channel: 'dine_in', table_id: null, guests: 2 }),
+      event(order, 'ItemAdded', itemCopy()),
     ]
-    const resultados = await nube.recibirEventos(hub, eventos)
-    expect(resultados.map((x) => x.estado)).toEqual(['guardado', 'guardado'])
-    expect(await nube.ultimaSecuencia(hub)).toBe(Math.max(...eventos.map((e) => e.secuencia)))
+    const resultados = await nube.recibirEventos(hub, events)
+    expect(resultados.map((x) => x.status)).toEqual(['saved', 'saved'])
+    expect(await nube.lastSequence(hub)).toBe(Math.max(...events.map((e) => e.sequence)))
   })
 
   it('si el trabajo falla, la transacción se deshace', async () => {
     const db = new PGlite()
     const sql = sqlDePg(clienteDe(db) as never)
     await migrar(sql)
-    const id = nuevoId()
+    const id = newId()
     await expect(
       sql.transaccion(async (tx) => {
-        await tx.query('INSERT INTO restaurante (id, nombre) VALUES ($1, $2)', [id, 'R'])
+        await tx.query('INSERT INTO restaurants (id, name) VALUES ($1, $2)', [id, 'R'])
         throw new Error('se cayó')
       }),
     ).rejects.toThrow('se cayó')
-    expect(await sql.query('SELECT 1 FROM restaurante WHERE id = $1', [id])).toEqual([])
+    expect(await sql.query('SELECT 1 FROM restaurants WHERE id = $1', [id])).toEqual([])
   })
 })

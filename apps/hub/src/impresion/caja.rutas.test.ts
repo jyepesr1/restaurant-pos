@@ -1,4 +1,4 @@
-import { configCompleta, nuevoId } from '@pos/core'
+import { fullConfig, newId } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { insertarVersionado, SISTEMA } from '../acceso/registros'
 import { leerCatalogo } from '../catalogo'
@@ -6,82 +6,84 @@ import { type Equipo, montarImpresion } from './montaje-impresion'
 
 // Las rutas de la tarea 1.6: `/api/caja/precuenta`, `/api/caja/configuracion`, `/api/caja/medios`,
 // `/api/caja/propina` y `/api/datafonos`, y lo que la carta dice del cobro. Todas piden un equipo
-// con token y una sesión con `administrar_dispositivos`.
+// con token y una sesión con `manage_devices`.
 
 type Json = Record<string, unknown>
 
 function mundo() {
   const t = montarImpresion()
-  const admin = t.equipo('admin', 'caja')
-  const cajero = t.equipo('cajero', 'caja')
-  const gerente = t.equipo('gerente', 'caja')
-  const mesero = t.equipo('mesero')
+  const admin = t.device('admin', 'register')
+  const cashier = t.device('cashier', 'register')
+  const manager = t.device('manager', 'register')
+  const waiter = t.device('waiter')
   const llamar = (e: Equipo, url: string, extra: Json = {}) =>
     t.post(url, { ...e.cuerpoSesion, ...extra }, e.token)
-  const catalogo = () => leerCatalogo(t.db, t.restauranteId)
+  const catalog = () => leerCatalogo(t.db, t.restauranteId)
   const configGuardada = () =>
-    configCompleta(
+    fullConfig(
       JSON.parse(
         String(
-          t.db.prepare('SELECT config FROM restaurante WHERE id = ?').get(t.restauranteId)?.config,
+          t.db.prepare('SELECT config FROM restaurants WHERE id = ?').get(t.restauranteId)?.config,
         ),
       ),
     )
-  const precuenta = (impresora_id: unknown, e: Equipo = admin) =>
-    llamar(e, '/api/caja/precuenta', { impresora_id })
-  const medios = (m: unknown, e: Equipo = admin) => llamar(e, '/api/caja/medios', { medios: m })
-  const propina = (puntos: unknown, e: Equipo = admin) => llamar(e, '/api/caja/propina', { puntos })
-  const datafono = (d: Json, e: Equipo = admin) => llamar(e, '/api/datafonos', { datafono: d })
-  const ajustes = async (e: Equipo = admin) =>
-    (await llamar(e, '/api/caja/configuracion')).json() as {
-      medios_pago: string[]
-      propina_sugerida: number
-      datafonos: { id: string; nombre: string; proveedor: string; activo: boolean }[]
+  const preBill = (printer_id: unknown, e: Equipo = admin) =>
+    llamar(e, '/api/register/pre-bill', { printer_id })
+  const medios = (m: unknown, e: Equipo = admin) =>
+    llamar(e, '/api/register/payment-methods', { medios: m })
+  const tip = (puntos: unknown, e: Equipo = admin) => llamar(e, '/api/register/tip', { puntos })
+  const cardTerminal = (d: Json, e: Equipo = admin) =>
+    llamar(e, '/api/card-terminals', { cardTerminal: d })
+  const settings = async (e: Equipo = admin) =>
+    (await llamar(e, '/api/register/config')).json() as {
+      payment_methods: string[]
+      suggested_tip: number
+      cardTerminals: { id: string; name: string; provider: string; active: boolean }[]
     }
   /** Un restaurante ajeno en la misma base, con una impresora y un datáfono suyos. */
   const ajeno = () => {
-    const otro = nuevoId()
+    const other = newId()
     t.db
       .prepare(
-        `INSERT INTO restaurante (id, restaurante_id, creado_en, actualizado_en, version, nombre, config)
+        `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
          VALUES (?, ?, ?, ?, 1, 'Otro restaurante', '{}')`,
       )
-      .run(otro, otro, new Date(t.reloj()).toISOString(), new Date(t.reloj()).toISOString())
+      .run(other, other, new Date(t.clock()).toISOString(), new Date(t.clock()).toISOString())
     t.db
-      .prepare("INSERT INTO contador (restaurante_id, nombre, valor) VALUES (?, 'catalogo', 1)")
-      .run(otro)
-    const impresora = insertarVersionado(
+      .prepare("INSERT INTO counters (restaurant_id, name, value) VALUES (?, 'catalog', 1)")
+      .run(other)
+    const printer = insertarVersionado(
       t.db,
-      'impresora',
-      otro,
-      { nombre: 'Barra ajena', conexion: 'red', direccion: '10.9.9.9', puerto: 9100, ancho: 80 },
+      'printers',
+      other,
+      { name: 'Barra ajena', connection: 'network', address: '10.9.9.9', port: 9100, width: 80 },
       SISTEMA,
-      new Date(t.reloj()).toISOString(),
+      new Date(t.clock()).toISOString(),
     )
     const datafonoId = insertarVersionado(
       t.db,
-      'datafono',
-      otro,
-      { nombre: 'Bold ajeno', proveedor: 'bold' },
+      'card_terminals',
+      other,
+      { name: 'Bold ajeno', provider: 'bold' },
       SISTEMA,
-      new Date(t.reloj()).toISOString(),
+      new Date(t.clock()).toISOString(),
     )
-    return { otro, impresora, datafonoId }
+    return { other, printer, datafonoId }
   }
   return {
     t,
     admin,
-    cajero,
-    gerente,
-    mesero,
+    cashier,
+    manager,
+    waiter,
     llamar,
-    catalogo,
+    catalog,
     configGuardada,
-    precuenta,
+    preBill,
     medios,
-    propina,
-    datafono,
-    ajustes,
+    tip,
+    cardTerminal,
+    settings,
     ajeno,
   }
 }
@@ -90,31 +92,31 @@ type Mundo = ReturnType<typeof mundo>
 
 describe('permisos: las cinco rutas piden administrar_dispositivos', () => {
   const rutas: [string, (m: Mundo, e: Equipo) => Promise<{ statusCode: number }>][] = [
-    ['/api/caja/precuenta', (m, e) => m.precuenta(null, e)],
-    ['/api/caja/configuracion', (m, e) => m.llamar(e, '/api/caja/configuracion')],
-    ['/api/caja/medios', (m, e) => m.medios(['efectivo', 'nequi'], e)],
-    ['/api/caja/propina', (m, e) => m.propina(500, e)],
+    ['/api/register/pre-bill', (m, e) => m.preBill(null, e)],
+    ['/api/register/config', (m, e) => m.llamar(e, '/api/register/config')],
+    ['/api/register/payment-methods', (m, e) => m.medios(['cash', 'nequi'], e)],
+    ['/api/register/tip', (m, e) => m.tip(500, e)],
     [
-      '/api/datafonos',
-      (m, e) => m.datafono({ nombre: 'Nuevo', proveedor: 'otro', activo: true }, e),
+      '/api/card-terminals',
+      (m, e) => m.cardTerminal({ name: 'Nuevo', provider: 'other', active: true }, e),
     ],
   ]
   /** El resto del cuerpo que cada ruta espera, para probar la sesión con datos válidos. */
   const CUERPO: Record<string, Json> = {
-    '/api/caja/precuenta': { impresora_id: null },
-    '/api/caja/configuracion': {},
-    '/api/caja/medios': { medios: ['efectivo'] },
-    '/api/caja/propina': { puntos: 500 },
-    '/api/caja/medios-propios': { medio: { nombre: 'Sodexo', activo: true } },
-    '/api/datafonos': { datafono: { nombre: 'Nuevo', proveedor: 'otro', activo: true } },
+    '/api/register/pre-bill': { printer_id: null },
+    '/api/register/config': {},
+    '/api/register/payment-methods': { medios: ['cash'] },
+    '/api/register/tip': { puntos: 500 },
+    '/api/register/custom-methods': { method: { name: 'Sodexo', active: true } },
+    '/api/card-terminals': { cardTerminal: { name: 'Nuevo', provider: 'other', active: true } },
   }
 
   it.each(rutas)('%s: sin token responde 401, aunque el cuerpo sea basura', async (url) => {
     const m = mundo()
-    for (const cuerpo of [{}, 'texto', [1], { medios: 1 }]) {
+    for (const cuerpo of [{}, 'text', [1], { medios: 1 }]) {
       const r = await m.t.post(url, cuerpo)
       expect(r.statusCode).toBe(401)
-      expect(r.json()).toMatchObject({ error: 'token_invalido' })
+      expect(r.json()).toMatchObject({ error: 'invalid_token' })
     }
   })
 
@@ -126,26 +128,26 @@ describe('permisos: las cinco rutas piden administrar_dispositivos', () => {
 
   it.each(rutas)('%s: sesión inventada o con otro secreto, 401', async (url) => {
     const m = mundo()
-    for (const sesion of [
-      { sesion_id: '01JB0000000000000000000000', secreto: 'inventado' },
-      { sesion_id: m.admin.cuerpoSesion.sesion_id, secreto: 'otro-secreto' },
+    for (const session of [
+      { session_id: '01JB0000000000000000000000', secret: 'inventado' },
+      { session_id: m.admin.cuerpoSesion.session_id, secret: 'otro-secreto' },
     ]) {
-      const r = await m.t.post(url, { ...sesion, ...CUERPO[url] }, m.admin.token)
+      const r = await m.t.post(url, { ...session, ...CUERPO[url] }, m.admin.token)
       expect(r.statusCode).toBe(401)
-      expect(r.json()).toMatchObject({ error: 'sesion_invalida' })
+      expect(r.json()).toMatchObject({ error: 'invalid_session' })
     }
   })
 
   it.each(rutas)('%s: la sesión de otro equipo no sirve', async (url, llamar) => {
     const m = mundo()
-    const r = await m.t.post(url, { ...m.admin.cuerpoSesion, ...CUERPO[url] }, m.mesero.token)
+    const r = await m.t.post(url, { ...m.admin.cuerpoSesion, ...CUERPO[url] }, m.waiter.token)
     expect(r.statusCode).toBe(401)
     expect(llamar).toBeTypeOf('function')
   })
 
   it.each(rutas)('%s: sin los datos de la sesión, 400', async (url) => {
     const m = mundo()
-    const { sesion_id: _s, secreto: _x, ...sinSesion } = { ...m.admin.cuerpoSesion, ...CUERPO[url] }
+    const { session_id: _s, secret: _x, ...sinSesion } = { ...m.admin.cuerpoSesion, ...CUERPO[url] }
     const r = await m.t.post(url, sinSesion, m.admin.token)
     expect(r.statusCode).toBe(400)
   })
@@ -153,116 +155,116 @@ describe('permisos: las cinco rutas piden administrar_dispositivos', () => {
   it.each(rutas)(
     '%s: cajero, gerente y mesero responden 403 y no cambian nada',
     async (url, llamar) => {
-      for (const quien of ['cajero', 'gerente', 'mesero'] as const) {
+      for (const quien of ['cashier', 'manager', 'waiter'] as const) {
         const m = mundo()
-        const antes = m.catalogo().version
+        const before = m.catalog().version
         const r = await llamar(m, m[quien])
         expect(r.statusCode, `${url} · ${quien}`).toBe(403)
-        expect(m.catalogo().version).toBe(antes)
+        expect(m.catalog().version).toBe(before)
         expect(m.t.cambiosCatalogo).toEqual([])
-        expect(m.configGuardada().medios_pago).toEqual(configCompleta().medios_pago)
+        expect(m.configGuardada().payment_methods).toEqual(fullConfig().payment_methods)
       }
     },
   )
 
   it.each(rutas)('%s: una sesión cerrada, 401', async (url, llamar) => {
     const m = mundo()
-    await m.t.post('/api/sesiones/cerrar', m.admin.cuerpoSesion, m.admin.token)
+    await m.t.post('/api/sessions/close', m.admin.cuerpoSesion, m.admin.token)
     expect((await llamar(m, m.admin)).statusCode, url).toBe(401)
   })
 
   it('un equipo retirado pierde el acceso a las rutas de caja', async () => {
     const m = mundo()
     await m.t.post(
-      `/api/dispositivos/${m.mesero.conexion.dispositivoId}/revocar`,
+      `/api/devices/${m.waiter.connection.dispositivoId}/revoke`,
       m.admin.cuerpoSesion,
       m.admin.token,
     )
-    expect((await m.medios(['efectivo'], m.mesero)).statusCode).toBe(401)
+    expect((await m.medios(['cash'], m.waiter)).statusCode).toBe(401)
   })
 })
 
 describe('POST /api/caja/precuenta', () => {
   const nuevaImpresora = (m: Mundo, extra: Record<string, string | number> = {}) =>
-    m.t.impresoraNueva('Caja', [m.t.cocina], extra)
+    m.t.impresoraNueva('Caja', [m.t.kitchen], extra)
 
   it('de fábrica no hay impresora de precuentas y la carta dice que no se imprime', () => {
     const m = mundo()
-    expect(m.configGuardada().impresora_precuenta_id).toBeNull()
-    expect(m.catalogo().restaurante.cobro?.imprimePrecuenta).toBe(false)
+    expect(m.configGuardada().pre_bill_printer_id).toBeNull()
+    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
   })
 
   it('elegir una impresora activa: 204, la guarda, avisa y la carta dice que se imprime', async () => {
     const m = mundo()
     const { id } = nuevaImpresora(m)
-    const antes = m.catalogo().version
-    const r = await m.precuenta(id)
+    const before = m.catalog().version
+    const r = await m.preBill(id)
     expect(r.statusCode).toBe(204)
     expect(r.body).toBe('')
-    expect(m.configGuardada().impresora_precuenta_id).toBe(id)
-    expect(m.catalogo().restaurante.cobro?.imprimePrecuenta).toBe(true)
-    expect(m.catalogo().version).toBeGreaterThan(antes)
-    expect(m.t.cambiosCatalogo).toEqual([m.catalogo().version])
+    expect(m.configGuardada().pre_bill_printer_id).toBe(id)
+    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(true)
+    expect(m.catalog().version).toBeGreaterThan(before)
+    expect(m.t.cambiosCatalogo).toEqual([m.catalog().version])
   })
 
   it('el cambio queda a nombre de quien lo hizo', async () => {
     const m = mundo()
-    await m.precuenta(nuevaImpresora(m).id)
+    await m.preBill(nuevaImpresora(m).id)
     const fila = m.t.db
-      .prepare('SELECT usuario_id, dispositivo_id FROM restaurante WHERE id = ?')
+      .prepare('SELECT user_id, device_id FROM restaurants WHERE id = ?')
       .get(m.t.restauranteId)
     expect(fila).toEqual({
-      usuario_id: m.t.personas.admin.usuarioId,
-      dispositivo_id: m.admin.conexion.dispositivoId,
+      user_id: m.t.people.admin.userId,
+      device_id: m.admin.connection.dispositivoId,
     })
   })
 
   it('quitarla (null) la deja sin impresora y repetirlo no sube la versión', async () => {
     const m = mundo()
-    await m.precuenta(nuevaImpresora(m).id)
-    expect((await m.precuenta(null)).statusCode).toBe(204)
-    expect(m.configGuardada().impresora_precuenta_id).toBeNull()
-    expect(m.catalogo().restaurante.cobro?.imprimePrecuenta).toBe(false)
-    const v = m.catalogo().version
-    expect((await m.precuenta(null)).statusCode).toBe(204)
-    expect(m.catalogo().version).toBe(v)
+    await m.preBill(nuevaImpresora(m).id)
+    expect((await m.preBill(null)).statusCode).toBe(204)
+    expect(m.configGuardada().pre_bill_printer_id).toBeNull()
+    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
+    const v = m.catalog().version
+    expect((await m.preBill(null)).statusCode).toBe(204)
+    expect(m.catalog().version).toBe(v)
   })
 
   it('elegir la misma impresora otra vez no sube la versión ni avisa', async () => {
     const m = mundo()
     const { id } = nuevaImpresora(m)
-    await m.precuenta(id)
-    const v = m.catalogo().version
+    await m.preBill(id)
+    const v = m.catalog().version
     const avisos = m.t.cambiosCatalogo.length
-    await m.precuenta(id)
-    expect(m.catalogo().version).toBe(v)
+    await m.preBill(id)
+    expect(m.catalog().version).toBe(v)
     expect(m.t.cambiosCatalogo).toHaveLength(avisos)
   })
 
   it('una impresora archivada se rechaza con 400', async () => {
     const m = mundo()
-    const { id } = nuevaImpresora(m, { activo: 0 })
-    const r = await m.precuenta(id)
+    const { id } = nuevaImpresora(m, { active: 0 })
+    const r = await m.preBill(id)
     expect(r.statusCode).toBe(400)
     expect(r.json()).toMatchObject({
-      error: 'datos_invalidos',
-      mensaje: 'Esa impresora no existe o está archivada',
+      error: 'invalid_data',
+      message: 'Esa impresora no existe o está archivada',
     })
-    expect(m.configGuardada().impresora_precuenta_id).toBeNull()
+    expect(m.configGuardada().pre_bill_printer_id).toBeNull()
   })
 
   it('una impresora que no existe se rechaza con 400', async () => {
     const m = mundo()
-    expect((await m.precuenta(nuevoId())).statusCode).toBe(400)
-    expect(m.configGuardada().impresora_precuenta_id).toBeNull()
+    expect((await m.preBill(newId())).statusCode).toBe(400)
+    expect(m.configGuardada().pre_bill_printer_id).toBeNull()
   })
 
   it('la impresora de OTRO restaurante se rechaza con 400', async () => {
     const m = mundo()
-    const { impresora } = m.ajeno()
-    const r = await m.precuenta(impresora)
+    const { printer } = m.ajeno()
+    const r = await m.preBill(printer)
     expect(r.statusCode).toBe(400)
-    expect(m.configGuardada().impresora_precuenta_id).toBeNull()
+    expect(m.configGuardada().pre_bill_printer_id).toBeNull()
   })
 
   it.each([
@@ -270,597 +272,606 @@ describe('POST /api/caja/precuenta', () => {
     ['cadena vacía', ''],
     ['número', 7],
     ['objeto', {}],
-    ['arreglo', [nuevoId()]],
-    ['id de 27 caracteres', `${nuevoId()}X`],
-  ])('rechaza impresora_id = %s con 400', async (_, valor) => {
+    ['arreglo', [newId()]],
+    ['id de 27 caracteres', `${newId()}X`],
+  ])('rechaza impresora_id = %s con 400', async (_, value) => {
     const m = mundo()
-    expect((await m.precuenta(valor)).statusCode).toBe(400)
+    expect((await m.preBill(value)).statusCode).toBe(400)
   })
 
   it('sin impresora_id y con campos de más, 400', async () => {
     const m = mundo()
-    expect((await m.llamar(m.admin, '/api/caja/precuenta', {})).statusCode).toBe(400)
+    expect((await m.llamar(m.admin, '/api/register/pre-bill', {})).statusCode).toBe(400)
     expect(
-      (await m.llamar(m.admin, '/api/caja/precuenta', { impresora_id: null, otro: 1 })).statusCode,
+      (await m.llamar(m.admin, '/api/register/pre-bill', { printer_id: null, other: 1 }))
+        .statusCode,
     ).toBe(400)
   })
 
   it('archivar la impresora elegida apaga la impresión; volver a activarla la prende', async () => {
     const m = mundo()
     const { id } = nuevaImpresora(m)
-    await m.precuenta(id)
-    expect(m.catalogo().restaurante.cobro?.imprimePrecuenta).toBe(true)
-    m.t.db.prepare('UPDATE impresora SET activo = 0 WHERE id = ?').run(id)
-    expect(m.catalogo().restaurante.cobro?.imprimePrecuenta).toBe(false)
+    await m.preBill(id)
+    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(true)
+    m.t.db.prepare('UPDATE printers SET active = 0 WHERE id = ?').run(id)
+    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
     // La elección no se pierde: sigue guardada en la configuración.
-    expect(m.configGuardada().impresora_precuenta_id).toBe(id)
-    m.t.db.prepare('UPDATE impresora SET activo = 1 WHERE id = ?').run(id)
-    expect(m.catalogo().restaurante.cobro?.imprimePrecuenta).toBe(true)
+    expect(m.configGuardada().pre_bill_printer_id).toBe(id)
+    m.t.db.prepare('UPDATE printers SET active = 1 WHERE id = ?').run(id)
+    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(true)
   })
 
   it('la pantalla «Cocina e impresoras» devuelve la impresora de precuentas elegida', async () => {
     const m = mundo()
     const { id } = nuevaImpresora(m)
-    await m.precuenta(id)
-    const r = await m.llamar(m.admin, '/api/cocina/configuracion')
-    expect(r.json()).toMatchObject({ impresora_precuenta_id: id })
+    await m.preBill(id)
+    const r = await m.llamar(m.admin, '/api/kitchen/config')
+    expect(r.json()).toMatchObject({ pre_bill_printer_id: id })
   })
 })
 
 describe('catálogo: restaurante.cobro y datafonos', () => {
   it('trae los valores de fábrica del cobro', () => {
-    const { catalogo } = mundo()
-    expect(catalogo().restaurante.cobro).toEqual({
-      mediosPago: ['efectivo', 'tarjeta', 'nequi', 'daviplata', 'breb', 'transferencia'],
+    const { catalog } = mundo()
+    expect(catalog().restaurant.checkout).toEqual({
+      mediosPago: ['cash', 'card', 'nequi', 'daviplata', 'breb', 'transfer'],
       mediosPropios: [],
       mediosPropiosArchivados: [],
-      propinaSugerida: 1000,
-      redondeoModo: 'mitad_arriba',
+      suggestedTip: 1000,
+      redondeoModo: 'half_up',
       redondeoEfectivo: 100,
-      redondeoEfectivoModo: 'cercano_mitad_abajo',
+      cashRoundingMode: 'nearest_half_down',
       umbralDiferencia: 1000,
-      zonaHoraria: 'America/Bogota',
+      timeZone: 'America/Bogota',
       inicioDiaOperativo: '06:00',
       imprimePrecuenta: false,
     })
-    expect(catalogo().datafonos).toEqual([])
+    expect(catalog().cardTerminals).toEqual([])
   })
 
   it('refleja la configuración guardada del restaurante', () => {
     const m = mundo()
-    m.t.db.prepare('UPDATE restaurante SET config = ? WHERE id = ?').run(
+    m.t.db.prepare('UPDATE restaurants SET config = ? WHERE id = ?').run(
       JSON.stringify({
-        medios_pago: ['nequi', 'efectivo'],
-        propina_sugerida: 700,
-        redondeo_modo: 'mitad_par',
-        redondeo_efectivo: 50,
-        redondeo_efectivo_modo: 'arriba',
+        payment_methods: ['nequi', 'cash'],
+        suggested_tip: 700,
+        rounding_mode: 'half_even',
+        cash_rounding: 50,
+        cash_rounding_mode: 'up',
       }),
       m.t.restauranteId,
     )
-    expect(m.catalogo().restaurante.cobro).toMatchObject({
-      mediosPago: ['nequi', 'efectivo'],
-      propinaSugerida: 700,
-      redondeoModo: 'mitad_par',
+    expect(m.catalog().restaurant.checkout).toMatchObject({
+      mediosPago: ['nequi', 'cash'],
+      suggestedTip: 700,
+      redondeoModo: 'half_even',
       redondeoEfectivo: 50,
-      redondeoEfectivoModo: 'arriba',
+      cashRoundingMode: 'up',
     })
   })
 
   it('una configuración vieja, sin los campos nuevos, toma los valores de fábrica', () => {
     const m = mundo()
-    m.t.db.prepare("UPDATE restaurante SET config = '{}' WHERE id = ?").run(m.t.restauranteId)
-    expect(m.catalogo().restaurante.cobro?.mediosPago).toEqual(configCompleta().medios_pago)
-    expect(m.catalogo().restaurante.cobro?.imprimePrecuenta).toBe(false)
+    m.t.db.prepare("UPDATE restaurants SET config = '{}' WHERE id = ?").run(m.t.restauranteId)
+    expect(m.catalog().restaurant.checkout?.mediosPago).toEqual(fullConfig().payment_methods)
+    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
   })
 
   it('imprimePrecuenta es falso si la impresora elegida es de otro restaurante', () => {
     const m = mundo()
-    const { impresora } = m.ajeno()
+    const { printer } = m.ajeno()
     m.t.db
-      .prepare('UPDATE restaurante SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ impresora_precuenta_id: impresora }), m.t.restauranteId)
-    expect(m.catalogo().restaurante.cobro?.imprimePrecuenta).toBe(false)
+      .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
+      .run(JSON.stringify({ pre_bill_printer_id: printer }), m.t.restauranteId)
+    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
   })
 
   it('imprimePrecuenta es falso si la impresora elegida ya no existe', () => {
     const m = mundo()
     m.t.db
-      .prepare('UPDATE restaurante SET config = ? WHERE id = ?')
-      .run(JSON.stringify({ impresora_precuenta_id: nuevoId() }), m.t.restauranteId)
-    expect(m.catalogo().restaurante.cobro?.imprimePrecuenta).toBe(false)
+      .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
+      .run(JSON.stringify({ pre_bill_printer_id: newId() }), m.t.restauranteId)
+    expect(m.catalog().restaurant.checkout?.imprimePrecuenta).toBe(false)
   })
 
   it('los datáfonos: solo los activos de este restaurante, por nombre', async () => {
     const m = mundo()
     const ajeno = m.ajeno()
-    await m.datafono({ nombre: 'Bold 2', proveedor: 'bold', activo: true })
-    await m.datafono({ nombre: 'Bold 1', proveedor: 'bold', activo: true })
-    const archivado = (
-      await m.datafono({ nombre: 'Viejo', proveedor: 'redeban', activo: true })
+    await m.cardTerminal({ name: 'Bold 2', provider: 'bold', active: true })
+    await m.cardTerminal({ name: 'Bold 1', provider: 'bold', active: true })
+    const archived = (
+      await m.cardTerminal({ name: 'Viejo', provider: 'redeban', active: true })
     ).json() as { id: string }
-    await m.datafono({ id: archivado.id, nombre: 'Viejo', proveedor: 'redeban', activo: false })
-    expect(m.catalogo().datafonos?.map((d) => d.nombre)).toEqual(['Bold 1', 'Bold 2'])
-    expect(m.catalogo().datafonos?.map((d) => d.id)).not.toContain(ajeno.datafonoId)
+    await m.cardTerminal({ id: archived.id, name: 'Viejo', provider: 'redeban', active: false })
+    expect(m.catalog().cardTerminals?.map((d) => d.name)).toEqual(['Bold 1', 'Bold 2'])
+    expect(m.catalog().cardTerminals?.map((d) => d.id)).not.toContain(ajeno.datafonoId)
     // El catálogo dice id, nombre y proveedor: los de un mismo proveedor tienen un solo cierre, así
     // que al cobrar solo se elige el proveedor si hay varios.
-    for (const d of m.catalogo().datafonos ?? [])
-      expect(Object.keys(d).sort()).toEqual(['id', 'nombre', 'proveedor'])
+    for (const d of m.catalog().cardTerminals ?? [])
+      expect(Object.keys(d).sort()).toEqual(['id', 'name', 'provider'])
   })
 })
 
 describe('POST /api/caja/medios', () => {
   it('de fábrica: efectivo, tarjeta, Nequi, Daviplata, Bre-B y transferencia, en ese orden', async () => {
     const m = mundo()
-    expect((await m.ajustes()).medios_pago).toEqual([
-      'efectivo',
-      'tarjeta',
+    expect((await m.settings()).payment_methods).toEqual([
+      'cash',
+      'card',
       'nequi',
       'daviplata',
       'breb',
-      'transferencia',
+      'transfer',
     ])
   })
 
   it('guarda los medios en el orden elegido, avisa y la carta los trae', async () => {
     const m = mundo()
-    const antes = m.catalogo().version
-    const r = await m.medios(['nequi', 'efectivo', 'tarjeta'])
+    const before = m.catalog().version
+    const r = await m.medios(['nequi', 'cash', 'card'])
     expect(r.statusCode).toBe(204)
-    expect((await m.ajustes()).medios_pago).toEqual(['nequi', 'efectivo', 'tarjeta'])
-    expect(m.catalogo().restaurante.cobro?.mediosPago).toEqual(['nequi', 'efectivo', 'tarjeta'])
-    expect(m.catalogo().version).toBeGreaterThan(antes)
-    expect(m.t.cambiosCatalogo).toEqual([m.catalogo().version])
+    expect((await m.settings()).payment_methods).toEqual(['nequi', 'cash', 'card'])
+    expect(m.catalog().restaurant.checkout?.mediosPago).toEqual(['nequi', 'cash', 'card'])
+    expect(m.catalog().version).toBeGreaterThan(before)
+    expect(m.t.cambiosCatalogo).toEqual([m.catalog().version])
   })
 
   it('solo efectivo es válido; el bono se puede agregar', async () => {
     const m = mundo()
-    expect((await m.medios(['efectivo'])).statusCode).toBe(204)
-    expect((await m.medios(['efectivo', 'bono'])).statusCode).toBe(204)
-    expect(m.configGuardada().medios_pago).toEqual(['efectivo', 'bono'])
+    expect((await m.medios(['cash'])).statusCode).toBe(204)
+    expect((await m.medios(['cash', 'voucher'])).statusCode).toBe(204)
+    expect(m.configGuardada().payment_methods).toEqual(['cash', 'voucher'])
   })
 
   it('los repetidos se quitan y se queda el primero', async () => {
     const m = mundo()
-    expect((await m.medios(['tarjeta', 'efectivo', 'tarjeta', 'efectivo'])).statusCode).toBe(204)
-    expect(m.configGuardada().medios_pago).toEqual(['tarjeta', 'efectivo'])
+    expect((await m.medios(['card', 'cash', 'card', 'cash'])).statusCode).toBe(204)
+    expect(m.configGuardada().payment_methods).toEqual(['card', 'cash'])
   })
 
   it('sin efectivo se rechaza con 400 y el mensaje lo explica', async () => {
     const m = mundo()
-    const antes = m.catalogo().version
-    const r = await m.medios(['tarjeta', 'nequi'])
+    const before = m.catalog().version
+    const r = await m.medios(['card', 'nequi'])
     expect(r.statusCode).toBe(400)
-    expect(r.json()).toMatchObject({ mensaje: 'El efectivo siempre se recibe' })
-    expect(m.configGuardada().medios_pago).toEqual(configCompleta().medios_pago)
-    expect(m.catalogo().version).toBe(antes)
+    expect(r.json()).toMatchObject({ message: 'El efectivo siempre se recibe' })
+    expect(m.configGuardada().payment_methods).toEqual(fullConfig().payment_methods)
+    expect(m.catalog().version).toBe(before)
   })
 
   it.each([
     ['lista vacía', []],
-    ['un medio que no existe', ['efectivo', 'cheque']],
+    ['un medio que no existe', ['cash', 'cheque']],
     ['mayúsculas', ['Efectivo']],
-    ['no es lista', 'efectivo'],
+    ['no es lista', 'cash'],
     ['null', null],
-    ['elemento no texto', ['efectivo', 3]],
-    ['más de diez', Array(11).fill('efectivo')],
-  ])('rechaza medios = %s con 400', async (_, valor) => {
+    ['elemento no texto', ['cash', 3]],
+    ['más de diez', Array(11).fill('cash')],
+  ])('rechaza medios = %s con 400', async (_, value) => {
     const m = mundo()
-    expect((await m.medios(valor)).statusCode).toBe(400)
-    expect(m.configGuardada().medios_pago).toEqual(configCompleta().medios_pago)
+    expect((await m.medios(value)).statusCode).toBe(400)
+    expect(m.configGuardada().payment_methods).toEqual(fullConfig().payment_methods)
   })
 
   it('sin medios y con campos de más, 400', async () => {
     const m = mundo()
-    expect((await m.llamar(m.admin, '/api/caja/medios', {})).statusCode).toBe(400)
+    expect((await m.llamar(m.admin, '/api/register/payment-methods', {})).statusCode).toBe(400)
     expect(
-      (await m.llamar(m.admin, '/api/caja/medios', { medios: ['efectivo'], x: 1 })).statusCode,
+      (await m.llamar(m.admin, '/api/register/payment-methods', { medios: ['cash'], x: 1 }))
+        .statusCode,
     ).toBe(400)
   })
 
   it('repetir la misma lista no sube la versión ni avisa', async () => {
     const m = mundo()
-    await m.medios(['efectivo', 'tarjeta'])
-    const v = m.catalogo().version
+    await m.medios(['cash', 'card'])
+    const v = m.catalog().version
     const avisos = m.t.cambiosCatalogo.length
-    expect((await m.medios(['efectivo', 'tarjeta'])).statusCode).toBe(204)
-    expect(m.catalogo().version).toBe(v)
+    expect((await m.medios(['cash', 'card'])).statusCode).toBe(204)
+    expect(m.catalog().version).toBe(v)
     expect(m.t.cambiosCatalogo).toHaveLength(avisos)
   })
 
   it('cambiar solo el orden sí es un cambio', async () => {
     const m = mundo()
-    await m.medios(['efectivo', 'tarjeta'])
-    const v = m.catalogo().version
-    await m.medios(['tarjeta', 'efectivo'])
-    expect(m.catalogo().version).toBeGreaterThan(v)
+    await m.medios(['cash', 'card'])
+    const v = m.catalog().version
+    await m.medios(['card', 'cash'])
+    expect(m.catalog().version).toBeGreaterThan(v)
   })
 
   it('no toca el resto de la configuración del restaurante', async () => {
     const m = mundo()
-    const antes = { ...m.configGuardada(), medios_pago: undefined }
-    await m.medios(['efectivo', 'nequi'])
-    expect({ ...m.configGuardada(), medios_pago: undefined }).toEqual(antes)
+    const before = { ...m.configGuardada(), payment_methods: undefined }
+    await m.medios(['cash', 'nequi'])
+    expect({ ...m.configGuardada(), payment_methods: undefined }).toEqual(before)
   })
 })
 
 describe('POST /api/caja/propina', () => {
   it.each([0, 1, 500, 750, 1000])('guarda %i puntos básicos', async (puntos) => {
     const m = mundo()
-    expect((await m.propina(puntos)).statusCode).toBe(204)
-    expect(m.configGuardada().propina_sugerida).toBe(puntos)
-    expect(m.catalogo().restaurante.cobro?.propinaSugerida).toBe(puntos)
-    expect((await m.ajustes()).propina_sugerida).toBe(puntos)
+    expect((await m.tip(puntos)).statusCode).toBe(204)
+    expect(m.configGuardada().suggested_tip).toBe(puntos)
+    expect(m.catalog().restaurant.checkout?.suggestedTip).toBe(puntos)
+    expect((await m.settings()).suggested_tip).toBe(puntos)
   })
 
   it.each([
-    ['negativo', -1],
+    ['negative', -1],
     ['sobre el tope legal del 10 %', 1001],
     ['con decimales', 10.5],
-    ['texto', '1000'],
+    ['text', '1000'],
     ['null', null],
     ['NaN como texto', 'NaN'],
   ])('rechaza %s con 400 y el mensaje explica el rango', async (_, puntos) => {
     const m = mundo()
-    const r = await m.propina(puntos)
+    const r = await m.tip(puntos)
     expect(r.statusCode).toBe(400)
-    expect(r.json()).toMatchObject({ mensaje: 'La propina sugerida va de 0 % a 10 %' })
-    expect(m.configGuardada().propina_sugerida).toBe(1000)
+    expect(r.json()).toMatchObject({ message: 'La propina sugerida va de 0 % a 10 %' })
+    expect(m.configGuardada().suggested_tip).toBe(1000)
   })
 
   it('el mismo valor no sube la versión', async () => {
     const m = mundo()
-    const v = m.catalogo().version
-    await m.propina(1000)
-    expect(m.catalogo().version).toBe(v)
+    const v = m.catalog().version
+    await m.tip(1000)
+    expect(m.catalog().version).toBe(v)
   })
 })
 
 describe('POST /api/caja/configuracion', () => {
   it('devuelve los medios, la propina sugerida y los datáfonos (activos primero)', async () => {
     const m = mundo()
-    const a = (await m.datafono({ nombre: 'Zeta', proveedor: 'otro', activo: true })).json() as {
+    const a = (await m.cardTerminal({ name: 'Zeta', provider: 'other', active: true })).json() as {
       id: string
     }
-    await m.datafono({ nombre: 'Bold 1', proveedor: 'bold', activo: true })
-    await m.datafono({ id: a.id, nombre: 'Zeta', proveedor: 'otro', activo: false })
-    const r = await m.ajustes()
-    expect(r.medios_pago).toEqual(configCompleta().medios_pago)
-    expect(r.propina_sugerida).toBe(1000)
-    expect(r.datafonos.map((d) => [d.nombre, d.proveedor, d.activo])).toEqual([
+    await m.cardTerminal({ name: 'Bold 1', provider: 'bold', active: true })
+    await m.cardTerminal({ id: a.id, name: 'Zeta', provider: 'other', active: false })
+    const r = await m.settings()
+    expect(r.payment_methods).toEqual(fullConfig().payment_methods)
+    expect(r.suggested_tip).toBe(1000)
+    expect(r.cardTerminals.map((d) => [d.name, d.provider, d.active])).toEqual([
       ['Bold 1', 'bold', true],
-      ['Zeta', 'otro', false],
+      ['Zeta', 'other', false],
     ])
   })
 
   it('no muestra los datáfonos de otro restaurante', async () => {
     const m = mundo()
     m.ajeno()
-    expect((await m.ajustes()).datafonos).toEqual([])
+    expect((await m.settings()).cardTerminals).toEqual([])
   })
 
   it('con campos de más, 400', async () => {
     const m = mundo()
-    expect((await m.llamar(m.admin, '/api/caja/configuracion', { x: 1 })).statusCode).toBe(400)
+    expect((await m.llamar(m.admin, '/api/register/config', { x: 1 })).statusCode).toBe(400)
   })
 })
 
 describe('POST /api/datafonos', () => {
-  const bold = { nombre: 'Bold 1', proveedor: 'bold', activo: true }
+  const bold = { name: 'Bold 1', provider: 'bold', active: true }
 
   it('crea un datáfono: devuelve su id y la lista, queda a nombre de quien lo creó y sube la versión', async () => {
     const m = mundo()
-    const antes = m.catalogo().version
-    const r = await m.datafono(bold)
+    const before = m.catalog().version
+    const r = await m.cardTerminal(bold)
     expect(r.statusCode).toBe(200)
-    const cuerpo = r.json() as { id: string; datafonos: { id: string; nombre: string }[] }
-    expect(cuerpo.datafonos).toEqual([
-      { id: cuerpo.id, nombre: 'Bold 1', proveedor: 'bold', activo: true },
+    const cuerpo = r.json() as { id: string; cardTerminals: { id: string; name: string }[] }
+    expect(cuerpo.cardTerminals).toEqual([
+      { id: cuerpo.id, name: 'Bold 1', provider: 'bold', active: true },
     ])
-    expect(m.t.db.prepare('SELECT * FROM datafono WHERE id = ?').get(cuerpo.id)).toMatchObject({
-      usuario_id: m.t.personas.admin.usuarioId,
-      dispositivo_id: m.admin.conexion.dispositivoId,
-      activo: 1,
+    expect(
+      m.t.db.prepare('SELECT * FROM card_terminals WHERE id = ?').get(cuerpo.id),
+    ).toMatchObject({
+      user_id: m.t.people.admin.userId,
+      device_id: m.admin.connection.dispositivoId,
+      active: 1,
     })
-    expect(m.catalogo().version).toBeGreaterThan(antes)
-    expect(m.t.cambiosCatalogo).toEqual([m.catalogo().version])
-    expect(m.catalogo().datafonos).toEqual([{ id: cuerpo.id, nombre: 'Bold 1', proveedor: 'bold' }])
+    expect(m.catalog().version).toBeGreaterThan(before)
+    expect(m.t.cambiosCatalogo).toEqual([m.catalog().version])
+    expect(m.catalog().cardTerminals).toEqual([{ id: cuerpo.id, name: 'Bold 1', provider: 'bold' }])
   })
 
-  it.each(['bold', 'redeban', 'credibanco', 'otro'])(
+  it.each(['bold', 'redeban', 'credibanco', 'other'])(
     'acepta el proveedor %s',
-    async (proveedor) => {
+    async (provider) => {
       const m = mundo()
-      expect((await m.datafono({ ...bold, proveedor })).statusCode).toBe(200)
+      expect((await m.cardTerminal({ ...bold, provider })).statusCode).toBe(200)
     },
   )
 
   it('el nombre se recorta, y a 60 caracteres pasa pero a 61 no', async () => {
     const m = mundo()
-    const r = await m.datafono({ ...bold, nombre: '   Bold   ' })
-    expect((r.json() as { datafonos: { nombre: string }[] }).datafonos[0]?.nombre).toBe('Bold')
-    expect((await m.datafono({ ...bold, nombre: 'x'.repeat(60) })).statusCode).toBe(200)
-    expect((await m.datafono({ ...bold, nombre: 'y'.repeat(61) })).statusCode).toBe(400)
+    const r = await m.cardTerminal({ ...bold, name: '   Bold   ' })
+    expect((r.json() as { cardTerminals: { name: string }[] }).cardTerminals[0]?.name).toBe('Bold')
+    expect((await m.cardTerminal({ ...bold, name: 'x'.repeat(60) })).statusCode).toBe(200)
+    expect((await m.cardTerminal({ ...bold, name: 'y'.repeat(61) })).statusCode).toBe(400)
   })
 
   it.each([
-    ['nombre vacío', { nombre: '' }],
-    ['nombre de espacios', { nombre: '    ' }],
-    ['nombre que no es texto', { nombre: 5 }],
-    ['sin nombre', { nombre: undefined }],
-    ['proveedor desconocido', { proveedor: 'visa' }],
-    ['proveedor en mayúsculas', { proveedor: 'BOLD' }],
-    ['sin proveedor', { proveedor: undefined }],
-    ['activo como texto', { activo: 'true' }],
-    ['sin activo', { activo: undefined }],
+    ['nombre vacío', { name: '' }],
+    ['nombre de espacios', { name: '    ' }],
+    ['nombre que no es texto', { name: 5 }],
+    ['sin nombre', { name: undefined }],
+    ['proveedor desconocido', { provider: 'visa' }],
+    ['proveedor en mayúsculas', { provider: 'BOLD' }],
+    ['sin proveedor', { provider: undefined }],
+    ['activo como texto', { active: 'true' }],
+    ['sin activo', { active: undefined }],
     ['id que no es ULID', { id: 'abc' }],
     ['campo de más', { color: 'rojo' }],
-  ])('rechaza %s con 400 y no crea nada', async (_, cambio) => {
+  ])('rechaza %s con 400 y no crea nada', async (_, change) => {
     const m = mundo()
-    const r = await m.datafono({ ...bold, ...cambio })
+    const r = await m.cardTerminal({ ...bold, ...change })
     expect(r.statusCode).toBe(400)
-    expect((await m.ajustes()).datafonos).toEqual([])
+    expect((await m.settings()).cardTerminals).toEqual([])
   })
 
   it('sin el objeto datafono, 400', async () => {
     const m = mundo()
-    expect((await m.llamar(m.admin, '/api/datafonos', {})).statusCode).toBe(400)
-    expect((await m.llamar(m.admin, '/api/datafonos', { datafono: null })).statusCode).toBe(400)
+    expect((await m.llamar(m.admin, '/api/card-terminals', {})).statusCode).toBe(400)
+    expect(
+      (await m.llamar(m.admin, '/api/card-terminals', { cardTerminal: null })).statusCode,
+    ).toBe(400)
   })
 
   it('nombre repetido entre activos: 400, sin importar mayúsculas ni tildes de más', async () => {
     const m = mundo()
-    await m.datafono(bold)
-    for (const nombre of ['Bold 1', 'bold 1', 'BOLD 1']) {
-      const r = await m.datafono({ ...bold, nombre })
-      expect(r.statusCode, nombre).toBe(400)
-      expect(r.json()).toMatchObject({ mensaje: 'Ya hay un datáfono con ese nombre' })
+    await m.cardTerminal(bold)
+    for (const name of ['Bold 1', 'bold 1', 'BOLD 1']) {
+      const r = await m.cardTerminal({ ...bold, name })
+      expect(r.statusCode, name).toBe(400)
+      expect(r.json()).toMatchObject({ message: 'Ya hay un datáfono con ese nombre' })
     }
-    expect((await m.ajustes()).datafonos).toHaveLength(1)
+    expect((await m.settings()).cardTerminals).toHaveLength(1)
   })
 
   it('dos nombres distintos conviven, y el mismo nombre en otro restaurante no cuenta', async () => {
     const m = mundo()
     m.ajeno()
-    expect((await m.datafono({ ...bold, nombre: 'Bold bar' })).statusCode).toBe(200)
-    expect((await m.datafono({ ...bold, nombre: 'Bold ajeno' })).statusCode).toBe(200)
-    expect((await m.ajustes()).datafonos).toHaveLength(2)
+    expect((await m.cardTerminal({ ...bold, name: 'Bold bar' })).statusCode).toBe(200)
+    expect((await m.cardTerminal({ ...bold, name: 'Bold ajeno' })).statusCode).toBe(200)
+    expect((await m.settings()).cardTerminals).toHaveLength(2)
   })
 
   it('renombrar y guardar el mismo nombre del propio datáfono no cuenta como repetido', async () => {
     const m = mundo()
-    const { id } = (await m.datafono(bold)).json() as { id: string }
-    expect((await m.datafono({ ...bold, id })).statusCode).toBe(200)
-    const r = await m.datafono({ ...bold, id, nombre: 'Bold barra' })
+    const { id } = (await m.cardTerminal(bold)).json() as { id: string }
+    expect((await m.cardTerminal({ ...bold, id })).statusCode).toBe(200)
+    const r = await m.cardTerminal({ ...bold, id, name: 'Bold barra' })
     expect(r.statusCode).toBe(200)
-    expect((await m.ajustes()).datafonos.map((d) => d.nombre)).toEqual(['Bold barra'])
+    expect((await m.settings()).cardTerminals.map((d) => d.name)).toEqual(['Bold barra'])
   })
 
   it('renombrar a un nombre que ya tiene otro activo, 400', async () => {
     const m = mundo()
-    await m.datafono(bold)
-    const { id } = (await m.datafono({ ...bold, nombre: 'Bold 2' })).json() as { id: string }
-    const r = await m.datafono({ ...bold, id, nombre: 'bold 1' })
+    await m.cardTerminal(bold)
+    const { id } = (await m.cardTerminal({ ...bold, name: 'Bold 2' })).json() as { id: string }
+    const r = await m.cardTerminal({ ...bold, id, name: 'bold 1' })
     expect(r.statusCode).toBe(400)
-    expect((await m.ajustes()).datafonos.map((d) => d.nombre).sort()).toEqual(['Bold 1', 'Bold 2'])
+    expect((await m.settings()).cardTerminals.map((d) => d.name).sort()).toEqual([
+      'Bold 1',
+      'Bold 2',
+    ])
   })
 
   it('editar sube la versión del datáfono y del contador; el id y la fecha de creación no cambian', async () => {
     const m = mundo()
-    const { id } = (await m.datafono(bold)).json() as { id: string }
-    const antes = m.t.db.prepare('SELECT * FROM datafono WHERE id = ?').get(id)
+    const { id } = (await m.cardTerminal(bold)).json() as { id: string }
+    const before = m.t.db.prepare('SELECT * FROM card_terminals WHERE id = ?').get(id)
     m.t.avanzar(5000)
-    await m.datafono({ ...bold, id, nombre: 'Bold terraza', proveedor: 'redeban' })
-    const despues = m.t.db.prepare('SELECT * FROM datafono WHERE id = ?').get(id)
-    expect(despues).toMatchObject({ nombre: 'Bold terraza', proveedor: 'redeban', id })
-    expect(Number(despues?.version)).toBeGreaterThan(Number(antes?.version))
-    expect(despues?.creado_en).toBe(antes?.creado_en)
-    expect(despues?.actualizado_en).not.toBe(antes?.actualizado_en)
+    await m.cardTerminal({ ...bold, id, name: 'Bold terraza', provider: 'redeban' })
+    const after = m.t.db.prepare('SELECT * FROM card_terminals WHERE id = ?').get(id)
+    expect(after).toMatchObject({ name: 'Bold terraza', provider: 'redeban', id })
+    expect(Number(after?.version)).toBeGreaterThan(Number(before?.version))
+    expect(after?.created_at).toBe(before?.created_at)
+    expect(after?.updated_at).not.toBe(before?.updated_at)
   })
 
   it('archivar: activo false lo saca de la carta pero queda en la lista de caja, y no se borra', async () => {
     const m = mundo()
-    const { id } = (await m.datafono(bold)).json() as { id: string }
-    const r = await m.datafono({ ...bold, id, activo: false })
+    const { id } = (await m.cardTerminal(bold)).json() as { id: string }
+    const r = await m.cardTerminal({ ...bold, id, active: false })
     expect(r.statusCode).toBe(200)
-    expect((await m.ajustes()).datafonos).toEqual([
-      { id, nombre: 'Bold 1', proveedor: 'bold', activo: false },
+    expect((await m.settings()).cardTerminals).toEqual([
+      { id, name: 'Bold 1', provider: 'bold', active: false },
     ])
-    expect(m.catalogo().datafonos).toEqual([])
-    expect(Number(m.t.db.prepare('SELECT count(*) AS n FROM datafono').get()?.n)).toBe(1)
+    expect(m.catalog().cardTerminals).toEqual([])
+    expect(Number(m.t.db.prepare('SELECT count(*) AS n FROM card_terminals').get()?.n)).toBe(1)
   })
 
   it('volver a usar un archivado: activo true lo devuelve a la carta', async () => {
     const m = mundo()
-    const { id } = (await m.datafono(bold)).json() as { id: string }
-    await m.datafono({ ...bold, id, activo: false })
-    const r = await m.datafono({ ...bold, id, activo: true })
+    const { id } = (await m.cardTerminal(bold)).json() as { id: string }
+    await m.cardTerminal({ ...bold, id, active: false })
+    const r = await m.cardTerminal({ ...bold, id, active: true })
     expect(r.statusCode).toBe(200)
-    expect(m.catalogo().datafonos).toEqual([{ id, nombre: 'Bold 1', proveedor: 'bold' }])
+    expect(m.catalog().cardTerminals).toEqual([{ id, name: 'Bold 1', provider: 'bold' }])
   })
 
   it('un archivado no estorba el nombre: se puede crear otro con el mismo', async () => {
     const m = mundo()
-    const { id } = (await m.datafono(bold)).json() as { id: string }
-    await m.datafono({ ...bold, id, activo: false })
-    expect((await m.datafono(bold)).statusCode).toBe(200)
+    const { id } = (await m.cardTerminal(bold)).json() as { id: string }
+    await m.cardTerminal({ ...bold, id, active: false })
+    expect((await m.cardTerminal(bold)).statusCode).toBe(200)
   })
 
   it('pero reactivar el archivado cuando ya hay otro activo con ese nombre, 400', async () => {
     const m = mundo()
-    const { id } = (await m.datafono(bold)).json() as { id: string }
-    await m.datafono({ ...bold, id, activo: false })
-    await m.datafono(bold)
-    const r = await m.datafono({ ...bold, id, activo: true })
+    const { id } = (await m.cardTerminal(bold)).json() as { id: string }
+    await m.cardTerminal({ ...bold, id, active: false })
+    await m.cardTerminal(bold)
+    const r = await m.cardTerminal({ ...bold, id, active: true })
     expect(r.statusCode).toBe(400)
-    expect(r.json()).toMatchObject({ mensaje: 'Ya hay un datáfono con ese nombre' })
-    expect((await m.ajustes()).datafonos.filter((d) => d.activo)).toHaveLength(1)
+    expect(r.json()).toMatchObject({ message: 'Ya hay un datáfono con ese nombre' })
+    expect((await m.settings()).cardTerminals.filter((d) => d.active)).toHaveLength(1)
   })
 
   it('renombrar un archivado a un nombre en uso se permite mientras siga archivado', async () => {
     const m = mundo()
-    await m.datafono(bold)
-    const { id } = (await m.datafono({ ...bold, nombre: 'Bold 2' })).json() as { id: string }
-    await m.datafono({ ...bold, nombre: 'Bold 2', id, activo: false })
-    expect((await m.datafono({ ...bold, id, nombre: 'Bold 1', activo: false })).statusCode).toBe(
+    await m.cardTerminal(bold)
+    const { id } = (await m.cardTerminal({ ...bold, name: 'Bold 2' })).json() as { id: string }
+    await m.cardTerminal({ ...bold, name: 'Bold 2', id, active: false })
+    expect((await m.cardTerminal({ ...bold, id, name: 'Bold 1', active: false })).statusCode).toBe(
       200,
     )
   })
 
   it('un id que no existe, 400 y no crea nada', async () => {
     const m = mundo()
-    const r = await m.datafono({ ...bold, id: nuevoId() })
+    const r = await m.cardTerminal({ ...bold, id: newId() })
     expect(r.statusCode).toBe(400)
-    expect(r.json()).toMatchObject({ mensaje: 'Ese datáfono no existe' })
-    expect((await m.ajustes()).datafonos).toEqual([])
+    expect(r.json()).toMatchObject({ message: 'Ese datáfono no existe' })
+    expect((await m.settings()).cardTerminals).toEqual([])
   })
 
   it('el id de un datáfono de OTRO restaurante, 400, y el ajeno queda intacto', async () => {
     const m = mundo()
     const ajeno = m.ajeno()
-    const antes = m.t.db.prepare('SELECT * FROM datafono WHERE id = ?').get(ajeno.datafonoId)
-    const r = await m.datafono({ ...bold, id: ajeno.datafonoId, nombre: 'Robado' })
+    const before = m.t.db.prepare('SELECT * FROM card_terminals WHERE id = ?').get(ajeno.datafonoId)
+    const r = await m.cardTerminal({ ...bold, id: ajeno.datafonoId, name: 'Robado' })
     expect(r.statusCode).toBe(400)
-    expect(m.t.db.prepare('SELECT * FROM datafono WHERE id = ?').get(ajeno.datafonoId)).toEqual(
-      antes,
-    )
-    expect((await m.ajustes()).datafonos).toEqual([])
+    expect(
+      m.t.db.prepare('SELECT * FROM card_terminals WHERE id = ?').get(ajeno.datafonoId),
+    ).toEqual(before)
+    expect((await m.settings()).cardTerminals).toEqual([])
   })
 
   it('un rechazo no sube la versión del catálogo ni avisa a los equipos', async () => {
     const m = mundo()
-    await m.datafono(bold)
-    const v = m.catalogo().version
+    await m.cardTerminal(bold)
+    const v = m.catalog().version
     const avisos = m.t.cambiosCatalogo.length
-    await m.datafono(bold)
-    await m.datafono({ ...bold, id: nuevoId() })
-    expect(m.catalogo().version).toBe(v)
+    await m.cardTerminal(bold)
+    await m.cardTerminal({ ...bold, id: newId() })
+    expect(m.catalog().version).toBe(v)
     expect(m.t.cambiosCatalogo).toHaveLength(avisos)
   })
 
   it('dos peticiones iguales a la vez no dejan dos datáfonos con el mismo nombre', async () => {
     const m = mundo()
-    const [a, b] = await Promise.all([m.datafono(bold), m.datafono(bold)])
+    const [a, b] = await Promise.all([m.cardTerminal(bold), m.cardTerminal(bold)])
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 400])
-    expect((await m.ajustes()).datafonos).toHaveLength(1)
+    expect((await m.settings()).cardTerminals).toHaveLength(1)
   })
 })
 
 describe('POST /api/caja/medios-propios', () => {
-  type Respuesta = { id: string; medios_propios: { id: string; nombre: string; activo: boolean }[] }
-  const guardar = (m: Mundo, medio: Json, e: Equipo = m.admin) =>
-    m.llamar(e, '/api/caja/medios-propios', { medio })
+  type Respuesta = { id: string; custom_methods: { id: string; name: string; active: boolean }[] }
+  const guardar = (m: Mundo, method: Json, e: Equipo = m.admin) =>
+    m.llamar(e, '/api/register/custom-methods', { method })
 
   it('crea un medio: devuelve su id y la lista, queda en la configuración y en la carta', async () => {
     const m = mundo()
-    const antes = m.catalogo().version
-    const r = await guardar(m, { nombre: 'Sodexo', activo: true })
+    const before = m.catalog().version
+    const r = await guardar(m, { name: 'Sodexo', active: true })
     expect(r.statusCode).toBe(200)
     const cuerpo = r.json() as Respuesta
-    expect(cuerpo.medios_propios).toEqual([{ id: cuerpo.id, nombre: 'Sodexo', activo: true }])
-    expect(m.configGuardada().medios_propios).toEqual(cuerpo.medios_propios)
-    expect(m.catalogo().restaurante.cobro?.mediosPropios).toEqual([
-      { id: cuerpo.id, nombre: 'Sodexo' },
+    expect(cuerpo.custom_methods).toEqual([{ id: cuerpo.id, name: 'Sodexo', active: true }])
+    expect(m.configGuardada().custom_methods).toEqual(cuerpo.custom_methods)
+    expect(m.catalog().restaurant.checkout?.mediosPropios).toEqual([
+      { id: cuerpo.id, name: 'Sodexo' },
     ])
-    expect(m.catalogo().version).toBeGreaterThan(antes)
-    expect((await m.ajustes()) as unknown).toMatchObject({ medios_propios: cuerpo.medios_propios })
+    expect(m.catalog().version).toBeGreaterThan(before)
+    expect((await m.settings()) as unknown).toMatchObject({ custom_methods: cuerpo.custom_methods })
   })
 
   it('el nombre se recorta; vacío, de espacios o de más de 30 letras, 400', async () => {
     const m = mundo()
-    const r = (await guardar(m, { nombre: '  QR  ', activo: true })).json() as Respuesta
-    expect(r.medios_propios[0]?.nombre).toBe('QR')
-    for (const nombre of ['', '    ', 'x'.repeat(31), 5])
-      expect((await guardar(m, { nombre, activo: true })).statusCode, String(nombre)).toBe(400)
-    expect((await guardar(m, { nombre: 'x'.repeat(30), activo: true })).statusCode).toBe(200)
+    const r = (await guardar(m, { name: '  QR  ', active: true })).json() as Respuesta
+    expect(r.custom_methods[0]?.name).toBe('QR')
+    for (const name of ['', '    ', 'x'.repeat(31), 5])
+      expect((await guardar(m, { name, active: true })).statusCode, String(name)).toBe(400)
+    expect((await guardar(m, { name: 'x'.repeat(30), active: true })).statusCode).toBe(200)
   })
 
   it('campos de más, sin activo o con un id que no es ULID, 400', async () => {
     const m = mundo()
-    expect((await guardar(m, { nombre: 'A', activo: true, color: 'r' })).statusCode).toBe(400)
-    expect((await guardar(m, { nombre: 'A' })).statusCode).toBe(400)
-    expect((await guardar(m, { id: 'abc', nombre: 'A', activo: true })).statusCode).toBe(400)
-    expect((await m.llamar(m.admin, '/api/caja/medios-propios', {})).statusCode).toBe(400)
+    expect((await guardar(m, { name: 'A', active: true, color: 'r' })).statusCode).toBe(400)
+    expect((await guardar(m, { name: 'A' })).statusCode).toBe(400)
+    expect((await guardar(m, { id: 'abc', name: 'A', active: true })).statusCode).toBe(400)
+    expect((await m.llamar(m.admin, '/api/register/custom-methods', {})).statusCode).toBe(400)
   })
 
   it('nombre repetido entre activos (sin importar mayúsculas), 400; un archivado no estorba', async () => {
     const m = mundo()
-    const a = (await guardar(m, { nombre: 'Sodexo', activo: true })).json() as Respuesta
-    const r = await guardar(m, { nombre: 'SODEXO', activo: true })
+    const a = (await guardar(m, { name: 'Sodexo', active: true })).json() as Respuesta
+    const r = await guardar(m, { name: 'SODEXO', active: true })
     expect(r.statusCode).toBe(400)
-    expect(r.json()).toMatchObject({ mensaje: 'Ya hay un medio con ese nombre' })
-    await guardar(m, { id: a.id, nombre: 'Sodexo', activo: false })
-    expect((await guardar(m, { nombre: 'Sodexo', activo: true })).statusCode).toBe(200)
+    expect(r.json()).toMatchObject({ message: 'Ya hay un medio con ese nombre' })
+    await guardar(m, { id: a.id, name: 'Sodexo', active: false })
+    expect((await guardar(m, { name: 'Sodexo', active: true })).statusCode).toBe(200)
     // Reactivar el archivado cuando ya hay uno activo con ese nombre.
-    expect((await guardar(m, { id: a.id, nombre: 'Sodexo', activo: true })).statusCode).toBe(400)
+    expect((await guardar(m, { id: a.id, name: 'Sodexo', active: true })).statusCode).toBe(400)
   })
 
   it('renombrar, archivar y volver a usar; el archivado sale de la carta pero queda en la configuración', async () => {
     const m = mundo()
-    const a = (await guardar(m, { nombre: 'Sodexo', activo: true })).json() as Respuesta
-    await guardar(m, { id: a.id, nombre: 'Sodexo Pass', activo: true })
-    expect(m.catalogo().restaurante.cobro?.mediosPropios?.[0]?.nombre).toBe('Sodexo Pass')
-    await guardar(m, { id: a.id, nombre: 'Sodexo Pass', activo: false })
-    expect(m.catalogo().restaurante.cobro?.mediosPropios).toEqual([])
+    const a = (await guardar(m, { name: 'Sodexo', active: true })).json() as Respuesta
+    await guardar(m, { id: a.id, name: 'Sodexo Pass', active: true })
+    expect(m.catalog().restaurant.checkout?.mediosPropios?.[0]?.name).toBe('Sodexo Pass')
+    await guardar(m, { id: a.id, name: 'Sodexo Pass', active: false })
+    expect(m.catalog().restaurant.checkout?.mediosPropios).toEqual([])
     // El archivado ya no sale al cobrar, pero la carta lo manda para nombrar sus pagos (1.8).
-    expect(m.catalogo().restaurante.cobro?.mediosPropiosArchivados).toEqual([
-      { id: a.id, nombre: 'Sodexo Pass' },
+    expect(m.catalog().restaurant.checkout?.mediosPropiosArchivados).toEqual([
+      { id: a.id, name: 'Sodexo Pass' },
     ])
-    expect(m.configGuardada().medios_propios).toEqual([
-      { id: a.id, nombre: 'Sodexo Pass', activo: false },
+    expect(m.configGuardada().custom_methods).toEqual([
+      { id: a.id, name: 'Sodexo Pass', active: false },
     ])
-    await guardar(m, { id: a.id, nombre: 'Sodexo Pass', activo: true })
-    expect(m.catalogo().restaurante.cobro?.mediosPropios).toHaveLength(1)
-    expect(m.catalogo().restaurante.cobro?.mediosPropiosArchivados).toEqual([])
+    await guardar(m, { id: a.id, name: 'Sodexo Pass', active: true })
+    expect(m.catalog().restaurant.checkout?.mediosPropios).toHaveLength(1)
+    expect(m.catalog().restaurant.checkout?.mediosPropiosArchivados).toEqual([])
   })
 
   it('un id que no existe, 400', async () => {
     const m = mundo()
-    const r = await guardar(m, { id: nuevoId(), nombre: 'A', activo: true })
+    const r = await guardar(m, { id: newId(), name: 'A', active: true })
     expect(r.statusCode).toBe(400)
-    expect(r.json()).toMatchObject({ mensaje: 'Ese medio no existe' })
+    expect(r.json()).toMatchObject({ message: 'Ese medio no existe' })
   })
 
   it('máximo 20 medios propios: el 21 se rechaza', async () => {
     const m = mundo()
     for (let i = 0; i < 20; i++)
-      expect((await guardar(m, { nombre: `Medio ${i}`, activo: true })).statusCode).toBe(200)
-    const r = await guardar(m, { nombre: 'Uno más', activo: true })
+      expect((await guardar(m, { name: `Medio ${i}`, active: true })).statusCode).toBe(200)
+    const r = await guardar(m, { name: 'Uno más', active: true })
     expect(r.statusCode).toBe(400)
-    expect(m.configGuardada().medios_propios).toHaveLength(20)
+    expect(m.configGuardada().custom_methods).toHaveLength(20)
   })
 
   it('guardar los mismos datos de un medio existente no sube la versión', async () => {
     const m = mundo()
-    const a = (await guardar(m, { nombre: 'Sodexo', activo: true })).json() as Respuesta
-    const v = m.catalogo().version
-    await guardar(m, { id: a.id, nombre: 'Sodexo', activo: true })
-    expect(m.catalogo().version).toBe(v)
+    const a = (await guardar(m, { name: 'Sodexo', active: true })).json() as Respuesta
+    const v = m.catalog().version
+    await guardar(m, { id: a.id, name: 'Sodexo', active: true })
+    expect(m.catalog().version).toBe(v)
   })
 
   it('cajero, gerente y mesero, 403 y no crean nada', async () => {
     const m = mundo()
-    for (const quien of ['cajero', 'gerente', 'mesero'] as const)
-      expect((await guardar(m, { nombre: 'A', activo: true }, m[quien])).statusCode).toBe(403)
-    expect(m.configGuardada().medios_propios).toEqual([])
+    for (const quien of ['cashier', 'manager', 'waiter'] as const)
+      expect((await guardar(m, { name: 'A', active: true }, m[quien])).statusCode).toBe(403)
+    expect(m.configGuardada().custom_methods).toEqual([])
   })
 
   it('los medios propios y los de fábrica conviven: cambiar uno no toca el otro', async () => {
     const m = mundo()
-    await guardar(m, { nombre: 'Sodexo', activo: true })
-    await m.medios(['efectivo', 'nequi'])
-    expect(m.configGuardada().medios_propios).toHaveLength(1)
-    await guardar(m, { nombre: 'QR', activo: true })
-    expect(m.configGuardada().medios_pago).toEqual(['efectivo', 'nequi'])
+    await guardar(m, { name: 'Sodexo', active: true })
+    await m.medios(['cash', 'nequi'])
+    expect(m.configGuardada().custom_methods).toHaveLength(1)
+    await guardar(m, { name: 'QR', active: true })
+    expect(m.configGuardada().payment_methods).toEqual(['cash', 'nequi'])
   })
 
-  // BUG: `/api/caja/medios` acepta «otro» en el esquema (z.array(MedioPago)) pero `configCompleta`
+  // BUG: `/api/caja/medios` acepta «otro» en el esquema (z.array(PaymentMethod)) pero `fullConfig`
   // lo rechaza al guardar y la ruta responde 500 en vez de 400.
   // apps/hub/src/impresion/rutas.ts:561 (esquema de `medios` / `actualizarConfig`).
   it('/api/caja/medios rechaza «otro» con 400 (no con un error del servidor)', async () => {
     const m = mundo()
-    const r = await m.medios(['efectivo', 'otro'])
+    const r = await m.medios(['cash', 'other'])
     expect(r.statusCode).toBe(400)
-    expect(m.configGuardada().medios_pago).not.toContain('otro')
+    expect(m.configGuardada().payment_methods).not.toContain('other')
   })
 })

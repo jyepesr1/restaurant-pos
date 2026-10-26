@@ -1,4 +1,4 @@
-import type { EventoPedido } from '@pos/core'
+import type { OrderEvent } from '@pos/core'
 import { type BaseSqlite, enTransaccion, type Fila } from '@pos/db'
 import {
   type AlmacenHub,
@@ -9,35 +9,35 @@ import {
   type TipoConflicto,
 } from './almacen'
 
-const texto = (v: unknown) => (v === null || v === undefined ? null : String(v))
+const text = (v: unknown) => (v === null || v === undefined ? null : String(v))
 
-function aEvento(f: Fila): EventoPedido {
+function aEvento(f: Fila): OrderEvent {
   return {
     id: String(f.id),
-    tipo: String(f.tipo),
-    version_esquema: Number(f.version_esquema),
-    agregado_tipo: String(f.agregado_tipo),
-    agregado_id: String(f.agregado_id),
-    relacionados: JSON.parse(String(f.relacionados)),
-    datos: JSON.parse(String(f.datos)),
-    sesion_id: texto(f.sesion_id),
-    usuario_id: String(f.usuario_id),
-    dispositivo_id: String(f.dispositivo_id),
-    autorizacion_id: texto(f.autorizacion_id),
-    motivo: texto(f.motivo),
-    hora_dispositivo: String(f.hora_dispositivo),
-    hora_estimada_hub: String(f.hora_estimada_hub),
-    secuencia_base: Number(f.secuencia_base),
-    secuencia: Number(f.secuencia),
-    recibido_en: String(f.recibido_en),
-    dia_operativo: String(f.dia_operativo),
-    asignaciones: JSON.parse(String(f.asignaciones)),
-    afecta: JSON.parse(String(f.afecta)),
-    autorizado_por_id: texto(f.autorizado_por_id),
-  } as EventoPedido
+    type: String(f.type),
+    schema_version: Number(f.schema_version),
+    aggregate_type: String(f.aggregate_type),
+    aggregate_id: String(f.aggregate_id),
+    related: JSON.parse(String(f.related)),
+    data: JSON.parse(String(f.data)),
+    session_id: text(f.session_id),
+    user_id: String(f.user_id),
+    device_id: String(f.device_id),
+    authorization_id: text(f.authorization_id),
+    reason: text(f.reason),
+    device_time: String(f.device_time),
+    hub_estimated_time: String(f.hub_estimated_time),
+    base_sequence: Number(f.base_sequence),
+    sequence: Number(f.sequence),
+    received_at: String(f.received_at),
+    business_day: String(f.business_day),
+    assignments: JSON.parse(String(f.assignments)),
+    affects: JSON.parse(String(f.affects)),
+    authorized_by_id: text(f.authorized_by_id),
+  } as OrderEvent
 }
 
-/** Almacén del hub sobre las tablas de `@pos/db` (evento, evento_agregado, rechazos, conflictos). */
+/** Almacén del hub sobre las tablas de `@pos/db` (evento, event_aggregates, rechazos, conflictos). */
 export class AlmacenSqlite implements AlmacenHub {
   private readonly db: BaseSqlite
   private readonly restauranteId: string
@@ -53,69 +53,69 @@ export class AlmacenSqlite implements AlmacenHub {
 
   maxSecuencia(): number {
     const fila = this.db
-      .prepare('SELECT max(secuencia) AS m FROM evento WHERE restaurante_id = ?')
+      .prepare('SELECT max(sequence) AS m FROM events WHERE restaurant_id = ?')
       .get(this.restauranteId)
     return Number(fila?.m ?? 0)
   }
 
   porId(id: string) {
     const fila = this.db
-      .prepare('SELECT * FROM evento WHERE restaurante_id = ? AND id = ?')
+      .prepare('SELECT * FROM events WHERE restaurant_id = ? AND id = ?')
       .get(this.restauranteId, id)
-    return fila ? { evento: aEvento(fila), huella: String(fila.contenido_hash) } : undefined
+    return fila ? { event: aEvento(fila), fingerprint: String(fila.content_hash) } : undefined
   }
 
-  rechazo(eventoId: string, huella: string): Rechazo | undefined {
+  rechazo(eventId: string, fingerprint: string): Rechazo | undefined {
     const f = this.db
       .prepare(
-        'SELECT * FROM evento_rechazado WHERE restaurante_id = ? AND evento_id = ? AND contenido_hash = ?',
+        'SELECT * FROM rejected_events WHERE restaurant_id = ? AND event_id = ? AND content_hash = ?',
       )
-      .get(this.restauranteId, eventoId, huella)
+      .get(this.restauranteId, eventId, fingerprint)
     if (!f) return undefined
     return {
-      eventoId: String(f.evento_id),
-      huella: String(f.contenido_hash),
-      dispositivoId: String(f.dispositivo_id),
-      motivo: String(f.motivo),
-      contenido: String(f.contenido),
-      recibidoEn: String(f.recibido_en),
+      eventId: String(f.event_id),
+      fingerprint: String(f.content_hash),
+      dispositivoId: String(f.device_id),
+      reason: String(f.reason),
+      content: String(f.content),
+      recibidoEn: String(f.received_at),
     }
   }
 
-  conflictoDe(eventoId: string): Conflicto | undefined {
+  conflictoDe(eventId: string): Conflicto | undefined {
     const f = this.db
-      .prepare('SELECT * FROM conflicto WHERE restaurante_id = ? AND evento_id = ?')
-      .get(this.restauranteId, eventoId)
+      .prepare('SELECT * FROM conflicts WHERE restaurant_id = ? AND event_id = ?')
+      .get(this.restauranteId, eventId)
     return f ? this.aConflicto(f) : undefined
   }
 
   ultimaSecuenciaDe(agregados: readonly string[], excepto?: string): number {
     if (agregados.length === 0) return 0
-    const lista = agregados.map(() => '?').join(', ')
+    const list = agregados.map(() => '?').join(', ')
     const fila =
       excepto === undefined
         ? this.db
             .prepare(
-              `SELECT max(secuencia) AS m FROM evento_agregado
-               WHERE restaurante_id = ? AND agregado_id IN (${lista})`,
+              `SELECT max(sequence) AS m FROM event_aggregates
+               WHERE restaurant_id = ? AND aggregate_id IN (${list})`,
             )
             .get(this.restauranteId, ...agregados)
         : this.db
             .prepare(
-              `SELECT max(a.secuencia) AS m FROM evento_agregado a
-               JOIN evento e ON e.restaurante_id = a.restaurante_id AND e.id = a.evento_id
-               WHERE a.restaurante_id = ? AND a.agregado_id IN (${lista}) AND e.dispositivo_id <> ?`,
+              `SELECT max(a.sequence) AS m FROM event_aggregates a
+               JOIN events e ON e.restaurant_id = a.restaurant_id AND e.id = a.event_id
+               WHERE a.restaurant_id = ? AND a.aggregate_id IN (${list}) AND e.device_id <> ?`,
             )
             .get(this.restauranteId, ...agregados, excepto)
     return Number(fila?.m ?? 0)
   }
 
-  eventosDeAgregado(agregadoId: string): EventoPedido[] {
+  eventosDeAgregado(agregadoId: string): OrderEvent[] {
     return this.db
       .prepare(
-        `SELECT e.* FROM evento_agregado a
-         JOIN evento e ON e.restaurante_id = a.restaurante_id AND e.id = a.evento_id
-         WHERE a.restaurante_id = ? AND a.agregado_id = ? ORDER BY a.secuencia`,
+        `SELECT e.* FROM event_aggregates a
+         JOIN events e ON e.restaurant_id = a.restaurant_id AND e.id = a.event_id
+         WHERE a.restaurant_id = ? AND a.aggregate_id = ? ORDER BY a.sequence`,
       )
       .all(this.restauranteId, agregadoId)
       .map(aEvento)
@@ -124,147 +124,147 @@ export class AlmacenSqlite implements AlmacenHub {
   cuarentenasDe(dispositivoId: string): number {
     const fila = this.db
       .prepare(
-        'SELECT count(*) AS n FROM evento_cuarentena WHERE restaurante_id = ? AND dispositivo_id = ?',
+        'SELECT count(*) AS n FROM quarantined_events WHERE restaurant_id = ? AND device_id = ?',
       )
       .get(this.restauranteId, dispositivoId)
     return Number(fila?.n ?? 0)
   }
 
-  aperturasDelDia(dia: string): number {
+  aperturasDelDia(day: string): number {
     const fila = this.db
       .prepare(
-        "SELECT count(*) AS n FROM evento WHERE restaurante_id = ? AND tipo = 'PedidoAbierto' AND dia_operativo = ?",
+        "SELECT count(*) AS n FROM events WHERE restaurant_id = ? AND type = 'OrderOpened' AND business_day = ?",
       )
-      .get(this.restauranteId, dia)
+      .get(this.restauranteId, day)
     return Number(fila?.n ?? 0)
   }
 
-  comandasDelDia(dia: string): number {
+  comandasDelDia(day: string): number {
     const fila = this.db
       .prepare(
-        `SELECT coalesce(sum((SELECT count(*) FROM json_each(asignaciones, '$.numeros_comanda'))), 0) AS n
-         FROM evento WHERE restaurante_id = ? AND tipo = 'ItemsEnviados' AND dia_operativo = ?`,
+        `SELECT coalesce(sum((SELECT count(*) FROM json_each(assignments, '$.ticket_numbers'))), 0) AS n
+         FROM events WHERE restaurant_id = ? AND type = 'ItemsSent' AND business_day = ?`,
       )
-      .get(this.restauranteId, dia)
+      .get(this.restauranteId, day)
     return Number(fila?.n ?? 0)
   }
 
-  eventosDelPeriodo(tipos: readonly string[], desde: string, hasta: string): EventoPedido[] {
-    if (tipos.length === 0) return []
-    // Usa el índice evento_por_tipo_y_dia (migración 0006).
+  eventosDelPeriodo(types: readonly string[], from: string, until: string): OrderEvent[] {
+    if (types.length === 0) return []
+    // Usa el índice events_by_type_and_day (migración 0006).
     return this.db
       .prepare(
-        `SELECT * FROM evento WHERE restaurante_id = ? AND tipo IN (${tipos.map(() => '?').join(', ')})
-           AND dia_operativo BETWEEN ? AND ? ORDER BY secuencia`,
+        `SELECT * FROM events WHERE restaurant_id = ? AND type IN (${types.map(() => '?').join(', ')})
+           AND business_day BETWEEN ? AND ? ORDER BY sequence`,
       )
-      .all(this.restauranteId, ...tipos, desde, hasta)
+      .all(this.restauranteId, ...types, from, until)
       .map(aEvento)
   }
 
-  cobrosDeTurno(turnoId: string, desde: string): EventoPedido[] {
-    // El índice evento_por_tipo_y_dia acota por tipo y día; el turno se compara después.
+  cobrosDeTurno(shiftId: string, from: string): OrderEvent[] {
+    // El índice events_by_type_and_day acota por tipo y día; el turno se compara después.
     return this.db
       .prepare(
-        `SELECT * FROM evento WHERE restaurante_id = ? AND tipo IN (${TIPOS_COBRO.map(() => '?').join(', ')})
-           AND dia_operativo >= ? AND json_extract(datos, '$.turno_caja_id') = ? ORDER BY secuencia`,
+        `SELECT * FROM events WHERE restaurant_id = ? AND type IN (${TIPOS_COBRO.map(() => '?').join(', ')})
+           AND business_day >= ? AND json_extract(data, '$.register_shift_id') = ? ORDER BY sequence`,
       )
-      .all(this.restauranteId, ...TIPOS_COBRO, desde, turnoId)
+      .all(this.restauranteId, ...TIPOS_COBRO, from, shiftId)
       .map(aEvento)
   }
 
-  eventosDesde(desde: number, limite: number): EventoPedido[] {
+  eventosDesde(from: number, limite: number): OrderEvent[] {
     return this.db
       .prepare(
-        'SELECT * FROM evento WHERE restaurante_id = ? AND secuencia > ? ORDER BY secuencia LIMIT ?',
+        'SELECT * FROM events WHERE restaurant_id = ? AND sequence > ? ORDER BY sequence LIMIT ?',
       )
-      .all(this.restauranteId, desde, limite)
+      .all(this.restauranteId, from, limite)
       .map(aEvento)
   }
 
-  guardarEvento(e: EventoPedido, huella: string, agregados: readonly string[]) {
+  saveEvent(e: OrderEvent, fingerprint: string, agregados: readonly string[]) {
     this.db
       .prepare(
-        `INSERT INTO evento (restaurante_id, id, tipo, version_esquema, agregado_tipo, agregado_id,
-           relacionados, datos, sesion_id, usuario_id, dispositivo_id, autorizacion_id, autorizado_por_id,
-           motivo, hora_dispositivo, hora_estimada_hub, secuencia_base, secuencia, recibido_en,
-           dia_operativo, asignaciones, afecta, contenido_hash)
+        `INSERT INTO events (restaurant_id, id, type, schema_version, aggregate_type, aggregate_id,
+           related, data, session_id, user_id, device_id, authorization_id, authorized_by_id,
+           reason, device_time, hub_estimated_time, base_sequence, sequence, received_at,
+           business_day, assignments, affects, content_hash)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         this.restauranteId,
         e.id,
-        e.tipo,
-        e.version_esquema,
-        e.agregado_tipo,
-        e.agregado_id,
-        JSON.stringify(e.relacionados),
-        JSON.stringify(e.datos),
-        e.sesion_id,
-        e.usuario_id,
-        e.dispositivo_id,
-        e.autorizacion_id,
-        e.autorizado_por_id,
-        e.motivo,
-        e.hora_dispositivo,
-        e.hora_estimada_hub,
-        e.secuencia_base,
-        e.secuencia,
-        e.recibido_en,
-        e.dia_operativo,
-        JSON.stringify(e.asignaciones),
-        JSON.stringify(e.afecta),
-        huella,
+        e.type,
+        e.schema_version,
+        e.aggregate_type,
+        e.aggregate_id,
+        JSON.stringify(e.related),
+        JSON.stringify(e.data),
+        e.session_id,
+        e.user_id,
+        e.device_id,
+        e.authorization_id,
+        e.authorized_by_id,
+        e.reason,
+        e.device_time,
+        e.hub_estimated_time,
+        e.base_sequence,
+        e.sequence,
+        e.received_at,
+        e.business_day,
+        JSON.stringify(e.assignments),
+        JSON.stringify(e.affects),
+        fingerprint,
       )
     const indice = this.db.prepare(
-      'INSERT INTO evento_agregado (restaurante_id, agregado_id, secuencia, evento_id) VALUES (?, ?, ?, ?)',
+      'INSERT INTO event_aggregates (restaurant_id, aggregate_id, sequence, event_id) VALUES (?, ?, ?, ?)',
     )
-    for (const agregado of agregados) indice.run(this.restauranteId, agregado, e.secuencia, e.id)
+    for (const aggregate of agregados) indice.run(this.restauranteId, aggregate, e.sequence, e.id)
   }
 
   guardarRechazo(r: Rechazo) {
     // Sin fila no salta el disparador `sin_reemplazo`: un rechazo repetido no hace nada.
     this.db
       .prepare(
-        `INSERT INTO evento_rechazado (restaurante_id, evento_id, dispositivo_id, motivo, contenido, contenido_hash, recibido_en)
+        `INSERT INTO rejected_events (restaurant_id, event_id, device_id, reason, content, content_hash, received_at)
          SELECT ?, ?, ?, ?, ?, ?, ?
-         WHERE NOT EXISTS (SELECT 1 FROM evento_rechazado
-           WHERE restaurante_id = ? AND evento_id = ? AND contenido_hash = ?)`,
+         WHERE NOT EXISTS (SELECT 1 FROM rejected_events
+           WHERE restaurant_id = ? AND event_id = ? AND content_hash = ?)`,
       )
       .run(
         this.restauranteId,
-        r.eventoId,
+        r.eventId,
         r.dispositivoId,
-        r.motivo,
-        r.contenido,
-        r.huella,
+        r.reason,
+        r.content,
+        r.fingerprint,
         r.recibidoEn,
         this.restauranteId,
-        r.eventoId,
-        r.huella,
+        r.eventId,
+        r.fingerprint,
       )
   }
 
   guardarCuarentena(c: Cuarentena) {
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO evento_cuarentena (restaurante_id, evento_id, dispositivo_id, motivo, contenido, recibido_en)
+        `INSERT OR IGNORE INTO quarantined_events (restaurant_id, event_id, device_id, reason, content, received_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(this.restauranteId, c.eventoId, c.dispositivoId, c.motivo, c.contenido, c.recibidoEn)
+      .run(this.restauranteId, c.eventId, c.dispositivoId, c.reason, c.content, c.recibidoEn)
   }
 
   guardarConflicto(c: Conflicto) {
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO conflicto (id, restaurante_id, tipo, evento_id, agregado_id, descripcion, detectado_en)
+        `INSERT OR IGNORE INTO conflicts (id, restaurant_id, type, event_id, aggregate_id, description, detected_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(c.id, this.restauranteId, c.tipo, c.eventoId, c.agregadoId, c.descripcion, c.detectadoEn)
+      .run(c.id, this.restauranteId, c.type, c.eventId, c.agregadoId, c.description, c.detectadoEn)
   }
 
   conflictos(): Conflicto[] {
     return this.db
-      .prepare('SELECT * FROM conflicto WHERE restaurante_id = ? ORDER BY detectado_en, evento_id')
+      .prepare('SELECT * FROM conflicts WHERE restaurant_id = ? ORDER BY detected_at, event_id')
       .all(this.restauranteId)
       .map((f) => this.aConflicto(f))
   }
@@ -272,11 +272,11 @@ export class AlmacenSqlite implements AlmacenHub {
   private aConflicto(f: Fila): Conflicto {
     return {
       id: String(f.id),
-      tipo: String(f.tipo) as TipoConflicto,
-      eventoId: String(f.evento_id),
-      agregadoId: String(f.agregado_id),
-      descripcion: String(f.descripcion),
-      detectadoEn: String(f.detectado_en),
+      type: String(f.type) as TipoConflicto,
+      eventId: String(f.event_id),
+      agregadoId: String(f.aggregate_id),
+      description: String(f.description),
+      detectadoEn: String(f.detected_at),
     }
   }
 }

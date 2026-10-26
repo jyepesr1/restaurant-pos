@@ -7,51 +7,51 @@ import Dexie, { type EntityTable } from 'dexie'
 
 interface FilaEvento {
   id: string
-  orden: number
+  position: number
   /** 1 si es propio y pendiente (IndexedDB no indexa booleanos). */
-  pendiente: 0 | 1
+  pending: 0 | 1
   /** Pedidos que toca (agregado, relacionados y afecta): índice de varias entradas. */
-  pedidos: string[]
+  orders: string[]
   local: EventoLocal
 }
 
 interface FilaAjuste {
-  clave: string
-  valor: unknown
+  key: string
+  value: unknown
 }
 
 export class BaseDispositivo extends Dexie {
-  eventos!: EntityTable<FilaEvento, 'id'>
-  ajustes!: EntityTable<FilaAjuste, 'clave'>
+  events!: EntityTable<FilaEvento, 'id'>
+  settings!: EntityTable<FilaAjuste, 'key'>
 
-  constructor(nombre = 'pos') {
-    super(nombre)
+  constructor(name = 'pos') {
+    super(name)
     this.version(1).stores({
-      eventos: 'id, orden, [pendiente+orden], *pedidos',
-      ajustes: 'clave',
+      events: 'id, position, [pending+position], *orders',
+      settings: 'key',
     })
   }
 
-  async leerAjuste<T>(clave: string): Promise<T | undefined> {
-    return (await this.ajustes.get(clave))?.valor as T | undefined
+  async leerAjuste<T>(key: string): Promise<T | undefined> {
+    return (await this.settings.get(key))?.value as T | undefined
   }
 
-  async guardarAjuste(clave: string, valor: unknown): Promise<void> {
-    await this.ajustes.put({ clave, valor })
+  async saveSetting(key: string, value: unknown): Promise<void> {
+    await this.settings.put({ key, value })
   }
 
-  async borrarAjuste(clave: string): Promise<void> {
-    await this.ajustes.delete(clave)
+  async borrarAjuste(key: string): Promise<void> {
+    await this.settings.delete(key)
   }
 }
 
 const CURSOR = 'cursor'
 
 const fila = (local: EventoLocal): FilaEvento => ({
-  id: local.evento.id,
-  orden: local.orden,
-  pendiente: local.propio && local.estado === 'pendiente' ? 1 : 0,
-  pedidos: pedidosDe(local.evento),
+  id: local.event.id,
+  position: local.position,
+  pending: local.own && local.status === 'pending' ? 1 : 0,
+  orders: pedidosDe(local.event),
   local,
 })
 
@@ -63,39 +63,39 @@ export class AlmacenIndexedDb implements AlmacenDispositivo {
   }
 
   async guardar(locales: readonly EventoLocal[]) {
-    if (locales.length > 0) await this.db.eventos.bulkPut(locales.map(fila))
+    if (locales.length > 0) await this.db.events.bulkPut(locales.map(fila))
   }
 
   async obtener(id: string) {
-    return (await this.db.eventos.get(id))?.local
+    return (await this.db.events.get(id))?.local
   }
 
-  async listar() {
-    return (await this.db.eventos.orderBy('orden').toArray()).map((f) => f.local)
+  async listAll() {
+    return (await this.db.events.orderBy('position').toArray()).map((f) => f.local)
   }
 
-  async pendientesPropios(limite = Number.POSITIVE_INFINITY) {
-    const consulta = this.db.eventos
-      .where('[pendiente+orden]')
+  async ownPending(limite = Number.POSITIVE_INFINITY) {
+    const consulta = this.db.events
+      .where('[pending+position]')
       .between([1, Dexie.minKey], [1, Dexie.maxKey])
-    const filas = await (Number.isFinite(limite) ? consulta.limit(limite) : consulta).toArray()
-    return filas.map((f) => f.local)
+    const rows = await (Number.isFinite(limite) ? consulta.limit(limite) : consulta).toArray()
+    return rows.map((f) => f.local)
   }
 
-  async dePedido(pedidoId: string) {
-    const filas = await this.db.eventos.where('pedidos').equals(pedidoId).toArray()
-    return filas.sort((a, b) => a.orden - b.orden).map((f) => f.local)
+  async dePedido(orderId: string) {
+    const rows = await this.db.events.where('orders').equals(orderId).toArray()
+    return rows.sort((a, b) => a.position - b.position).map((f) => f.local)
   }
 
-  async borrar(ids: readonly string[]) {
-    await this.db.eventos.bulkDelete([...ids])
+  async erase(ids: readonly string[]) {
+    await this.db.events.bulkDelete([...ids])
   }
 
   async cursor(): Promise<Cursor> {
-    return (await this.db.leerAjuste<Cursor>(CURSOR)) ?? { instancia: null, hasta: 0 }
+    return (await this.db.leerAjuste<Cursor>(CURSOR)) ?? { instancia: null, until: 0 }
   }
 
   async guardarCursor(cursor: Cursor) {
-    await this.db.guardarAjuste(CURSOR, cursor)
+    await this.db.saveSetting(CURSOR, cursor)
   }
 }

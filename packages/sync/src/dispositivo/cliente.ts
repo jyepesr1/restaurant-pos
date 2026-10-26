@@ -1,11 +1,11 @@
 import {
-  type EstadoPedido,
-  type EventoAplicable,
-  type EventoNuevo,
-  type EventoPedido,
-  nuevoId,
-  reconstruir,
-  validarEventoNuevo,
+  type ApplicableEvent,
+  type NewEvent,
+  newId,
+  type OrderEvent,
+  type OrderState,
+  rebuild,
+  validateNewEvent,
 } from '@pos/core'
 import { pedidosDe } from '../hub/hub'
 import {
@@ -19,7 +19,7 @@ import { type AlmacenDispositivo, type EventoLocal, sinAceptacion } from './alma
 export interface OpcionesCliente {
   almacen: AlmacenDispositivo
   /** Envía un mensaje al hub (por el WebSocket). Solo se llama estando conectado. */
-  enviar: (mensaje: MensajeDispositivo) => void
+  send: (message: MensajeDispositivo) => void
   token: string
   versionApp: string
   /** Reloj del dispositivo, en ms. */
@@ -29,11 +29,11 @@ export interface OpcionesCliente {
    * la app debe cerrar el canal y mostrar qué hacer; con `token_revocado` sigue entregando lo
    * pendiente (va a cuarentena) pero ya no recibe nada.
    */
-  alErrorHub?: (codigo: CodigoError, mensaje: string) => void
+  onHubError?: (code: CodigoError, message: string) => void
   /** Falló el procesamiento de un mensaje del hub (para el registro de diagnóstico). */
-  alFallo?: (error: unknown) => void
+  onFailure?: (error: unknown) => void
   /** Algo pudo cambiar en lo guardado (un evento nuevo, uno confirmado…): la pantalla relee. */
-  alCambiar?: () => void
+  onChange?: () => void
 }
 
 /**
@@ -46,54 +46,54 @@ export interface OpcionesCliente {
  */
 export class ClienteSync {
   private readonly almacen: AlmacenDispositivo
-  private readonly enviarAlHub: (mensaje: MensajeDispositivo) => void
+  private readonly enviarAlHub: (message: MensajeDispositivo) => void
   private readonly token: string
   private readonly versionApp: string
   private readonly ahora: () => number
-  private readonly alErrorHub: OpcionesCliente['alErrorHub']
-  private readonly alFallo: OpcionesCliente['alFallo']
-  private readonly alCambiar: OpcionesCliente['alCambiar']
+  private readonly onHubError: OpcionesCliente['onHubError']
+  private readonly onFailure: OpcionesCliente['onFailure']
+  private readonly onChange: OpcionesCliente['onChange']
 
-  private conectado = false
+  private connected = false
   private generacion = 0
-  private loteEnVuelo: { id: string; eventos: string[] } | null = null
+  private loteEnVuelo: { id: string; events: string[] } | null = null
   private trayendo = false
   /** Un `nuevo` con hueco llegó mientras se traía: al terminar, traer hasta él si falta. */
   private faltaHasta = 0
   private desfaseMs = 0
   private cola: Promise<void> = Promise.resolve()
-  private siguienteOrden = 0
+  private nextPosition = 0
 
   constructor(o: OpcionesCliente) {
     this.almacen = o.almacen
-    this.enviarAlHub = o.enviar
+    this.enviarAlHub = o.send
     this.token = o.token
     this.versionApp = o.versionApp
     this.ahora = o.ahora ?? Date.now
-    this.alErrorHub = o.alErrorHub
-    this.alFallo = o.alFallo
-    this.alCambiar = o.alCambiar
+    this.onHubError = o.onHubError
+    this.onFailure = o.onFailure
+    this.onChange = o.onChange
   }
 
   /**
    * Persistir antes de mostrar: el evento queda guardado como pendiente y se envía si se puede.
    * Registrar dos veces el mismo id no hace nada.
    */
-  async registrar(evento: EventoNuevo): Promise<{ ok: true } | { ok: false; errores: string[] }> {
-    const validacion = validarEventoNuevo(evento)
-    if (!validacion.ok) return validacion
+  async record(event: NewEvent): Promise<{ ok: true } | { ok: false; errors: string[] }> {
+    const validation = validateNewEvent(event)
+    if (!validation.ok) return validation
     await this.enEspera(async () => {
-      if (await this.almacen.obtener(validacion.evento.id)) return
+      if (await this.almacen.obtener(validation.event.id)) return
       // Si el cursor bajó entre que se creó el evento y ahora (hub restaurado), no prometer al
       // hub más de lo que se conoce.
-      const { hasta } = await this.almacen.cursor()
-      const secuencia_base = Math.min(validacion.evento.secuencia_base, hasta)
+      const { until } = await this.almacen.cursor()
+      const base_sequence = Math.min(validation.event.base_sequence, until)
       await this.almacen.guardar([
         {
-          evento: { ...validacion.evento, secuencia_base },
-          estado: 'pendiente',
-          propio: true,
-          orden: await this.orden(),
+          event: { ...validation.event, base_sequence },
+          status: 'pending',
+          own: true,
+          position: await this.position(),
         },
       ])
       await this.enviarLote(this.generacion)
@@ -101,12 +101,12 @@ export class ClienteSync {
     return { ok: true }
   }
 
-  /** Secuencia que conoce este dispositivo: va como `secuencia_base` de los eventos nuevos. */
+  /** Secuencia que conoce este dispositivo: va como `base_sequence` de los eventos nuevos. */
   async conocido(): Promise<number> {
-    return (await this.almacen.cursor()).hasta
+    return (await this.almacen.cursor()).until
   }
 
-  /** Hora del hub estimada con el desfase aprendido al conectar (`hora_estimada_hub`). */
+  /** Hora del hub estimada con el desfase aprendido al conectar (`hub_estimated_time`). */
   horaEstimadaHub(horaDispositivoMs = this.ahora()): string {
     return new Date(horaDispositivoMs + this.desfaseMs).toISOString()
   }
@@ -120,15 +120,15 @@ export class ClienteSync {
 
   alConectar(): Promise<void> {
     const generacion = this.nuevaGeneracion()
-    this.conectado = true
+    this.connected = true
     return this.enEspera(async () => {
       const cursor = await this.almacen.cursor()
       if (generacion !== this.generacion) return
-      this.enviar({
-        tipo: 'hola',
+      this.send({
+        type: 'hello',
         token: this.token,
         hub_instancia: cursor.instancia,
-        hasta: cursor.hasta,
+        until: cursor.until,
         version_app: this.versionApp,
       })
     })
@@ -136,40 +136,40 @@ export class ClienteSync {
 
   alDesconectar(): void {
     this.nuevaGeneracion()
-    this.conectado = false
+    this.connected = false
   }
 
-  /** Procesa un mensaje del hub, en orden con los demás. No rechaza: los fallos van a `alFallo`. */
-  recibir(mensaje: MensajeHub): Promise<void> {
+  /** Procesa un mensaje del hub, en orden con los demás. No rechaza: los fallos van a `onFailure`. */
+  recibir(message: MensajeHub): Promise<void> {
     const generacion = this.generacion
     // Un latido o un pong no cambian nada guardado: la pantalla no tiene por qué releer.
-    const escribe = !['latido', 'pong', 'catalogo', 'impresoras'].includes(mensaje.tipo)
+    const escribe = !['heartbeat', 'pong', 'catalog', 'printers'].includes(message.type)
     return this.enEspera(async () => {
-      if (generacion === this.generacion) await this.procesar(mensaje, generacion)
-    }, escribe).catch((error) => this.alFallo?.(error))
+      if (generacion === this.generacion) await this.procesar(message, generacion)
+    }, escribe).catch((error) => this.onFailure?.(error))
   }
 
   /** Estado de un pedido: confirmados por secuencia y, encima, los propios pendientes. */
-  async pedido(id: string): Promise<EstadoPedido | null> {
-    const vigentes = (await this.almacen.dePedido(id)).filter(
-      (l) => l.estado === 'confirmado' || l.estado === 'pendiente',
+  async order(id: string): Promise<OrderState | null> {
+    const currentOnes = (await this.almacen.dePedido(id)).filter(
+      (l) => l.status === 'confirmed' || l.status === 'pending',
     )
-    return reconstruir(
-      vigentes.map((l) => l.evento),
+    return rebuild(
+      currentOnes.map((l) => l.event),
       id,
     )
   }
 
-  async pendientes(): Promise<number> {
-    return (await this.almacen.pendientesPropios()).length
+  async pendingList(): Promise<number> {
+    return (await this.almacen.ownPending()).length
   }
 
   async locales(): Promise<EventoLocal[]> {
-    return this.almacen.listar()
+    return this.almacen.listAll()
   }
 
   /** Espera a que se procesen los mensajes en curso. */
-  async listo(): Promise<void> {
+  async ready(): Promise<void> {
     await this.cola
   }
 
@@ -177,14 +177,14 @@ export class ClienteSync {
 
   /**
    * Encola un trabajo. La cola sigue aunque uno falle; el fallo le llega a quien lo encoló. Al
-   * terminar avisa `alCambiar`, salvo que el trabajo no pueda haber cambiado nada guardado.
+   * terminar avisa `onChange`, salvo que el trabajo no pueda haber cambiado nada guardado.
    */
   private enEspera(trabajo: () => Promise<void>, avisar = true): Promise<void> {
-    const resultado = this.cola.then(trabajo).finally(() => {
-      if (avisar) this.alCambiar?.()
+    const result = this.cola.then(trabajo).finally(() => {
+      if (avisar) this.onChange?.()
     })
-    this.cola = resultado.catch(() => {})
-    return resultado
+    this.cola = result.catch(() => {})
+    return result
   }
 
   private nuevaGeneracion() {
@@ -195,89 +195,89 @@ export class ClienteSync {
     return this.generacion
   }
 
-  private async orden(): Promise<number> {
-    if (this.siguienteOrden === 0) {
-      const todos = await this.almacen.listar()
-      this.siguienteOrden = (todos.at(-1)?.orden ?? 0) + 1
+  private async position(): Promise<number> {
+    if (this.nextPosition === 0) {
+      const all = await this.almacen.listAll()
+      this.nextPosition = (all.at(-1)?.position ?? 0) + 1
     }
-    return this.siguienteOrden++
+    return this.nextPosition++
   }
 
-  private enviar(mensaje: MensajeDispositivo) {
-    if (this.conectado) this.enviarAlHub(mensaje)
+  private send(message: MensajeDispositivo) {
+    if (this.connected) this.enviarAlHub(message)
   }
 
   private async procesar(m: MensajeHub, generacion: number): Promise<void> {
-    switch (m.tipo) {
-      case 'bienvenido': {
+    switch (m.type) {
+      case 'welcome': {
         const cursor = await this.almacen.cursor()
         const restaurado =
           (cursor.instancia !== null && cursor.instancia !== m.hub_instancia) ||
-          cursor.hasta > m.secuencia_max
+          cursor.until > m.secuencia_max
         if (restaurado) await this.reenviarTodo()
         const desfase = Date.parse(m.hora_hub) - this.ahora()
         if (Number.isFinite(desfase)) this.desfaseMs = desfase
-        const nuevo = {
+        const fresh = {
           instancia: m.hub_instancia,
-          hasta: restaurado ? 0 : cursor.hasta,
+          until: restaurado ? 0 : cursor.until,
           desfaseMs: this.desfaseMs,
         }
-        await this.almacen.guardarCursor(nuevo)
+        await this.almacen.guardarCursor(fresh)
         if (generacion !== this.generacion) return
-        this.traer(nuevo.hasta)
+        this.pull(fresh.until)
         await this.enviarLote(generacion)
         return
       }
 
-      case 'eventos': {
-        await this.incorporar(m.eventos, generacion)
+      case 'events': {
+        await this.incorporar(m.events, generacion)
         const cursor = await this.almacen.cursor()
-        const hasta = Math.max(cursor.hasta, m.hasta)
-        await this.almacen.guardarCursor({ ...cursor, hasta })
+        const until = Math.max(cursor.until, m.until)
+        await this.almacen.guardarCursor({ ...cursor, until })
         if (generacion !== this.generacion) return
         this.trayendo = false
-        if (m.hay_mas || this.faltaHasta > hasta) this.traer(hasta)
+        if (m.hay_mas || this.faltaHasta > until) this.pull(until)
         return
       }
 
-      case 'nuevo': {
+      case 'new': {
         const cursor = await this.almacen.cursor()
-        if (m.hasta <= cursor.hasta) return
-        if (m.hasta_anterior !== cursor.hasta) {
+        if (m.until <= cursor.until) return
+        if (m.hasta_anterior !== cursor.until) {
           // Hueco: falta algo entre el cursor y este evento. No avanzar; traer lo que falta.
-          this.faltaHasta = Math.max(this.faltaHasta, m.hasta)
-          this.traer(cursor.hasta)
+          this.faltaHasta = Math.max(this.faltaHasta, m.until)
+          this.pull(cursor.until)
           return
         }
-        await this.incorporar([m.evento], generacion)
-        await this.almacen.guardarCursor({ ...cursor, hasta: m.hasta })
+        await this.incorporar([m.event], generacion)
+        await this.almacen.guardarCursor({ ...cursor, until: m.until })
         return
       }
 
-      case 'resultado': {
+      case 'result': {
         if (!this.loteEnVuelo || this.loteEnVuelo.id !== m.lote_id) return
         const rechazados: string[] = []
         for (const r of m.resultados) {
           const local = await this.almacen.obtener(r.id)
           if (!local) continue
-          if (r.estado === 'confirmado') {
+          if (r.status === 'confirmed') {
             await this.almacen.guardar([
               {
                 ...local,
-                estado: 'confirmado',
-                evento: { ...local.evento, ...r.aceptacion },
-                conflicto: r.conflicto,
+                status: 'confirmed',
+                event: { ...local.event, ...r.aceptacion },
+                conflict: r.conflict,
               },
             ])
             continue
           }
           // Lo que el hub ya confirmó (llegó por `eventos` o `nuevo`) no se deshace.
-          if (local.estado === 'confirmado') continue
-          if (r.estado === 'rechazado') {
-            await this.almacen.guardar([{ ...local, estado: 'rechazado', motivo: r.motivo }])
+          if (local.status === 'confirmed') continue
+          if (r.status === 'rejected') {
+            await this.almacen.guardar([{ ...local, status: 'rejected', reason: r.reason }])
             rechazados.push(r.id)
           } else {
-            await this.almacen.guardar([{ ...local, estado: 'cuarentena' }])
+            await this.almacen.guardar([{ ...local, status: 'quarantine' }])
           }
         }
         if (rechazados.length > 0) await this.rechazarDependientes(rechazados)
@@ -288,39 +288,39 @@ export class ClienteSync {
       }
 
       case 'error':
-        if (m.codigo === 'token_invalido' || m.codigo === 'app_vieja') this.alDesconectar()
-        this.alErrorHub?.(m.codigo, m.mensaje)
+        if (m.code === 'invalid_token' || m.code === 'outdated_app') this.alDesconectar()
+        this.onHubError?.(m.code, m.message)
         return
 
       // Los atiende la app (el catálogo se pide por HTTP); aquí no cambian nada guardado.
       case 'pong':
-      case 'latido':
-      case 'catalogo':
-      case 'impresoras':
+      case 'heartbeat':
+      case 'catalog':
+      case 'printers':
         return
     }
   }
 
   /**
    * Guarda eventos confirmados del hub. La copia del hub manda: reemplaza la propia (pendiente o
-   * ya confirmada, que puede diferir en `secuencia_base` tras un reenvío a un hub restaurado).
+   * ya confirmada, que puede diferir en `base_sequence` tras un reenvío a un hub restaurado).
    */
-  private async incorporar(eventos: readonly EventoPedido[], generacion: number) {
+  private async incorporar(events: readonly OrderEvent[], generacion: number) {
     const nuevos: EventoLocal[] = []
-    for (const evento of eventos) {
-      const local = await this.almacen.obtener(evento.id)
+    for (const event of events) {
+      const local = await this.almacen.obtener(event.id)
       nuevos.push(
         local
-          ? { ...local, evento: { ...local.evento, ...evento }, estado: 'confirmado' }
-          : { evento, estado: 'confirmado', propio: false, orden: await this.orden() },
+          ? { ...local, event: { ...local.event, ...event }, status: 'confirmed' }
+          : { event, status: 'confirmed', own: false, position: await this.position() },
       )
     }
     await this.almacen.guardar(nuevos)
     // Si se perdió la respuesta del lote pero sus eventos ya volvieron confirmados, seguir.
-    const lote = this.loteEnVuelo
-    if (lote && generacion === this.generacion) {
-      const enVuelo = await Promise.all(lote.eventos.map((id) => this.almacen.obtener(id)))
-      if (this.loteEnVuelo === lote && enVuelo.every((l) => l?.estado === 'confirmado')) {
+    const batch = this.loteEnVuelo
+    if (batch && generacion === this.generacion) {
+      const enVuelo = await Promise.all(batch.events.map((id) => this.almacen.obtener(id)))
+      if (this.loteEnVuelo === batch && enVuelo.every((l) => l?.status === 'confirmed')) {
         this.loteEnVuelo = null
         await this.enviarLote(generacion)
       }
@@ -332,19 +332,18 @@ export class ClienteSync {
    * (docs/SYNC.md#rechazos-cuarentena-y-conflictos).
    */
   private async rechazarDependientes(rechazados: readonly string[]) {
-    const todos = await this.almacen.listar()
+    const all = await this.almacen.listAll()
     const afectados = new Set(
-      todos.filter((l) => rechazados.includes(l.evento.id)).flatMap((l) => pedidosDe(l.evento)),
+      all.filter((l) => rechazados.includes(l.event.id)).flatMap((l) => pedidosDe(l.event)),
     )
-    const dependientes = todos.filter(
-      (l) =>
-        l.propio && l.estado === 'pendiente' && pedidosDe(l.evento).some((p) => afectados.has(p)),
+    const dependientes = all.filter(
+      (l) => l.own && l.status === 'pending' && pedidosDe(l.event).some((p) => afectados.has(p)),
     )
     await this.almacen.guardar(
       dependientes.map((l) => ({
         ...l,
-        estado: 'rechazado' as const,
-        motivo: 'depende_de_rechazado',
+        status: 'rejected' as const,
+        reason: 'depends_on_rejected',
       })),
     )
   }
@@ -352,40 +351,40 @@ export class ClienteSync {
   /**
    * El hub se restauró de un respaldo o se reinstaló: se reenvían todos los eventos propios y se
    * olvida lo ajeno, que volverá con el cursor en 0. El hub restaurado no conoce lo que había,
-   * así que el dispositivo no estaba "al día": `secuencia_base` baja a 0. La huella del hub no
+   * así que el dispositivo no estaba "al día": `base_sequence` baja a 0. La huella del hub no
    * la incluye, así que lo que el respaldo ya tenía se reconoce como el mismo evento.
    */
   private async reenviarTodo() {
-    const todos = await this.almacen.listar()
-    await this.almacen.borrar(todos.filter((l) => !l.propio).map((l) => l.evento.id))
+    const all = await this.almacen.listAll()
+    await this.almacen.erase(all.filter((l) => !l.own).map((l) => l.event.id))
     await this.almacen.guardar(
-      todos
-        .filter((l) => l.propio && (l.estado === 'confirmado' || l.estado === 'pendiente'))
+      all
+        .filter((l) => l.own && (l.status === 'confirmed' || l.status === 'pending'))
         .map((l) => ({
           ...l,
-          estado: 'pendiente' as const,
-          evento: { ...sinAceptacion(l.evento), secuencia_base: 0 },
+          status: 'pending' as const,
+          event: { ...sinAceptacion(l.event), base_sequence: 0 },
         })),
     )
   }
 
-  private traer(desde: number) {
+  private pull(from: number) {
     if (this.trayendo) return
     this.trayendo = true
-    this.enviar({ tipo: 'traer', desde })
+    this.send({ type: 'pull', from })
   }
 
   private async enviarLote(generacion: number) {
-    if (!this.conectado || this.loteEnVuelo || generacion !== this.generacion) return
-    const pendientes = await this.almacen.pendientesPropios(TAMANO_LOTE)
+    if (!this.connected || this.loteEnVuelo || generacion !== this.generacion) return
+    const pendingList = await this.almacen.ownPending(TAMANO_LOTE)
     // Mientras se leía pudo cortarse la conexión, o salir otro lote.
-    if (!this.conectado || this.loteEnVuelo || generacion !== this.generacion) return
-    if (pendientes.length === 0) return
-    this.loteEnVuelo = { id: nuevoId(), eventos: pendientes.map((l) => l.evento.id) }
-    this.enviar({
-      tipo: 'empujar',
+    if (!this.connected || this.loteEnVuelo || generacion !== this.generacion) return
+    if (pendingList.length === 0) return
+    this.loteEnVuelo = { id: newId(), events: pendingList.map((l) => l.event.id) }
+    this.send({
+      type: 'push',
       lote_id: this.loteEnVuelo.id,
-      eventos: pendientes.map((l) => sinAceptacion(l.evento as EventoAplicable)),
+      events: pendingList.map((l) => sinAceptacion(l.event as ApplicableEvent)),
     })
   }
 }

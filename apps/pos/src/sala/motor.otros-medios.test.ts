@@ -1,8 +1,8 @@
 import 'fake-indexeddb/auto'
-import { cuadreDeOtrosMedios, firmarEvento, nuevoId } from '@pos/core'
+import { newId, otherMethodsReconciliation, signEvent } from '@pos/core'
 import {
   AlmacenMemoria,
-  type Canal,
+  type Channel,
   type ControlAcceso,
   HubSync,
   type Manejadores,
@@ -20,29 +20,29 @@ import { catalogoDePrueba, datosItem } from './pruebas'
 // con las reglas de cobro. Abrir turno → cobro con tarjeta y Nequi → conteo con los cierres del
 // datáfono y de la app → cierre confirmado; y con un reporte distinto, que pide justificación. El
 // cierre se arma como lo hace la pantalla de la caja (`mediosDelCierre`, `conSigno`,
-// `cuadreDeOtrosMedios`). Los temporizadores son falsos: nada espera de verdad.
+// `otherMethodsReconciliation`). Los temporizadores son falsos: nada espera de verdad.
 
 const T0 = new Date('2026-10-26T15:00:00.000Z')
-const SODEXO = nuevoId()
+const SODEXO = newId()
 const REGLAS: ReglasCobro = {
-  mediosPago: ['efectivo', 'tarjeta', 'nequi'],
-  mediosPropios: [{ id: SODEXO, nombre: 'Sodexo' }],
-  propinaSugerida: 1000,
-  redondeoModo: 'mitad_arriba',
+  mediosPago: ['cash', 'card', 'nequi'],
+  mediosPropios: [{ id: SODEXO, name: 'Sodexo' }],
+  suggestedTip: 1000,
+  redondeoModo: 'half_up',
   redondeoEfectivo: 100,
-  redondeoEfectivoModo: 'cercano_mitad_abajo',
+  cashRoundingMode: 'nearest_half_down',
   imprimePrecuenta: false,
 }
-const DATAFONO = nuevoId()
+const DATAFONO = newId()
 const CATALOGO = catalogoDePrueba({
-  datafonos: [{ id: DATAFONO, nombre: 'Datáfono 1', proveedor: 'bold' }],
+  cardTerminals: [{ id: DATAFONO, name: 'Datáfono 1', provider: 'bold' }],
 })
 
 const accesoConFirma: ControlAcceso = {
-  verificar: (_c, evento) =>
-    evento.sesion_id && evento.firma === firmarEvento(evento, `secreto-${evento.sesion_id}`)
-      ? { ok: true, autorizadoPorId: null, autorizacionId: null }
-      : { ok: false, motivo: 'firma_invalida' },
+  verify: (_c, event) =>
+    event.session_id && event.signature === signEvent(event, `secreto-${event.session_id}`)
+      ? { ok: true, authorizedById: null, autorizacionId: null }
+      : { ok: false, reason: 'invalid_signature' },
   registrarUso: () => {},
 }
 
@@ -66,7 +66,7 @@ async function avanzar(ms: number) {
     await asentar(3)
   }
 }
-async function hasta(condicion: () => Promise<boolean> | boolean, maxMs = 20_000) {
+async function until(condicion: () => Promise<boolean> | boolean, maxMs = 20_000) {
   for (let t = 0; t <= maxMs; t += 100) {
     if (await condicion()) return
     await avanzar(100)
@@ -76,69 +76,69 @@ async function hasta(condicion: () => Promise<boolean> | boolean, maxMs = 20_000
 /** Deja correr el reloj simulado hasta que la promesa termine (bien o mal). */
 async function resolver<T>(
   promesa: Promise<T>,
-): Promise<{ ok: true; valor: T } | { ok: false; error: Error }> {
-  let r: { ok: true; valor: T } | { ok: false; error: Error } | null = null
+): Promise<{ ok: true; value: T } | { ok: false; error: Error }> {
+  let r: { ok: true; value: T } | { ok: false; error: Error } | null = null
   promesa.then(
-    (valor) => {
-      r = { ok: true, valor }
+    (value) => {
+      r = { ok: true, value }
     },
     (error) => {
       r = { ok: false, error }
     },
   )
-  await hasta(() => r !== null)
+  await until(() => r !== null)
   return r as never
 }
 
 function montarHub() {
   const tokens = new Map<string, Equipo>()
   const hub = new HubSync(new AlmacenMemoria(), {
-    restauranteId: nuevoId(),
-    zonaHoraria: 'America/Bogota',
+    restauranteId: newId(),
+    timeZone: 'America/Bogota',
     inicioDiaOperativo: '06:00',
-    instancia: 'hub-prueba',
-    reloj: () => new Date(Date.now()).toISOString(),
-    acceso: accesoConFirma,
+    instancia: 'hub-test',
+    clock: () => new Date(Date.now()).toISOString(),
+    access: accesoConFirma,
     reglasCobro: () => ({
-      multiplo: 100,
-      modo: 'cercano_mitad_abajo',
+      multiple: 100,
+      mode: 'nearest_half_down',
       medios: REGLAS.mediosPago,
       mediosPropios: [SODEXO],
-      datafonos: [DATAFONO],
+      cardTerminals: [DATAFONO],
       umbralDiferencia: 1000,
     }),
   })
   const salaHub = new SalaSync(hub, (token) => {
     const e = tokens.get(token)
-    return e ? { dispositivoId: e.dispositivoId, tipo: e.tipo, revocadoEn: null } : null
+    return e ? { dispositivoId: e.dispositivoId, type: e.type, revocadoEn: null } : null
   })
   const h = {
     hub,
     tokens,
     recibidos: [] as MensajeDispositivo[],
-    abrir(m: Manejadores): Canal {
-      let enlace: ReturnType<SalaSync['conectar']> | null = null
-      let cerrado = false
+    open(m: Manejadores): Channel {
+      let enlace: ReturnType<SalaSync['connect']> | null = null
+      let closed = false
       setTimeout(() => {
-        if (cerrado) return
-        enlace = salaHub.conectar((msg) => {
-          const copia = JSON.parse(JSON.stringify(msg))
+        if (closed) return
+        enlace = salaHub.connect((msg) => {
+          const copy = JSON.parse(JSON.stringify(msg))
           setTimeout(() => {
-            if (!cerrado) m.alMensaje(copia)
+            if (!closed) m.alMensaje(copy)
           })
         })
         m.alAbrir()
       })
       return {
-        enviar: (msg) => {
-          if (!enlace || cerrado) return
-          const copia = JSON.parse(JSON.stringify(msg)) as MensajeDispositivo
-          h.recibidos.push(copia)
-          enlace.recibir(copia)
+        send: (msg) => {
+          if (!enlace || closed) return
+          const copy = JSON.parse(JSON.stringify(msg)) as MensajeDispositivo
+          h.recibidos.push(copy)
+          enlace.recibir(copy)
         },
-        cerrar: () => {
-          cerrado = true
-          enlace?.cerrar()
+        close: () => {
+          closed = true
+          enlace?.close()
           enlace = null
         },
       }
@@ -159,119 +159,106 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function caja(h: Hub, nombre = 'Caja 1') {
-  const db = new BaseDispositivo(`cierre-${nuevoId()}`)
+async function register(h: Hub, name = 'Caja 1') {
+  const db = new BaseDispositivo(`closeout-${newId()}`)
   bases.push(db)
-  const e: Equipo = { dispositivoId: nuevoId(), token: nuevoId(), nombre, tipo: 'caja' }
+  const e: Equipo = { dispositivoId: newId(), token: newId(), name, type: 'register' }
   h.tokens.set(e.token, e)
-  const sesionId = nuevoId()
-  const sesion: Sesion = {
+  const sesionId = newId()
+  const session: Sesion = {
     sesionId,
-    secreto: `secreto-${sesionId}`,
-    usuario: { id: nuevoId(), nombre: 'Carlos', rol: 'Cajero' },
-    permisos: [
-      'tomar_pedido',
-      'registrar_pago',
-      'cerrar_mesa',
-      'dividir_cuenta',
-      'abrir_turno_caja',
-      'movimiento_caja',
-      'cerrar_turno_caja',
+    secret: `secreto-${sesionId}`,
+    user: { id: newId(), name: 'Carlos', role: 'Cajero' },
+    permissions: [
+      'take_order',
+      'record_payment',
+      'close_table',
+      'split_check',
+      'open_register_shift',
+      'cash_movement',
+      'close_register_shift',
     ],
     ultimoUso: Date.now(),
   }
-  await db.guardarAjuste('equipo', e)
-  await db.guardarAjuste('sesion', sesion)
-  await db.guardarAjuste('catalogo', CATALOGO)
-  const sala = new Sala({ db, abrir: (m) => h.abrir(m) })
+  await db.saveSetting('device', e)
+  await db.saveSetting('session', session)
+  await db.saveSetting('catalog', CATALOGO)
+  const sala = new Sala({ db, open: (m) => h.open(m) })
   salas.push(sala)
   await sala.cargar()
-  await hasta(() => sala.instantanea().conexion === 'conectado')
+  await until(() => sala.instantanea().connection === 'connected')
   return { sala, e }
 }
 
 const locales = async (s: Sala) => (await s.sync?.locales()) ?? []
-const sinPendientes = (s: Sala) => s.instantanea().pendientes === 0
+const sinPendientes = (s: Sala) => s.instantanea().pendingList === 0
 
 /** Un pedido de dos productos que suma $100.050, ya en el hub. */
 async function pedidoDeCien(sala: Sala) {
-  const pedido = nuevoId()
-  await sala.registrar('PedidoAbierto', pedido, { canal: 'salon', mesa_id: null, comensales: 2 })
-  await sala.registrar(
-    'ItemAgregado',
-    pedido,
-    datosItem({ precio_unitario: 60_050, nombre: 'Tagliata' }),
-  )
-  await sala.registrar(
-    'ItemAgregado',
-    pedido,
-    datosItem({ precio_unitario: 40_000, nombre: 'Pizza' }),
-  )
-  await hasta(() => sinPendientes(sala))
-  return pedido
+  const order = newId()
+  await sala.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
+  await sala.record('ItemAdded', order, datosItem({ unit_price: 60_050, name: 'Tagliata' }))
+  await sala.record('ItemAdded', order, datosItem({ unit_price: 40_000, name: 'Pizza' }))
+  await until(() => sinPendientes(sala))
+  return order
 }
 
-const conteoDe = (contado: number) =>
+const conteoDe = (counted: number) =>
   [
-    { valor: 100_000, cantidad: Math.floor(contado / 100_000) },
-    { valor: 50, cantidad: (contado % 100_000) / 50 },
-  ].filter((c) => c.cantidad > 0)
+    { value: 100_000, quantity: Math.floor(counted / 100_000) },
+    { value: 50, quantity: (counted % 100_000) / 50 },
+  ].filter((c) => c.quantity > 0)
 
-const mensaje = (r: { ok: boolean }) => (r as unknown as { error: Error }).error.message
+const message = (r: { ok: boolean }) => (r as unknown as { error: Error }).error.message
 
 /** Un pago parcial de `monto` con el medio dado, sin redondeo: tarjeta (con datáfono), Nequi o Sodexo. */
-const pago = (
-  turno: string,
-  medio: 'tarjeta' | 'nequi' | 'propio',
-  monto: number,
-  propina = 0,
-) => ({
-  pago_id: nuevoId(),
-  cuenta_id: null,
-  turno_caja_id: turno,
-  medio: medio === 'propio' ? ('otro' as const) : medio,
-  ...(medio === 'propio' ? { medio_propio_id: SODEXO } : {}),
-  monto,
-  propina,
-  recibido: null,
-  cambio: null,
-  ajuste_redondeo: 0,
-  redondeo: null,
-  datafono:
-    medio === 'tarjeta'
+const payment = (shift: string, method: 'card' | 'nequi' | 'own', amount: number, tip = 0) => ({
+  payment_id: newId(),
+  check_id: null,
+  register_shift_id: shift,
+  method: method === 'own' ? ('other' as const) : method,
+  ...(method === 'own' ? { custom_method_id: SODEXO } : {}),
+  amount,
+  tip,
+  tendered: null,
+  change: null,
+  rounding_adjustment: 0,
+  rounding: null,
+  cardTerminal:
+    method === 'card'
       ? {
-          datafono_id: DATAFONO,
-          franquicia: null,
-          ultimos4: null,
-          aprobacion: null,
-          recibo: null,
-          tipo_tarjeta: 'credito' as const,
+          card_terminal_id: DATAFONO,
+          franchise: null,
+          last4: null,
+          approval_code: null,
+          receipt: null,
+          card_type: 'credit' as const,
         }
       : null,
-  referencia_cobro: null,
+  charge_reference: null,
 })
 
 /** Un turno con $50.000 de base y un pedido de $100.050 cobrado con tarjeta (60.050 + 6.000) y Nequi. */
 async function turnoCobrado(h: Hub) {
-  const { sala, e } = await caja(h)
-  const turno = await sala.abrirTurno(50_000)
-  const pedido = await pedidoDeCien(sala)
+  const { sala, e } = await register(h)
+  const shift = await sala.abrirTurno(50_000)
+  const order = await pedidoDeCien(sala)
   expect(
     (
       await resolver(
-        sala.registrarConfirmado('PagoRegistrado', pedido, pago(turno, 'tarjeta', 60_050, 6_000)),
+        sala.registrarConfirmado('PaymentRecorded', order, payment(shift, 'card', 60_050, 6_000)),
       )
     ).ok,
   ).toBe(true)
   expect(
     (
       await resolver(
-        sala.registrarConfirmado('PagoRegistrado', pedido, pago(turno, 'nequi', 40_000)),
+        sala.registrarConfirmado('PaymentRecorded', order, payment(shift, 'nequi', 40_000)),
       )
     ).ok,
   ).toBe(true)
-  await hasta(() => sinPendientes(sala))
-  return { sala, e, turno, pedido }
+  await until(() => sinPendientes(sala))
+  return { sala, e, shift, order }
 }
 
 /**
@@ -280,241 +267,239 @@ async function turnoCobrado(h: Hub) {
  */
 async function cerrarComoCaja(
   sala: Sala,
-  turno: string,
-  contado: number,
+  shift: string,
+  counted: number,
   escrito: Record<string, string>,
-  justificacion: string | null = null,
+  justification: string | null = null,
 ) {
   const guardados = await locales(sala)
-  const cuadre = cuadreDeCaja(guardados, turno)
-  if (!cuadre) throw new Error('Sin cuadre')
-  const medios = mediosDelCierre(REGLAS, cuadre, CATALOGO)
+  const reconciliation = cuadreDeCaja(guardados, shift)
+  if (!reconciliation) throw new Error('Sin cuadre')
+  const medios = mediosDelCierre(REGLAS, reconciliation, CATALOGO)
   const reportados = medios.map((m) => ({
-    medio: m.medio,
-    medio_propio_id: m.medioPropioId,
-    reportado: conSigno(escrito[m.clave] ?? ''),
+    method: m.method,
+    custom_method_id: m.customMethodId,
+    reported: conSigno(escrito[m.key] ?? ''),
   }))
-  const arqueo = nuevoId()
-  const conteo = await resolver(
-    sala.registrarConfirmado('ArqueoRegistrado', turno, {
-      arqueo_id: arqueo,
-      conteo: conteoDe(contado),
-      contado_efectivo: contado,
-      otros: reportados,
+  const cashCount = newId()
+  const tally = await resolver(
+    sala.registrarConfirmado('CashCountRecorded', shift, {
+      cash_count_id: cashCount,
+      tally: conteoDe(counted),
+      counted_cash: counted,
+      others: reportados,
     }),
   )
-  const otros = cuadreDeOtrosMedios(cuadre, {
-    id: arqueo,
-    conteo: [],
-    contado,
-    otros: reportados.map((r) => ({
-      medio: r.medio,
-      medioPropioId: r.medio_propio_id,
-      reportado: r.reportado,
+  const others = otherMethodsReconciliation(reconciliation, {
+    id: cashCount,
+    tally: [],
+    counted,
+    others: reportados.map((r) => ({
+      method: r.method,
+      customMethodId: r.custom_method_id,
+      reported: r.reported,
     })),
-    hora: '',
+    time: '',
   })
-  const cierre = await resolver(
-    sala.registrarConfirmado('TurnoCerrado', turno, {
-      arqueo_id: arqueo,
-      esperado_efectivo: cuadre.efectivo.esperado,
-      contado_efectivo: contado,
-      diferencia: contado - cuadre.efectivo.esperado,
-      justificacion,
-      otros_medios: otros.map((o) => ({
-        medio: o.medio,
-        medio_propio_id: o.medioPropioId,
-        esperado: o.esperado,
-        reportado: o.reportado,
-        diferencia: o.diferencia,
+  const closeout = await resolver(
+    sala.registrarConfirmado('ShiftClosed', shift, {
+      cash_count_id: cashCount,
+      expected_cash: reconciliation.cash.expected,
+      counted_cash: counted,
+      variance: counted - reconciliation.cash.expected,
+      justification,
+      other_methods: others.map((o) => ({
+        method: o.method,
+        custom_method_id: o.customMethodId,
+        expected: o.expected,
+        reported: o.reported,
+        variance: o.variance,
       })),
     }),
   )
-  return { conteo, cierre, otros, arqueo, medios, cuadre }
+  return { tally, closeout, others, cashCount, medios, reconciliation }
 }
 
 describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → conteo con los cierres → cierre', () => {
   it('con los cierres que coinciden: se confirma, queda guardado y el turno se cierra', async () => {
     const h = montarHub()
-    const { sala, e, turno } = await turnoCobrado(h)
+    const { sala, e, shift } = await turnoCobrado(h)
 
     // La caja y el hub ven lo mismo antes de cerrar.
-    const antes = cuadreDeCaja(await locales(sala), turno)
-    expect(antes?.porMedio).toEqual([
-      { medio: 'tarjeta', medioPropioId: null, venta: 60_050, propina: 6_000, pagos: 1 },
-      { medio: 'nequi', medioPropioId: null, venta: 40_000, propina: 0, pagos: 1 },
+    const before = cuadreDeCaja(await locales(sala), shift)
+    expect(before?.byMethod).toEqual([
+      { method: 'card', customMethodId: null, sale: 60_050, tip: 6_000, payments: 1 },
+      { method: 'nequi', customMethodId: null, sale: 40_000, tip: 0, payments: 1 },
     ])
-    expect(h.hub.cuadre(turno)).toEqual(antes)
+    expect(h.hub.reconciliation(shift)).toEqual(before)
 
-    const r = await cerrarComoCaja(sala, turno, 50_000, {
-      'tarjeta:': '66.050',
+    const r = await cerrarComoCaja(sala, shift, 50_000, {
+      'card:': '66.050',
       'nequi:': '40.000',
     })
-    expect(r.medios.map((m) => m.clave)).toEqual(['tarjeta:', 'nequi:', `otro:${SODEXO}`])
-    expect(r.conteo.ok).toBe(true)
-    expect(r.cierre.ok).toBe(true)
-    expect(r.otros).toEqual([
-      { medio: 'tarjeta', medioPropioId: null, esperado: 66_050, reportado: 66_050, diferencia: 0 },
-      { medio: 'nequi', medioPropioId: null, esperado: 40_000, reportado: 40_000, diferencia: 0 },
+    expect(r.medios.map((m) => m.key)).toEqual(['card:', 'nequi:', `other:${SODEXO}`])
+    expect(r.tally.ok).toBe(true)
+    expect(r.closeout.ok).toBe(true)
+    expect(r.others).toEqual([
+      { method: 'card', customMethodId: null, expected: 66_050, reported: 66_050, variance: 0 },
+      { method: 'nequi', customMethodId: null, expected: 40_000, reported: 40_000, variance: 0 },
     ])
-    await hasta(() => sinPendientes(sala))
+    await until(() => sinPendientes(sala))
 
     expect(h.hub.turnoAbierto(e.dispositivoId)).toBeNull()
     const guardados = await locales(sala)
-    expect(guardados.every((l) => l.estado === 'confirmado')).toBe(true)
+    expect(guardados.every((l) => l.status === 'confirmed')).toBe(true)
     expect(turnoDeCaja(guardados, e.dispositivoId)).toBeNull()
-    expect(cuadreDeCaja(guardados, turno)?.cerrado).toMatchObject({
-      esperado: 50_000,
-      contado: 50_000,
-      diferencia: 0,
-      otrosMedios: r.otros,
+    expect(cuadreDeCaja(guardados, shift)?.closed).toMatchObject({
+      expected: 50_000,
+      counted: 50_000,
+      variance: 0,
+      otherMethods: r.others,
     })
-    expect(
-      resumenTurno(guardados, turno).porMedio.map((m) => [m.medio, m.venta + m.propina]),
-    ).toEqual([
-      ['tarjeta', 66_050],
+    expect(resumenTurno(guardados, shift).byMethod.map((m) => [m.method, m.sale + m.tip])).toEqual([
+      ['card', 66_050],
       ['nequi', 40_000],
     ])
   })
 
   it('el Sodexo sin cobros y sin escribir no cuenta: el cierre lo omite', async () => {
     const h = montarHub()
-    const { sala, turno } = await turnoCobrado(h)
-    const r = await cerrarComoCaja(sala, turno, 50_000, {
-      'tarjeta:': '66.050',
+    const { sala, shift } = await turnoCobrado(h)
+    const r = await cerrarComoCaja(sala, shift, 50_000, {
+      'card:': '66.050',
       'nequi:': '40.000',
     })
-    expect(r.otros.map((o) => o.medio)).toEqual(['tarjeta', 'nequi'])
-    expect(r.cierre.ok).toBe(true)
+    expect(r.others.map((o) => o.method)).toEqual(['card', 'nequi'])
+    expect(r.closeout.ok).toBe(true)
   })
 
   it('con un reporte distinto: el hub pide justificación y con ella cierra', async () => {
     const h = montarHub()
-    const { sala, e, turno } = await turnoCobrado(h)
-    const sin = await cerrarComoCaja(sala, turno, 50_000, {
-      'tarjeta:': '66.050',
+    const { sala, e, shift } = await turnoCobrado(h)
+    const without = await cerrarComoCaja(sala, shift, 50_000, {
+      'card:': '66.050',
       'nequi:': '35.000',
     })
-    expect(sin.otros.find((o) => o.medio === 'nequi')).toMatchObject({
-      esperado: 40_000,
-      reportado: 35_000,
-      diferencia: -5_000,
+    expect(without.others.find((o) => o.method === 'nequi')).toMatchObject({
+      expected: 40_000,
+      reported: 35_000,
+      variance: -5_000,
     })
-    expect(sin.cierre.ok).toBe(false)
-    expect(mensaje(sin.cierre)).toBe('Escribe por qué no cuadra la caja.')
+    expect(without.closeout.ok).toBe(false)
+    expect(message(without.closeout)).toBe('Escribe por qué no cuadra la caja.')
     // El turno sigue abierto aquí y en el hub; el cierre rechazado queda a la vista.
     expect(h.hub.turnoAbierto(e.dispositivoId)).not.toBeNull()
     let guardados = await locales(sala)
-    expect(turnoDeCaja(guardados, e.dispositivoId)?.id).toBe(turno)
-    expect(guardados.filter((l) => l.estado === 'rechazado').map((l) => l.motivo)).toEqual([
-      'falta_justificacion',
+    expect(turnoDeCaja(guardados, e.dispositivoId)?.id).toBe(shift)
+    expect(guardados.filter((l) => l.status === 'rejected').map((l) => l.reason)).toEqual([
+      'missing_justification',
     ])
 
     // Con el mismo conteo y una justificación.
-    const arqueo = sin.arqueo
-    const con = await resolver(
-      sala.registrarConfirmado('TurnoCerrado', turno, {
-        arqueo_id: arqueo,
-        esperado_efectivo: 50_000,
-        contado_efectivo: 50_000,
-        diferencia: 0,
-        justificacion: 'Nequi no mostró un pago de $5.000',
-        otros_medios: sin.otros.map((o) => ({
-          medio: o.medio,
-          medio_propio_id: o.medioPropioId,
-          esperado: o.esperado,
-          reportado: o.reportado,
-          diferencia: o.diferencia,
+    const cashCount = without.cashCount
+    const withIt = await resolver(
+      sala.registrarConfirmado('ShiftClosed', shift, {
+        cash_count_id: cashCount,
+        expected_cash: 50_000,
+        counted_cash: 50_000,
+        variance: 0,
+        justification: 'Nequi no mostró un pago de $5.000',
+        other_methods: without.others.map((o) => ({
+          method: o.method,
+          custom_method_id: o.customMethodId,
+          expected: o.expected,
+          reported: o.reported,
+          variance: o.variance,
         })),
       }),
     )
-    expect(con.ok).toBe(true)
-    await hasta(() => sinPendientes(sala))
+    expect(withIt.ok).toBe(true)
+    await until(() => sinPendientes(sala))
     guardados = await locales(sala)
     expect(turnoDeCaja(guardados, e.dispositivoId)).toBeNull()
-    expect(cuadreDeCaja(guardados, turno)?.cerrado).toMatchObject({
-      justificacion: 'Nequi no mostró un pago de $5.000',
-      otrosMedios: [
-        { medio: 'tarjeta', diferencia: 0 },
-        { medio: 'nequi', esperado: 40_000, reportado: 35_000, diferencia: -5_000 },
+    expect(cuadreDeCaja(guardados, shift)?.closed).toMatchObject({
+      justification: 'Nequi no mostró un pago de $5.000',
+      otherMethods: [
+        { method: 'card', variance: 0 },
+        { method: 'nequi', expected: 40_000, reported: 35_000, variance: -5_000 },
       ],
     })
   })
 
   it('por debajo del umbral ($999 de diferencia en la tarjeta) se cierra sin justificación', async () => {
     const h = montarHub()
-    const { sala, e, turno } = await turnoCobrado(h)
-    const r = await cerrarComoCaja(sala, turno, 50_000, {
-      'tarjeta:': '65.051',
+    const { sala, e, shift } = await turnoCobrado(h)
+    const r = await cerrarComoCaja(sala, shift, 50_000, {
+      'card:': '65.051',
       'nequi:': '40.000',
     })
-    expect(r.cierre.ok).toBe(true)
+    expect(r.closeout.ok).toBe(true)
     expect(h.hub.turnoAbierto(e.dispositivoId)).toBeNull()
   })
 
   it('un medio propio (Sodexo) con cobro y con lo escrito distinto', async () => {
     const h = montarHub()
-    const { sala, e } = await caja(h)
-    const turno = await sala.abrirTurno(0)
-    const pedido = await pedidoDeCien(sala)
+    const { sala, e } = await register(h)
+    const shift = await sala.abrirTurno(0)
+    const order = await pedidoDeCien(sala)
     expect(
       (
         await resolver(
-          sala.registrarConfirmado('PagoRegistrado', pedido, pago(turno, 'propio', 30_000)),
+          sala.registrarConfirmado('PaymentRecorded', order, payment(shift, 'own', 30_000)),
         )
       ).ok,
     ).toBe(true)
-    const r = await cerrarComoCaja(sala, turno, 0, { [`otro:${SODEXO}`]: '30.000' })
-    expect(r.cierre.ok).toBe(true)
-    expect(r.otros).toEqual([
-      { medio: 'otro', medioPropioId: SODEXO, esperado: 30_000, reportado: 30_000, diferencia: 0 },
+    const r = await cerrarComoCaja(sala, shift, 0, { [`other:${SODEXO}`]: '30.000' })
+    expect(r.closeout.ok).toBe(true)
+    expect(r.others).toEqual([
+      { method: 'other', customMethodId: SODEXO, expected: 30_000, reported: 30_000, variance: 0 },
     ])
     expect(h.hub.turnoAbierto(e.dispositivoId)).toBeNull()
   })
 
   it('un reporte escrito para un medio sin cobros (un cobro que no se registró): sobrante que pide justificación', async () => {
     const h = montarHub()
-    const { sala, turno } = await turnoCobrado(h)
-    const r = await cerrarComoCaja(sala, turno, 50_000, {
-      'tarjeta:': '66.050',
+    const { sala, shift } = await turnoCobrado(h)
+    const r = await cerrarComoCaja(sala, shift, 50_000, {
+      'card:': '66.050',
       'nequi:': '40.000',
-      [`otro:${SODEXO}`]: '12.000',
+      [`other:${SODEXO}`]: '12.000',
     })
-    expect(r.otros.at(-1)).toMatchObject({
-      medio: 'otro',
-      esperado: 0,
-      reportado: 12_000,
-      diferencia: 12_000,
+    expect(r.others.at(-1)).toMatchObject({
+      method: 'other',
+      expected: 0,
+      reported: 12_000,
+      variance: 12_000,
     })
-    expect(mensaje(r.cierre)).toBe('Escribe por qué no cuadra la caja.')
+    expect(message(r.closeout)).toBe('Escribe por qué no cuadra la caja.')
   })
 
   it('un cierre con las líneas de otro conteo (desactualizadas): otros_medios_distintos, dicho en palabras', async () => {
     const h = montarHub()
-    const { sala, e, turno } = await turnoCobrado(h)
-    const arqueo = nuevoId()
+    const { sala, e, shift } = await turnoCobrado(h)
+    const cashCount = newId()
     await resolver(
-      sala.registrarConfirmado('ArqueoRegistrado', turno, {
-        arqueo_id: arqueo,
-        conteo: conteoDe(50_000),
-        contado_efectivo: 50_000,
-        otros: [
-          { medio: 'tarjeta', medio_propio_id: null, reportado: 66_050 },
-          { medio: 'nequi', medio_propio_id: null, reportado: 40_000 },
+      sala.registrarConfirmado('CashCountRecorded', shift, {
+        cash_count_id: cashCount,
+        tally: conteoDe(50_000),
+        counted_cash: 50_000,
+        others: [
+          { method: 'card', custom_method_id: null, reported: 66_050 },
+          { method: 'nequi', custom_method_id: null, reported: 40_000 },
         ],
       }),
     )
     const r = await resolver(
-      sala.registrarConfirmado('TurnoCerrado', turno, {
-        arqueo_id: arqueo,
-        esperado_efectivo: 50_000,
-        contado_efectivo: 50_000,
-        diferencia: 0,
-        justificacion: null,
-        otros_medios: [],
+      sala.registrarConfirmado('ShiftClosed', shift, {
+        cash_count_id: cashCount,
+        expected_cash: 50_000,
+        counted_cash: 50_000,
+        variance: 0,
+        justification: null,
+        other_methods: [],
       }),
     )
-    expect(mensaje(r)).toBe(
+    expect(message(r)).toBe(
       'Los demás medios no coinciden con lo que registró la caja: recarga la app (puede estar desactualizada) y vuelve a contar.',
     )
     expect(h.hub.turnoAbierto(e.dispositivoId)).not.toBeNull()
@@ -522,61 +507,64 @@ describe('de punta a punta (1.8): abrir turno → cobro con tarjeta y Nequi → 
 
   it('un cobro con Nequi después del conteo desactualiza el cierre: se dice en palabras y, al volver a contar, cierra', async () => {
     const h = montarHub()
-    const { sala, e, turno } = await turnoCobrado(h)
-    const viejo = await cerrarComoCaja(
+    const { sala, e, shift } = await turnoCobrado(h)
+    const oldOne = await cerrarComoCaja(
       sala,
-      turno,
+      shift,
       50_000,
-      { 'tarjeta:': '66.050', 'nequi:': '40.000' },
+      { 'card:': '66.050', 'nequi:': '40.000' },
       null,
     )
     // Ese cierre se aceptó; para probar el desfase se arma otro turno.
-    expect(viejo.cierre.ok).toBe(true)
+    expect(oldOne.closeout.ok).toBe(true)
 
     const t2 = await sala.abrirTurno(0)
-    const pedido = await pedidoDeCien(sala)
+    const order = await pedidoDeCien(sala)
     expect(
       (
         await resolver(
-          sala.registrarConfirmado('PagoRegistrado', pedido, pago(t2, 'nequi', 10_000)),
+          sala.registrarConfirmado('PaymentRecorded', order, payment(t2, 'nequi', 10_000)),
         )
       ).ok,
     ).toBe(true)
-    const arqueo = nuevoId()
+    const cashCount = newId()
     await resolver(
-      sala.registrarConfirmado('ArqueoRegistrado', t2, {
-        arqueo_id: arqueo,
-        conteo: [],
-        contado_efectivo: 0,
-        otros: [{ medio: 'nequi', medio_propio_id: null, reportado: 10_000 }],
+      sala.registrarConfirmado('CashCountRecorded', t2, {
+        cash_count_id: cashCount,
+        tally: [],
+        counted_cash: 0,
+        others: [{ method: 'nequi', custom_method_id: null, reported: 10_000 }],
       }),
     )
     expect(
-      (await resolver(sala.registrarConfirmado('PagoRegistrado', pedido, pago(t2, 'nequi', 5_000))))
-        .ok,
+      (
+        await resolver(
+          sala.registrarConfirmado('PaymentRecorded', order, payment(t2, 'nequi', 5_000)),
+        )
+      ).ok,
     ).toBe(true)
     const tarde = await resolver(
-      sala.registrarConfirmado('TurnoCerrado', t2, {
-        arqueo_id: arqueo,
-        esperado_efectivo: 0,
-        contado_efectivo: 0,
-        diferencia: 0,
-        justificacion: null,
-        otros_medios: [
+      sala.registrarConfirmado('ShiftClosed', t2, {
+        cash_count_id: cashCount,
+        expected_cash: 0,
+        counted_cash: 0,
+        variance: 0,
+        justification: null,
+        other_methods: [
           {
-            medio: 'nequi',
-            medio_propio_id: null,
-            esperado: 10_000,
-            reportado: 10_000,
-            diferencia: 0,
+            method: 'nequi',
+            custom_method_id: null,
+            expected: 10_000,
+            reported: 10_000,
+            variance: 0,
           },
         ],
       }),
     )
-    expect(mensaje(tarde)).toBe('Hubo pagos o movimientos después del conteo: vuelve a contar.')
+    expect(message(tarde)).toBe('Hubo pagos o movimientos después del conteo: vuelve a contar.')
     expect(h.hub.turnoAbierto(e.dispositivoId)?.id).toBe(t2)
-    const otra = await cerrarComoCaja(sala, t2, 0, { 'nequi:': '15.000', 'tarjeta:': '' })
-    expect(otra.cierre.ok).toBe(true)
+    const another = await cerrarComoCaja(sala, t2, 0, { 'nequi:': '15.000', 'card:': '' })
+    expect(another.closeout.ok).toBe(true)
     expect(h.hub.turnoAbierto(e.dispositivoId)).toBeNull()
   })
 })

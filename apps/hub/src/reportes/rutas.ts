@@ -1,4 +1,4 @@
-import { diaOperativo, informe } from '@pos/core'
+import { businessDay, report } from '@pos/core'
 import { datosDeInforme } from '@pos/sync'
 import { AlmacenSqlite } from '@pos/sync/sqlite'
 import type { FastifyInstance } from 'fastify'
@@ -21,81 +21,81 @@ const esDia = (d: string) => {
   const t = Date.parse(`${d}T00:00:00Z`)
   return !Number.isNaN(t) && new Date(t).toISOString().startsWith(d)
 }
-const Dia = z.string().refine(esDia, 'Fecha inválida')
+const Day = z.string().refine(esDia, 'Fecha inválida')
 
 const Sesion = z.strictObject({
-  sesion_id: z.string().length(26),
-  secreto: z.string().min(1).max(100),
+  session_id: z.string().length(26),
+  secret: z.string().min(1).max(100),
 })
 
-const diasEntre = (desde: string, hasta: string) =>
-  Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000) + 1
+const diasEntre = (from: string, until: string) =>
+  Math.round((Date.parse(`${until}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1
 
 export async function rutasReportes(app: FastifyInstance, o: OpcionesImpresion) {
-  const { db, restauranteId, acceso, cola, zonaHoraria } = o
-  const reloj = o.reloj ?? (() => new Date().toISOString())
-  const { conEquipo, datosInvalidos, quien } = guardasDeEquipo(acceso)
-  const opciones = { db, restauranteId, zonaHoraria }
+  const { db, restauranteId, access, cola, timeZone } = o
+  const clock = o.clock ?? (() => new Date().toISOString())
+  const { conEquipo, datosInvalidos, quien } = guardasDeEquipo(access)
+  const options = { db, restauranteId, timeZone }
 
   // El informe de un período. Sin fechas, el día operativo de hoy.
-  app.post('/api/reportes', conEquipo, async (req, reply) => {
-    const cuerpo = Sesion.extend({ desde: Dia.optional(), hasta: Dia.optional() }).safeParse(
+  app.post('/api/reports', conEquipo, async (req, reply) => {
+    const cuerpo = Sesion.extend({ from: Day.optional(), until: Day.optional() }).safeParse(
       req.body,
     )
     if (!cuerpo.success) return datosInvalidos(reply)
-    if (!quien(req, reply, cuerpo.data, ['ver_reportes'])) return reply
-    const cfg = configDe(opciones)
-    const hoy = diaOperativo(reloj(), zonaHoraria, cfg.inicio_dia_operativo)
-    const desde = cuerpo.data.desde ?? hoy
-    const hasta = cuerpo.data.hasta ?? desde
-    if (desde > hasta) return datosInvalidos(reply, 'La fecha inicial va antes de la final')
-    if (diasEntre(desde, hasta) > MAX_DIAS_REPORTE)
+    if (!quien(req, reply, cuerpo.data, ['view_reports'])) return reply
+    const cfg = configDe(options)
+    const today = businessDay(clock(), timeZone, cfg.business_day_start)
+    const from = cuerpo.data.from ?? today
+    const until = cuerpo.data.until ?? from
+    if (from > until) return datosInvalidos(reply, 'La fecha inicial va antes de la final')
+    if (diasEntre(from, until) > MAX_DIAS_REPORTE)
       return datosInvalidos(reply, `Elige un período de ${MAX_DIAS_REPORTE} días o menos`)
 
-    const datos = datosDeInforme(new AlmacenSqlite(db, restauranteId), desde, hasta)
-    const resultado = informe({
-      ...datos,
-      config: { ventas_por_mesero: cfg.ventas_por_mesero, redondeo_modo: cfg.redondeo_modo },
+    const data = datosDeInforme(new AlmacenSqlite(db, restauranteId), from, until)
+    const result = report({
+      ...data,
+      config: { sales_by_waiter: cfg.sales_by_waiter, rounding_mode: cfg.rounding_mode },
     })
-    const usuarios = nombresDeUsuarios(opciones, [
-      ...resultado.porMesero.map((m) => m.usuarioId),
-      ...resultado.anulaciones.flatMap((a) => [a.usuarioId, a.autorizadoPorId ?? a.usuarioId]),
-      ...resultado.cancelaciones.flatMap((c) => [c.usuarioId, c.autorizadoPorId ?? c.usuarioId]),
-      ...datos.cierresDeCaja.flatMap((c) => [c.abiertoPor, c.cerradoPor]),
+    const usuarios = nombresDeUsuarios(options, [
+      ...result.byWaiter.map((m) => m.userId),
+      ...result.voids.flatMap((a) => [a.userId, a.authorizedById ?? a.userId]),
+      ...result.cancellations.flatMap((c) => [c.userId, c.authorizedById ?? c.userId]),
+      ...data.cierresDeCaja.flatMap((c) => [c.abiertoPor, c.cerradoPor]),
     ])
     return {
-      hoy,
-      informe: resultado,
-      cierres: datos.cierresDeCaja.map((c) => ({
-        turnoId: c.cuadre.turnoId,
-        diaOperativo: c.diaOperativo,
-        abiertoEn: c.cuadre.abiertoEn,
+      today,
+      report: result,
+      closings: data.cierresDeCaja.map((c) => ({
+        shiftId: c.reconciliation.shiftId,
+        businessDay: c.businessDay,
+        openedAt: c.reconciliation.openedAt,
         abiertoPor: c.abiertoPor,
         cerradoPor: c.cerradoPor,
-        base: c.cuadre.base,
-        porMedio: c.cuadre.porMedio,
-        cerrado: c.cuadre.cerrado,
+        base: c.reconciliation.base,
+        byMethod: c.reconciliation.byMethod,
+        closed: c.reconciliation.closed,
       })),
       usuarios,
-      impresora: impresoraDeCierre(opciones) !== null,
+      printer: impresoraDeCierre(options) !== null,
     }
   })
 
   // Reimprimir el cierre Z de un turno cerrado.
-  app.post('/api/reportes/cierre-z', conEquipo, async (req, reply) => {
+  app.post('/api/reports/z-report', conEquipo, async (req, reply) => {
     const cuerpo = Sesion.extend({ turno_id: z.string().length(26) }).safeParse(req.body)
     if (!cuerpo.success) return datosInvalidos(reply)
-    if (!quien(req, reply, cuerpo.data, ['ver_reportes'])) return reply
-    const r = encolarCierreZ(opciones, cuerpo.data.turno_id, { reimpresoEn: reloj() })
-    if (r === 'sin_impresora')
+    if (!quien(req, reply, cuerpo.data, ['view_reports'])) return reply
+    const r = encolarCierreZ(options, cuerpo.data.turno_id, { reprintedAt: clock() })
+    if (r === 'no_printer')
       return reply.code(409).send({
-        error: 'sin_impresora',
-        mensaje: 'Elige la impresora de precuentas en «Caja y pagos» para imprimir el cierre',
+        error: 'no_printer',
+        message: 'Elige la impresora de precuentas en «Caja y pagos» para imprimir el cierre',
       })
-    if (r === 'sin_cierre')
+    if (r === 'no_closeout')
       return reply
         .code(404)
-        .send({ error: 'sin_cierre', mensaje: 'Ese turno no existe o sigue abierto' })
+        .send({ error: 'no_closeout', message: 'Ese turno no existe o sigue abierto' })
     cola.despertar()
     return reply.code(204).send()
   })

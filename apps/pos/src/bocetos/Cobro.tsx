@@ -22,76 +22,76 @@ const BILLETES = [20_000, 50_000, 100_000]
 export function Cobro() {
   const numero = useMesaDeLaRuta(12)
   const { parametros } = useRuta()
-  const mesa = useMesas().find((m) => m.numero === numero)
+  const table = useMesas().find((m) => m.numero === numero)
   const avisar = useAvisar()
 
-  const saldo = mesa ? saldoMesa(mesa) : 0
-  const pedido = soloDigitos(parametros.get('monto') ?? '')
-  const monto = pedido > 0 && pedido <= saldo ? pedido : saldo
-  const sugerida = parametros.has('propina')
-    ? soloDigitos(parametros.get('propina') ?? '')
-    : propinaSobre(monto)
+  const balance = table ? saldoMesa(table) : 0
+  const order = soloDigitos(parametros.get('amount') ?? '')
+  const amount = order > 0 && order <= balance ? order : balance
+  const suggested = parametros.has('tip')
+    ? soloDigitos(parametros.get('tip') ?? '')
+    : propinaSobre(amount)
 
-  const [medio, setMedio] = useState<Medio>('efectivo')
-  const [propina, setPropina] = useState(() => propinaParaEfectivo(sugerida))
-  const [recibido, setRecibido] = useState<number | null>(null)
-  const [aprobacion, setAprobacion] = useState('')
+  const [method, setMedio] = useState<Medio>('cash')
+  const [tip, setPropina] = useState(() => propinaParaEfectivo(suggested))
+  const [tendered, setRecibido] = useState<number | null>(null)
+  const [approval_code, setAprobacion] = useState('')
   const [confirmando, setConfirmando] = useState(false)
   const [ultimoCambio, setUltimoCambio] = useState<number | null>(null)
-  const confirmar = useRef<HTMLButtonElement>(null)
+  const confirm = useRef<HTMLButtonElement>(null)
 
   const elegirMedio = (m: Medio) => {
     setMedio(m)
-    setPropina(m === 'efectivo' ? propinaParaEfectivo(sugerida) : sugerida)
+    setPropina(m === 'cash' ? propinaParaEfectivo(suggested) : suggested)
     setRecibido(null)
     setConfirmando(false)
   }
 
-  const efectivo = monto > 0 ? pagoEnEfectivo({ saldo, monto, propina, recibido: 0 }) : null
+  const cash = amount > 0 ? pagoEnEfectivo({ balance, amount, tip, tendered: 0 }) : null
   // Por defecto, el cliente entrega justo lo que hay que cobrar (un toque menos).
-  const entregado = recibido ?? efectivo?.aEntregar ?? 0
-  const calculo = monto > 0 ? pagoEnEfectivo({ saldo, monto, propina, recibido: entregado }) : null
-  const tarjeta = monto > 0 ? pagoConTarjeta({ saldo, monto, propina }) : null
-  const aCobrar = medio === 'efectivo' ? (calculo?.aEntregar ?? 0) : (tarjeta?.aprobado ?? 0)
+  const served = tendered ?? cash?.aEntregar ?? 0
+  const calculo = amount > 0 ? pagoEnEfectivo({ balance, amount, tip, tendered: served }) : null
+  const card = amount > 0 ? pagoConTarjeta({ balance, amount, tip }) : null
+  const aCobrar = method === 'cash' ? (calculo?.aEntregar ?? 0) : (card?.aprobado ?? 0)
   const puede =
-    monto > 0 && (medio === 'efectivo' ? calculo?.falta === 0 : /^\d{4,8}$/.test(aprobacion))
+    amount > 0 && (method === 'cash' ? calculo?.missing === 0 : /^\d{4,8}$/.test(approval_code))
 
-  const registrar = () => {
-    if (!mesa || !calculo || !puede) return
-    const pago =
-      medio === 'efectivo'
+  const record = () => {
+    if (!table || !calculo || !puede) return
+    const payment =
+      method === 'cash'
         ? {
-            medio,
-            monto,
-            ajuste: calculo.ajuste,
-            propina,
-            recibido: entregado,
-            cambio: calculo.cambio,
+            method,
+            amount,
+            adjustment: calculo.adjustment,
+            tip,
+            tendered: served,
+            change: calculo.change,
           }
-        : { medio, monto, ajuste: 0, propina, recibido: null, cambio: null }
-    const cierra = monto === saldo
+        : { method, amount, adjustment: 0, tip, tendered: null, change: null }
+    const closes = amount === balance
     cambiarMesa(numero, (m) => ({
       ...m,
-      pagos: [...m.pagos, pago],
-      estado: cierra ? 'sucia' : m.estado,
+      payments: [...m.payments, payment],
+      status: closes ? 'dirty' : m.status,
     }))
     setConfirmando(false)
-    setUltimoCambio(medio === 'efectivo' ? calculo.cambio : null)
-    if (cierra) {
+    setUltimoCambio(method === 'cash' ? calculo.change : null)
+    if (closes) {
       // La mesa se cierra sola al quedar en 0: un toque menos. Se puede deshacer el cierre.
       avisar(`Mesa ${numero} pagada y cerrada`, () =>
-        cambiarMesa(numero, (m) => ({ ...m, estado: 'precuenta' })),
+        cambiarMesa(numero, (m) => ({ ...m, status: 'preBill' })),
       )
     } else {
-      avisar(`Pago registrado. Queda ${pesos(saldo - monto)}`)
-      navegar(`/bocetos/precuenta?mesa=${numero}`)
+      avisar(`Pago registrado. Queda ${pesos(balance - amount)}`)
+      navegar(`/mockups/pre-bill?table=${numero}`)
     }
   }
 
   // Al pedir confirmación, el foco va a "Confirmar": Enter confirma; Tab y Enter en "Cancelar",
   // cancela (el atajo nunca le gana al botón que tiene el foco).
   useEffect(() => {
-    if (confirmando) confirmar.current?.focus()
+    if (confirmando) confirm.current?.focus()
   }, [confirmando])
 
   const teclas = useRef<(e: KeyboardEvent) => void>(() => {})
@@ -100,11 +100,11 @@ export function Cobro() {
     const enBoton = (e.target as HTMLElement | null)?.closest('button, a')
     if (e.key === 'F2' || e.key === 'F3') {
       e.preventDefault()
-      elegirMedio(e.key === 'F2' ? 'efectivo' : 'tarjeta')
+      elegirMedio(e.key === 'F2' ? 'cash' : 'card')
     } else if (e.key === 'Escape') setConfirmando(false)
     else if (e.key === 'Enter' && !enBoton && puede) {
       e.preventDefault()
-      if (confirmando) registrar()
+      if (confirmando) record()
       else setConfirmando(true)
     }
   }
@@ -114,27 +114,23 @@ export function Cobro() {
     return () => window.removeEventListener('keydown', alTeclear)
   }, [])
 
-  if (!mesa) return null
-  const total = totalMesa(mesa)
+  if (!table) return null
+  const total = totalMesa(table)
 
   return (
-    <Marco
-      titulo={`Cobro · Mesa ${numero}`}
-      usuario="Caja"
-      volver={`/bocetos/precuenta?mesa=${numero}`}
-    >
+    <Marco titulo={`Cobro · Mesa ${numero}`} user="Caja" back={`/mockups/pre-bill?table=${numero}`}>
       <div className="mx-auto grid max-w-4xl gap-4 p-3 md:grid-cols-2">
         <section className="rounded-2xl border border-borde bg-superficie p-4" aria-label="Saldo">
           <p className="text-texto-suave">Saldo pendiente</p>
           <p
-            className={`cifras font-titulo text-5xl font-bold ${saldo === 0 ? 'text-libre-texto' : ''}`}
+            className={`cifras font-titulo text-5xl font-bold ${balance === 0 ? 'text-libre-texto' : ''}`}
           >
-            {pesos(saldo)}
+            {pesos(balance)}
           </p>
           <p className="cifras mt-1 text-texto-suave">{`de ${pesos(total)}`}</p>
-          {monto > 0 && monto < saldo && (
+          {amount > 0 && amount < balance && (
             <p className="mt-2">
-              <Etiqueta tono="accion" icono="personas">{`Esta cuenta: ${pesos(monto)}`}</Etiqueta>
+              <Etiqueta tono="action" icono="people">{`Esta cuenta: ${pesos(amount)}`}</Etiqueta>
             </p>
           )}
           {ultimoCambio !== null && (
@@ -143,50 +139,51 @@ export function Cobro() {
               <span className="cifras text-3xl font-bold">{pesos(ultimoCambio)}</span>
             </p>
           )}
-          {mesa.pagos.length > 0 && (
+          {table.payments.length > 0 && (
             <ul className="cifras mt-4 flex flex-col gap-1 border-t border-borde pt-3">
-              {mesa.pagos.map((p, i) => (
+              {table.payments.map((p, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: los pagos no se reordenan
                 <li key={i} className="flex justify-between gap-2">
-                  <span className="capitalize">{p.medio}</span>
+                  <span className="capitalize">{p.method}</span>
                   <span className="text-right">
-                    {pesos(p.monto)}
-                    {p.propina > 0 && ` + propina ${pesos(p.propina)}`}
-                    {p.ajuste !== 0 && ` (redondeo ${p.ajuste > 0 ? '+' : ''}${pesos(p.ajuste)})`}
+                    {pesos(p.amount)}
+                    {p.tip > 0 && ` + propina ${pesos(p.tip)}`}
+                    {p.adjustment !== 0 &&
+                      ` (redondeo ${p.adjustment > 0 ? '+' : ''}${pesos(p.adjustment)})`}
                   </span>
                 </li>
               ))}
             </ul>
           )}
-          {saldo === 0 && (
+          {balance === 0 && (
             <Boton
-              variante="secundario"
-              grande
+              variant="secondary"
+              large
               className="mt-6 w-full"
-              onClick={() => navegar('/bocetos/plano')}
+              onClick={() => navegar('/mockups/floor-plan')}
             >
               Volver al salón
             </Boton>
           )}
         </section>
 
-        {monto > 0 && (
+        {amount > 0 && (
           <section className="flex flex-col gap-3" aria-label="Pago">
             <Grupo etiqueta="Medio de pago" className="grid grid-cols-2 gap-2">
               {(
                 [
-                  ['efectivo', 'Efectivo', 'F2'],
-                  ['tarjeta', 'Tarjeta', 'F3'],
+                  ['cash', 'Efectivo', 'F2'],
+                  ['card', 'Tarjeta', 'F3'],
                 ] as const
-              ).map(([m, texto, tecla]) => (
+              ).map(([m, text, tecla]) => (
                 <Opcion
                   key={m}
-                  forma="tarjeta"
-                  elegida={medio === m}
+                  shape="card"
+                  elegida={method === m}
                   alElegir={() => elegirMedio(m)}
                   detalle={tecla}
                 >
-                  {texto}
+                  {text}
                 </Opcion>
               ))}
             </Grupo>
@@ -194,12 +191,12 @@ export function Cobro() {
             <div className="rounded-2xl border border-borde bg-superficie p-4">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-semibold">Propina (voluntaria)</span>
-                <span className="cifras text-sm text-texto-suave">{`sugerida ${pesos(sugerida)}`}</span>
+                <span className="cifras text-sm text-texto-suave">{`sugerida ${pesos(suggested)}`}</span>
               </div>
               <input
                 inputMode="numeric"
                 aria-label="Propina"
-                value={conPuntos(propina)}
+                value={conPuntos(tip)}
                 onChange={(e) => setPropina(soloDigitos(e.target.value))}
                 placeholder="0"
                 className="cifras mt-2 min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 text-xl focus-visible:outline-3 focus-visible:outline-foco"
@@ -207,7 +204,7 @@ export function Cobro() {
               <div className="mt-2 flex flex-wrap gap-2">
                 <Boton
                   onClick={() =>
-                    setPropina(medio === 'efectivo' ? propinaParaEfectivo(sugerida) : sugerida)
+                    setPropina(method === 'cash' ? propinaParaEfectivo(suggested) : suggested)
                   }
                 >
                   Sugerida
@@ -216,10 +213,10 @@ export function Cobro() {
               </div>
             </div>
 
-            {medio === 'efectivo' && calculo ? (
+            {method === 'cash' && calculo ? (
               <div className="rounded-2xl border border-borde bg-superficie p-4">
                 <p className="text-texto-suave">
-                  {monto === saldo
+                  {amount === balance
                     ? 'A cobrar (venta redondeada a $100 + propina)'
                     : 'A cobrar (venta + propina)'}
                 </p>
@@ -228,7 +225,7 @@ export function Cobro() {
                   <span className="font-semibold">El cliente entrega</span>
                   <input
                     inputMode="numeric"
-                    value={conPuntos(entregado)}
+                    value={conPuntos(served)}
                     onChange={(e) => setRecibido(soloDigitos(e.target.value))}
                     className="cifras mt-2 min-h-14 w-full rounded-xl border border-borde bg-superficie px-3 text-2xl focus-visible:outline-3 focus-visible:outline-foco"
                   />
@@ -242,19 +239,19 @@ export function Cobro() {
                   ))}
                 </div>
                 <div className="cifras mt-3 flex flex-wrap items-center gap-2 text-lg">
-                  {calculo.falta > 0 ? (
+                  {calculo.missing > 0 ? (
                     <Etiqueta
-                      tono="alerta"
-                      icono="alerta"
-                    >{`Faltan ${pesos(calculo.falta)}`}</Etiqueta>
+                      tono="warning"
+                      icono="warning"
+                    >{`Faltan ${pesos(calculo.missing)}`}</Etiqueta>
                   ) : (
                     <Etiqueta
-                      tono="libre"
+                      tono="free"
                       icono="check"
-                    >{`Cambio ${pesos(calculo.cambio)}`}</Etiqueta>
+                    >{`Cambio ${pesos(calculo.change)}`}</Etiqueta>
                   )}
-                  {calculo.cambio > 0 && (
-                    <Boton onClick={() => setPropina(propina + calculo.cambio)}>
+                  {calculo.change > 0 && (
+                    <Boton onClick={() => setPropina(tip + calculo.change)}>
                       Deja el cambio de propina
                     </Boton>
                   )}
@@ -268,7 +265,7 @@ export function Cobro() {
                   <span className="font-semibold">Número de aprobación</span>
                   <input
                     inputMode="numeric"
-                    value={aprobacion}
+                    value={approval_code}
                     onChange={(e) => setAprobacion(e.target.value.replace(/\D/g, '').slice(0, 8))}
                     className="cifras mt-2 min-h-14 w-full rounded-xl border border-borde bg-superficie px-3 text-2xl focus-visible:outline-3 focus-visible:outline-foco"
                   />
@@ -280,30 +277,25 @@ export function Cobro() {
               <div
                 className="rounded-2xl border-2 border-accion-fuerte bg-accion-suave p-4 text-accion-texto"
                 role="alertdialog"
-                aria-labelledby="confirmar-pago"
+                aria-labelledby="confirm-payment"
               >
-                <p id="confirmar-pago" className="mb-3 text-lg font-semibold">
-                  {`¿Registrar ${pesos(aCobrar)} en ${medio}?`}
+                <p id="confirm-payment" className="mb-3 text-lg font-semibold">
+                  {`¿Registrar ${pesos(aCobrar)} en ${method}?`}
                 </p>
                 <div className="flex gap-2">
                   <Boton onClick={() => setConfirmando(false)}>Cancelar</Boton>
                   <button
-                    ref={confirmar}
+                    ref={confirm}
                     type="button"
                     className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl bg-accion-fuerte px-4 font-semibold text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-foco"
-                    onClick={registrar}
+                    onClick={record}
                   >
                     Confirmar
                   </button>
                 </div>
               </div>
             ) : (
-              <Boton
-                variante="principal"
-                grande
-                disabled={!puede}
-                onClick={() => setConfirmando(true)}
-              >
+              <Boton variant="main" large disabled={!puede} onClick={() => setConfirmando(true)}>
                 {`Cobrar ${pesos(aCobrar)}`}
               </Boton>
             )}

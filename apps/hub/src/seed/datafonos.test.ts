@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { esIdValido, nuevoId } from '@pos/core'
+import { isValidId, newId } from '@pos/core'
 import { aplicarMigraciones } from '@pos/db'
 import { abrirBase } from '@pos/db/node'
 import { describe, expect, it } from 'vitest'
@@ -25,39 +25,41 @@ function hub() {
   aplicarMigraciones(db)
   const restauranteId = asegurarRestaurante(db, AHORA)
   const roles = asegurarRoles(db, restauranteId, AHORA)
-  const acceso = new ServicioAcceso({
+  const access = new ServicioAcceso({
     db,
     restauranteId,
-    clave: Buffer.alloc(32, 3),
-    reloj: () => AHORA,
+    key: Buffer.alloc(32, 3),
+    clock: () => AHORA,
   })
-  asegurarAdministrador(db, acceso, roles.admin, false)
+  asegurarAdministrador(db, access, roles.admin, false)
   const cargar = (ahora = AHORA, sinPersonal = true) =>
-    sembrar(db, acceso, { restauranteId, roles, carta: leerCarta(TEXTO_CARTA), sinPersonal }, ahora)
-  const datafonos = () =>
-    db.prepare('SELECT * FROM datafono WHERE restaurante_id = ? ORDER BY nombre').all(restauranteId)
+    sembrar(db, access, { restauranteId, roles, menu: leerCarta(TEXTO_CARTA), sinPersonal }, ahora)
+  const cardTerminals = () =>
+    db
+      .prepare('SELECT * FROM card_terminals WHERE restaurant_id = ? ORDER BY name')
+      .all(restauranteId)
   const admin = () => {
-    const u = db.prepare("SELECT id FROM usuario WHERE nombre = 'Administrador'").get()
-    return { usuarioId: String(u?.id), dispositivoId: null }
+    const u = db.prepare("SELECT id FROM users WHERE name = 'Administrador'").get()
+    return { userId: String(u?.id), dispositivoId: null }
   }
-  return { db, restauranteId, cargar, datafonos, admin }
+  return { db, restauranteId, cargar, cardTerminals, admin }
 }
 
 describe('el seed crea dos datáfonos Bold', () => {
   it('«Bold 1» y «Bold 2», proveedor bold, activos, del sistema y con id válido y estable', () => {
     const h = hub()
     h.cargar()
-    const filas = h.datafonos()
-    expect(filas.map((f) => [f.nombre, f.proveedor, f.activo])).toEqual([
+    const rows = h.cardTerminals()
+    expect(rows.map((f) => [f.name, f.provider, f.active])).toEqual([
       ['Bold 1', 'bold', 1],
       ['Bold 2', 'bold', 1],
     ])
-    for (const f of filas) {
-      expect(esIdValido(String(f.id))).toBe(true)
-      expect(f.usuario_id).toBeNull()
-      expect(f.dispositivo_id).toBeNull()
+    for (const f of rows) {
+      expect(isValidId(String(f.id))).toBe(true)
+      expect(f.user_id).toBeNull()
+      expect(f.device_id).toBeNull()
     }
-    expect(filas.map((f) => f.id)).toEqual([
+    expect(rows.map((f) => f.id)).toEqual([
       idEstable(h.restauranteId, 'datafono:bold-1'),
       idEstable(h.restauranteId, 'datafono:bold-2'),
     ])
@@ -65,33 +67,33 @@ describe('el seed crea dos datáfonos Bold', () => {
 
   it('el resumen los cuenta como creados', () => {
     const r = hub().cargar()
-    expect(r.tablas.datafono).toEqual({
-      creado: 2,
-      actualizado: 0,
-      igual: 0,
-      respetado: 0,
-      archivado: 0,
+    expect(r.sqlTables.card_terminals).toEqual({
+      created: 2,
+      updated: 0,
+      equal: 0,
+      respected: 0,
+      archived: 0,
     })
   })
 
   it('con el personal de ejemplo también se crean (el seed completo)', () => {
     const h = hub()
     h.cargar(AHORA, false)
-    expect(h.datafonos()).toHaveLength(2)
+    expect(h.cardTerminals()).toHaveLength(2)
   })
 
   it('cada datáfono sube la versión del catálogo: los equipos lo reciben con la carta', () => {
     const h = hub()
     h.cargar()
-    const versiones = h.datafonos().map((f) => Number(f.version))
+    const versiones = h.cardTerminals().map((f) => Number(f.version))
     expect(new Set(versiones).size).toBe(2)
     for (const v of versiones) expect(v).toBeGreaterThan(0)
-    const contador = Number(
+    const counter = Number(
       h.db
-        .prepare("SELECT valor FROM contador WHERE restaurante_id = ? AND nombre = 'catalogo'")
-        .get(h.restauranteId)?.valor,
+        .prepare("SELECT value FROM counters WHERE restaurant_id = ? AND name = 'catalog'")
+        .get(h.restauranteId)?.value,
     )
-    expect(contador).toBeGreaterThanOrEqual(Math.max(...versiones))
+    expect(counter).toBeGreaterThanOrEqual(Math.max(...versiones))
   })
 })
 
@@ -99,18 +101,18 @@ describe('repetir el seed', () => {
   it('no duplica ni toca los datáfonos: mismos ids, versiones y fechas', () => {
     const h = hub()
     h.cargar()
-    const antes = h.datafonos()
+    const before = h.cardTerminals()
     const r = h.cargar(MAS_TARDE)
-    expect(h.datafonos()).toEqual(antes)
-    expect(r.tablas.datafono).toEqual({
-      creado: 0,
-      actualizado: 0,
-      igual: 0,
-      respetado: 2,
-      archivado: 0,
+    expect(h.cardTerminals()).toEqual(before)
+    expect(r.sqlTables.card_terminals).toEqual({
+      created: 0,
+      updated: 0,
+      equal: 0,
+      respected: 2,
+      archived: 0,
     })
     h.cargar('2027-01-01T00:00:00.000Z')
-    expect(h.datafonos()).toEqual(antes)
+    expect(h.cardTerminals()).toEqual(before)
   })
 
   it('el administrador renombra uno: el seed no lo pisa', () => {
@@ -119,16 +121,16 @@ describe('repetir el seed', () => {
     const id = idEstable(h.restauranteId, 'datafono:bold-1')
     actualizarVersionado(
       h.db,
-      'datafono',
+      'card_terminals',
       h.restauranteId,
       id,
-      { nombre: 'Bold terraza', proveedor: 'redeban' },
+      { name: 'Bold terraza', provider: 'redeban' },
       h.admin(),
       MAS_TARDE,
     )
     h.cargar(MAS_TARDE)
     h.cargar('2027-01-01T00:00:00.000Z')
-    expect(h.datafonos().map((f) => [f.nombre, f.proveedor])).toEqual([
+    expect(h.cardTerminals().map((f) => [f.name, f.provider])).toEqual([
       ['Bold 2', 'bold'],
       ['Bold terraza', 'redeban'],
     ])
@@ -138,50 +140,74 @@ describe('repetir el seed', () => {
     const h = hub()
     h.cargar()
     const id = idEstable(h.restauranteId, 'datafono:bold-2')
-    actualizarVersionado(h.db, 'datafono', h.restauranteId, id, { activo: 0 }, h.admin(), MAS_TARDE)
+    actualizarVersionado(
+      h.db,
+      'card_terminals',
+      h.restauranteId,
+      id,
+      { active: 0 },
+      h.admin(),
+      MAS_TARDE,
+    )
     h.cargar(MAS_TARDE)
-    expect(h.datafonos().map((f) => [f.nombre, f.activo])).toEqual([
+    expect(h.cardTerminals().map((f) => [f.name, f.active])).toEqual([
       ['Bold 1', 1],
       ['Bold 2', 0],
     ])
-    expect(h.datafonos()).toHaveLength(2)
+    expect(h.cardTerminals()).toHaveLength(2)
   })
 
   it('uno archivado a mano y reactivado por el administrador sigue como lo dejó', () => {
     const h = hub()
     h.cargar()
     const id = idEstable(h.restauranteId, 'datafono:bold-1')
-    actualizarVersionado(h.db, 'datafono', h.restauranteId, id, { activo: 0 }, h.admin(), AHORA)
-    actualizarVersionado(h.db, 'datafono', h.restauranteId, id, { activo: 1 }, h.admin(), AHORA)
-    const antes = h.datafonos()
+    actualizarVersionado(
+      h.db,
+      'card_terminals',
+      h.restauranteId,
+      id,
+      { active: 0 },
+      h.admin(),
+      AHORA,
+    )
+    actualizarVersionado(
+      h.db,
+      'card_terminals',
+      h.restauranteId,
+      id,
+      { active: 1 },
+      h.admin(),
+      AHORA,
+    )
+    const before = h.cardTerminals()
     h.cargar(MAS_TARDE)
-    expect(h.datafonos()).toEqual(antes)
+    expect(h.cardTerminals()).toEqual(before)
   })
 
   it('un datáfono que agregó el administrador no se archiva aunque el seed no lo conozca', () => {
     const h = hub()
     h.cargar()
-    const propio = insertarVersionado(
+    const own = insertarVersionado(
       h.db,
-      'datafono',
+      'card_terminals',
       h.restauranteId,
-      { nombre: 'Redeban barra', proveedor: 'redeban' },
+      { name: 'Redeban barra', provider: 'redeban' },
       h.admin(),
       MAS_TARDE,
     )
     const r = h.cargar(MAS_TARDE)
-    const fila = h.datafonos().find((f) => f.id === propio)
-    expect(fila).toMatchObject({ activo: 1, nombre: 'Redeban barra' })
-    expect(r.tablas.datafono?.archivado ?? 0).toBe(0)
-    expect(h.datafonos()).toHaveLength(3)
+    const fila = h.cardTerminals().find((f) => f.id === own)
+    expect(fila).toMatchObject({ active: 1, name: 'Redeban barra' })
+    expect(r.sqlTables.card_terminals?.archived ?? 0).toBe(0)
+    expect(h.cardTerminals()).toHaveLength(3)
   })
 
   it('varias corridas no repiten «Bold 1»', () => {
     const h = hub()
-    const antes = h.cargar()
-    expect(antes.tablas.datafono?.creado).toBe(2)
+    const before = h.cargar()
+    expect(before.sqlTables.card_terminals?.created).toBe(2)
     h.cargar(MAS_TARDE)
-    expect(h.datafonos().filter((f) => f.nombre === 'Bold 1')).toHaveLength(1)
+    expect(h.cardTerminals().filter((f) => f.name === 'Bold 1')).toHaveLength(1)
   })
 })
 
@@ -191,38 +217,40 @@ describe('varios restaurantes', () => {
     const b = hub()
     a.cargar()
     b.cargar()
-    expect(a.datafonos().map((f) => f.id)).not.toEqual(b.datafonos().map((f) => f.id))
-    for (const f of a.datafonos()) expect(f.restaurante_id).toBe(a.restauranteId)
+    expect(a.cardTerminals().map((f) => f.id)).not.toEqual(b.cardTerminals().map((f) => f.id))
+    for (const f of a.cardTerminals()) expect(f.restaurant_id).toBe(a.restauranteId)
   })
 
   it('en una base compartida, el seed de uno no crea datáfonos en el otro', () => {
     const db = abrirBase(':memory:')
     aplicarMigraciones(db)
-    const uno = asegurarRestaurante(db, AHORA)
-    const otro = nuevoId()
+    const one = asegurarRestaurante(db, AHORA)
+    const other = newId()
     db.prepare(
-      `INSERT INTO restaurante (id, restaurante_id, creado_en, actualizado_en, version, nombre, config)
+      `INSERT INTO restaurants (id, restaurant_id, created_at, updated_at, version, name, config)
        VALUES (?, ?, ?, ?, 1, 'Otro', '{}')`,
-    ).run(otro, otro, AHORA, AHORA)
-    db.prepare(
-      "INSERT INTO contador (restaurante_id, nombre, valor) VALUES (?, 'catalogo', 1)",
-    ).run(otro)
-    const roles = asegurarRoles(db, uno, AHORA)
-    const acceso = new ServicioAcceso({
+    ).run(other, other, AHORA, AHORA)
+    db.prepare("INSERT INTO counters (restaurant_id, name, value) VALUES (?, 'catalog', 1)").run(
+      other,
+    )
+    const roles = asegurarRoles(db, one, AHORA)
+    const access = new ServicioAcceso({
       db,
-      restauranteId: uno,
-      clave: Buffer.alloc(32, 3),
-      reloj: () => AHORA,
+      restauranteId: one,
+      key: Buffer.alloc(32, 3),
+      clock: () => AHORA,
     })
     sembrar(
       db,
-      acceso,
-      { restauranteId: uno, roles, carta: leerCarta(TEXTO_CARTA), sinPersonal: true },
+      access,
+      { restauranteId: one, roles, menu: leerCarta(TEXTO_CARTA), sinPersonal: true },
       AHORA,
     )
-    const cuenta = (r: string) =>
-      Number(db.prepare('SELECT count(*) AS n FROM datafono WHERE restaurante_id = ?').get(r)?.n)
-    expect(cuenta(uno)).toBe(2)
-    expect(cuenta(otro)).toBe(0)
+    const check = (r: string) =>
+      Number(
+        db.prepare('SELECT count(*) AS n FROM card_terminals WHERE restaurant_id = ?').get(r)?.n,
+      )
+    expect(check(one)).toBe(2)
+    expect(check(other)).toBe(0)
   })
 })

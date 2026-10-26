@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
 import { MarcaFaro } from '../ui/Logo'
-import { MARCAS, type Marca as MarcaId } from '../ui/marca'
+import { BRANDS, type Marca as MarcaId } from '../ui/marca'
 import { sala, useSala } from './contexto'
 import { MarcoSala } from './MarcoSala'
 
@@ -12,42 +12,42 @@ import { MarcoSala } from './MarcoSala'
 /** Lo que distingue a cada marca a primera vista: su suelo, su acción, su título y su logo. */
 const MUESTRA: Record<
   MarcaId,
-  { fondo: string; tarjeta: string; accion: string; titulo: string; texto: string; letra: string }
+  { fondo: string; card: string; action: string; titulo: string; text: string; letra: string }
 > = {
   faro: {
     fondo: '#f2f5f5',
-    tarjeta: '#ffffff',
-    accion: '#0f766e',
+    card: '#ffffff',
+    action: '#0f766e',
     titulo: '#12201f',
-    texto: '#51625f',
+    text: '#51625f',
     letra: '"Figtree Variable", system-ui, sans-serif',
   },
   'la-spritzzeria': {
     fondo: '#f8ecda',
-    tarjeta: '#fff8ec',
-    accion: '#1d3552',
+    card: '#fff8ec',
+    action: '#1d3552',
     titulo: '#dc5a0f',
-    texto: '#3c4f66',
+    text: '#3c4f66',
     letra: '"League Gothic", "Arial Narrow", sans-serif',
   },
 }
 
 export function Marca() {
-  const { catalogo } = useSala()
+  const { catalog } = useSala()
   const avisar = useAvisar()
-  const actual = (catalogo?.restaurante.marca ?? 'faro') as MarcaId
+  const current = (catalog?.restaurant.brand ?? 'faro') as MarcaId
   const [guardando, setGuardando] = useState<MarcaId | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const elegir = async (marca: MarcaId, deshacible = true) => {
-    const anterior = actual
-    setGuardando(marca)
+  const select = async (brand: MarcaId, deshacible = true) => {
+    const previous = current
+    setGuardando(brand)
     setError(null)
     try {
-      await sala.cambiarMarca(marca)
-      const texto = `Ahora todos los equipos se ven con ${MARCAS.find((m) => m.marca === marca)?.nombre}`
-      if (deshacible) avisar(texto, () => void elegir(anterior, false))
-      else avisar(texto)
+      await sala.cambiarMarca(brand)
+      const text = `Ahora todos los equipos se ven con ${BRANDS.find((m) => m.brand === brand)?.name}`
+      if (deshacible) avisar(text, () => void select(previous, false))
+      else avisar(text)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cambiar la marca')
     }
@@ -67,12 +67,12 @@ export function Marca() {
           </p>
         )}
         <ul className="grid gap-4 md:grid-cols-2">
-          {MARCAS.map((m) => {
-            const v = MUESTRA[m.marca]
-            const elegida = m.marca === actual
+          {BRANDS.map((m) => {
+            const v = MUESTRA[m.brand]
+            const elegida = m.brand === current
             return (
               <li
-                key={m.marca}
+                key={m.brand}
                 className={`flex flex-col overflow-hidden rounded-2xl border-2 bg-superficie ${elegida ? 'border-accion-fuerte' : 'border-linea'}`}
               >
                 {/* Una muestra de la pantalla con esa marca (fuera del tema actual a propósito). */}
@@ -82,7 +82,7 @@ export function Marca() {
                   style={{ background: v.fondo }}
                 >
                   <div className="flex items-center gap-3">
-                    {m.marca === 'faro' ? (
+                    {m.brand === 'faro' ? (
                       <MarcaFaro className="size-10" />
                     ) : (
                       <img
@@ -93,17 +93,17 @@ export function Marca() {
                       />
                     )}
                     <span className="text-2xl" style={{ color: v.titulo, fontFamily: v.letra }}>
-                      {m.marca === 'faro' ? 'Salón' : 'LA SPRITZZERÍA'}
+                      {m.brand === 'faro' ? 'Salón' : 'LA SPRITZZERÍA'}
                     </span>
                   </div>
                   <div className="flex gap-2">
-                    {['Mesa 4', 'Mesa 5'].map((mesa, i) => (
+                    {['Mesa 4', 'Mesa 5'].map((table, i) => (
                       <span
-                        key={mesa}
+                        key={table}
                         className="flex-1 rounded-xl p-3 text-sm font-semibold"
-                        style={{ background: v.tarjeta, color: v.texto }}
+                        style={{ background: v.card, color: v.text }}
                       >
-                        {mesa}
+                        {table}
                         <span
                           className="mt-1 block h-1.5 w-10 rounded-full"
                           style={{ background: i === 0 ? '#15803d' : '#b45309' }}
@@ -113,15 +113,15 @@ export function Marca() {
                   </div>
                   <span
                     className="rounded-xl py-2.5 text-center font-semibold text-white"
-                    style={{ background: v.accion }}
+                    style={{ background: v.action }}
                   >
                     Enviar a cocina
                   </span>
                 </div>
                 <div className="flex flex-1 flex-col gap-3 p-5">
                   <div>
-                    <p className="text-lg font-bold">{m.nombre}</p>
-                    <p className="text-texto-suave">{m.descripcion}</p>
+                    <p className="text-lg font-bold">{m.name}</p>
+                    <p className="text-texto-suave">{m.description}</p>
                   </div>
                   <span className="mt-auto">
                     {elegida ? (
@@ -130,11 +130,11 @@ export function Marca() {
                       </span>
                     ) : (
                       <Boton
-                        variante="principal"
+                        variant="main"
                         disabled={guardando !== null}
-                        onClick={() => void elegir(m.marca)}
+                        onClick={() => void select(m.brand)}
                       >
-                        {guardando === m.marca ? 'Cambiando…' : `Usar ${m.nombre}`}
+                        {guardando === m.brand ? 'Cambiando…' : `Usar ${m.name}`}
                       </Boton>
                     )}
                   </span>

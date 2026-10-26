@@ -1,8 +1,8 @@
-import { type EstadoPedido, type ItemPedido, nuevoId, totalesItem } from '@pos/core'
+import { itemTotals, newId, type OrderItem, type OrderState } from '@pos/core'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useAvisar } from '../ui/avisos'
 import { Boton } from '../ui/Boton'
-import { buscar } from '../ui/busqueda'
+import { search } from '../ui/busqueda'
 import { pesos } from '../ui/formato'
 import { Icono, type NombreIcono } from '../ui/iconos'
 import { Grupo, Opcion } from '../ui/Opciones'
@@ -20,8 +20,8 @@ import { sala, useSala, useVistaLocal } from './contexto'
 import { MarcoSala } from './MarcoSala'
 import {
   CANALES,
-  CURSOS,
-  type Curso,
+  COURSES,
+  type Course,
   comandasDeCurso,
   comandasPorEstacion,
   copiaDe,
@@ -46,64 +46,64 @@ import { claveAgotado, itemsVigentes, ocupaMesa, type PedidoVisible } from './pr
 // La mesa queda ocupada al agregar el primer producto, no al abrirla.
 
 /** Unidades (no líneas) de unos ítems: 2 Aperol en una línea son 2. */
-const unidadesDe = (items: readonly ItemPedido[]) =>
-  items.reduce((n, i) => n + i.cantidad - i.cantidadAnulada, 0)
+const unidadesDe = (items: readonly OrderItem[]) =>
+  items.reduce((n, i) => n + i.quantity - i.voidedQuantity, 0)
 
 /** Lo que está en cocina y el mesero puede marcar entregado (ADR-015). */
-const EN_COCINA = new Set(['enviado', 'en_preparacion', 'listo'])
+const EN_COCINA = new Set(['sent', 'in_preparation', 'ready'])
 
 const TEXTO_ESTADO: Record<string, string> = {
-  pendiente: 'sin enviar',
-  retenido: 'retenido',
-  enviado: 'en cocina',
-  en_preparacion: 'en preparación',
-  listo: 'listo para llevar',
-  entregado: 'entregado',
+  pending: 'sin enviar',
+  held: 'held',
+  sent: 'en cocina',
+  in_preparation: 'en preparación',
+  ready: 'listo para llevar',
+  served: 'entregado',
 }
 
-type Canal = 'salon' | keyof typeof CANALES
+type Channel = 'dine_in' | keyof typeof CANALES
 /** Lo más que lleva una línea desde la pantalla (el esquema admite hasta 999). */
 const MAXIMO_LINEA = 99
 
-const FAVORITOS = '__favoritos'
-const MAS_PEDIDOS = '__mas'
+const FAVORITOS = '__favorites'
+const MAS_PEDIDOS = '__more'
 const RESULTADOS = 40
 
 export function TomaPedido() {
   const { parametros } = useRuta()
-  const { catalogo, sesion, conexion } = useSala()
-  const enLinea = conexion === 'conectado'
+  const { catalog, session, connection } = useSala()
+  const enLinea = connection === 'connected'
   const vista = useVistaLocal()
-  const pedidos = vista?.pedidos ?? null
+  const orders = vista?.orders ?? null
   const agotados = vista?.agotados ?? new Set<string>()
   const avisar = useAvisar()
-  const mesaId = parametros.get('mesa')
-  const canalNuevo = (parametros.get('canal') as Canal | null) ?? (mesaId ? 'salon' : null)
-  const mesa = mesaId ? catalogo?.mesas.find((m) => m.id === mesaId) : undefined
+  const tableId = parametros.get('table')
+  const canalNuevo = (parametros.get('channel') as Channel | null) ?? (tableId ? 'dine_in' : null)
+  const table = tableId ? catalog?.tables.find((m) => m.id === tableId) : undefined
   const [busqueda, setBusqueda] = useState('')
-  const [categoria, setCategoria] = useState<string | null>(null)
+  const [category, setCategoria] = useState<string | null>(null)
   const [elegido, setElegido] = useState<ProductoCatalogo | null>(null)
   const [editando, setEditando] = useState<string | null>(null)
   const [verPedido, setVerPedido] = useState(false)
-  const [comensal, setComensal] = useState<number | null>(null)
-  const [curso, setCurso] = useState<Curso | null>(null)
+  const [guest, setComensal] = useState<number | null>(null)
+  const [course, setCurso] = useState<Course | null>(null)
   const [comensalesIniciales, setComensalesIniciales] = useState(0)
   const [marcandoAgotados, setMarcandoAgotados] = useState(false)
   const [agotando, setAgotando] = useState<ProductoCatalogo | null>(null)
   const campoBusqueda = useRef<HTMLInputElement>(null)
   // El pedido que se abrió aquí: los toques seguidos van al mismo aunque aún no se haya releído.
-  const abierto = useRef<string | null>(null)
+  const opened = useRef<string | null>(null)
   // Los toques se guardan uno tras otro, en el orden en que se hicieron.
   const cola = useRef<Promise<void>>(Promise.resolve())
-  const puedeAgotar = sesion?.permisos.includes('agotar_producto') ?? false
-  const puedeEntregar = sesion?.permisos.includes('marcar_preparacion') ?? false
+  const puedeAgotar = session?.permissions.includes('mark_product_sold_out') ?? false
+  const puedeEntregar = session?.permissions.includes('mark_preparation') ?? false
   // Los cursos se usan poco en Colombia: solo se ven si el restaurante los prende.
-  const usarCursos = catalogo?.restaurante.usarCursos ?? false
+  const usarCursos = catalog?.restaurant.usarCursos ?? false
   const [editandoNota, setEditandoNota] = useState(false)
   // Mesa y pedido (tarea 1.5): qué panel está abierto, y qué ítem se anula.
-  const [accion, setAccion] = useState<'menu' | 'mover' | 'mesa' | 'unir' | 'cancelar' | null>(null)
+  const [action, setAccion] = useState<'menu' | 'move' | 'table' | 'merge' | 'cancel' | null>(null)
   const [anulando, setAnulando] = useState<string | null>(null)
-  const permisos = sesion?.permisos ?? []
+  const permissions = session?.permissions ?? []
 
   // "/" lleva a la búsqueda (atajo de caja, brief §5, regla 8).
   useEffect(() => {
@@ -116,54 +116,51 @@ export function TomaPedido() {
     return () => window.removeEventListener('keydown', alTeclear)
   }, [])
 
-  if (!catalogo || (mesaId && !mesa) || (!mesaId && !canalNuevo && !parametros.get('pedido'))) {
+  if (!catalog || (tableId && !table) || (!tableId && !canalNuevo && !parametros.get('order'))) {
     return (
-      <MarcoSala titulo="Pedido" volver="/">
+      <MarcoSala titulo="Pedido" back="/">
         <p className="p-6 text-texto-suave">Esta mesa o este pedido no existe.</p>
       </MarcoSala>
     )
   }
 
   // El pedido: el elegido, el que se abrió aquí o el primero de la mesa.
-  const candidatos = (pedidos ?? []).filter((p) =>
-    mesaId
-      ? p.estado.mesaId === mesaId || p.estado.mesasUnidas.includes(mesaId)
-      : p.estado.id === parametros.get('pedido'),
+  const candidatos = (orders ?? []).filter((p) =>
+    tableId
+      ? p.status.tableId === tableId || p.status.mergedTables.includes(tableId)
+      : p.status.id === parametros.get('order'),
   )
   const elegidoId =
-    parametros.get('pedido') ??
-    abierto.current ??
-    (mesaId ? candidatos[0]?.estado.id : null) ??
-    null
-  const pedido = (pedidos ?? []).find((p) => p.estado.id === elegidoId) ?? null
-  const canal: Canal = pedido?.estado.canal ?? canalNuevo ?? 'salon'
-  const comensales = pedido?.estado.comensales ?? comensalesIniciales
-  const unidas = (pedido?.estado.mesasUnidas ?? [])
-    .map((id) => catalogo?.mesas.find((m) => m.id === id)?.nombre)
+    parametros.get('order') ?? opened.current ?? (tableId ? candidatos[0]?.status.id : null) ?? null
+  const order = (orders ?? []).find((p) => p.status.id === elegidoId) ?? null
+  const channel: Channel = order?.status.channel ?? canalNuevo ?? 'dine_in'
+  const guests = order?.status.guests ?? comensalesIniciales
+  const merged = (order?.status.mergedTables ?? [])
+    .map((id) => catalog?.tables.find((m) => m.id === id)?.name)
     .filter(Boolean)
-  const titulo = mesa
-    ? `Mesa ${[mesa.nombre, ...unidas].join(' + ')}`
-    : `${canal === 'salon' ? 'Pedido' : CANALES[canal]}${pedido?.estado.numeroDia ? ` #${pedido.estado.numeroDia}` : ''}`
-  const productos = catalogo.categorias.flatMap((c) => c.productos)
+  const titulo = table
+    ? `Mesa ${[table.name, ...merged].join(' + ')}`
+    : `${channel === 'dine_in' ? 'Pedido' : CANALES[channel]}${order?.status.dayNumber ? ` #${order.status.dayNumber}` : ''}`
+  const products = catalog.categories.flatMap((c) => c.products)
   // Por dónde sale cada producto (cocina o barra): da su ícono cuando no tiene foto.
   const estacionDe = new Map(
-    catalogo.categorias.flatMap((c) =>
-      c.productos.map((p) => [
+    catalog.categories.flatMap((c) =>
+      c.products.map((p) => [
         p.id,
-        catalogo.estaciones.find((e) => e.id === c.estacionId)?.nombre ?? '',
+        catalog.stations.find((e) => e.id === c.estacionId)?.name ?? '',
       ]),
     ),
   )
-  const agotado = (p: ProductoCatalogo) => agotados.has(claveAgotado(p.id))
+  const soldOut = (p: ProductoCatalogo) => agotados.has(claveAgotado(p.id))
 
-  const enOrden = (trabajo: () => Promise<void>) => {
+  const inOrder = (trabajo: () => Promise<void>) => {
     cola.current = cola.current.then(trabajo).catch((e) => {
       console.error(e)
       avisar(e instanceof Error ? e.message : 'No se pudo guardar')
     })
   }
   /**
-   * Como `enOrden`, pero el fallo vuelve a quien lo pidió (un panel que lo muestra junto al
+   * Como `inOrder`, pero el fallo vuelve a quien lo pidió (un panel que lo muestra junto al
    * botón: un PIN errado, sin conexión) en vez de un aviso.
    */
   const enOrdenConError = (trabajo: () => Promise<void>): Promise<void> => {
@@ -181,51 +178,51 @@ export function TomaPedido() {
   }
   /** El pedido guardado (no el de la última pantalla): un toque anterior pudo cambiarlo. */
   const pedidoGuardado = async () => {
-    const id = elegidoId ?? abierto.current
-    return id ? ((await sala.sync?.pedido(id)) ?? null) : null
+    const id = elegidoId ?? opened.current
+    return id ? ((await sala.sync?.order(id)) ?? null) : null
   }
   /** El pedido al que va lo que se agregue; si aún no existe, se abre. */
   const asegurarPedido = async () => {
-    const id = elegidoId ?? abierto.current
+    const id = elegidoId ?? opened.current
     if (id) return id
-    const nuevo = nuevoId()
-    await sala.registrar('PedidoAbierto', nuevo, {
-      canal,
-      mesa_id: mesaId ?? null,
-      comensales: comensalesIniciales,
+    const fresh = newId()
+    await sala.record('OrderOpened', fresh, {
+      channel,
+      table_id: tableId ?? null,
+      guests: comensalesIniciales,
     })
     // Solo después de guardarlo: si falló, el próximo toque lo vuelve a intentar.
-    abierto.current = nuevo
+    opened.current = fresh
     // Un pedido sin mesa se sigue por su id (la mesa no lo identifica).
-    if (!mesaId) navegar(`/pedido?pedido=${nuevo}`)
-    return nuevo
+    if (!tableId) navegar(`/order?order=${fresh}`)
+    return fresh
   }
   /** La línea tal como está guardada, si aún no se envió. */
   const lineaGuardada = async (itemId: string) => {
-    const estado = await pedidoGuardado()
-    const item = estado?.items[itemId]
-    return estado && item && (item.estado === 'pendiente' || item.estado === 'retenido')
-      ? { estado, item }
+    const status = await pedidoGuardado()
+    const item = status?.items[itemId]
+    return status && item && (item.status === 'pending' || item.status === 'held')
+      ? { status, item }
       : null
   }
   /**
    * Los datos para volver a agregar un ítem como está ahora (otra `item_id`), con la versión de
    * catálogo con que se agregó: el precio era el de esa carta.
    */
-  const copiaActual = async (item: ItemPedido) => {
+  const copiaActual = async (item: OrderItem) => {
     const original = (await sala.sync?.locales())?.find(
-      (l) => l.evento.tipo === 'ItemAgregado' && l.evento.datos.item_id === item.id,
-    )?.evento
-    return original?.tipo === 'ItemAgregado'
+      (l) => l.event.type === 'ItemAdded' && l.event.data.item_id === item.id,
+    )?.event
+    return original?.type === 'ItemAdded'
       ? {
-          ...original.datos,
-          item_id: nuevoId(),
-          cantidad: item.cantidad - item.cantidadAnulada,
-          comensal: item.comensal,
-          curso: item.curso,
-          notas: item.notas,
+          ...original.data,
+          item_id: newId(),
+          quantity: item.quantity - item.voidedQuantity,
+          guest: item.guest,
+          course: item.course,
+          notes: item.notes,
         }
-      : copiaDe(item, catalogo.version)
+      : copiaDe(item, catalog.version)
   }
 
   /**
@@ -233,93 +230,93 @@ export function TomaPedido() {
    * cuentan dos). Sin aviso: el número cambia a la vista y con «−» se corrige (decisión del
    * dueño: el aviso estorbaba al tomar pedidos). Si queda en 0, la quita con Deshacer.
    */
-  const sumar = (itemId: string, delta: number) =>
-    enOrden(async () => {
-      const linea = await lineaGuardada(itemId)
-      if (!linea) {
+  const increment = (itemId: string, delta: number) =>
+    inOrder(async () => {
+      const line = await lineaGuardada(itemId)
+      if (!line) {
         avisar('Esa línea ya se envió o ya no está')
         return
       }
-      const cantidad = linea.item.cantidad + delta
-      if (cantidad <= 0) {
-        await quitarYa(linea.estado, linea.item)
+      const quantity = line.item.quantity + delta
+      if (quantity <= 0) {
+        await quitarYa(line.status, line.item)
         return
       }
-      if (cantidad > MAXIMO_LINEA) {
+      if (quantity > MAXIMO_LINEA) {
         avisar(`Una línea lleva hasta ${MAXIMO_LINEA}`)
         return
       }
-      await sala.registrar('ItemCambiado', linea.estado.id, { item_id: itemId, cantidad })
+      await sala.record('ItemChanged', line.status.id, { item_id: itemId, quantity })
     })
 
-  const agregar = (
+  const add = (
     p: ProductoCatalogo,
-    varianteId: string | null,
+    variantId: string | null,
     elegidas: Record<string, string[]>,
-    extras: { cantidad?: number; notas?: string } = {},
+    extras: { quantity?: number; notes?: string } = {},
   ) =>
-    enOrden(async () => {
+    inOrder(async () => {
       // Antes de abrir el pedido: si falta elegir algo, no queda un pedido vacío en la mesa.
-      const datos = datosItem(catalogo, p, varianteId, elegidas, {
+      const data = datosItem(catalog, p, variantId, elegidas, {
         ...extras,
-        comensal,
-        curso: usarCursos ? curso : null,
+        guest,
+        course: usarCursos ? course : null,
       })
       const id = await asegurarPedido()
-      const igual = lineaIgual(await pedidoGuardado(), datos)
-      if (igual) {
-        const cantidad = Math.min(MAXIMO_LINEA, igual.cantidad + datos.cantidad)
-        const sumado = cantidad - igual.cantidad
+      const equal = lineaIgual(await pedidoGuardado(), data)
+      if (equal) {
+        const quantity = Math.min(MAXIMO_LINEA, equal.quantity + data.quantity)
+        const sumado = quantity - equal.quantity
         if (sumado === 0) {
           avisar(`Una línea lleva hasta ${MAXIMO_LINEA}`)
           return
         }
-        await sala.registrar('ItemCambiado', id, { item_id: igual.id, cantidad })
+        await sala.record('ItemChanged', id, { item_id: equal.id, quantity })
         return
       }
-      await sala.registrar('ItemAgregado', id, datos)
+      await sala.record('ItemAdded', id, data)
     })
 
   /** Quita la línea (ya dentro de la cola) y deja Deshacer, que la vuelve a agregar como estaba. */
-  const quitarYa = async (estado: EstadoPedido, item: ItemPedido) => {
-    const copia = await copiaActual(item)
-    await sala.registrar('ItemQuitado', estado.id, { item_id: item.id })
-    avisar(`Quitaste ${item.nombre}`, () =>
-      enOrden(() => sala.registrar('ItemAgregado', estado.id, copia).then(() => {})),
+  const quitarYa = async (status: OrderState, item: OrderItem) => {
+    const copy = await copiaActual(item)
+    await sala.record('ItemRemoved', status.id, { item_id: item.id })
+    avisar(`Quitaste ${item.name}`, () =>
+      inOrder(() => sala.record('ItemAdded', status.id, copy).then(() => {})),
     )
   }
-  const quitar = (itemId: string) =>
-    enOrden(async () => {
-      const linea = await lineaGuardada(itemId)
-      if (linea) await quitarYa(linea.estado, linea.item)
+  const remove = (itemId: string) =>
+    inOrder(async () => {
+      const line = await lineaGuardada(itemId)
+      if (line) await quitarYa(line.status, line.item)
     })
 
   /** Cambia para quién, el curso o la nota de una línea sin enviar. */
   const cambiarItem = (
     itemId: string,
-    cambio: { comensal?: number | null; curso?: Curso | null; notas?: string | null },
+    change: { guest?: number | null; course?: Course | null; notes?: string | null },
   ) =>
-    enOrden(async () => {
-      const linea = await lineaGuardada(itemId)
-      if (!linea) {
+    inOrder(async () => {
+      const line = await lineaGuardada(itemId)
+      if (!line) {
         avisar('Esa línea ya se envió o ya no está')
         return
       }
-      await sala.registrar('ItemCambiado', linea.estado.id, { item_id: itemId, ...cambio })
+      await sala.record('ItemChanged', line.status.id, { item_id: itemId, ...change })
     })
 
   /** La nota de todo el pedido («alérgico al maní»): va en cada comanda y en la cocina. */
-  const cambiarNotaPedido = (notas: string | null) =>
-    enOrden(async () => {
-      const antes = await pedidoGuardado()
+  const cambiarNotaPedido = (notes: string | null) =>
+    inOrder(async () => {
+      const before = await pedidoGuardado()
       // Sin cambio no se escribe nada, ni se abre un pedido vacío en una mesa libre.
-      if ((antes?.notas ?? null) === notas) return
-      if (antes && antes.estado !== 'abierto') {
+      if ((before?.notes ?? null) === notes) return
+      if (before && before.status !== 'open') {
         avisar('Este pedido ya se cerró: la nota no se guardó')
         return
       }
       const id = await asegurarPedido()
-      await sala.registrar('NotaPedidoCambiada', id, { notas })
+      await sala.record('OrderNoteChanged', id, { notes })
     })
 
   // ── Mesa y pedido (tarea 1.5) ────────────────────────────────────────
@@ -328,59 +325,60 @@ export function TomaPedido() {
    * Mesas que ocupan los otros pedidos abiertos (su mesa y las unidas), para elegir a dónde pasar.
    * Uno que quedó vacío al pasar todo a otra mesa ya no ocupa la suya (igual que en el hub).
    */
-  const ocupadas = new Map<string, string>()
-  for (const p of pedidos ?? []) {
-    if (!p.estado.mesaId || p.estado.id === pedido?.estado.id || !ocupaMesa(p.estado)) continue
-    const mesero = catalogo?.personal.find((u) => u.id === p.estado.meseroAsignadoId)?.nombre
-    for (const m of [p.estado.mesaId, ...p.estado.mesasUnidas]) ocupadas.set(m, mesero ?? 'ocupada')
+  const occupiedIds = new Map<string, string>()
+  for (const p of orders ?? []) {
+    if (!p.status.tableId || p.status.id === order?.status.id || !ocupaMesa(p.status)) continue
+    const waiter = catalog?.staff.find((u) => u.id === p.status.assignedWaiterId)?.name
+    for (const m of [p.status.tableId, ...p.status.mergedTables])
+      occupiedIds.set(m, waiter ?? 'ocupada')
   }
 
   /** Anular lo enviado, con motivo; sin el permiso lo autoriza el cajero con su PIN. */
-  const anular = (
+  const voidItem = (
     itemId: string,
-    d: { cantidad: number; motivo: string; yaPreparado: boolean; pin: string | null },
+    d: { quantity: number; reason: string; alreadyPrepared: boolean; pin: string | null },
   ) =>
     sinFrenarLaCola(async () => {
-      const estado = await pedidoGuardado()
-      const item = estado?.items[itemId]
-      if (!estado || !item) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
-      await sala.registrar(
-        'ItemAnulado',
-        estado.id,
+      const status = await pedidoGuardado()
+      const item = status?.items[itemId]
+      if (!status || !item) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
+      await sala.record(
+        'ItemVoided',
+        status.id,
         {
           item_id: item.id,
-          cantidad: d.cantidad,
-          ya_preparado: d.yaPreparado,
-          comanda_id: nuevoId(),
+          quantity: d.quantity,
+          already_prepared: d.alreadyPrepared,
+          ticket_id: newId(),
         },
         {
-          motivo: d.motivo,
-          ...(d.pin ? { autoriza: { pin: d.pin, permiso: 'anular_item_enviado' } } : {}),
+          reason: d.reason,
+          ...(d.pin ? { authorizes: { pin: d.pin, permission: 'void_sent_item' } } : {}),
         },
       )
       setAnulando(null)
       setEditando(null)
       avisar(
         enLinea
-          ? `Anulaste ${d.cantidad} ${item.nombre}`
+          ? `Anulaste ${d.quantity} ${item.name}`
           : `Anulado aquí: llega a cocina cuando vuelva la conexión`,
       )
     })
 
   /** Cancelar el pedido entero; la mesa queda libre y la cocina recibe la anulación. */
-  const cancelarPedido = (d: { motivo: string; pin: string | null }) =>
+  const cancelarPedido = (d: { reason: string; pin: string | null }) =>
     sinFrenarLaCola(async () => {
-      const estado = await pedidoGuardado()
-      if (!estado) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
-      if (Object.values(estado.pagos).some((p) => !p.anulado))
+      const status = await pedidoGuardado()
+      if (!status) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
+      if (Object.values(status.payments).some((p) => !p.voided))
         throw new Error('Este pedido ya tiene pagos: primero hay que anularlos en caja')
-      await sala.registrar(
-        'PedidoCancelado',
-        estado.id,
+      await sala.record(
+        'OrderCanceled',
+        status.id,
         {},
         {
-          motivo: d.motivo,
-          ...(d.pin ? { autoriza: { pin: d.pin, permiso: 'cancelar_pedido' } } : {}),
+          reason: d.reason,
+          ...(d.pin ? { authorizes: { pin: d.pin, permission: 'cancel_order' } } : {}),
         },
       )
       setAccion(null)
@@ -389,19 +387,19 @@ export function TomaPedido() {
     })
 
   /** La nota de un plato que ya salió: la cocina recibe una comanda «CAMBIO». */
-  const cambiarNotaEnviada = (itemId: string, notas: string | null) =>
-    enOrden(async () => {
-      const estado = await pedidoGuardado()
-      const item = estado?.items[itemId]
-      if (!estado || !item || item.notas === notas) return
-      await sala.registrar('ItemModificadoTrasEnvio', estado.id, {
+  const cambiarNotaEnviada = (itemId: string, notes: string | null) =>
+    inOrder(async () => {
+      const status = await pedidoGuardado()
+      const item = status?.items[itemId]
+      if (!status || !item || item.notes === notes) return
+      await sala.record('ItemModifiedAfterSend', status.id, {
         item_id: item.id,
-        comanda_id: nuevoId(),
-        notas,
+        ticket_id: newId(),
+        notes,
       })
       avisar(
         enLinea
-          ? `La cocina recibe el cambio de ${item.nombre}`
+          ? `La cocina recibe el cambio de ${item.name}`
           : 'Guardado: el cambio llega a cocina cuando vuelva la conexión',
       )
     })
@@ -409,137 +407,137 @@ export function TomaPedido() {
   /** Pasar productos a otra mesa: al pedido que tenga, o a uno nuevo si está libre. */
   const moverA = (itemIds: string[], mesaDestino: string) =>
     enOrdenConError(async () => {
-      const estado = await pedidoGuardado()
-      if (!estado) return
-      const items = itemIds.map((id) => estado.items[id]).filter((i): i is ItemPedido => !!i)
+      const status = await pedidoGuardado()
+      if (!status) return
+      const items = itemIds.map((id) => status.items[id]).filter((i): i is OrderItem => !!i)
       if (items.length === 0) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
       // Lo que el hub rechazaría se avisa antes de abrir nada en la otra mesa.
-      if (estado.cuentas) throw new Error('La cuenta está dividida: primero deshaz la división')
+      if (status.checks) throw new Error('La cuenta está dividida: primero deshaz la división')
       if (
         items.some((i) =>
-          Object.values(estado.descuentos).some((d) => d.montos[i.id] !== undefined),
+          Object.values(status.discounts).some((d) => d.amounts[i.id] !== undefined),
         )
       )
         throw new Error('Algo tiene descuento: primero quítalo en caja')
-      let destino = (pedidos ?? []).find(
+      let target = (orders ?? []).find(
         (p) =>
-          p.estado.id !== estado.id &&
-          (p.estado.mesaId === mesaDestino || p.estado.mesasUnidas.includes(mesaDestino)),
-      )?.estado.id
-      if (!destino) {
-        destino = nuevoId()
-        await sala.registrar('PedidoAbierto', destino, {
-          canal: 'salon',
-          mesa_id: mesaDestino,
-          comensales: 0,
+          p.status.id !== status.id &&
+          (p.status.tableId === mesaDestino || p.status.mergedTables.includes(mesaDestino)),
+      )?.status.id
+      if (!target) {
+        target = newId()
+        await sala.record('OrderOpened', target, {
+          channel: 'dine_in',
+          table_id: mesaDestino,
+          guests: 0,
         })
       }
-      await sala.registrar(
-        'ItemsMovidos',
-        estado.id,
-        { pedido_destino_id: destino, items: items.map(movidoDe) },
-        { relacionados: [destino] },
+      await sala.record(
+        'ItemsMoved',
+        status.id,
+        { target_order_id: target, items: items.map(movidoDe) },
+        { related: [target] },
       )
       setAccion(null)
-      const nombre = catalogo?.mesas.find((m) => m.id === mesaDestino)?.nombre
-      avisar(`Pasaste ${unidadesDe(items)} a la mesa ${nombre ?? ''}`)
+      const name = catalog?.tables.find((m) => m.id === mesaDestino)?.name
+      avisar(`Pasaste ${unidadesDe(items)} a la mesa ${name ?? ''}`)
     })
 
   /** El pedido entero se cambia a otra mesa libre. */
   const cambiarDeMesa = (mesaDestino: string) =>
     enOrdenConError(async () => {
-      const estado = await pedidoGuardado()
-      if (!estado) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
-      await sala.registrar('PedidoMovidoDeMesa', estado.id, { mesa_destino_id: mesaDestino })
+      const status = await pedidoGuardado()
+      if (!status) throw new Error('El pedido cambió: ciérralo y ábrelo de nuevo')
+      await sala.record('OrderMovedTable', status.id, { target_table_id: mesaDestino })
       setAccion(null)
-      navegar(`/pedido?mesa=${mesaDestino}&pedido=${estado.id}`)
+      navegar(`/order?table=${mesaDestino}&order=${status.id}`)
     })
 
   /** Unir mesas libres a la de este pedido, o soltarlas. */
-  const unirMesas = (agregar: string[], quitar: string[]) =>
+  const unirMesas = (add: string[], remove: string[]) =>
     enOrdenConError(async () => {
       const id = await asegurarPedido()
-      if (agregar.length > 0) await sala.registrar('MesasUnidas', id, { mesa_ids: agregar })
-      if (quitar.length > 0) await sala.registrar('MesasSeparadas', id, { mesa_ids: quitar })
+      if (add.length > 0) await sala.record('TablesMerged', id, { table_ids: add })
+      if (remove.length > 0) await sala.record('TablesSeparated', id, { table_ids: remove })
       setAccion(null)
     })
 
-  const duplicar = (itemId: string) =>
-    enOrden(async () => {
-      const estado = await pedidoGuardado()
-      const item = estado?.items[itemId]
-      if (!estado || !item) return
-      await sala.registrar('ItemAgregado', estado.id, await copiaActual(item))
+  const duplicateSelected = (itemId: string) =>
+    inOrder(async () => {
+      const status = await pedidoGuardado()
+      const item = status?.items[itemId]
+      if (!status || !item) return
+      await sala.record('ItemAdded', status.id, await copiaActual(item))
     })
 
   /** Una persona más o menos, sobre lo guardado; no baja de la mayor persona que tiene algo. */
   const cambiarComensales = (delta: number) => {
-    if (!pedido) {
+    if (!order) {
       setComensalesIniciales((n) => Math.max(0, Math.min(200, n + delta)))
       return
     }
-    enOrden(async () => {
-      const estado = await pedidoGuardado()
-      if (!estado) return
-      const enUso = Math.max(0, ...itemsVigentes(estado).map((i) => i.comensal ?? 0))
-      const n = estado.comensales + delta
+    inOrder(async () => {
+      const status = await pedidoGuardado()
+      if (!status) return
+      const enUso = Math.max(0, ...itemsVigentes(status).map((i) => i.guest ?? 0))
+      const n = status.guests + delta
       if (n < enUso) {
         avisar(`La persona ${enUso} tiene cosas: pásalas a otra antes de quitarla`)
         return
       }
       if (n < 0 || n > 200) return
-      if (comensal !== null && comensal > n) setComensal(null)
-      await sala.registrar('ComensalesCambiados', estado.id, { comensales: n })
+      if (guest !== null && guest > n) setComensal(null)
+      await sala.record('GuestsChanged', status.id, { guests: n })
     })
   }
 
   // Sin conexión queda guardado aquí, pero cocina todavía no lo tiene: no decir "Enviado".
   const avisarEnvio = (cuantos: number, que = 'a cocina y barra') =>
     avisar(
-      sala.instantanea().conexion === 'conectado'
+      sala.instantanea().connection === 'connected'
         ? `Enviado ${que} (${cuantos})`
         : `Guardado (${cuantos}): llega a cocina cuando vuelva la conexión`,
     )
 
   /** Enviar lo pendiente (lo retenido espera a que se marche su curso). */
-  const enviar = () =>
-    enOrden(async () => {
-      const estado = await pedidoGuardado()
-      if (!estado) return
-      const cuantos = unidadesPorEnviar(estado)
+  const send = () =>
+    inOrder(async () => {
+      const status = await pedidoGuardado()
+      if (!status) return
+      const cuantos = unidadesPorEnviar(status)
       if (cuantos === 0) return
-      const datos = comandasPorEstacion(catalogo, estado)
-      if (!datos) {
+      const data = comandasPorEstacion(catalog, status)
+      if (!data) {
         avisar('No hay a dónde enviar: la carta no tiene cocina ni barra')
         return
       }
-      await sala.registrar('ItemsEnviados', estado.id, datos)
+      await sala.record('ItemsSent', status.id, data)
       navigator.vibrate?.(60)
       avisarEnvio(cuantos)
       setVerPedido(false)
       navegar('/')
     })
 
-  const retener = (c: Curso) =>
-    enOrden(async () => {
-      const estado = await pedidoGuardado()
-      if (!estado) return
-      await sala.registrar('CursoRetenido', estado.id, { curso: c })
-      const texto = elCurso(c)
-      avisar(`${texto[0]?.toUpperCase()}${texto.slice(1)} espera: márchalo cuando lo pidan`)
+  const hold = (c: Course) =>
+    inOrder(async () => {
+      const status = await pedidoGuardado()
+      if (!status) return
+      await sala.record('CourseHeld', status.id, { course: c })
+      const text = elCurso(c)
+      avisar(`${text[0]?.toUpperCase()}${text.slice(1)} espera: márchalo cuando lo pidan`)
     })
   /** Marchar: el curso deja de esperar y sale a cocina de una vez. */
-  const marchar = (c: Curso) =>
-    enOrden(async () => {
-      const estado = await pedidoGuardado()
-      if (!estado) return
-      await sala.registrar('CursoMarchado', estado.id, { curso: c })
+  const marchar = (c: Course) =>
+    inOrder(async () => {
+      const status = await pedidoGuardado()
+      if (!status) return
+      await sala.record('CourseFired', status.id, { course: c })
       const ahora = await pedidoGuardado()
-      const datos = ahora ? comandasDeCurso(catalogo, ahora, c) : null
-      if (ahora && datos) {
-        await sala.registrar('ItemsEnviados', ahora.id, datos)
+      const data = ahora ? comandasDeCurso(catalog, ahora, c) : null
+      if (ahora && data) {
+        await sala.record('ItemsSent', ahora.id, data)
         avisarEnvio(
-          datos.comandas.reduce((s, x) => s + x.item_ids.length, 0),
+          data.tickets.reduce((s, x) => s + x.item_ids.length, 0),
           elCurso(c),
         )
       }
@@ -549,14 +547,14 @@ export function TomaPedido() {
    * El mesero lleva el plato a la mesa (ADR-015): sale de «Pedidos en cocina». Se puede deshacer
    * unos segundos, por si tocó el que no era.
    */
-  const entregar = (ids: string[], que: string) =>
-    enOrden(async () => {
-      const estado = await pedidoGuardado()
-      if (!estado || ids.length === 0) return
-      await sala.registrar('ItemEntregado', estado.id, { item_ids: ids })
+  const serve = (ids: string[], que: string) =>
+    inOrder(async () => {
+      const status = await pedidoGuardado()
+      if (!status || ids.length === 0) return
+      await sala.record('ItemServed', status.id, { item_ids: ids })
       avisar(`Entregado: ${que}`, () =>
-        enOrden(async () => {
-          await sala.registrar('ItemDevueltoACola', estado.id, { item_ids: ids })
+        inOrder(async () => {
+          await sala.record('ItemReturnedToQueue', status.id, { item_ids: ids })
         }),
       )
     })
@@ -564,80 +562,79 @@ export function TomaPedido() {
   /** Marca agotado o disponible el producto entero o una variante (la botella, no la copa). */
   const alternarAgotado = (
     p: ProductoCatalogo,
-    varianteId: string | null,
-    agotar: boolean,
+    variantId: string | null,
+    markSoldOut: boolean,
     deshacible = true,
   ): void =>
-    enOrden(async () => {
-      await sala.registrar(agotar ? 'ProductoAgotado' : 'ProductoDisponible', p.id, {
-        producto_id: p.id,
-        variante_id: varianteId,
+    inOrder(async () => {
+      await sala.record(markSoldOut ? 'ProductSoldOut' : 'ProductAvailable', p.id, {
+        product_id: p.id,
+        variant_id: variantId,
       })
-      const variante = p.variantes.find((v) => v.id === varianteId)
-      const nombre = variante ? `${p.nombre} (${variante.nombre})` : p.nombre
-      const texto = agotar ? `${nombre}: agotado` : `${nombre} vuelve a estar disponible`
-      if (deshacible) avisar(texto, () => alternarAgotado(p, varianteId, !agotar, false))
-      else avisar(texto)
+      const variant = p.variants.find((v) => v.id === variantId)
+      const name = variant ? `${p.name} (${variant.name})` : p.name
+      const text = markSoldOut ? `${name}: agotado` : `${name} vuelve a estar disponible`
+      if (deshacible) avisar(text, () => alternarAgotado(p, variantId, !markSoldOut, false))
+      else avisar(text)
     })
 
   const tocarProducto = (p: ProductoCatalogo) => {
     if (marcandoAgotados) {
-      if (p.variantes.length > 0) setAgotando(p)
-      else alternarAgotado(p, null, !agotado(p))
-    } else if (agotado(p)) avisar(`${p.nombre} está agotado`)
+      if (p.variants.length > 0) setAgotando(p)
+      else alternarAgotado(p, null, !soldOut(p))
+    } else if (soldOut(p)) avisar(`${p.name} está agotado`)
     else if (pideOpciones(p)) setElegido(p)
-    else agregar(p, null, {})
+    else add(p, null, {})
   }
 
-  const favoritos = productos.filter((p) => p.favorito)
+  const favoritos = products.filter((p) => p.favorite)
   const masPedidos = (vista?.masPedidos ?? [])
-    .map((id) => productos.find((p) => p.id === id))
+    .map((id) => products.find((p) => p.id === id))
     .filter((p): p is ProductoCatalogo => p !== undefined)
   const categoriaActual =
-    categoria ??
+    category ??
     (favoritos.length > 0
       ? FAVORITOS
       : masPedidos.length > 0
         ? MAS_PEDIDOS
-        : catalogo.categorias[0]?.id)
-  const lista = busqueda.trim()
-    ? buscar(productos, busqueda, (p) => `${p.nombre} ${p.descripcion ?? ''}`)
+        : catalog.categories[0]?.id)
+  const list = busqueda.trim()
+    ? search(products, busqueda, (p) => `${p.name} ${p.description ?? ''}`)
     : categoriaActual === FAVORITOS
       ? favoritos
       : categoriaActual === MAS_PEDIDOS
         ? masPedidos
-        : (catalogo.categorias.find((c) => c.id === categoriaActual)?.productos ?? [])
+        : (catalog.categories.find((c) => c.id === categoriaActual)?.products ?? [])
   // Unidades por enviar ahora (lo retenido espera a que se marche su curso).
-  const enPedido = (productoId: string) =>
-    pedido
-      ? itemsVigentes(pedido.estado)
+  const enPedido = (productId: string) =>
+    order
+      ? itemsVigentes(order.status)
           .filter(
-            (i) =>
-              i.productoId === productoId && (i.estado === 'pendiente' || i.estado === 'retenido'),
+            (i) => i.productId === productId && (i.status === 'pending' || i.status === 'held'),
           )
-          .reduce((s, i) => s + i.cantidad, 0)
+          .reduce((s, i) => s + i.quantity, 0)
       : 0
-  const faltan = pedido ? unidadesPorEnviar(pedido.estado) : 0
-  const itemEditado = pedido && editando ? (pedido.estado.items[editando] ?? null) : null
+  const missingOnes = order ? unidadesPorEnviar(order.status) : 0
+  const itemEditado = order && editando ? (order.status.items[editando] ?? null) : null
 
-  const enCocina = pedido ? itemsVigentes(pedido.estado).filter((i) => EN_COCINA.has(i.estado)) : []
+  const enCocina = order ? itemsVigentes(order.status).filter((i) => EN_COCINA.has(i.status)) : []
   const botonEnviar = (
     <Boton
-      variante="principal"
-      grande
-      icono="enviar"
+      variant="main"
+      large
+      icono="send"
       className="w-full"
-      disabled={faltan === 0}
-      onClick={enviar}
+      disabled={missingOnes === 0}
+      onClick={send}
     >
-      {faltan === 0 ? 'Enviar' : `Enviar ${faltan}`}
+      {missingOnes === 0 ? 'Enviar' : `Enviar ${missingOnes}`}
     </Boton>
   )
   // La precuenta, dividir y cobrar (tarea 1.6), en su pantalla.
-  const conProductos = pedido !== null && itemsVigentes(pedido.estado).length > 0
-  const irACuenta = () => pedido && navegar(`/cuenta?pedido=${pedido.estado.id}`)
+  const conProductos = order !== null && itemsVigentes(order.status).length > 0
+  const irACuenta = () => order && navegar(`/check?order=${order.status.id}`)
   const botonCuenta = (
-    <Boton variante="secundario" grande icono="recibo" className="w-full" onClick={irACuenta}>
+    <Boton variant="secondary" large icono="receipt" className="w-full" onClick={irACuenta}>
       Cuenta
     </Boton>
   )
@@ -651,31 +648,31 @@ export function TomaPedido() {
   )
   const ticket = (
     <Ticket
-      pedido={pedido}
-      comensales={comensales}
-      enSalon={canal === 'salon'}
+      order={order}
+      guests={guests}
+      enSalon={channel === 'dine_in'}
       alCambiarComensales={cambiarComensales}
       alTocarItem={(i) => setEditando(i.id)}
-      alSumar={(i, delta) => sumar(i.id, delta)}
-      alRetener={retener}
+      alSumar={(i, delta) => increment(i.id, delta)}
+      alRetener={hold}
       alMarchar={marchar}
-      alEntregar={puedeEntregar ? entregar : null}
+      alEntregar={puedeEntregar ? serve : null}
       alEditarNota={() => setEditandoNota(true)}
-      alAcciones={pedido || mesaId ? () => setAccion('menu') : null}
+      alAcciones={order || tableId ? () => setAccion('menu') : null}
     />
   )
 
   return (
-    <MarcoSala titulo={titulo} volver="/">
+    <MarcoSala titulo={titulo} back="/">
       <div className="mx-auto flex max-w-[96rem] gap-5 p-3 pb-28 md:p-5 md:pb-5">
         <section className="min-w-0 flex-1" aria-label="Carta">
-          {mesaId && candidatos.length > 1 && (
+          {tableId && candidatos.length > 1 && (
             <Grupo etiqueta="Pedidos de la mesa" className="mb-3 flex flex-wrap gap-2">
               {candidatos.map((p, i) => (
                 <Opcion
-                  key={p.estado.id}
-                  elegida={p.estado.id === elegidoId}
-                  alElegir={() => navegar(`/pedido?mesa=${mesaId}&pedido=${p.estado.id}`)}
+                  key={p.status.id}
+                  elegida={p.status.id === elegidoId}
+                  alElegir={() => navegar(`/order?table=${tableId}&order=${p.status.id}`)}
                 >
                   {`Pedido ${i + 1}`}
                 </Opcion>
@@ -687,7 +684,7 @@ export function TomaPedido() {
             <label className="relative min-w-0 flex-1">
               <span className="sr-only">Buscar en la carta</span>
               <Icono
-                nombre="buscar"
+                name="search"
                 className="absolute top-1/2 left-3 -translate-y-1/2 text-texto-suave"
               />
               <input
@@ -698,8 +695,8 @@ export function TomaPedido() {
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') setBusqueda('')
                   // Con una sola coincidencia, Enter la agrega (atajo de caja).
-                  if (e.key === 'Enter' && lista.length === 1 && lista[0]) {
-                    tocarProducto(lista[0])
+                  if (e.key === 'Enter' && list.length === 1 && list[0]) {
+                    tocarProducto(list[0])
                     setBusqueda('')
                   }
                 }}
@@ -713,7 +710,7 @@ export function TomaPedido() {
             </label>
             {puedeAgotar && (
               <Boton
-                variante={marcandoAgotados ? 'principal' : 'secundario'}
+                variant={marcandoAgotados ? 'main' : 'secondary'}
                 aria-pressed={marcandoAgotados}
                 onClick={() => setMarcandoAgotados(!marcandoAgotados)}
               >
@@ -749,30 +746,30 @@ export function TomaPedido() {
                   Lo más pedido
                 </Opcion>
               )}
-              {catalogo.categorias.map((c) => (
+              {catalog.categories.map((c) => (
                 <Opcion
                   key={c.id}
                   elegida={c.id === categoriaActual}
                   alElegir={() => setCategoria(c.id)}
                 >
-                  {c.nombre}
+                  {c.name}
                 </Opcion>
               ))}
             </Grupo>
           )}
 
           <ElegirPara
-            comensales={canal === 'salon' ? comensales : 0}
-            preguntarPersonas={canal === 'salon' && comensales === 0}
-            comensal={comensal}
-            curso={curso}
+            guests={channel === 'dine_in' ? guests : 0}
+            preguntarPersonas={channel === 'dine_in' && guests === 0}
+            guest={guest}
+            course={course}
             usarCursos={usarCursos}
             alElegirComensal={setComensal}
             alElegirCurso={setCurso}
-            alContarPersonas={(n) => cambiarComensales(n - comensales)}
+            alContarPersonas={(n) => cambiarComensales(n - guests)}
           />
 
-          {pedidos === null && (
+          {orders === null && (
             <p className="mt-3 text-texto-suave" role="status">
               Leyendo los pedidos de este equipo…
             </p>
@@ -780,48 +777,48 @@ export function TomaPedido() {
           {/* Las columnas salen del ancho de la carta, no de la pantalla: en tablet el panel del
               pedido le quita espacio. */}
           <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(10rem,1fr))]">
-            {lista.slice(0, RESULTADOS).map((p) => {
-              const cantidad = enPedido(p.id)
-              const sinStock = agotado(p)
+            {list.slice(0, RESULTADOS).map((p) => {
+              const quantity = enPedido(p.id)
+              const sinStock = soldOut(p)
               return (
                 <li key={p.id}>
                   <button
                     type="button"
                     // Hasta leer los pedidos no se sabe si la mesa ya tiene uno.
-                    disabled={pedidos === null}
+                    disabled={orders === null}
                     aria-label={[
-                      p.nombre,
+                      p.name,
                       sinStock
                         ? 'agotado'
-                        : p.variantes.length > 0
-                          ? `desde ${pesos(Math.min(...p.variantes.map((v) => v.precio)))}`
-                          : pesos(p.precio),
-                      ...(cantidad > 0 ? [`${cantidad} en el pedido`] : []),
+                        : p.variants.length > 0
+                          ? `desde ${pesos(Math.min(...p.variants.map((v) => v.price)))}`
+                          : pesos(p.price),
+                      ...(quantity > 0 ? [`${quantity} en el pedido`] : []),
                     ].join(', ')}
                     onClick={() => tocarProducto(p)}
                     className={`group flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition active:scale-[0.98] focus-visible:outline-3 focus-visible:outline-foco ${
                       sinStock
                         ? 'border-dashed border-alerta-fuerte bg-alerta-suave text-alerta-texto'
-                        : cantidad > 0
+                        : quantity > 0
                           ? 'border-accion-fuerte bg-superficie shadow-flota'
                           : 'border-linea bg-superficie hover:border-borde hover:shadow-flota'
                     }`}
                   >
                     <span
                       className={`relative flex w-full items-center justify-center ${
-                        p.foto
+                        p.photo
                           ? 'aspect-video bg-superficie-2 sm:aspect-[4/3]'
                           : 'h-14 bg-superficie-2/70 sm:h-20'
                       }`}
                     >
                       <FotoOIcono
-                        foto={p.foto ?? null}
+                        photo={p.photo ?? null}
                         icono={iconoDe(estacionDe.get(p.id) ?? '')}
                         apagada={sinStock}
                       />
-                      {cantidad > 0 && (
+                      {quantity > 0 && (
                         <span className="cifras absolute top-2 right-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-accion-fuerte px-2 text-sm font-bold text-white shadow-flota">
-                          {`×${cantidad}`}
+                          {`×${quantity}`}
                         </span>
                       )}
                       {sinStock && (
@@ -834,13 +831,13 @@ export function TomaPedido() {
                       <span
                         className={`line-clamp-2 font-semibold leading-snug ${sinStock ? 'line-through' : ''}`}
                       >
-                        {p.nombre}
+                        {p.name}
                       </span>
                       <span className="mt-auto flex items-center justify-between gap-2">
                         <span className="cifras text-lg font-bold">
-                          {p.variantes.length > 0
-                            ? `desde ${pesos(Math.min(...p.variantes.map((v) => v.precio)))}`
-                            : pesos(p.precio)}
+                          {p.variants.length > 0
+                            ? `desde ${pesos(Math.min(...p.variants.map((v) => v.price)))}`
+                            : pesos(p.price)}
                         </span>
                         {!sinStock &&
                           (pideOpciones(p) ? (
@@ -852,7 +849,7 @@ export function TomaPedido() {
                               aria-hidden="true"
                               className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accion-fuerte text-white transition group-hover:brightness-110"
                             >
-                              <Icono nombre="mas" className="size-5" />
+                              <Icono name="more" className="size-5" />
                             </span>
                           ))}
                       </span>
@@ -861,14 +858,14 @@ export function TomaPedido() {
                 </li>
               )
             })}
-            {lista.length === 0 && (
+            {list.length === 0 && (
               <li className="col-span-full p-6 text-center text-texto-suave">
                 {busqueda.trim() ? `No hay nada con «${busqueda}».` : 'No hay productos aquí.'}
               </li>
             )}
-            {lista.length > RESULTADOS && (
+            {list.length > RESULTADOS && (
               <li className="col-span-full p-3 text-center text-texto-suave">
-                {`Hay ${lista.length - RESULTADOS} más: escribe un poco más.`}
+                {`Hay ${list.length - RESULTADOS} más: escribe un poco más.`}
               </li>
             )}
           </ul>
@@ -878,8 +875,8 @@ export function TomaPedido() {
         <aside className="sticky top-21 hidden h-[calc(100dvh-6.5rem)] w-80 shrink-0 lg:w-96 flex-col overflow-hidden rounded-2xl border border-linea bg-superficie shadow-flota md:flex">
           <div className="flex items-center justify-between gap-2 border-b border-linea px-4 py-3">
             <h2 className="text-lg font-bold">{titulo}</h2>
-            {pedido?.estado.numeroDia && (
-              <span className="cifras text-sm text-texto-suave">{`Pedido #${pedido.estado.numeroDia}`}</span>
+            {order?.status.dayNumber && (
+              <span className="cifras text-sm text-texto-suave">{`Pedido #${order.status.dayNumber}`}</span>
             )}
           </div>
           {ticket}
@@ -890,24 +887,24 @@ export function TomaPedido() {
       {/* Celular: barra fija abajo, al alcance del pulgar. */}
       <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-linea bg-lateral p-3 shadow-flota md:hidden">
         <Boton
-          variante="secundario"
-          grande
+          variant="secondary"
+          large
           onClick={() => setVerPedido(true)}
           className="flex-1 flex-col gap-0! text-base! leading-tight"
         >
-          <span>{`Pedido (${pedido ? itemsVigentes(pedido.estado).reduce((n, i) => n + i.cantidad - i.cantidadAnulada, 0) : 0})`}</span>
-          <span className="cifras font-titulo text-lg">{pesos(pedido?.total ?? 0)}</span>
+          <span>{`Pedido (${order ? itemsVigentes(order.status).reduce((n, i) => n + i.quantity - i.voidedQuantity, 0) : 0})`}</span>
+          <span className="cifras font-titulo text-lg">{pesos(order?.total ?? 0)}</span>
         </Boton>
         {/* Con todo enviado, el pulgar entrega lo que está en cocina de una vez (ADR-015). */}
         <div className="flex-1">
-          {faltan === 0 && puedeEntregar && enCocina.length > 0 ? (
+          {missingOnes === 0 && puedeEntregar && enCocina.length > 0 ? (
             <Boton
-              variante="exito"
-              grande
-              icono="servir"
+              variant="success"
+              large
+              icono="serve"
               className="w-full"
               onClick={() =>
-                entregar(
+                serve(
                   enCocina.map((i) => i.id),
                   `${unidadesDe(enCocina)} ${unidadesDe(enCocina) === 1 ? 'producto' : 'productos'}`,
                 )
@@ -915,7 +912,7 @@ export function TomaPedido() {
             >
               {`Entregar ${unidadesDe(enCocina)}`}
             </Boton>
-          ) : faltan === 0 && conProductos ? (
+          ) : missingOnes === 0 && conProductos ? (
             botonCuenta
           ) : (
             botonEnviar
@@ -924,7 +921,7 @@ export function TomaPedido() {
       </div>
 
       <PanelLateral
-        abierto={verPedido}
+        opened={verPedido}
         titulo={`Pedido · ${titulo}`}
         alCerrar={() => setVerPedido(false)}
         pie={pieTicket}
@@ -933,113 +930,113 @@ export function TomaPedido() {
       </PanelLateral>
 
       <PanelProducto
-        producto={elegido}
+        product={elegido}
         agotados={agotados}
         alCerrar={() => setElegido(null)}
-        alAgregar={(varianteId, elegidas, extras) => {
-          if (elegido) agregar(elegido, varianteId, elegidas, extras)
+        alAgregar={(variantId, elegidas, extras) => {
+          if (elegido) add(elegido, variantId, elegidas, extras)
           setElegido(null)
         }}
       />
 
       <PanelAgotar
-        producto={agotando}
+        product={agotando}
         agotados={agotados}
         alCerrar={() => setAgotando(null)}
-        alCambiar={(varianteId, agotar) =>
-          agotando && alternarAgotado(agotando, varianteId, agotar)
+        onChange={(variantId, markSoldOut) =>
+          agotando && alternarAgotado(agotando, variantId, markSoldOut)
         }
       />
 
       {editandoNota && (
         <PanelNotaPedido
-          nota={pedido?.estado.notas ?? null}
+          note={order?.status.notes ?? null}
           alCerrar={() => setEditandoNota(false)}
-          alGuardar={(nota) => {
-            cambiarNotaPedido(nota)
+          onSave={(note) => {
+            cambiarNotaPedido(note)
             setEditandoNota(false)
           }}
         />
       )}
 
-      {accion === 'menu' && (
+      {action === 'menu' && (
         <PanelAccionesPedido
-          conMesa={pedido ? pedido.estado.mesaId !== null : !!mesaId}
-          conPedido={!!pedido}
+          withTable={order ? order.status.tableId !== null : !!tableId}
+          withOrder={!!order}
           alCerrar={() => setAccion(null)}
           alElegir={setAccion}
         />
       )}
-      {pedido && accion === 'mover' && (
+      {order && action === 'move' && (
         <PanelMover
-          pedido={pedido}
-          catalogo={catalogo}
-          ocupadas={ocupadas}
+          order={order}
+          catalog={catalog}
+          occupiedIds={occupiedIds}
           enLinea={enLinea}
           alCerrar={() => setAccion(null)}
           alMover={moverA}
         />
       )}
-      {pedido?.estado.mesaId && accion === 'mesa' && (
+      {order?.status.tableId && action === 'table' && (
         <PanelCambiarMesa
           enLinea={enLinea}
-          catalogo={catalogo}
-          ocupadas={ocupadas}
-          actual={[pedido.estado.mesaId, ...pedido.estado.mesasUnidas]}
+          catalog={catalog}
+          occupiedIds={occupiedIds}
+          current={[order.status.tableId, ...order.status.mergedTables]}
           alCerrar={() => setAccion(null)}
-          alCambiar={cambiarDeMesa}
+          onChange={cambiarDeMesa}
         />
       )}
-      {(pedido?.estado.mesaId ?? mesaId) && accion === 'unir' && (
+      {(order?.status.tableId ?? tableId) && action === 'merge' && (
         <PanelUnirMesas
           enLinea={enLinea}
-          catalogo={catalogo}
-          ocupadas={ocupadas}
-          mesaId={(pedido?.estado.mesaId ?? mesaId) as string}
-          unidas={pedido?.estado.mesasUnidas ?? []}
+          catalog={catalog}
+          occupiedIds={occupiedIds}
+          tableId={(order?.status.tableId ?? tableId) as string}
+          merged={order?.status.mergedTables ?? []}
           alCerrar={() => setAccion(null)}
-          alGuardar={unirMesas}
+          onSave={unirMesas}
         />
       )}
-      {pedido && accion === 'cancelar' && (
+      {order && action === 'cancel' && (
         <PanelCancelar
-          mesa={titulo}
-          conPagos={Object.values(pedido.estado.pagos).some((p) => !p.anulado)}
-          conPermiso={permisos.includes('cancelar_pedido')}
+          table={titulo}
+          withPayments={Object.values(order.status.payments).some((p) => !p.voided)}
+          conPermiso={permissions.includes('cancel_order')}
           enLinea={enLinea}
-          enCocina={itemsVigentes(pedido.estado).filter((i) => EN_COCINA.has(i.estado)).length}
+          enCocina={itemsVigentes(order.status).filter((i) => EN_COCINA.has(i.status)).length}
           alCerrar={() => setAccion(null)}
           alCancelar={cancelarPedido}
         />
       )}
-      {pedido && anulando && pedido.estado.items[anulando] && (
+      {order && anulando && order.status.items[anulando] && (
         <PanelAnular
-          item={pedido.estado.items[anulando] as ItemPedido}
-          conPermiso={permisos.includes('anular_item_enviado')}
+          item={order.status.items[anulando] as OrderItem}
+          conPermiso={permissions.includes('void_sent_item')}
           enLinea={enLinea}
           alCerrar={() => setAnulando(null)}
-          alAnular={(d) => anular(anulando, d)}
+          onVoid={(d) => voidItem(anulando, d)}
         />
       )}
 
-      {pedido && itemEditado && !anulando && (
+      {order && itemEditado && !anulando && (
         <PanelItem
           key={itemEditado.id}
           item={itemEditado}
-          comensales={comensales}
+          guests={guests}
           alCerrar={() => setEditando(null)}
-          enSalon={canal === 'salon'}
-          alCambiar={(cambio) => cambiarItem(itemEditado.id, cambio)}
-          alSumar={(delta) => sumar(itemEditado.id, delta)}
+          enSalon={channel === 'dine_in'}
+          onChange={(change) => cambiarItem(itemEditado.id, change)}
+          alSumar={(delta) => increment(itemEditado.id, delta)}
           usarCursos={usarCursos}
-          alAnular={() => setAnulando(itemEditado.id)}
-          alCambiarNotaEnviada={(notas) => cambiarNotaEnviada(itemEditado.id, notas)}
+          onVoid={() => setAnulando(itemEditado.id)}
+          alCambiarNotaEnviada={(notes) => cambiarNotaEnviada(itemEditado.id, notes)}
           alDuplicar={() => {
-            duplicar(itemEditado.id)
+            duplicateSelected(itemEditado.id)
             setEditando(null)
           }}
           alQuitar={() => {
-            quitar(itemEditado.id)
+            remove(itemEditado.id)
             setEditando(null)
           }}
         />
@@ -1050,19 +1047,19 @@ export function TomaPedido() {
 
 /** La foto del producto; si no tiene, o no carga (el hub no responde), su ícono. */
 function FotoOIcono({
-  foto,
+  photo,
   icono,
   apagada,
 }: {
-  foto: string | null
+  photo: string | null
   icono: NombreIcono
   apagada: boolean
 }) {
-  const [rota, setRota] = useState(false)
-  if (foto && !rota)
+  const [broken, setRota] = useState(false)
+  if (photo && !broken)
     return (
       <img
-        src={foto}
+        src={photo}
         alt=""
         loading="lazy"
         onError={() => setRota(true)}
@@ -1071,44 +1068,41 @@ function FotoOIcono({
     )
   return (
     <Icono
-      nombre={icono}
+      name={icono}
       className={`size-9 ${apagada ? 'text-alerta-texto' : 'text-texto-suave'}`}
     />
   )
 }
 
 /** Sin foto, el producto muestra un ícono: copa si sale por la barra, plato si sale por cocina. */
-const iconoDe = (estacion: string): NombreIcono =>
-  /barra|bar|bebida/i.test(estacion) ? 'copa' : 'plato'
+const iconoDe = (station: string): NombreIcono =>
+  /barra|bar|bebida/i.test(station) ? 'glass' : 'dish'
 
 const nombreComensal = (c: number | null) => (c === null ? 'Mesa' : `P${c}`)
 const etiquetaComensal = (c: number | null) =>
   c === null ? 'Mesa, para todos' : `P${c}, persona ${c}`
-const personasDe = (comensales: number) => [
-  null,
-  ...Array.from({ length: comensales }, (_, i) => i + 1),
-]
+const personasDe = (guests: number) => [null, ...Array.from({ length: guests }, (_, i) => i + 1)]
 /** Lo que se toca más al sentar una mesa; más de 6 se sube con + en el pedido. */
 const PERSONAS_RAPIDAS = [1, 2, 3, 4, 5, 6]
 
 /** Para quién y en qué curso va lo que se agregue: vale para lo siguiente. */
 function ElegirPara({
-  comensales,
+  guests,
   preguntarPersonas,
-  comensal,
-  curso,
+  guest,
+  course,
   usarCursos,
   alElegirComensal,
   alElegirCurso,
   alContarPersonas,
 }: {
-  comensales: number
+  guests: number
   preguntarPersonas: boolean
-  comensal: number | null
-  curso: Curso | null
+  guest: number | null
+  course: Course | null
   usarCursos: boolean
   alElegirComensal: (c: number | null) => void
-  alElegirCurso: (c: Curso | null) => void
+  alElegirCurso: (c: Course | null) => void
   alContarPersonas: (n: number) => void
 }) {
   // En el celular cada fila es una sola línea que se desliza; en pantallas anchas cabe todo.
@@ -1125,13 +1119,13 @@ function ElegirPara({
           ))}
         </Grupo>
       )}
-      {comensales > 0 && (
+      {guests > 0 && (
         <Grupo etiqueta="Para quién es lo que agregues" className={fila}>
           <span className="shrink-0 font-semibold text-texto-suave">Para</span>
-          {personasDe(comensales).map((c) => (
+          {personasDe(guests).map((c) => (
             <Opcion
-              key={c ?? 'mesa'}
-              elegida={comensal === c}
+              key={c ?? 'table'}
+              elegida={guest === c}
               alElegir={() => alElegirComensal(c)}
               etiqueta={etiquetaComensal(c)}
             >
@@ -1143,13 +1137,13 @@ function ElegirPara({
       {usarCursos && (
         <Grupo etiqueta="En qué curso va lo que agregues" className={fila}>
           <span className="shrink-0 font-semibold text-texto-suave">Curso</span>
-          {CURSOS.map((c) => (
+          {COURSES.map((c) => (
             <Opcion
-              key={c.curso ?? 'ninguno'}
-              elegida={curso === c.curso}
-              alElegir={() => alElegirCurso(c.curso)}
+              key={c.course ?? 'ninguno'}
+              elegida={course === c.course}
+              alElegir={() => alElegirCurso(c.course)}
             >
-              {c.nombre}
+              {c.name}
             </Opcion>
           ))}
         </Grupo>
@@ -1159,8 +1153,8 @@ function ElegirPara({
 }
 
 function Ticket({
-  pedido,
-  comensales,
+  order,
+  guests,
   enSalon,
   alCambiarComensales,
   alTocarItem,
@@ -1171,51 +1165,51 @@ function Ticket({
   alEditarNota,
   alAcciones,
 }: {
-  pedido: PedidoVisible | null
-  comensales: number
+  order: PedidoVisible | null
+  guests: number
   enSalon: boolean
   /** Una persona más (1) o menos (-1). */
   alCambiarComensales: (delta: number) => void
-  alTocarItem: (item: ItemPedido) => void
-  alSumar: (item: ItemPedido, delta: number) => void
-  alRetener: (curso: Curso) => void
-  alMarchar: (curso: Curso) => void
+  alTocarItem: (item: OrderItem) => void
+  alSumar: (item: OrderItem, delta: number) => void
+  alRetener: (course: Course) => void
+  alMarchar: (course: Course) => void
   /** Sin el permiso de marcar, no se ven los botones de entregar. */
   alEntregar: ((ids: string[], que: string) => void) | null
   alEditarNota: () => void
   /** Cambiar de mesa, unir, mover y cancelar; sin pedido todavía, nada. */
   alAcciones: (() => void) | null
 }) {
-  const items = pedido ? itemsVigentes(pedido.estado) : []
-  const porEntregar = items.filter((i) => EN_COCINA.has(i.estado))
-  const porCurso = CURSOS.map((c) => ({
+  const items = order ? itemsVigentes(order.status) : []
+  const porEntregar = items.filter((i) => EN_COCINA.has(i.status))
+  const porCurso = COURSES.map((c) => ({
     ...c,
-    items: items.filter((i) => i.curso === c.curso),
+    items: items.filter((i) => i.course === c.course),
   })).filter((c) => c.items.length > 0)
-  const esperan = items.filter((i) => i.estado === 'retenido').length
+  const esperan = items.filter((i) => i.status === 'held').length
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Fuera del salón no se cuentan personas. */}
       {enSalon && (
         <div className="flex items-center gap-2 border-b border-linea p-3">
-          <Icono nombre="personas" />
+          <Icono name="people" />
           <span className="font-semibold">
-            {comensales === 0
+            {guests === 0
               ? 'Sin contar personas'
-              : `${comensales} ${comensales === 1 ? 'persona' : 'personas'}`}
+              : `${guests} ${guests === 1 ? 'persona' : 'personas'}`}
           </span>
           <Boton
-            variante="fantasma"
-            icono="menos"
+            variant="ghost"
+            icono="minus"
             aria-label="Una persona menos"
-            disabled={comensales <= 0}
+            disabled={guests <= 0}
             onClick={() => alCambiarComensales(-1)}
           />
           <Boton
-            variante="fantasma"
-            icono="mas"
+            variant="ghost"
+            icono="more"
             aria-label="Una persona más"
-            disabled={comensales >= 200}
+            disabled={guests >= 200}
             onClick={() => alCambiarComensales(1)}
           />
         </div>
@@ -1226,7 +1220,7 @@ function Ticket({
           onClick={alAcciones}
           className="flex min-h-12 w-full items-center gap-2 border-b border-linea px-4 py-2 text-left font-semibold hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
         >
-          <Icono nombre="mesa" className="size-5 shrink-0" />
+          <Icono name="table" className="size-5 shrink-0" />
           Mesa y pedido
           <span className="ml-auto text-sm font-normal text-texto-suave">
             Cambiar, unir, mover, cancelar
@@ -1238,11 +1232,11 @@ function Ticket({
         onClick={alEditarNota}
         className="flex min-h-12 w-full items-start gap-2 border-b border-linea px-4 py-2 text-left hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
       >
-        <Icono nombre="lapiz" className="mt-0.5 size-5 shrink-0" />
-        {pedido?.estado.notas ? (
+        <Icono name="pencil" className="mt-0.5 size-5 shrink-0" />
+        {order?.status.notes ? (
           <span>
             <span className="block text-sm text-texto-suave">Nota del pedido</span>
-            <span className="font-semibold">{pedido.estado.notas}</span>
+            <span className="font-semibold">{order.status.notes}</span>
           </span>
         ) : (
           <span className="font-semibold text-accion-texto">Nota del pedido</span>
@@ -1252,27 +1246,27 @@ function Ticket({
         {items.length === 0 && (
           <p className="p-6 text-center text-texto-suave">Toca un producto para agregarlo.</p>
         )}
-        {pedido &&
+        {order &&
           porCurso.map((c) => {
-            const retenidos = c.items.filter((i) => i.estado === 'retenido').length
-            const pendientes = c.items.filter((i) => i.estado === 'pendiente').length
+            const retenidos = c.items.filter((i) => i.status === 'held').length
+            const pendingList = c.items.filter((i) => i.status === 'pending').length
             return (
-              <section key={c.curso ?? 'ninguno'} aria-label={c.nombre}>
-                {(porCurso.length > 1 || c.curso !== null) && (
+              <section key={c.course ?? 'ninguno'} aria-label={c.name}>
+                {(porCurso.length > 1 || c.course !== null) && (
                   <div className="flex min-h-12 items-center justify-between gap-2 bg-superficie-2/60 px-4">
                     <span className="font-semibold">
-                      {c.nombre}
+                      {c.name}
                       {retenidos > 0 && (
                         <span className="font-normal text-proceso-texto"> · espera</span>
                       )}
                     </span>
-                    {c.curso !== null && retenidos > 0 && (
-                      <Boton variante="principal" onClick={() => alMarchar(c.curso as Curso)}>
+                    {c.course !== null && retenidos > 0 && (
+                      <Boton variant="main" onClick={() => alMarchar(c.course as Course)}>
                         {`Marchar ${retenidos}`}
                       </Boton>
                     )}
-                    {c.curso !== null && retenidos === 0 && pendientes > 0 && (
-                      <Boton onClick={() => alRetener(c.curso as Curso)}>Retener</Boton>
+                    {c.course !== null && retenidos === 0 && pendingList > 0 && (
+                      <Boton onClick={() => alRetener(c.course as Course)}>Retener</Boton>
                     )}
                   </div>
                 )}
@@ -1280,13 +1274,13 @@ function Ticket({
                   {c.items.map((i) => (
                     <LineaTicket
                       key={i.id}
-                      pedido={pedido}
+                      order={order}
                       item={i}
                       alTocar={() => alTocarItem(i)}
                       alSumar={(delta) => alSumar(i, delta)}
                       alEntregar={
-                        alEntregar && EN_COCINA.has(i.estado)
-                          ? () => alEntregar([i.id], i.nombre)
+                        alEntregar && EN_COCINA.has(i.status)
+                          ? () => alEntregar([i.id], i.name)
                           : null
                       }
                     />
@@ -1299,7 +1293,7 @@ function Ticket({
       {alEntregar && porEntregar.length > 1 && (
         <div className="border-t border-linea px-3 pt-3">
           <Boton
-            icono="servir"
+            icono="serve"
             className="w-full"
             onClick={() =>
               alEntregar(
@@ -1321,12 +1315,12 @@ function Ticket({
         <div className="flex justify-between text-sm text-texto-suave">
           <span>Productos</span>
           <span className="cifras">
-            {items.reduce((total, i) => total + i.cantidad - i.cantidadAnulada, 0)}
+            {items.reduce((total, i) => total + i.quantity - i.voidedQuantity, 0)}
           </span>
         </div>
         <div className="cifras flex items-baseline justify-between">
           <span className="text-lg font-semibold">Total</span>
-          <span className="text-2xl font-bold">{pesos(pedido?.total ?? 0)}</span>
+          <span className="text-2xl font-bold">{pesos(order?.total ?? 0)}</span>
         </div>
       </div>
     </div>
@@ -1334,20 +1328,20 @@ function Ticket({
 }
 
 function LineaTicket({
-  pedido,
+  order,
   item: i,
   alTocar,
   alSumar,
   alEntregar,
 }: {
-  pedido: PedidoVisible
-  item: ItemPedido
+  order: PedidoVisible
+  item: OrderItem
   alTocar: () => void
   alSumar: (delta: number) => void
   alEntregar: (() => void) | null
 }) {
-  const sinEnviar = i.estado === 'pendiente' || i.estado === 'retenido'
-  const porConfirmar = pedido.itemsPorConfirmar.has(i.id)
+  const sinEnviar = i.status === 'pending' || i.status === 'held'
+  const porConfirmar = order.itemsPorConfirmar.has(i.id)
   return (
     <li className="flex min-h-14 items-center gap-1 border-b border-linea pr-2">
       <button
@@ -1355,59 +1349,59 @@ function LineaTicket({
         onClick={alTocar}
         className="flex min-h-14 flex-1 items-start gap-3 px-3 py-2 text-left hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
       >
-        <span className="cifras w-6 font-semibold">{i.cantidad - i.cantidadAnulada}</span>
+        <span className="cifras w-6 font-semibold">{i.quantity - i.voidedQuantity}</span>
         <span className="flex-1">
-          <span className="font-semibold">{i.nombre}</span>
-          {i.modificadores.length > 0 && (
+          <span className="font-semibold">{i.name}</span>
+          {i.modifiers.length > 0 && (
             <span className="block text-sm font-semibold text-proceso-texto">
-              {i.modificadores.map((m) => m.nombre).join(' · ')}
+              {i.modifiers.map((m) => m.name).join(' · ')}
             </span>
           )}
-          {i.notas && <span className="block text-sm font-semibold">«{i.notas}»</span>}
-          {sinEnviar && !i.notas && (
+          {i.notes && <span className="block text-sm font-semibold">«{i.notes}»</span>}
+          {sinEnviar && !i.notes && (
             <span className="flex items-center gap-1 whitespace-nowrap text-sm text-accion-texto">
-              <Icono nombre="lapiz" className="size-4" />
+              <Icono name="pencil" className="size-4" />
               Toca para nota
             </span>
           )}
           <span className="flex flex-wrap items-center gap-1 text-sm text-texto-suave">
             {[
-              ...(i.comensal === null ? [] : [nombreComensal(i.comensal)]),
-              TEXTO_ESTADO[i.estado] ?? i.estado,
+              ...(i.guest === null ? [] : [nombreComensal(i.guest)]),
+              TEXTO_ESTADO[i.status] ?? i.status,
             ].join(' · ')}
             {porConfirmar && (
               <>
                 {' · '}
-                <Icono nombre="reloj" className="size-4" />
+                <Icono name="clock" className="size-4" />
                 sin confirmar
               </>
             )}
           </span>
         </span>
-        <span className="cifras">{pesos(totalesItem(pedido.estado, i).neto)}</span>
+        <span className="cifras">{pesos(itemTotals(order.status, i).net)}</span>
       </button>
       {sinEnviar && (
         <>
           <Boton
-            variante="fantasma"
-            icono="menos"
-            aria-label={i.cantidad === 1 ? `Quitar ${i.nombre}` : `Uno menos de ${i.nombre}`}
+            variant="ghost"
+            icono="minus"
+            aria-label={i.quantity === 1 ? `Quitar ${i.name}` : `Uno menos de ${i.name}`}
             onClick={() => alSumar(-1)}
           />
           <Boton
-            variante="fantasma"
-            icono="mas"
-            aria-label={`Uno más de ${i.nombre}`}
-            disabled={i.cantidad >= MAXIMO_LINEA}
+            variant="ghost"
+            icono="more"
+            aria-label={`Uno más de ${i.name}`}
+            disabled={i.quantity >= MAXIMO_LINEA}
             onClick={() => alSumar(1)}
           />
         </>
       )}
       {alEntregar && (
         <Boton
-          variante={i.estado === 'listo' ? 'exito' : 'secundario'}
-          icono="servir"
-          aria-label={`Entregar: ${i.nombre}`}
+          variant={i.status === 'ready' ? 'success' : 'secondary'}
+          icono="serve"
+          aria-label={`Entregar: ${i.name}`}
           className="px-3"
           onClick={alEntregar}
         >
@@ -1418,7 +1412,7 @@ function LineaTicket({
   )
 }
 
-function Seccion({ titulo, children }: { titulo: string; children: ReactNode }) {
+function Section({ titulo, children }: { titulo: string; children: ReactNode }) {
   return (
     <div className="mb-4 flex flex-col gap-2">
       <p className="font-semibold">{titulo}</p>
@@ -1427,29 +1421,29 @@ function Seccion({ titulo, children }: { titulo: string; children: ReactNode }) 
   )
 }
 
-function Cantidad({
-  valor,
-  alCambiar,
-  minimo = 1,
+function Quantity({
+  value,
+  onChange,
+  minimum = 1,
 }: {
-  valor: number
-  alCambiar: (n: number) => void
-  minimo?: number
+  value: number
+  onChange: (n: number) => void
+  minimum?: number
 }) {
   return (
     <div className="flex items-center gap-2">
       <Boton
-        icono="menos"
+        icono="minus"
         aria-label="Uno menos"
-        disabled={valor <= minimo}
-        onClick={() => alCambiar(valor - 1)}
+        disabled={value <= minimum}
+        onClick={() => onChange(value - 1)}
       />
-      <output className="cifras w-10 text-center text-xl font-semibold">{valor}</output>
+      <output className="cifras w-10 text-center text-xl font-semibold">{value}</output>
       <Boton
-        icono="mas"
+        icono="more"
         aria-label="Uno más"
-        disabled={valor >= MAXIMO_LINEA}
-        onClick={() => alCambiar(valor + 1)}
+        disabled={value >= MAXIMO_LINEA}
+        onClick={() => onChange(value + 1)}
       />
     </div>
   )
@@ -1463,150 +1457,150 @@ const claseNota =
  * lo agrega.
  */
 function PanelProducto({
-  producto,
+  product,
   agotados,
   alCerrar,
   alAgregar,
 }: {
-  producto: ProductoCatalogo | null
+  product: ProductoCatalogo | null
   agotados: Set<string>
   alCerrar: () => void
   alAgregar: (
-    varianteId: string | null,
+    variantId: string | null,
     elegidas: Record<string, string[]>,
-    extras: { cantidad: number; notas: string },
+    extras: { quantity: number; notes: string },
   ) => void
 }) {
-  const [varianteId, setVarianteId] = useState<string | null>(null)
+  const [variantId, setVarianteId] = useState<string | null>(null)
   const [elegidas, setElegidas] = useState<Record<string, string[]>>({})
-  const [cantidad, setCantidad] = useState(1)
-  const [notas, setNotas] = useState('')
+  const [quantity, setCantidad] = useState(1)
+  const [notes, setNotas] = useState('')
   const [abiertoPara, setAbiertoPara] = useState<string | null>(null)
 
   // Al abrir con otro producto, todo empieza de cero.
-  if (producto && abiertoPara !== producto.id) {
-    setAbiertoPara(producto.id)
+  if (product && abiertoPara !== product.id) {
+    setAbiertoPara(product.id)
     setVarianteId(null)
     setElegidas({})
     setCantidad(1)
     setNotas('')
   }
-  if (!producto) return null
+  if (!product) return null
 
-  const [unico, ...otros] = producto.grupos
+  const [unico, ...others] = product.groups
   const unaSola =
-    (producto.variantes.length > 0 && !unico) ||
-    (producto.variantes.length === 0 &&
-      otros.length === 0 &&
-      unico?.minimo === 1 &&
-      unico.maximo === 1)
-  const faltan = faltaElegir(producto, varianteId, elegidas)
-  const precio = precioElegido(producto, varianteId, elegidas)
-  const varianteAgotada = (id: string) => agotados.has(claveAgotado(producto.id, id))
+    (product.variants.length > 0 && !unico) ||
+    (product.variants.length === 0 &&
+      others.length === 0 &&
+      unico?.minimum === 1 &&
+      unico.maximum === 1)
+  const missingOnes = faltaElegir(product, variantId, elegidas)
+  const price = precioElegido(product, variantId, elegidas)
+  const varianteAgotada = (id: string) => agotados.has(claveAgotado(product.id, id))
 
-  const cerrar = () => {
+  const close = () => {
     setAbiertoPara(null)
     alCerrar()
   }
   const agregarCon = (v: string | null, e: Record<string, string[]>) => {
     setAbiertoPara(null)
-    alAgregar(v, e, { cantidad, notas })
+    alAgregar(v, e, { quantity, notes })
   }
-  const tocarOpcion = (grupoId: string, maximo: number, opcionId: string) => {
+  const tocarOpcion = (grupoId: string, maximum: number, opcionId: string) => {
     const actuales = elegidas[grupoId] ?? []
-    const nuevas = actuales.includes(opcionId)
+    const newOnes = actuales.includes(opcionId)
       ? actuales.filter((o) => o !== opcionId)
-      : maximo === 1
+      : maximum === 1
         ? [opcionId]
-        : actuales.length < maximo
+        : actuales.length < maximum
           ? [...actuales, opcionId]
           : actuales
-    const todas = { ...elegidas, [grupoId]: nuevas }
-    if (unaSola) agregarCon(null, todas)
-    else setElegidas(todas)
+    const allRows = { ...elegidas, [grupoId]: newOnes }
+    if (unaSola) agregarCon(null, allRows)
+    else setElegidas(allRows)
   }
 
   return (
     <PanelLateral
-      abierto
-      titulo={producto.nombre}
-      alCerrar={cerrar}
+      opened
+      titulo={product.name}
+      alCerrar={close}
       pie={
         <Boton
-          variante="principal"
-          grande
+          variant="main"
+          large
           className="w-full"
-          disabled={faltan.length > 0}
-          onClick={() => agregarCon(varianteId, elegidas)}
+          disabled={missingOnes.length > 0}
+          onClick={() => agregarCon(variantId, elegidas)}
         >
-          {faltan.length > 0
-            ? `Elige ${faltan[0]}`
-            : `Agregar ${cantidad > 1 ? `${cantidad} · ` : '· '}${pesos(precio * cantidad)}`}
+          {missingOnes.length > 0
+            ? `Elige ${missingOnes[0]}`
+            : `Agregar ${quantity > 1 ? `${quantity} · ` : '· '}${pesos(price * quantity)}`}
         </Boton>
       }
     >
-      {producto.descripcion && <p className="mb-4 text-texto-suave">{producto.descripcion}</p>}
+      {product.description && <p className="mb-4 text-texto-suave">{product.description}</p>}
       {unaSola && (
         <p className="mb-3 text-texto-suave">
           Toca una opción y queda agregada. Si quieres cantidad o nota, cámbialas antes.
         </p>
       )}
-      {producto.variantes.length > 0 && (
+      {product.variants.length > 0 && (
         <Grupo etiqueta="Tamaño" className="mb-4 flex flex-col gap-2">
           <p className="font-semibold">Tamaño</p>
-          {producto.variantes.map((v) =>
+          {product.variants.map((v) =>
             varianteAgotada(v.id) ? (
               <p
                 key={v.id}
                 className="flex min-h-14 items-center rounded-xl border-2 border-dashed border-alerta-fuerte px-3 text-alerta-texto"
               >
-                {`${v.nombre} · agotado`}
+                {`${v.name} · agotado`}
               </p>
             ) : (
               <Opcion
                 key={v.id}
-                forma="tarjeta"
-                elegida={v.id === varianteId}
-                detalle={pesos(v.precio)}
+                shape="card"
+                elegida={v.id === variantId}
+                detalle={pesos(v.price)}
                 alElegir={() => (unaSola ? agregarCon(v.id, elegidas) : setVarianteId(v.id))}
               >
-                {v.nombre}
+                {v.name}
               </Opcion>
             ),
           )}
         </Grupo>
       )}
-      {producto.grupos.map((g) => (
-        <Grupo key={g.id} etiqueta={g.nombre} className="mb-4 flex flex-col gap-2">
+      {product.groups.map((g) => (
+        <Grupo key={g.id} etiqueta={g.name} className="mb-4 flex flex-col gap-2">
           <p className="font-semibold">
-            {g.nombre}
-            {g.minimo > 0 && <span className="font-normal text-texto-suave"> (obligatorio)</span>}
-            {g.maximo > 1 && (
-              <span className="font-normal text-texto-suave">{` · hasta ${g.maximo}`}</span>
+            {g.name}
+            {g.minimum > 0 && <span className="font-normal text-texto-suave"> (obligatorio)</span>}
+            {g.maximum > 1 && (
+              <span className="font-normal text-texto-suave">{` · hasta ${g.maximum}`}</span>
             )}
           </p>
-          {g.opciones.map((o) => (
+          {g.options.map((o) => (
             <Opcion
               key={o.id}
-              forma="tarjeta"
+              shape="card"
               elegida={elegidas[g.id]?.includes(o.id) ?? false}
-              detalle={o.precioExtra > 0 ? `+ ${pesos(o.precioExtra)}` : undefined}
-              alElegir={() => tocarOpcion(g.id, g.maximo, o.id)}
+              detalle={o.extraPrice > 0 ? `+ ${pesos(o.extraPrice)}` : undefined}
+              alElegir={() => tocarOpcion(g.id, g.maximum, o.id)}
             >
-              {o.nombre}
+              {o.name}
             </Opcion>
           ))}
         </Grupo>
       ))}
-      <Seccion titulo="Cantidad">
-        <Cantidad valor={cantidad} alCambiar={setCantidad} />
-      </Seccion>
+      <Section titulo="Cantidad">
+        <Quantity value={quantity} onChange={setCantidad} />
+      </Section>
       <label className="flex flex-col gap-1">
         <span className="font-semibold">Nota para cocina (opcional)</span>
         <textarea
           rows={2}
           maxLength={200}
-          value={notas}
+          value={notes}
           placeholder="Sin cebolla, salsa aparte…"
           onChange={(e) => setNotas(e.target.value)}
           className={claseNota}
@@ -1619,67 +1613,67 @@ function PanelProducto({
 /** Una línea del pedido: cantidad, para quién, curso y nota si aún no se envió; duplicar o quitar. */
 function PanelItem({
   item,
-  comensales,
+  guests,
   enSalon,
   alCerrar,
-  alCambiar,
+  onChange,
   alSumar,
   usarCursos,
-  alAnular,
+  onVoid,
   alCambiarNotaEnviada,
   alDuplicar,
   alQuitar,
 }: {
-  item: ItemPedido
-  comensales: number
+  item: OrderItem
+  guests: number
   enSalon: boolean
   usarCursos: boolean
   alCerrar: () => void
-  alCambiar: (cambio: {
-    comensal?: number | null
-    curso?: Curso | null
-    notas?: string | null
+  onChange: (change: {
+    guest?: number | null
+    course?: Course | null
+    notes?: string | null
   }) => void
   alSumar: (delta: number) => void
   /** Ya enviado: anular con motivo (y PIN si hace falta). */
-  alAnular: () => void
+  onVoid: () => void
   /** Ya enviado: cambiar su nota; la cocina recibe «CAMBIO». */
-  alCambiarNotaEnviada: (notas: string | null) => void
+  alCambiarNotaEnviada: (notes: string | null) => void
   alDuplicar: () => void
   alQuitar: () => void
 }) {
-  const sinEnviar = item.estado === 'pendiente' || item.estado === 'retenido'
-  const [notas, setNotas] = useState(item.notas ?? '')
+  const sinEnviar = item.status === 'pending' || item.status === 'held'
+  const [notes, setNotas] = useState(item.notes ?? '')
   /**
    * La nota se aplica al cerrar el panel (o al elegir persona o curso). Si es para una sola
    * unidad, se escribe así en la nota («1 sin hielo»): el dueño lo prefiere a separar la línea.
    */
   const guardarNota = () => {
-    const nueva = notas.trim() || null
-    if (nueva === item.notas) return
-    if (sinEnviar) alCambiar({ notas: nueva })
+    const newOne = notes.trim() || null
+    if (newOne === item.notes) return
+    if (sinEnviar) onChange({ notes: newOne })
     // Ya enviado y sin entregar: lo escrito no se pierde al cerrar, va como «CAMBIO» a cocina.
-    else if (item.estado !== 'entregado' && item.estado !== 'anulado') alCambiarNotaEnviada(nueva)
+    else if (item.status !== 'served' && item.status !== 'voided') alCambiarNotaEnviada(newOne)
   }
-  const cerrar = () => {
+  const close = () => {
     guardarNota()
     alCerrar()
   }
   // Para quién y curso son una sola elección: al tocarla, el panel se cierra.
-  const elegir = (cambio: { comensal?: number | null; curso?: Curso | null }) => {
+  const select = (change: { guest?: number | null; course?: Course | null }) => {
     guardarNota()
-    alCambiar(cambio)
+    onChange(change)
     alCerrar()
   }
   return (
     <PanelLateral
-      abierto
-      titulo={item.nombre}
-      alCerrar={cerrar}
+      opened
+      titulo={item.name}
+      alCerrar={close}
       pie={
         <div className="flex gap-2">
           <Boton
-            grande
+            large
             className="flex-1"
             onClick={() => {
               guardarNota()
@@ -1689,24 +1683,24 @@ function PanelItem({
             Duplicar
           </Boton>
           {sinEnviar && (
-            <Boton grande className="flex-1" onClick={alQuitar}>
+            <Boton large className="flex-1" onClick={alQuitar}>
               Quitar
             </Boton>
           )}
-          {!sinEnviar && item.estado !== 'anulado' && (
-            <Boton variante="peligro" grande className="flex-1" onClick={alAnular}>
+          {!sinEnviar && item.status !== 'voided' && (
+            <Boton variant="danger" large className="flex-1" onClick={onVoid}>
               Anular
             </Boton>
           )}
         </div>
       }
     >
-      {!sinEnviar && item.estado === 'entregado' && (
+      {!sinEnviar && item.status === 'served' && (
         <p className="rounded-xl bg-neutro-suave p-3 text-neutro-texto">
           Ya se entregó en la mesa. Si hay que anularlo, toca «Anular».
         </p>
       )}
-      {!sinEnviar && item.estado !== 'entregado' && (
+      {!sinEnviar && item.status !== 'served' && (
         <div className="flex flex-col gap-4">
           <p className="rounded-xl bg-neutro-suave p-3 text-neutro-texto">
             Ya salió a cocina. Si cambias la nota, la cocina recibe una comanda «CAMBIO».
@@ -1716,29 +1710,29 @@ function PanelItem({
             <textarea
               rows={2}
               maxLength={200}
-              value={notas}
+              value={notes}
               onChange={(e) => setNotas(e.target.value)}
               className={claseNota}
             />
           </label>
-          <Boton disabled={(notas.trim() || null) === item.notas} onClick={cerrar}>
+          <Boton disabled={(notes.trim() || null) === item.notes} onClick={close}>
             Enviar el cambio a cocina
           </Boton>
         </div>
       )}
       {sinEnviar && (
         <>
-          <Seccion titulo="Cantidad">
-            <Cantidad valor={item.cantidad} alCambiar={(n) => alSumar(n - item.cantidad)} />
-          </Seccion>
-          {enSalon && comensales > 0 && (
+          <Section titulo="Cantidad">
+            <Quantity value={item.quantity} onChange={(n) => alSumar(n - item.quantity)} />
+          </Section>
+          {enSalon && guests > 0 && (
             <Grupo etiqueta="Para quién" className="mb-4 flex flex-wrap items-center gap-2">
               <p className="w-full font-semibold">Para quién</p>
-              {personasDe(comensales).map((c) => (
+              {personasDe(guests).map((c) => (
                 <Opcion
-                  key={c ?? 'mesa'}
-                  elegida={item.comensal === c}
-                  alElegir={() => elegir({ comensal: c })}
+                  key={c ?? 'table'}
+                  elegida={item.guest === c}
+                  alElegir={() => select({ guest: c })}
                   etiqueta={etiquetaComensal(c)}
                 >
                   {nombreComensal(c)}
@@ -1749,13 +1743,13 @@ function PanelItem({
           {usarCursos && (
             <Grupo etiqueta="Curso" className="mb-4 flex flex-wrap items-center gap-2">
               <p className="w-full font-semibold">Curso</p>
-              {CURSOS.map((c) => (
+              {COURSES.map((c) => (
                 <Opcion
-                  key={c.curso ?? 'ninguno'}
-                  elegida={item.curso === c.curso}
-                  alElegir={() => elegir({ curso: c.curso })}
+                  key={c.course ?? 'ninguno'}
+                  elegida={item.course === c.course}
+                  alElegir={() => select({ course: c.course })}
                 >
-                  {c.nombre}
+                  {c.name}
                 </Opcion>
               ))}
             </Grupo>
@@ -1765,9 +1759,9 @@ function PanelItem({
             <textarea
               rows={2}
               maxLength={200}
-              value={notas}
+              value={notes}
               placeholder={
-                item.cantidad - item.cantidadAnulada > 1
+                item.quantity - item.voidedQuantity > 1
                   ? '1 sin hielo, salsa aparte…'
                   : 'Sin hielo, salsa aparte…'
               }
@@ -1783,24 +1777,24 @@ function PanelItem({
 
 /** La nota de todo el pedido: alergias, celebraciones, «todo junto». Va en cada comanda. */
 function PanelNotaPedido({
-  nota,
+  note,
   alCerrar,
-  alGuardar,
+  onSave,
 }: {
-  nota: string | null
+  note: string | null
   alCerrar: () => void
-  alGuardar: (nota: string | null) => void
+  onSave: (note: string | null) => void
 }) {
-  const [texto, setTexto] = useState(nota ?? '')
-  const nueva = texto.trim() || null
+  const [text, setTexto] = useState(note ?? '')
+  const newOne = text.trim() || null
   return (
     <PanelLateral
-      abierto
+      opened
       titulo="Nota del pedido"
       alCerrar={alCerrar}
       pie={
-        <Boton variante="principal" grande className="w-full" onClick={() => alGuardar(nueva)}>
-          {nueva === null && nota !== null ? 'Quitar la nota' : 'Guardar'}
+        <Boton variant="main" large className="w-full" onClick={() => onSave(newOne)}>
+          {newOne === null && note !== null ? 'Quitar la nota' : 'Guardar'}
         </Boton>
       }
     >
@@ -1809,7 +1803,7 @@ function PanelNotaPedido({
         <textarea
           rows={3}
           maxLength={300}
-          value={texto}
+          value={text}
           placeholder="Alérgico al maní, cumpleaños, todo junto…"
           // biome-ignore lint/a11y/noAutofocus: el panel se abre solo para escribir la nota
           autoFocus
@@ -1827,40 +1821,40 @@ function PanelNotaPedido({
 
 /** Agotar un producto con tamaños: el producto entero o solo uno (se acabó la botella, no la copa). */
 function PanelAgotar({
-  producto,
+  product,
   agotados,
   alCerrar,
-  alCambiar,
+  onChange,
 }: {
-  producto: ProductoCatalogo | null
+  product: ProductoCatalogo | null
   agotados: Set<string>
   alCerrar: () => void
-  alCambiar: (varianteId: string | null, agotar: boolean) => void
+  onChange: (variantId: string | null, markSoldOut: boolean) => void
 }) {
-  if (!producto) return null
-  const todo = agotados.has(claveAgotado(producto.id))
+  if (!product) return null
+  const everything = agotados.has(claveAgotado(product.id))
   // Con todo el producto agotado, los tamaños no se tocan por separado.
-  const opciones = [
-    { id: null, nombre: 'Todo el producto' },
-    ...(todo ? [] : producto.variantes.map((v) => ({ id: v.id, nombre: v.nombre }))),
+  const options = [
+    { id: null, name: 'Todo el producto' },
+    ...(everything ? [] : product.variants.map((v) => ({ id: v.id, name: v.name }))),
   ]
   return (
-    <PanelLateral abierto titulo={`Agotar ${producto.nombre}`} alCerrar={alCerrar}>
+    <PanelLateral opened titulo={`Agotar ${product.name}`} alCerrar={alCerrar}>
       <p className="mb-4 text-texto-suave">
         Toca lo que se acabó; tócalo otra vez cuando vuelva a haber.
       </p>
       <Grupo etiqueta="Qué se acabó" className="flex flex-col gap-2">
-        {opciones.map((o) => {
-          const yaAgotado = agotados.has(claveAgotado(producto.id, o.id))
+        {options.map((o) => {
+          const yaAgotado = agotados.has(claveAgotado(product.id, o.id))
           return (
             <Opcion
-              key={o.id ?? 'todo'}
-              forma="tarjeta"
+              key={o.id ?? 'everything'}
+              shape="card"
               elegida={yaAgotado}
               detalle={yaAgotado ? 'agotado' : 'disponible'}
-              alElegir={() => alCambiar(o.id, !yaAgotado)}
+              alElegir={() => onChange(o.id, !yaAgotado)}
             >
-              {o.nombre}
+              {o.name}
             </Opcion>
           )
         })}

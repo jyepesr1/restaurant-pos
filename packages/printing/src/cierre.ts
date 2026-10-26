@@ -8,54 +8,54 @@ import { pesos } from './precuenta'
 // calculados por `@pos/core`; aquí solo se decide el orden y el estilo.
 
 export interface MedioCierreZ {
-  nombre: string
+  name: string
   /** Lo registrado en el sistema (venta + propina). */
-  esperado: number
+  expected: number
   /** Lo que dice el cierre del datáfono o la app. */
-  reportado: number
-  diferencia: number
+  reported: number
+  variance: number
 }
 
 export interface CierreZ {
-  restaurante: string
+  restaurant: string
   /** El día operativo, ya en palabras («sábado 24 de octubre de 2026»). */
-  dia: string
+  day: string
   /** Horas ya formateadas en la zona horaria del restaurante. */
-  abierto: string
-  cerrado: string
+  opened: string
+  closed: string
   abrio: string
   cerro: string
-  efectivo: {
+  cash: {
     base: number
-    cobrado: number
-    devoluciones: number
-    entradas: number
-    salidas: number
-    pagosPropinas: number
-    esperado: number
-    contado: number
-    diferencia: number
+    charged: number
+    refunds: number
+    entries: number
+    outflows: number
+    tipPayouts: number
+    expected: number
+    counted: number
+    variance: number
   }
-  otrosMedios: MedioCierreZ[]
-  justificacion: string | null
+  otherMethods: MedioCierreZ[]
+  justification: string | null
   /** Lo cobrado en el turno, por medio de pago. */
-  cobrado: { nombre: string; venta: number; propina: number }[]
+  charged: { name: string; sale: number; tip: number }[]
   /** Las ventas de todo el día operativo (no solo del turno). */
-  ventas: {
-    neto: number
-    impuestos: { nombre: string; base: number; valor: number }[]
-    propinas: number
-    cuentas: number
-    comensales: number
-    ticketPromedio: number
+  sales: {
+    net: number
+    taxes: { name: string; base: number; value: number }[]
+    tips: number
+    checks: number
+    guests: number
+    averageTicket: number
     /** Ajuste por redondeo del efectivo: lo cobrado de más o de menos al redondear. */
-    ajustes?: number
-    anulado: number
-    cancelado: number
-    descuentos: number
+    settings?: number
+    voided: number
+    canceled: number
+    discounts: number
   }
   /** Hora de la reimpresión, si lo es. */
-  reimpreso: string | null
+  reprinted: string | null
 }
 
 /** «Cuadra», «Sobran $1.000» o «Faltan $1.000», como en la pantalla de la caja. */
@@ -65,82 +65,82 @@ const enPalabras = (n: number) =>
 /** El cierre Z partido en líneas para una impresora de ese ancho y esa tabla de caracteres. */
 export function lineasCierreZ(
   z: CierreZ,
-  formato: { columnas: number; pagina: PaginaCodigos },
+  format: { columnas: number; pagina: PaginaCodigos },
 ): Linea[] {
-  const f: Formato = formato
+  const f: Formato = format
   const fila = (izquierda: string, derecha: string, estilo: Estilo = {}) =>
     aLosLados(izquierda, derecha, f, estilo)
-  const titulo = (texto: string) => [
-    { separador: true } as Linea,
-    ...parrafo(texto, f, { negrita: true }),
+  const titulo = (text: string) => [
+    { separator: true } as Linea,
+    ...parrafo(text, f, { negrita: true }),
   ]
-  const e = z.efectivo
-  const lineas: Linea[] = [
-    ...parrafo(z.restaurante, f, { grande: true, centro: true }),
-    ...parrafo('CIERRE DE CAJA', f, { invertido: true, centro: true, negrita: true }),
-    ...(z.reimpreso ? parrafo(`Reimpresión ${z.reimpreso}`, f, { centro: true }) : []),
-    { espacio: true },
-    ...parrafo(z.dia, f, { negrita: true }),
-    ...parrafo(`Abrió ${z.abrio} · ${z.abierto}`, f),
-    ...parrafo(`Cerró ${z.cerro} · ${z.cerrado}`, f),
+  const e = z.cash
+  const lines: Linea[] = [
+    ...parrafo(z.restaurant, f, { large: true, centro: true }),
+    ...parrafo('CIERRE DE CAJA', f, { reversed: true, centro: true, negrita: true }),
+    ...(z.reprinted ? parrafo(`Reimpresión ${z.reprinted}`, f, { centro: true }) : []),
+    { space: true },
+    ...parrafo(z.day, f, { negrita: true }),
+    ...parrafo(`Abrió ${z.abrio} · ${z.opened}`, f),
+    ...parrafo(`Cerró ${z.cerro} · ${z.closed}`, f),
 
     ...titulo('Efectivo'),
     ...fila('Base', pesos(e.base)),
-    ...fila('Cobrado', pesos(e.cobrado)),
+    ...fila('Cobrado', pesos(e.charged)),
   ]
-  if (e.devoluciones) lineas.push(...fila('Devoluciones', `-${pesos(e.devoluciones)}`))
-  if (e.entradas) lineas.push(...fila('Entradas', pesos(e.entradas)))
-  if (e.salidas) lineas.push(...fila('Salidas', `-${pesos(e.salidas)}`))
-  if (e.pagosPropinas) lineas.push(...fila('Pago de propinas', `-${pesos(e.pagosPropinas)}`))
-  lineas.push(
-    ...fila('Esperado', pesos(e.esperado), { negrita: true }),
-    ...fila('Contado', pesos(e.contado), { negrita: true }),
-    ...fila('Diferencia', enPalabras(e.diferencia), { negrita: true }),
+  if (e.refunds) lines.push(...fila('Devoluciones', `-${pesos(e.refunds)}`))
+  if (e.entries) lines.push(...fila('Entradas', pesos(e.entries)))
+  if (e.outflows) lines.push(...fila('Salidas', `-${pesos(e.outflows)}`))
+  if (e.tipPayouts) lines.push(...fila('Pago de propinas', `-${pesos(e.tipPayouts)}`))
+  lines.push(
+    ...fila('Esperado', pesos(e.expected), { negrita: true }),
+    ...fila('Contado', pesos(e.counted), { negrita: true }),
+    ...fila('Diferencia', enPalabras(e.variance), { negrita: true }),
   )
 
-  if (z.otrosMedios.length > 0) {
-    lineas.push(...titulo('Otros medios (según sistema / según cierre)'))
-    for (const m of z.otrosMedios) {
-      lineas.push(...fila(m.nombre, `${pesos(m.esperado)} / ${pesos(m.reportado)}`))
-      if (m.diferencia !== 0) lineas.push(...fila('  Diferencia', enPalabras(m.diferencia)))
+  if (z.otherMethods.length > 0) {
+    lines.push(...titulo('Otros medios (según sistema / según cierre)'))
+    for (const m of z.otherMethods) {
+      lines.push(...fila(m.name, `${pesos(m.expected)} / ${pesos(m.reported)}`))
+      if (m.variance !== 0) lines.push(...fila('  Diferencia', enPalabras(m.variance)))
     }
   }
-  if (z.justificacion) lineas.push(...titulo('Justificación'), ...parrafo(z.justificacion, f))
+  if (z.justification) lines.push(...titulo('Justificación'), ...parrafo(z.justification, f))
 
-  if (z.cobrado.length > 0) {
-    lineas.push(...titulo('Cobrado en el turno'))
-    for (const m of z.cobrado) {
-      lineas.push(...fila(m.nombre, pesos(m.venta + m.propina)))
-      if (m.propina !== 0) lineas.push(...fila('  de propina', pesos(m.propina)))
+  if (z.charged.length > 0) {
+    lines.push(...titulo('Cobrado en el turno'))
+    for (const m of z.charged) {
+      lines.push(...fila(m.name, pesos(m.sale + m.tip)))
+      if (m.tip !== 0) lines.push(...fila('  de propina', pesos(m.tip)))
     }
   }
 
-  const v = z.ventas
-  lineas.push(...titulo('Ventas del día'), ...fila('Ventas', pesos(v.neto), { negrita: true }))
-  if (v.impuestos.length > 0) {
-    lineas.push(...fila('Base sin impuestos', pesos(v.impuestos.reduce((a, i) => a + i.base, 0))))
-    for (const i of v.impuestos) if (i.valor > 0) lineas.push(...fila(i.nombre, pesos(i.valor)))
+  const v = z.sales
+  lines.push(...titulo('Ventas del día'), ...fila('Ventas', pesos(v.net), { negrita: true }))
+  if (v.taxes.length > 0) {
+    lines.push(...fila('Base sin impuestos', pesos(v.taxes.reduce((a, i) => a + i.base, 0))))
+    for (const i of v.taxes) if (i.value > 0) lines.push(...fila(i.name, pesos(i.value)))
   }
-  lineas.push(
-    ...(v.ajustes ? fila('Ajuste por redondeo', pesos(v.ajustes)) : []),
-    ...fila('Propinas', pesos(v.propinas)),
-    ...fila('Cuentas', String(v.cuentas)),
-    ...fila('Comensales', String(v.comensales)),
-    ...fila('Ticket promedio', pesos(v.ticketPromedio)),
+  lines.push(
+    ...(v.settings ? fila('Ajuste por redondeo', pesos(v.settings)) : []),
+    ...fila('Propinas', pesos(v.tips)),
+    ...fila('Cuentas', String(v.checks)),
+    ...fila('Comensales', String(v.guests)),
+    ...fila('Ticket promedio', pesos(v.averageTicket)),
   )
-  if (v.anulado || v.cancelado || v.descuentos) {
-    lineas.push(...titulo('Anulado y descontado'))
-    if (v.anulado) lineas.push(...fila('Productos anulados', pesos(v.anulado)))
-    if (v.cancelado) lineas.push(...fila('Pedidos cancelados', pesos(v.cancelado)))
-    if (v.descuentos) lineas.push(...fila('Descuentos', pesos(v.descuentos)))
+  if (v.voided || v.canceled || v.discounts) {
+    lines.push(...titulo('Anulado y descontado'))
+    if (v.voided) lines.push(...fila('Productos anulados', pesos(v.voided)))
+    if (v.canceled) lines.push(...fila('Pedidos cancelados', pesos(v.canceled)))
+    if (v.discounts) lines.push(...fila('Descuentos', pesos(v.discounts)))
   }
-  lineas.push(
-    { separador: true },
-    { espacio: true },
+  lines.push(
+    { separator: true },
+    { space: true },
     ...parrafo('Firma cajero', f),
-    { espacio: true },
-    { espacio: true },
+    { space: true },
+    { space: true },
     ...parrafo('Firma de quien recibe', f),
   )
-  return lineas
+  return lines
 }

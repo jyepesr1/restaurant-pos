@@ -1,8 +1,8 @@
 import 'fake-indexeddb/auto'
-import { firmarEvento, nuevoId } from '@pos/core'
+import { newId, signEvent } from '@pos/core'
 import {
   AlmacenMemoria,
-  type Canal,
+  type Channel,
   type ControlAcceso,
   HubSync,
   type Manejadores,
@@ -28,20 +28,20 @@ import { catalogoDePrueba, datosItem } from './pruebas'
 
 const T0 = new Date('2026-10-26T15:00:00.000Z')
 const REGLAS: ReglasCobro = {
-  mediosPago: ['efectivo', 'tarjeta', 'nequi'],
-  propinaSugerida: 1000,
-  redondeoModo: 'mitad_arriba',
+  mediosPago: ['cash', 'card', 'nequi'],
+  suggestedTip: 1000,
+  redondeoModo: 'half_up',
   redondeoEfectivo: 100,
-  redondeoEfectivoModo: 'cercano_mitad_abajo',
+  cashRoundingMode: 'nearest_half_down',
   imprimePrecuenta: false,
 }
-const DATAFONO = nuevoId()
+const DATAFONO = newId()
 
 const accesoConFirma: ControlAcceso = {
-  verificar: (_c, evento) =>
-    evento.sesion_id && evento.firma === firmarEvento(evento, `secreto-${evento.sesion_id}`)
-      ? { ok: true, autorizadoPorId: null, autorizacionId: null }
-      : { ok: false, motivo: 'firma_invalida' },
+  verify: (_c, event) =>
+    event.session_id && event.signature === signEvent(event, `secreto-${event.session_id}`)
+      ? { ok: true, authorizedById: null, autorizacionId: null }
+      : { ok: false, reason: 'invalid_signature' },
   registrarUso: () => {},
 }
 
@@ -65,7 +65,7 @@ async function avanzar(ms: number) {
     await asentar(3)
   }
 }
-async function hasta(condicion: () => Promise<boolean> | boolean, maxMs = 20_000) {
+async function until(condicion: () => Promise<boolean> | boolean, maxMs = 20_000) {
   for (let t = 0; t <= maxMs; t += 100) {
     if (await condicion()) return
     await avanzar(100)
@@ -75,68 +75,68 @@ async function hasta(condicion: () => Promise<boolean> | boolean, maxMs = 20_000
 /** Deja correr el reloj simulado hasta que la promesa termine (bien o mal). */
 async function resolver<T>(
   promesa: Promise<T>,
-): Promise<{ ok: true; valor: T } | { ok: false; error: Error }> {
-  let r: { ok: true; valor: T } | { ok: false; error: Error } | null = null
+): Promise<{ ok: true; value: T } | { ok: false; error: Error }> {
+  let r: { ok: true; value: T } | { ok: false; error: Error } | null = null
   promesa.then(
-    (valor) => {
-      r = { ok: true, valor }
+    (value) => {
+      r = { ok: true, value }
     },
     (error) => {
       r = { ok: false, error }
     },
   )
-  await hasta(() => r !== null)
+  await until(() => r !== null)
   return r as never
 }
 
 function montarHub() {
   const tokens = new Map<string, Equipo>()
   const hub = new HubSync(new AlmacenMemoria(), {
-    restauranteId: nuevoId(),
-    zonaHoraria: 'America/Bogota',
+    restauranteId: newId(),
+    timeZone: 'America/Bogota',
     inicioDiaOperativo: '06:00',
-    instancia: 'hub-prueba',
-    reloj: () => new Date(Date.now()).toISOString(),
-    acceso: accesoConFirma,
+    instancia: 'hub-test',
+    clock: () => new Date(Date.now()).toISOString(),
+    access: accesoConFirma,
     reglasCobro: () => ({
-      multiplo: 100,
-      modo: 'cercano_mitad_abajo',
+      multiple: 100,
+      mode: 'nearest_half_down',
       medios: REGLAS.mediosPago,
-      datafonos: [DATAFONO],
+      cardTerminals: [DATAFONO],
       umbralDiferencia: 1000,
     }),
   })
   const salaHub = new SalaSync(hub, (token) => {
     const e = tokens.get(token)
-    return e ? { dispositivoId: e.dispositivoId, tipo: e.tipo, revocadoEn: null } : null
+    return e ? { dispositivoId: e.dispositivoId, type: e.type, revocadoEn: null } : null
   })
   const h = {
     hub,
     tokens,
     recibidos: [] as MensajeDispositivo[],
-    abrir(m: Manejadores): Canal {
-      let enlace: ReturnType<SalaSync['conectar']> | null = null
-      let cerrado = false
+    open(m: Manejadores): Channel {
+      let enlace: ReturnType<SalaSync['connect']> | null = null
+      let closed = false
       setTimeout(() => {
-        if (cerrado) return
-        enlace = salaHub.conectar((msg) => {
-          const copia = JSON.parse(JSON.stringify(msg))
+        if (closed) return
+        enlace = salaHub.connect((msg) => {
+          const copy = JSON.parse(JSON.stringify(msg))
           setTimeout(() => {
-            if (!cerrado) m.alMensaje(copia)
+            if (!closed) m.alMensaje(copy)
           })
         })
         m.alAbrir()
       })
       return {
-        enviar: (msg) => {
-          if (!enlace || cerrado) return
-          const copia = JSON.parse(JSON.stringify(msg)) as MensajeDispositivo
-          h.recibidos.push(copia)
-          enlace.recibir(copia)
+        send: (msg) => {
+          if (!enlace || closed) return
+          const copy = JSON.parse(JSON.stringify(msg)) as MensajeDispositivo
+          h.recibidos.push(copy)
+          enlace.recibir(copy)
         },
-        cerrar: () => {
-          cerrado = true
-          enlace?.cerrar()
+        close: () => {
+          closed = true
+          enlace?.close()
           enlace = null
         },
       }
@@ -157,260 +157,254 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function caja(h: Hub, nombre = 'Caja 1') {
-  const db = new BaseDispositivo(`cierre-${nuevoId()}`)
+async function register(h: Hub, name = 'Caja 1') {
+  const db = new BaseDispositivo(`closeout-${newId()}`)
   bases.push(db)
-  const e: Equipo = { dispositivoId: nuevoId(), token: nuevoId(), nombre, tipo: 'caja' }
+  const e: Equipo = { dispositivoId: newId(), token: newId(), name, type: 'register' }
   h.tokens.set(e.token, e)
-  const sesionId = nuevoId()
-  const sesion: Sesion = {
+  const sesionId = newId()
+  const session: Sesion = {
     sesionId,
-    secreto: `secreto-${sesionId}`,
-    usuario: { id: nuevoId(), nombre: 'Carlos', rol: 'Cajero' },
-    permisos: [
-      'tomar_pedido',
-      'registrar_pago',
-      'cerrar_mesa',
-      'dividir_cuenta',
-      'abrir_turno_caja',
-      'movimiento_caja',
-      'cerrar_turno_caja',
+    secret: `secreto-${sesionId}`,
+    user: { id: newId(), name: 'Carlos', role: 'Cajero' },
+    permissions: [
+      'take_order',
+      'record_payment',
+      'close_table',
+      'split_check',
+      'open_register_shift',
+      'cash_movement',
+      'close_register_shift',
     ],
     ultimoUso: Date.now(),
   }
-  await db.guardarAjuste('equipo', e)
-  await db.guardarAjuste('sesion', sesion)
-  await db.guardarAjuste('catalogo', catalogoDePrueba())
-  const sala = new Sala({ db, abrir: (m) => h.abrir(m) })
+  await db.saveSetting('device', e)
+  await db.saveSetting('session', session)
+  await db.saveSetting('catalog', catalogoDePrueba())
+  const sala = new Sala({ db, open: (m) => h.open(m) })
   salas.push(sala)
   await sala.cargar()
-  await hasta(() => sala.instantanea().conexion === 'conectado')
+  await until(() => sala.instantanea().connection === 'connected')
   return { sala, e }
 }
 
 const locales = async (s: Sala) => (await s.sync?.locales()) ?? []
-const sinPendientes = (s: Sala) => s.instantanea().pendientes === 0
+const sinPendientes = (s: Sala) => s.instantanea().pendingList === 0
 
 /** Un pedido de dos productos que suma $100.050, ya en el hub. */
 async function pedidoDeCien(sala: Sala) {
-  const pedido = nuevoId()
-  await sala.registrar('PedidoAbierto', pedido, { canal: 'salon', mesa_id: null, comensales: 2 })
-  await sala.registrar(
-    'ItemAgregado',
-    pedido,
-    datosItem({ precio_unitario: 60_050, nombre: 'Tagliata' }),
-  )
-  await sala.registrar(
-    'ItemAgregado',
-    pedido,
-    datosItem({ precio_unitario: 40_000, nombre: 'Pizza' }),
-  )
-  await hasta(() => sinPendientes(sala))
-  return pedido
+  const order = newId()
+  await sala.record('OrderOpened', order, { channel: 'dine_in', table_id: null, guests: 2 })
+  await sala.record('ItemAdded', order, datosItem({ unit_price: 60_050, name: 'Tagliata' }))
+  await sala.record('ItemAdded', order, datosItem({ unit_price: 40_000, name: 'Pizza' }))
+  await until(() => sinPendientes(sala))
+  return order
 }
 
 const datosPago = (
-  turno: string,
-  cuentaId: string | null,
-  medio: 'efectivo' | 'tarjeta' | 'nequi',
-  saldo: number,
-  propina: number,
-  recibido = 0,
+  shift: string,
+  checkId: string | null,
+  method: 'cash' | 'card' | 'nequi',
+  balance: number,
+  tip: number,
+  tendered = 0,
 ) => {
-  const c = pagoEnEfectivo({ saldo, monto: saldo, propina, recibido }, REGLAS)
-  const entregado = recibido || c.aEntregar
-  const f = pagoEnEfectivo({ saldo, monto: saldo, propina, recibido: entregado }, REGLAS)
+  const c = pagoEnEfectivo({ balance, amount: balance, tip, tendered }, REGLAS)
+  const served = tendered || c.aEntregar
+  const f = pagoEnEfectivo({ balance, amount: balance, tip, tendered: served }, REGLAS)
   return {
-    pago_id: nuevoId(),
-    cuenta_id: cuentaId,
-    turno_caja_id: turno,
-    medio,
-    monto: saldo,
-    propina,
-    recibido: medio === 'efectivo' ? entregado : null,
-    cambio: medio === 'efectivo' ? f.cambio : null,
-    ajuste_redondeo: medio === 'efectivo' ? f.ajuste : 0,
-    redondeo: medio === 'efectivo' ? f.redondeo : null,
-    datafono:
-      medio === 'tarjeta'
+    payment_id: newId(),
+    check_id: checkId,
+    register_shift_id: shift,
+    method,
+    amount: balance,
+    tip,
+    tendered: method === 'cash' ? served : null,
+    change: method === 'cash' ? f.change : null,
+    rounding_adjustment: method === 'cash' ? f.adjustment : 0,
+    rounding: method === 'cash' ? f.rounding : null,
+    cardTerminal:
+      method === 'card'
         ? {
-            datafono_id: DATAFONO,
-            franquicia: null,
-            ultimos4: null,
-            aprobacion: null,
-            recibo: null,
-            tipo_tarjeta: 'credito' as const,
+            card_terminal_id: DATAFONO,
+            franchise: null,
+            last4: null,
+            approval_code: null,
+            receipt: null,
+            card_type: 'credit' as const,
           }
         : null,
-    referencia_cobro: null,
+    charge_reference: null,
   }
 }
 
 const HOY = '2026-10-26'
 
 /** Un cobro en efectivo del pedido de $100.050: se cobran 100.000 (−50) y 5.000 de propina. */
-const cobroEfectivo = (turno: string) => datosPago(turno, null, 'efectivo', 100_050, 5_000, 105_000)
+const cobroEfectivo = (shift: string) => datosPago(shift, null, 'cash', 100_050, 5_000, 105_000)
 
-const conteoDe = (contado: number) =>
+const conteoDe = (counted: number) =>
   [
-    { valor: 100_000, cantidad: Math.floor(contado / 100_000) },
-    { valor: 50, cantidad: (contado % 100_000) / 50 },
-  ].filter((c) => c.cantidad > 0)
+    { value: 100_000, quantity: Math.floor(counted / 100_000) },
+    { value: 50, quantity: (counted % 100_000) / 50 },
+  ].filter((c) => c.quantity > 0)
 
-async function contar(sala: Sala, turno: string, contado: number) {
-  const arqueo = nuevoId()
+async function contar(sala: Sala, shift: string, counted: number) {
+  const cashCount = newId()
   const r = await resolver(
-    sala.registrarConfirmado('ArqueoRegistrado', turno, {
-      arqueo_id: arqueo,
-      conteo: conteoDe(contado),
-      contado_efectivo: contado,
+    sala.registrarConfirmado('CashCountRecorded', shift, {
+      cash_count_id: cashCount,
+      tally: conteoDe(counted),
+      counted_cash: counted,
     }),
   )
-  return { arqueo, r }
+  return { cashCount, r }
 }
 
 const datosCierre = (
-  arqueo: string,
-  esperado: number,
-  contado: number,
-  justificacion: string | null = null,
+  cashCount: string,
+  expected: number,
+  counted: number,
+  justification: string | null = null,
 ) => ({
-  arqueo_id: arqueo,
-  esperado_efectivo: esperado,
-  contado_efectivo: contado,
-  diferencia: contado - esperado,
-  justificacion,
+  cash_count_id: cashCount,
+  expected_cash: expected,
+  counted_cash: counted,
+  variance: counted - expected,
+  justification,
 })
 
-const mensaje = (r: { ok: boolean }) => (r as unknown as { error: Error }).error.message
+const message = (r: { ok: boolean }) => (r as unknown as { error: Error }).error.message
 
 describe('de punta a punta: abrir turno → cobro → entrada → propinas → arqueo → cierre → turno nuevo', () => {
   it('todo se confirma, el turno se cierra con diferencia 0 y la caja abre otro', async () => {
     const h = montarHub()
-    const { sala, e } = await caja(h)
-    const turno = await sala.abrirTurno(200_000)
-    await hasta(() => sinPendientes(sala))
+    const { sala, e } = await register(h)
+    const shift = await sala.abrirTurno(200_000)
+    await until(() => sinPendientes(sala))
 
-    const pedido = await pedidoDeCien(sala)
-    const pago = cobroEfectivo(turno)
-    expect(pago).toMatchObject({ ajuste_redondeo: -50, cambio: 0, recibido: 105_000 })
-    expect((await resolver(sala.registrarConfirmado('PagoRegistrado', pedido, pago))).ok).toBe(true)
-    expect((await resolver(sala.registrarConfirmado('PedidoCerrado', pedido, {}))).ok).toBe(true)
+    const order = await pedidoDeCien(sala)
+    const payment = cobroEfectivo(shift)
+    expect(payment).toMatchObject({ rounding_adjustment: -50, change: 0, tendered: 105_000 })
+    expect((await resolver(sala.registrarConfirmado('PaymentRecorded', order, payment))).ok).toBe(
+      true,
+    )
+    expect((await resolver(sala.registrarConfirmado('OrderClosed', order, {}))).ok).toBe(true)
 
-    const entrada = await resolver(
-      sala.registrarConfirmado('MovimientoCajaRegistrado', turno, {
-        movimiento_id: nuevoId(),
-        tipo: 'entrada',
-        monto: 20_000,
-        descripcion: 'Cambio para el turno',
-        a_quien: null,
-        dias: [],
+    const entry = await resolver(
+      sala.registrarConfirmado('CashMovementRecorded', shift, {
+        movement_id: newId(),
+        type: 'entry',
+        amount: 20_000,
+        description: 'Cambio para el turno',
+        to_whom: null,
+        days: [],
       }),
     )
-    expect(entrada.ok).toBe(true)
-    const propinas = await resolver(
-      sala.registrarConfirmado('MovimientoCajaRegistrado', turno, {
-        movimiento_id: nuevoId(),
-        tipo: 'pago_propinas',
-        monto: 5_000,
-        descripcion: 'Propinas de hoy',
-        a_quien: 'Equipo de sala',
-        dias: [HOY],
+    expect(entry.ok).toBe(true)
+    const tips = await resolver(
+      sala.registrarConfirmado('CashMovementRecorded', shift, {
+        movement_id: newId(),
+        type: 'tip_payout',
+        amount: 5_000,
+        description: 'Propinas de hoy',
+        to_whom: 'Equipo de sala',
+        days: [HOY],
       }),
     )
-    expect(propinas.ok).toBe(true)
+    expect(tips.ok).toBe(true)
 
     // 200.000 + (100.000 + 5.000) + 20.000 − 5.000 = 320.000, en la caja y en el hub.
-    const antes = cuadreDeCaja(await locales(sala), turno)
-    expect(antes?.efectivo).toMatchObject({
-      cobrado: 105_000,
-      entradas: 20_000,
-      pagosPropinas: 5_000,
-      esperado: 320_000,
+    const before = cuadreDeCaja(await locales(sala), shift)
+    expect(before?.cash).toMatchObject({
+      charged: 105_000,
+      entries: 20_000,
+      tipPayouts: 5_000,
+      expected: 320_000,
     })
-    expect(h.hub.cuadre(turno)).toEqual(antes)
+    expect(h.hub.reconciliation(shift)).toEqual(before)
 
-    const { arqueo, r: conteo } = await contar(sala, turno, 320_000)
-    expect(conteo.ok).toBe(true)
-    const cierre = await resolver(
-      sala.registrarConfirmado('TurnoCerrado', turno, datosCierre(arqueo, 320_000, 320_000)),
+    const { cashCount, r: tally } = await contar(sala, shift, 320_000)
+    expect(tally.ok).toBe(true)
+    const closeout = await resolver(
+      sala.registrarConfirmado('ShiftClosed', shift, datosCierre(cashCount, 320_000, 320_000)),
     )
-    expect(cierre.ok).toBe(true)
-    await hasta(() => sinPendientes(sala))
+    expect(closeout.ok).toBe(true)
+    await until(() => sinPendientes(sala))
 
     // Cerrado en el hub y en la caja; lo guardado aquí está confirmado.
     expect(h.hub.turnoAbierto(e.dispositivoId)).toBeNull()
     const guardados = await locales(sala)
-    expect(guardados.every((l) => l.estado === 'confirmado')).toBe(true)
+    expect(guardados.every((l) => l.status === 'confirmed')).toBe(true)
     expect(turnoDeCaja(guardados, e.dispositivoId)).toBeNull()
-    expect(cuadreDeCaja(guardados, turno)?.cerrado).toMatchObject({
-      esperado: 320_000,
-      contado: 320_000,
-      diferencia: 0,
+    expect(cuadreDeCaja(guardados, shift)?.closed).toMatchObject({
+      expected: 320_000,
+      counted: 320_000,
+      variance: 0,
     })
-    expect(resumenTurno(guardados, turno).porMedio).toEqual([
-      { medio: 'efectivo', medioPropioId: null, venta: 100_000, propina: 5_000, pagos: 1 },
+    expect(resumenTurno(guardados, shift).byMethod).toEqual([
+      { method: 'cash', customMethodId: null, sale: 100_000, tip: 5_000, payments: 1 },
     ])
 
     // Un pago más a ese turno ya no entra, y se dice en palabras.
-    const otroPedido = await pedidoDeCien(sala)
+    const anotherOrder = await pedidoDeCien(sala)
     const tarde = await resolver(
       sala.registrarConfirmado(
-        'PagoRegistrado',
-        otroPedido,
-        datosPago(turno, null, 'nequi', 100_050, 0),
+        'PaymentRecorded',
+        anotherOrder,
+        datosPago(shift, null, 'nequi', 100_050, 0),
       ),
     )
-    expect(mensaje(tarde)).toBe('La caja no tiene turno abierto: ábrela en «Caja».')
+    expect(message(tarde)).toBe('La caja no tiene turno abierto: ábrela en «Caja».')
 
     // El turno nuevo empieza de cero.
-    const nuevo = await sala.abrirTurno(50_000)
-    await hasta(() => sinPendientes(sala))
-    expect(h.hub.turnoAbierto(e.dispositivoId)).toMatchObject({ id: nuevo, base: 50_000 })
-    const despues = await locales(sala)
-    expect(turnoDeCaja(despues, e.dispositivoId)).toMatchObject({ id: nuevo, base: 50_000 })
-    expect(cuadreDeCaja(despues, nuevo)).toMatchObject({
-      efectivo: { cobrado: 0, entradas: 0, esperado: 50_000 },
-      porMedio: [],
-      arqueos: [],
-      cerrado: null,
+    const fresh = await sala.abrirTurno(50_000)
+    await until(() => sinPendientes(sala))
+    expect(h.hub.turnoAbierto(e.dispositivoId)).toMatchObject({ id: fresh, base: 50_000 })
+    const after = await locales(sala)
+    expect(turnoDeCaja(after, e.dispositivoId)).toMatchObject({ id: fresh, base: 50_000 })
+    expect(cuadreDeCaja(after, fresh)).toMatchObject({
+      cash: { charged: 0, entries: 0, expected: 50_000 },
+      byMethod: [],
+      cashCounts: [],
+      closed: null,
     })
   })
 
   it('un faltante de $1.000 o más sin justificación lo rechaza el hub y con ella se cierra', async () => {
     const h = montarHub()
-    const { sala, e } = await caja(h)
-    const turno = await sala.abrirTurno(100_000)
-    const { arqueo } = await contar(sala, turno, 98_000)
-    const sin = await resolver(
-      sala.registrarConfirmado('TurnoCerrado', turno, datosCierre(arqueo, 100_000, 98_000)),
+    const { sala, e } = await register(h)
+    const shift = await sala.abrirTurno(100_000)
+    const { cashCount } = await contar(sala, shift, 98_000)
+    const without = await resolver(
+      sala.registrarConfirmado('ShiftClosed', shift, datosCierre(cashCount, 100_000, 98_000)),
     )
-    expect(mensaje(sin)).toBe('Escribe por qué no cuadra la caja.')
+    expect(message(without)).toBe('Escribe por qué no cuadra la caja.')
     // El turno sigue abierto aquí y en el hub, y el cierre rechazado queda a la vista.
     expect(h.hub.turnoAbierto(e.dispositivoId)).not.toBeNull()
     const guardados = await locales(sala)
-    expect(turnoDeCaja(guardados, e.dispositivoId)?.id).toBe(turno)
-    expect(guardados.filter((l) => l.estado === 'rechazado').map((l) => l.motivo)).toEqual([
-      'falta_justificacion',
+    expect(turnoDeCaja(guardados, e.dispositivoId)?.id).toBe(shift)
+    expect(guardados.filter((l) => l.status === 'rejected').map((l) => l.reason)).toEqual([
+      'missing_justification',
     ])
-    const con = await resolver(
+    const withIt = await resolver(
       sala.registrarConfirmado(
-        'TurnoCerrado',
-        turno,
-        datosCierre(arqueo, 100_000, 98_000, 'Se pagó un domicilio'),
+        'ShiftClosed',
+        shift,
+        datosCierre(cashCount, 100_000, 98_000, 'Se pagó un domicilio'),
       ),
     )
-    expect(con.ok).toBe(true)
+    expect(withIt.ok).toBe(true)
     expect(turnoDeCaja(await locales(sala), e.dispositivoId)).toBeNull()
   })
 
   it('un faltante por debajo del umbral ($999) se cierra sin justificación', async () => {
     const h = montarHub()
-    const { sala, e } = await caja(h)
-    const turno = await sala.abrirTurno(100_000)
-    const { arqueo } = await contar(sala, turno, 99_050)
+    const { sala, e } = await register(h)
+    const shift = await sala.abrirTurno(100_000)
+    const { cashCount } = await contar(sala, shift, 99_050)
     const r = await resolver(
-      sala.registrarConfirmado('TurnoCerrado', turno, datosCierre(arqueo, 100_000, 99_050)),
+      sala.registrarConfirmado('ShiftClosed', shift, datosCierre(cashCount, 100_000, 99_050)),
     )
     expect(r.ok).toBe(true)
     expect(h.hub.turnoAbierto(e.dispositivoId)).toBeNull()
@@ -419,88 +413,92 @@ describe('de punta a punta: abrir turno → cobro → entrada → propinas → a
 
 describe('el cierre rechazado, con el motivo en palabras', () => {
   /** Turno con un cobro en efectivo (esperado 305.000: base 200.000 + 105.000) y un conteo. */
-  async function listo() {
+  async function ready() {
     const h = montarHub()
-    const { sala, e } = await caja(h)
-    const turno = await sala.abrirTurno(200_000)
-    const pedido = await pedidoDeCien(sala)
-    await resolver(sala.registrarConfirmado('PagoRegistrado', pedido, cobroEfectivo(turno)))
-    const { arqueo } = await contar(sala, turno, 305_000)
-    return { h, sala, e, turno, arqueo }
+    const { sala, e } = await register(h)
+    const shift = await sala.abrirTurno(200_000)
+    const order = await pedidoDeCien(sala)
+    await resolver(sala.registrarConfirmado('PaymentRecorded', order, cobroEfectivo(shift)))
+    const { cashCount } = await contar(sala, shift, 305_000)
+    return { h, sala, e, shift, cashCount }
   }
 
   it('con un esperado viejo (sin la propina): esperado_distinto', async () => {
-    const t = await listo()
+    const t = await ready()
     const r = await resolver(
       t.sala.registrarConfirmado(
-        'TurnoCerrado',
-        t.turno,
-        datosCierre(t.arqueo, 300_000, 305_000, 'x'),
+        'ShiftClosed',
+        t.shift,
+        datosCierre(t.cashCount, 300_000, 305_000, 'x'),
       ),
     )
-    expect(mensaje(r)).toBe(
+    expect(message(r)).toBe(
       'La caja registró algo que este equipo aún no tenía: espera un momento y vuelve a contar.',
     )
     expect(t.h.hub.turnoAbierto(t.e.dispositivoId)).not.toBeNull()
-    expect(turnoDeCaja(await locales(t.sala), t.e.dispositivoId)?.id).toBe(t.turno)
+    expect(turnoDeCaja(await locales(t.sala), t.e.dispositivoId)?.id).toBe(t.shift)
   })
 
   it('con un conteo que no existe: arqueo_inexistente', async () => {
-    const t = await listo()
+    const t = await ready()
     const r = await resolver(
-      t.sala.registrarConfirmado('TurnoCerrado', t.turno, datosCierre(nuevoId(), 305_000, 305_000)),
+      t.sala.registrarConfirmado('ShiftClosed', t.shift, datosCierre(newId(), 305_000, 305_000)),
     )
-    expect(mensaje(r)).toBe('La caja no tiene ese conteo: vuelve a contar.')
+    expect(message(r)).toBe('La caja no tiene ese conteo: vuelve a contar.')
   })
 
   it('con un contado distinto del conteo: contado_distinto', async () => {
-    const t = await listo()
+    const t = await ready()
     const r = await resolver(
       t.sala.registrarConfirmado(
-        'TurnoCerrado',
-        t.turno,
-        datosCierre(t.arqueo, 305_000, 300_000, 'x'),
+        'ShiftClosed',
+        t.shift,
+        datosCierre(t.cashCount, 305_000, 300_000, 'x'),
       ),
     )
-    expect(mensaje(r)).toBe('Lo contado no coincide con el conteo guardado: vuelve a contar.')
+    expect(message(r)).toBe('Lo contado no coincide con el conteo guardado: vuelve a contar.')
   })
 
   it('con un conteo que no es el último: arqueo_no_es_el_ultimo', async () => {
-    const t = await listo()
-    await contar(t.sala, t.turno, 305_000)
+    const t = await ready()
+    await contar(t.sala, t.shift, 305_000)
     const r = await resolver(
-      t.sala.registrarConfirmado('TurnoCerrado', t.turno, datosCierre(t.arqueo, 305_000, 305_000)),
+      t.sala.registrarConfirmado(
+        'ShiftClosed',
+        t.shift,
+        datosCierre(t.cashCount, 305_000, 305_000),
+      ),
     )
-    expect(mensaje(r)).toBe('La caja se cierra con el último conteo: vuelve a contar.')
+    expect(message(r)).toBe('La caja se cierra con el último conteo: vuelve a contar.')
   })
 
   it('con dinero movido después del conteo: arqueo_desactualizado', async () => {
-    const t = await listo()
+    const t = await ready()
     await resolver(
-      t.sala.registrarConfirmado('MovimientoCajaRegistrado', t.turno, {
-        movimiento_id: nuevoId(),
-        tipo: 'salida',
-        monto: 5_000,
-        descripcion: 'Hielo',
-        a_quien: null,
-        dias: [],
+      t.sala.registrarConfirmado('CashMovementRecorded', t.shift, {
+        movement_id: newId(),
+        type: 'output',
+        amount: 5_000,
+        description: 'Hielo',
+        to_whom: null,
+        days: [],
       }),
     )
     const r = await resolver(
       t.sala.registrarConfirmado(
-        'TurnoCerrado',
-        t.turno,
-        datosCierre(t.arqueo, 300_000, 305_000, 'x'),
+        'ShiftClosed',
+        t.shift,
+        datosCierre(t.cashCount, 300_000, 305_000, 'x'),
       ),
     )
-    expect(mensaje(r)).toBe('Hubo pagos o movimientos después del conteo: vuelve a contar.')
+    expect(message(r)).toBe('Hubo pagos o movimientos después del conteo: vuelve a contar.')
     // Volviendo a contar, cierra.
-    const nuevo = await contar(t.sala, t.turno, 300_000)
+    const fresh = await contar(t.sala, t.shift, 300_000)
     const ok = await resolver(
       t.sala.registrarConfirmado(
-        'TurnoCerrado',
-        t.turno,
-        datosCierre(nuevo.arqueo, 300_000, 300_000),
+        'ShiftClosed',
+        t.shift,
+        datosCierre(fresh.cashCount, 300_000, 300_000),
       ),
     )
     expect(ok.ok).toBe(true)
@@ -508,88 +506,88 @@ describe('el cierre rechazado, con el motivo en palabras', () => {
 
   it('un movimiento o un conteo sin turno abierto: sin_turno', async () => {
     const h = montarHub()
-    const { sala } = await caja(h)
-    const turno = nuevoId()
+    const { sala } = await register(h)
+    const shift = newId()
     const m = await resolver(
-      sala.registrarConfirmado('MovimientoCajaRegistrado', turno, {
-        movimiento_id: nuevoId(),
-        tipo: 'entrada',
-        monto: 1_000,
-        descripcion: 'x',
-        a_quien: null,
-        dias: [],
+      sala.registrarConfirmado('CashMovementRecorded', shift, {
+        movement_id: newId(),
+        type: 'entry',
+        amount: 1_000,
+        description: 'x',
+        to_whom: null,
+        days: [],
       }),
     )
-    expect(mensaje(m)).toBe('La caja no tiene turno abierto: ábrela en «Caja».')
-    expect(mensaje((await contar(sala, turno, 1_000)).r)).toBe(
+    expect(message(m)).toBe('La caja no tiene turno abierto: ábrela en «Caja».')
+    expect(message((await contar(sala, shift, 1_000)).r)).toBe(
       'La caja no tiene turno abierto: ábrela en «Caja».',
     )
   })
 
   it('el movimiento rechazado desaparece del cuadre de la caja', async () => {
-    const t = await listo()
-    const otra = await caja(t.h, 'Caja 2')
+    const t = await ready()
+    const another = await register(t.h, 'Caja 2')
     // La otra caja intenta mover efectivo en el turno de esta.
     const r = await resolver(
-      otra.sala.registrarConfirmado('MovimientoCajaRegistrado', t.turno, {
-        movimiento_id: nuevoId(),
-        tipo: 'entrada',
-        monto: 1_000,
-        descripcion: 'x',
-        a_quien: null,
-        dias: [],
+      another.sala.registrarConfirmado('CashMovementRecorded', t.shift, {
+        movement_id: newId(),
+        type: 'entry',
+        amount: 1_000,
+        description: 'x',
+        to_whom: null,
+        days: [],
       }),
     )
-    expect(mensaje(r)).toBe('Ese turno es de otra caja: cobra desde la caja donde se abrió.')
-    expect(t.h.hub.cuadre(t.turno)?.efectivo.entradas).toBe(0)
+    expect(message(r)).toBe('Ese turno es de otra caja: cobra desde la caja donde se abrió.')
+    expect(t.h.hub.reconciliation(t.shift)?.cash.entries).toBe(0)
   })
 })
 
 describe('sin conexión', () => {
   it('el cierre queda pendiente: el turno sigue abierto aquí hasta que el hub lo acepta', async () => {
     const h = montarHub()
-    const { sala, e } = await caja(h)
-    const turno = await sala.abrirTurno(10_000)
-    await hasta(() => sinPendientes(sala))
-    const { arqueo } = await contar(sala, turno, 10_000)
+    const { sala, e } = await register(h)
+    const shift = await sala.abrirTurno(10_000)
+    await until(() => sinPendientes(sala))
+    const { cashCount } = await contar(sala, shift, 10_000)
 
     sala.simularSinConexion(true)
     const r = await resolver(
-      sala.registrarConfirmado('TurnoCerrado', turno, datosCierre(arqueo, 10_000, 10_000)),
+      sala.registrarConfirmado('ShiftClosed', shift, datosCierre(cashCount, 10_000, 10_000)),
     )
-    expect(mensaje(r)).toMatch(/Quedó pendiente/)
-    const pendiente = await locales(sala)
-    expect(pendiente.at(-1)).toMatchObject({ estado: 'pendiente' })
-    expect(turnoDeCaja(pendiente, e.dispositivoId)?.id).toBe(turno)
+    expect(message(r)).toMatch(/Quedó pendiente/)
+    const pending = await locales(sala)
+    expect(pending.at(-1)).toMatchObject({ status: 'pending' })
+    expect(turnoDeCaja(pending, e.dispositivoId)?.id).toBe(shift)
     expect(h.hub.turnoAbierto(e.dispositivoId)).not.toBeNull()
 
     sala.simularSinConexion(false)
-    await hasta(() => sinPendientes(sala))
+    await until(() => sinPendientes(sala))
     expect(h.hub.turnoAbierto(e.dispositivoId)).toBeNull()
     expect(turnoDeCaja(await locales(sala), e.dispositivoId)).toBeNull()
     // Llegó una sola vez.
-    const cierres = (await locales(sala)).filter((l) => l.evento.tipo === 'TurnoCerrado')
-    expect(cierres).toHaveLength(1)
+    const closings = (await locales(sala)).filter((l) => l.event.type === 'ShiftClosed')
+    expect(closings).toHaveLength(1)
   })
 
   it('un movimiento hecho sin conexión suma al cuadre local al guardarse y se confirma al volver', async () => {
     const h = montarHub()
-    const { sala } = await caja(h)
-    const turno = await sala.abrirTurno(10_000)
-    await hasta(() => sinPendientes(sala))
+    const { sala } = await register(h)
+    const shift = await sala.abrirTurno(10_000)
+    await until(() => sinPendientes(sala))
     sala.simularSinConexion(true)
-    await sala.registrar('MovimientoCajaRegistrado', turno, {
-      movimiento_id: nuevoId(),
-      tipo: 'salida',
-      monto: 3_000,
-      descripcion: 'Taxi',
-      a_quien: null,
-      dias: [],
+    await sala.record('CashMovementRecorded', shift, {
+      movement_id: newId(),
+      type: 'output',
+      amount: 3_000,
+      description: 'Taxi',
+      to_whom: null,
+      days: [],
     })
-    expect(cuadreDeCaja(await locales(sala), turno)?.efectivo.esperado).toBe(7_000)
-    expect(h.hub.cuadre(turno)?.efectivo.esperado).toBe(10_000)
+    expect(cuadreDeCaja(await locales(sala), shift)?.cash.expected).toBe(7_000)
+    expect(h.hub.reconciliation(shift)?.cash.expected).toBe(10_000)
     sala.simularSinConexion(false)
-    await hasta(() => sinPendientes(sala))
-    expect(h.hub.cuadre(turno)?.efectivo.esperado).toBe(7_000)
+    await until(() => sinPendientes(sala))
+    expect(h.hub.reconciliation(shift)?.cash.expected).toBe(7_000)
   })
 })

@@ -9,7 +9,7 @@ export default defineConfig({
     // En desarrollo, la API la atiende el hub.
     proxy: {
       '/api': { target: 'http://localhost:4000', ws: true },
-      '/fotos': 'http://localhost:4000',
+      '/photos': 'http://localhost:4000',
     },
   },
   test: {
