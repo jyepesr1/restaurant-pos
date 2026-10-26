@@ -18,7 +18,7 @@ Estados: ✅ terminado · 🚧 en curso · ⏳ pendiente · ⏭️ omitida
 | 0.10 | Pantalla mínima para la demo de sincronización | ✅ |
 | 0.11 | Demo guiada | ⏭️ omitida |
 
-**0.11 omitida por decisión del dueño (24-oct-2026):** se pasa directo a la Fase 1. La prueba de aceptación de la Fase 0 con dos navegadores (Playwright) se escribe al cierre de la Fase 1, junto con la de la 1.11.
+**0.11 omitida por decisión del dueño (24-oct-2026):** se pasa directo a la Fase 1. La prueba de aceptación de la Fase 0 con dos navegadores (Playwright) se escribe al cierre de la Fase 1, junto con la de la 1.14.
 
 ## Fase 1 — MVP de salón (operar un servicio completo sin facturación electrónica)
 
@@ -37,8 +37,13 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.7 | Apertura, cierre y arqueo de caja | ✅ |
 | 1.8 | Datáfonos nivel 1 y conciliación en el cierre | ✅ (por totales; el importador espera un reporte real de Bold) |
 | 1.9 | Reportes básicos y `docs/KPIS.md` | ✅ |
-| 1.10 | Hub en el PC de caja (Windows) | ⏳ |
-| 1.11 | Prueba de aceptación: servicio de 2 horas sin internet (y la e2e de la Fase 0) | ⏳ |
+| 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ⏳ |
+| 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja; carta, configuración y personal bajando de la nube | ⏳ |
+| 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
+| 1.13 | Hub en el PC de caja (Windows) | ⏳ |
+| 1.14 | Prueba de aceptación: servicio de 2 horas con un corte de internet y la sincronización al volver (y la e2e de la Fase 0) | ⏳ |
+
+**Cambio de arquitectura (26-oct-2026):** el dueño decidió que Faro funcione principalmente en línea, con la base oficial en Postgres (Neon) y el PC de caja como puente local para no detenerse sin internet ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)). Por eso se agregan las tareas 1.10 a 1.12 antes del instalador del hub (antes 1.10, ahora 1.13) y de la prueba de aceptación (antes 1.11, ahora 1.14).
 
 ### 0.1 — Prueba de conexión en dispositivos reales ✅
 
@@ -160,7 +165,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entr
 - **Sincronización:** 170.
 
 **Queda pendiente:**
-- **Impresoras USB**: la de la caja es para recibos y cajón (1.6 y 1.7). La impresión por USB llega con el instalador de Windows (1.10).
+- **Impresoras USB**: la de la caja es para recibos y cajón (1.6 y 1.7). La impresión por USB llega con el instalador de Windows (1.13).
 - **El timbre de la impresora** (algunas Jaltech de cocina traen zumbador): no se usa todavía.
 - **Agrupar productos iguales** y la pantalla de expedidor: Fase 3 (KDS completo).
 - **Tiempo por mesa** en el plano con los colores de cocina: en una tarea siguiente.
@@ -252,7 +257,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron:
 - **Mover solo una unidad** de una línea de varias: hoy se mueve la línea entera.
 - Un pedido que queda vacío al mover todo sigue abierto sin productos (la mesa se ve libre).
 - Mesas unidas de zonas distintas no llevan franja en el plano: solo el halo y «con la 5 (Terraza)».
-- El plano con mesas unidas no tiene prueba automática (necesita el ancho real de la pantalla): queda para Playwright (1.11).
+- El plano con mesas unidas no tiene prueba automática (necesita el ancho real de la pantalla): queda para Playwright (1.14).
 - El hub no revisa que la mesa exista al abrir o cambiarse (solo que esté libre).
 - Un celular con una versión vieja de la app no conoce `MesasUnidas`: hay que actualizar todos los equipos a la vez.
 
@@ -627,7 +632,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. El skill de diseño 
 - **Sincronización:** 112.
 
 **Queda pendiente:**
-- **Copia de seguridad**: la carpeta `datos/fotos` debe entrar en la copia del hub cuando se haga (1.10).
+- **Copia de seguridad**: la carpeta `datos/fotos` debe entrar en la copia del hub cuando se haga (1.12): con ADR-016 las fotos suben a la nube.
 - **Tablet**: la barra lateral muestra solo íconos, sin nombres.
 - **Celular**: los paneles dentro de paneles (opciones de un producto) se apilan.
 - Más de 6 personas en un pedido; el tiempo a partir del cual la demora sale en rojo; atajos de teclado y un salto al contenido para la caja; los nombres P1, P2 de las personas.

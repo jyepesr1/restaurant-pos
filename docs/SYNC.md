@@ -2,7 +2,7 @@
 
 Cómo viajan los datos entre los celulares, el hub y la nube sin perder ni duplicar nada. Decisión de fondo: [ADR-007](DECISIONES.md#adr-007--sincronización-propia-con-el-mismo-protocolo-en-dos-niveles). Lo aprendido en celulares reales: [ADR-001](DECISIONES.md#adr-001--los-dispositivos-abren-la-app-por-la-ip-del-hub-con-http-y-sin-instalar-nada). Entidades y eventos: [MODELO_DATOS.md](MODELO_DATOS.md).
 
-Se implementa en `packages/sync` (tarea 0.6, dispositivo ↔ hub). El nivel hub ↔ nube usa el mismo protocolo desde la Fase 2.
+Se implementa en `packages/sync` (tarea 0.6, dispositivo ↔ hub). El nivel hub ↔ nube usa el mismo protocolo. Desde [ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local) (26-oct-2026) **la base oficial es Postgres en Neon** y el PC de caja es el puente local.
 
 **Estado de la implementación (0.6):** lógica del hub (`HubSync`, `SalaSync`), almacén SQLite, cliente del dispositivo (`ClienteSync`) y gestor de conexión (`GestorConexion`), probados con una red simulada (escenarios 1 a 13). Diferencias con este documento, por ahora:
 - **`foto`**: un dispositivo nuevo o sin datos pide `traer desde: 0`; la foto llega cuando el volumen lo justifique (Fase 1).
@@ -11,7 +11,7 @@ Se implementa en `packages/sync` (tarea 0.6, dispositivo ↔ hub). El nivel hub 
 - **Sesiones y tokens** (tareas 0.7 y 1.3b): entrar, el cierre y las autorizaciones van por la **API HTTP** del hub (`POST /api/entrar`, `/api/sesiones/cerrar`, `/api/autorizaciones`, `/api/dispositivos/:id/revocar`, y el personal en `/api/personal/…`), con el token en `Authorization: Bearer`; no por el WebSocket. El WebSocket solo lleva eventos. El emparejamiento por código (`/api/emparejamientos`, `/api/emparejar`) queda en el hub sin uso: la pantalla de cocina la convierte el administrador con `POST /api/pantallas` (tarea 1.4, ADR-015).
 - **Cierre por inactividad**: lo hace el dispositivo (pide el PIN otra vez tras `sesion_inactividad_min`), porque el hub no ve el uso sin conexión. El hub cierra una sesión al cerrarla el usuario, al entrar otra persona en ese dispositivo, al revocar el dispositivo o al archivar al usuario.
 - **Eventos de producto** (tarea 1.3): `ProductoAgotado` y `ProductoDisponible` viajan en la misma secuencia que los pedidos (agregado `producto`). El hub los acepta con el permiso `agotar_producto` y no los pasa por el reductor del pedido. Un ítem de un producto agotado que llega de un equipo sin conexión se acepta: todavía no es conflicto.
-- **Catálogo** (tarea 1.1): el mensaje `catalogo` solo avisa la versión nueva y el dispositivo pide la carta entera por HTTP (`GET /api/catalogo`, es pequeña); también la pide cada vez que se conecta. Mandar solo los registros cambiados queda para cuando la carta sea grande o la edite la nube (Fase 2).
+- **Catálogo** (tarea 1.1): el mensaje `catalogo` solo avisa la versión nueva y el dispositivo pide la carta entera por HTTP (`GET /api/catalogo`, es pequeña); también la pide cada vez que se conecta. Mandar solo los registros cambiados queda para cuando la carta sea grande o la edite la nube (1.11).
 - **Suscripciones**: por ahora solo hay eventos de pedido y todos los ven; el filtro por tipo de dispositivo y `comanda` llegan con esos datos.
 - **WebSocket real e IndexedDB** quedaron conectados en la tarea 0.10: `GET /api/sync/ws` (mensajes de hasta 1 MB, latido cada 5 s, se cierra si no saluda en 10 s) y el almacén del dispositivo en IndexedDB con índices para los pendientes propios y los eventos de cada pedido. El **escenario 14 con dos navegadores (Playwright)** queda para la corrida e2e del final. Los mensajes del hub aún no se validan tipo por tipo en el dispositivo.
 - **`afecta`** siempre va vacío: en la Fase 0 ningún evento se aplica fuera de su agregado y sus `relacionados`. Lo mismo los conflictos `item_movido`, `mesa_bloqueada` y `precio_distinto`: llegan con el bloqueo de mesas, mover ítems sin conexión y el catálogo (Fase 1).
@@ -24,7 +24,8 @@ Cada acción es un **evento** con un código único. Se guarda primero donde se 
 
 ## Modo normal y modo de respaldo
 
-- **Lo normal es estar conectado al hub** por la red local del restaurante. Cada evento llega al hub en milisegundos y los demás dispositivos lo ven al instante. **No se necesita internet** para operar el salón: internet solo se usa para la nube, la DIAN y los datáfonos integrados.
+- **Lo normal es estar en línea**: los equipos del local están conectados al hub por la red del restaurante, y el hub sube cada evento a la nube apenas lo acepta (con internet, en uno o dos segundos). La nube es la base oficial, con respaldos (ADR-016).
+- **Si se cae internet, el salón no se detiene**: el hub sigue atendiendo a los equipos e imprimiendo comandas, y guarda lo que falta por subir en su cola. Al volver la conexión lo sube en orden y sin duplicar. La caja muestra cuántos cambios faltan por subir. Sin internet no se edita la carta, el personal ni la configuración (su autoridad es la nube).
 - **El modo sin conexión es un respaldo** para cuando se cae el Wi-Fi o el hub. En ese modo el celular sigue tomando pedidos y los guarda en su cola; al volver la conexión se envían solos.
 - Para no complicar el caso excepcional, **sin conexión con el hub no se puede**:
   - pedir autorización de supervisor;
@@ -42,14 +43,14 @@ flowchart LR
     K["KDS"] <--> H
     C["Caja · localhost"] <--> H
   end
-  H <-->|"mismo protocolo, cuando hay internet"| N[("Nube · Cloudflare · Fase 2")]
+  H <-->|"mismo protocolo · sube al instante · encola sin internet"| N[("Nube · Postgres en Neon · base oficial")]
 ```
 
 | Nodo | Guarda | Es autoridad de |
 |---|---|---|
 | Dispositivo (celular, tablet, KDS) | Copia de trabajo en IndexedDB y su cola de salida | Nada: su copia puede borrarse (ADR-001) |
-| Hub | Todos los eventos del restaurante en SQLite | El salón: orden, numeración, sesiones, permisos y reglas |
-| Nube (Fase 2) | Copia de todos los eventos | Catálogo y configuración editados desde el panel web, reportes, integraciones |
+| Hub | Los eventos del restaurante en SQLite (copia de trabajo) y su cola de subida | El salón: orden, numeración, sesiones, permisos y reglas |
+| Nube (Postgres en Neon) | **La base oficial**: todos los eventos, con respaldos | Carta, configuración y personal; reportes de varios días y sedes; integraciones; restaurar un hub |
 
 ## Sobre del evento
 
@@ -171,7 +172,7 @@ Si procesar un evento hace fallar al hub, pero el hub todavía puede guardar, el
 
 ## Catálogo y configuración
 
-- Solo los escribe el hub (Fases 0–1, editados desde la caja) o la nube (desde la Fase 2, que pasa a ser la autoridad). Como hay un solo escritor, no hay ediciones concurrentes que desempatar.
+- Solo los escribe el hub (hasta la tarea 1.10, editados desde la caja) o la nube (desde la 1.11, que pasa a ser la autoridad, ADR-016). Como hay un solo escritor, no hay ediciones concurrentes que desempatar.
 - Cada cambio toma el siguiente valor de un **contador global de catálogo** del restaurante y lo guarda como `version` del registro, y deja su fila en el **historial** (`catalogo_cambio`, [MODELO_DATOS.md](MODELO_DATOS.md#catálogo)).
 - Se edita desde la caja con `POST /api/catalogo/cambios`: una lista de cambios que se aplica entera o no se aplica, con la sesión y el permiso `editar_catalogo` (o `editar_precios` si solo cambian precios). Al guardar, el hub manda `catalogo` a los conectados.
 - Las filas de unión (`ProductoEstacion`, `RolPermiso`, …) también tienen `activo`: quitar un vínculo es archivarlo, y eso viaja como cualquier cambio.
@@ -208,11 +209,13 @@ Si procesar un evento hace fallar al hub, pero el hub todavía puede guardar, el
 | Reloj del celular desfasado | No afecta el orden (lo da la secuencia del hub). El dispositivo aprende el desfase con `hora_hub` de `bienvenido`, lo guarda y lo suma para la `hora_estimada_hub` de sus eventos. |
 | App del celular más vieja que el hub | `bienvenido` trae la versión mínima; la app se recarga sola. |
 
-## Hub ↔ nube (Fase 2)
+## Hub ↔ nube (ADR-016)
 
-- El hub es un "dispositivo" de la nube: tiene su `ColaSalida` hacia la nube y empuja sus eventos ya secuenciados.
-- La nube guarda por `(restaurante_id, id)`, conserva la `secuencia` del hub y numera los suyos aparte.
-- Sin internet, el salón no nota nada: la cola del hub crece y se vacía al volver la conexión.
+- El hub es un "dispositivo" de la nube: tiene su `ColaSalida` hacia la nube y empuja sus eventos ya secuenciados, apenas los acepta.
+- La nube guarda por `(restaurante_id, id)`, conserva la `secuencia` del hub y numera los suyos aparte. No rechaza un evento que el hub ya aceptó: si algo no cuadra, lo marca como conflicto.
+- La carta, la configuración y el personal los escribe la nube; el hub los baja (al conectarse y cuando cambian).
+- Sin internet, el salón no nota nada: la cola del hub crece y se vacía al volver la conexión. La caja muestra cuántos cambios faltan por subir.
+- Un hub nuevo (PC cambiado o dañado) se registra con una credencial de su restaurante y sede y baja de la nube la carta, la configuración, el personal y los pedidos abiertos.
 
 ## Pruebas de aceptación (tarea 0.6)
 

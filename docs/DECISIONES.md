@@ -216,7 +216,7 @@ Cumple a la vez la trazabilidad total del brief, la sincronización sin pérdida
 ### Decisión
 
 - Mismo mecanismo entre **dispositivo ↔ hub** (Fase 0) y **hub ↔ nube** (Fase 2): cola local de salida, envío idempotente por ID, secuencia asignada por quien recibe y lectura de lo nuevo desde el último número conocido.
-- El hub es la autoridad del salón y funciona sin nube.
+- El hub es la autoridad del salón y funciona sin nube. Desde [ADR-016](#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local) (26-oct-2026), **la base oficial es la nube**: el hub conserva el orden del salón y sube cada evento apenas lo acepta.
 - Conflictos: los eventos que no se contradicen se conservan todos; los que no se pueden fusionar solos no se descartan, se **marcan para que los resuelva una persona** en caja.
 
 ### Alternativas descartadas
@@ -267,7 +267,7 @@ Detalle del protocolo en [SYNC.md](SYNC.md#seguridad).
 
 ## ADR-009 · Nube en Cloudflare (desde la Fase 2)
 
-**Fecha:** 23-oct-2026 · **Estado:** aceptada (se implementa en la Fase 2)
+**Fecha:** 23-oct-2026 · **Estado:** reemplazada por [ADR-016](#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local) (26-oct-2026)
 
 ### Decisión
 
@@ -334,7 +334,7 @@ Dos de ellas cambian lo que dice el brief:
 | Propina al cobrar | La sugerida (10 %) aparece **ya marcada** y se ve su porcentaje. Se cambia con «Sin propina», «5 %» o con otro valor **en pesos o en porcentaje**; también desde la precuenta, y la elegida pasa al papel y al cobro. El porcentaje sugerido del restaurante se cambia en «Caja y pagos». «El cliente entrega» y el cambio son solo del efectivo: con los medios digitales se cobra lo justo. |
 | Precuenta con impuesto | La precuenta **discrimina el impuesto**: base sin impuestos y cada impuesto con su tarifa (INC 8 %), con el mismo desglose del documento DIAN redondeado a pesos — (validar) con el contador. |
 | Dividir la cuenta | Primero **en partes iguales** y **por productos** (un producto que toman varias cuentas se reparte entre ellas). Monto libre y fracciones (1/3 de botella) quedan para después. |
-| Precuenta | Se ve en pantalla y, si se eligió, sale por una impresora (de red hoy; la USB de la caja llega con la 1.10). Pedirla marca la mesa «Pidió la cuenta». |
+| Precuenta | Se ve en pantalla y, si se eligió, sale por una impresora (de red hoy; la USB de la caja llega con el instalador, 1.13). Pedirla marca la mesa «Pidió la cuenta». |
 | Cerrar la mesa | **Se cierra sola** cuando un pago deja el saldo en 0. |
 | Reportes (tarea 1.9) | Se ve **un día operativo o un rango** (Hoy, Ayer, Últimos 7 días, Rango; hasta 93 días). Solo quien tiene «Ver todos los reportes»; **el mesero no ve nada por ahora**. Se descarga en **CSV para Excel**. Las fórmulas están en [KPIS.md](KPIS.md) (26-oct-2026). |
 | Mesa reabierta en los reportes | Lo ya reportado de un día **no cambia nunca**: si una mesa cerrada el 24 se reabre y se cierra el 25, la diferencia (lo agregado o corregido) aparece el 25. Como en contabilidad y en la factura electrónica (nota crédito ese día) (26-oct-2026). |
@@ -468,7 +468,7 @@ Decisiones del dueño del 25-oct-2026. En La Spritzzería la cocina no tiene pan
   - también salen las comandas de **reimpresión**, **modificación** y **anulación** cuando existan esos eventos;
   - **cola con reintentos** (espera creciente hasta 30 s, sin rendirse); a los 3 fallos seguidos la comanda pasa a la **impresora de respaldo** si hay una, y todos los equipos ven la alerta «La impresora de Barra no responde»;
   - la caja puede descartar un trabajo atascado (queda registrado, no se borra).
-- **Las impresoras USB** (la de la caja de La Spritzzería) son para recibos y cajón (tareas 1.6 y 1.7) y se conectan por la cola de Windows con el instalador (1.10). La comanda por USB queda para entonces.
+- **Las impresoras USB** (la de la caja de La Spritzzería) son para recibos y cajón (tareas 1.6 y 1.7) y se conectan por la cola de Windows con el instalador (1.13). La comanda por USB queda para entonces.
 - **Número de comanda**: lo asigna el hub al aceptar el envío, consecutivo por día operativo, uno por estación (`asignaciones.numeros_comanda`). La reimpresión, la modificación y la anulación muestran el número de la comanda original.
 - **Pantalla de cocina (KDS), opcional**:
   - el **administrador** entra con su contraseña en la tablet o el PC de cocina y la **convierte en pantalla** de una o varias estaciones; desde ahí queda abierta siempre, sin PIN;
@@ -491,3 +491,57 @@ El brief pide impresoras por estación y KDS, pero en el piloto la cocina no tie
 | «Empezar» y «Listo» en la pantalla | Un toque más por comanda; el piloto no necesita saber qué está en preparación. |
 | La caja marca listo y el mesero entrega | Un paso más en hora pico; queda posible pero no es el flujo normal. |
 | Generar la comanda fuera de la transacción del evento | Un corte entre las dos dejaría un pedido enviado que nunca se imprimió. |
+
+---
+
+## ADR-016 · Nube primero: Postgres en Neon como base oficial y el PC de caja como puente local
+
+**Fecha:** 26-oct-2026 · **Estado:** aceptada · **Reemplaza:** [ADR-009](#adr-009--nube-en-cloudflare-desde-la-fase-2) · **Cambia:** [ADR-007](#adr-007--sincronización-propia-con-el-mismo-protocolo-en-dos-niveles) (quién es la base oficial) · **Detalle:** [SYNC.md](SYNC.md)
+
+Decisión del dueño del 26-oct-2026. Faro debe funcionar **principalmente en línea**, con los datos en una base en la nube con respaldos. El modo sin internet es el respaldo, para que el restaurante no se detenga si se cae la conexión.
+
+### Decisión
+
+- **La base oficial es Postgres en Neon**, con respaldos y restauración a un momento dado. Hay una sola base para todos los restaurantes, separada por `restaurante_id` y con seguridad por fila. La región se elige al implementar **(validar)**: la de Estados Unidos (este) o la de São Paulo, según la latencia desde Colombia.
+- **La API de la nube corre en Cloudflare Workers** y se conecta a Neon (con Hyperdrive). Antes de escribirla, `investigador-integraciones` resume la documentación oficial de Neon y Hyperdrive en `docs/integraciones/` **(validar)**.
+- **El PC de caja sigue siendo el puente local (el hub).** Los celulares, la cocina y las impresoras siguen conectados a él por la red del local (ADR-001 y ADR-015). Hay dos razones:
+  - el navegador de un celular no puede imprimir en una impresora de red: sin algo en el local, si se cae internet no salen comandas;
+  - con el hub en el local, sin internet el restaurante sigue completo: pedidos, comandas, cobros y cierre de caja.
+- **Una sola forma de trabajar, con o sin internet:**
+  - el hub acepta y guarda cada evento al instante;
+  - lo sube a la nube enseguida (con internet, en uno o dos segundos);
+  - si no hay internet, lo deja en su cola local y lo sube **en orden y sin duplicar** apenas vuelva la conexión.
+  
+  No hay un «modo en línea» y un «modo sin conexión» que se cambien en pleno servicio: así el mesero no espera a internet y el corte no cambia las reglas.
+- **Quién manda:**
+  - **La nube** es la base oficial y la copia que vale para respaldos, reportes de varios días o sedes, y lo que se vea desde fuera del local. También es la autoridad de la carta, la configuración y el personal: con internet, la caja los edita en la nube y el hub los baja.
+  - **El hub** conserva el orden del salón: la secuencia de los eventos, la numeración del día y las reglas de mesas, permisos y caja. Todos los equipos del local pasan por él, así que no hay dos autoridades en el mismo salón.
+  - La nube **no rechaza** un evento que el hub ya aceptó: lo guarda con su secuencia y, si encuentra algo raro, lo marca como conflicto para que lo revise una persona (ADR-007).
+- **Sin internet:**
+  - el salón opera completo;
+  - **no se edita la carta, el personal ni la configuración**, porque la autoridad es la nube;
+  - la caja muestra cuántos cambios faltan por subir;
+  - el cierre de caja se hace igual, sale el cierre Z y avisa si quedan cambios por subir.
+- **Respaldos y PC nuevo:**
+  - el SQLite del hub deja de ser la única copia: queda como copia de trabajo y cola de subida;
+  - si se daña o se cambia el PC de caja, un hub nuevo baja de la nube la carta, la configuración, el personal y los pedidos abiertos.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Solo nube, sin nada en el local | Sin internet los celulares guardan pedidos, pero la cocina no los recibe ni salen comandas: el restaurante se detiene. |
+| Cloudflare Durable Objects con SQLite por restaurante (ADR-009) | Más amarre a un proveedor y difícil para reportes entre sedes; el dueño prefiere Postgres estándar con respaldos. |
+| Con internet, confirmar cada evento en la nube antes de mostrarlo | Dos modos distintos según la conexión: cada acción espera a internet, y un corte en pleno servicio cambia el comportamiento. |
+| PowerSync, ElectricSQL u otro motor de sincronización sobre Postgres | Suponen que cada dispositivo habla con la nube; no resuelven imprimir en el local sin internet, y ya hay un protocolo propio probado (ADR-007). Se puede reconsiderar para el panel web. |
+
+### Consecuencias
+
+- **ADR-009 queda reemplazada.** Se mantienen:
+  - ADR-003: el hub es un servicio de Windows en el PC de caja;
+  - ADR-007: el mismo protocolo, con cola de salida y envío idempotente, ahora hub → nube;
+  - ADR-012: SQLite en el hub, como copia local y cola.
+- **Dos dialectos de SQL**: SQLite en el hub y Postgres en la nube. El esquema de la nube se escribe aparte (los eventos como `jsonb`). La lógica de negocio sigue en `@pos/core` (TypeScript), no en SQL, así que los cálculos son los mismos en los dos lados.
+- **Nuevas tareas antes del instalador del hub** (ver [ROADMAP.md](ROADMAP.md)): la base y la API en la nube, la subida hub → nube con la carta bajando de la nube, y restaurar un hub desde la nube.
+- **Multirestaurante desde el principio:** cada evento, registro y credencial lleva `restaurante_id`. Cada hub se registra en la nube con una credencial propia de su restaurante y su sede.
+- **(validar)** Costo mensual de Neon y de Workers por restaurante, y la región.

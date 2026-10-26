@@ -11,6 +11,8 @@
 - `docs/ROADMAP.md`: estado de cada tarea y cómo probarla a mano.
 - `apps/pos/PRODUCT.md` y `apps/pos/DESIGN.md`: qué es el producto para quien diseña, y su sistema visual.
 
+**Arquitectura** ([ADR-016](docs/DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): la base oficial es **Postgres en Neon** (API en Cloudflare Workers). El PC de caja (el hub, SQLite) es el **puente local**: atiende a los equipos y las impresoras del local, sube cada evento a la nube al instante y, sin internet, lo encola y lo sube al volver.
+
 Antes de cambiar el modelo, la sincronización o una regla de negocio, leer el ADR correspondiente; si la decisión cambia, actualizar el ADR.
 
 Restaurante piloto (primer cliente): **La Spritzzería** (Envigado). Su carta real está en `docs/datos/carta-la-spritzzeria.yaml`; se ve con su marca opcional.
