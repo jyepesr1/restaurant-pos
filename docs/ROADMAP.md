@@ -308,7 +308,8 @@ Decisión del dueño ([ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-
 - Nombres que se pueden mejorar: el curso «entrada» quedó como `entry` (mejor `starter`); los movimientos de caja `entry`/`output` (mejor `cash_in`/`cash_out`); `settings` para los ajustes de redondeo (mejor `roundingAdjustments`); los tipos de comanda `newOne`/`voidEntry`; algunos nombres sueltos señalados en la revisión.
 - Los tokens de color de `styles.css` y las clases de Tailwind que los usan, en español.
 - Las e2e «the home screen links to /diagnostics» y «app start (sign in): everything is at least 48×48» ya fallaban antes de la reescritura: buscan un enlace «Diagnóstico del equipo» y un encabezado «Escribe tu PIN» que la pantalla de entrar no tiene.
-- `apps/hub/.vitest/json/output.json` y `apps/pos/.vitest/json/output.json` son salidas viejas de Vitest guardadas en git por error.
+- **Antes de cualquier push:** el commit «Rename apps/hub to English» guardó por error tres archivos de la carpeta vieja `apps/hub/datos` (la llave de los PIN, `hub-instancia` y `diagnosticos.jsonl`). Ya no se versionan, pero siguen en el historial local de ese commit: hay que sacarlos del historial (por ejemplo con `git filter-branch` sobre los commits de esta tarea) antes de subir.
+- Los celulares y tablets que ya abrieron Faro guardan una base local con los nombres viejos: hay que borrar los datos del sitio en cada uno (paso 6) antes de usarlos de nuevo.
 
 ### 1.10 — La nube: Postgres en Neon y API en Cloudflare Workers ✅
 
