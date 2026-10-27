@@ -209,7 +209,7 @@ describe('the same product-group link', () => {
       { entity: 'products', id: p, data: product(m) },
     ])
     expect(r.code).toBe(400)
-    expect(r.body.message).toMatch(/Cambio 1.*product_id no existe/)
+    expect(r.body.message).toMatch(/Cambio 1.*producto_id no existe/)
   })
 })
 
@@ -515,7 +515,7 @@ describe('invalid ids and data', () => {
     const r = await rejected(m, [
       { entity: 'products', id: newId(), data: product(m, { category_id: burrata.id }) },
     ])
-    expect(r.body.message).toMatch(/category_id no existe/)
+    expect(r.body.message).toMatch(/categoria_id no existe/)
     // The "product" of a variant is a tax.
     await rejected(m, [
       {
@@ -841,13 +841,13 @@ describe('a record parent does not change', () => {
       { entity: 'variants', id: variant.id, data: { product_id: other.id } },
     ])
     expect(r1.code).toBe(400)
-    expect(r1.body.message).toMatch(/otro product/)
+    expect(r1.body.message).toMatch(/otro producto/)
     if (otherGroup) {
       const r2 = await m.edit(session, [
         { entity: 'modifiers', id: option.id, data: { group_id: String(otherGroup.id) } },
       ])
       expect(r2.code).toBe(400)
-      expect(r2.body.message).toMatch(/otro group/)
+      expect(r2.body.message).toMatch(/otro grupo/)
     }
     const link = String(m.db.prepare('SELECT id FROM product_modifier_groups LIMIT 1').get()?.id)
     const r3 = await m.edit(session, [
@@ -941,7 +941,7 @@ describe('archive what others use', () => {
       { entity: 'products', id: products[0], data: { active: true } },
     ])
     expect(r.code).toBe(400)
-    expect(r.body.message).toMatch(/category está archivado/)
+    expect(r.body.message).toMatch(/categoria está archivado/)
   })
 
   it('archiving a group archives its links and stays in the history', async () => {
@@ -985,7 +985,7 @@ describe('archive what others use', () => {
       { entity: 'variants', id: glass.id, data: { price: glass.price + 1_000 } },
     ])
     expect(r.code).toBe(400)
-    expect(r.body.message).toMatch(/Cambio 2.*product está archivado/)
+    expect(r.body.message).toMatch(/Cambio 2.*producto está archivado/)
     expect(m.catalog().version).toBe(before)
     // Separately, yes.
     expect(
@@ -1007,6 +1007,6 @@ describe('archive what others use', () => {
       { entity: 'modifiers', id: option.id, data: { extra_price: option.extraPrice + 500 } },
     ])
     expect(r.code).toBe(400)
-    expect(r.body.message).toMatch(/Cambio 2.*group está archivado/)
+    expect(r.body.message).toMatch(/Cambio 2.*grupo está archivado/)
   })
 })

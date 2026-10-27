@@ -323,7 +323,7 @@ describe('POST /api/catalog/changes', () => {
       },
     ])
     expect(r4.code).toBe(400)
-    expect(r4.body.message).toMatch(/category está archivado/)
+    expect(r4.body.message).toMatch(/categoria está archivado/)
   })
 
   it('archiving a group removes it from its products', async () => {

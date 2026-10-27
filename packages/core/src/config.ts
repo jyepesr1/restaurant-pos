@@ -73,7 +73,7 @@ export const RestaurantConfig = z.strictObject({
     .min(1)
     .refine((m) => m.includes('cash'), 'El efectivo siempre se recibe')
     .refine((m) => new Set(m).size === m.length, 'Hay medios repetidos')
-    .refine((m) => !m.includes('other'), 'Los medios propios van en medios_propios')
+    .refine((m) => !m.includes('other'), 'Los medios propios van en custom_methods')
     .default(['cash', 'card', 'nequi', 'daviplata', 'breb', 'transfer']),
   /**
    * Methods the restaurant creates, with their name (Sodexo, QR Bancolombia, Rappi). They show at

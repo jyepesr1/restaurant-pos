@@ -39,3 +39,7 @@ apps/hub/data/
 .wrangler/
 .dev.vars
 .dev.vars.*
+
+# Old hub data folder (before the English rewrite) and Vitest JSON output
+apps/hub/datos/
+.vitest/

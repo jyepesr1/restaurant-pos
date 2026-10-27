@@ -54,7 +54,7 @@ const IN_KITCHEN = new Set(['sent', 'in_preparation', 'ready'])
 
 const STATUS_TEXT: Record<string, string> = {
   pending: 'sin enviar',
-  held: 'held',
+  held: 'retenido',
   sent: 'en cocina',
   in_preparation: 'en preparación',
   ready: 'listo para llevar',

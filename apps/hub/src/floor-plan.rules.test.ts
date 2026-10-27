@@ -121,9 +121,9 @@ describe('moving a table or an element to another zone', () => {
       { entity: 'dining_tables', id: one, data: { zone_id: emptyOne.id } },
     ])
     expect(toArchived.code).toBe(400)
-    expect(toArchived.body.message).toMatch(/zone está archivado/)
+    expect(toArchived.body.message).toMatch(/zona está archivado/)
     const toNone = await m.edit([{ entity: 'dining_tables', id: one, data: { zone_id: newId() } }])
-    expect(toNone.body.message).toMatch(/zone_id no existe/)
+    expect(toNone.body.message).toMatch(/zona_id no existe/)
     // Nothing moved.
     expect(m.catalog().tables.find((x) => x.id === one)?.zoneId).toBe(m.diningRoom())
   })
@@ -221,7 +221,7 @@ describe('reactivating archived records', () => {
     ])
     const r = await m.edit([{ entity: 'dining_tables', id: t1.id, data: { active: true } }])
     expect(r.code).toBe(400)
-    expect(r.body.message).toMatch(/zone está archivado/)
+    expect(r.body.message).toMatch(/zona está archivado/)
   })
 
   it('a table whose name another active table took is not reactivated', async () => {
@@ -513,7 +513,7 @@ describe('what the editor sees and what devices see', () => {
     await m.edit([{ entity: 'zones', id: t.id, data: { active: false } }])
     const r = await m.edit([element(t.id)])
     expect(r.code).toBe(400)
-    expect(r.body.message).toMatch(/zone está archivado/)
+    expect(r.body.message).toMatch(/zona está archivado/)
   })
 })
 

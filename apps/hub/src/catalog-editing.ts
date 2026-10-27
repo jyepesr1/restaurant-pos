@@ -107,6 +107,50 @@ export type EditableEntity = keyof typeof ENTITIES
 const NAMES = Object.keys(ENTITIES) as [EditableEntity, ...EditableEntity[]]
 
 /** Which table each reference field points to. */
+/** How each field is named in the editor's error messages, which stay in Spanish. */
+const FIELD_NAMES: Record<string, string> = {
+  active: 'activo',
+  capacity: 'capacidad',
+  category_id: 'categoria_id',
+  description: 'descripcion',
+  extra_price: 'precio_extra',
+  favorite: 'favorito',
+  group_id: 'grupo_id',
+  height: 'alto',
+  level: 'piso',
+  maximum: 'maximo',
+  minimum: 'minimo',
+  name: 'nombre',
+  position: 'orden',
+  price: 'precio',
+  product_id: 'producto_id',
+  rate: 'tarifa',
+  rotation: 'rotacion',
+  shape: 'forma',
+  station_id: 'estacion_id',
+  tax_id: 'impuesto_id',
+  text: 'texto',
+  type: 'tipo',
+  width: 'ancho',
+  zone_id: 'zona_id',
+  photo: 'foto',
+}
+const fieldName = (f: string) => FIELD_NAMES[f] ?? f
+/** How each entity is named in those messages. */
+const ENTITY_NAMES: Record<EditableEntity, string> = {
+  zones: 'zona',
+  dining_tables: 'mesa',
+  floor_plan_elements: 'elemento_plano',
+  taxes: 'impuesto',
+  stations: 'estacion',
+  categories: 'categoria',
+  products: 'producto',
+  variants: 'variante',
+  modifier_groups: 'grupo_modificador',
+  product_modifier_groups: 'producto_grupo_modificador',
+  modifiers: 'modificador',
+}
+
 const REFERENCES: Record<string, string> = {
   zone_id: 'zones',
   station_id: 'stations',
@@ -226,7 +270,7 @@ export function applyChanges(
   return inTransaction(db, () => {
     const touched: { entity: EditableEntity; id: string; where: string }[] = []
     for (const [i, c] of changes.entries()) {
-      const where = `Cambio ${i + 1} (${c.entity})`
+      const where = `Cambio ${i + 1} (${ENTITY_NAMES[c.entity]})`
       if (Object.keys(c.data).length === 0) throw new EditError(`${where}: no cambia nada`)
       // An id belongs to a single record type: the history must not mix them up.
       const other = db
@@ -241,18 +285,22 @@ export function applyChanges(
       const parsed = (current ? schema.partial() : schema).safeParse(c.data)
       if (!parsed.success) {
         const issue = parsed.error.issues[0]
-        throw new EditError(`${where}: ${issue?.path.join('.') || 'datos'}: ${issue?.message}`)
+        throw new EditError(
+          `${where}: ${issue?.path.map((p) => fieldName(String(p))).join('.') || 'datos'}: ${issue?.message}`,
+        )
       }
       let data = toSql(parsed.data as Record<string, unknown>)
       for (const [field, tableName] of Object.entries(REFERENCES)) {
         const value = data[field]
         if (typeof value === 'string' && !read(db, restaurantId, tableName, value))
-          throw new EditError(`${where}: ${field} no existe`)
+          throw new EditError(`${where}: ${fieldName(field)} no existe`)
       }
       if (current) {
         for (const field of PARENTS[c.entity] ?? [])
           if (field in data && data[field] !== current[field])
-            throw new EditError(`${where}: no se puede pasar a otro ${field.replace('_id', '')}`)
+            throw new EditError(
+              `${where}: no se puede pasar a otro ${fieldName(field).replace('_id', '')}`,
+            )
         data = Object.fromEntries(Object.entries(data).filter(([k, v]) => current[k] !== v))
         if (Object.keys(data).length === 0) continue
       }
@@ -277,7 +325,7 @@ export function applyChanges(
         for (const [field, tableName] of Object.entries(REFERENCES)) {
           const ref = row[field]
           if (typeof ref === 'string' && read(db, restaurantId, tableName, ref)?.active !== 1)
-            throw new EditError(`${t.where}: ${field.replace('_id', '')} está archivado`)
+            throw new EditError(`${t.where}: ${fieldName(field).replace('_id', '')} está archivado`)
         }
         continue
       }
