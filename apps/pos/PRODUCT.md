@@ -34,13 +34,13 @@ Frente a Toteat, Fudo y Vendty, cuatro cosas juntas:
 - Mercado: **Colombia primero** (DIAN, datáfonos Bold y Redeban, pesos enteros), luego el resto de Latinoamérica de habla hispana. Interfaz en español.
 - Se abre desde el navegador por la IP del hub en la red local (HTTP), sin instalar nada. Meseros entran con PIN; caja, administración y reportes con usuario y contraseña (ADR-013).
 - Salones con luz baja o mucha luz; pantallas de celulares de gama media; uso con una mano; interrupciones constantes.
-- Multirestaurante: todo es por restaurante (`restaurante_id`); la nube (Fase 2) atenderá a muchos clientes.
+- Multirestaurante: todo es por restaurante (`restaurant_id`); la nube (Fase 2) atenderá a muchos clientes.
 
 ## Capabilities and Constraints
 
 - Ya construido: entrar por rol, plano de mesas editable, carta con variantes y modificadores, toma de pedido por persona y curso (retener y marchar), agotados en tiempo real, pedidos para llevar/domicilio/barra, personal y roles con permisos dinámicos, sincronización offline.
 - Viene en Fase 1: comandas ESC/POS y KDS, mover/unir/anular, precuenta y división, pagos y propina, caja, datáfonos, reportes.
-- Stack: React 19 + Vite + Tailwind 4 en `apps/pos`; las fuentes van empaquetadas (funciona sin internet). Design system en `apps/pos/src/ui` y tokens en `apps/pos/src/estilos.css`.
+- Stack: React 19 + Vite + Tailwind 4 en `apps/pos`; las fuentes van empaquetadas (funciona sin internet). Design system en `apps/pos/src/ui` y tokens en `apps/pos/src/styles.css`.
 - Colores con significado fijo en todo el producto, sin importar la marca del restaurante: verde libre, ámbar en proceso, rojo demora o peligro; nunca solo color.
 - Nada tributario cableado; todo lo DIAN queda marcado para validar.
 - **Nombre del producto: Faro** (decisión del dueño, 25-oct-2026). Pendiente validar marca registrada (SIC) y dominio antes de usarlo en público; una búsqueda rápida no encontró otro POS de la región con ese nombre.
@@ -49,7 +49,7 @@ Frente a Toteat, Fudo y Vendty, cuatro cosas juntas:
 
 - El producto se llama **Faro** y tiene marca propia, distinta de La Spritzzería: lo que no se apaga y guía (nunca se cae, control total).
 - La personalización por restaurante es **opcional**: un restaurante sin configurar se ve con la marca del producto.
-- La Spritzzería quiere verse **con sus colores** (paleta Bagno, League Gothic y Alegreya Sans, su logo), según `la-spritzzeria-menu/DESIGN.md` y las direcciones de `/bocetos`.
+- La Spritzzería quiere verse **con sus colores** (paleta Bagno, League Gothic y Alegreya Sans, su logo), según `la-spritzzeria-menu/DESIGN.md` y las direcciones de `/mockups`.
 - Herramientas internas (editor de carta, plano, personal) se sienten como herramienta, no como marketing.
 - **Estilo elegido por el dueño (25-oct-2026): el estándar de los POS modernos del mercado, hecho con el máximo cuidado**, a la altura de sus referencias RestroBit y Tasty Station (conceptos de Dribbble):
   - barra lateral con secciones;
@@ -65,7 +65,7 @@ Frente a Toteat, Fudo y Vendty, cuatro cosas juntas:
 ## Evidence on Hand
 
 - Carta real del piloto: `docs/datos/carta-la-spritzzeria.yaml` (98 productos).
-- Bocetos navegables y direcciones visuales de la tarea 0.9 en `/bocetos`.
+- Bocetos navegables y direcciones visuales de la tarea 0.9 en `/mockups`.
 - No hay clientes, testimonios, precios ni cifras de mercado: no inventarlos.
 
 ## Product Principles

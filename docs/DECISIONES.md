@@ -29,7 +29,7 @@ El dueño pidió explícitamente que nadie tenga que instalar nada y que sea rá
 
 ### Evidencia (prueba del 23-oct-2026, hub en el Mac, mismo Wi-Fi)
 
-Herramienta: pantalla **Diagnóstico del dispositivo** (`/diagnostico`).
+Herramienta: pantalla **Diagnóstico del dispositivo** (`/diagnostics`).
 
 | | Android Mesero 1 (Chrome 155) | iPhone Caja (Safari 27.0.1) |
 |---|---|---|
@@ -152,7 +152,7 @@ Las fórmulas exactas, con ejemplos y la lista de pruebas de la tarea 0.5, está
 | Descuentos | En pesos con impuesto incluido, fijados al aplicarse; el del pedido se reparte por mayor residuo sobre el neto de las líneas; ninguna línea queda negativa. |
 | División | Montos fijos en el evento, calculados sobre el saldo; lo agregado después va a "sin asignar". |
 | Propina sugerida | 10 % sobre la base sin INC, neta de descuentos, con un solo redondeo (decisión del dueño). Va a un fondo común. |
-| Efectivo | El pago que deja el saldo en 0 se redondea a $100 (al más cercano; la mitad a favor del cliente); la diferencia queda en `ajuste_redondeo` (decisión del dueño). |
+| Efectivo | El pago que deja el saldo en 0 se redondea a $100 (al más cercano; la mitad a favor del cliente); la diferencia queda en `rounding_adjustment` (decisión del dueño). |
 | Redondeo | A la mitad hacia arriba, configurable. Todo con enteros y `BigInt`, un solo redondeo por cálculo. |
 
 ### Pendiente de validar
@@ -167,11 +167,11 @@ Con el contador y el proveedor DIAN: granularidad del desglose (línea o documen
 
 ### Decisión
 
-- Todo cambio de un pedido (abrir, agregar, enviar a cocina, anular, mover, descontar, cobrar, cerrar, reabrir) es un **evento** que se agrega a la tabla `Evento` y nunca se edita ni se borra.
+- Todo cambio de un pedido (abrir, agregar, enviar a cocina, anular, mover, descontar, cobrar, cerrar, reabrir) es un **evento** que se agrega a la tabla `events` y nunca se edita ni se borra.
 - El estado actual del pedido, sus ítems, cuentas y pagos es una **proyección**: se calcula aplicando los eventos en orden con una función pura de `packages/core`, y se puede reconstruir en cualquier momento.
 - Cada evento lleva usuario, dispositivo, hora del dispositivo y, si aplica, quién lo autorizó y el motivo. Así la auditoría sale sola.
 - Las entidades transaccionales (pagos, movimientos de caja e inventario, documentos fiscales) tampoco se borran: se anulan con otro registro.
-- El catálogo y la configuración no se borran: se archivan (`activo = false`).
+- El catálogo y la configuración no se borran: se archivan (`active = false`).
 - Los eventos tienen versión de esquema; cuando un esquema cambie se agrega una conversión de la versión vieja a la nueva, nunca se reescriben eventos guardados.
 
 ### Por qué
@@ -195,8 +195,8 @@ Cumple a la vez la trazabilidad total del brief, la sincronización sin pérdida
 
 - Todo registro sincronizable tiene un ID **ULID** generado en el dispositivo que lo crea (`packages/core`, forma canónica en mayúsculas). Funciona sin conexión y sin colisiones.
 - El **hub asigna un número de secuencia** a cada evento que acepta, consecutivo por restaurante. Ese número es el orden oficial.
-- La hora del dispositivo nunca ordena. La hora oficial de recepción es la del hub (`recibido_en`); para el día operativo de un evento que llega tarde se usa la hora del dispositivo corregida con el desfase que conoce el hub, acotada a una ventana de 12 h ([SYNC.md](SYNC.md#sobre-del-evento)).
-- Los números visibles para las personas (número de comanda, de pedido del día) los asigna el hub al aceptar el evento y viajan en sus `asignaciones`. Un dispositivo sin hub muestra un número provisional (`P` + iniciales del dispositivo + contador local, p. ej. `P-AM1-3`) que se reemplaza al confirmar.
+- La hora del dispositivo nunca ordena. La hora oficial de recepción es la del hub (`received_at`); para el día operativo de un evento que llega tarde se usa la hora del dispositivo corregida con el desfase que conoce el hub, acotada a una ventana de 12 h ([SYNC.md](SYNC.md#sobre-del-evento)).
+- Los números visibles para las personas (número de comanda, de pedido del día) los asigna el hub al aceptar el evento y viajan en sus `assignments`. Un dispositivo sin hub muestra un número provisional (`P` + iniciales del dispositivo + contador local, p. ej. `P-AM1-3`) que se reemplaza al confirmar.
 - **Los consecutivos DIAN solo los asigna la caja dueña de la resolución**, nunca un celular.
 
 ### Alternativas descartadas
@@ -244,14 +244,14 @@ Cumple a la vez la trazabilidad total del brief, la sincronización sin pérdida
 - El hub **no confía** en el usuario, dispositivo ni restaurante que diga el evento: los compara con la sesión y el token, y si no cuadran rechaza el evento.
 - Cada dispositivo se empareja con un QR de un solo uso (vence en 5 min, aprobado con PIN de administrador) y recibe un **token propio y revocable**.
 - Autorización de supervisor en el momento: el gerente escribe su PIN en el dispositivo del mesero sin cerrarle la sesión; el hub emite un **comprobante de un solo uso** para ese evento exacto (su huella SHA-256) y esa sesión, y el evento lo lleva. El supervisor debe tener el permiso y no puede autorizarse a sí mismo.
-- Cada evento va firmado (HMAC) con un secreto de sesión que el hub deriva de su clave: nadie crea eventos a nombre de otro con un `sesion_id` viejo. Las operaciones con hash corren en JavaScript puro (`@noble/hashes`) porque por HTTP el navegador no ofrece `crypto.subtle`.
+- Cada evento va firmado (HMAC) con un secreto de sesión que el hub deriva de su clave: nadie crea eventos a nombre de otro con un `session_id` viejo. Las operaciones con hash corren en JavaScript puro (`@noble/hashes`) porque por HTTP el navegador no ofrece `crypto.subtle`.
 - Aprobar un emparejamiento se hace desde un equipo ya emparejado (la caja); solo el primero de un hub nuevo se aprueba sin token.
 - Sin conexión con el hub no hay inicio de sesión nuevo ni autorizaciones: el dispositivo conserva la sesión abierta y las acciones que piden supervisor esperan a que vuelva la red.
 - Riesgo aceptado: con HTTP (ADR-001) el PIN viaja sin cifrar por el Wi-Fi; por eso debe ser una red solo del personal.
 - Al instalar, el hub crea el usuario «Administrador» y muestra su PIN **una sola vez** en la ventana del hub. Si la salida no es una ventana (servicio de Windows con log a archivo), lo deja en `pin-administrador.txt` en la carpeta de datos, solo legible por el hub, para leerlo y borrarlo.
 - Riesgo conocido: si alguien reemplaza el archivo de la clave por otra clave válida, el hub no lo detecta; ningún PIN funciona y hay que regenerarlos como si se hubiera perdido.
 
-**Implementación (tarea 0.7):** permisos y roles de fábrica en `packages/core/src/acceso`; emparejamiento, PIN, sesiones, comprobantes y revocación en `apps/hub/src/acceso` (API HTTP del hub); el hub de sincronización los consulta en cada evento a través de `ControlAcceso`.
+**Implementación (tarea 0.7):** permisos y roles de fábrica en `packages/core/src/access`; emparejamiento, PIN, sesiones, comprobantes y revocación en `apps/hub/src/access` (API HTTP del hub); el hub de sincronización los consulta en cada evento a través de `AccessControl`.
 
 Detalle del protocolo en [SYNC.md](SYNC.md#seguridad).
 
@@ -286,13 +286,20 @@ Más amarre a un proveedor. Los reportes comparativos entre sedes (Fase 5) neces
 
 ---
 
-## ADR-010 · Idioma: dominio en español, técnica en inglés
+## ADR-010 · Idioma: código y commits en inglés; interfaz y documentación en español
 
-**Fecha:** 23-oct-2026 · **Estado:** aceptada
+**Fecha:** 23-oct-2026, cambiada el 26-oct-2026 · **Estado:** aceptada
 
-- Entidades, eventos y reglas de negocio en español (`Pedido`, `Comanda`, `ItemAnulado`, `aplicarEvento`).
-- Infraestructura y utilidades técnicas en inglés (`useSyncStatus`, `retryWithBackoff`) cuando no hay un término de negocio.
-- Interfaz, documentación y mensajes de commit en español.
+**Decisión del dueño (26-oct-2026):** el código va en inglés. Reemplaza la regla anterior («dominio en español, técnica en inglés»).
+
+- **En inglés:** identificadores, nombres de archivos y carpetas, paquetes (`@pos/cloud`) y scripts (`reset-admin`, `test-printer`, `migrate`), tipos de evento y sus campos (`ItemVoided`, `business_day`), tablas y columnas de SQLite y Postgres (en plural: `orders`, `order_items`), roles de Postgres (`faro_data`), rutas de la API (`/api/register/pre-bill`), códigos de error de máquina (`invalid_code`), claves de configuración, de IndexedDB y de localStorage, comentarios, títulos de las pruebas y mensajes de commit.
+- **En español:** todo lo que ve el personal del restaurante: textos de pantallas, lo que se imprime (comanda, precuenta, cierre Z), los mensajes (`message`) que la API muestra al usuario, los encabezados del CSV, los avisos y la salida de los scripts que corre el dueño. También la documentación (`docs/`, `CLAUDE.md`) y la conversación.
+- **Un solo nombre por término:** la tabla de `docs/GLOSARIO.md` fija el inglés de cada término del dominio (pedido → `order`, mesa → `table`, caja → `register`, turno → `shift`, precuenta → `preBill`, cuenta → `check`, cobro → `checkout`…), con inglés de producto POS estándar (Toast, Square).
+- **Se quedan como están, a propósito:** el archivo de la carta del piloto (`docs/datos/carta-la-spritzzeria.yaml`) y sus claves, porque es un formato exportado; los tokens de color de `apps/pos/src/styles.css` (`fondo`, `superficie`, la clase `oscuro`, `data-marca`), que se cambian aparte; y el secreto `TOKEN_ADMIN` del Worker.
+
+**Por qué:** el producto se venderá a otros restaurantes (ADR-014) y el código lo pueden mantener personas que no hablan español; las herramientas y librerías ya están en inglés, y la mezcla de idiomas en un mismo nombre (`useSala`, `tieneSyncActivo`) confundía. Lo que ve el restaurante sigue en español porque los clientes son de Colombia.
+
+**Cómo se hizo:** una reescritura sin cambiar lógica, por fases y con un commit en cada una (core, printing, db y sync, hub, pos, nube, e2e, docs), con `pnpm check` en verde y el mismo número de pruebas. Como no había ventas reales, las bases se crearon de nuevo: SQLite quedó con una sola migración 1 en inglés y Neon se recreó con la migración 1 de la nube.
 
 ---
 
@@ -308,7 +315,7 @@ Dos de ellas cambian lo que dice el brief:
 
 | Regla | Cómo queda |
 |---|---|
-| Quién cierra mesas | **Solo el cajero** (permiso `cerrar_mesa`). |
+| Quién cierra mesas | **Solo el cajero** (permiso `close_table`). |
 | Quién registra pagos | **Solo el cajero**, en efectivo y con datáfono. El mesero lleva el efectivo o el voucher a caja de inmediato. Los meseros no manejan saldo propio. |
 | Bloqueo de mesa por mesero | Opcional por restaurante. La mesa queda asignada a quien la abrió; los demás meseros la ven sin poder modificarla. **Reasignan el cajero y el gerente.** Toda reasignación queda auditada. |
 | Día operativo | Configurable; por defecto de 6:00 a. m. a 5:59 a. m. (una venta a la 1 a. m. cuenta para el día anterior). El piloto a veces cierra pasada la medianoche. |
@@ -318,19 +325,19 @@ Dos de ellas cambian lo que dice el brief:
 | Ventas por mesero (reportes) | A quien agregó cada ítem, aunque la mesa se reasigne después (valor por defecto; configurable). |
 | Modo normal | Conectado al hub por la red local. Sin conexión es solo un respaldo: se toman pedidos, pero no se cobra, no se autoriza ni se edita el catálogo hasta que vuelva la red. |
 | Estaciones del piloto | Cocina y barra. |
-| Cursos (entrada, fuerte, postre; retener y marchar) | **Apagados por defecto** (25-oct-2026): en Colombia casi no se usan. Se prenden por restaurante en «Cocina e impresoras» (`usar_cursos`). |
+| Cursos (entrada, fuerte, postre; retener y marchar) | **Apagados por defecto** (25-oct-2026): en Colombia casi no se usan. Se prenden por restaurante en «Cocina e impresoras» (`courses_enabled`). |
 | Anular lo enviado (tarea 1.5) | Con motivo de una lista (error del mesero, el cliente cambió, demora, producto dañado o mal hecho) u otro escrito, y si la cocina ya lo hizo (merma). Quien no tiene el permiso lo pide con el **PIN del cajero o del administrador en el mismo celular** (comprobante del ADR-008); desde la caja, sin PIN extra. La cocina recibe «ANULAR». Cancelar el pedido entero, igual, con su permiso. |
-| Unir mesas (tarea 1.5) | Es **juntar mesas para un grupo grande**: un solo pedido ocupa varias mesas y el plano las muestra unidas (`MesasUnidas` en el pedido). No es juntar dos cuentas (`PedidosUnidos` existe en el núcleo, sin pantalla todavía). |
-| Nota del pedido | Además de la nota de cada plato, una nota para todo el pedido (alergias, celebraciones) que sale en cada comanda y en la pantalla de cocina (`NotaPedidoCambiada`, 25-oct-2026). |
+| Unir mesas (tarea 1.5) | Es **juntar mesas para un grupo grande**: un solo pedido ocupa varias mesas y el plano las muestra unidas (`TablesMerged` en el pedido). No es juntar dos cuentas (`OrdersMerged` existe en el núcleo, sin pantalla todavía). |
+| Nota del pedido | Además de la nota de cada plato, una nota para todo el pedido (alergias, celebraciones) que sale en cada comanda y en la pantalla de cocina (`OrderNoteChanged`, 25-oct-2026). |
 | Productos con opciones | Un solo producto con opciones (Ramón Bilbao copa o botella con su precio; Té Hatsu con sabor obligatorio sin costo). |
 | Modificadores | Término de la carne, quitar ingredientes, adicionales con precio y notas libres. La lista real con precios se pide antes de la Fase 1. |
 | Propina en efectivo | Se sugiere redondeada a $100 para poder pagarla con billetes; el cajero la puede cambiar y el cambio que deja el cliente pasa a propina. Con tarjeta, exacta (24-oct-2026, [DINERO.md](DINERO.md#propina-sugerida)). |
-| Turno de caja (tarea 1.6) | Para cobrar, el cajero **abre la caja con la base** en efectivo (`TurnoAbierto`); por ahora la caja es el equipo donde se abre. |
-| Cierre de caja (tarea 1.7) | **Arqueo ciego**: el cajero cuenta billetes y monedas sin ver lo esperado; el conteo queda guardado (`ArqueoRegistrado`) y solo después ve el sobrante o el faltante. Puede volver a contar (cada conteo queda). **Desde $1.000** de diferencia escribe por qué (`umbral_diferencia_caja`, configurable). Si hay mesas abiertas, **avisa y deja cerrar**: lo que se cobre después cae en el próximo turno. El hub calcula el esperado con sus propios eventos y no acepta un cierre que no cuadre con él (26-oct-2026). |
+| Turno de caja (tarea 1.6) | Para cobrar, el cajero **abre la caja con la base** en efectivo (`ShiftOpened`); por ahora la caja es el equipo donde se abre. |
+| Cierre de caja (tarea 1.7) | **Arqueo ciego**: el cajero cuenta billetes y monedas sin ver lo esperado; el conteo queda guardado (`CashCountRecorded`) y solo después ve el sobrante o el faltante. Puede volver a contar (cada conteo queda). **Desde $1.000** de diferencia escribe por qué (`register_variance_threshold`, configurable). Si hay mesas abiertas, **avisa y deja cerrar**: lo que se cobre después cae en el próximo turno. El hub calcula el esperado con sus propios eventos y no acepta un cierre que no cuadre con él (26-oct-2026). |
 | Movimientos de efectivo | **Entradas** y **salidas** con motivo, y **pago de propinas** con a quién se entregaron; el retiro parcial no se usa por ahora. |
 | Conciliación en el cierre (tarea 1.8) | Con el conteo del efectivo, el cajero escribe **el total del cierre de Bold** (sin el número de transacciones) y **lo que llegó por cada app** (Nequi, Daviplata, Bre-B, transferencia y los medios propios), también a ciegas. La caja muestra por medio si cuadra, sobra o falta; desde el umbral pide justificación. Hay **un turno por día**, así que el cierre de Bold del día se compara con el turno. La conciliación pago por pago (importar el reporte de Bold) espera un archivo de ejemplo real (26-oct-2026). |
-| Medios de pago | Del piloto: efectivo, tarjeta, Nequi, Daviplata, Bre-B y transferencia; sin bonos. Cada restaurante prende o apaga los de fábrica en «Caja y pagos» (`medios_pago`; el efectivo siempre está) y **crea los suyos con nombre** (Sodexo, QR del banco: `medios_propios`, el pago va con `medio: 'otro'` y `medio_propio_id`). La tarjeta se cobra como **crédito o débito** (`datafono.tipo_tarjeta`). |
-| Tarjeta | Se registra **solo con el monto**: el cajero no escribe el número de aprobación (queda opcional en `PagoRegistrado`). Como los datáfonos de un mismo proveedor entregan **un solo cierre unificado** (Bold), al cobrar no se pregunta en cuál se pasó la tarjeta: solo se elige el proveedor si el restaurante tiene de varios (Bold y Redeban). En el cierre (tarea 1.8) se compara el total de la tarjeta con el cierre del datáfono; emparejar pago por pago (monto y hora) y por proveedor queda para cuando se importe su reporte (26-oct-2026). |
+| Medios de pago | Del piloto: efectivo, tarjeta, Nequi, Daviplata, Bre-B y transferencia; sin bonos. Cada restaurante prende o apaga los de fábrica en «Caja y pagos» (`payment_methods`; el efectivo siempre está) y **crea los suyos con nombre** (Sodexo, QR del banco: `custom_methods`, el pago va con `method: 'other'` y `custom_method_id`). La tarjeta se cobra como **crédito o débito** (`cardTerminal.card_type`). |
+| Tarjeta | Se registra **solo con el monto**: el cajero no escribe el número de aprobación (queda opcional en `PaymentRecorded`). Como los datáfonos de un mismo proveedor entregan **un solo cierre unificado** (Bold), al cobrar no se pregunta en cuál se pasó la tarjeta: solo se elige el proveedor si el restaurante tiene de varios (Bold y Redeban). En el cierre (tarea 1.8) se compara el total de la tarjeta con el cierre del datáfono; emparejar pago por pago (monto y hora) y por proveedor queda para cuando se importe su reporte (26-oct-2026). |
 | Propina al cobrar | La sugerida (10 %) aparece **ya marcada** y se ve su porcentaje. Se cambia con «Sin propina», «5 %» o con otro valor **en pesos o en porcentaje**; también desde la precuenta, y la elegida pasa al papel y al cobro. El porcentaje sugerido del restaurante se cambia en «Caja y pagos». «El cliente entrega» y el cambio son solo del efectivo: con los medios digitales se cobra lo justo. |
 | Precuenta con impuesto | La precuenta **discrimina el impuesto**: base sin impuestos y cada impuesto con su tarifa (INC 8 %), con el mismo desglose del documento DIAN redondeado a pesos — (validar) con el contador. |
 | Dividir la cuenta | Primero **en partes iguales** y **por productos** (un producto que toman varias cuentas se reparte entre ellas). Monto libre y fracciones (1/3 de botella) quedan para después. |
@@ -348,11 +355,11 @@ Dos de ellas cambian lo que dice el brief:
 
 ### Decisión
 
-- El hub usa **`node:sqlite`**, el SQLite que trae Node 24 (versión 3.50), detrás de una interfaz mínima (`BaseSqlite` en `packages/db`). Lo cumple también `better-sqlite3`, así que cambiar de motor es un cambio de un archivo.
+- El hub usa **`node:sqlite`**, el SQLite que trae Node 24 (versión 3.50), detrás de una interfaz mínima (`SqliteDatabase` en `packages/db`). Lo cumple también `better-sqlite3`, así que cambiar de motor es un cambio de un archivo.
 - **Todas las tablas son `STRICT`**: SQLite rechaza un número con decimales en una columna `INTEGER`. Junto con los `CHECK` de rango (precio entre 0 y $100.000.000, tarifa entre 0 y 10.000 puntos básicos, cantidad de 1 a 999), la regla de los pesos enteros (ADR-004) también la hace cumplir la base.
 - **Las tablas de eventos no se pueden editar, borrar ni reemplazar**: disparadores abortan `UPDATE`, `DELETE` e `INSERT OR REPLACE` (este último no dispara los de borrado en SQLite), y la secuencia de eventos debe ser contigua (ADR-005).
-- **El catálogo no se borra**: las tablas versionadas rechazan `DELETE`; se archiva con `activo = 0`. Archivar un usuario libera su PIN.
-- Restricciones de coherencia fiscal: un impuesto `exento` no puede tener tarifa.
+- **El catálogo no se borra**: las tablas versionadas rechazan `DELETE`; se archiva con `active = 0`. Archivar un usuario libera su PIN.
+- Restricciones de coherencia fiscal: un impuesto `exempt` no puede tener tarifa.
 - **Migraciones en TypeScript con el SQL en texto**, numeradas y aplicadas al arrancar el hub, cada una en su transacción. El runner guarda la huella de cada migración y se niega a arrancar si una ya aplicada cambió. Una base más nueva que la aplicación no se abre. Las migraciones que reconstruyen tablas apagan las claves foráneas y verifican las referencias antes de confirmar.
 - Configuración de la base: modo WAL (verificado al abrir), `synchronous = FULL` (sin UPS, no perder la última transacción confirmada), claves foráneas activas. El hub la abre **en exclusiva**: un segundo hub sobre la misma carpeta de datos no arranca. Una sola conexión por proceso, porque `node:sqlite` es síncrono. El costo de `FULL` (una escritura a disco por evento) se mide en la 0.6.
 - La base vive en la carpeta de datos del hub (`pos.sqlite`).
@@ -372,7 +379,7 @@ Dos de ellas cambian lo que dice el brief:
 
 ### Riesgo abierto
 
-`node:sqlite` todavía figura como experimental en Node 24: su API podría cambiar. Lo mitiga la interfaz `BaseSqlite` y las pruebas del esquema.
+`node:sqlite` todavía figura como experimental en Node 24: su API podría cambiar. Lo mitiga la interfaz `SqliteDatabase` y las pruebas del esquema.
 
 ---
 
@@ -388,12 +395,12 @@ Decisión del dueño del 24-oct-2026: el mesero no debe pasar por emparejar su c
 - **Roles de fábrica: Administrador, Cajero, Reportes y Mesero**, solo como punto de partida (la matriz está en [MODELO_DATOS.md](MODELO_DATOS.md#permisos)). No se renombran ni se archivan, porque el hub los reconoce por su nombre; sus permisos sí se cambian. Se quitan Gerente y Cocina como roles de fábrica: en un hub que ya los tenía quedan como roles propios del restaurante, con su gente, y Contador pasa a llamarse Reportes.
 - **Mesero**: abre la IP del hub en su celular y escribe su **PIN de 4 dígitos**. Entra directo a la zona de pedidos. No hay emparejamiento: con el primer PIN correcto el hub registra ese navegador como equipo de mesero y le da un token propio y revocable, para que los eventos sigan llevando dispositivo, firma y revocación (ADR-005, ADR-008).
 - **Administrador, Cajero y Reportes**: entran con **usuario y contraseña** desde cualquier equipo de la red (el PC de caja, una tablet o el celular del dueño dentro del local). Cada uno ve lo de su rol. El cajero también toma pedidos y además cobra y maneja la caja. Reportes solo ve informes. El administrador ve todo y administra personal, carta, plano y equipos.
-- **Lo delicado pide contraseña**: quien tenga permisos de cobro, caja, carta, reportes o administración (`PERMISOS_CON_CONTRASENA` en `packages/core`) no puede entrar solo con un PIN, aunque el rol se lo dé. El hub lo exige al entrar y al guardar personas y roles. Un PIN de 4 dígitos se adivina más fácil que una contraseña.
-- `administrar_usuarios` **equivale a poder todo**: quien lo tiene puede darse cualquier rol. Se da solo a personas de toda confianza; la pantalla lo dice.
-- **Equipos**: con contraseña, el equipo pasa a ser de caja solo si esa persona puede cobrar (`PERMISOS_DE_COBRO`). Cada equipo registrado aparece en **Personal y roles → Equipos**, con su último uso, para **retirarlo** si se pierde. El emparejamiento por código queda en el hub sin uso: la pantalla de cocina la convierte el administrador desde el propio equipo (tarea 1.4, ADR-015).
+- **Lo delicado pide contraseña**: quien tenga permisos de cobro, caja, carta, reportes o administración (`PASSWORD_PERMISSIONS` en `packages/core`) no puede entrar solo con un PIN, aunque el rol se lo dé. El hub lo exige al entrar y al guardar personas y roles. Un PIN de 4 dígitos se adivina más fácil que una contraseña.
+- `manage_users` **equivale a poder todo**: quien lo tiene puede darse cualquier rol. Se da solo a personas de toda confianza; la pantalla lo dice.
+- **Equipos**: con contraseña, el equipo pasa a ser de caja solo si esa persona puede cobrar (`CHECKOUT_PERMISSIONS`). Cada equipo registrado aparece en **Personal y roles → Equipos**, con su último uso, para **retirarlo** si se pierde. El emparejamiento por código queda en el hub sin uso: la pantalla de cocina la convierte el administrador desde el propio equipo (tarea 1.4, ADR-015).
 - **PIN de autorización**: el administrador y el cajero tienen además un PIN de 4 dígitos que **no abre sesión**. Solo sirve para autorizar en el celular del mesero (anular lo enviado, descuentos) con el comprobante de un solo uso del ADR-008. Todos los PIN del restaurante, de entrada y de autorización, son únicos y los genera el sistema.
-- **Contraseñas**: mínimo 8 caracteres. El hub guarda solo una huella lenta con sal (scrypt, N = 2^15), en tablas que solo existen en el hub y nunca se sincronizan; no dependen de la clave de los PIN. Espera creciente por IP (o por equipo) y por usuario; la de usuario tiene un tope de 10 s, para que nadie pueda dejar afuera al administrador probando su usuario. Un usuario que no existe, uno archivado y una contraseña errada tardan lo mismo y dan la misma respuesta. Aviso al administrador como con el PIN. El administrador cambia la contraseña de quien la olvide en Personal y roles; si la olvida el propio administrador, `pnpm restablecer-admin` en el PC del hub le da una nueva. Al instalar, el hub muestra **una sola vez** el usuario del administrador, su contraseña y su PIN para autorizar.
-- **Multirestaurante**: usuarios, roles, PIN y contraseñas son **por restaurante** (`restaurante_id`). El nombre de usuario es único dentro del restaurante, no en todo el sistema. El hub atiende una sola sede, así que su pantalla de entrada no pide escoger restaurante. Cómo se identifica el restaurante al entrar a la nube se decide en la Fase 2.
+- **Contraseñas**: mínimo 8 caracteres. El hub guarda solo una huella lenta con sal (scrypt, N = 2^15), en tablas que solo existen en el hub y nunca se sincronizan; no dependen de la clave de los PIN. Espera creciente por IP (o por equipo) y por usuario; la de usuario tiene un tope de 10 s, para que nadie pueda dejar afuera al administrador probando su usuario. Un usuario que no existe, uno archivado y una contraseña errada tardan lo mismo y dan la misma respuesta. Aviso al administrador como con el PIN. El administrador cambia la contraseña de quien la olvide en Personal y roles; si la olvida el propio administrador, `pnpm reset-admin` en el PC del hub le da una nueva. Al instalar, el hub muestra **una sola vez** el usuario del administrador, su contraseña y su PIN para autorizar.
+- **Multirestaurante**: usuarios, roles, PIN y contraseñas son **por restaurante** (`restaurant_id`). El nombre de usuario es único dentro del restaurante, no en todo el sistema. El hub atiende una sola sede, así que su pantalla de entrada no pide escoger restaurante. Cómo se identifica el restaurante al entrar a la nube se decide en la Fase 2.
 - La pantalla de cocina (KDS) ya no tiene rol propio: cómo se identifica lo decide el [ADR-015](#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero) (tarea 1.4).
 
 ### Riesgo aceptado
@@ -432,14 +439,14 @@ Riesgo conocido: comprobar una contraseña (scrypt, unos 50 ms) detiene al hub m
 - **Color de Faro: verde azulado** (`#0f766e`), una sola letra (Figtree, empaquetada) y superficies claras y frías. Los colores de estado no cambian con ninguna marca: verde libre, ámbar en proceso, rojo demora.
 - **Marca del restaurante, opcional.**
   - Cada restaurante puede verse con su marca en todos sus equipos. Sin elegir, se ve como Faro.
-  - Se guarda en la configuración del restaurante (`marca`), llega con la carta y la cambia el administrador en **Marca del restaurante**.
+  - Se guarda en la configuración del restaurante (`brand`), llega con la carta y la cambia el administrador en **Marca del restaurante**.
   - Por ahora las marcas son conjuntos preparados en la app (Faro y La Spritzzería). Una marca a la medida de cada cliente (sus colores y su logo) se arma desde el panel de la nube (Fase 2).
 - **Fotos de los productos, opcionales.**
   - El administrador las sube desde la carta.
   - El equipo las achica (unos 800 px) antes de subirlas.
   - El hub las guarda en su carpeta de datos, con la huella del contenido como nombre, y las sirve sin token, con caché permanente. Funcionan sin internet.
   - Sin foto, la tarjeta muestra el ícono de su estación (plato o copa).
-  - Las fotos viven fuera de SQLite, en `datos/fotos/` del hub: **el respaldo del hub y la sincronización con la nube (Fase 2) deben incluir esa carpeta**. Como cada hub atiende un solo restaurante, la carpeta no se separa por restaurante; si un hub llegara a atender varios, se guardaría en `fotos/<restaurante_id>/`.
+  - Las fotos viven fuera de SQLite, en `data/photos/` del hub: **el respaldo del hub y la sincronización con la nube (Fase 2) deben incluir esa carpeta**. Como cada hub atiende un solo restaurante, la carpeta no se separa por restaurante; si un hub llegara a atender varios, se guardaría en `photos/<restaurant_id>/`.
 
 ### Alternativas descartadas
 
@@ -469,14 +476,14 @@ Decisiones del dueño del 25-oct-2026. En La Spritzzería la cocina no tiene pan
   - **cola con reintentos** (espera creciente hasta 30 s, sin rendirse); a los 3 fallos seguidos la comanda pasa a la **impresora de respaldo** si hay una, y todos los equipos ven la alerta «La impresora de Barra no responde»;
   - la caja puede descartar un trabajo atascado (queda registrado, no se borra).
 - **Las impresoras USB** (la de la caja de La Spritzzería) son para recibos y cajón (tareas 1.6 y 1.7) y se conectan por la cola de Windows con el instalador (1.13). La comanda por USB queda para entonces.
-- **Número de comanda**: lo asigna el hub al aceptar el envío, consecutivo por día operativo, uno por estación (`asignaciones.numeros_comanda`). La reimpresión, la modificación y la anulación muestran el número de la comanda original.
+- **Número de comanda**: lo asigna el hub al aceptar el envío, consecutivo por día operativo, uno por estación (`assignments.ticket_numbers`). La reimpresión, la modificación y la anulación muestran el número de la comanda original.
 - **Pantalla de cocina (KDS), opcional**:
   - el **administrador** entra con su contraseña en la tablet o el PC de cocina y la **convierte en pantalla** de una o varias estaciones; desde ahí queda abierta siempre, sin PIN;
   - lo que marca queda a nombre de esa pantalla (un usuario técnico por pantalla, que no aparece en Personal ni puede entrar con PIN o contraseña) y solo puede marcar listo y agotados;
   - el cocinero solo toca **«Listo»** (un toque por comanda); lo marcado por error se recupera;
   - se retira como cualquier equipo, en **Personal y roles → Equipos**.
 - **Sin pantalla en la estación, el mesero marca «Entregado»** al llevar el plato (uno a uno o «Todo entregado»). Puede pasar directo de enviado a entregado (ya lo permitía el reductor).
-- **Vista «Pedidos en cocina» en la caja**: lo enviado que falta entregar, por estación, con el tiempo desde el envío y su color (a tiempo sin color, solo con borde; ámbar desde `cocina_amarillo_min`, rojo desde `cocina_rojo_min`; por defecto 10 y 20 minutos). «A tiempo» no va en verde (decisión del dueño, 25-oct-2026): en cocina el verde es solo «Listo para llevar». Quien tenga el permiso de marcar puede tocar «Listo» si cocina avisa. Si un plato queda listo, el mesero de la mesa recibe un aviso en su celular.
+- **Vista «Pedidos en cocina» en la caja**: lo enviado que falta entregar, por estación, con el tiempo desde el envío y su color (a tiempo sin color, solo con borde; ámbar desde `kitchen_yellow_min`, rojo desde `kitchen_red_min`; por defecto 10 y 20 minutos). «A tiempo» no va en verde (decisión del dueño, 25-oct-2026): en cocina el verde es solo «Listo para llevar». Quien tenga el permiso de marcar puede tocar «Listo» si cocina avisa. Si un plato queda listo, el mesero de la mesa recibe un aviso en su celular.
 
 ### Por qué
 
@@ -502,7 +509,7 @@ Decisión del dueño del 26-oct-2026. Faro debe funcionar **principalmente en l�
 
 ### Decisión
 
-- **La base oficial es Postgres en Neon**, con respaldos y restauración a un momento dado. Hay una sola base para todos los restaurantes, separada por `restaurante_id` y con seguridad por fila. La región se elige al implementar **(validar)**: la de Estados Unidos (este) o la de São Paulo, según la latencia desde Colombia.
+- **La base oficial es Postgres en Neon**, con respaldos y restauración a un momento dado. Hay una sola base para todos los restaurantes, separada por `restaurant_id` y con seguridad por fila. La región se elige al implementar **(validar)**: la de Estados Unidos (este) o la de São Paulo, según la latencia desde Colombia.
 - **La API de la nube corre en Cloudflare Workers** y se conecta a Neon (con Hyperdrive). Antes de escribirla, `investigador-integraciones` resume la documentación oficial de Neon y Hyperdrive en `docs/integraciones/` **(validar)**.
 - **El PC de caja sigue siendo el puente local (el hub).** Los celulares, la cocina y las impresoras siguen conectados a él por la red del local (ADR-001 y ADR-015). Hay dos razones:
   - el navegador de un celular no puede imprimir en una impresora de red: sin algo en el local, si se cae internet no salen comandas;
@@ -543,5 +550,5 @@ Decisión del dueño del 26-oct-2026. Faro debe funcionar **principalmente en l�
   - ADR-012: SQLite en el hub, como copia local y cola.
 - **Dos dialectos de SQL**: SQLite en el hub y Postgres en la nube. El esquema de la nube se escribe aparte (los eventos como `jsonb`). La lógica de negocio sigue en `@pos/core` (TypeScript), no en SQL, así que los cálculos son los mismos en los dos lados.
 - **Nuevas tareas antes del instalador del hub** (ver [ROADMAP.md](ROADMAP.md)): la base y la API en la nube, la subida hub → nube con la carta bajando de la nube, y restaurar un hub desde la nube.
-- **Multirestaurante desde el principio:** cada evento, registro y credencial lleva `restaurante_id`. Cada hub se registra en la nube con una credencial propia de su restaurante y su sede.
+- **Multirestaurante desde el principio:** cada evento, registro y credencial lleva `restaurant_id`. Cada hub se registra en la nube con una credencial propia de su restaurante y su sede.
 - **(validar)** Costo mensual de Neon y de Workers por restaurante, y la región.

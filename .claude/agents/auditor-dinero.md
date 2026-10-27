@@ -20,7 +20,7 @@ Eres de **solo lectura**. Con Bash ejecuta únicamente `git diff`, `git log`, `g
 
 ## Qué revisar
 
-1. Busca en los cambios (y en el código que usan) todo uso de dinero: `precio`, `total`, `monto`, `valor`, `impuesto`, `propina`, `descuento`, `saldo`, `pago`, `cambio`.
+1. Busca en los cambios (y en el código que usan) todo uso de dinero: `price`, `total`, `amount`, `value`, `tax`, `tip`, `discount`, `balance`, `payment`, `change`.
 2. Señala: divisiones o porcentajes sin redondeo explícito, `toFixed`, `parseFloat`, `Math.round` sobre resultados fraccionados sin regla documentada, sumas de flotantes, redondeo por línea frente a redondeo del total sin decisión documentada, pérdida o creación de pesos en un reparto.
 3. Por cada función de dinero, confirma que exista una prueba para: caso normal, caso borde (residuos, cero, un solo comensal, descuento mayor que el total) y, si aplica, una prueba de propiedades (las partes siempre suman el total).
 4. Ejecuta `pnpm test` para confirmar que esas pruebas pasan.

@@ -9,6 +9,7 @@
 - `docs/DINERO.md`: fórmulas exactas de todo cálculo de dinero y las pruebas que deben cubrirlas.
 - `docs/KPIS.md`: fórmulas de los reportes (ventas, medios, meseros, productos, anulaciones, cierre Z).
 - `docs/ROADMAP.md`: estado de cada tarea y cómo probarla a mano.
+- `docs/GLOSARIO.md`: el nombre en inglés de cada término del dominio, para el código.
 - `apps/pos/PRODUCT.md` y `apps/pos/DESIGN.md`: qué es el producto para quien diseña, y su sistema visual.
 
 **Arquitectura** ([ADR-016](docs/DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): la base oficial es **Postgres en Neon** (API en Cloudflare Workers). El PC de caja (el hub, SQLite) es el **puente local**: atiende a los equipos y las impresoras del local, sube cada evento a la nube al instante y, sin internet, lo encola y lo sube al volver.
@@ -19,7 +20,7 @@ Restaurante piloto (primer cliente): **La Spritzzería** (Envigado). Su carta re
 
 ## Convenciones
 
-- **Idioma**: el dominio va en español (`Pedido`, `Comanda`, `Mesa`, eventos como `ItemAnulado`); la parte técnica en inglés (`useSyncStatus`, `retryWithBackoff`). Interfaz, documentación y mensajes de commit en español.
+- **Idioma** ([ADR-010](docs/DECISIONES.md#adr-010--idioma-código-y-commits-en-inglés-interfaz-y-documentación-en-español)): el **código y los mensajes de commit van en inglés**: identificadores, archivos, tablas y columnas, rutas de la API, tipos de evento (`ItemVoided`, `OrderOpened`), comentarios y títulos de las pruebas. Cada término del dominio tiene un solo nombre en inglés, fijado en `docs/GLOSARIO.md` (pedido → `order`, mesa → `table`, caja → `register`, turno → `shift`, precuenta → `preBill`…). La **interfaz, lo que se imprime, los mensajes al usuario, la documentación y la conversación van en español**.
 - **Dinero**: pesos enteros en todo el sistema. Los decimales solo existen dentro del cálculo fiscal DIAN, con aritmética exacta. Repartos por mayor residuo. Toda fórmula sigue `docs/DINERO.md`.
 - **IDs**: ULID generados en el dispositivo.
 - **Nada se borra** en entidades transaccionales: se anula con motivo, usuario y dispositivo.
@@ -46,7 +47,7 @@ Los subagentes del proyecto están en `.claude/agents/`.
 2. Si la tarea toca dinero, pasarlo también por `auditor-dinero`. Si toca pantallas, por `revisor-ux`.
 3. Corregir lo que encuentren (o dejar registrado en `docs/ROADMAP.md` por qué no se corrige).
 4. Confirmar que `pnpm check` pasa.
-5. Hacer un commit con un mensaje claro en español: qué cambió y por qué.
+5. Hacer un commit con un mensaje claro en inglés: qué cambió y por qué.
 6. Actualizar `docs/ROADMAP.md` con el estado de la tarea y cómo probarla manualmente.
 
 No hacer push ni abrir PR sin que el usuario lo pida.
@@ -57,13 +58,13 @@ Monorepo con pnpm workspaces y Turborepo. TypeScript estricto en todo.
 
 | Carpeta | Qué contiene |
 |---|---|
-| `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador. `src/ui`: design system de Faro (tokens y marcas en `estilos.css`, logo, botones, panel lateral, avisos con Deshacer, teclado PIN, búsqueda tolerante). `src/bocetos`: bocetos navegables de la tarea 0.9 (datos en memoria, no son el modelo de la Fase 1). `src/sala`: la app de operación (entrar con PIN o con usuario y contraseña, plano de mesas, pedido, «Pedidos en cocina» y la pantalla de cocina, la cuenta (precuenta, dividir y cobrar), la caja y los reportes, editor de la carta y del plano, personal y roles, cocina e impresoras, caja y pagos) sobre IndexedDB (Dexie) y la sincronización con el hub (`Sala` en `motor.ts`) |
-| `apps/hub` (`@pos/hub`) | Servidor local (Fastify) que corre en el PC de caja: sirve la app y la API en la red local. En `src/acceso`: entrar con PIN o con usuario y contraseña sin emparejar, sesiones, comprobantes de supervisor, revocación, y personal y roles dinámicos (`personal.ts`) (ADR-008 y ADR-013). `src/sincronizacion.ts`: WebSocket de eventos; `src/catalogo.ts` y `src/edicion-catalogo.ts`: leer y editar la carta; `src/precios.ts`: historial del catálogo y revisión del precio copiado (`precio_distinto`). `src/impresion`: comandas por estación y precuentas, cola de impresión con reintentos y respaldo, API de impresoras, pantallas de cocina, medios de pago y datáfonos, e impresora de prueba (ADR-015). `src/reportes`: el informe de un período y el cierre Z impreso al cerrar la caja (`docs/KPIS.md`) |
-| `apps/nube` (`@pos/nube`) | La nube (ADR-016): API en Cloudflare Workers (`src/worker.ts`, `wrangler.jsonc`) sobre Postgres en Neon por Hyperdrive con `pg`. `src/migraciones.ts`: esquema Postgres con seguridad por fila por restaurante (rol `faro_datos`); `src/nube.ts`: restaurantes, registro de hubs con código de un solo uso, credenciales y recepción de eventos sin duplicar; `src/api.ts`: rutas HTTP. Las pruebas corren contra PGlite (Postgres embebido). Investigación oficial en `docs/integraciones/neon-cloudflare.md` |
-| `packages/core` (`@pos/core`) | Lógica de negocio compartida, sin dependencias de navegador ni de Node: dinero (`src/dinero`), esquemas de eventos (`src/eventos`), reductor del pedido (`src/pedido`) y permisos, roles y firma de eventos (`src/acceso`) |
-| `packages/sync` (`@pos/sync`) | Sincronización dispositivo ↔ hub: `HubSync` y `SalaSync` (hub), `ClienteSync` y `GestorConexion` (dispositivo), almacén del hub sobre SQLite en `@pos/sync/sqlite` |
+| `apps/pos` (`@pos/app`) | App React + Vite + Tailwind que usan meseros, caja y KDS en el navegador. `src/ui`: design system de Faro (tokens y marcas en `styles.css`, que conservan sus nombres en español; logo, botones, panel lateral, avisos con Deshacer en `toasts.tsx`, teclado PIN, búsqueda tolerante). `src/mockups`: bocetos navegables de la tarea 0.9 (datos en memoria, no son el modelo de la Fase 1). `src/floor`: la app de operación (entrar con PIN o con usuario y contraseña, plano de mesas, pedido, «Pedidos en cocina» y la pantalla de cocina, la cuenta (precuenta, dividir y cobrar), la caja y los reportes, editor de la carta y del plano, personal y roles, cocina e impresoras, caja y pagos) sobre IndexedDB (Dexie) y la sincronización con el hub (`Floor` en `engine.ts`) |
+| `apps/hub` (`@pos/hub`) | Servidor local (Fastify) que corre en el PC de caja: sirve la app y la API en la red local. En `src/access`: entrar con PIN o con usuario y contraseña sin emparejar, sesiones, comprobantes de supervisor, revocación, y personal y roles dinámicos (`staff.ts`) (ADR-008 y ADR-013). `src/sync.ts`: WebSocket de eventos; `src/catalog.ts` y `src/catalog-editing.ts`: leer y editar la carta; `src/prices.ts`: historial del catálogo y revisión del precio copiado (`price_mismatch`). `src/printing`: comandas por estación y precuentas, cola de impresión con reintentos y respaldo, API de impresoras, pantallas de cocina, medios de pago y datáfonos, e impresora de prueba (ADR-015). `src/reports`: el informe de un período y el cierre Z impreso al cerrar la caja (`docs/KPIS.md`) |
+| `apps/cloud` (`@pos/cloud`) | La nube (ADR-016): API en Cloudflare Workers (`src/worker.ts`, `wrangler.jsonc`) sobre Postgres en Neon por Hyperdrive con `pg`. `src/migrations.ts`: esquema Postgres con seguridad por fila por restaurante (rol `faro_data`); `src/cloud.ts`: restaurantes, registro de hubs con código de un solo uso, credenciales y recepción de eventos sin duplicar; `src/api.ts`: rutas HTTP. Las pruebas corren contra PGlite (Postgres embebido). Investigación oficial en `docs/integraciones/neon-cloudflare.md` |
+| `packages/core` (`@pos/core`) | Lógica de negocio compartida, sin dependencias de navegador ni de Node: dinero (`src/money`), esquemas de eventos (`src/events`), reductor del pedido (`src/order`) y permisos, roles y firma de eventos (`src/access`) |
+| `packages/sync` (`@pos/sync`) | Sincronización dispositivo ↔ hub: `HubSync` y `FloorSync` (hub), `SyncClient` y `ConnectionManager` (dispositivo), almacén del hub sobre SQLite en `@pos/sync/sqlite` |
 | `packages/printing` (`@pos/printing`) | La comanda, la precuenta y el cierre Z en papel: líneas al ancho de la impresora (58/80 mm), tildes por tabla de caracteres y bytes ESC/POS; también lee ESC/POS como texto para las pruebas |
-| `packages/db` (`@pos/db`) | Esquema SQLite, migraciones y la interfaz `BaseSqlite`; `@pos/db/node` abre la base con `node:sqlite` (solo Node) |
+| `packages/db` (`@pos/db`) | Esquema SQLite, migraciones y la interfaz `SqliteDatabase`; `@pos/db/node` abre la base con `node:sqlite` (solo Node) |
 | `tests/e2e` | Pruebas Playwright de punta a punta (celular Android y caja) |
 | `docs/` | Brief, decisiones, roadmap, modelo de datos y datos del piloto |
 
@@ -82,14 +83,15 @@ Requiere Node 24 (`.nvmrc`) y pnpm por corepack (`corepack enable pnpm`). En una
 | `pnpm format` | Corrige formato y orden de imports |
 | `pnpm test` | Pruebas unitarias (Vitest) de todos los paquetes; en `@pos/core` exige 90 % de cobertura |
 | `pnpm test:e2e` | Pruebas Playwright; compila la app y levanta el hub en el puerto 4100 |
-| `pnpm seed` | Carga en la base del hub los datos de La Spritzzería (carta, salón, personal de ejemplo: Caja y Reportes con usuario y contraseña, tres meseros con PIN). Con el hub cerrado; se puede repetir sin duplicar. `--sin-personal` omite las cuentas de ejemplo |
-| `pnpm --filter @pos/hub impresora-prueba [puerto]` | Una impresora de red de mentira (puerto 9100 por defecto) que muestra en la ventana cada comanda que recibe. Para probar sin papel |
-| `pnpm --filter @pos/nube migrar` | Crea o pone al día las tablas de la base de Neon. Pide la cadena de conexión del rol dueño sin mostrarla (o la toma de `DATABASE_URL`) |
-| `NUBE_URL=… pnpm --filter @pos/nube admin restaurante \| codigo \| revocar <hub>` | Administración de la nube: crea el restaurante del hub de este equipo, da un código para registrar su PC de caja o revoca uno. Pide el token de administración sin mostrarlo |
-| `pnpm restablecer-admin` | Da una contraseña nueva al administrador (si la olvidó) y la muestra una vez. Con el hub cerrado |
+| `pnpm seed` | Carga en la base del hub los datos de La Spritzzería (carta, salón, personal de ejemplo: Caja y Reportes con usuario y contraseña, tres meseros con PIN). Con el hub cerrado; se puede repetir sin duplicar. `--no-staff` omite las cuentas de ejemplo |
+| `pnpm --filter @pos/hub test-printer [puerto]` | Una impresora de red de mentira (puerto 9100 por defecto) que muestra en la ventana cada comanda que recibe. Para probar sin papel |
+| `pnpm --filter @pos/cloud migrate` | Crea o pone al día las tablas de la base de Neon. Pide la cadena de conexión del rol dueño sin mostrarla (o la toma de `DATABASE_URL`) |
+| `CLOUD_URL=… pnpm --filter @pos/cloud admin restaurant \| code \| revoke <hub>` | Administración de la nube: crea el restaurante del hub de este equipo, da un código para registrar su PC de caja o revoca uno. Pide el token de administración sin mostrarlo |
+| `pnpm --filter @pos/cloud run deploy` | Publica el Worker `faro-api` en Cloudflare con wrangler (lleva `run` porque `pnpm deploy` es otro comando de pnpm) |
+| `pnpm reset-admin` | Da una contraseña nueva al administrador (si la olvidó) y la muestra una vez. Con el hub cerrado |
 
 Biome no formatea los archivos Markdown (están excluidos en `biome.json`).
 
-Base de datos: los cambios de esquema van en una migración **nueva** en `packages/db/src/migraciones/` (nunca se edita una publicada), con la tabla agregada a su categoría en `packages/db/src/esquema.ts`. Toda tabla es `STRICT`.
+Base de datos: los cambios de esquema van en una migración **nueva** en `packages/db/src/migrations/` (nunca se edita una publicada; hoy hay una sola, `0001_initial.ts`), con la tabla agregada a su categoría en `packages/db/src/schema.ts`. Las tablas van en plural y en inglés (`orders`, `order_items`, `dining_tables`). Toda tabla es `STRICT`.
 
 Las dependencias que ejecutan scripts al instalarse deben aprobarse con `pnpm approve-builds <paquete>`; quedan en `allowBuilds` de `pnpm-workspace.yaml`.

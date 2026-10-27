@@ -305,7 +305,7 @@ Entidades mínimas: `Restaurante`, `Sede`, `Zona`, `Mesa` (posición, forma, tam
 
 Reglas:
 - IDs ULID generados en el dispositivo (funciona offline sin colisiones).
-- Campos `creado_en`, `actualizado_en`, `version`, `dispositivo_id`, `usuario_id` en todo lo sincronizable.
+- Campos `created_at`, `updated_at`, `version`, `device_id`, `user_id` en todo lo sincronizable.
 - Nada de borrado físico en entidades transaccionales.
 
 ---

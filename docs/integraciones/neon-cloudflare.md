@@ -157,11 +157,11 @@ Para no tocar producción: apuntar `localConnectionString` a (a) un Postgres loc
 - Esto permite mandar **todo el lote como un parámetro `jsonb`** y una sola sentencia. Ejemplo *ilustrativo* (nombres de tabla y columnas de ejemplo, no del esquema final):
 
 ```sql
-INSERT INTO eventos (restaurante_id, id, secuencia_hub, tipo, payload)
-SELECT $1, e.id, e.secuencia_hub, e.tipo, e.payload
+INSERT INTO events (restaurant_id, id, hub_sequence, type, content)
+SELECT $1, e.id, e.hub_sequence, e.type, e.content
 FROM jsonb_to_recordset($2::jsonb)
-  AS e(id text, secuencia_hub bigint, tipo text, payload jsonb)
-ON CONFLICT (restaurante_id, id) DO NOTHING
+  AS e(id text, hub_sequence bigint, type text, content jsonb)
+ON CONFLICT (restaurant_id, id) DO NOTHING
 RETURNING id;
 ```
 
@@ -271,7 +271,7 @@ Fuentes: [restauración de ramas](https://neon.com/docs/introduction/branch-rest
 - Es una función estándar de Postgres: `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` y `CREATE POLICY`. Con RLS activado y sin política, aplica una política de denegar todo ([Postgres](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)).
 - **Quién se la salta:** superusuarios y roles con `BYPASSRLS`; los dueños de la tabla normalmente también, salvo que se use `ALTER TABLE ... FORCE ROW LEVEL SECURITY` (misma fuente). Solo el dueño de la tabla puede activarla o crear políticas.
 - **En Neon:** los roles creados por consola, CLI o API (incluido el rol por defecto `neondb_owner`) son miembros de `neon_superuser`, que incluye `BYPASSRLS` ([roles de Neon](https://neon.com/docs/manage/roles)). Esa página dice que un rol creado con SQL (`CREATE ROLE nombre WITH LOGIN PASSWORD '...'`) no se añade a `neon_superuser`, aunque no afirma por escrito que eso lo deje sin `BYPASSRLS`: **verificar en el proyecto real**. Consecuencia para Faro: la API no debe conectarse con el rol creado por la consola; hay que crear con SQL un rol de aplicación sin privilegios de más, y darle solo lo necesario.
-- **Cómo pasar el restaurante a las políticas con Hyperdrive:** el pool es en modo transacción y `SET` solo dura dentro de la transacción ([pooling de Hyperdrive](https://developers.cloudflare.com/hyperdrive/concepts/connection-pooling/)). Postgres ofrece `set_config(nombre, valor, true)`, cuyo valor aplica solo durante la transacción actual ([funciones de administración](https://www.postgresql.org/docs/current/functions-admin.html)). Es decir: `BEGIN; SELECT set_config('app.restaurante_id', $1, true); ...; COMMIT;`, y las políticas leen ese valor. Esa combinación es una **inferencia a partir de dos fuentes**; no hay un ejemplo oficial de RLS con Hyperdrive. Requiere prueba (ver preguntas abiertas).
+- **Cómo pasar el restaurante a las políticas con Hyperdrive:** el pool es en modo transacción y `SET` solo dura dentro de la transacción ([pooling de Hyperdrive](https://developers.cloudflare.com/hyperdrive/concepts/connection-pooling/)). Postgres ofrece `set_config(nombre, valor, true)`, cuyo valor aplica solo durante la transacción actual ([funciones de administración](https://www.postgresql.org/docs/current/functions-admin.html)). Es decir: `BEGIN; SELECT set_config('app.restaurant_id', $1, true); ...; COMMIT;`, y las políticas leen ese valor. Esa combinación es una **inferencia a partir de dos fuentes**; no hay un ejemplo oficial de RLS con Hyperdrive. Requiere prueba (ver preguntas abiertas).
 - Neon documenta también RLS para su «Data API» con JWT; no aplica a Faro (la API es nuestro Worker) ([guía RLS de Neon](https://neon.com/docs/guides/rls-drizzle)). Esa guía indica correr las migraciones y políticas por conexión directa.
 
 ## 7. Pregunta 4: Workers e Hyperdrive, precios y límites
@@ -428,7 +428,7 @@ neon branches restore main ^self@2026-11-01T00:00:00Z --preserve-under-name main
 Razones:
 
 1. **Es lo que recomiendan Cloudflare y Neon** para Workers con Neon, y Cloudflare dice que `pg` es el driver con mejor compatibilidad con Hyperdrive ([ejemplo con pg](https://developers.cloudflare.com/hyperdrive/examples/connect-to-postgres/postgres-drivers-and-libraries/node-postgres/)).
-2. **El hub sube lotes de eventos**, y el diseño idempotente (`ON CONFLICT DO NOTHING` por `(restaurante_id, id)`) y la seguridad por fila piden transacciones interactivas (`BEGIN`, `set_config(..., true)`, inserciones, `COMMIT`). El driver HTTP de Neon no las admite; el de WebSocket sí, pero Neon mismo remite a Hyperdrive.
+2. **El hub sube lotes de eventos**, y el diseño idempotente (`ON CONFLICT DO NOTHING` por `(restaurant_id, id)`) y la seguridad por fila piden transacciones interactivas (`BEGIN`, `set_config(..., true)`, inserciones, `COMMIT`). El driver HTTP de Neon no las admite; el de WebSocket sí, pero Neon mismo remite a Hyperdrive.
 3. **No hay una clave de Neon dentro del Worker**: el dueño la pega una vez en la configuración de Hyperdrive; el Worker solo recibe `env.HYPERDRIVE.connectionString`. Menos secretos que cuidar.
 4. **Costo**: Hyperdrive va incluido en Workers Free y Paid, sin cargo de pooling, caché ni transferencia.
 5. **Un lote = una sentencia** (con `jsonb_to_recordset` y `ON CONFLICT DO NOTHING`), dentro de una transacción corta que también fija el restaurante para RLS. Esto minimiza las consultas contadas por Hyperdrive y mantiene la transacción breve, como pide Cloudflare.

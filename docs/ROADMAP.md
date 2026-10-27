@@ -45,14 +45,16 @@ Orden aprobado por el dueño el 24-oct-2026.
 
 **Cambio de arquitectura (26-oct-2026):** el dueño decidió que Faro funcione principalmente en línea, con la base oficial en Postgres (Neon) y el PC de caja como puente local para no detenerse sin internet ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)). Por eso se agregan las tareas 1.10 a 1.12 antes del instalador del hub (antes 1.10, ahora 1.13) y de la prueba de aceptación (antes 1.11, ahora 1.14).
 
+**Código en inglés (26-oct-2026):** el dueño decidió que el código y los commits vayan en inglés; la interfaz, lo impreso, la documentación y la conversación siguen en español ([ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-en-inglés-interfaz-y-documentación-en-español), [glosario](GLOSARIO.md)). Se reescribió todo el código sin cambiar la lógica antes de seguir con la 1.11 (sección «Código en inglés» más abajo).
+
 ### 0.1 — Prueba de conexión en dispositivos reales ✅
 
-Pantalla **Diagnóstico del dispositivo** en `/diagnostico` (queda como herramienta para instalar restaurantes). Comprueba en cada celular o tablet abierto por IP con HTTP:
+Pantalla **Diagnóstico del dispositivo** en `/diagnostics` (queda como herramienta para instalar restaurantes). Comprueba en cada celular o tablet abierto por IP con HTTP:
 - canal en tiempo real con el hub (WebSocket con latidos, reconexión y detección de conexión muerta) y tiempo de respuesta;
 - qué pasa al bloquear la pantalla: si la conexión sobrevive y si el navegador recarga la página solo;
 - datos locales (IndexedDB), vibración, sonido, pantalla encendida y notificaciones.
 
-Los resultados se envían al hub y quedan en `apps/hub/datos/diagnosticos.jsonl` (máximo 5 MB).
+Los resultados se envían al hub y quedan en `apps/hub/data/diagnostics.jsonl` (máximo 5 MB).
 
 **Resultado:** la app funciona por IP con HTTP en Android (Chrome) y en iPhone (Safari) sin instalar nada. Decisión, evidencia y consecuencias para el diseño en [ADR-001](DECISIONES.md#adr-001--los-dispositivos-abren-la-app-por-la-ip-del-hub-con-http-y-sin-instalar-nada). Lo más importante: la conexión se pierde cada vez que se bloquea la pantalla y el reloj de los celulares no es confiable.
 
@@ -63,7 +65,7 @@ Los resultados se envían al hub y quedan en `apps/hub/datos/diagnosticos.jsonl`
 **Cómo probarlo a mano:**
 
 1. Inicia el hub: `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver `Hub en marcha` y la dirección `http://192.168…:4000`.
-2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/diagnostico`. Debes ver **Diagnóstico del dispositivo** y **✓ Conectado** en «Canal en tiempo real».
+2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/diagnostics`. Debes ver **Diagnóstico del dispositivo** y **✓ Conectado** en «Canal en tiempo real».
 3. Sigue los cuatro pasos numerados de la pantalla. Al enviar debes ver **✓ Resultados enviados**.
 
 ## Antes de probar cualquier tarea
@@ -109,15 +111,15 @@ Decisiones del dueño del 25-oct-2026 ([ADR-015](DECISIONES.md#adr-015--comandas
 **Por dentro:**
 - `packages/printing` (nuevo): la comanda en líneas del ancho de la impresora (48 caracteres en 80 mm) y en bytes ESC/POS.
   - Un nombre de producto nunca puede mandarle órdenes a la impresora: se quitan los bytes de control.
-- **Migración 6**:
-  - tablas `impresora` y `trabajo_impresion` (la cola, que no se borra);
-  - columnas `dispositivo.estacion_ids`, `usuario.pantalla` y `rol.oculto`.
+- **Migración 6** (hoy parte de la migración 1):
+  - tablas `printers` y `print_jobs` (la cola, que no se borra);
+  - columnas `devices.station_ids`, `users.screen` y `roles.hidden`.
 - **Hub**:
-  - numera las comandas por día operativo (`asignaciones.numeros_comanda`);
-  - arma los trabajos dentro de la transacción del evento (`alGuardar`), y si falla el evento igual se acepta;
-  - avisa el estado de las impresoras por WebSocket (`impresoras`).
+  - numera las comandas por día operativo (`assignments.ticket_numbers`);
+  - arma los trabajos dentro de la transacción del evento (`onSave`), y si falla el evento igual se acepta;
+  - avisa el estado de las impresoras por WebSocket (`printers`).
 - **La pantalla de cocina** marca a nombre de un usuario técnico propio. Solo puede marcar listo y agotados, no sale en Personal y no entra con PIN ni contraseña.
-- **Impresora de prueba**: `pnpm --filter @pos/hub impresora-prueba` muestra en la ventana cada comanda, para probar sin papel.
+- **Impresora de prueba**: `pnpm --filter @pos/hub test-printer` muestra en la ventana cada comanda, para probar sin papel.
 
 Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entre otros:
 - **Hub**:
@@ -193,7 +195,7 @@ En el hub:
 pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
-   Debes ver «Base de datos actualizada a la versión 6».
+   Debes ver «Base de datos en la versión 1.» (o «Base de datos actualizada a la versión 1.» si la base es nueva).
 5. En el PC de la caja entra como administrador. En la barra lateral toca **Cocina e impresoras**. Debes ver Cocina y Barra con «No le llega nada».
 6. Toca **Agregar impresora**. Escribe «Cocina», toca la estación **Cocina**, deja «Cable de red», escribe la IP del paso 2, deja el puerto 9100 y 80 mm, y toca **Guardar**. Debe salir en la lista con «Lista».
 7. Toca **Prueba**. La impresora de la cocina debe sacar una hoja «PRUEBA DE IMPRESIÓN»: la regla de números debe ocupar una sola línea y las tildes y eñes deben verse bien. Si salen símbolos raros, toca **Editar**, elige **Windows (1252)**, guarda y prueba otra vez.
@@ -223,7 +225,7 @@ Decisiones del dueño del 25-oct-2026 ([ADR-011](DECISIONES.md#adr-011--reglas-d
 - **Cambiar la nota**: la cocina recibe una comanda «CAMBIO».
 
 **Por dentro:**
-- Eventos nuevos `MesasUnidas` y `MesasSeparadas` en el pedido (un grupo ocupa varias mesas).
+- Eventos nuevos `TablesMerged` y `TablesSeparated` en el pedido (un grupo ocupa varias mesas).
 - El hub no deja abrir, cambiarse ni unir una mesa que otro pedido ocupa, contando también las mesas unidas.
 - El motor arma eventos con motivo, con el pedido relacionado (al mover) y con el comprobante del supervisor: la huella del evento se firma en el hub con su PIN (ADR-008).
 - Comandas nuevas: «CAMBIO DE MESA» y la anulación de un pedido cancelado.
@@ -253,13 +255,13 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron:
 **Pruebas:** 241 nuevas (núcleo 80, sincronización 43, impresión 4, hub 53, app 61), todas pasan.
 
 **Queda pendiente:**
-- **Juntar dos cuentas en una** (`PedidosUnidos`): el núcleo lo soporta, sin pantalla; al hacerlo, la nota del pedido de origen debe pasar al destino.
+- **Juntar dos cuentas en una** (`OrdersMerged`): el núcleo lo soporta, sin pantalla; al hacerlo, la nota del pedido de origen debe pasar al destino.
 - **Mover solo una unidad** de una línea de varias: hoy se mueve la línea entera.
 - Un pedido que queda vacío al mover todo sigue abierto sin productos (la mesa se ve libre).
 - Mesas unidas de zonas distintas no llevan franja en el plano: solo el halo y «con la 5 (Terraza)».
 - El plano con mesas unidas no tiene prueba automática (necesita el ancho real de la pantalla): queda para Playwright (1.14).
 - El hub no revisa que la mesa exista al abrir o cambiarse (solo que esté libre).
-- Un celular con una versión vieja de la app no conoce `MesasUnidas`: hay que actualizar todos los equipos a la vez.
+- Un celular con una versión vieja de la app no conoce `TablesMerged`: hay que actualizar todos los equipos a la vez.
 
 **Cómo probarlo:**
 
@@ -277,24 +279,55 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 7. Abre la mesa 8, **Mesa y pedido → Cancelar el pedido**, elige un motivo, escribe el PIN del administrador y toca **Cancelar el pedido**. La mesa 8 queda libre.
 8. Toca un plato enviado, cambia su nota y toca **Enviar el cambio a cocina**: sale una comanda «CAMBIO».
 
+### Código en inglés (26-oct-2026) ✅
+
+Decisión del dueño ([ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-en-inglés-interfaz-y-documentación-en-español)). Una reescritura **sin cambiar la lógica**: mismo comportamiento y mismas pruebas (core 798, printing 113, db 398 + 1 falla esperada, sync 431, hub 1496, app 976, cloud 296).
+
+**Qué cambió:**
+- **Todo el código en inglés**, con un nombre por término según [GLOSARIO.md](GLOSARIO.md): identificadores, archivos y carpetas (`apps/nube` → `apps/cloud`, `src/sala` → `src/floor`, `src/bocetos` → `src/mockups`…), paquetes (`@pos/cloud`), comentarios y títulos de las pruebas.
+- **Valores de código:** tipos de evento (`ItemAnulado` → `ItemVoided`), estados, canales, permisos, códigos de error, rutas de la API (`/api/caja/precuenta` → `/api/register/pre-bill`, `/v1/salud` → `/v1/health`), rutas de la app (`/pedido?mesa=` → `/order?table=`) y claves de IndexedDB y localStorage.
+- **Bases de datos nuevas:**
+  - SQLite: las 8 migraciones se cambiaron por **una sola migración 1** con el mismo esquema final, en inglés y con tablas en plural (`orders`, `order_items`, `dining_tables`, `print_jobs`…). Se comprobó objeto por objeto (35 tablas, 38 disparadores) que el esquema es el mismo.
+  - Neon: se borró el esquema en español (vacío) y se aplicó la migración 1 nueva con su huella. El rol `faro_api` es miembro de `faro_data`, sin `BYPASSRLS`. La seguridad por fila se comprobó como `faro_api`: cada restaurante ve solo lo suyo y no puede escribir en otro (prueba revertida, la base quedó vacía).
+  - El Worker `faro-api` se volvió a publicar con el mismo Hyperdrive y el mismo secreto `TOKEN_ADMIN`: `/v1/health` responde 200 y las rutas de hub y de administración dan 401.
+- **Comandos renombrados:** `pnpm reset-admin`, `pnpm --filter @pos/hub test-printer`, `pnpm seed --no-staff`, `pnpm --filter @pos/cloud migrate`, `CLOUD_URL=… pnpm --filter @pos/cloud admin restaurant | code | revoke`, `pnpm --filter @pos/cloud run deploy`. La carpeta de datos del hub es `apps/hub/data` y las variables `DATA_DIR`, `APP_DIR`, `DIE_AT`, `CLOUD_URL`.
+
+**Se quedan en español a propósito:** todo lo que ve o imprime el restaurante; la carta del piloto (`docs/datos/carta-la-spritzzeria.yaml`) y sus claves, porque es un formato exportado; los tokens de color de `apps/pos/src/styles.css` (`fondo`, `superficie`, `.oscuro`, `data-marca`); los archivos que abre el dueño (`pin-administrador.txt`, `pines-….txt`, `restablecer-….txt`).
+
+**Cómo probarlo a mano** (la base del hub se crea de nuevo, porque la vieja está en la versión 8 y en español):
+1. Cierra el hub si está abierto (en la ventana donde corre, `Ctrl+C`).
+2. En la carpeta del proyecto, en una terminal: `nvm use 24`.
+3. Borra la carpeta de datos vieja: en Finder, entra a `restaurant-pos/apps/hub/` y manda a la papelera la carpeta **`datos`** (si ya existe una carpeta **`data`** de una prueba anterior, mándala también).
+4. Corre `pnpm seed`. Debes ver una tabla con `products  98 nuevos` y `dining_tables  25 nuevos`, y al final los usuarios y PIN de ejemplo. Quedan también en `apps/hub/data/pines-….txt`.
+5. Corre `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver «Base de datos en la versión 1.» y las direcciones para abrir desde el celular.
+6. Abre `http://localhost:4000` en el navegador. Si el navegador ya había abierto Faro antes, borra los datos del sitio (en Chrome: candado de la barra de direcciones → «Configuración del sitio» → «Borrar datos») y recarga. Debes ver «Escribe tu PIN».
+7. Escribe el PIN de «Mesero 1» del archivo de PIN. Debes ver el salón con 25 mesas libres y arriba «Solo red local».
+8. Toca la mesa 5, agrega un producto y envíalo. Debes ver la mesa «En preparación» en el plano. Todos los textos siguen en español.
+
+**Pendiente (no cambia lógica, se hace aparte):**
+- Nombres que se pueden mejorar: el curso «entrada» quedó como `entry` (mejor `starter`); los movimientos de caja `entry`/`output` (mejor `cash_in`/`cash_out`); `settings` para los ajustes de redondeo (mejor `roundingAdjustments`); los tipos de comanda `newOne`/`voidEntry`; algunos nombres sueltos señalados en la revisión.
+- Los tokens de color de `styles.css` y las clases de Tailwind que los usan, en español.
+- Las e2e «the home screen links to /diagnostics» y «app start (sign in): everything is at least 48×48» ya fallaban antes de la reescritura: buscan un enlace «Diagnóstico del equipo» y un encabezado «Escribe tu PIN» que la pantalla de entrar no tiene.
+- `apps/hub/.vitest/json/output.json` y `apps/pos/.vitest/json/output.json` son salidas viejas de Vitest guardadas en git por error.
+
 ### 1.10 — La nube: Postgres en Neon y API en Cloudflare Workers ✅
 
 **En marcha desde el 26-oct-2026:**
 - **Neon:** proyecto `faro` (`divine-moon-41531979`), región **AWS São Paulo** (`aws-sa-east-1`), Postgres 18, plan gratis (6 horas para restaurar). Migración 1 aplicada y registrada con su huella. Comprobado en Neon:
-  - las tablas existen y la seguridad por fila está activa en `evento` y `evento_distinto`;
+  - las tablas existen y la seguridad por fila está activa en `events` y `divergent_events`;
   - un evento de otro restaurante se rechaza;
-  - el rol de la API `faro_api` (creado por el dueño con su clave) es miembro de `faro_datos`, no tiene `BYPASSRLS` y no está en `neon_superuser`.
+  - el rol de la API `faro_api` (creado por el dueño con su clave) es miembro de `faro_data`, no tiene `BYPASSRLS` y no está en `neon_superuser`.
 - **Cloudflare:**
   - Hyperdrive `faro-neon` (id `482abd5728404ed88ce40944a75e52df`) apunta a Neon con `faro_api`, sin pooler y con la caché apagada;
   - el Worker `faro-api` está publicado en https://faro-api.johanyepes.workers.dev con el secreto `TOKEN_ADMIN`.
 - **Probado contra la API publicada:**
-  - `/v1/salud` responde `{"ok":true}`;
+  - `/v1/health` responde `{"ok":true}`;
   - sin credencial, con una inventada o con un token de administración equivocado, la respuesta es 401;
   - una credencial inventada consulta la base: el camino Worker → Hyperdrive → Neon funciona.
 
 Decisión del dueño del 26-oct-2026 ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)). Investigación oficial: [integraciones/neon-cloudflare.md](integraciones/neon-cloudflare.md).
 
-**Lo nuevo** (`apps/nube`):
+**Lo nuevo** (`apps/cloud`):
 - **La base de la nube** en Postgres:
   - restaurantes;
   - códigos de registro: sirven para un solo PC de caja y vencen a las 24 horas;
@@ -309,8 +342,8 @@ Decisión del dueño del 26-oct-2026 ([ADR-016](DECISIONES.md#adr-016--nube-prim
     - si un evento trae algo que Postgres no acepta, se marca inválido sin tumbar el lote;
     - si la respuesta del registro se pierde, el mismo PC puede repetirlo con el mismo código.
 - **Comandos** (piden las claves sin mostrarlas en pantalla ni dejarlas en el historial):
-  - `pnpm --filter @pos/nube migrar` crea las tablas en Neon;
-  - `pnpm --filter @pos/nube admin` crea el restaurante de este PC en la nube, da el código o revoca un PC.
+  - `pnpm --filter @pos/cloud migrate` crea las tablas en Neon;
+  - `pnpm --filter @pos/cloud admin` crea el restaurante de este PC en la nube, da el código o revoca un PC.
 
 Revisado por `revisor-codigo` y `qa-pruebas`. Se corrigió:
 - «hasta dónde está todo» daba la mayor secuencia recibida aunque faltaran eventos antes: ahora es la última sin huecos desde la 1;
@@ -342,14 +375,14 @@ Revisado por `revisor-codigo` y `qa-pruebas`. Se corrigió:
 4. **Crea las tablas.** En una terminal, en la carpeta del proyecto:
 
 ```bash
-pnpm --filter @pos/nube migrar
+pnpm --filter @pos/cloud migrate
 ```
 
    Pega la cadena cuando la pida (no se ve al pegarla) y presiona Enter. Debes ver «Listo: se aplicaron las migraciones 1».
 5. **Crea el rol de la API.** En Neon, abre **SQL Editor** y ejecuta esto, cambiando la clave por una larga que generes en tu gestor de contraseñas:
 
 ```sql
-CREATE ROLE faro_api WITH LOGIN PASSWORD 'pon-aqui-una-clave-larga' IN ROLE faro_datos;
+CREATE ROLE faro_api WITH LOGIN PASSWORD 'pon-aqui-una-clave-larga' IN ROLE faro_data;
 ```
 
    Debes ver «Statement executed successfully». Arma su cadena de conexión: es la del paso 3, cambiando `neondb_owner:<clave>` por `faro_api:<la clave que pusiste>`.
@@ -371,32 +404,32 @@ read -s CADENA
 npx wrangler@4.149.0 hyperdrive create faro-neon --connection-string="$CADENA" --caching-disabled
 ```
 
-   Debes ver un mensaje con el **id** de la configuración. Ese id no es secreto: pásamelo (o ponlo en `apps/nube/wrangler.jsonc`, en lugar de `REEMPLAZAR_CON_EL_ID_DE_HYPERDRIVE`).
+   Debes ver un mensaje con el **id** de la configuración. Ese id no es secreto: pásamelo (o ponlo en `apps/cloud/wrangler.jsonc`, en lugar de `REEMPLAZAR_CON_EL_ID_DE_HYPERDRIVE`).
 7. **Publica la API:**
 
 ```bash
-pnpm --filter @pos/nube desplegar
+pnpm --filter @pos/cloud run deploy
 ```
 
-   Debes ver una dirección como `https://faro-api.<tu-cuenta>.workers.dev`. Ábrela en el navegador agregando `/v1/salud`: debe decir `{"ok":true}`.
+   Debes ver una dirección como `https://faro-api.<tu-cuenta>.workers.dev`. Ábrela en el navegador agregando `/v1/health`: debe decir `{"ok":true}`.
 8. **Crea el token de administración.** Genera uno largo en tu gestor de contraseñas y guárdalo ahí. Luego:
 
 ```bash
-cd apps/nube && npx wrangler@4.149.0 secret put TOKEN_ADMIN
+cd apps/cloud && npx wrangler@4.149.0 secret put TOKEN_ADMIN
 ```
 
    Pégalo cuando lo pida. Debes ver «Success! Uploaded secret TOKEN_ADMIN».
 9. **Crea tu restaurante en la nube.** Cierra el hub (**Ctrl+C**) y, en la carpeta del proyecto, cambiando la dirección por la tuya:
 
 ```bash
-NUBE_URL=https://faro-api.TU-CUENTA.workers.dev pnpm --filter @pos/nube admin restaurante
+CLOUD_URL=https://faro-api.TU-CUENTA.workers.dev pnpm --filter @pos/cloud admin restaurant
 ```
 
    Pega el token de administración (no se ve). Debes ver «Listo: «La Spritzzería» quedó creado en la nube».
 10. **Pide el código del PC de caja** (se usará en la 1.11):
 
 ```bash
-NUBE_URL=https://faro-api.TU-CUENTA.workers.dev pnpm --filter @pos/nube admin codigo
+CLOUD_URL=https://faro-api.TU-CUENTA.workers.dev pnpm --filter @pos/cloud admin code
 ```
 
    Debes ver un código como `K7PM-QX2R-9DHT` y hasta cuándo sirve (24 horas).
@@ -418,8 +451,8 @@ Decisiones del dueño del 26-oct-2026 ([ADR-011](DECISIONES.md#adr-011--reglas-d
 - **Mesa reabierta:** lo ya reportado de un día no cambia; la diferencia aparece el día en que se vuelve a cerrar.
 
 **Por dentro:**
-- `informe` en `@pos/core` calcula todo; el hub (`datosDeInforme`) solo junta los eventos del período.
-- Migración 8: la cola de impresión acepta el cierre Z.
+- `report` en `@pos/core` calcula todo; el hub (`reportData`) solo junta los eventos del período.
+- Migración 8 (hoy parte de la migración 1): la cola de impresión acepta el cierre Z.
 
 Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas`. Se corrigió:
 - una anulación de algo que después se pasó a otra mesa salía como «Producto» por $0;
@@ -434,7 +467,7 @@ Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas`. Se
 **Pruebas:** todas pasan con `pnpm check` (núcleo, sincronización, hub, impresión, base y app), con pruebas de propiedades sobre historias al azar.
 
 **Queda pendiente:**
-- El mesero no ve sus ventas (`ver_reportes_propios`); se decide después.
+- El mesero no ve sus ventas (`view_own_reports`); se decide después.
 - Los reportes se calculan en el PC de la caja cada vez: para períodos largos (más de 62 días) hará falta la nube (Fase 3) o guardar resúmenes por día.
 - El fondo de propinas es del período elegido, no un saldo acumulado.
 - Una anulación de pago cuyo pago original no aparece no resta nada (no debería pasar; no avisa).
@@ -512,8 +545,8 @@ Decisiones del dueño del 26-oct-2026 ([ADR-011](DECISIONES.md#adr-011--reglas-d
 - Una caja abierta de un día anterior lo avisa para cerrarla.
 
 **Por dentro:**
-- Eventos `MovimientoCajaRegistrado`, `ArqueoRegistrado` y `TurnoCerrado` (agregado `turno_caja`), solo desde la caja y con sus permisos.
-- `cuadreDeTurno` en `@pos/core` calcula el cuadre igual en el hub y en la caja.
+- Eventos `CashMovementRecorded`, `CashCountRecorded` y `ShiftClosed` (agregado `register_shift`), solo desde la caja y con sus permisos.
+- `shiftReconciliation` en `@pos/core` calcula el cuadre igual en el hub y en la caja.
 - El hub no acepta un cierre que no cuadre con lo suyo: sin el último conteo, con pagos o movimientos después del conteo, con otro esperado o sin la justificación. Después del cierre, ese turno no recibe pagos.
 
 Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas`. Se corrigió:
@@ -576,8 +609,8 @@ Decisiones del dueño del 26-oct-2026 ([ADR-011](DECISIONES.md#adr-011--reglas-d
 - **Caja y pagos** (administración): medios de pago (prender y apagar; crear los propios), propina sugerida (sin propina, 5 %, 8 % o 10 %), impresora de precuentas y datáfonos (el seed crea dos Bold).
 
 **Por dentro:**
-- Evento `TurnoAbierto` (agregado `turno_caja`). El hub no deja abrir dos turnos en la misma caja y rechaza pagos, anulaciones y reembolsos sin turno abierto, de otra caja, con un medio apagado, con un datáfono archivado o con otra regla de redondeo.
-- Migración 7: tabla `datafono` y la cola de impresión acepta precuentas.
+- Evento `ShiftOpened` (agregado `register_shift`). El hub no deja abrir dos turnos en la misma caja y rechaza pagos, anulaciones y reembolsos sin turno abierto, de otra caja, con un medio apagado, con un datáfono archivado o con otra regla de redondeo.
+- Migración 7 (hoy parte de la migración 1): tabla `card_terminals` y la cola de impresión acepta precuentas.
 - La propina de un pago parcial es la diferencia entre la pendiente antes y después: las partes suman la propina entera. La de una cuenta pagada en parte es la parte de su propina que falta.
 - La precuenta impresa la arma el hub con el pedido (no confía en los montos del equipo).
 
@@ -591,9 +624,9 @@ Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas`. Se
 - los botones de cobrar quedaban fuera del pulgar en el celular;
 - se habían perdido los atajos de teclado;
 - la mesa seguía en «Pidió la cuenta» al pedir más;
-- `/api/caja/medios` respondía error del servidor con «otro»;
+- `/api/register/payment-methods` respondía error del servidor con «other»;
 - dividir por productos fallaba si otro equipo anulaba un producto asignado;
-- un `TurnoAbierto` podía nombrar un pedido y quedar en su historia;
+- un `ShiftOpened` podía nombrar un pedido y quedar en su historia;
 - las opciones de un plato salían sin sangría en la precuenta.
 
 **Pruebas:** 589 nuevas (núcleo 92, sincronización 60, base 35, hub 205, impresión 49, app 148), todas pasan.
@@ -609,7 +642,7 @@ Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas`. Se
 
 **Cómo probarlo:**
 
-1. Cierra el hub (**Ctrl+C**) y arráncalo con la versión nueva (la base pasa a la versión 7):
+1. Cierra el hub (**Ctrl+C**) y arráncalo con la versión nueva (la base queda en la versión 1):
 
 ```bash
 pnpm --filter @pos/app build && pnpm --filter @pos/hub start
@@ -618,7 +651,7 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 2. Con el hub cerrado una vez, carga los datáfonos de ejemplo (no toca el personal):
 
 ```bash
-pnpm seed -- --sin-personal
+pnpm seed -- --no-staff
 ```
 
 3. En el PC de la caja entra con el usuario y la contraseña de **Caja**. En el menú toca **Caja**, escribe la base (por ejemplo 200.000) y toca **Abrir con $200.000**. Debes ver «Caja abierta desde las…».
@@ -636,7 +669,7 @@ Pedidos del dueño al probar la 1.4 en su iPhone:
 - **Pista para la nota**: cada línea sin enviar dice «Toca para nota»; al tocarla se abre su panel.
 - **Nota para una sola unidad**: se escribe en la nota de la línea («1 sin hielo»); el campo lo sugiere cuando hay varias. (Se probó separar la unidad en su propia línea, con un botón y luego con «Solo para 1»; el dueño prefirió quitarlo: en la nota se especifica.) La nota se aplica al cerrar el panel, no al salir del campo.
 - **Sin avisos al agregar**: agregar un producto o tocar + y − ya no muestra «Aperol Spritz: 3 · Deshacer» (estorbaba al tomar pedidos); el número cambia a la vista y se corrige con «−». Quitar una línea completa sí deja Deshacer, porque se pierden su nota y sus opciones.
-- **Nota del pedido**: arriba del pedido, «Nota del pedido» (alergias, cumpleaños). Sale resaltada en cada comanda y en la pantalla de cocina. Si cambia o se quita con platos ya en cocina, sale en papel una comanda «NOTA NUEVA» a cada estación con algo pendiente (una alergia no puede quedar solo en pantalla). Evento nuevo `NotaPedidoCambiada`.
+- **Nota del pedido**: arriba del pedido, «Nota del pedido» (alergias, cumpleaños). Sale resaltada en cada comanda y en la pantalla de cocina. Si cambia o se quita con platos ya en cocina, sale en papel una comanda «NOTA NUEVA» a cada estación con algo pendiente (una alergia no puede quedar solo en pantalla). Evento nuevo `OrderNoteChanged`.
 - **«Enviar» cuenta unidades**: 3 Aperol dicen «Enviar 3», no «Enviar 1».
 - **El encabezado del celular cabe en una fila**: «Solo red local» se abrevia «Local»; el modo oscuro sigue arriba y también está en el menú.
 - **Cursos apagados**: «Curso», «Retener» y «Marchar» ya no se ven. Se prenden en **Cocina e impresoras → Cursos** si un restaurante los usa ([ADR-011](DECISIONES.md#adr-011--reglas-de-operación-acordadas-para-el-piloto)).
@@ -652,7 +685,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron:
 
 **Pruebas:** 137 nuevas, todas pasan.
 - **Núcleo:** 384. La nota con propiedades al azar; se rechaza con el pedido cerrado.
-- **Hub:** 1.171. Comanda con la nota y «NOTA NUEVA» por estación; `/api/cocina/cursos` con su matriz de permisos.
+- **Hub:** 1.171. Comanda con la nota y «NOTA NUEVA» por estación; `/api/kitchen/courses` con su matriz de permisos.
 - **App:** unidades por enviar; la nota del pedido sobre el motor y sin conexión.
 
 **Queda pendiente:**
@@ -709,14 +742,14 @@ Decisión del dueño del 25-oct-2026 ([ADR-014](DECISIONES.md#adr-014--faro-nomb
 - **Fotos de productos (opcionales):**
   - en **Carta**, cada producto tiene Subir foto, Cambiar y Quitar;
   - el celular achica la foto antes de mandarla (800 px);
-  - el hub la guarda en `datos/fotos`.
+  - el hub la guarda en `data/photos`.
 
 **Por dentro:**
-- Tokens de color en `apps/pos/src/estilos.css`; una marca nueva es un bloque `data-marca` en claro y oscuro, más su entrada en `MARCAS`.
-- `marca` en la configuración del restaurante (por defecto `faro`); `POST /api/restaurante/marca`.
+- Tokens de color en `apps/pos/src/styles.css`; una marca nueva es un bloque `data-marca` en claro y oscuro, más su entrada en `BRANDS`.
+- `brand` en la configuración del restaurante (por defecto `faro`); `POST /api/restaurant/brand`.
 - Fotos:
-  - `POST /api/catalogo/fotos` (permiso de editar la carta, máximo 1 MB, solo WebP, JPEG o PNG comprobados por su contenido);
-  - se sirven en `/fotos/…` con el nombre sacado de su contenido;
+  - `POST /api/catalog/photos` (permiso de editar la carta, máximo 1 MB, solo WebP, JPEG o PNG comprobados por su contenido);
+  - se sirven en `/photos/…` con el nombre sacado de su contenido;
   - el token se revisa antes de leer la foto.
 - **Seed:** a La Spritzzería le pone su marca si no tenía una.
 
@@ -749,14 +782,14 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. El skill de diseño 
 - **App:** 531.
   - Sillas con propiedades aleatorias: la cuenta exacta, ninguna dentro de la mesa, ninguna encima de otra.
   - Contraste de todas las marcas, también sobre la barra lateral.
-  - La lista de marcas de la app coincide con la del hub y con `estilos.css`.
+  - La lista de marcas de la app coincide con la del hub y con `styles.css`.
   - Subir foto y cambiar marca sin red, con sesión vencida y con respuestas raras.
 - **Base:** 288 (más la `it.fails` de la 1.3b).
 - **Núcleo:** 345.
 - **Sincronización:** 112.
 
 **Queda pendiente:**
-- **Copia de seguridad**: la carpeta `datos/fotos` debe entrar en la copia del hub cuando se haga (1.12): con ADR-016 las fotos suben a la nube.
+- **Copia de seguridad**: la carpeta `data/photos` debe entrar en la copia del hub cuando se haga (1.12): con ADR-016 las fotos suben a la nube.
 - **Tablet**: la barra lateral muestra solo íconos, sin nombres.
 - **Celular**: los paneles dentro de paneles (opciones de un producto) se apilan.
 - Más de 6 personas en un pedido; el tiempo a partir del cual la demora sale en rojo; atajos de teclado y un salto al contenido para la caja; los nombres P1, P2 de las personas.
@@ -813,14 +846,14 @@ Decisión del dueño del 24-oct-2026 ([ADR-013](DECISIONES.md#adr-013--acceso-po
   - pide confirmar antes de quitarte tu propio acceso y antes de salir con cambios sin guardar.
 
 **Por dentro:**
-- `POST /api/entrar` (PIN o usuario y contraseña, con o sin token) y `/api/personal/…`.
-- Contraseñas con scrypt en la migración 5, solo en el hub. Usuarios únicos por restaurante.
+- `POST /api/sign-in` (PIN o usuario y contraseña, con o sin token) y `/api/staff/…`.
+- Contraseñas con scrypt en la migración 5 (hoy parte de la migración 1), solo en el hub. Usuarios únicos por restaurante.
 - Un hub de antes conserva lo suyo:
   - Contador pasa a ser Reportes;
   - Gerente y Cocina quedan como roles propios;
   - el administrador recibe usuario y contraseña al arrancar.
 - **Seed**: «Caja» y «Reportes» con usuario y contraseña, y tres meseros con PIN.
-- **Si se pierde la contraseña del administrador**: `pnpm restablecer-admin` en el PC del hub, con el hub cerrado.
+- **Si se pierde la contraseña del administrador**: `pnpm reset-admin` en el PC del hub, con el hub cerrado.
 - **«Simular corte»** ahora solo se ve en desarrollo o abriendo la app una vez con `?demo=1` (`?demo=0` lo quita).
 
 Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entre otros:
@@ -829,8 +862,8 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entr
   - el tiempo de respuesta delataba qué usuarios existían;
   - probar contraseñas dejaba al administrador afuera hasta 60 s;
   - cualquier celular podía crear códigos de emparejamiento de caja;
-  - el arranque y `restablecer-admin` no filtraban por restaurante;
-  - `restablecer-admin` perdía el PIN que regeneraba;
+  - el arranque y `reset-admin` no filtraban por restaurante;
+  - `reset-admin` perdía el PIN que regeneraba;
   - reactivar a alguien cuyo PIN tenía otra persona daba un error 500.
 - **Pantalla**:
   - archivar no pedía confirmación;
@@ -849,7 +882,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entr
   - Carreras al quitar el último administrador.
   - Roles viejos convertidos.
   - Reinicio y pérdida de la clave de los PIN.
-  - `restablecer-admin` como proceso real.
+  - `reset-admin` como proceso real.
 - **App:** 463, con el motor sin conexión, con un token falso y con uno retirado.
 - **Base:** 288, con la migración 5 y las transacciones anidadas. Una más falla a propósito (`it.fails`): documenta lo del savepoint.
 - **Núcleo:** 341.
@@ -865,7 +898,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entr
 - **Pantalla de cocina**: cómo entra (sin rol Cocina de fábrica) se decidió en la 1.4: la convierte el administrador ([ADR-015](DECISIONES.md#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero)).
 - **Roles de un hub ya instalado**: un hub que ya existía conserva los permisos de sus roles. En el tuyo, el Cajero no tiene anular ni descontar hasta que los marques en **Personal y roles**.
 - **Pasos viejos**: los de las tareas 0.7 y 0.10 que dicen «emparejar» ahora son «entrar».
-- **Transacciones anidadas sin savepoint**: si una transacción de adentro falla y quien la llama atrapa el error y sigue, lo que alcanzó a escribir queda. Ningún código lo hace hoy y el comentario de `enTransaccion` lo advierte; hay una prueba `it.fails` que lo documenta.
+- **Transacciones anidadas sin savepoint**: si una transacción de adentro falla y quien la llama atrapa el error y sigue, lo que alcanzó a escribir queda. Ningún código lo hace hoy y el comentario de `inTransaction` lo advierte; hay una prueba `it.fails` que lo documenta.
 - **Doble envío del formulario**: guardar dos veces seguidas una persona nueva crea dos personas. Se archiva la repetida.
 - **Retirar no es para siempre**: un celular retirado que borra sus datos puede volver a entrar como equipo nuevo, si alguien sabe un PIN válido.
 
@@ -904,11 +937,11 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 - En el buscador, **Esc** lo borra y **Enter** agrega el producto si queda uno solo.
 - **El ticket** va agrupado por curso: − y + en cada línea (dos toques seguidos cuentan dos), y al tocar la línea se cambia cantidad, persona, curso o nota, o se duplica o quita.
 - **Retener** un curso: el fuerte espera mientras la entrada sale. **Enviar** manda lo pendiente; lo retenido sale al tocar **Marchar**.
-- **Agotados (86)**: quien tiene el permiso `agotar_producto` (admin y cajero) toca **Agotados** y luego los productos. Se ve al instante en todos los equipos, también sin conexión para quien lo marcó, y se puede deshacer. Un producto con tamaños deja agotar uno solo.
+- **Agotados (86)**: quien tiene el permiso `mark_product_sold_out` (admin y cajero) toca **Agotados** y luego los productos. Se ve al instante en todos los equipos, también sin conexión para quien lo marcó, y se puede deshacer. Un producto con tamaños deja agotar uno solo.
 - **Pedidos sin mesa**: en el salón, **Para llevar**, **Domicilio** y **Barra** abren un pedido con número del día. Los abiertos se ven ahí con su total y su mesero.
 
 **Por dentro:**
-- Agotar y volver a ofrecer son eventos `ProductoAgotado` y `ProductoDisponible` del producto (no de un pedido), firmados y ordenados por el hub como los demás ([SYNC.md](SYNC.md)).
+- Agotar y volver a ofrecer son eventos `ProductSoldOut` y `ProductAvailable` del producto (no de un pedido), firmados y ordenados por el hub como los demás ([SYNC.md](SYNC.md)).
 - Lo agotado y lo más pedido se calculan en cada equipo a partir de los eventos que tiene guardados.
 
 Revisado por `revisor-codigo`, `qa-pruebas`, `revisor-ux` y `auditor-dinero`. Se corrigieron, entre otros:
@@ -927,7 +960,7 @@ Revisado por `revisor-codigo`, `qa-pruebas`, `revisor-ux` y `auditor-dinero`. Se
 **Queda pendiente:**
 - **Acceso:** el acceso por rol (meseros con PIN desde la IP, sin emparejar; caja con usuario y contraseña) es la tarea 1.3b.
 - **Lo que el hub todavía no revisa:**
-  - el precio de un cambio después de enviado (`ItemModificadoTrasEnvio`);
+  - el precio de un cambio después de enviado (`ItemModifiedAfterSend`);
   - un producto agotado que se agrega desde un equipo que no lo sabía. Lo acepta: el aviso es solo en la pantalla.
 - **Datos:**
   - el ítem no guarda la versión de la carta con que se agregó, así que Deshacer y Duplicar la buscan en los eventos guardados;
@@ -975,7 +1008,7 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 - Las mesas quitadas de una zona se pueden **volver a poner**.
 
 **En el hub:**
-- Zonas, mesas y elementos se editan con la misma API que la carta, con el permiso `editar_catalogo`. La tabla `elemento_plano` llega con la migración 4.
+- Zonas, mesas y elementos se editan con la misma API que la carta, con el permiso `edit_catalog`. La tabla `floor_plan_elements` llega con la migración 4 (hoy parte de la migración 1).
 - **Reglas:**
   - dos mesas activas no se llaman igual, ni en zonas distintas;
   - no se archiva una mesa con un pedido abierto, ni una zona con mesas activas.
@@ -1015,7 +1048,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entr
 pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
-   Debes ver `Base de datos actualizada a la versión 4.` y `Hub en marcha`.
+   Debes ver `Base de datos en la versión 1.` (o `Base de datos actualizada a la versión 1.` si la base es nueva) y `Hub en marcha`.
 2. En la caja, entra con tu PIN de administrador o de gerente. En el salón debes ver las 25 mesas en cuadrícula. Toca **Editar plano**.
 3. Toca **Nueva zona**, escribe «Terraza» como nombre, toca **Varias a la vez…**, elige **Redonda**, deja 10 y 5 por fila, y toca **Agregar 10**. Debes ver dos filas de mesas redondas con los números 26 a 35.
 4. Arrastra la mesa 26 a otro lugar y toca **Guardar**. Debes ver «Guardaste Terraza».
@@ -1030,16 +1063,16 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 - **Productos:** nombre, descripción, categoría, impuesto y precio; **tamaños** con su precio (copa y botella); los grupos de opciones que pide; archivar y volver a poner en la carta. Búsqueda tolerante y lista de archivados.
 - **Grupos de opciones:** término de la carne, sabor o adicionales con precio extra, con cuántas se pueden y se deben elegir. Un grupo sirve para varios productos; la lista dice cuáles lo usan.
 - **Categorías y estaciones:** a qué estación va cada categoría (cocina o barra).
-- Con solo el permiso **editar_precios** se ve todo, pero solo se cambian precios.
+- Con solo el permiso `edit_prices` se ve todo, pero solo se cambian precios.
 - Un precio mal escrito («53,900», «1.5») no se guarda. Al cerrar un panel con cambios, pregunta antes de descartarlos.
 
 **En el hub:**
-- `POST /api/catalogo/cambios`: los cambios de un guardado se aplican todos o ninguno, con la sesión y el permiso.
+- `POST /api/catalog/changes`: los cambios de un guardado se aplican todos o ninguno, con la sesión y el permiso.
 - No deja dejar la carta rota: nada activo apunta a algo archivado. No se archiva un impuesto o una categoría con productos activos, ni una estación con categorías activas. Archivar un grupo lo quita de sus productos.
 - Repetir el mismo guardado (un reintento tras un corte) no cambia nada ni avisa a nadie.
-- **Historial de la carta** (`catalogo_cambio`, migración 3): cada cambio queda con cómo estaba, cómo quedó, quién y desde qué equipo. El seed escribe por el mismo camino.
-- **Aviso a los equipos:** al guardar, el hub manda `catalogo` y cada equipo trae la carta nueva sin recargar. También la trae al reconectarse.
-- **Revisión del precio copiado:** cada ítem que llega se compara con la carta en la versión que vio el equipo. Si algo no cuadra, el ítem se acepta (ya se pidió, quizá sin conexión) y queda como conflicto `precio_distinto` para la caja. Se revisan:
+- **Historial de la carta** (`catalog_changes`, migración 3; hoy parte de la migración 1): cada cambio queda con cómo estaba, cómo quedó, quién y desde qué equipo. El seed escribe por el mismo camino.
+- **Aviso a los equipos:** al guardar, el hub manda `catalog` y cada equipo trae la carta nueva sin recargar. También la trae al reconectarse.
+- **Revisión del precio copiado:** cada ítem que llega se compara con la carta en la versión que vio el equipo. Si algo no cuadra, el ítem se acepta (ya se pidió, quizá sin conexión) y queda como conflicto `price_mismatch` para la caja. Se revisan:
   - el producto;
   - la copa o botella obligatoria;
   - los precios y el impuesto;
@@ -1063,7 +1096,7 @@ Revisado por `revisor-codigo`, `qa-pruebas`, `auditor-dinero` y `revisor-ux`. Se
 - propiedades con datos al azar: guardar un borrador y volverlo a abrir da lo mismo.
 
 **Queda pendiente:**
-- Cambiar las opciones de un ítem ya enviado (`ItemModificadoTrasEnvio`) todavía no se revisa contra la carta: llega con la toma de pedido de la 1.3.
+- Cambiar las opciones de un ítem ya enviado (`ItemModifiedAfterSend`) todavía no se revisa contra la carta: llega con la toma de pedido de la 1.3.
 - Un evento guarda un solo conflicto: si ya tenía otro, el de precio no se anota.
 - Agotar un producto (86) llega en la 1.3.
 - Sin Deshacer al guardar en el editor; Enter no guarda. Los dos grupos «Sabor» (Té Hatsu y Soda Hatsu) se llaman igual en los botones del producto: conviene renombrarlos desde el editor.
@@ -1078,7 +1111,7 @@ Revisado por `revisor-codigo`, `qa-pruebas`, `auditor-dinero` y `revisor-ux`. Se
 pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
-   Debes ver `Base de datos actualizada a la versión 3.` y `Hub en marcha`.
+   Debes ver `Base de datos en la versión 1.` (o `Base de datos actualizada a la versión 1.` si la base es nueva) y `Hub en marcha`.
 2. En la caja, entra con tu PIN de administrador o de gerente. En el salón debes ver el botón **Carta**. Tócalo.
 3. Toca **Pinsa**, cambia el precio a `22.900` y toca **Guardar**. Debes ver «Guardaste Pinsa» y el precio nuevo en la lista.
 4. En el celular, abre una mesa: la Pinsa debe decir **$22.900** sin recargar la página.
@@ -1095,10 +1128,10 @@ La app ya no muestra la página de inicio con "Conectado al hub". Al abrirla se 
   - latido cada 5 s;
   - mensajes de hasta 1 MB;
   - cierra la conexión que no saluda en 10 s.
-- `GET /api/catalogo` (solo con un equipo emparejado): mesas, estaciones y la carta vigentes, con los minutos de inactividad de la sesión.
-- La instancia del hub se guarda en el archivo `hub-instancia` de la carpeta de datos. Si el hub se reinstala, los equipos lo notan y reenvían lo suyo.
+- `GET /api/catalog` (solo con un equipo emparejado): mesas, estaciones y la carta vigentes, con los minutos de inactividad de la sesión.
+- La instancia del hub se guarda en el archivo `hub-instance` de la carpeta de datos. Si el hub se reinstala, los equipos lo notan y reenvían lo suyo.
 
-**En la app** (`apps/pos/src/sala`):
+**En la app** (`apps/pos/src/floor`):
 - **Emparejar:**
   - el primer equipo (la caja) se aprueba con el PIN del administrador;
   - los demás escriben el código que muestra la caja en **Aprobar un equipo**.
@@ -1133,8 +1166,8 @@ Revisado por `revisor-codigo`, `qa-pruebas`, `revisor-ux` y `auditor-dinero`. Se
   - la proyección de mesas.
 
 **Queda pendiente:**
-- **Pruebas e2e:** por pedido tuyo se dejan para el final. Falta escribir el escenario 14 con dos navegadores. `tests/e2e/estado-hub.spec.ts` y `conexion-hub.spec.ts` revisaban la página de inicio que ya no existe: quedan apartadas hasta reescribirlas sobre el indicador nuevo.
-- Los mensajes del hub solo se descartan si no tienen `tipo`; validar cada tipo con su esquema llega cuando el hub deje de ser solo de la red local.
+- **Pruebas e2e:** por pedido tuyo se dejan para el final. Falta escribir el escenario 14 con dos navegadores. `tests/e2e/hub-status.spec.ts` y `hub-connection.spec.ts` revisaban la página de inicio que ya no existe: quedan apartadas hasta reescribirlas sobre el indicador nuevo.
+- Los mensajes del hub solo se descartan si no tienen `type`; validar cada tipo con su esquema llega cuando el hub deje de ser solo de la red local.
 - Si se sale sin conexión, la sesión queda abierta en el hub hasta que otra persona entre en ese equipo. No es grave: el secreto ya se borró del equipo.
 - Dos pestañas de la app en el mismo equipo comparten la base y pueden desordenar la vista local. El hub no duplica nada.
 - Un producto cuyo impuesto esté archivado no aparece en la carta, y por ahora no hay aviso.
@@ -1152,7 +1185,7 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 
    Debes ver `Hub en marcha` y una dirección como `http://192.168…:4000`.
 3. En la caja (o en tu computador), abre esa dirección. Debes ver **Emparejar este equipo**.
-4. Toca **Es el primer equipo**, deja el nombre «Caja» y el tipo **Caja**, y escribe el PIN del administrador: el que mostró el hub la primera vez que arrancó (si arrancó sin ventana, está en `apps/hub/datos/pin-administrador.txt`). Debes pasar a **Escribe tu PIN**.
+4. Toca **Es el primer equipo**, deja el nombre «Caja» y el tipo **Caja**, y escribe el PIN del administrador: el que mostró el hub la primera vez que arrancó (si arrancó sin ventana, está en `apps/hub/data/pin-administrador.txt`). Debes pasar a **Escribe tu PIN**.
 5. Escribe tu PIN (o el del administrador). Debes ver **Salón** con las 25 mesas libres y, arriba, **Solo red local**.
 6. Toca **Aprobar un equipo**, escribe «Celular» como nombre, deja **Celular o tablet de mesero** y escribe el PIN del administrador. Debes ver un código de 8 letras.
 7. En el celular, conectado al mismo Wi-Fi, abre la misma dirección, toca **Tengo un código**, escríbelo y toca **Emparejar**. Debes ver **Escribe tu PIN**. Escribe el PIN de un mesero. Debes ver el mismo salón.
@@ -1168,7 +1201,7 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 
 **Dirección visual elegida: neutra** (24-oct-2026): gris claro, letra del sistema, azul en la acción principal y sin logo. Las direcciones con la marca de La Spritzzería quedan como opción para cuando cada restaurante configure la suya (Fase 1).
 
-**Direcciones visuales con la marca de La Spritzzería** (tomada de su carta web, `la-spritzzeria-menu/DESIGN.md`: paleta Bagno, League Gothic y Alegreya Sans, y el logo). Se eligen en `/bocetos` y cambian todas las pantallas:
+**Direcciones visuales con la marca de La Spritzzería** (tomada de su carta web, `la-spritzzeria-menu/DESIGN.md`: paleta Bagno, League Gothic y Alegreya Sans, y el logo). Se eligen en `/mockups` y cambian todas las pantallas:
 - **Bagno:** el mundo de la carta. Suelo de arena, marino que escribe y actúa, toldo a rayas bajo la barra, logo en su insignia, títulos, números de mesa y precios en League Gothic. En modo oscuro pasa a Noche.
 - **Taller:** como el panel de administración de la carta. Gris neutro, letra del sistema y el naranja de marca solo en la acción principal. Respeta la decisión del dueño de que las herramientas internas se vean como herramienta.
 - **Noche en la terraza:** Bagno oscuro siempre, para el bar de noche y la cocina.
@@ -1176,7 +1209,7 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 
 El significado de los colores de estado no cambia con la marca: verde libre, ámbar en proceso, rojo demora. El ámbar de estado es mostaza, para que no se confunda con el naranja Aperol. Las cuatro cumplen contraste AA en claro y oscuro, y la prueba las mide todas. Las fuentes van empaquetadas en la app (funciona sin internet) y solo se descargan si se elige una marca que las use.
 
-**Design system** (`apps/pos/src/estilos.css` y `apps/pos/src/ui`), según la sección 5 del brief:
+**Design system** (`apps/pos/src/styles.css` y `apps/pos/src/ui`), según la sección 5 del brief:
 - **Colores con significado fijo:** verde = libre o listo, ámbar = en proceso, rojo = demora o alerta, azul = acción principal, gris = lo demás. Siempre con ícono y texto, nunca solo color.
 - **Contraste y tamaños:** contraste AA en claro y en oscuro, que una prueba automática mide en cada cambio. Botones de al menos 48 px.
 - **Modo oscuro:** sigue al sistema, se puede elegir y se recuerda. Se aplica antes de pintar para que no haya destello blanco.
@@ -1190,7 +1223,7 @@ El significado de los colores de estado no cambia con la marca: verde libre, ám
   - **indicador de conexión** y de impresoras;
   - **búsqueda tolerante** («hamburgesa» encuentra la Spritz Burguer; «quatro formagi», la Quattro Formaggi).
 
-**Bocetos navegables** en `/bocetos`, con la carta real (98 productos) y los cálculos de dinero reales de `packages/core`:
+**Bocetos navegables** en `/mockups`, con la carta real (98 productos) y los cálculos de dinero reales de `packages/core`:
 - **Plano de mesas:** estados con color, ícono y texto, y tiempo y saldo en cada mesa. Plano o lista. En tablet y caja, las cuentas abiertas al lado.
 - **Toma de pedido:**
   - tocar mesa → tocar producto → Enviar, en 3 toques;
@@ -1220,14 +1253,14 @@ Revisado por `revisor-ux`, `revisor-codigo`, `auditor-dinero` y `qa-pruebas`. Se
 - el tiempo de una comanda se reiniciaba al enviar otra;
 - la propina en efectivo daba totales imposibles de pagar con billetes.
 
-**Pruebas:** 95 unitarias en `apps/pos` (contraste AA, búsqueda, formatos, y división y cobro con pruebas de propiedades). Hay además unas 185 pruebas de navegador en `tests/e2e/bocetos.spec.ts`, cada una en celular y en caja. En su última corrida pasaron 370 de 371; la única falla era un error real (dos paneles abiertos), que ya quedó corregido. Por pedido tuyo, la corrida completa de las pruebas e2e se deja para el final.
+**Pruebas:** 95 unitarias en `apps/pos` (contraste AA, búsqueda, formatos, y división y cobro con pruebas de propiedades). Hay además unas 185 pruebas de navegador en `tests/e2e/mockups.spec.ts`, cada una en celular y en caja. En su última corrida pasaron 370 de 371; la única falla era un error real (dos paneles abiertos), que ya quedó corregido. Por pedido tuyo, la corrida completa de las pruebas e2e se deja para el final.
 
 **Decisiones abiertas para cuando revises:**
 - «Por cobrar» va en gris; el revisor de UX propone ámbar.
 - Modo oscuro automático de noche, o solo siguiendo al sistema.
 - Sonido al enviar una comanda.
 
-**Ojo para la Fase 1:** los datos de los bocetos viven en memoria y se simplifican, porque los ítems se borran y los pagos no son eventos. No son el modelo: allí todo es un evento (ADR-005). Las reglas de término y sabor de la carta (`CON_TERMINO`, `CON_SABOR`) deben pasar a la configuración del catálogo.
+**Ojo para la Fase 1:** los datos de los bocetos viven en memoria y se simplifican, porque los ítems se borran y los pagos no son eventos. No son el modelo: allí todo es un evento (ADR-005). Las reglas de término y sabor de la carta (`WITH_DONENESS`, `WITH_FLAVOR`) deben pasar a la configuración del catálogo.
 
 **Cómo verlo en tu celular y tu tablet:**
 
@@ -1238,7 +1271,7 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
    Debes ver `Hub en marcha` y una dirección como `http://192.168…:4000`.
-2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/bocetos`. Debes ver **Bocetos del POS** con seis tarjetas.
+2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/mockups`. Debes ver **Bocetos del POS** con seis tarjetas.
 3. Prueba el flujo del mesero: **Plano de mesas** → toca una mesa libre → toca un producto → **Enviar**. Debes volver al plano con la mesa en «En preparación».
 4. Abre **Cocina y barra**, toca **Todo listo** en esa mesa y vuelve al plano: la mesa debe decir «Listo para servir».
 5. En la tablet, abre **Precuenta y división** → **Partes iguales** → **Cobrar** en la cuenta 1 → **Cobrar** → **Confirmar**. Debes volver a la precuenta con «Ya pagado».
@@ -1247,7 +1280,7 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ### 0.8 — Seed con la carta de La Spritzzería ✅
 
 Comando `pnpm seed` (código en `apps/hub/src/seed`). Lee [la carta](datos/carta-la-spritzzeria.yaml) y carga en la base del hub:
-- el restaurante «La Spritzzería» (sede Envigado), con la configuración del piloto (esquema `ConfigRestaurante` en `packages/core/src/config.ts`);
+- el restaurante «La Spritzzería» (sede Envigado), con la configuración del piloto (esquema `RestaurantConfig` en `packages/core/src/config.ts`);
 - un salón con **25 mesas** en cuadrícula: es provisional, el plano real se dibuja con el editor (Fase 1);
 - las estaciones **Cocina** y **Barra**: la comida va a cocina y las bebidas a barra;
 - el impuesto **INC 8 %**, **(validar)** con el contador;
@@ -1255,7 +1288,7 @@ Comando `pnpm seed` (código en `apps/hub/src/seed`). Lee [la carta](datos/carta
   - copa y botella del Ramón Bilbao son un solo producto con dos opciones;
   - el sabor del Té Hatsu y de la Soda Hatsu es obligatorio y sin costo;
   - la hamburguesa y la Tagliata llevan el término de la carne;
-- **personal de ejemplo**: Gerente, Caja, Mesero 1 a 3, Cocina y Barra, cada uno con su PIN. Son cuentas para el piloto: el restaurante pone luego los nombres reales. `pnpm seed --sin-personal` no las crea.
+- **personal de ejemplo**: Gerente, Caja, Mesero 1 a 3, Cocina y Barra, cada uno con su PIN. Son cuentas para el piloto: el restaurante pone luego los nombres reales. `pnpm seed --no-staff` no las crea.
 
 **Reglas al volver a correrlo:**
 - da siempre el mismo resultado: cada registro tiene un identificador estable y lo que ya está igual no se toca;
@@ -1275,7 +1308,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` (unas 50 pruebas: repetir el seed, v
 - la configuración aceptaba una propina sugerida por encima del 10 % (tope legal, **(validar)** con el contador) y un desglose fiscal que aún no existe.
 
 **Queda para otras tareas:**
-- `CatalogoCambiado` en cada cambio del catálogo, antes de validar precios copiados (`precio_distinto`, Fase 1);
+- `CatalogChanged` en cada cambio del catálogo, antes de validar precios copiados (`price_mismatch`, Fase 1);
 - que el hub exija elegir la variante en un producto con copa y botella (Fase 1, ver [DINERO.md](DINERO.md#precio-copiado));
 - los modificadores reales con precio (quitar ingredientes, adicionales), que el restaurante enviará antes de la Fase 1;
 - el plano real del salón y los nombres reales del personal.
@@ -1289,26 +1322,26 @@ Revisado por `revisor-codigo`, `qa-pruebas` (unas 50 pruebas: repetir el seed, v
 pnpm seed
 ```
 
-   Debes ver `Datos de La Spritzzería cargados en …`, una línea por tabla (por ejemplo `producto  98 nuevos, 0 cambiados, 0 iguales`) y, al final, `PIN nuevos:` con un PIN de 4 dígitos para cada persona. Anótalos.
+   Debes ver `Datos de La Spritzzería cargados en …`, una línea por tabla (por ejemplo `products  98 nuevos, 0 cambiados, 0 iguales`) y, al final, `PIN y contraseñas nuevos:` con un PIN de 4 dígitos para cada persona. Anótalos.
 
 3. Vuelve a correr el mismo comando. Ahora todas las líneas deben decir `0 nuevos, 0 cambiados` y al final `No se creó personal nuevo: cada quien conserva su PIN.`
-4. Si quieres probarlo sin tocar tu hub, usa una carpeta aparte: `DIR_DATOS=/tmp/hub-piloto pnpm seed`.
+4. Si quieres probarlo sin tocar tu hub, usa una carpeta aparte: `DATA_DIR=/tmp/hub-piloto pnpm seed`.
 
 ### 0.7 — Autenticación con PIN, roles y permisos ✅
 
 Según [ADR-008](DECISIONES.md#adr-008--inicio-de-sesión-solo-con-pin-generado-por-el-sistema) y [SYNC.md](SYNC.md#seguridad):
-- **Permisos y roles** (`packages/core/src/acceso`): las 24 claves de permiso, los 6 roles de fábrica con la matriz de [MODELO_DATOS.md](MODELO_DATOS.md#permisos) y qué permiso pide cada tipo de evento. Pagos y cierres solo desde un dispositivo de caja.
-- **Acceso en el hub** (`apps/hub/src/acceso`):
+- **Permisos y roles** (`packages/core/src/access`): las 24 claves de permiso, los 6 roles de fábrica con la matriz de [MODELO_DATOS.md](MODELO_DATOS.md#permisos) y qué permiso pide cada tipo de evento. Pagos y cierres solo desde un dispositivo de caja.
+- **Acceso en el hub** (`apps/hub/src/access`):
   - PIN de **4 dígitos** (decisión del dueño) generados al azar, únicos entre usuarios activos, guardados solo como HMAC con la clave del hub.
   - Emparejar un equipo con un código de un solo uso (5 minutos), aprobado con el PIN del administrador desde la caja.
   - Sesión con PIN; espera creciente tras errores (hasta 60 s) y aviso al administrador.
   - Comprobante de supervisor para un evento exacto.
   - Revocar un equipo.
-  - API HTTP: `/api/emparejamientos`, `/api/emparejar`, `/api/sesiones`, `/api/sesiones/cerrar`, `/api/autorizaciones` y `/api/dispositivos/:id/revocar`.
+  - API HTTP: `/api/pairings`, `/api/pair`, `/api/sessions`, `/api/sessions/close`, `/api/authorizations` y `/api/devices/:id/revoke`.
 - **En cada evento**, el hub de sincronización comprueba la sesión, la firma del evento, el permiso del rol al recibirlo (o el comprobante) y el tipo de equipo.
 - **Al instalar**, el hub crea el restaurante, los roles y el usuario «Administrador», y muestra su PIN una sola vez.
 
-Criterios cumplidos, con pruebas que recorren el hub completo: un dispositivo revocado es rechazado (no lee el salón y lo nuevo que envía no entra); un mesero no puede anular sin autorización; cada autorización deja registro de quién la dio (`autorizado_por_id` en el evento y el comprobante usado).
+Criterios cumplidos, con pruebas que recorren el hub completo: un dispositivo revocado es rechazado (no lee el salón y lo nuevo que envía no entra); un mesero no puede anular sin autorización; cada autorización deja registro de quién la dio (`authorized_by_id` en el evento y el comprobante usado).
 
 Revisado por `revisor-codigo` y `qa-pruebas` (unas 140 pruebas nuevas: la matriz completa de roles por evento, carreras de comprobantes, fuerza bruta, reinicios del hub y entradas raras a la API). Corregido, entre otros:
 - **Grave:** un empleado podía alternar su propio PIN con PIN ajenos para que la espera nunca empezara y probar los diez mil PIN en minutos. Ahora un acierto no borra los fallos.
@@ -1319,7 +1352,7 @@ Revisado por `revisor-codigo` y `qa-pruebas` (unas 140 pruebas nuevas: la matriz
 - El trabajo hecho sin conexión antes de que archivaran a un usuario se perdía. Ahora va a cuarentena.
 - El PIN del administrador podía quedar escrito en un archivo de log. Ahora, si no hay ventana, va a un archivo aparte para borrar.
 
-Agrega la migración 2 (comprobante atado al contenido) y la dependencia `@noble/hashes` (SHA-256 en JavaScript puro, porque por HTTP el navegador no ofrece el suyo).
+Agrega la migración 2 (comprobante atado al contenido; hoy parte de la migración 1) y la dependencia `@noble/hashes` (SHA-256 en JavaScript puro, porque por HTTP el navegador no ofrece el suyo).
 
 **Queda para otras tareas:**
 - pantallas de PIN, emparejamiento con QR y administración de usuarios (0.9 y 0.10; mientras tanto, los usuarios se crean desde el código y el seed de la 0.8);
@@ -1339,7 +1372,7 @@ pnpm --filter @pos/hub test
 2. Para ver el arranque de un hub recién instalado sin tocar los datos del tuyo (por ejemplo, los resultados de los celulares de la tarea 0.1), detén el hub si está abierto y arranca uno con una carpeta de datos aparte:
 
 ```bash
-DIR_DATOS=/tmp/hub-nuevo pnpm --filter @pos/hub start
+DATA_DIR=/tmp/hub-nuevo pnpm --filter @pos/hub start
 ```
 
    En la ventana debes ver `PIN del administrador: ` seguido de 4 dígitos, y `Hub en marcha`.
@@ -1349,11 +1382,11 @@ DIR_DATOS=/tmp/hub-nuevo pnpm --filter @pos/hub start
 ### 0.6 — Motor de sincronización ✅
 
 Paquete `packages/sync`, según [SYNC.md](SYNC.md):
-- **Hub** (`HubSync`): valida, detecta duplicados por id y contenido, aplica el evento a los pedidos que toca, decide rechazo, conflicto o aceptación según si el dispositivo estaba al día, numera, calcula el día operativo y guarda, un evento por transacción. `SalaSync` atiende las conexiones y difunde lo aceptado. Almacén en memoria y sobre SQLite (`@pos/sync/sqlite`).
-- **Dispositivo** (`ClienteSync`): guarda cada evento como pendiente, envía lotes de 100 (uno a la vez), aplica lo confirmado, avanza el cursor solo de forma contigua (pide lo que falte ante un hueco), rechaza en cascada lo que dependía de un rechazo y, si el hub se restauró, reenvía todo.
-- **Conexión** (`GestorConexion`): reconecta al instante al volver a la pantalla, abandona intentos colgados a los 4 s, descarta canales mudos (3 s tras volver, 15 s sin latidos) y reintenta con espera de 1 a 5 s.
+- **Hub** (`HubSync`): valida, detecta duplicados por id y contenido, aplica el evento a los pedidos que toca, decide rechazo, conflicto o aceptación según si el dispositivo estaba al día, numera, calcula el día operativo y guarda, un evento por transacción. `FloorSync` atiende las conexiones y difunde lo aceptado. Almacén en memoria y sobre SQLite (`@pos/sync/sqlite`).
+- **Dispositivo** (`SyncClient`): guarda cada evento como pendiente, envía lotes de 100 (uno a la vez), aplica lo confirmado, avanza el cursor solo de forma contigua (pide lo que falte ante un hueco), rechaza en cascada lo que dependía de un rechazo y, si el hub se restauró, reenvía todo.
+- **Conexión** (`ConnectionManager`): reconecta al instante al volver a la pantalla, abandona intentos colgados a los 4 s, descarta canales mudos (3 s tras volver, 15 s sin latidos) y reintenta con espera de 1 a 5 s.
 
-Escenarios probados con red simulada (el hub sobre SQLite real): pedidos sin conexión en dos dispositivos, ítems al mismo pedido, misma mesa (un solo conflicto, también al reenviar), respuesta perdida, hub caído a mitad de un lote y antes de responder, reloj desfasado 5 horas, rechazo en cascada, hueco en lo recibido, hub restaurado de un respaldo, dispositivo con datos borrados, 150 eventos pendientes y dispositivo revocado (cuarentena). Además: casos borde del protocolo (mensajes fuera de orden, `traer` de varias páginas, cortes con un lote en vuelo) y una prueba de propiedades que genera cientos de historias al azar con cortes, pérdidas, duplicados y caídas del hub, y exige que al final todos vean lo mismo y nada se pierda.
+Escenarios probados con red simulada (el hub sobre SQLite real): pedidos sin conexión en dos dispositivos, ítems al mismo pedido, misma mesa (un solo conflicto, también al reenviar), respuesta perdida, hub caído a mitad de un lote y antes de responder, reloj desfasado 5 horas, rechazo en cascada, hueco en lo recibido, hub restaurado de un respaldo, dispositivo con datos borrados, 150 eventos pendientes y dispositivo revocado (cuarentena). Además: casos borde del protocolo (mensajes fuera de orden, `pull` de varias páginas, cortes con un lote en vuelo) y una prueba de propiedades que genera cientos de historias al azar con cortes, pérdidas, duplicados y caídas del hub, y exige que al final todos vean lo mismo y nada se pierda.
 
 Revisado por `revisor-codigo` y `qa-pruebas`; corregido, entre otros:
 - al reenviar a un hub restaurado de un respaldo, el hub tomaba como distintos los eventos que el respaldo ya tenía y **se perdía un ítem**;
@@ -1364,16 +1397,16 @@ Revisado por `revisor-codigo` y `qa-pruebas`; corregido, entre otros:
 - un dispositivo revocado seguía recibiendo los pedidos del salón;
 - los eventos del mismo dispositivo contaban como "no conocidos", lo que convertía en conflicto errores que debían rechazarse.
 
-**Queda para otras tareas:** sesiones, tokens y revocación reales (0.7); WebSocket real en el hub con límite de tamaño, almacén IndexedDB con índices y prueba Playwright con dos navegadores (0.10); foto inicial, conflictos como eventos, pedido de rescate, `afecta`, bloqueo de mesas, filtros por tipo de dispositivo y proyecciones guardadas en la base para que el hub arranque rápido con años de datos (Fase 1). Ver el detalle en [SYNC.md](SYNC.md).
+**Queda para otras tareas:** sesiones, tokens y revocación reales (0.7); WebSocket real en el hub con límite de tamaño, almacén IndexedDB con índices y prueba Playwright con dos navegadores (0.10); foto inicial, conflictos como eventos, pedido de rescate, `affects`, bloqueo de mesas, filtros por tipo de dispositivo y proyecciones guardadas en la base para que el hub arranque rápido con años de datos (Fase 1). Ver el detalle en [SYNC.md](SYNC.md).
 
 **Cómo probarlo a mano:** ejecuta `pnpm --filter @pos/sync test`. Debes ver todas las pruebas en verde.
 
 ### 0.5 — Núcleo de dominio: dinero y eventos del pedido ✅
 
 En `packages/core`, el mismo código para celular, hub y nube:
-- **Dinero** (`src/dinero/`): redondeo, reparto por mayor residuo, línea, descuentos, desglose fiscal, propina sobre la base, redondeo del efectivo y efectivo esperado de caja, tal como los define [DINERO.md](DINERO.md).
-- **Eventos del pedido** (`src/eventos/`): los 31 tipos de la versión 1 con su esquema Zod; `validarEventoNuevo` devuelve los errores en español y nunca lanza.
-- **Reductor** (`src/pedido/`): `aplicarEvento` aplica cada evento al estado del pedido y devuelve un `problema` cuando no puede (por ejemplo `saldo_negativo` o `pedido_dividido`); `totalesPedido` calcula bruto, anulado, descuentos, neto, pagado y saldo.
+- **Dinero** (`src/money/`): redondeo, reparto por mayor residuo, línea, descuentos, desglose fiscal, propina sobre la base, redondeo del efectivo y efectivo esperado de caja, tal como los define [DINERO.md](DINERO.md).
+- **Eventos del pedido** (`src/events/`): los 31 tipos de la versión 1 con su esquema Zod; `validateNewEvent` devuelve los errores en español y nunca lanza.
+- **Reductor** (`src/order/`): `applyEvent` aplica cada evento al estado del pedido y devuelve un `issue` cuando no puede (por ejemplo `negative_balance` o `order_split`); `orderTotals` calcula bruto, anulado, descuentos, neto, pagado y saldo.
 
 Pruebas: los ejemplos de DINERO.md, cada regla del reductor y pruebas de propiedades (miles de casos al azar) que exigen que las partes sumen el total, que ninguna línea quede negativa y que con cualquier secuencia de eventos el reductor no falle, sea determinista y nunca deje saldo negativo. La prueba de propiedades encontró un error real (quitar un ítem sin enviar en un pedido ya pagado dejaba saldo negativo), ya corregido. Cobertura exigida: 90 % (actual: 98,8 %).
 
@@ -1405,7 +1438,7 @@ Las pruebas además exigen que toda tabla esté clasificada en una categoría y 
 
 1. Ejecuta `pnpm --filter @pos/db test`. Debes ver todas las pruebas en verde.
 2. Inicia el hub (`pnpm --filter @pos/app build && pnpm --filter @pos/hub start`). La primera vez debe decir `Base de datos actualizada a la versión 1.`; las siguientes, `Base de datos en la versión 1.`
-3. La base queda en `apps/hub/datos/pos.sqlite`.
+3. La base queda en `apps/hub/data/pos.sqlite`.
 
 ### 0.3 — Documentos vivos ✅
 
@@ -1434,6 +1467,6 @@ Monorepo pnpm + Turborepo con `apps/pos`, `apps/hub` y `packages/core`; Biome, T
 4. Abre esa dirección en el navegador del computador. Debes ver "POS" y el indicador verde **✓ Conectado al hub**.
 5. Detén el hub con `Ctrl+C`. En unos 3 segundos el indicador cambia a rojo **✕ Sin conexión con el hub**.
 
-Las pruebas e2e compilan la app en `.e2e/app` y guardan datos en `.e2e/datos`, para no tocar un hub de desarrollo que esté sirviendo a celulares reales.
+Las pruebas e2e compilan la app en `.e2e/app` y guardan datos en `.e2e/data`, para no tocar un hub de desarrollo que esté sirviendo a celulares reales.
 
 El CI de GitHub corre cuando el repositorio se suba a GitHub (pendiente: se verificará en la primera corrida).

@@ -1,6 +1,6 @@
 # Design system de Faro
 
-Cómo se ve Faro y por qué (ADR-014). La verdad está en el código: `src/estilos.css` (tokens), `src/ui` (componentes) y `src/sala/MarcoSala.tsx` (marco). Este documento lo resume para quien diseña la próxima pantalla.
+Cómo se ve Faro y por qué (ADR-014). La verdad está en el código: `src/styles.css` (tokens), `src/ui` (componentes) y `src/floor/FloorFrame.tsx` (marco). Este documento lo resume para quien diseña la próxima pantalla.
 
 ## Estilo
 
@@ -14,7 +14,7 @@ El de los POS modernos del mercado, con el máximo cuidado. Las referencias son 
 
 ## Color
 
-Estrategia contenida: neutros fríos y un acento. Todo par de texto y fondo cumple AA en claro y oscuro (`src/ui/contraste.test.ts`).
+Estrategia contenida: neutros fríos y un acento. Todo par de texto y fondo cumple AA en claro y oscuro (`src/ui/contrast.test.ts`).
 
 **Capas**
 
@@ -57,9 +57,9 @@ Los tonos `libre`, `proceso` y `alerta` **no cambian con la marca**.
 
 - **Esquinas:** `rounded-xl` en controles, `rounded-2xl` en tarjetas y paneles, `rounded-3xl` en la tarjeta de entrada y los cajones, `rounded-full` en etiquetas y chips.
 - **Táctil:** todo lo que se toca mide al menos 48 × 48 px; los botones grandes, 56.
-- **Íconos:** de trazo, en `src/ui/iconos.tsx`, del mismo grosor; nunca emoji.
+- **Íconos:** de trazo, en `src/ui/icons.tsx`, del mismo grosor; nunca emoji.
 
-## Marco (`MarcoSala`)
+## Marco (`FloorFrame`)
 
 - **Caja (≥ 1024 px):** barra lateral de 256 px con el logo del restaurante («con Faro»), quién entró y las secciones agrupadas (Servicio, Administración) según sus permisos. Salir va abajo.
 - **Tablet (768 a 1023 px):** la misma barra, solo con íconos (80 px).
@@ -72,7 +72,7 @@ Los tonos `libre`, `proceso` y `alerta` **no cambian con la marca**.
   - pestañas de zona;
   - Plano o Lista en un control de dos;
   - leyenda de estados con cuántas mesas hay de cada uno;
-  - el plano con sus sillas (`Sillas`), mesas teñidas del color de su estado;
+  - el plano con sus sillas (`Seats`), mesas teñidas del color de su estado;
   - a la derecha (abajo en el celular), los pedidos abiertos en tarjetas del color de su estado y los botones de pedidos sin mesa.
 - **Toma de pedido:**
   - tarjetas de producto con foto (4:3) o, sin foto, el ícono de su estación;
@@ -93,11 +93,11 @@ Los tonos `libre`, `proceso` y `alerta` **no cambian con la marca**.
 
 ## Marca del restaurante
 
-`data-marca` en `<html>` (`src/ui/marca.ts`) cambia:
+`data-marca` en `<html>` (`src/ui/brand.ts`) cambia:
 - las superficies;
 - la letra;
 - el tono `accion` y `--marca`;
 - el logo: el del restaurante en lugar del faro (`.logo-marca` y `.logo-faro`);
 - la firma bajo la barra superior.
 
-Una marca nueva es un bloque `:root[data-marca="…"]` en claro y otro en oscuro, con todos los tokens de color, más su entrada en `MARCAS` (`src/ui/marca.ts` y `packages/core/src/config.ts`). La prueba de contraste debe incluirla.
+Una marca nueva es un bloque `:root[data-marca="…"]` en claro y otro en oscuro, con todos los tokens de color, más su entrada en `BRANDS` (`src/ui/brand.ts` y `packages/core/src/config.ts`). La prueba de contraste debe incluirla.

@@ -1,6 +1,6 @@
 # Glosario: términos del dominio en el código
 
-Desde el 26-oct-2026 el código de Faro está en inglés (ver [ADR-010](DECISIONES.md#adr-010)). La interfaz, lo que se imprime, los mensajes al usuario, la documentación y la conversación siguen en español. Esta tabla fija **un solo nombre en inglés por término** para todo el código: identificadores, archivos, tablas y columnas, rutas de la API, tipos de evento y claves guardadas.
+Desde el 26-oct-2026 el código de Faro está en inglés (ver [ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-en-inglés-interfaz-y-documentación-en-español)). La interfaz, lo que se imprime, los mensajes al usuario, la documentación y la conversación siguen en español. Esta tabla fija **un solo nombre en inglés por término** para todo el código: identificadores, archivos, tablas y columnas, rutas de la API, tipos de evento y claves guardadas.
 
 Reglas generales:
 

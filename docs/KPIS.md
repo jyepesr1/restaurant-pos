@@ -1,13 +1,13 @@
 # Indicadores y reportes
 
-Las fórmulas de cada número de los reportes (tarea 1.9). Todos salen de los **mismos eventos** del hub, con el código de `@pos/core` (`src/reportes/`), para que cuadren entre sí. Dinero en pesos enteros (ADR-004); las reglas de dinero están en [DINERO.md](DINERO.md).
+Las fórmulas de cada número de los reportes (tarea 1.9). Todos salen de los **mismos eventos** del hub, con el código de `@pos/core` (`src/reports/`), para que cuadren entre sí. Dinero en pesos enteros (ADR-004); las reglas de dinero están en [DINERO.md](DINERO.md).
 
 ## Período
 
-- Un reporte cubre uno o varios **días operativos** completos (por defecto de 6:00 a. m. a 5:59 a. m. del día siguiente, `inicio_dia_operativo`).
-- Un **pedido** cuenta en el día de su **primer cierre** (`PedidoCerrado`), con lo que tenía al cerrarse.
+- Un reporte cubre uno o varios **días operativos** completos (por defecto de 6:00 a. m. a 5:59 a. m. del día siguiente, `business_day_start`).
+- Un **pedido** cuenta en el día de su **primer cierre** (`OrderClosed`), con lo que tenía al cerrarse.
 - **Lo ya reportado de un día no cambia nunca** (decisión del dueño, 26-oct-2026; DINERO.md#día-operativo-e-informes). Si una mesa se reabre y se vuelve a cerrar otro día, ese otro día suma **solo la diferencia** (el pedido al cerrar de nuevo menos como estaba en su cierre anterior); puede ser negativa si se corrigió un cobro. Una mesa reabierta que sigue abierta conserva lo que reportó en su cierre anterior. La cuenta y sus comensales se cuentan una sola vez, en el primer cierre.
-- Un **pago**, una **anulación de pago**, un **reembolso** y un **movimiento de caja** cuentan en el día en que se registraron (`dia_operativo` del evento).
+- Un **pago**, una **anulación de pago**, un **reembolso** y un **movimiento de caja** cuentan en el día en que se registraron (`business_day` del evento).
 - Una **anulación de producto** y una **cancelación** cuentan en el día en que se registraron.
 
 ## Ventas
@@ -25,10 +25,10 @@ Sobre los cierres de mesa del período (lo que sumó cada uno):
 | Propinas | Σ propina de los pagos de esos pedidos, menos lo reembolsado de propina |
 | Cuentas | Pedidos cerrados con neto > 0 |
 | Comensales | Σ comensales de esos pedidos |
-| Ticket promedio | neto ÷ cuentas, redondeado a pesos con el `redondeo_modo` del restaurante (por defecto, mitad hacia arriba); 0 sin cuentas |
+| Ticket promedio | neto ÷ cuentas, redondeado a pesos con el `rounding_mode` del restaurante (por defecto, mitad hacia arriba); 0 sin cuentas |
 | Gasto por comensal | neto ÷ comensales, redondeado igual; 0 sin comensales |
 
-Identidad: `neto = Σ (monto − reembolso de venta)` de los pagos de esos pedidos, sin importar el día en que se registró cada pago (DINERO.md#día-operativo-e-informes).
+Identidad: `neto = Σ (amount − reembolso de venta)` de los pagos de esos pedidos, sin importar el día en que se registró cada pago (DINERO.md#día-operativo-e-informes).
 
 ## Por medio de pago
 
@@ -36,7 +36,7 @@ Sobre los pagos **registrados** en el período (no los de los pedidos cerrados):
 
 ## Por mesero
 
-Por defecto a **quien agregó cada ítem** (`ventas_por_mesero: 'quien_agrega'`), también si el ítem pasó a otra mesa; con `'mesero_asignado'`, al mesero de la mesa. Por mesero:
+Por defecto a **quien agregó cada ítem** (`sales_by_waiter: 'added_by'`), también si el ítem pasó a otra mesa; con `'assigned_waiter'`, al mesero de la mesa. Por mesero:
 
 | Indicador | Fórmula |
 |---|---|
@@ -52,14 +52,14 @@ Por producto y variante, sobre las líneas de los pedidos cerrados: unidades ven
 
 ## Anulaciones y cancelaciones
 
-- **Anulaciones**: cada `ItemAnulado` del período, con producto, unidades, valor (unidades × precio con extras, del pedido tal como estaba al anular: el ítem pudo pasar después a otra mesa), motivo, si la cocina ya lo había hecho (merma), quién y quién autorizó.
-- **Cancelaciones**: cada `PedidoCancelado` del período, con lo que tenía, el motivo y quién.
+- **Anulaciones**: cada `ItemVoided` del período, con producto, unidades, valor (unidades × precio con extras, del pedido tal como estaba al anular: el ítem pudo pasar después a otra mesa), motivo, si la cocina ya lo había hecho (merma), quién y quién autorizó.
+- **Cancelaciones**: cada `OrderCanceled` del período, con lo que tenía, el motivo y quién.
 - **Descuentos**: cada descuento aplicado y vigente en los pedidos cerrados, con regla, valor, monto y motivo (quién lo autorizó queda en el evento; el reporte aún no lo muestra).
 
 ## Caja
 
 - **Cierres**: cada turno cerrado del período, con el cuadre de [DINERO.md#caja](DINERO.md#caja): base, efectivo esperado, contado y diferencia, los demás medios (registrado, según su cierre y diferencia) y la justificación.
-- **Fondo de propinas**: propinas registradas en el período (de todos los medios, netas de reembolsos) − propinas pagadas desde la caja (`pago_propinas`) = saldo del período.
+- **Fondo de propinas**: propinas registradas en el período (de todos los medios, netas de reembolsos) − propinas pagadas desde la caja (`tip_payout`) = saldo del período.
 
 ## Cierre Z impreso
 
