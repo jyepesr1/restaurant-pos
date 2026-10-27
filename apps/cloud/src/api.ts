@@ -1,20 +1,20 @@
 import { z } from 'zod'
-import { MAX_EVENTOS_POR_LOTE, Nube, NuevoRestaurante, Registration, sha256 } from './nube'
+import { Cloud, MAX_EVENTS_PER_BATCH, NewRestaurant, Registration, sha256 } from './cloud'
 import type { Sql } from './sql'
 
-// La API HTTP de la nube (tarea 1.10, ADR-016), como un `fetch` estándar: la misma función corre
-// en Cloudflare Workers y en las pruebas de Node. Todo va por HTTPS con un token en
-// `Authorization: Bearer`: el del administrador de Faro para crear restaurantes y códigos, y la
-// credencial de cada hub para subir sus eventos.
+// The cloud HTTP API (task 1.10, ADR-016), as a standard `fetch`: the same function runs on
+// Cloudflare Workers and in the Node tests. Everything goes over HTTPS with a token in
+// `Authorization: Bearer`: the Faro admin's to create restaurants and codes, and each hub's
+// credential to upload its events.
 
-/** Un lote de 500 eventos cabe holgado; más que esto no es del POS. */
-export const MAX_BYTES_CUERPO = 4 * 1024 * 1024
+/** A batch of 500 events fits easily; anything bigger does not come from the POS. */
+export const MAX_BODY_BYTES = 4 * 1024 * 1024
 
-export interface EntornoApi {
-  /** La base. En el Worker conecta recién en la primera consulta (`sqlPerezoso`). */
+export interface ApiEnv {
+  /** The database. In the Worker it connects only on the first query (`lazySql`). */
   sql: Sql
-  /** El token del administrador de Faro (un secreto del Worker). Sin él, no hay rutas de administración. */
-  tokenAdmin?: string
+  /** The Faro admin token (a Worker secret). Without it, there are no admin routes. */
+  adminToken?: string
   clock?: () => Date
 }
 
@@ -27,29 +27,29 @@ const error = (status: number, code: string, message: string) =>
   json(status, { error: code, message })
 
 const bearer = (req: Request) => {
-  const [schema, token] = (req.headers.get('authorization') ?? '').split(' ')
-  return schema === 'Bearer' && token ? token : null
+  const [scheme, token] = (req.headers.get('authorization') ?? '').split(' ')
+  return scheme === 'Bearer' && token ? token : null
 }
 
-const MUY_GRANDE = Symbol('too_large')
+const TOO_LARGE = Symbol('too_large')
 
 /**
- * El cuerpo como JSON, leído sin pasar del límite aunque no traiga `content-length`. Devuelve
- * MUY_GRANDE si se pasa, o null si no es JSON.
+ * The body as JSON, read without going over the limit even without `content-length`. Returns
+ * TOO_LARGE if it goes over, or null if it is not JSON.
  */
-async function cuerpoJson(req: Request): Promise<unknown> {
-  if (Number(req.headers.get('content-length') ?? 0) > MAX_BYTES_CUERPO) return MUY_GRANDE
+async function jsonBody(req: Request): Promise<unknown> {
+  if (Number(req.headers.get('content-length') ?? 0) > MAX_BODY_BYTES) return TOO_LARGE
   if (!req.body) return null
-  const lector = req.body.getReader()
+  const reader = req.body.getReader()
   const parts: Uint8Array[] = []
   let total = 0
   for (;;) {
-    const { done, value } = await lector.read()
+    const { done, value } = await reader.read()
     if (done) break
     total += value.byteLength
-    if (total > MAX_BYTES_CUERPO) {
-      await lector.cancel().catch(() => {})
-      return MUY_GRANDE
+    if (total > MAX_BODY_BYTES) {
+      await reader.cancel().catch(() => {})
+      return TOO_LARGE
     }
     parts.push(value)
   }
@@ -66,62 +66,62 @@ async function cuerpoJson(req: Request): Promise<unknown> {
   }
 }
 
-const muyGrande = () =>
+const tooLarge = () =>
   error(413, 'batch_too_large', 'El lote es demasiado grande: súbelo en lotes más pequeños')
 
-/** Compara el token de administración por su huella: el tiempo no depende de cuánto coincide. */
-async function esAdmin(req: Request, tokenAdmin: string | undefined) {
+/** Compares the admin token by its fingerprint: the time does not depend on how much matches. */
+async function isAdmin(req: Request, adminToken: string | undefined) {
   const token = bearer(req)
-  if (!tokenAdmin || !token) return false
-  return (await sha256(token)) === (await sha256(tokenAdmin))
+  if (!adminToken || !token) return false
+  return (await sha256(token)) === (await sha256(adminToken))
 }
 
-const Lote = z.strictObject({ events: z.array(z.unknown()).min(1).max(MAX_EVENTOS_POR_LOTE) })
+const Batch = z.strictObject({ events: z.array(z.unknown()).min(1).max(MAX_EVENTS_PER_BATCH) })
 
-export async function atender(req: Request, environment: EntornoApi): Promise<Response> {
-  const nube = new Nube(environment.sql, environment.clock)
+export async function handle(req: Request, environment: ApiEnv): Promise<Response> {
+  const cloud = new Cloud(environment.sql, environment.clock)
   const { pathname } = new URL(req.url)
   const route = `${req.method} ${pathname}`
 
   try {
     if (route === 'GET /v1/health') return json(200, { ok: true })
 
-    // ── Administración de Faro ──
+    // ── Faro administration ──
     if (pathname.startsWith('/v1/admin/')) {
-      if (!(await esAdmin(req, environment.tokenAdmin)))
+      if (!(await isAdmin(req, environment.adminToken)))
         return error(401, 'no_permission', 'Falta el token de administración')
-      const body = await cuerpoJson(req)
-      if (body === MUY_GRANDE) return muyGrande()
+      const body = await jsonBody(req)
+      if (body === TOO_LARGE) return tooLarge()
       if (route === 'POST /v1/admin/restaurants') {
-        const data = NuevoRestaurante.safeParse(body)
+        const data = NewRestaurant.safeParse(body)
         if (!data.success) return error(400, 'invalid_data', 'Falta el id o el nombre')
-        const r = await nube.crearRestaurante(data.data)
+        const r = await cloud.createRestaurant(data.data)
         return json(r === 'created' ? 201 : 200, { status: r })
       }
       if (route === 'POST /v1/admin/codes') {
         const data = z.strictObject({ restaurant_id: z.string().length(26) }).safeParse(body)
         if (!data.success) return error(400, 'invalid_data', 'Falta el restaurante')
-        const r = await nube.crearCodigo(data.data.restaurant_id)
+        const r = await cloud.createCode(data.data.restaurant_id)
         if (!r) return error(404, 'no_restaurant', 'Ese restaurante no existe')
         return json(201, { code: r.code, expires_at: r.expiresAt })
       }
       if (route === 'POST /v1/admin/hubs/revoke') {
         const data = z.strictObject({ hub_id: z.string().length(26) }).safeParse(body)
         if (!data.success) return error(400, 'invalid_data', 'Falta el hub')
-        return (await nube.revocarHub(data.data.hub_id))
+        return (await cloud.revokeHub(data.data.hub_id))
           ? new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
           : error(404, 'no_hub', 'Ese hub no existe o ya estaba revocado')
       }
       return error(404, 'not_found', 'Esa ruta no existe')
     }
 
-    // ── Registro de un hub (con el código, sin credencial todavía) ──
+    // ── Registering a hub (with the code, no credential yet) ──
     if (route === 'POST /v1/hubs/register') {
-      const body = await cuerpoJson(req)
-      if (body === MUY_GRANDE) return muyGrande()
+      const body = await jsonBody(req)
+      if (body === TOO_LARGE) return tooLarge()
       const data = Registration.safeParse(body)
       if (!data.success) return error(400, 'invalid_data', 'Datos con formato inesperado')
-      const r = await nube.registrarHub(data.data)
+      const r = await cloud.registerHub(data.data)
       if (!r.ok)
         return r.reason === 'invalid_code'
           ? error(403, 'invalid_code', 'El código no existe, ya se usó o venció. Pide uno nuevo.')
@@ -129,27 +129,27 @@ export async function atender(req: Request, environment: EntornoApi): Promise<Re
       return json(201, { credential: r.credential, restaurant_id: r.restaurantId })
     }
 
-    // ── Lo que hace un hub registrado ──
+    // ── What a registered hub does ──
     const credential = bearer(req)
-    const hub = credential ? await nube.authenticate(credential) : null
+    const hub = credential ? await cloud.authenticate(credential) : null
     if (route === 'POST /v1/events' || route === 'GET /v1/events/last') {
       if (!hub)
         return error(401, 'invalid_credential', 'Este PC de caja no está registrado o fue revocado')
       if (route === 'GET /v1/events/last')
-        return json(200, { last_sequence: await nube.lastSequence(hub) })
-      const body = await cuerpoJson(req)
-      if (body === MUY_GRANDE) return muyGrande()
-      const batch = Lote.safeParse(body)
+        return json(200, { last_sequence: await cloud.lastSequence(hub) })
+      const body = await jsonBody(req)
+      if (body === TOO_LARGE) return tooLarge()
+      const batch = Batch.safeParse(body)
       if (!batch.success)
-        return error(400, 'invalid_data', `Un lote trae de 1 a ${MAX_EVENTOS_POR_LOTE} eventos`)
-      const results = await nube.recibirEventos(hub, batch.data.events)
-      return json(200, { results, last_sequence: await nube.lastSequence(hub) })
+        return error(400, 'invalid_data', `Un lote trae de 1 a ${MAX_EVENTS_PER_BATCH} eventos`)
+      const results = await cloud.receiveEvents(hub, batch.data.events)
+      return json(200, { results, last_sequence: await cloud.lastSequence(hub) })
     }
 
     return error(404, 'not_found', 'Esa ruta no existe')
   } catch (e) {
-    // Un error interno no se muestra al hub, y al registro solo va lo justo: el detalle de un
-    // error de Postgres puede traer valores de la fila (datos del restaurante).
+    // An internal error is not shown to the hub, and only the bare minimum goes to the log: the
+    // detail of a Postgres error may carry row values (restaurant data).
     const { code, constraint, message } = (e ?? {}) as Record<string, unknown>
     console.error('Error en la API de la nube:', { route, code, constraint, message })
     return error(500, 'internal_error', 'La nube tuvo un problema. Se reintentará.')

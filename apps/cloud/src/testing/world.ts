@@ -1,31 +1,31 @@
 import { newId } from '@pos/core'
-import { atender } from '../api'
-import { type HubAutenticado, Nube } from '../nube'
+import { handle } from '../api'
+import { type AuthenticatedHub, Cloud } from '../cloud'
 import type { Sql } from '../sql'
-import { baseDePrueba } from './pglite'
+import { testDatabase } from './pglite'
 
-// Utilidades compartidas por las pruebas de la nube: ids deterministas, eventos planos (sin pasar
-// por la fábrica del POS: la nube solo exige el sobre), restaurantes y hubs ya registrados.
+// Helpers shared by the cloud tests: deterministic ids, flat events (without going through the
+// POS factory: the cloud only requires the envelope), restaurants and already registered hubs.
 
 export const ADMIN = 'token-de-administracion-de-prueba'
 export const NOW = new Date('2026-10-26T15:00:00.000Z')
-/** Semilla fija de fast-check: las pruebas de propiedades son repetibles. */
+/** Fixed fast-check seed: the property tests are repeatable. */
 export const SEED = 20261026
 
-const ALFABETO_ULID = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+const ULID_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 
-/** Un ULID válido y determinista a partir de un número (y una letra de marca para distinguir). */
+/** A valid, deterministic ULID from a number (and a marker letter to tell them apart). */
 export function ulid(n: number, brand = 'A'): string {
   let rest = n
-  let queue = ''
-  while (queue.length < 24) {
-    queue = ALFABETO_ULID[rest % 32] + queue
+  let tail = ''
+  while (tail.length < 24) {
+    tail = ULID_ALPHABET[rest % 32] + tail
     rest = Math.floor(rest / 32)
   }
-  return `0${brand}${queue}`
+  return `0${brand}${tail}`
 }
 
-export interface EventoPlano {
+export interface FlatEvent {
   id: string
   type: string
   aggregate_type: string
@@ -37,8 +37,8 @@ export interface EventoPlano {
   [field: string]: unknown
 }
 
-/** Un evento mínimo pero válido para la nube; el número fija su id y su secuencia. */
-export function eventoPlano(n: number, extras: Partial<EventoPlano> = {}): EventoPlano {
+/** A minimal but valid event for the cloud; the number sets its id and its sequence. */
+export function flatEvent(n: number, extras: Partial<FlatEvent> = {}): FlatEvent {
   return {
     id: ulid(n, 'E'),
     type: 'ItemAdded',
@@ -53,34 +53,34 @@ export function eventoPlano(n: number, extras: Partial<EventoPlano> = {}): Event
 }
 
 export const batch = (from: number, howMany: number) =>
-  Array.from({ length: howMany }, (_, i) => eventoPlano(from + i))
+  Array.from({ length: howMany }, (_, i) => flatEvent(from + i))
 
-export interface HubDePrueba {
-  hub: HubAutenticado
+export interface TestHub {
+  hub: AuthenticatedHub
   credential: string
   restaurantId: string
 }
 
 export interface World {
   sql: Sql
-  db: Awaited<ReturnType<typeof baseDePrueba>>['db']
-  nube: Nube
+  db: Awaited<ReturnType<typeof testDatabase>>['db']
+  cloud: Cloud
   clock: { now: Date }
-  /** Crea (si hace falta) el restaurante y registra un hub con un código nuevo. */
-  newHub: (restaurantId?: string) => Promise<HubDePrueba>
-  /** Una petición a la API con el token y el reloj de la prueba. */
+  /** Creates the restaurant (if needed) and registers a hub with a new code. */
+  newHub: (restaurantId?: string) => Promise<TestHub>
+  /** A request to the API with the test's token and clock. */
   request: (httpMethod: string, route: string, body?: unknown, token?: string) => Promise<Response>
 }
 
-export async function crearMundo(): Promise<World> {
-  const { sql, db } = await baseDePrueba()
+export async function createWorld(): Promise<World> {
+  const { sql, db } = await testDatabase()
   const clock = { now: NOW }
-  const nube = new Nube(sql, () => clock.now)
-  const newHub = async (restaurantId = newId()): Promise<HubDePrueba> => {
-    await nube.crearRestaurante({ id: restaurantId, name: 'Restaurante de prueba' })
-    const code = await nube.crearCodigo(restaurantId)
-    if (!code) throw new Error('sin código')
-    const r = await nube.registrarHub({
+  const cloud = new Cloud(sql, () => clock.now)
+  const newHub = async (restaurantId = newId()): Promise<TestHub> => {
+    await cloud.createRestaurant({ id: restaurantId, name: 'Restaurante de prueba' })
+    const code = await cloud.createCode(restaurantId)
+    if (!code) throw new Error('no code')
+    const r = await cloud.registerHub({
       code: code.code,
       hub_id: newId(),
       location_id: newId(),
@@ -88,12 +88,12 @@ export async function crearMundo(): Promise<World> {
       instance: 'i',
     })
     if (!r.ok) throw new Error(r.reason)
-    const hub = await nube.authenticate(r.credential)
-    if (!hub) throw new Error('sin hub')
+    const hub = await cloud.authenticate(r.credential)
+    if (!hub) throw new Error('no hub')
     return { hub, credential: r.credential, restaurantId }
   }
   const request: World['request'] = (httpMethod, route, body, token) =>
-    atender(
+    handle(
       new Request(`https://cloud.faro.test${route}`, {
         method: httpMethod,
         headers: {
@@ -103,13 +103,13 @@ export async function crearMundo(): Promise<World> {
         body:
           body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
       }),
-      { sql, tokenAdmin: ADMIN, clock: () => clock.now },
+      { sql, adminToken: ADMIN, clock: () => clock.now },
     )
-  return { sql, db, nube, clock, newHub, request }
+  return { sql, db, cloud, clock, newHub, request }
 }
 
-/** Lo guardado de un restaurante, ordenado por id, para comparar corridas distintas. */
-export async function eventosGuardados(db: World['db'], restaurantId: string) {
+/** A restaurant's stored events, ordered by id, to compare different runs. */
+export async function savedEvents(db: World['db'], restaurantId: string) {
   const r = await db.query<{
     id: string
     fingerprint: string

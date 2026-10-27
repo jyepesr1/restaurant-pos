@@ -2,23 +2,23 @@ import { eventFingerprint } from '@pos/sync'
 import { z } from 'zod'
 import type { Sql } from './sql'
 
-// La lógica de la nube (tarea 1.10, ADR-016): restaurantes, registro de hubs con un código de un
-// solo uso y recepción de los eventos que sube cada hub, sin duplicar. No sabe de HTTP (eso es
-// `api.ts`) ni de con qué se conecta a Postgres (`sql.ts`).
+// The cloud logic (task 1.10, ADR-016): restaurants, hub registration with a single-use code and
+// receiving the events each hub uploads, without duplicates. It knows nothing about HTTP (that is
+// `api.ts`) or how it connects to Postgres (`sql.ts`).
 
-/** Cuántos eventos caben en un lote. El hub sube de a varios para ponerse al día rápido. */
-export const MAX_EVENTOS_POR_LOTE = 500
-/** Un evento más grande que esto no es un evento del POS (el hub limita lo que acepta). */
-export const MAX_BYTES_EVENTO = 64 * 1024
-/** Cuánto dura un código de registro. */
+/** How many events fit in a batch. The hub uploads several at a time to catch up quickly. */
+export const MAX_EVENTS_PER_BATCH = 500
+/** An event bigger than this is not a POS event (the hub limits what it accepts). */
+export const MAX_EVENT_BYTES = 64 * 1024
+/** How long a registration code lasts. */
 export const CODE_TTL_MS = 24 * 60 * 60 * 1000
 
-const anioValido = (t: string) => {
-  const anio = Number(t.slice(0, 4))
-  return anio >= 2000 && anio <= 2999
+const validYear = (t: string) => {
+  const year = Number(t.slice(0, 4))
+  return year >= 2000 && year <= 2999
 }
-/** «Z» o un desfase de hasta 14 horas (el mayor que existe). */
-const desfaseValido = (t: string) => {
+/** "Z" or an offset of up to 14 hours (the largest that exists). */
+const validOffset = (t: string) => {
   const m = /([+-])(\d{2}):?(\d{2})$/.exec(t)
   return !m || Number(m[2]) * 60 + Number(m[3]) <= 14 * 60
 }
@@ -26,18 +26,19 @@ const desfaseValido = (t: string) => {
 const Ulid = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
 
 /**
- * Lo mínimo que la nube exige de un evento: el sobre con lo que puso el hub. Los datos no se
- * revisan aquí: el hub ya lo aceptó, y la nube no rechaza lo que el hub aceptó (ADR-016).
+ * The minimum the cloud requires of an event: the envelope with what the hub set. The data is not
+ * checked here: the hub already accepted it, and the cloud does not reject what the hub accepted
+ * (ADR-016).
  */
-const EventoSubido = z.looseObject({
+const EventUploaded = z.looseObject({
   id: Ulid,
   type: z.string().min(1).max(60),
   aggregate_type: z.string().min(1).max(30),
   aggregate_id: Ulid,
   sequence: z.int().min(1),
-  // Fechas razonables para un POS: Postgres no acepta el año 0 ni desfases de horas imposibles.
-  received_at: z.iso.datetime({ offset: true }).refine((t) => anioValido(t) && desfaseValido(t)),
-  business_day: z.iso.date().refine(anioValido),
+  // Reasonable dates for a POS: Postgres does not accept year 0 or impossible hour offsets.
+  received_at: z.iso.datetime({ offset: true }).refine((t) => validYear(t) && validOffset(t)),
+  business_day: z.iso.date().refine(validYear),
   data: z.record(z.string(), z.unknown()),
 })
 
@@ -50,84 +51,84 @@ export const Registration = z.strictObject({
 })
 export type Registration = z.infer<typeof Registration>
 
-export const NuevoRestaurante = z.strictObject({
+export const NewRestaurant = z.strictObject({
   id: Ulid,
   name: z.string().trim().min(1).max(120),
 })
 
-/** Lo que pasó con cada evento de un lote. */
+/** What happened to each event in a batch. */
 export type EventResult =
   | { id: string; status: 'saved' | 'already_stored' }
-  /** El id ya estaba con otro contenido: el guardado no cambia y el nuevo queda para revisión. */
+  /** The id already existed with other content: the stored one stays, the new one is for review. */
   | { id: string; status: 'divergent' }
   | { id: string | null; status: 'invalid'; reason: string }
 
-export interface HubAutenticado {
+export interface AuthenticatedHub {
   id: string
   restaurantId: string
   locationId: string
 }
 
 /**
- * Postgres no guarda en `jsonb` el carácter nulo ni medio par de sustitutos de Unicode: un texto
- * así haría fallar el lote entero. Se revisan valores y claves.
+ * Postgres does not store the null character or half a Unicode surrogate pair in `jsonb`: such a
+ * text would make the whole batch fail. Values and keys are checked.
  */
-const SUSTITUTO_SUELTO = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
-const NULO = String.fromCharCode(0)
-const noValido = (text: string) => text.includes(NULO) || SUSTITUTO_SUELTO.test(text)
-export function textoValido(value: unknown): boolean {
-  // Sin recursión: un dato muy anidado no agota la pila.
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+const NUL = String.fromCharCode(0)
+const isInvalid = (text: string) => text.includes(NUL) || LONE_SURROGATE.test(text)
+export function isValidText(value: unknown): boolean {
+  // No recursion: deeply nested data does not exhaust the stack.
   const pendingList: unknown[] = [value]
   while (pendingList.length > 0) {
     const v = pendingList.pop()
     if (typeof v === 'string') {
-      if (noValido(v)) return false
+      if (isInvalid(v)) return false
     } else if (Array.isArray(v)) pendingList.push(...v)
     else if (v && typeof v === 'object')
       for (const [k, x] of Object.entries(v)) {
-        if (noValido(k)) return false
+        if (isInvalid(k)) return false
         pendingList.push(x)
       }
   }
   return true
 }
 
-/** Un error de Postgres por un dato que no acepta (clase 22: fechas, textos, números fuera de rango). */
-const esErrorDeDato = (e: unknown) => String((e as { code?: unknown })?.code ?? '').startsWith('22')
+/** A Postgres error for a value it rejects (class 22: dates, texts, numbers out of range). */
+const isDataError = (e: unknown) => String((e as { code?: unknown })?.code ?? '').startsWith('22')
 
-// ── Credenciales ───────────────────────────────────────────────────────
+// ── Credentials ────────────────────────────────────────────────────────
 
-/** SHA-256 en hexadecimal (Web Crypto: igual en Workers y en Node). */
+/** SHA-256 in hexadecimal (Web Crypto: the same in Workers and in Node). */
 export async function sha256(text: string): Promise<string> {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
   return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-const aleatorio = (bytes: number) => crypto.getRandomValues(new Uint8Array(bytes))
+const randomBytes = (bytes: number) => crypto.getRandomValues(new Uint8Array(bytes))
 
-/** Credencial de un hub: 32 bytes al azar en base64url. Se muestra una vez; se guarda su huella. */
-export function nuevaCredencial(): string {
-  return btoa(String.fromCharCode(...aleatorio(32)))
+/** A hub credential: 32 random bytes in base64url. Shown once; its fingerprint is stored. */
+export function newCredential(): string {
+  return btoa(String.fromCharCode(...randomBytes(32)))
     .replaceAll('+', '-')
     .replaceAll('/', '_')
     .replace(/=+$/, '')
 }
 
-/** Sin letras que se confunden al dictarlas (0/O, 1/I/L). */
-const ALFABETO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+/** No characters that get confused when read aloud (0/O, 1/I/L). */
+const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 
-/** «K7PM-QX2R-9DHT»: 12 caracteres para escribir a mano al instalar el PC de caja. */
+/** "K7PM-QX2R-9DHT": 12 characters to type by hand when installing the register PC. */
 export function newCode(): string {
-  const letras = [...aleatorio(12)].map((b) => ALFABETO[b % ALFABETO.length]).join('')
-  return `${letras.slice(0, 4)}-${letras.slice(4, 8)}-${letras.slice(8)}`
+  const letters = [...randomBytes(12)].map((b) => ALPHABET[b % ALPHABET.length]).join('')
+  return `${letters.slice(0, 4)}-${letters.slice(4, 8)}-${letters.slice(8)}`
 }
 
-/** El código como lo escriba la persona: sin espacios ni guiones y en mayúsculas. */
-export const normalizarCodigo = (code: string) => code.replace(/[\s-]/g, '').toUpperCase()
+/** The code however the person types it: without spaces or dashes and in uppercase. */
+export const normalizeCode = (code: string) => code.replace(/[\s-]/g, '').toUpperCase()
 
-// ── Operaciones ────────────────────────────────────────────────────────
+// ── Operations ─────────────────────────────────────────────────────────
 
-export class Nube {
+export class Cloud {
   private readonly sql: Sql
   private readonly clock: () => Date
 
@@ -137,10 +138,10 @@ export class Nube {
   }
 
   /**
-   * Corre el trabajo dentro de una transacción de un solo restaurante: la seguridad por fila de
-   * la base solo deja ver y escribir sus eventos, aunque una consulta olvide filtrar.
+   * Runs the job inside a single-restaurant transaction: the database's row-level security only
+   * lets it see and write that restaurant's events, even if a query forgets to filter.
    */
-  private enRestaurante<T>(restaurantId: string, job: (tx: Sql) => Promise<T>): Promise<T> {
+  private inRestaurant<T>(restaurantId: string, job: (tx: Sql) => Promise<T>): Promise<T> {
     return this.sql.transaction(async (tx) => {
       await tx.query("SELECT set_config('faro.restaurant_id', $1, true)", [restaurantId])
       await tx.query('SET LOCAL ROLE faro_data')
@@ -148,9 +149,9 @@ export class Nube {
     })
   }
 
-  /** Crea el restaurante si no existe (con el mismo id que tiene en su hub). */
-  async crearRestaurante(
-    data: z.infer<typeof NuevoRestaurante>,
+  /** Creates the restaurant if it does not exist (with the same id it has in its hub). */
+  async createRestaurant(
+    data: z.infer<typeof NewRestaurant>,
   ): Promise<'created' | 'already_existed'> {
     const rows = await this.sql.query(
       'INSERT INTO restaurants (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING RETURNING id',
@@ -159,38 +160,39 @@ export class Nube {
     return rows.length > 0 ? 'created' : 'already_existed'
   }
 
-  /** Un código para registrar un hub del restaurante; null si el restaurante no existe. */
-  async crearCodigo(restaurantId: string): Promise<{ code: string; expiresAt: string } | null> {
+  /** A code to register one of the restaurant's hubs; null if the restaurant does not exist. */
+  async createCode(restaurantId: string): Promise<{ code: string; expiresAt: string } | null> {
     const [exists] = await this.sql.query('SELECT 1 FROM restaurants WHERE id = $1', [restaurantId])
     if (!exists) return null
     const code = newCode()
     const expiresAt = new Date(this.clock().getTime() + CODE_TTL_MS).toISOString()
     await this.sql.query(
       'INSERT INTO registration_codes (fingerprint, restaurant_id, created_at, expires_at) VALUES ($1, $2, $3, $4)',
-      [await sha256(normalizarCodigo(code)), restaurantId, this.clock().toISOString(), expiresAt],
+      [await sha256(normalizeCode(code)), restaurantId, this.clock().toISOString(), expiresAt],
     )
     return { code, expiresAt }
   }
 
   /**
-   * Registra un hub con su código y devuelve su credencial. El código vence a las 24 horas y es
-   * de un solo hub: si la respuesta se perdió (se cayó el Wi-Fi), el mismo hub puede repetir el
-   * registro con el mismo código mientras no venza y recibe una credencial nueva (la anterior deja
-   * de servir). Otro hub con un código usado, o el mismo hub con otro código, no se registra.
+   * Registers a hub with its code and returns its credential. The code expires after 24 hours and
+   * belongs to a single hub: if the response was lost (the Wi-Fi dropped), the same hub can repeat
+   * the registration with the same code until it expires and gets a new credential (the previous
+   * one stops working). Another hub with a used code, or the same hub with another code, is not
+   * registered.
    */
-  async registrarHub(
+  async registerHub(
     data: Registration,
   ): Promise<
     | { ok: true; credential: string; restaurantId: string }
     | { ok: false; reason: 'invalid_code' | 'hub_already_registered' }
   > {
-    const fingerprint = await sha256(normalizarCodigo(data.code))
-    const credential = nuevaCredencial()
-    const huellaCredencial = await sha256(credential)
+    const fingerprint = await sha256(normalizeCode(data.code))
+    const credential = newCredential()
+    const credentialHash = await sha256(credential)
     const now = this.clock().toISOString()
     try {
       return await this.sql.transaction(async (tx) => {
-        // FOR UPDATE: dos registros a la vez con el mismo código no lo usan los dos.
+        // FOR UPDATE: two concurrent registrations with the same code do not both use it.
         const [code] = await tx.query<{ restaurant_id: string; hub_id: string | null }>(
           `SELECT restaurant_id, hub_id FROM registration_codes
            WHERE fingerprint = $1 AND expires_at > $2 FOR UPDATE`,
@@ -198,12 +200,12 @@ export class Nube {
         )
         if (!code) return { ok: false, reason: 'invalid_code' } as const
         if (code.hub_id !== null) {
-          // Ya usado: solo lo repite el mismo hub, y solo si no fue revocado.
+          // Already used: only the same hub can repeat it, and only if it was not revoked.
           if (code.hub_id !== data.hub_id) return { ok: false, reason: 'invalid_code' } as const
           const duplicate = await tx.query(
             `UPDATE hubs SET credential_hash = $2
              WHERE id = $1 AND revoked_at IS NULL RETURNING id`,
-            [data.hub_id, huellaCredencial],
+            [data.hub_id, credentialHash],
           )
           if (duplicate.length === 0) return { ok: false, reason: 'invalid_code' } as const
           return { ok: true, credential, restaurantId: code.restaurant_id } as const
@@ -211,7 +213,7 @@ export class Nube {
         const [already] = await tx.query('SELECT 1 FROM hubs WHERE id = $1', [data.hub_id])
         if (already) return { ok: false, reason: 'hub_already_registered' } as const
         await tx.query(
-          `INSERT INTO hubs (id, restaurant_id, location_id, name, instancia, credential_hash, created_at)
+          `INSERT INTO hubs (id, restaurant_id, location_id, name, instance, credential_hash, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [
             data.hub_id,
@@ -219,7 +221,7 @@ export class Nube {
             data.location_id,
             data.name,
             data.instance,
-            huellaCredencial,
+            credentialHash,
             now,
           ],
         )
@@ -230,15 +232,15 @@ export class Nube {
         return { ok: true, credential, restaurantId: code.restaurant_id } as const
       })
     } catch (e) {
-      // Dos registros del mismo hub a la vez con códigos distintos: el segundo choca con la clave.
+      // Two concurrent registrations of the same hub with different codes: the second hits the key.
       if ((e as { code?: string }).code === '23505')
         return { ok: false, reason: 'hub_already_registered' }
       throw e
     }
   }
 
-  /** El hub dueño de una credencial, si existe y no está revocado. */
-  async authenticate(credential: string): Promise<HubAutenticado | null> {
+  /** The hub that owns a credential, if it exists and is not revoked. */
+  async authenticate(credential: string): Promise<AuthenticatedHub | null> {
     if (!credential || credential.length > 200) return null
     const [hub] = await this.sql.query<{ id: string; restaurant_id: string; location_id: string }>(
       'SELECT id, restaurant_id, location_id FROM hubs WHERE credential_hash = $1 AND revoked_at IS NULL',
@@ -247,8 +249,8 @@ export class Nube {
     return hub ? { id: hub.id, restaurantId: hub.restaurant_id, locationId: hub.location_id } : null
   }
 
-  /** Revoca un hub: su credencial deja de servir. */
-  async revocarHub(hubId: string): Promise<boolean> {
+  /** Revokes a hub: its credential stops working. */
+  async revokeHub(hubId: string): Promise<boolean> {
     const rows = await this.sql.query(
       'UPDATE hubs SET revoked_at = $2 WHERE id = $1 AND revoked_at IS NULL RETURNING id',
       [hubId, this.clock().toISOString()],
@@ -257,27 +259,32 @@ export class Nube {
   }
 
   /**
-   * Guarda un lote de eventos del hub en una transacción. Un evento que ya estaba (mismo id y
-   * contenido) no se duplica; uno que ya estaba con otro contenido no pisa el guardado y queda en
-   * `divergent_events`. Devuelve el resultado de cada uno, en el orden en que llegaron.
+   * Saves a batch of the hub's events in one transaction. An event already stored (same id and
+   * content) is not duplicated; one already stored with other content does not overwrite the
+   * stored one and goes to `divergent_events`. Returns each one's result, in arrival order.
    */
-  async recibirEventos(hub: HubAutenticado, rawList: readonly unknown[]): Promise<EventResult[]> {
+  async receiveEvents(hub: AuthenticatedHub, rawList: readonly unknown[]): Promise<EventResult[]> {
     const results: EventResult[] = []
-    type Valido = { index: number; id: string; fingerprint: string; row: Record<string, unknown> }
-    const validEntries: Valido[] = []
-    /** El mismo id otra vez en el lote: se compara con lo que quede guardado. */
-    const repetidosEnLote: Valido[] = []
+    type ValidEntry = {
+      index: number
+      id: string
+      fingerprint: string
+      row: Record<string, unknown>
+    }
+    const validEntries: ValidEntry[] = []
+    /** The same id again in the batch: compared with whatever ends up stored. */
+    const duplicatesInBatch: ValidEntry[] = []
     const seenSet = new Set<string>()
     rawList.forEach((raw, index) => {
-      const r = EventoSubido.safeParse(raw)
-      // El id solo se devuelve si parece un id (no se le devuelve al hub cualquier texto).
-      const crudoId = (raw as { id?: unknown } | null)?.id
-      const id = typeof crudoId === 'string' && crudoId.length <= 26 ? crudoId : null
+      const r = EventUploaded.safeParse(raw)
+      // The id is only returned if it looks like an id (the hub does not get arbitrary text back).
+      const rawId = (raw as { id?: unknown } | null)?.id
+      const id = typeof rawId === 'string' && rawId.length <= 26 ? rawId : null
       if (!r.success) {
         results[index] = { id, status: 'invalid', reason: 'format' }
         return
       }
-      // La huella también limita el anidamiento: así lo que sigue no recorre datos sin fondo.
+      // The fingerprint also limits nesting: that way what follows does not walk bottomless data.
       let fingerprint: string
       try {
         fingerprint = eventFingerprint(r.data)
@@ -285,16 +292,16 @@ export class Nube {
         results[index] = { id: r.data.id, status: 'invalid', reason: 'too_deeply_nested' }
         return
       }
-      if (!textoValido(r.data)) {
+      if (!isValidText(r.data)) {
         results[index] = { id: r.data.id, status: 'invalid', reason: 'invalid_character' }
         return
       }
       const content = JSON.stringify(r.data)
-      if (new TextEncoder().encode(content).length > MAX_BYTES_EVENTO) {
+      if (new TextEncoder().encode(content).length > MAX_EVENT_BYTES) {
         results[index] = { id: r.data.id, status: 'invalid', reason: 'too_large' }
         return
       }
-      const valid: Valido = {
+      const valid: ValidEntry = {
         index,
         id: r.data.id,
         fingerprint,
@@ -310,7 +317,7 @@ export class Nube {
           fingerprint,
         },
       }
-      if (seenSet.has(r.data.id)) repetidosEnLote.push(valid)
+      if (seenSet.has(r.data.id)) duplicatesInBatch.push(valid)
       else {
         seenSet.add(r.data.id)
         validEntries.push(valid)
@@ -318,8 +325,8 @@ export class Nube {
     })
     if (validEntries.length === 0) return results
 
-    return this.enRestaurante(hub.restaurantId, async (tx) => {
-      const insert = (rows: Valido[]) =>
+    return this.inRestaurant(hub.restaurantId, async (tx) => {
+      const insert = (rows: ValidEntry[]) =>
         tx.query<{ id: string }>(
           `INSERT INTO events (restaurant_id, id, hub_id, type, aggregate_type, aggregate_id,
                                hub_sequence, business_day, received_at, content, fingerprint)
@@ -332,63 +339,63 @@ export class Nube {
            RETURNING id`,
           [hub.restaurantId, hub.id, JSON.stringify(rows.map((v) => v.row))],
         )
-      // Una sola sentencia para todo el lote. Si la base rechaza un dato (una fecha que Postgres
-      // no acepta, por ejemplo), se prueba uno por uno: el malo queda inválido y el resto entra.
-      // Si no, el hub reintentaría para siempre un lote que nunca pasa.
-      let aGuardar = validEntries
+      // A single statement for the whole batch. If the database rejects a value (a date Postgres
+      // does not accept, for example), they are tried one by one: the bad one is invalid and the
+      // rest go in. Otherwise the hub would retry forever a batch that never goes through.
+      let toSave = validEntries
       let savedList: { id: string }[]
-      await tx.query('SAVEPOINT lote')
+      await tx.query('SAVEPOINT batch')
       try {
         savedList = await insert(validEntries)
-        await tx.query('RELEASE SAVEPOINT lote')
+        await tx.query('RELEASE SAVEPOINT batch')
       } catch (e) {
-        if (!esErrorDeDato(e)) throw e
-        await tx.query('ROLLBACK TO SAVEPOINT lote')
+        if (!isDataError(e)) throw e
+        await tx.query('ROLLBACK TO SAVEPOINT batch')
         savedList = []
-        aGuardar = []
+        toSave = []
         for (const v of validEntries) {
-          await tx.query('SAVEPOINT uno')
+          await tx.query('SAVEPOINT single')
           try {
             savedList.push(...(await insert([v])))
-            await tx.query('RELEASE SAVEPOINT uno')
-            aGuardar.push(v)
+            await tx.query('RELEASE SAVEPOINT single')
+            toSave.push(v)
           } catch (e2) {
-            if (!esErrorDeDato(e2)) throw e2
-            await tx.query('ROLLBACK TO SAVEPOINT uno')
+            if (!isDataError(e2)) throw e2
+            await tx.query('ROLLBACK TO SAVEPOINT single')
             results[v.index] = { id: v.id, status: 'invalid', reason: 'rejected_by_database' }
           }
         }
       }
 
       const newer = new Set(savedList.map((g) => g.id))
-      // Lo que quedó guardado de cada id: lo nuevo de este lote o lo de antes.
+      // What ended up stored for each id: the new one from this batch or the earlier one.
       const saved = new Map<string, string>()
-      for (const v of aGuardar) if (newer.has(v.id)) saved.set(v.id, v.fingerprint)
-      const consultar = [
+      for (const v of toSave) if (newer.has(v.id)) saved.set(v.id, v.fingerprint)
+      const toQuery = [
         ...new Set(
-          [...aGuardar, ...repetidosEnLote].map((v) => v.id).filter((id) => !saved.has(id)),
+          [...toSave, ...duplicatesInBatch].map((v) => v.id).filter((id) => !saved.has(id)),
         ),
       ]
-      if (consultar.length > 0) {
+      if (toQuery.length > 0) {
         const rows = await tx.query<{ id: string; fingerprint: string }>(
           'SELECT id, fingerprint FROM events WHERE restaurant_id = $1 AND id = ANY($2::text[])',
-          [hub.restaurantId, consultar],
+          [hub.restaurantId, toQuery],
         )
         for (const f of rows) saved.set(f.id, f.fingerprint)
       }
-      const enLote = repetidosEnLote.filter((v) => saved.has(v.id))
-      const distintos = [...aGuardar.filter((v) => !newer.has(v.id)), ...enLote].filter(
+      const inBatch = duplicatesInBatch.filter((v) => saved.has(v.id))
+      const altered = [...toSave.filter((v) => !newer.has(v.id)), ...inBatch].filter(
         (v) => saved.get(v.id) !== v.fingerprint,
       )
-      if (distintos.length > 0)
+      if (altered.length > 0)
         await tx.query(
           `INSERT INTO divergent_events (restaurant_id, event_id, hub_id, content, fingerprint)
            SELECT $1, x.id, $2, x.content, x.fingerprint
            FROM jsonb_to_recordset($3::jsonb) AS x(id text, content jsonb, fingerprint text)
            ON CONFLICT (restaurant_id, event_id, fingerprint) DO NOTHING`,
-          [hub.restaurantId, hub.id, JSON.stringify(distintos.map((d) => d.row))],
+          [hub.restaurantId, hub.id, JSON.stringify(altered.map((d) => d.row))],
         )
-      // Lo guardado sin huecos desde la secuencia 1: desde ahí sigue el hub (`lastSequence`).
+      // What is stored with no gaps from sequence 1: the hub continues from there (`lastSequence`).
       await tx.query(
         `UPDATE hubs SET contiguous_sequence = (
            SELECT coalesce(max(s.hub_sequence), hubs.contiguous_sequence) FROM (
@@ -400,16 +407,16 @@ export class Nube {
          WHERE id = $2`,
         [hub.restaurantId, hub.id],
       )
-      for (const v of [...aGuardar, ...repetidosEnLote]) {
+      for (const v of [...toSave, ...duplicatesInBatch]) {
         if (!saved.has(v.id)) {
-          // Repetido en el lote de uno que la base rechazó: corre la misma suerte.
+          // A repeat in the batch of one the database rejected: it shares the same fate.
           results[v.index] = { id: v.id, status: 'invalid', reason: 'rejected_by_database' }
           continue
         }
-        const esNuevo = newer.has(v.id) && !repetidosEnLote.includes(v)
+        const isNew = newer.has(v.id) && !duplicatesInBatch.includes(v)
         results[v.index] = {
           id: v.id,
-          status: esNuevo
+          status: isNew
             ? 'saved'
             : saved.get(v.id) === v.fingerprint
               ? 'already_stored'
@@ -421,10 +428,11 @@ export class Nube {
   }
 
   /**
-   * Hasta qué secuencia del hub está todo en la nube, sin huecos desde la 1: desde ahí sigue
-   * subiendo. Si un evento no se pudo guardar (inválido), se queda ahí y el hub lo debe avisar.
+   * Up to which hub sequence everything is in the cloud, with no gaps from 1: it keeps uploading
+   * from there. If an event could not be saved (invalid), it stays there and the hub must report
+   * it.
    */
-  async lastSequence(hub: HubAutenticado): Promise<number> {
+  async lastSequence(hub: AuthenticatedHub): Promise<number> {
     const [row] = await this.sql.query<{ s: string | number }>(
       'SELECT contiguous_sequence AS s FROM hubs WHERE id = $1',
       [hub.id],

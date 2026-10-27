@@ -1,19 +1,20 @@
 import type { PGlite } from '@electric-sql/pglite'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ADMIN, batch, crearMundo, type World } from './pruebas/mundo'
+import { ADMIN, batch, createWorld, type World } from './testing/world'
 
-// El Worker de Cloudflare con un `pg.Client` de mentira que habla con PGlite: conecta solo si la
-// ruta usa la base, cierra la conexión al terminar y no filtra nada si la conexión falla.
+// The Cloudflare Worker with a fake `pg.Client` that talks to PGlite: it connects only if the
+// route uses the database, closes the connection when done and leaks nothing if the connection
+// fails.
 
 const status = vi.hoisted(() => ({
   db: null as unknown,
   createdList: [] as { connectionString: string }[],
   connectedCount: 0,
-  terminados: 0,
+  finishedCount: 0,
   listeners: [] as string[],
   failing: null as Error | null,
-  fallaAlTerminar: false,
-  fallaConsulta: false,
+  failOnEnd: false,
+  failQuery: false,
 }))
 
 vi.mock('pg', () => ({
@@ -29,7 +30,7 @@ vi.mock('pg', () => ({
       status.connectedCount++
     }
     async query(text: string, params?: unknown[]) {
-      if (status.fallaConsulta) throw new Error('connection terminated')
+      if (status.failQuery) throw new Error('connection terminated')
       const db = status.db as PGlite
       if (params === undefined) {
         const r = await db.exec(text)
@@ -38,28 +39,28 @@ vi.mock('pg', () => ({
       return db.query(text, params)
     }
     async end() {
-      status.terminados++
-      if (status.fallaAlTerminar) throw new Error('ya estaba cerrada')
+      status.finishedCount++
+      if (status.failOnEnd) throw new Error('already closed')
     }
   },
 }))
 
 import worker from './worker'
 
-const CADENA = 'postgres://faro_api:clave-de-la-base@host.neon.tech/faro'
+const CONNECTION_STRING = 'postgres://faro_api:clave-de-la-base@host.neon.tech/faro'
 
 let m: World
 let credential: string
 beforeEach(async () => {
-  m = await crearMundo()
+  m = await createWorld()
   status.db = m.db
   status.createdList.length = 0
   status.connectedCount = 0
-  status.terminados = 0
+  status.finishedCount = 0
   status.listeners.length = 0
   status.failing = null
-  status.fallaAlTerminar = false
-  status.fallaConsulta = false
+  status.failOnEnd = false
+  status.failQuery = false
   credential = (await m.newHub()).credential
 })
 
@@ -67,14 +68,14 @@ function makeCall(route: string, options: RequestInit = {}) {
   const pendingList: Promise<unknown>[] = []
   const response = worker.fetch(
     new Request(`https://cloud.faro.test${route}`, options),
-    { HYPERDRIVE: { connectionString: CADENA }, TOKEN_ADMIN: ADMIN },
+    { HYPERDRIVE: { connectionString: CONNECTION_STRING }, TOKEN_ADMIN: ADMIN },
     { waitUntil: (p) => void pendingList.push(p) },
   )
   return { response, pendingList }
 }
 
 describe('Worker', () => {
-  it('la salud y las rutas que no existen no abren conexión con la base', async () => {
+  it('health and routes that do not exist do not open a database connection', async () => {
     for (const route of ['/v1/health', '/v1/nothing']) {
       const { response, pendingList } = makeCall(route)
       await response
@@ -82,10 +83,10 @@ describe('Worker', () => {
     }
     expect(status.createdList).toEqual([])
     expect(status.connectedCount).toBe(0)
-    expect(status.terminados).toBe(0)
+    expect(status.finishedCount).toBe(0)
   })
 
-  it('una ruta que usa la base conecta una vez, con la cadena de Hyperdrive, y cierra al terminar', async () => {
+  it('a route that uses the database connects once, with the Hyperdrive string, and closes when done', async () => {
     const { response, pendingList } = makeCall('/v1/events', {
       method: 'POST',
       headers: { authorization: `Bearer ${credential}` },
@@ -94,12 +95,12 @@ describe('Worker', () => {
     const r = await response
     expect(r.status).toBe(200)
     await Promise.all(pendingList)
-    expect(status.createdList).toEqual([{ connectionString: CADENA }])
+    expect(status.createdList).toEqual([{ connectionString: CONNECTION_STRING }])
     expect(status.connectedCount).toBe(1)
-    expect(status.terminados).toBe(1)
+    expect(status.finishedCount).toBe(1)
   })
 
-  it('cada petición usa su propia conexión', async () => {
+  it('each request uses its own connection', async () => {
     for (let i = 0; i < 3; i++) {
       const { response, pendingList } = makeCall('/v1/events/last', {
         headers: { authorization: `Bearer ${credential}` },
@@ -108,10 +109,10 @@ describe('Worker', () => {
       await Promise.all(pendingList)
     }
     expect(status.connectedCount).toBe(3)
-    expect(status.terminados).toBe(3)
+    expect(status.finishedCount).toBe(3)
   })
 
-  it('una caída de la conexión a mitad de camino queda atendida (hay oyente de error)', async () => {
+  it('a connection drop midway is handled (there is an error listener)', async () => {
     const { response, pendingList } = makeCall('/v1/events/last', {
       headers: { authorization: `Bearer ${credential}` },
     })
@@ -120,9 +121,9 @@ describe('Worker', () => {
     expect(status.listeners).toContain('error')
   })
 
-  it('si no se puede conectar: 500 genérico, sin la cadena de conexión ni el motivo', async () => {
+  it('if it cannot connect: generic 500, without the connection string or the reason', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    status.failing = new Error(`connect ECONNREFUSED ${CADENA}`)
+    status.failing = new Error(`connect ECONNREFUSED ${CONNECTION_STRING}`)
     const { response, pendingList } = makeCall('/v1/events/last', {
       headers: { authorization: `Bearer ${credential}` },
     })
@@ -136,8 +137,8 @@ describe('Worker', () => {
     expect(r.headers.get('content-type')).toContain('application/json')
   })
 
-  it('si cerrar la conexión falla, la petición igual responde y no queda una promesa sin manejar', async () => {
-    status.fallaAlTerminar = true
+  it('if closing the connection fails, the request still responds and no promise is left unhandled', async () => {
+    status.failOnEnd = true
     const { response, pendingList } = makeCall('/v1/events/last', {
       headers: { authorization: `Bearer ${credential}` },
     })
@@ -145,9 +146,9 @@ describe('Worker', () => {
     await expect(Promise.all(pendingList)).resolves.toBeDefined()
   })
 
-  it('un error interno de la API (la consulta falla) responde 500 y cierra igual la conexión', async () => {
+  it('an internal API error (the query fails) responds 500 and still closes the connection', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    status.fallaConsulta = true
+    status.failQuery = true
     const { response, pendingList } = makeCall('/v1/events/last', {
       headers: { authorization: `Bearer ${credential}` },
     })
@@ -155,10 +156,10 @@ describe('Worker', () => {
     await Promise.all(pendingList)
     expect(r.status).toBe(500)
     expect(status.connectedCount).toBe(1)
-    expect(status.terminados).toBe(1)
+    expect(status.finishedCount).toBe(1)
   })
 
-  it('la zona de administración funciona con el token del entorno y no sin él', async () => {
+  it('the admin area works with the environment token and not without it', async () => {
     const without = makeCall('/v1/admin/restaurants', { method: 'POST', body: '{}' })
     expect((await without.response).status).toBe(401)
     await Promise.all(without.pendingList)
@@ -171,7 +172,7 @@ describe('Worker', () => {
     await Promise.all(withIt.pendingList)
   })
 
-  it('sin TOKEN_ADMIN en el entorno no hay administración (aunque se mande un token)', async () => {
+  it('without TOKEN_ADMIN in the environment there is no admin (even if a token is sent)', async () => {
     const pendingList: Promise<unknown>[] = []
     const r = await worker.fetch(
       new Request('https://cloud.faro.test/v1/admin/restaurants', {
@@ -179,7 +180,7 @@ describe('Worker', () => {
         headers: { authorization: 'Bearer cualquiera' },
         body: '{}',
       }),
-      { HYPERDRIVE: { connectionString: CADENA } },
+      { HYPERDRIVE: { connectionString: CONNECTION_STRING } },
       { waitUntil: (p) => void pendingList.push(p) },
     )
     expect(r.status).toBe(401)

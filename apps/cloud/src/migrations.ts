@@ -1,17 +1,18 @@
 import type { Sql } from './sql'
 
-// Migraciones de la base de la nube (Postgres en Neon, ADR-016). Igual que en el hub (ADR-012):
-// código TypeScript con el SQL en texto, numeradas, y nunca se edita una ya aplicada (se
-// comprueba por su huella). Se aplican con `pnpm --filter @pos/nube migrar`, no desde el Worker.
+// Cloud database migrations (Postgres on Neon, ADR-016). Same as in the hub (ADR-012):
+// TypeScript code with the SQL as text, numbered, and one already applied is never edited
+// (checked by its fingerprint). Applied with `pnpm --filter @pos/cloud migrate`, not from the
+// Worker.
 
-export interface MigracionNube {
+export interface CloudMigration {
   version: number
   name: string
   sql: string
 }
 
 const initial = `
--- Solo se agregan filas: la base rechaza cambiar o borrar (nada se borra, ADR-005).
+-- Rows are only added: the database rejects updates and deletes (nothing is deleted, ADR-005).
 CREATE FUNCTION append_only() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION '%: solo se agregan filas, no se cambian ni se borran', TG_TABLE_NAME;
@@ -23,8 +24,8 @@ CREATE TABLE restaurants (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Un código para registrar un hub: se entrega al instalar el PC de caja, vence y sirve una vez.
--- Solo se guarda su huella.
+-- A code to register a hub: handed out when installing the register PC, expires and works once.
+-- Only its fingerprint is stored.
 CREATE TABLE registration_codes (
   fingerprint text PRIMARY KEY,
   restaurant_id text NOT NULL REFERENCES restaurants (id),
@@ -35,25 +36,25 @@ CREATE TABLE registration_codes (
   CHECK ((used_at IS NULL) = (hub_id IS NULL))
 );
 
--- El PC de caja de una sede. Su credencial se guarda solo como huella; revocarlo la anula.
+-- A location's register PC. Its credential is stored only as a fingerprint; revoking voids it.
 CREATE TABLE hubs (
   id text PRIMARY KEY CHECK (length(id) = 26),
   restaurant_id text NOT NULL REFERENCES restaurants (id),
   location_id text NOT NULL CHECK (length(location_id) = 26),
   name text NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
-  instancia text NOT NULL CHECK (length(instancia) BETWEEN 1 AND 100),
+  instance text NOT NULL CHECK (length(instance) BETWEEN 1 AND 100),
   credential_hash text NOT NULL UNIQUE,
   created_at timestamptz NOT NULL DEFAULT now(),
   revoked_at timestamptz,
-  -- Hasta qué secuencia del hub está todo en la nube, sin huecos desde la 1.
+  -- Up to which hub sequence everything is in the cloud, with no gaps from 1.
   contiguous_sequence bigint NOT NULL DEFAULT 0 CHECK (contiguous_sequence >= 0)
 );
 CREATE INDEX hubs_by_restaurant ON hubs (restaurant_id);
 
--- Los eventos de todos los restaurantes, tal como los aceptó cada hub (ADR-005 y ADR-007). La
--- clave es (restaurante_id, id): reenviar un evento no lo duplica. La columna secuencia es el
--- orden de llegada a la nube (no es el orden de confirmación entre transacciones a la vez: para
--- leer «lo nuevo» se usa (hub_id, secuencia_hub)); secuencia_hub, el que le dio su hub.
+-- The events of every restaurant, as each hub accepted them (ADR-005 and ADR-007). The key is
+-- (restaurant_id, id): resending an event does not duplicate it. The sequence column is the order
+-- of arrival in the cloud (not the commit order between concurrent transactions: to read "what is
+-- new" use (hub_id, hub_sequence)); hub_sequence is the one its hub gave it.
 CREATE TABLE events (
   restaurant_id text NOT NULL REFERENCES restaurants (id),
   id text NOT NULL CHECK (length(id) = 26),
@@ -76,8 +77,8 @@ CREATE INDEX events_by_aggregate ON events (restaurant_id, aggregate_id);
 CREATE TRIGGER events_append_only BEFORE UPDATE OR DELETE ON events
   FOR EACH ROW EXECUTE FUNCTION append_only();
 
--- Llegó un id que ya estaba, con otro contenido: no se pisa el guardado; queda para revisión
--- (ADR-007: los conflictos no se descartan, los resuelve una persona).
+-- An id that already existed arrived with different content: the stored one is not overwritten;
+-- it is kept for review (ADR-007: conflicts are not discarded, a person resolves them).
 CREATE TABLE divergent_events (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   restaurant_id text NOT NULL REFERENCES restaurants (id),
@@ -91,26 +92,26 @@ CREATE TABLE divergent_events (
 CREATE TRIGGER divergent_events_append_only BEFORE UPDATE OR DELETE ON divergent_events
   FOR EACH ROW EXECUTE FUNCTION append_only();
 
--- Lo que puede hacer la API. El rol con que se conecta (faro_api, creado a mano en Neon con su
--- clave) recibe este rol; nunca se salta la seguridad por fila. Los roles son de todo el servidor:
--- si ya existe, no se vuelve a crear.
+-- What the API can do. The role it connects with (faro_api, created by hand in Neon with its
+-- password) is granted this role; it never bypasses row-level security. Roles are server-wide:
+-- if it already exists, it is not created again.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'faro_data') THEN
     CREATE ROLE faro_data NOLOGIN NOBYPASSRLS;
   END IF;
 END $$;
--- Quien migra también puede pasar a este rol (la API lo hace en cada transacción de un restaurante).
+-- Whoever migrates can also switch to this role (the API does it in each restaurant transaction).
 GRANT faro_data TO CURRENT_USER;
 GRANT USAGE ON SCHEMA public TO faro_data;
 GRANT SELECT, INSERT ON restaurants TO faro_data;
--- Solo las columnas que la API cambia: un error no puede tocar el resto.
+-- Only the columns the API changes: a bug cannot touch the rest.
 GRANT SELECT, INSERT, UPDATE (used_at, hub_id) ON registration_codes TO faro_data;
 GRANT SELECT, INSERT, UPDATE (credential_hash, revoked_at, contiguous_sequence) ON hubs TO faro_data;
 GRANT SELECT, INSERT ON events, divergent_events TO faro_data;
 
--- Seguridad por fila: los eventos de un restaurante solo se ven y se escriben dentro de una
--- transacción que dijo de qué restaurante es (set_config('faro.restaurante_id', …, true)).
+-- Row-level security: a restaurant's events are only seen and written inside a transaction
+-- that stated which restaurant it is for (set_config('faro.restaurant_id', …, true)).
 ALTER TABLE events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE divergent_events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY events_of_restaurant ON events TO faro_data
@@ -121,11 +122,11 @@ CREATE POLICY divergent_events_of_restaurant ON divergent_events TO faro_data
   WITH CHECK (restaurant_id = current_setting('faro.restaurant_id', true));
 `
 
-export const MIGRACIONES_NUBE: readonly MigracionNube[] = [
+export const CLOUD_MIGRATIONS: readonly CloudMigration[] = [
   { version: 1, name: 'initial', sql: initial },
 ]
 
-/** Huella FNV-1a de 64 bits del SQL (la misma idea que en `@pos/db`). */
+/** 64-bit FNV-1a fingerprint of the SQL (the same idea as in `@pos/db`). */
 export function sqlFingerprint(sql: string): string {
   let hash = 0xcbf29ce484222325n
   for (const byte of new TextEncoder().encode(sql)) {
@@ -145,12 +146,12 @@ const CREATE_REGISTRY = `
 `
 
 /**
- * Aplica las migraciones que falten, cada una en su transacción. Falla si una ya aplicada cambió.
- * Devuelve las versiones aplicadas.
+ * Applies the missing migrations, each in its own transaction. Fails if an applied one changed.
+ * Returns the applied versions.
  */
-export async function migrar(
+export async function migrate(
   sql: Sql,
-  migrations: readonly MigracionNube[] = MIGRACIONES_NUBE,
+  migrations: readonly CloudMigration[] = CLOUD_MIGRATIONS,
 ): Promise<number[]> {
   migrations.forEach((m, i) => {
     if (m.version !== i + 1)
@@ -167,10 +168,10 @@ export async function migrar(
         `La migración ${row.version} («${row.name}») cambió después de aplicarse. Las migraciones publicadas no se editan: crea una nueva.`,
       )
   }
-  const hechas: number[] = []
+  const doneVersions: number[] = []
   for (const m of migrations) {
-    const aplicada = await sql.transaction(async (tx) => {
-      // Se bloquea el registro: dos procesos a la vez no aplican la misma migración.
+    const applied = await sql.transaction(async (tx) => {
+      // The registry is locked: two concurrent processes do not apply the same migration.
       await tx.query('LOCK TABLE migrations IN EXCLUSIVE MODE')
       const [row] = await tx.query<{ v: number | null }>('SELECT max(version) AS v FROM migrations')
       if ((row?.v ?? 0) >= m.version) return false
@@ -182,7 +183,7 @@ export async function migrar(
       ])
       return true
     })
-    if (aplicada) hechas.push(m.version)
+    if (applied) doneVersions.push(m.version)
   }
-  return hechas
+  return doneVersions
 }

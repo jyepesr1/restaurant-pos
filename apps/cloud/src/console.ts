@@ -1,14 +1,14 @@
 import { createInterface } from 'node:readline'
 
-// Pedir un secreto en la terminal sin mostrarlo (la cadena de conexión, el token de
-// administración): así no queda en el historial de la terminal ni en la pantalla.
+// Ask for a secret in the terminal without showing it (the connection string, the admin token):
+// that way it stays out of the terminal history and off the screen.
 
-export function pedirSecreto(question: string): Promise<string> {
+export function askSecret(question: string): Promise<string> {
   return new Promise((resolve) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true })
     const write = (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput
     ;(rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => {
-      // Solo se muestra la pregunta; lo que se escribe no.
+      // Only the question is shown; what is typed is not.
       if (s.includes(question)) write.call(rl, s)
     }
     rl.question(question, (response) => {
@@ -19,9 +19,9 @@ export function pedirSecreto(question: string): Promise<string> {
   })
 }
 
-/** Una variable de entorno o, si no está, preguntarla sin mostrarla. */
+/** An environment variable or, if it is not set, ask for it without showing it. */
 export async function secret(variable: string, question: string): Promise<string> {
-  const value = process.env[variable]?.trim() || (await pedirSecreto(question))
+  const value = process.env[variable]?.trim() || (await askSecret(question))
   if (!value) {
     console.error('No escribiste nada. No se hizo ningún cambio.')
     process.exit(1)

@@ -1,14 +1,14 @@
 {
-  "name": "@pos/nube",
+  "name": "@pos/cloud",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "migrar": "tsx --disable-warning=ExperimentalWarning src/migrar.ts",
+    "migrate": "tsx --disable-warning=ExperimentalWarning src/migrate.ts",
     "admin": "tsx --disable-warning=ExperimentalWarning src/admin.ts",
-    "desplegar": "npx wrangler@4.149.0 deploy"
+    "deploy": "npx wrangler@4.149.0 deploy"
   },
   "dependencies": {
     "@pos/core": "workspace:*",

@@ -4,24 +4,24 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import {
   batch,
   count,
-  crearMundo,
-  eventoPlano,
-  eventosGuardados,
+  createWorld,
+  flatEvent,
   SEED,
+  savedEvents,
   ulid,
   type World,
-} from './pruebas/mundo'
+} from './testing/world'
 
-// Varios restaurantes en la misma base (ADR-016): nada de uno aparece en el otro, ni por la API
-// ni dentro de la base con el rol de la API (seguridad por fila).
+// Several restaurants in the same database (ADR-016): nothing from one shows up in another,
+// neither through the API nor inside the database with the API role (row-level security).
 
 let m: World
 beforeAll(async () => {
-  m = await crearMundo()
+  m = await createWorld()
 })
 
-/** Corre el trabajo como lo hace la API: en una transacción de un restaurante, con el rol limitado. */
-const comoApi = <T>(restaurantId: string | null, job: (tx: World['sql']) => Promise<T>) =>
+/** Runs the job like the API does: in a single-restaurant transaction, with the limited role. */
+const asApi = <T>(restaurantId: string | null, job: (tx: World['sql']) => Promise<T>) =>
   m.sql.transaction(async (tx) => {
     if (restaurantId !== null)
       await tx.query("SELECT set_config('faro.restaurant_id', $1, true)", [restaurantId])
@@ -39,92 +39,90 @@ const insertEvent =
       [restaurantId, id, hubId],
     )
 
-describe('por la API', () => {
-  it('con dos restaurantes que suben el mismo id de evento, cada uno guarda y ve el suyo', async () => {
+describe('through the API', () => {
+  it('with two restaurants uploading the same event id, each one saves and sees its own', async () => {
     const a = await m.newHub()
     const b = await m.newHub()
-    // Mismos ids, pero un contenido distinto en cada restaurante.
-    const deA = batch(1, 5).map((e) => ({ ...e, data: { dueno: 'A' } }))
-    const deB = batch(1, 5).map((e) => ({ ...e, data: { dueno: 'B' } }))
-    const ra = await m.nube.recibirEventos(a.hub, deA)
-    const rb = await m.nube.recibirEventos(b.hub, deB)
-    // Para B no es «ya estaba» ni «distinto»: en su restaurante el id no existía.
+    // Same ids, but different content in each restaurant.
+    const fromA = batch(1, 5).map((e) => ({ ...e, data: { owner: 'A' } }))
+    const fromB = batch(1, 5).map((e) => ({ ...e, data: { owner: 'B' } }))
+    const ra = await m.cloud.receiveEvents(a.hub, fromA)
+    const rb = await m.cloud.receiveEvents(b.hub, fromB)
+    // For B it is neither "already stored" nor "divergent": the id did not exist in its restaurant.
     expect(ra.map((r) => r.status)).toEqual(Array(5).fill('saved'))
     expect(rb.map((r) => r.status)).toEqual(Array(5).fill('saved'))
     expect(await count(m.db, 'divergent_events', a.restaurantId)).toBe(0)
     expect(await count(m.db, 'divergent_events', b.restaurantId)).toBe(0)
-    for (const [h, dueno] of [
+    for (const [h, owner] of [
       [a, 'A'],
       [b, 'B'],
     ] as const) {
-      const rows = await eventosGuardados(m.db, h.restaurantId)
+      const rows = await savedEvents(m.db, h.restaurantId)
       expect(rows).toHaveLength(5)
       expect(
-        rows.every((f) => (f.content as { data: { dueno: string } }).data.dueno === dueno),
+        rows.every((f) => (f.content as { data: { owner: string } }).data.owner === owner),
       ).toBe(true)
       expect(rows.every((f) => f.hub_id === h.hub.id)).toBe(true)
     }
   })
 
-  it('ultima_secuencia de uno no se mueve por lo que sube el otro', async () => {
+  it("one's last_sequence does not move because of what the other uploads", async () => {
     const a = await m.newHub()
     const b = await m.newHub()
-    await m.nube.recibirEventos(a.hub, batch(1, 20))
-    expect(await m.nube.lastSequence(a.hub)).toBe(20)
-    expect(await m.nube.lastSequence(b.hub)).toBe(0)
-    await m.nube.recibirEventos(b.hub, batch(1, 3))
-    expect(await m.nube.lastSequence(a.hub)).toBe(20)
-    expect(await m.nube.lastSequence(b.hub)).toBe(3)
+    await m.cloud.receiveEvents(a.hub, batch(1, 20))
+    expect(await m.cloud.lastSequence(a.hub)).toBe(20)
+    expect(await m.cloud.lastSequence(b.hub)).toBe(0)
+    await m.cloud.receiveEvents(b.hub, batch(1, 3))
+    expect(await m.cloud.lastSequence(a.hub)).toBe(20)
+    expect(await m.cloud.lastSequence(b.hub)).toBe(3)
   })
 
-  it('por HTTP: la credencial de uno no sube ni lee nada del otro', async () => {
+  it("over HTTP: one's credential neither uploads nor reads anything of the other", async () => {
     const a = await m.newHub()
     const b = await m.newHub()
     const r = await m.request('POST', '/v1/events', { events: batch(1, 4) }, a.credential)
     expect(r.status).toBe(200)
-    const deB = await (await m.request('GET', '/v1/events/last', undefined, b.credential)).json()
-    expect(deB).toEqual({ last_sequence: 0 })
+    const fromB = await (await m.request('GET', '/v1/events/last', undefined, b.credential)).json()
+    expect(fromB).toEqual({ last_sequence: 0 })
     expect(await count(m.db, 'events', b.restaurantId)).toBe(0)
   })
 
-  it('un evento que declara otro restaurante u otro hub en su cuerpo se guarda en el del hub que lo sube', async () => {
+  it("an event that declares another restaurant or hub in its body is saved in the uploading hub's restaurant", async () => {
     const a = await m.newHub()
     const b = await m.newHub()
-    const fake = eventoPlano(1, {
+    const fake = flatEvent(1, {
       restaurant_id: b.restaurantId,
       hub_id: b.hub.id,
       data: { restaurant_id: b.restaurantId },
     })
-    const [r] = await m.nube.recibirEventos(a.hub, [fake])
+    const [r] = await m.cloud.receiveEvents(a.hub, [fake])
     expect(r?.status).toBe('saved')
     expect(await count(m.db, 'events', b.restaurantId)).toBe(0)
-    const [row] = await eventosGuardados(m.db, a.restaurantId)
+    const [row] = await savedEvents(m.db, a.restaurantId)
     expect(row?.hub_id).toBe(a.hub.id)
   })
 
-  it('propiedad: con k restaurantes y lotes al azar, cada uno termina con exactamente lo suyo', async () => {
+  it('property: with k restaurants and random batches, each one ends up with exactly its own', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(fc.uniqueArray(fc.integer({ min: 1, max: 30 }), { maxLength: 15 }), {
           minLength: 2,
           maxLength: 4,
         }),
-        async (porRestaurante) => {
-          const hubs = await Promise.all(porRestaurante.map(() => m.newHub()))
+        async (byRestaurant) => {
+          const hubs = await Promise.all(byRestaurant.map(() => m.newHub()))
           await Promise.all(
             hubs.map((h, i) =>
-              m.nube.recibirEventos(
+              m.cloud.receiveEvents(
                 h.hub,
-                (porRestaurante[i] ?? []).map((n) =>
-                  eventoPlano(n, { data: { src: h.restaurantId } }),
-                ),
+                (byRestaurant[i] ?? []).map((n) => flatEvent(n, { data: { src: h.restaurantId } })),
               ),
             ),
           )
           for (const [i, h] of hubs.entries()) {
-            const rows = await eventosGuardados(m.db, h.restaurantId)
+            const rows = await savedEvents(m.db, h.restaurantId)
             expect(rows.map((f) => f.id).sort()).toEqual(
-              (porRestaurante[i] ?? []).map((n) => ulid(n, 'E')).sort(),
+              (byRestaurant[i] ?? []).map((n) => ulid(n, 'E')).sort(),
             )
             expect(
               rows.every(
@@ -138,13 +136,13 @@ describe('por la API', () => {
     )
   })
 
-  it('el registro de otro restaurante no se mezcla: el código fija el restaurante', async () => {
+  it("another restaurant's registration does not get mixed up: the code sets the restaurant", async () => {
     const a = await m.newHub()
     const rb = newId()
-    await m.nube.crearRestaurante({ id: rb, name: 'B' })
-    const cb = await m.nube.crearCodigo(rb)
-    if (!cb) throw new Error('sin código')
-    const r = await m.nube.registrarHub({
+    await m.cloud.createRestaurant({ id: rb, name: 'B' })
+    const cb = await m.cloud.createCode(rb)
+    if (!cb) throw new Error('no code')
+    const r = await m.cloud.registerHub({
       code: cb.code,
       hub_id: newId(),
       location_id: a.hub.locationId,
@@ -153,60 +151,58 @@ describe('por la API', () => {
     })
     if (!r.ok) throw new Error(r.reason)
     expect(r.restaurantId).toBe(rb)
-    const hub = await m.nube.authenticate(r.credential)
+    const hub = await m.cloud.authenticate(r.credential)
     expect(hub?.restaurantId).toBe(rb)
   })
 })
 
-describe('dentro de la base, con el rol de la API', () => {
-  it('sin decir el restaurante no se ve ni se escribe nada; con una cadena vacía o inventada, tampoco', async () => {
+describe('inside the database, with the API role', () => {
+  it('without stating the restaurant nothing is seen or written; with an empty or made-up string, neither', async () => {
     const a = await m.newHub()
-    await m.nube.recibirEventos(a.hub, batch(1, 3))
+    await m.cloud.receiveEvents(a.hub, batch(1, 3))
     for (const rest of [null, '', 'inventado', newId()]) {
-      expect(await comoApi(rest, (tx) => tx.query('SELECT 1 FROM events')), String(rest)).toEqual(
-        [],
-      )
+      expect(await asApi(rest, (tx) => tx.query('SELECT 1 FROM events')), String(rest)).toEqual([])
       expect(
-        await comoApi(rest, (tx) => tx.query('SELECT 1 FROM divergent_events')),
+        await asApi(rest, (tx) => tx.query('SELECT 1 FROM divergent_events')),
         String(rest),
       ).toEqual([])
-      await expect(comoApi(rest, insertEvent(a.restaurantId, a.hub.id))).rejects.toThrow(
+      await expect(asApi(rest, insertEvent(a.restaurantId, a.hub.id))).rejects.toThrow(
         /row-level security/,
       )
     }
   })
 
-  it('leer: una consulta sin filtro, o que pide a propósito otro restaurante, no ve nada ajeno', async () => {
+  it('read: a query without a filter, or one that deliberately asks for another restaurant, sees nothing foreign', async () => {
     const a = await m.newHub()
     const b = await m.newHub()
-    await m.nube.recibirEventos(a.hub, batch(1, 3))
-    await m.nube.recibirEventos(b.hub, batch(1, 4))
-    const vistosPorA = await comoApi(a.restaurantId, (tx) =>
+    await m.cloud.receiveEvents(a.hub, batch(1, 3))
+    await m.cloud.receiveEvents(b.hub, batch(1, 4))
+    const seenByA = await asApi(a.restaurantId, (tx) =>
       tx.query<{ r: string }>('SELECT DISTINCT restaurant_id AS r FROM events'),
     )
-    expect(vistosPorA).toEqual([{ r: a.restaurantId }])
-    const ajenos = await comoApi(a.restaurantId, (tx) =>
+    expect(seenByA).toEqual([{ r: a.restaurantId }])
+    const foreignRows = await asApi(a.restaurantId, (tx) =>
       tx.query('SELECT * FROM events WHERE restaurant_id = $1', [b.restaurantId]),
     )
-    expect(ajenos).toEqual([])
-    const porHub = await comoApi(a.restaurantId, (tx) =>
+    expect(foreignRows).toEqual([])
+    const byHub = await asApi(a.restaurantId, (tx) =>
       tx.query('SELECT * FROM events WHERE hub_id = $1', [b.hub.id]),
     )
-    expect(porHub).toEqual([])
-    const [check] = await comoApi(b.restaurantId, (tx) =>
+    expect(byHub).toEqual([])
+    const [check] = await asApi(b.restaurantId, (tx) =>
       tx.query<{ n: number }>('SELECT count(*)::int AS n FROM events'),
     )
     expect(check?.n).toBe(4)
   })
 
-  it('escribir: un evento o un conflicto de otro restaurante lo rechaza la política', async () => {
+  it('write: the policy rejects an event or a conflict of another restaurant', async () => {
     const a = await m.newHub()
     const b = await m.newHub()
-    await expect(comoApi(a.restaurantId, insertEvent(b.restaurantId, b.hub.id))).rejects.toThrow(
+    await expect(asApi(a.restaurantId, insertEvent(b.restaurantId, b.hub.id))).rejects.toThrow(
       /row-level security/,
     )
     await expect(
-      comoApi(a.restaurantId, (tx) =>
+      asApi(a.restaurantId, (tx) =>
         tx.query(
           `INSERT INTO divergent_events (restaurant_id, event_id, hub_id, content, fingerprint)
            VALUES ($1, $2, $3, '{}', 'h')`,
@@ -218,17 +214,17 @@ describe('dentro de la base, con el rol de la API', () => {
     expect(await count(m.db, 'divergent_events', b.restaurantId)).toBe(0)
   })
 
-  it('escribir con el restaurante propio sí funciona (la política no bloquea de más)', async () => {
+  it('writing with its own restaurant does work (the policy does not over-block)', async () => {
     const a = await m.newHub()
-    await comoApi(a.restaurantId, insertEvent(a.restaurantId, a.hub.id))
+    await asApi(a.restaurantId, insertEvent(a.restaurantId, a.hub.id))
     expect(await count(m.db, 'events', a.restaurantId)).toBe(1)
   })
 
-  it('el rol no puede cambiar ni borrar eventos, ni borrar hubs, ni tocar conflictos', async () => {
+  it('the role cannot change or delete events, delete hubs or touch conflicts', async () => {
     const a = await m.newHub()
-    await m.nube.recibirEventos(a.hub, batch(1, 2))
-    await m.nube.recibirEventos(a.hub, [eventoPlano(1, { data: { other: 1 } })])
-    const sentencias = [
+    await m.cloud.receiveEvents(a.hub, batch(1, 2))
+    await m.cloud.receiveEvents(a.hub, [flatEvent(1, { data: { other: 1 } })])
+    const statements = [
       "UPDATE events SET type = 'x'",
       'DELETE FROM events',
       "UPDATE divergent_events SET fingerprint = 'x'",
@@ -245,19 +241,19 @@ describe('dentro de la base, con el rol de la API', () => {
       'ALTER TABLE events DISABLE ROW LEVEL SECURITY',
       'DROP POLICY events_of_restaurant ON events',
     ]
-    for (const s of sentencias)
+    for (const s of statements)
       await expect(
-        comoApi(a.restaurantId, (tx) => tx.query(s)),
+        asApi(a.restaurantId, (tx) => tx.query(s)),
         s,
       ).rejects.toThrow(/permission denied|must be owner|row-level security/)
     expect(await count(m.db, 'events', a.restaurantId)).toBe(2)
     expect(await count(m.db, 'hubs')).toBeGreaterThan(0)
   })
 
-  it('aunque el rol intente ver otro restaurante cambiando de rol o de ajuste, sale del rol limitado solo si es el dueño', async () => {
-    // El rol de la API no puede volver a ser superusuario con RESET ROLE dentro de la transacción
-    // de la API (en producción su rol de inicio es faro_api, que solo tiene faro_data). Aquí lo
-    // que se garantiza es que el rol de las políticas no se salta la seguridad por fila.
+  it('even if the role tries to see another restaurant by switching role or setting, it leaves the limited role only if it is the owner', async () => {
+    // The API role cannot become superuser again with RESET ROLE inside the API transaction (in
+    // production its login role is faro_api, which only has faro_data). What is guaranteed here
+    // is that the policies' role does not bypass row-level security.
     const [r] = (
       await m.db.query<{ rolbypassrls: boolean; rolsuper: boolean; rolcanlogin: boolean }>(
         "SELECT rolbypassrls, rolsuper, rolcanlogin FROM pg_roles WHERE rolname = 'faro_data'",
@@ -272,12 +268,12 @@ describe('dentro de la base, con el rol de la API', () => {
     expect(sqlTables.map((t) => t.relrowsecurity)).toEqual([true, true])
   })
 
-  it('ultima_secuencia y los registros de hubs no dependen del restaurante activo', async () => {
+  it('last_sequence and the hub records do not depend on the active restaurant', async () => {
     const a = await m.newHub()
     const b = await m.newHub()
-    await m.nube.recibirEventos(a.hub, batch(1, 3))
-    // Solo se lee la fila del hub de cada uno.
-    expect(await m.nube.lastSequence(a.hub)).toBe(3)
-    expect(await m.nube.lastSequence(b.hub)).toBe(0)
+    await m.cloud.receiveEvents(a.hub, batch(1, 3))
+    // Only each one's hub row is read.
+    expect(await m.cloud.lastSequence(a.hub)).toBe(3)
+    expect(await m.cloud.lastSequence(b.hub)).toBe(0)
   })
 })

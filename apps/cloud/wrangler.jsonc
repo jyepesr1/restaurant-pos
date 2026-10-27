@@ -1,5 +1,5 @@
 {
-  // La API de la nube de Faro (ADR-016, docs/integraciones/neon-cloudflare.md).
+  // Faro's cloud API (ADR-016, docs/integraciones/neon-cloudflare.md).
   "$schema": "https://unpkg.com/wrangler@4.149.0/config-schema.json",
   "name": "faro-api",
   "main": "src/worker.ts",
@@ -10,8 +10,8 @@
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      // El id que muestra `wrangler hyperdrive create` (no es un secreto). La cadena de conexión
-      // de Neon vive solo en Hyperdrive, nunca en este archivo.
+      // The id shown by `wrangler hyperdrive create` (not a secret). The Neon connection string
+      // lives only in Hyperdrive, never in this file.
       "id": "482abd5728404ed88ce40944a75e52df"
     }
   ]

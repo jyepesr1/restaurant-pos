@@ -1,20 +1,20 @@
 import { newId } from '@pos/core'
 import fc from 'fast-check'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { atender, MAX_BYTES_CUERPO } from './api'
-import { MAX_EVENTOS_POR_LOTE } from './nube'
-import { ADMIN, batch, count, crearMundo, NOW, SEED, type World } from './pruebas/mundo'
+import { handle, MAX_BODY_BYTES } from './api'
+import { MAX_EVENTS_PER_BATCH } from './cloud'
 import type { Sql } from './sql'
+import { ADMIN, batch, count, createWorld, NOW, SEED, type World } from './testing/world'
 
-// Los bordes de la API HTTP: cuerpos malformados, tipos inesperados, métodos y rutas que no son,
-// tamaños, errores internos que no deben mostrar nada, y las cabeceras de toda respuesta.
+// The edges of the HTTP API: malformed bodies, unexpected types, wrong methods and routes, sizes,
+// internal errors that must show nothing, and the headers of every response.
 
 let m: World
 let credential: string
 let restaurantId: string
 let hubId: string
 beforeAll(async () => {
-  m = await crearMundo()
+  m = await createWorld()
   const h = await m.newHub()
   credential = h.credential
   restaurantId = h.restaurantId
@@ -24,39 +24,39 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-interface Ruta {
+interface Route {
   name: string
   httpMethod: string
   route: string
   token: () => string | undefined
-  /** Un cuerpo válido: sirve de base para cambiarle un campo. */
+  /** A valid body: the base for changing one field. */
   valid?: () => Record<string, unknown>
 }
 
-const RUTAS_CON_CUERPO: Ruta[] = [
+const ROUTES_WITH_BODY: Route[] = [
   {
-    name: 'crear restaurante',
+    name: 'create restaurant',
     httpMethod: 'POST',
     route: '/v1/admin/restaurants',
     token: () => ADMIN,
     valid: () => ({ id: newId(), name: 'R' }),
   },
   {
-    name: 'crear código',
+    name: 'create code',
     httpMethod: 'POST',
     route: '/v1/admin/codes',
     token: () => ADMIN,
     valid: () => ({ restaurant_id: restaurantId }),
   },
   {
-    name: 'revocar hub',
+    name: 'revoke hub',
     httpMethod: 'POST',
     route: '/v1/admin/hubs/revoke',
     token: () => ADMIN,
     valid: () => ({ hub_id: newId() }),
   },
   {
-    name: 'registrar hub',
+    name: 'register hub',
     httpMethod: 'POST',
     route: '/v1/hubs/register',
     token: () => undefined,
@@ -69,7 +69,7 @@ const RUTAS_CON_CUERPO: Ruta[] = [
     }),
   },
   {
-    name: 'subir eventos',
+    name: 'upload events',
     httpMethod: 'POST',
     route: '/v1/events',
     token: () => credential,
@@ -77,8 +77,8 @@ const RUTAS_CON_CUERPO: Ruta[] = [
   },
 ]
 
-describe('cuerpos malformados', () => {
-  const cuerpos = [
+describe('malformed bodies', () => {
+  const bodies = [
     '',
     ' ',
     '{',
@@ -102,23 +102,23 @@ describe('cuerpos malformados', () => {
     '{"__proto__":{"admin":true}}',
     '{"constructor":{"prototype":{}}}',
   ]
-  for (const r of RUTAS_CON_CUERPO)
-    it(`${r.name}: responde 400 y nunca 500 ante cuerpos que no sirven`, async () => {
-      for (const c of cuerpos) {
+  for (const r of ROUTES_WITH_BODY)
+    it(`${r.name}: responds 400 and never 500 to unusable bodies`, async () => {
+      for (const c of bodies) {
         const res = await m.request(r.httpMethod, r.route, c, r.token())
         expect(res.status, JSON.stringify(c)).toBe(400)
         expect(await res.json()).toMatchObject({ error: 'invalid_data' })
       }
     })
 
-  for (const r of RUTAS_CON_CUERPO)
-    it(`${r.name}: sin cuerpo (sin body ni content-type) es 400`, async () => {
+  for (const r of ROUTES_WITH_BODY)
+    it(`${r.name}: no body (no body or content-type) is 400`, async () => {
       const res = await m.request(r.httpMethod, r.route, undefined, r.token())
       expect(res.status).toBe(400)
     })
 
-  it('el tipo de contenido no importa: un JSON válido como text/plain se entiende igual', async () => {
-    const res = await atender(
+  it('the content type does not matter: valid JSON as text/plain is understood the same', async () => {
+    const res = await handle(
       new Request('https://cloud.faro.test/v1/events', {
         method: 'POST',
         headers: { authorization: `Bearer ${credential}`, 'content-type': 'text/plain' },
@@ -129,8 +129,8 @@ describe('cuerpos malformados', () => {
     expect(res.status).toBe(200)
   })
 
-  it('un cuerpo que no es UTF-8 válido no rompe: es 400', async () => {
-    const res = await atender(
+  it('a body that is not valid UTF-8 does not break anything: it is 400', async () => {
+    const res = await handle(
       new Request('https://cloud.faro.test/v1/events', {
         method: 'POST',
         headers: { authorization: `Bearer ${credential}` },
@@ -141,9 +141,9 @@ describe('cuerpos malformados', () => {
     expect(res.status).toBe(400)
   })
 
-  it('propiedad: cualquier JSON arbitrario en cualquier ruta con cuerpo da 400, nunca 500', async () => {
+  it('property: any arbitrary JSON on any route with a body gives 400, never 500', async () => {
     await fc.assert(
-      fc.asyncProperty(fc.jsonValue(), fc.constantFrom(...RUTAS_CON_CUERPO), async (value, r) => {
+      fc.asyncProperty(fc.jsonValue(), fc.constantFrom(...ROUTES_WITH_BODY), async (value, r) => {
         const res = await m.request(r.httpMethod, r.route, JSON.stringify(value), r.token())
         expect(res.status).toBe(400)
       }),
@@ -151,11 +151,11 @@ describe('cuerpos malformados', () => {
     )
   })
 
-  it('propiedad: texto cualquiera como cuerpo nunca da 500', async () => {
+  it('property: arbitrary text as a body never gives 500', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.string({ unit: 'binary', maxLength: 200 }),
-        fc.constantFrom(...RUTAS_CON_CUERPO),
+        fc.constantFrom(...ROUTES_WITH_BODY),
         async (text, r) => {
           const res = await m.request(r.httpMethod, r.route, text === '' ? ' ' : text, r.token())
           expect(res.status).toBeLessThan(500)
@@ -166,8 +166,8 @@ describe('cuerpos malformados', () => {
   })
 })
 
-describe('tipos inesperados en cada campo', () => {
-  const valoresMalos: unknown[] = [
+describe('unexpected types in each field', () => {
+  const badValues: unknown[] = [
     null,
     1,
     0,
@@ -182,12 +182,12 @@ describe('tipos inesperados en cada campo', () => {
     '',
     'x'.repeat(1000),
   ]
-  for (const r of RUTAS_CON_CUERPO) {
-    it(`${r.name}: cada campo con un valor de otro tipo o fuera de rango es 400`, async () => {
+  for (const r of ROUTES_WITH_BODY) {
+    it(`${r.name}: each field with a value of another type or out of range is 400`, async () => {
       const base = r.valid?.() ?? {}
       for (const field of Object.keys(base))
-        for (const badCase of valoresMalos) {
-          // Una lista con cualquier cosa dentro es un lote válido (cada elemento se juzga solo).
+        for (const badCase of badValues) {
+          // A list with anything inside is a valid batch (each element is judged on its own).
           if (field === 'events' && Array.isArray(badCase) && badCase.length > 0) continue
           const res = await m.request(
             r.httpMethod,
@@ -199,17 +199,17 @@ describe('tipos inesperados en cada campo', () => {
         }
     })
 
-    it(`${r.name}: un campo de más es 400 (los cuerpos son estrictos)`, async () => {
+    it(`${r.name}: an extra field is 400 (bodies are strict)`, async () => {
       const res = await m.request(
         r.httpMethod,
         r.route,
-        { ...(r.valid?.() ?? {}), de_mas: 1 },
+        { ...(r.valid?.() ?? {}), extra_field: 1 },
         r.token(),
       )
       expect(res.status).toBe(400)
     })
 
-    it(`${r.name}: faltando cada campo es 400`, async () => {
+    it(`${r.name}: missing each field is 400`, async () => {
       const base = r.valid?.() ?? {}
       for (const field of Object.keys(base)) {
         const { [field]: _removed, ...rest } = base
@@ -218,7 +218,7 @@ describe('tipos inesperados en cada campo', () => {
     })
   }
 
-  it('el nombre del restaurante se recorta y no puede quedar vacío ni pasar de 120 caracteres', async () => {
+  it('the restaurant name is trimmed and cannot be empty or exceed 120 characters', async () => {
     const request = (name: string) =>
       m.request('POST', '/v1/admin/restaurants', { id: newId(), name }, ADMIN)
     expect((await request('   ')).status).toBe(400)
@@ -226,19 +226,19 @@ describe('tipos inesperados en cada campo', () => {
     expect((await request('x'.repeat(120))).status).toBe(201)
   })
 
-  it('el lote: eventos que no es lista, o lista de más de 500, o vacía', async () => {
+  it('the batch: events that is not a list, or a list of more than 500, or empty', async () => {
     for (const events of ['x', null, {}, 1, true, []])
       expect((await m.request('POST', '/v1/events', { events }, credential)).status).toBe(400)
-    const justo = Array.from({ length: MAX_EVENTOS_POR_LOTE }, () => 1)
-    const r = await m.request('POST', '/v1/events', { events: justo }, credential)
+    const atLimit = Array.from({ length: MAX_EVENTS_PER_BATCH }, () => 1)
+    const r = await m.request('POST', '/v1/events', { events: atLimit }, credential)
     expect(r.status).toBe(200)
-    expect(((await r.json()) as { results: unknown[] }).results).toHaveLength(MAX_EVENTOS_POR_LOTE)
+    expect(((await r.json()) as { results: unknown[] }).results).toHaveLength(MAX_EVENTS_PER_BATCH)
     expect(
-      (await m.request('POST', '/v1/events', { events: [...justo, 1] }, credential)).status,
+      (await m.request('POST', '/v1/events', { events: [...atLimit, 1] }, credential)).status,
     ).toBe(400)
   })
 
-  it('un lote con elementos que no son eventos responde 200 con todos inválidos', async () => {
+  it('a batch with elements that are not events responds 200 with all invalid', async () => {
     const r = await m.request('POST', '/v1/events', { events: [1, 'x', null, [], {}] }, credential)
     expect(r.status).toBe(200)
     const body = (await r.json()) as { results: { status: string }[] }
@@ -246,13 +246,13 @@ describe('tipos inesperados en cada campo', () => {
   })
 })
 
-describe('tamaño del cuerpo', () => {
-  const envoltura = (padding: string) => `{"events":["${padding}"]}`
+describe('body size', () => {
+  const wrapper = (padding: string) => `{"events":["${padding}"]}`
   const bytes = (t: string) => new TextEncoder().encode(t).length
 
-  it('un content-length falso muy grande se rechaza con 413 sin leer el cuerpo', async () => {
-    for (const length of [String(MAX_BYTES_CUERPO + 1), '999999999999', '1e9']) {
-      const res = await atender(
+  it('a very large fake content-length is rejected with 413 without reading the body', async () => {
+    for (const length of [String(MAX_BODY_BYTES + 1), '999999999999', '1e9']) {
+      const res = await handle(
         new Request('https://cloud.faro.test/v1/events', {
           method: 'POST',
           headers: { authorization: `Bearer ${credential}`, 'content-length': length },
@@ -265,21 +265,21 @@ describe('tamaño del cuerpo', () => {
     }
   })
 
-  it('un content-length falso muy chico no deja pasar un cuerpo que de verdad es grande', async () => {
-    const res = await atender(
+  it('a very small fake content-length does not let through a body that really is large', async () => {
+    const res = await handle(
       new Request('https://cloud.faro.test/v1/events', {
         method: 'POST',
         headers: { authorization: `Bearer ${credential}`, 'content-length': '10' },
-        body: envoltura('x'.repeat(MAX_BYTES_CUERPO)),
+        body: wrapper('x'.repeat(MAX_BODY_BYTES)),
       }),
       { sql: m.sql },
     )
     expect(res.status).toBe(413)
   })
 
-  it('un content-length ilegible o negativo no rompe nada', async () => {
+  it('an unreadable or negative content-length breaks nothing', async () => {
     for (const length of ['abc', '-5', '', ' ']) {
-      const res = await atender(
+      const res = await handle(
         new Request('https://cloud.faro.test/v1/events', {
           method: 'POST',
           headers: { authorization: `Bearer ${credential}`, 'content-length': length },
@@ -291,71 +291,71 @@ describe('tamaño del cuerpo', () => {
     }
   })
 
-  it('el límite es exacto: MAX_BYTES_CUERPO pasa, un byte más es 413', async () => {
-    const empty = bytes(envoltura(''))
-    const justo = envoltura('x'.repeat(MAX_BYTES_CUERPO - empty))
-    expect(bytes(justo)).toBe(MAX_BYTES_CUERPO)
-    expect((await m.request('POST', '/v1/events', justo, credential)).status).toBe(200)
-    const demas = envoltura('x'.repeat(MAX_BYTES_CUERPO - empty + 1))
-    const r = await m.request('POST', '/v1/events', demas, credential)
+  it('the limit is exact: MAX_BODY_BYTES passes, one more byte is 413', async () => {
+    const empty = bytes(wrapper(''))
+    const atLimit = wrapper('x'.repeat(MAX_BODY_BYTES - empty))
+    expect(bytes(atLimit)).toBe(MAX_BODY_BYTES)
+    expect((await m.request('POST', '/v1/events', atLimit, credential)).status).toBe(200)
+    const oversized = wrapper('x'.repeat(MAX_BODY_BYTES - empty + 1))
+    const r = await m.request('POST', '/v1/events', oversized, credential)
     expect(r.status).toBe(413)
     expect(await r.json()).toMatchObject({ error: 'batch_too_large' })
   })
 
-  it('el límite se mide en bytes: caracteres de varios bytes se pasan antes', async () => {
-    const text = envoltura('ñ'.repeat(MAX_BYTES_CUERPO / 2))
-    expect(text.length).toBeLessThan(MAX_BYTES_CUERPO)
+  it('the limit is measured in bytes: multi-byte characters exceed it sooner', async () => {
+    const text = wrapper('ñ'.repeat(MAX_BODY_BYTES / 2))
+    expect(text.length).toBeLessThan(MAX_BODY_BYTES)
     expect((await m.request('POST', '/v1/events', text, credential)).status).toBe(413)
   })
 
-  it('sin content-length (flujo), deja de leer al pasarse del límite', async () => {
+  it('without content-length (stream), it stops reading once over the limit', async () => {
     const chunk = new Uint8Array(1024 * 1024).fill(0x20)
-    let leidos = 0
-    const flujo = new ReadableStream<Uint8Array>({
+    let readCount = 0
+    const stream = new ReadableStream<Uint8Array>({
       pull(control) {
-        leidos++
-        if (leidos > 40) control.close()
+        readCount++
+        if (readCount > 40) control.close()
         else control.enqueue(chunk)
       },
     })
-    const res = await atender(
+    const res = await handle(
       new Request('https://cloud.faro.test/v1/events', {
         method: 'POST',
         headers: { authorization: `Bearer ${credential}` },
-        body: flujo,
+        body: stream,
         duplex: 'half',
       } as RequestInit),
       { sql: m.sql },
     )
     expect(res.status).toBe(413)
-    expect(leidos).toBeLessThan(40)
+    expect(readCount).toBeLessThan(40)
   })
 
-  it('un cuerpo enorme de alguien sin credencial se rechaza con 401 sin leerlo', async () => {
-    let leidos = 0
-    const flujo = new ReadableStream<Uint8Array>({
+  it('a huge body from someone without a credential is rejected with 401 without reading it', async () => {
+    let readCount = 0
+    const stream = new ReadableStream<Uint8Array>({
       pull(control) {
-        leidos++
+        readCount++
         control.enqueue(new Uint8Array(1024))
-        if (leidos > 10) control.close()
+        if (readCount > 10) control.close()
       },
     })
-    const res = await atender(
+    const res = await handle(
       new Request('https://cloud.faro.test/v1/events', {
         method: 'POST',
         headers: { authorization: 'Bearer inventada' },
-        body: flujo,
+        body: stream,
         duplex: 'half',
       } as RequestInit),
       { sql: m.sql },
     )
     expect(res.status).toBe(401)
-    const admin = await m.request('POST', '/v1/admin/restaurants', 'x'.repeat(MAX_BYTES_CUERPO + 5))
+    const admin = await m.request('POST', '/v1/admin/restaurants', 'x'.repeat(MAX_BODY_BYTES + 5))
     expect(admin.status).toBe(401)
   })
 
-  it('en las rutas de administración y de registro también hay 413', async () => {
-    const large = `{"a":"${'x'.repeat(MAX_BYTES_CUERPO)}"}`
+  it('the admin and registration routes also have 413', async () => {
+    const large = `{"a":"${'x'.repeat(MAX_BODY_BYTES)}"}`
     expect((await m.request('POST', '/v1/admin/restaurants', large, ADMIN)).status).toBe(413)
     expect((await m.request('POST', '/v1/admin/codes', large, ADMIN)).status).toBe(413)
     expect((await m.request('POST', '/v1/admin/hubs/revoke', large, ADMIN)).status).toBe(413)
@@ -363,8 +363,8 @@ describe('tamaño del cuerpo', () => {
   })
 })
 
-describe('método y ruta', () => {
-  const equivocados: [string, string][] = [
+describe('method and route', () => {
+  const wrong: [string, string][] = [
     ['GET', '/v1/events'],
     ['PUT', '/v1/events'],
     ['PATCH', '/v1/events'],
@@ -381,8 +381,8 @@ describe('método y ruta', () => {
     ['POST', '/v1/health'],
     ['DELETE', '/v1/health'],
   ]
-  it.each(equivocados)(
-    '%s %s no hace nada (404 o 405) ni cambia datos',
+  it.each(wrong)(
+    '%s %s does nothing (404 or 405) and changes no data',
     async (httpMethod, route) => {
       const body = httpMethod === 'GET' ? undefined : { events: batch(700, 3), hub_id: hubId }
       const before = [
@@ -404,7 +404,7 @@ describe('método y ruta', () => {
     },
   )
 
-  const inexistentes = [
+  const nonexistentOnes = [
     '/',
     '/v1',
     '/v1/',
@@ -427,8 +427,8 @@ describe('método y ruta', () => {
     '/.env',
     '/v1/admin/../health',
   ]
-  it.each(inexistentes)(
-    '%s no existe: 404 (o 401 si es la zona de administración)',
+  it.each(nonexistentOnes)(
+    '%s does not exist: 404 (or 401 if it is the admin area)',
     async (route) => {
       for (const httpMethod of ['GET', 'POST']) {
         const r = await m.request(
@@ -437,14 +437,14 @@ describe('método y ruta', () => {
           httpMethod === 'POST' ? {} : undefined,
           credential,
         )
-        // Las rutas que normaliza la URL a una real (por ejemplo /v1/admin/../salud) pueden dar 200.
+        // Routes the URL normalizes to a real one (for example /v1/admin/../health) may give 200.
         expect([200, 400, 401, 404], `${httpMethod} ${route}`).toContain(r.status)
         if (r.status === 404) expect(await r.json()).toMatchObject({ error: 'not_found' })
       }
     },
   )
 
-  it('la zona de administración no revela qué rutas existen: sin token todo es 401', async () => {
+  it('the admin area does not reveal which routes exist: without a token everything is 401', async () => {
     for (const route of [
       '/v1/admin/',
       '/v1/admin/nothing',
@@ -455,7 +455,7 @@ describe('método y ruta', () => {
     expect((await m.request('POST', '/v1/admin/nothing', {}, ADMIN)).status).toBe(404)
   })
 
-  it('la cadena de consulta no cambia la ruta, y la salud no pide nada', async () => {
+  it('the query string does not change the route, and health requires nothing', async () => {
     expect((await m.request('GET', '/v1/health?x=1&y=2')).status).toBe(200)
     expect(
       (await m.request('GET', '/v1/events/last?hub=other', undefined, credential)).status,
@@ -463,72 +463,72 @@ describe('método y ruta', () => {
     expect(await (await m.request('GET', '/v1/health')).json()).toEqual({ ok: true })
   })
 
-  it('el resultado de ultima trae solo la secuencia del hub que pregunta', async () => {
+  it('the last result only carries the sequence of the hub that asks', async () => {
     const r = await m.request('GET', '/v1/events/last', undefined, credential)
     expect(Object.keys((await r.json()) as object)).toEqual(['last_sequence'])
   })
 })
 
-describe('un error interno nunca devuelve detalles', () => {
-  const SECRETO =
+describe('an internal error never returns details', () => {
+  const SECRET =
     'password=hunter2 INSERT INTO hubs VALUES (secreto-12345) en /srv/faro/src/nube.ts:99'
 
-  function sqlQueLanza(quePasa: () => unknown, soloTransacciones = false): Sql {
-    const lanzar = async (): Promise<never> => {
-      throw quePasa()
+  function throwingSql(whatHappens: () => unknown, transactionsOnly = false): Sql {
+    const doThrow = async (): Promise<never> => {
+      throw whatHappens()
     }
     return {
-      query: soloTransacciones ? m.sql.query.bind(m.sql) : lanzar,
-      execute: lanzar,
-      transaction: lanzar,
+      query: transactionsOnly ? m.sql.query.bind(m.sql) : doThrow,
+      execute: doThrow,
+      transaction: doThrow,
     }
   }
 
   const errors: [string, () => unknown][] = [
-    ['un Error con datos', () => new Error(SECRETO)],
+    ['an Error with data', () => new Error(SECRET)],
     [
-      'un error de Postgres con detalle y restricción',
+      'a Postgres error with detail and constraint',
       () =>
-        Object.assign(new Error(SECRETO), {
+        Object.assign(new Error(SECRET), {
           code: '22P02',
-          detail: `Key (id)=(${SECRETO}) is duplicated`,
+          detail: `Key (id)=(${SECRET}) is duplicated`,
           constraint: 'hub_pkey',
-          query: SECRETO,
-          parameters: [SECRETO],
-          stack: `Error: ${SECRETO}\n    at /srv/faro/x.ts:1`,
+          query: SECRET,
+          parameters: [SECRET],
+          stack: `Error: ${SECRET}\n    at /srv/faro/x.ts:1`,
         }),
     ],
-    ['un texto lanzado', () => SECRETO],
-    ['un objeto cualquiera', () => ({ secret: SECRETO })],
+    ['a thrown string', () => SECRET],
+    ['an arbitrary object', () => ({ secret: SECRET })],
     ['null', () => null],
     ['undefined', () => undefined],
     [
-      'un objeto con toString que lanza',
+      'an object whose toString throws',
       () => ({
         toString: () => {
-          throw new Error(SECRETO)
+          throw new Error(SECRET)
         },
       }),
     ],
   ]
 
-  function pedirCon(sql: Sql, httpMethod: string, route: string, body: unknown, token?: string) {
-    return atender(
+  function requestWith(sql: Sql, httpMethod: string, route: string, body: unknown, token?: string) {
+    return handle(
       new Request(`https://cloud.faro.test${route}`, {
         method: httpMethod,
         headers: token ? { authorization: `Bearer ${token}` } : {},
         body: body === undefined ? undefined : JSON.stringify(body),
       }),
-      { sql, tokenAdmin: ADMIN, clock: () => NOW },
+      { sql, adminToken: ADMIN, clock: () => NOW },
     )
   }
 
-  const rutasHttp = (): [string, string, string, unknown, string | undefined][] => [
-    ['crear restaurante', 'POST', '/v1/admin/restaurants', { id: newId(), name: 'R' }, ADMIN],
-    ['crear código', 'POST', '/v1/admin/codes', { restaurant_id: newId() }, ADMIN],
+  const httpRoutes = (): [string, string, string, unknown, string | undefined][] => [
+    ['create restaurant', 'POST', '/v1/admin/restaurants', { id: newId(), name: 'R' }, ADMIN],
+    ['create code', 'POST', '/v1/admin/codes', { restaurant_id: newId() }, ADMIN],
     ['revoke', 'POST', '/v1/admin/hubs/revoke', { hub_id: newId() }, ADMIN],
     [
-      'registrar',
+      'register',
       'POST',
       '/v1/hubs/register',
       {
@@ -540,16 +540,16 @@ describe('un error interno nunca devuelve detalles', () => {
       },
       undefined,
     ],
-    ['subir eventos', 'POST', '/v1/events', { events: batch(1, 1) }, credential],
-    ['ultima secuencia', 'GET', '/v1/events/last', undefined, credential],
+    ['upload events', 'POST', '/v1/events', { events: batch(1, 1) }, credential],
+    ['last sequence', 'GET', '/v1/events/last', undefined, credential],
   ]
 
-  for (const [nombreError, act] of errors)
-    it(`${nombreError}: 500 genérico, sin SQL, rutas, claves ni pila`, async () => {
+  for (const [errorName, act] of errors)
+    it(`${errorName}: generic 500, without SQL, paths, keys or stack`, async () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-      for (const [name, httpMethod, route, body, token] of rutasHttp()) {
-        // Las rutas de hub llegan a su consulta de autenticación con el mismo error.
-        const r = await pedirCon(sqlQueLanza(act), httpMethod, route, body, token)
+      for (const [name, httpMethod, route, body, token] of httpRoutes()) {
+        // The hub routes reach their authentication query with the same error.
+        const r = await requestWith(throwingSql(act), httpMethod, route, body, token)
         const text = await r.text()
         expect(r.status, name).toBe(500)
         expect(r.headers.get('content-type'), name).toContain('application/json')
@@ -557,7 +557,7 @@ describe('un error interno nunca devuelve detalles', () => {
           error: 'internal_error',
           message: expect.any(String),
         })
-        for (const prohibido of [
+        for (const forbidden of [
           'hunter2',
           'INSERT',
           'secret',
@@ -567,50 +567,50 @@ describe('un error interno nunca devuelve detalles', () => {
           'detail',
           'at ',
         ])
-          expect(text, `${name}: ${prohibido}`).not.toContain(prohibido)
+          expect(text, `${name}: ${forbidden}`).not.toContain(forbidden)
       }
       expect(log).toHaveBeenCalled()
     })
 
-  it('el registro del error no vuelca el objeto completo (consulta, parámetros, pila)', async () => {
+  it('the error log does not dump the whole object (query, parameters, stack)', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const odd = Object.assign(new Error('falló'), {
+    const odd = Object.assign(new Error('failed'), {
       code: '22P02',
       query: 'SELECT secreto',
       parameters: ['clave-super-secreta'],
     })
-    await pedirCon(
-      sqlQueLanza(() => odd),
+    await requestWith(
+      throwingSql(() => odd),
       'POST',
       '/v1/admin/restaurants',
       { id: newId(), name: 'R' },
       ADMIN,
     )
-    const volcado = JSON.stringify(log.mock.calls, (_k, v) =>
+    const dumped = JSON.stringify(log.mock.calls, (_k, v) =>
       v instanceof Error ? `ERROR:${v.message}` : v,
     )
-    expect(volcado).not.toContain('clave-super-secreta')
-    expect(volcado).not.toContain('SELECT secreto')
+    expect(dumped).not.toContain('clave-super-secreta')
+    expect(dumped).not.toContain('SELECT secreto')
     for (const call of log.mock.calls) for (const arg of call) expect(arg).not.toBeInstanceOf(Error)
   })
 
-  it('si la base falla en la transacción de guardar un lote, es 500 y no queda nada a medias', async () => {
+  it('if the database fails in the transaction that saves a batch, it is 500 and nothing is left half done', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const sql: Sql = {
       query: m.sql.query.bind(m.sql),
       execute: m.sql.execute.bind(m.sql),
       transaction: async () => {
-        throw new Error(SECRETO)
+        throw new Error(SECRET)
       },
     }
     const before = await count(m.db, 'events')
-    const r = await pedirCon(sql, 'POST', '/v1/events', { events: batch(800, 3) }, credential)
+    const r = await requestWith(sql, 'POST', '/v1/events', { events: batch(800, 3) }, credential)
     expect(r.status).toBe(500)
     expect(await r.text()).not.toContain('hunter2')
     expect(await count(m.db, 'events')).toBe(before)
   })
 
-  it('un choque de clave única al registrar (dos registros a la vez) se contesta 409, no 500', async () => {
+  it('a unique key clash on registration (two registrations at once) is answered 409, not 500', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const sql: Sql = {
       query: m.sql.query.bind(m.sql),
@@ -624,7 +624,7 @@ describe('un error interno nunca devuelve detalles', () => {
         )
       },
     }
-    const r = await pedirCon(sql, 'POST', '/v1/hubs/register', {
+    const r = await requestWith(sql, 'POST', '/v1/hubs/register', {
       code: 'ABCD-EFGH-JKMN',
       hub_id: newId(),
       location_id: newId(),
@@ -634,7 +634,7 @@ describe('un error interno nunca devuelve detalles', () => {
     expect(r.status).toBe(409)
   })
 
-  it('un error real de Postgres (no simulado) tampoco filtra detalles', async () => {
+  it('a real Postgres error (not simulated) does not leak details either', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const r = await m.request(
       'POST',
@@ -643,13 +643,13 @@ describe('un error interno nunca devuelve detalles', () => {
       credential,
     )
     const text = await r.text()
-    for (const prohibido of ['date/time', 'out of range', 'jsonb_to_recordset', 'INSERT'])
-      expect(text).not.toContain(prohibido)
+    for (const forbidden of ['date/time', 'out of range', 'jsonb_to_recordset', 'INSERT'])
+      expect(text).not.toContain(forbidden)
   })
 
-  it('la salud no toca la base: responde aunque la base esté caída', async () => {
-    const r = await pedirCon(
-      sqlQueLanza(() => new Error('caída')),
+  it('health does not touch the database: it responds even if the database is down', async () => {
+    const r = await requestWith(
+      throwingSql(() => new Error('down')),
       'GET',
       '/v1/health',
       undefined,
@@ -657,42 +657,42 @@ describe('un error interno nunca devuelve detalles', () => {
     expect(r.status).toBe(200)
   })
 
-  it('rutas que no existen o sin credencial no usan la base más de lo necesario', async () => {
-    const r = await pedirCon(
-      sqlQueLanza(() => new Error('caída')),
+  it('routes that do not exist or without a credential do not use the database more than needed', async () => {
+    const r = await requestWith(
+      throwingSql(() => new Error('down')),
       'GET',
       '/v1/nothing',
       undefined,
     )
-    // Sin credencial no hay consulta: 404 limpio aunque la base esté caída.
+    // Without a credential there is no query: a clean 404 even if the database is down.
     expect(r.status).toBe(404)
   })
 })
 
-describe('forma de toda respuesta', () => {
-  it('es JSON con cache-control: no-store en cada código de estado', async () => {
+describe('shape of every response', () => {
+  it('is JSON with cache-control: no-store on every status code', async () => {
     const restaurant = newId()
-    const matriz: [string, () => Promise<Response>][] = [
-      ['200 salud', () => m.request('GET', '/v1/health')],
+    const matrix: [string, () => Promise<Response>][] = [
+      ['200 health', () => m.request('GET', '/v1/health')],
       [
-        '201 restaurante',
+        '201 restaurant',
         () => m.request('POST', '/v1/admin/restaurants', { id: restaurant, name: 'R' }, ADMIN),
       ],
       [
-        '200 restaurante repetido',
+        '200 repeated restaurant',
         () => m.request('POST', '/v1/admin/restaurants', { id: restaurant, name: 'R' }, ADMIN),
       ],
       [
-        '201 código',
+        '201 code',
         () => m.request('POST', '/v1/admin/codes', { restaurant_id: restaurant }, ADMIN),
       ],
-      ['404 código', () => m.request('POST', '/v1/admin/codes', { restaurant_id: newId() }, ADMIN)],
-      ['404 revocar', () => m.request('POST', '/v1/admin/hubs/revoke', { hub_id: newId() }, ADMIN)],
+      ['404 code', () => m.request('POST', '/v1/admin/codes', { restaurant_id: newId() }, ADMIN)],
+      ['404 revoke', () => m.request('POST', '/v1/admin/hubs/revoke', { hub_id: newId() }, ADMIN)],
       ['400', () => m.request('POST', '/v1/events', '{', credential)],
       ['401', () => m.request('POST', '/v1/events', {}, 'inventada')],
       ['401 admin', () => m.request('POST', '/v1/admin/restaurants', {})],
       [
-        '403 registro',
+        '403 registration',
         () =>
           m.request('POST', '/v1/hubs/register', {
             code: 'NADA',
@@ -702,21 +702,21 @@ describe('forma de toda respuesta', () => {
             instance: 'i',
           }),
       ],
-      ['404 ruta', () => m.request('GET', '/v1/nothing')],
+      ['404 route', () => m.request('GET', '/v1/nothing')],
       [
         '413',
         () =>
           m.request(
             'POST',
             '/v1/events',
-            `{"events":["${'x'.repeat(MAX_BYTES_CUERPO)}"]}`,
+            `{"events":["${'x'.repeat(MAX_BODY_BYTES)}"]}`,
             credential,
           ),
       ],
-      ['200 eventos', () => m.request('POST', '/v1/events', { events: batch(1, 1) }, credential)],
-      ['200 ultima', () => m.request('GET', '/v1/events/last', undefined, credential)],
+      ['200 events', () => m.request('POST', '/v1/events', { events: batch(1, 1) }, credential)],
+      ['200 last', () => m.request('GET', '/v1/events/last', undefined, credential)],
     ]
-    for (const [name, request] of matriz) {
+    for (const [name, request] of matrix) {
       const r = await request()
       expect(r.headers.get('content-type'), name).toMatch(/^application\/json/)
       expect(r.headers.get('cache-control'), name).toBe('no-store')
@@ -724,26 +724,26 @@ describe('forma de toda respuesta', () => {
     }
   })
 
-  it('el 409 de registro y el 204 de revocar también llevan cache-control: no-store', async () => {
+  it('the registration 409 and the revoke 204 also carry cache-control: no-store', async () => {
     const h = await m.newHub()
-    const code = await m.nube.crearCodigo(h.restaurantId)
-    if (!code) throw new Error('sin código')
-    const duplicado = await m.request('POST', '/v1/hubs/register', {
+    const code = await m.cloud.createCode(h.restaurantId)
+    if (!code) throw new Error('no code')
+    const duplicate = await m.request('POST', '/v1/hubs/register', {
       code: code.code,
       hub_id: h.hub.id,
       location_id: newId(),
       name: 'C',
       instance: 'i',
     })
-    expect(duplicado.status).toBe(409)
-    expect(duplicado.headers.get('cache-control')).toBe('no-store')
+    expect(duplicate.status).toBe(409)
+    expect(duplicate.headers.get('cache-control')).toBe('no-store')
     const revoked = await m.request('POST', '/v1/admin/hubs/revoke', { hub_id: h.hub.id }, ADMIN)
     expect(revoked.status).toBe(204)
     expect(await revoked.text()).toBe('')
     expect(revoked.headers.get('cache-control')).toBe('no-store')
   })
 
-  it('los errores traen solo error y mensaje, en español, y no repiten lo que mandó el cliente', async () => {
+  it('errors carry only error and message, in Spanish, and do not echo what the client sent', async () => {
     const datum = 'dato-que-mando-el-cliente-98765'
     for (const r of [
       await m.request('POST', '/v1/admin/restaurants', { id: datum, name: datum }, ADMIN),

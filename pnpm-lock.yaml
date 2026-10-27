@@ -182,6 +182,43 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  apps/cloud:
+    dependencies:
+      '@pos/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pos/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@pos/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: 0.5.8
+        version: 0.5.8
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
+      fast-check:
+        specifier: ^4.10.2
+        version: 4.10.2
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@24.19.2)(@vitest/coverage-v8@5.0.5)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
   apps/hub:
     dependencies:
       '@fastify/static':
@@ -218,43 +255,6 @@ importers:
       '@types/ws':
         specifier: ^8.18.2
         version: 8.18.2
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
-      vitest:
-        specifier: ^5.0.5
-        version: 5.0.5(@types/node@24.19.2)(@vitest/coverage-v8@5.0.5)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
-
-  apps/nube:
-    dependencies:
-      '@pos/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@pos/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@pos/sync':
-        specifier: workspace:*
-        version: link:../../packages/sync
-      pg:
-        specifier: 8.23.1
-        version: 8.23.1
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@electric-sql/pglite':
-        specifier: 0.5.8
-        version: 0.5.8
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      '@types/pg':
-        specifier: 8.23.1
-        version: 8.23.1
-      fast-check:
-        specifier: ^4.10.2
-        version: 4.10.2
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
