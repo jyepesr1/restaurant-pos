@@ -1,16 +1,16 @@
 import { expect, test } from '@playwright/test'
 
-// Pendiente (tarea 0.10): la pantalla de inicio con "Conectado al hub" se reemplazó por la de
-// operación (emparejar, PIN, mesas). Estas pruebas se reescriben sobre el indicador de conexión
-// nuevo junto con el escenario 14, en la corrida e2e del final (docs/ROADMAP.md).
-test.skip(true, 'Se reescribe con el escenario 14 en la corrida e2e del final')
+// Pending (task 0.10): the home screen with "Conectado al hub" was replaced by the operations
+// one (pairing, PIN, tables). These tests get rewritten against the new connection indicator
+// along with scenario 14, in the final e2e run (docs/ROADMAP.md).
+test.skip(true, 'Rewritten with scenario 14 in the final e2e run')
 
-test('la app servida por el hub muestra que está conectada', async ({ page }) => {
+test('the app served by the hub shows it is connected', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('Conectado al hub')).toBeVisible()
 })
 
-test('la app avisa cuando el hub deja de responder y se recupera cuando vuelve', async ({
+test('the app warns when the hub stops responding and recovers when it comes back', async ({
   page,
 }) => {
   await page.goto('/')

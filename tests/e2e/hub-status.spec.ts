@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test'
 
-// Pendiente (tarea 0.10): la pantalla de inicio con "Conectado al hub" se reemplazó por la de
-// operación (emparejar, PIN, mesas). Estas pruebas se reescriben sobre el indicador de conexión
-// nuevo junto con el escenario 14, en la corrida e2e del final (docs/ROADMAP.md).
-test.skip(true, 'Se reescribe con el escenario 14 en la corrida e2e del final')
+// Pending (task 0.10): the home screen with "Conectado al hub" was replaced by the operations
+// one (pairing, PIN, tables). These tests get rewritten against the new connection indicator
+// along with scenario 14, in the final e2e run (docs/ROADMAP.md).
+test.skip(true, 'Rewritten with scenario 14 in the final e2e run')
 
 const HEALTH = '**/api/health'
 
-test('al arrancar muestra "Buscando el hub" hasta que el hub responde', async ({ page }) => {
+test('on startup shows "Buscando el hub" until the hub responds', async ({ page }) => {
   let release: () => void = () => {}
   const heldPromise = new Promise<void>((resolve) => {
     release = resolve
@@ -26,10 +26,10 @@ test('al arrancar muestra "Buscando el hub" hasta que el hub responde', async ({
   await expect(page.getByText('Conectado al hub')).toBeVisible()
 })
 
-test('si el hub está colgado (no responde) pasa a "Sin conexión" al vencer el tiempo de espera', async ({
+test('if the hub hangs (does not respond) it switches to "Sin conexión" when the timeout expires', async ({
   page,
 }) => {
-  // La petición queda abierta para siempre: el hub aceptó la conexión pero no contesta.
+  // The request stays open forever: the hub accepted the connection but does not answer.
   await page.route(HEALTH, () => new Promise<void>(() => {}))
 
   await page.goto('/')
@@ -37,28 +37,28 @@ test('si el hub está colgado (no responde) pasa a "Sin conexión" al vencer el 
   await expect(page.getByText('Sin conexión con el hub')).toBeVisible()
 })
 
-test('si el hub se cuelga estando conectado, avisa y se recupera cuando vuelve a responder', async ({
+test('if the hub hangs while connected, it warns and recovers when it responds again', async ({
   page,
 }) => {
   await page.goto('/')
   await expect(page.getByText('Conectado al hub')).toBeVisible()
 
   await page.route(HEALTH, () => new Promise<void>(() => {}))
-  // Peor caso: el siguiente sondeo sale a los 3 s y vence a los 2 s (5 s en total).
+  // Worst case: the next poll goes out at 3 s and times out at 2 s (5 s in total).
   await expect(page.getByText('Sin conexión con el hub')).toBeVisible({ timeout: 10_000 })
 
   await page.unroute(HEALTH)
   await expect(page.getByText('Conectado al hub')).toBeVisible()
 })
 
-test('si el hub responde con error del servidor, muestra "Sin conexión"', async ({ page }) => {
+test('if the hub responds with a server error, shows "Sin conexión"', async ({ page }) => {
   await page.route(HEALTH, (route) => route.fulfill({ status: 500, body: 'error' }))
 
   await page.goto('/')
   await expect(page.getByText('Sin conexión con el hub')).toBeVisible()
 })
 
-test('el hub sirve los assets de la app con su tipo de contenido', async ({ page, request }) => {
+test('the hub serves the app assets with their content type', async ({ page, request }) => {
   await page.goto('/')
   const js = await page.locator('script[src]').first().getAttribute('src')
   const css = await page.locator('link[rel="stylesheet"]').first().getAttribute('href')
@@ -74,7 +74,7 @@ test('el hub sirve los assets de la app con su tipo de contenido', async ({ page
   }
 })
 
-test('el hub no entrega archivos fuera de la carpeta de la app', async ({ request }) => {
+test('the hub does not serve files outside the app folder', async ({ request }) => {
   for (const route of [
     '/../package.json',
     '/%2e%2e/package.json',

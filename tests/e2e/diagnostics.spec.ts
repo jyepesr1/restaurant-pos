@@ -7,8 +7,8 @@ const FILE = join(DATA_DIR_E2E, 'diagnostics.jsonl')
 const ERROR_MESSAGE = '✕ No llegó al hub. Revisa que el equipo esté en el Wi-Fi del local.'
 
 /**
- * Deja pasar los WebSocket del diagnóstico hasta el hub real, pero guarda cada conexión
- * para poder cortarla desde la prueba (simula Wi-Fi caído o celular que se duerme).
+ * Lets the diagnostics WebSockets through to the real hub, but keeps each connection
+ * so the test can cut it (simulates Wi-Fi down or a phone going to sleep).
  */
 async function interceptWs(page: Page) {
   const connections: WebSocketRoute[] = []
@@ -20,9 +20,9 @@ async function interceptWs(page: Page) {
 }
 
 /**
- * Hace que Date.now() nunca repita un valor. El registro ordena los eventos por milisegundo;
- * sin esto, dos eventos del mismo milisegundo (p. ej. "oculta" y "ws-cerrado") pueden
- * quedar invertidos y la prueba dependería de la velocidad de la máquina.
+ * Makes Date.now() never repeat a value. The log orders events by millisecond;
+ * without this, two events in the same millisecond (e.g. "hidden" and "ws-closed") can
+ * end up swapped and the test would depend on the machine's speed.
  */
 async function clockWithoutTies(page: Page) {
   await page.addInitScript(() => {
@@ -35,23 +35,23 @@ async function clockWithoutTies(page: Page) {
   })
 }
 
-/** Simula que el celular bloquea o desbloquea la pantalla (visibilitychange). */
+/** Simulates the phone locking or unlocking the screen (visibilitychange). */
 async function changeVisibility(page: Page, isHidden: boolean) {
-  // Se evalúa como texto porque este proyecto de pruebas no incluye los tipos del DOM.
+  // Evaluated as text because this test project does not include the DOM types.
   await page.evaluate(`(() => {
-    const oculta = ${isHidden}
-    Object.defineProperty(document, 'hidden', { configurable: true, get: () => oculta })
+    const hidden = ${isHidden}
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
-      get: () => (oculta ? 'hidden' : 'visible'),
+      get: () => (hidden ? 'hidden' : 'visible'),
     })
     document.dispatchEvent(new Event('visibilitychange'))
   })()`)
 }
 
 /**
- * Hub que se puede "apagar": mientras `caido` sea true rechaza cada conexión nueva. Guarda en
- * `conexiones` solo las que llegaron al hub real, así su longitud cuenta las conexiones del hub.
+ * Hub that can be "turned off": while `down` is true it rejects every new connection. Keeps in
+ * `connections` only those that reached the real hub, so its length counts the hub's connections.
  */
 async function controllableHub(page: Page) {
   const hub = { down: false, connections: [] as WebSocketRoute[] }
@@ -67,29 +67,29 @@ async function controllableHub(page: Page) {
 }
 
 /**
- * Envuelve WebSocket en la página para contar sockets vivos (CONNECTING u OPEN) y el máximo
- * que hubo a la vez. Con `window.__colgar = true` los sockets nuevos quedan en CONNECTING
- * para siempre, como un intento hecho con la pantalla bloqueada. Debe registrarse después de
- * `controllableHub`, para envolver el WebSocket que ya intercepta Playwright.
+ * Wraps WebSocket in the page to count live sockets (CONNECTING or OPEN) and the maximum
+ * open at once. With `window.__hang = true` new sockets stay in CONNECTING
+ * forever, like an attempt made with the screen locked. Must be registered after
+ * `controllableHub`, to wrap the WebSocket that Playwright already intercepts.
  */
 async function instrumentWs(page: Page) {
   await page.addInitScript(`(() => {
     const Real = window.WebSocket
     window.__ws = []
-    window.__maxVivos = 0
-    window.__colgar = false
-    function colgado() {
-      const falso = new EventTarget()
-      falso.readyState = 0
-      falso.send = () => {}
-      falso.close = () => { falso.readyState = 3 }
-      return falso
+    window.__maxLive = 0
+    window.__hang = false
+    function hung() {
+      const fake = new EventTarget()
+      fake.readyState = 0
+      fake.send = () => {}
+      fake.close = () => { fake.readyState = 3 }
+      return fake
     }
-    window.WebSocket = function (url, protocolos) {
-      const ws = window.__colgar ? colgado() : new Real(url, protocolos)
+    window.WebSocket = function (url, protocols) {
+      const ws = window.__hang ? hung() : new Real(url, protocols)
       window.__ws.push(ws)
-      const vivos = window.__ws.filter((w) => w.readyState <= 1).length
-      window.__maxVivos = Math.max(window.__maxVivos, vivos)
+      const live = window.__ws.filter((w) => w.readyState <= 1).length
+      window.__maxLive = Math.max(window.__maxLive, live)
       return ws
     }
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 })
@@ -99,19 +99,18 @@ async function instrumentWs(page: Page) {
 interface PageSockets {
   live: number
   maxConcurrent: number
-  /** readyState de cada socket creado, en orden. */
+  /** readyState of each socket created, in order. */
   statuses: number[]
 }
 
 const readSockets = (page: Page) =>
   page.evaluate(`({
-    vivos: window.__ws.filter((w) => w.readyState <= 1).length,
-    maximoSimultaneos: window.__maxVivos,
-    estados: window.__ws.map((w) => w.readyState),
+    live: window.__ws.filter((w) => w.readyState <= 1).length,
+    maxConcurrent: window.__maxLive,
+    statuses: window.__ws.map((w) => w.readyState),
   })`) as Promise<PageSockets>
 
-const hangNewSockets = (page: Page, hang: boolean) =>
-  page.evaluate(`window.__colgar = ${hang}`)
+const hangNewSockets = (page: Page, hang: boolean) => page.evaluate(`window.__hang = ${hang}`)
 
 const row = (page: Page, title: string) => page.getByRole('listitem').filter({ hasText: title })
 const CHANNEL = 'Canal en tiempo real'
@@ -119,7 +118,7 @@ const LOCK = 'Última vez en segundo plano'
 const wsConnected = (page: Page) => expect(row(page, CHANNEL)).toContainText('✓ Conectado')
 const wsDisconnected = (page: Page) =>
   expect(row(page, CHANNEL)).toContainText('✕ Desconectado, reintentando')
-/** Valor (columna derecha) de una fila del diagnóstico. */
+/** Value (right column) of a diagnostics row. */
 const value = (page: Page, title: string) => row(page, title).locator(':scope > span').last()
 const enterName = (page: Page, name = 'Equipo de pruebas') =>
   page.getByLabel('Nombre de este equipo').fill(name)
@@ -127,8 +126,8 @@ const enterName = (page: Page, name = 'Equipo de pruebas') =>
 const submission = (page: Page) =>
   page.getByRole('button', { name: /Enviar resultados al hub|Enviando/ })
 
-test.describe('pantalla de diagnóstico', () => {
-  test('muestra el canal conectado, el tiempo de respuesta y datos locales funcionando', async ({
+test.describe('diagnostics screen', () => {
+  test('shows the channel connected, the response time and local data working', async ({
     page,
   }) => {
     await page.goto('/diagnostics')
@@ -137,19 +136,21 @@ test.describe('pantalla de diagnóstico', () => {
     await wsConnected(page)
     await expect(row(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
     await expect(row(page, 'Tiempo de respuesta')).toContainText('Midiendo')
-    // El primer ping sale a los 5 s de abrir el socket.
+    // The first ping goes out 5 s after the socket opens.
     await expect(row(page, 'Tiempo de respuesta')).toContainText(/\d+ ms/, { timeout: 15_000 })
     await expect(row(page, 'Tiempo de respuesta')).not.toContainText('Midiendo')
   })
 
-  test('el inicio enlaza a /diagnostico', async ({ page }) => {
+  test('the home screen links to /diagnostics', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('link', { name: 'Diagnóstico del equipo' }).click()
-    await expect(page).toHaveURL(/\/diagnostico$/)
+    await expect(page).toHaveURL(/\/diagnostics$/)
     await expect(page.getByRole('heading', { name: 'Diagnóstico del dispositivo' })).toBeVisible()
   })
 
-  test('si el canal se corta muestra "Desconectado" y se reconecta solo', async ({ page }) => {
+  test('if the channel drops it shows "Desconectado" and reconnects on its own', async ({
+    page,
+  }) => {
     const connections = await interceptWs(page)
     await page.goto('/diagnostics')
     await wsConnected(page)
@@ -158,14 +159,14 @@ test.describe('pantalla de diagnóstico', () => {
     await connections[0]?.close({ code: 1006 })
     await wsDisconnected(page)
 
-    // El primer reintento sale al segundo.
+    // The first retry goes out after one second.
     await wsConnected(page)
     expect(connections).toHaveLength(2)
-    // La reconexión se refleja en el contador del resumen (se refresca cada 3 s).
+    // The reconnection shows up in the summary counter (refreshed every 3 s).
     await expect(value(page, 'Veces que se reconectó')).toHaveText('1', { timeout: 10_000 })
   })
 
-  test('sigue reintentando mientras el hub rechaza la conexión y se recupera al volver', async ({
+  test('keeps retrying while the hub rejects the connection and recovers when it is back', async ({
     page,
   }) => {
     let hubDown = false
@@ -185,16 +186,14 @@ test.describe('pantalla de diagnóstico', () => {
     hubDown = true
     await connections[0]?.close()
     await wsDisconnected(page)
-    // Aguanta varios intentos fallidos seguidos sin perder el aviso.
+    // Survives several failed attempts in a row without losing the notice.
     await wsDisconnected(page)
 
     hubDown = false
     await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 10_000 })
   })
 
-  test('al ocultar y mostrar la página actualiza el resumen del último bloqueo', async ({
-    page,
-  }) => {
+  test('hiding and showing the page updates the last lock summary', async ({ page }) => {
     await clockWithoutTies(page)
     await page.goto('/diagnostics')
     await wsConnected(page)
@@ -204,16 +203,14 @@ test.describe('pantalla de diagnóstico', () => {
     await changeVisibility(page, true)
     await changeVisibility(page, false)
 
-    // Al volver espera hasta 3 s una respuesta del hub antes de dar la conexión por viva.
+    // On return it waits up to 3 s for a hub response before treating the connection as alive.
     await expect(lock).toContainText('sin cortes', { timeout: 10_000 })
     await expect(lock).not.toContainText('Aún no ha pasado')
-    // Con todo medido y sin cortes, el veredicto queda en verde.
+    // With everything measured and no drops, the verdict turns green.
     await expect(page.getByText('Listo para operar')).toBeVisible({ timeout: 15_000 })
   })
 
-  test('si la conexión se pierde mientras la pantalla está bloqueada lo indica', async ({
-    page,
-  }) => {
+  test('if the connection is lost while the screen is locked it says so', async ({ page }) => {
     const connections = await interceptWs(page)
     await clockWithoutTies(page)
     await page.goto('/diagnostics')
@@ -229,34 +226,32 @@ test.describe('pantalla de diagnóstico', () => {
     await expect(page.getByText('En segundo plano se pierde la conexión')).toBeVisible()
   })
 
-  test('si un intento de conexión queda colgado, lo abandona y vuelve a intentar', async ({
-    page,
-  }) => {
-    // El primer WebSocket nunca abre ni falla, como pasó en Android con la pantalla bloqueada.
+  test('if a connection attempt hangs, it abandons it and tries again', async ({ page }) => {
+    // The first WebSocket never opens or fails, as happened on Android with the screen locked.
     await page.addInitScript(`(() => {
       const Real = window.WebSocket
-      let creados = 0
-      function Colgado() {
-        const falso = new EventTarget()
-        falso.readyState = 0
-        falso.send = () => {}
-        falso.close = () => { falso.readyState = 3 }
-        return falso
+      let created = 0
+      function Hung() {
+        const fake = new EventTarget()
+        fake.readyState = 0
+        fake.send = () => {}
+        fake.close = () => { fake.readyState = 3 }
+        return fake
       }
-      window.WebSocket = function (url, protocolos) {
-        creados += 1
-        return creados === 1 ? Colgado() : new Real(url, protocolos)
+      window.WebSocket = function (url, protocols) {
+        created += 1
+        return created === 1 ? Hung() : new Real(url, protocols)
       }
       Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 })
     })()`)
 
     await page.goto('/diagnostics')
     await expect(row(page, CHANNEL)).toContainText('Conectando')
-    // Se abandona a los 4 s y el siguiente intento sale al segundo.
+    // It is abandoned at 4 s and the next attempt goes out after one second.
     await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 10_000 })
   })
 
-  test('al volver sin conexión reconecta de inmediato, sin esperar el reintento', async ({
+  test('on return without connection it reconnects immediately, without waiting for the retry', async ({
     page,
   }) => {
     let hubDown = false
@@ -273,28 +268,30 @@ test.describe('pantalla de diagnóstico', () => {
     await page.goto('/diagnostics')
     await wsConnected(page)
 
-    // Con la pantalla bloqueada se corta y los reintentos fallan: la espera entre ellos crece.
+    // With the screen locked it drops and retries fail: the wait between them grows.
     await changeVisibility(page, true)
     hubDown = true
     await connections[0]?.close({ code: 1006 })
     await page.waitForTimeout(7000)
 
-    // El hub vuelve justo cuando el usuario desbloquea: debe reconectar en menos de 1,5 s,
-    // aunque el reintento programado estuviera a varios segundos.
+    // The hub comes back right when the user unlocks: it must reconnect in under 1.5 s,
+    // even if the scheduled retry was several seconds away.
     hubDown = false
     await changeVisibility(page, false)
     await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 1500 })
     await expect(row(page, LOCK)).toContainText('volvió en', { timeout: 10_000 })
   })
 
-  test('al volver sin conexión no quedan dos sockets abiertos a la vez', async ({ page }) => {
+  test('on return without connection there are never two sockets open at once', async ({
+    page,
+  }) => {
     const hub = await controllableHub(page)
     await instrumentWs(page)
     await clockWithoutTies(page)
     await page.goto('/diagnostics')
     await wsConnected(page)
 
-    // Se corta con la pantalla bloqueada y los reintentos fallan: queda un reintento programado.
+    // It drops with the screen locked and retries fail: a retry stays scheduled.
     await changeVisibility(page, true)
     hub.down = true
     await hub.connections[0]?.close({ code: 1006 })
@@ -304,8 +301,8 @@ test.describe('pantalla de diagnóstico', () => {
     await changeVisibility(page, false)
     await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 3000 })
 
-    // El reintento viejo habría saltado como mucho a los 5 s (espera máxima entre intentos): si
-    // no se canceló al volver, abriría un segundo socket. Es una ventana de tiempo real a propósito.
+    // The old retry would have fired at most at 5 s (maximum wait between attempts): if
+    // it was not canceled on return, it would open a second socket. A real-time window on purpose.
     await page.waitForTimeout(6000)
     await wsConnected(page)
     const sockets = await readSockets(page)
@@ -313,7 +310,7 @@ test.describe('pantalla de diagnóstico', () => {
     expect(sockets.maxConcurrent).toBe(1)
   })
 
-  test('si al volver un intento sigue en CONNECTING, lo descarta y reconecta sin esperar', async ({
+  test('if on return an attempt is still CONNECTING, it discards it and reconnects without waiting', async ({
     page,
   }) => {
     const hub = await controllableHub(page)
@@ -322,17 +319,17 @@ test.describe('pantalla de diagnóstico', () => {
     await page.goto('/diagnostics')
     await wsConnected(page)
 
-    // Pantalla bloqueada: se corta y el reintento (al segundo) queda colgado en CONNECTING.
+    // Screen locked: it drops and the retry (after one second) hangs in CONNECTING.
     await changeVisibility(page, true)
     await hangNewSockets(page, true)
     await hub.connections[0]?.close({ code: 1006 })
     await expect.poll(async () => (await readSockets(page)).statuses).toEqual([3, 0])
 
-    // El hub está bien: el usuario vuelve cuando el intento lleva poco tiempo colgado.
+    // The hub is fine: the user returns when the attempt has been hanging only briefly.
     await hangNewSockets(page, false)
     await changeVisibility(page, false)
 
-    // Debe reconectar antes de que el límite de 4 s abandone el intento por su cuenta.
+    // It must reconnect before the 4 s limit abandons the attempt on its own.
     await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 3000 })
     const sockets = await readSockets(page)
     expect(sockets.statuses).toEqual([3, 3, 1])
@@ -341,7 +338,7 @@ test.describe('pantalla de diagnóstico', () => {
     await expect(row(page, LOCK)).toContainText('volvió en', { timeout: 10_000 })
   })
 
-  test('una conexión sana reabierta al volver no se descarta por no haber recibido mensajes aún', async ({
+  test('a healthy connection reopened on return is not discarded for not having received messages yet', async ({
     page,
   }) => {
     const hub = await controllableHub(page)
@@ -357,15 +354,15 @@ test.describe('pantalla de diagnóstico', () => {
     await changeVisibility(page, false)
     await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 3000 })
 
-    // La fila solo cambia tras la comprobación de 3 s al volver, que es cuando podría descartarla.
+    // The row only changes after the 3 s check on return, which is when it could discard it.
     await expect(row(page, LOCK)).toContainText('volvió en', { timeout: 10_000 })
     await wsConnected(page)
-    // El hub no manda nada nada más abrir (el primer latido sale a los 5 s): eso no es "mudo".
+    // The hub sends nothing right after opening (first heartbeat at 5 s): that is not "silent".
     expect(hub.connections).toHaveLength(2)
     await expect(value(page, 'Veces que se reconectó')).toHaveText('1', { timeout: 10_000 })
   })
 
-  test('ocultar y volver varias veces seguidas sin conexión no duplica sockets y termina conectado', async ({
+  test('hiding and returning several times in a row without connection does not duplicate sockets and ends connected', async ({
     page,
   }) => {
     const hub = await controllableHub(page)
@@ -377,7 +374,7 @@ test.describe('pantalla de diagnóstico', () => {
     await changeVisibility(page, true)
     hub.down = true
     await hub.connections[0]?.close({ code: 1006 })
-    // Tres vueltas rápidas con el hub todavía caído, y la última con el hub ya disponible.
+    // Three quick returns with the hub still down, and the last one with the hub available again.
     await changeVisibility(page, false)
     await changeVisibility(page, true)
     await changeVisibility(page, false)
@@ -386,7 +383,7 @@ test.describe('pantalla de diagnóstico', () => {
     await changeVisibility(page, false)
 
     await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 5000 })
-    // Un intento por vuelta como mucho, y los reintentos programados no deben sumar otro socket.
+    // At most one attempt per return, and scheduled retries must not add another socket.
     await page.waitForTimeout(6000)
     await wsConnected(page)
     const sockets = await readSockets(page)
@@ -397,12 +394,12 @@ test.describe('pantalla de diagnóstico', () => {
     await expect(lock).toContainText('se perdió la conexión', { timeout: 10_000 })
     await expect(lock).toContainText('volvió en')
     await expect(lock).not.toContainText('aún reconectando')
-    // Recuperó al instante: no debe salir el aviso de más de 3 s.
+    // It recovered instantly: the more-than-3-s notice must not appear.
     await expect(page.getByText('En segundo plano se pierde la conexión')).toBeVisible()
     await expect(page.getByText('tardó más de 3 s en reconectar')).toBeHidden()
   })
 
-  test('"aún reconectando" se muestra mientras el hub sigue caído y pasa a "volvió en" al volver', async ({
+  test('"aún reconectando" shows while the hub is still down and switches to "volvió en" when it is back', async ({
     page,
   }) => {
     const hub = await controllableHub(page)
@@ -415,7 +412,7 @@ test.describe('pantalla de diagnóstico', () => {
     await hub.connections[0]?.close({ code: 1006 })
     await changeVisibility(page, false)
 
-    // La comprobación al volver dura 3 s y el resumen se refresca cada 3 s.
+    // The check on return lasts 3 s and the summary refreshes every 3 s.
     const lock = row(page, LOCK)
     await expect(lock).toContainText('se perdió la conexión', { timeout: 10_000 })
     await expect(lock).toContainText('(aún reconectando)')
@@ -428,7 +425,9 @@ test.describe('pantalla de diagnóstico', () => {
     await expect(lock).not.toContainText('aún reconectando')
   })
 
-  test('si al volver tarda más de 3 s en reconectar, el veredicto lo avisa', async ({ page }) => {
+  test('if on return it takes more than 3 s to reconnect, the verdict warns about it', async ({
+    page,
+  }) => {
     const hub = await controllableHub(page)
     await clockWithoutTies(page)
     await page.goto('/diagnostics')
@@ -439,18 +438,18 @@ test.describe('pantalla de diagnóstico', () => {
     await hub.connections[0]?.close({ code: 1006 })
     await changeVisibility(page, false)
 
-    // "aún reconectando" solo aparece pasados los 3 s de la comprobación: el hub vuelve después.
+    // "aún reconectando" only appears after the 3 s check: the hub comes back afterward.
     const lock = row(page, LOCK)
     await expect(lock).toContainText('(aún reconectando)', { timeout: 10_000 })
     hub.down = false
     await wsConnected(page)
 
-    // 3 s o más (el texto redondea al segundo): nunca "menos de 1 s".
+    // 3 s or more (the text rounds to the second): never "menos de 1 s".
     await expect(lock).toContainText(/\(volvió en (?:[3-9]|\d{2,}) s\)/, { timeout: 10_000 })
     await expect(page.getByText('Al volver tardó más de 3 s en reconectar.')).toBeVisible()
   })
 
-  test('si al volver el canal está abierto pero mudo, lo reemplaza sin esperar al vigilante', async ({
+  test('if on return the channel is open but silent, it replaces it without waiting for the watchdog', async ({
     page,
   }) => {
     let silence = false
@@ -458,7 +457,7 @@ test.describe('pantalla de diagnóstico', () => {
     await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
       const server = ws.connectToServer()
       connections.push(ws)
-      // Con `silenciar` la primera conexión deja de recibir del hub, pero sigue abierta.
+      // With `silence` the first connection stops receiving from the hub, but stays open.
       const isFirst = connections.length === 1
       server.onMessage((message) => {
         if (!(isFirst && silence)) ws.send(message)
@@ -471,14 +470,14 @@ test.describe('pantalla de diagnóstico', () => {
     await changeVisibility(page, true)
     silence = true
     await changeVisibility(page, false)
-    // La comprobación espera 3 s; el vigilante habría tardado 15 s. La reconexión es inmediata,
-    // así que "Sin respuesta" dura milisegundos: se comprueba por la segunda conexión en el hub.
+    // The check waits 3 s; the watchdog would have taken 15 s. The reconnection is immediate,
+    // so "Sin respuesta" lasts milliseconds: it is checked via the second connection on the hub.
     await expect.poll(() => connections.length, { timeout: 6000 }).toBe(2)
     await wsConnected(page)
     await expect(row(page, LOCK)).toContainText('volvió en', { timeout: 10_000 })
   })
 
-  test('si el hub deja de responder sin cerrar el canal, lo detecta y reconecta', async ({
+  test('if the hub stops responding without closing the channel, it detects it and reconnects', async ({
     page,
   }) => {
     let silence = true
@@ -486,7 +485,7 @@ test.describe('pantalla de diagnóstico', () => {
     await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
       const server = ws.connectToServer()
       connections.push(ws)
-      // La primera conexión queda "muerta": el hub no entrega nada pero el canal sigue abierto.
+      // The first connection is "dead": the hub delivers nothing but the channel stays open.
       if (silence) {
         silence = false
         server.onMessage(() => {})
@@ -502,7 +501,7 @@ test.describe('pantalla de diagnóstico', () => {
     expect(connections).toHaveLength(2)
   })
 
-  test('el nombre del equipo se conserva al recargar', async ({ page }) => {
+  test('the device name is kept after reloading', async ({ page }) => {
     await page.goto('/diagnostics')
     const field = page.getByLabel('Nombre de este equipo')
     await expect(field).toHaveValue('')
@@ -513,10 +512,10 @@ test.describe('pantalla de diagnóstico', () => {
     await expect(page.getByLabel('Nombre de este equipo')).toHaveValue('Android mesero 1')
   })
 
-  test('"Enviar resultados al hub" manda el informe y muestra la confirmación', async ({
+  test('"Enviar resultados al hub" sends the report and shows the confirmation', async ({
     page,
   }) => {
-    // El envío se atiende en la prueba para no escribir en la carpeta de datos del hub.
+    // The submission is handled in the test so nothing is written to the hub's data folder.
     let body: Record<string, unknown> | undefined
     await page.route('**/api/diagnostics', async (route) => {
       if (route.request().method() !== 'POST') return route.fallback()
@@ -540,7 +539,7 @@ test.describe('pantalla de diagnóstico', () => {
     expect(types).toContain('load')
   })
 
-  test('si el hub rechaza el envío (500) muestra el mensaje de error', async ({ page }) => {
+  test('if the hub rejects the submission (500) it shows the error message', async ({ page }) => {
     await page.route('**/api/diagnostics', (route) =>
       route.request().method() === 'POST'
         ? route.fulfill({ status: 500, json: { error: 'falló' } })
@@ -554,7 +553,7 @@ test.describe('pantalla de diagnóstico', () => {
     await expect(page.getByText('✓ Resultados enviados')).toBeHidden()
   })
 
-  test('si el envío falla por red muestra el error y permite reintentar con éxito', async ({
+  test('if the submission fails on the network it shows the error and allows a successful retry', async ({
     page,
   }) => {
     await page.route('**/api/diagnostics', (route) =>
@@ -564,7 +563,7 @@ test.describe('pantalla de diagnóstico', () => {
     await enterName(page)
     await submission(page).click()
     await expect(page.getByRole('status')).toHaveText(ERROR_MESSAGE)
-    // El botón vuelve a quedar disponible.
+    // The button becomes available again.
     await expect(submission(page)).toBeEnabled()
 
     await page.unroute('**/api/diagnostics')
@@ -577,7 +576,7 @@ test.describe('pantalla de diagnóstico', () => {
     await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
   })
 
-  test('sin nombre no envía y pide escribirlo', async ({ page }) => {
+  test('without a name it does not send and asks for one', async ({ page }) => {
     let sentList = 0
     await page.route('**/api/diagnostics', (route) => {
       if (route.request().method() === 'POST') sentList += 1
@@ -593,7 +592,7 @@ test.describe('pantalla de diagnóstico', () => {
     expect(sentList).toBe(0)
   })
 
-  test('"Borrar registro" pide confirmación y luego limpia el resumen', async ({ page }) => {
+  test('"Borrar registro" asks for confirmation and then clears the summary', async ({ page }) => {
     await page.route('**/api/diagnostics', (route) =>
       route.request().method() === 'POST'
         ? route.fulfill({ json: { saved: true } })
@@ -606,7 +605,7 @@ test.describe('pantalla de diagnóstico', () => {
     const reloads = value(page, 'El navegador recargó la página solo')
     await expect(reloads).toContainText('0 veces en 1 carga')
 
-    // Cancelar no borra nada.
+    // Canceling deletes nothing.
     await page.getByRole('button', { name: 'Borrar registro y empezar de nuevo' }).click()
     await page.getByRole('button', { name: 'Cancelar' }).click()
     await expect(page.getByText('✓ Resultados enviados')).toBeVisible()
@@ -618,12 +617,12 @@ test.describe('pantalla de diagnóstico', () => {
   })
 })
 
-// Usa el hub real, que en las pruebas guarda en su propia carpeta (.e2e/datos). Corre en un
-// solo proyecto para no depender del orden con que escriben los dos.
-test('el hub guarda el informe enviado desde la pantalla en diagnosticos.jsonl', async ({
+// Uses the real hub, which in tests saves to its own folder (.e2e/data). Runs in a
+// single project so it does not depend on the order in which both write.
+test('the hub saves the report sent from the screen in diagnostics.jsonl', async ({
   page,
 }, testInfo) => {
-  test.skip(testInfo.project.name !== 'register', 'Una sola ejecución basta')
+  test.skip(testInfo.project.name !== 'register', 'A single run is enough')
 
   const name = `e2e-diagnostics-${Date.now()}`
   await page.goto('/diagnostics')
