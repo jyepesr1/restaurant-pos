@@ -228,7 +228,12 @@ export const CHANNELS = {
 } as const
 
 /** "la entrada", "el fuerte": for the notices. */
-export const courseName = (c: Course) => (c === 'entry' ? 'la entrada' : `el ${c}`)
+const COURSE_NAMES: Record<Course, string> = {
+  entry: 'la entrada',
+  main: 'el fuerte',
+  dessert: 'el postre',
+}
+export const courseName = (c: Course) => COURSE_NAMES[c]
 
 /**
  * Void and cancellation reasons (task 1.5, owner's decision). Another one can always be

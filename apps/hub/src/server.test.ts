@@ -29,9 +29,9 @@ describe('hub server', () => {
   })
 
   it('serves the app and returns index.html on app routes', async () => {
-    const dirApp = mkdtempSync(join(tmpdir(), 'pos-app-'))
-    writeFileSync(join(dirApp, 'index.html'), '<title>POS</title>')
-    app = createAppServer({ dirApp })
+    const appDir = mkdtempSync(join(tmpdir(), 'pos-app-'))
+    writeFileSync(join(appDir, 'index.html'), '<title>POS</title>')
+    app = createAppServer({ appDir })
 
     const root = await app.inject({ method: 'GET', url: '/' })
     const appRoute = await app.inject({ method: 'GET', url: '/tables/5' })
@@ -42,9 +42,9 @@ describe('hub server', () => {
   })
 
   it('answers 404 on API routes that do not exist', async () => {
-    const dirApp = mkdtempSync(join(tmpdir(), 'pos-app-'))
-    writeFileSync(join(dirApp, 'index.html'), '<title>POS</title>')
-    app = createAppServer({ dirApp })
+    const appDir = mkdtempSync(join(tmpdir(), 'pos-app-'))
+    writeFileSync(join(appDir, 'index.html'), '<title>POS</title>')
+    app = createAppServer({ appDir })
 
     const res = await app.inject({ method: 'GET', url: '/api/does-not-exist' })
 
@@ -55,13 +55,13 @@ describe('hub server', () => {
     /** Test folder: `<root>/app` is the app and `<root>/secreto.txt` sits outside it. */
     function createDirs() {
       const root = mkdtempSync(join(tmpdir(), 'pos-estaticos-'))
-      const dirApp = join(root, 'app')
-      mkdirSync(join(dirApp, 'assets'), { recursive: true })
-      writeFileSync(join(dirApp, 'index.html'), '<title>POS</title>')
-      writeFileSync(join(dirApp, 'assets', 'index-abc.js'), 'console.log("pos")')
-      writeFileSync(join(dirApp, 'assets', 'index-abc.css'), 'body{margin:0}')
+      const appDir = join(root, 'app')
+      mkdirSync(join(appDir, 'assets'), { recursive: true })
+      writeFileSync(join(appDir, 'index.html'), '<title>POS</title>')
+      writeFileSync(join(appDir, 'assets', 'index-abc.js'), 'console.log("pos")')
+      writeFileSync(join(appDir, 'assets', 'index-abc.css'), 'body{margin:0}')
       writeFileSync(join(root, 'secreto.txt'), 'CONTENIDO-SECRETO')
-      return dirApp
+      return appDir
     }
 
     /** A real HTTP request with the path as is, without the client normalizing it. */
@@ -82,7 +82,7 @@ describe('hub server', () => {
     }
 
     it('serves JS and CSS assets with their content type', async () => {
-      app = createAppServer({ dirApp: createDirs() })
+      app = createAppServer({ appDir: createDirs() })
 
       const js = await app.inject({ method: 'GET', url: '/assets/index-abc.js' })
       const css = await app.inject({ method: 'GET', url: '/assets/index-abc.css' })
@@ -95,7 +95,7 @@ describe('hub server', () => {
     })
 
     it('serves index.html as HTML', async () => {
-      app = createAppServer({ dirApp: createDirs() })
+      app = createAppServer({ appDir: createDirs() })
 
       const res = await app.inject({ method: 'GET', url: '/' })
 
@@ -105,7 +105,7 @@ describe('hub server', () => {
     it.each(['/assets/does-not-exist.js', '/favicon.ico'])(
       'a file that does not exist answers 404 and not HTML: %s',
       async (url) => {
-        app = createAppServer({ dirApp: createDirs() })
+        app = createAppServer({ appDir: createDirs() })
 
         const res = await app.inject({ method: 'GET', url })
 
@@ -116,7 +116,7 @@ describe('hub server', () => {
     )
 
     it.each(['/api', '/api?x=1'])('%s answers 404 JSON and not the app', async (url) => {
-      app = createAppServer({ dirApp: createDirs() })
+      app = createAppServer({ appDir: createDirs() })
 
       const res = await app.inject({ method: 'GET', url })
 
@@ -125,7 +125,7 @@ describe('hub server', () => {
     })
 
     it('HEAD on an app route answers 200', async () => {
-      app = createAppServer({ dirApp: createDirs() })
+      app = createAppServer({ appDir: createDirs() })
 
       const res = await app.inject({ method: 'HEAD', url: '/tables/5' })
 
@@ -133,7 +133,7 @@ describe('hub server', () => {
     })
 
     it('answers 404 to non-GET methods outside the API', async () => {
-      app = createAppServer({ dirApp: createDirs() })
+      app = createAppServer({ appDir: createDirs() })
 
       const res = await app.inject({ method: 'POST', url: '/tables/5' })
 
@@ -149,7 +149,7 @@ describe('hub server', () => {
       '/..%5csecreto.txt',
       '/%252e%252e/secreto.txt',
     ])('does not expose files outside the app folder: %s', async (route) => {
-      app = createAppServer({ dirApp: createDirs() })
+      app = createAppServer({ appDir: createDirs() })
 
       const res = await requestRaw(app, route)
 

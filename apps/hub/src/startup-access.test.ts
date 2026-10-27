@@ -99,7 +99,7 @@ describe('access with the real hub process', () => {
   }
   const environment = async () => ({
     DATA_DIR: dataDir(),
-    DIR_APP: join(folder, 'sin-app'),
+    APP_DIR: join(folder, 'no-app'),
     PORT: String(await freePort()),
   })
   const post = (h: StartedHub, route: string, body: object, token?: string) =>

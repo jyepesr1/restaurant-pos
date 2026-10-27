@@ -244,7 +244,7 @@ describe('seed as a real process, with other cases', { timeout: 90_000 }, () => 
       env: {
         ...process.env,
         DATA_DIR: folder,
-        DIR_APP: join(folder, 'sin-app'),
+        APP_DIR: join(folder, 'no-app'),
         PORT: String(port),
       },
       stdio: ['ignore', 'pipe', 'pipe'],

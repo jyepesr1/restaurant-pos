@@ -159,7 +159,7 @@ describe('occupied table through the real hub path (main.ts)', () => {
   async function spinUp(dataDir: string, port: number) {
     hub = await start({
       DATA_DIR: dataDir,
-      DIR_APP: join(folder, 'sin-app'),
+      APP_DIR: join(folder, 'no-app'),
       PORT: String(port),
     })
   }

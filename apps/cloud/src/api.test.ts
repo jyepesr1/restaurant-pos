@@ -339,7 +339,7 @@ describe('code review (1.10)', () => {
     ])
     const [c] = orderEvents(10)
     if (!c) throw new Error('no event')
-    const lone = { ...c, data: { ...c.data, [`clave\uD800`]: 1 } }
+    const lone = { ...c, data: { ...c.data, 'key\uD800': 1 } }
     const r2 = await (await request('POST', '/v1/events', { events: [lone] }, credential)).json()
     expect(r2.results[0]).toMatchObject({ status: 'invalid', reason: 'invalid_character' })
   })

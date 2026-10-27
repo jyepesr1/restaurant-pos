@@ -19,6 +19,9 @@ import { tableBalance, tableTotal } from './totals'
 
 const BILLS = [20_000, 50_000, 100_000]
 
+/** How the method reads in the confirmation question. */
+const METHOD_NAMES: Record<Method, string> = { cash: 'efectivo', card: 'tarjeta' }
+
 export function Checkout() {
   const number = useRouteTable(12)
   const { params } = useRoute()
@@ -142,7 +145,7 @@ export function Checkout() {
               {table.payments.map((p, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: payments are never reordered
                 <li key={i} className="flex justify-between gap-2">
-                  <span className="capitalize">{p.method}</span>
+                  <span className="capitalize">{METHOD_NAMES[p.method]}</span>
                   <span className="text-right">
                     {pesos(p.amount)}
                     {p.tip > 0 && ` + propina ${pesos(p.tip)}`}
@@ -273,7 +276,7 @@ export function Checkout() {
                 aria-labelledby="confirm-payment"
               >
                 <p id="confirm-payment" className="mb-3 text-lg font-semibold">
-                  {`¿Registrar ${pesos(toCharge)} en ${method}?`}
+                  {`¿Registrar ${pesos(toCharge)} en ${METHOD_NAMES[method]}?`}
                 </p>
                 <div className="flex gap-2">
                   <Button onClick={() => setConfirming(false)}>Cancelar</Button>

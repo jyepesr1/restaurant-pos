@@ -81,7 +81,7 @@ describe('hub startup (real process)', () => {
 
   const environment = async (dataDir: string) => ({
     DATA_DIR: dataDir,
-    DIR_APP: join(folder, 'sin-app'),
+    APP_DIR: join(folder, 'no-app'),
     PORT: String(await freePort()),
   })
 

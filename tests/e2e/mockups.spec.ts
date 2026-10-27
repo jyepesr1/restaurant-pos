@@ -6,7 +6,7 @@ import { expect, type Locator, type Page, test } from '@playwright/test'
 // ejemplo, y para conservarlo entre pantallas se navega con toques, nunca con `page.goto`.
 // Los avisos y los tiempos dependen del reloj: las pruebas que los miran lo congelan.
 
-const isRegister = (proyecto: string) => proyecto === 'register'
+const isRegister = (projectName: string) => projectName === 'register'
 
 // ---------------------------------------------------------------------------------------------
 // Utilidades
@@ -17,40 +17,40 @@ const isRegister = (proyecto: string) => proyecto === 'register'
  * (los avisos y los minutos de las mesas dependen de él). Sigue corriendo en tiempo real, así que
  * las pruebas que lo usan no deben tardar más de 5 s entre pasos que miren un aviso.
  */
-async function congelarReloj(page: Page) {
+async function freezeClock(page: Page) {
   await page.clock.install({ time: new Date('2026-10-24T12:00:00') })
 }
 
 /** Navega dentro de la app sin recargar (conserva el estado en memoria de los bocetos). */
-const irA = (page: Page, route: string) =>
+const goTo = (page: Page, route: string) =>
   page.evaluate((r) => {
     history.pushState(null, '', r)
     window.dispatchEvent(new Event('pos-navigate'))
   }, route)
 
 /** Elementos tocables visibles que miden menos de 48×48 px (la casilla cuenta por su etiqueta). */
-async function medidasPequenas(page: Page): Promise<string[]> {
+async function smallSizes(page: Page): Promise<string[]> {
   return page.evaluate(() => {
-    const MINIMO = 48
+    const MINIMUM = 48
     const description = (el: Element) =>
       `${el.tagName.toLowerCase()}[${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 40)}]`
-    const fallas: string[] = []
+    const issues: string[] = []
     const candidates = document.querySelectorAll(
       'button, a[href], input, select, textarea, summary, [role="button"], [role="link"], [role="checkbox"]',
     )
     for (const el of candidates) {
-      let medido: Element = el
+      let measured: Element = el
       if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio'))
-        medido = el.closest('label') ?? el
-      const style = getComputedStyle(medido)
+        measured = el.closest('label') ?? el
+      const style = getComputedStyle(measured)
       if (style.display === 'none' || style.visibility === 'hidden') continue
       if (el.closest('[hidden], [aria-hidden="true"]')) continue
-      const r = medido.getBoundingClientRect()
+      const r = measured.getBoundingClientRect()
       if (r.width === 0 && r.height === 0) continue
-      if (r.width < MINIMO - 0.5 || r.height < MINIMO - 0.5)
-        fallas.push(`${description(el)} mide ${Math.round(r.width)}×${Math.round(r.height)}`)
+      if (r.width < MINIMUM - 0.5 || r.height < MINIMUM - 0.5)
+        issues.push(`${description(el)} mide ${Math.round(r.width)}×${Math.round(r.height)}`)
     }
-    return fallas
+    return issues
   })
 }
 
@@ -58,7 +58,7 @@ async function medidasPequenas(page: Page): Promise<string[]> {
  * Texto visible con contraste menor que AA (4,5:1; 3:1 si es grande), con el fondo y la opacidad
  * reales que pinta el navegador. Ignora lo deshabilitado (WCAG lo exime).
  */
-async function contrasteInsuficiente(page: Page): Promise<string[]> {
+async function insufficientContrast(page: Page): Promise<string[]> {
   // Las transiciones (p. ej. la opacidad de un botón que pasa de deshabilitado a habilitado) deben
   // terminar: a la mitad de una, los colores medidos no son los finales.
   await page.evaluate(() =>
@@ -74,7 +74,7 @@ async function contrasteInsuficiente(page: Page): Promise<string[]> {
     const canvas = document.createElement('canvas')
     canvas.width = canvas.height = 1
     const ctx = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D
-    const aRgba = (css: string): Rgba => {
+    const toRgba = (css: string): Rgba => {
       ctx.clearRect(0, 0, 1, 1)
       ctx.fillStyle = '#000'
       ctx.fillStyle = css
@@ -95,18 +95,18 @@ async function contrasteInsuficiente(page: Page): Promise<string[]> {
       }
       return 0.2126 * k(c[0]) + 0.7152 * k(c[1]) + 0.0722 * k(c[2])
     }
-    const fondoDe = (el: Element): Rgba => {
-      const capas: Rgba[] = []
+    const backgroundOf = (el: Element): Rgba => {
+      const layers: Rgba[] = []
       for (let e: Element | null = el; e; e = e.parentElement) {
-        const c = aRgba(getComputedStyle(e).backgroundColor)
-        if (c[3] > 0) capas.push(c)
+        const c = toRgba(getComputedStyle(e).backgroundColor)
+        if (c[3] > 0) layers.push(c)
         if (c[3] === 1) break
       }
       let accumulated: Rgba = [255, 255, 255, 1]
-      for (const capa of capas.reverse()) accumulated = envelope(capa, accumulated)
+      for (const layer of layers.reverse()) accumulated = envelope(layer, accumulated)
       return accumulated
     }
-    const fallas: string[] = []
+    const issues: string[] = []
     const seenSet = new Set<string>()
     for (const el of document.body.querySelectorAll('*')) {
       if (el instanceof SVGElement) continue
@@ -119,52 +119,52 @@ async function contrasteInsuficiente(page: Page): Promise<string[]> {
       const r = el.getBoundingClientRect()
       if (r.width <= 1 || r.height <= 1) continue // sr-only
       if (el.closest('button:disabled, fieldset:disabled, [aria-disabled="true"]')) continue
-      let opacidad = 1
+      let opacity = 1
       for (let e: Element | null = el; e; e = e.parentElement)
-        opacidad *= Number(getComputedStyle(e).opacity)
-      const background = fondoDe(el)
-      const text = aRgba(style.color)
-      text[3] *= opacidad
+        opacity *= Number(getComputedStyle(e).opacity)
+      const background = backgroundOf(el)
+      const text = toRgba(style.color)
+      text[3] *= opacity
       const seen = envelope(text, background)
       const [a, b] = [lum(seen), lum(background)].sort((x, y) => y - x) as [number, number]
-      const razon = (a + 0.05) / (b + 0.05)
+      const ratio = (a + 0.05) / (b + 0.05)
       const px = Number.parseFloat(style.fontSize)
       const large = px >= 24 || (px >= 18.66 && Number(style.fontWeight) >= 700)
-      if (razon < (large ? 3 : 4.5)) {
+      if (ratio < (large ? 3 : 4.5)) {
         const name = (el.textContent ?? '').trim().slice(0, 30)
         const key = `${name}|${style.color}|${style.backgroundColor}`
         if (seenSet.has(key)) continue
         seenSet.add(key)
-        fallas.push(`«${name}» contraste ${razon.toFixed(2)} (${large ? 'grande' : 'normal'})`)
+        issues.push(`«${name}» contraste ${ratio.toFixed(2)} (${large ? 'grande' : 'normal'})`)
       }
     }
-    return fallas
+    return issues
   })
 }
 
-const colorDeFondo = (page: Page) =>
+const getBackgroundColor = (page: Page) =>
   page.evaluate(() => getComputedStyle(document.body).backgroundColor)
-const colorDeTexto = (page: Page) => page.evaluate(() => getComputedStyle(document.body).color)
-const esOscuro = (page: Page) =>
+const getTextColor = (page: Page) => page.evaluate(() => getComputedStyle(document.body).color)
+const isDark = (page: Page) =>
   page.evaluate(() => document.documentElement.classList.contains('dark'))
 
 /** Dinero como lo escribe la interfaz: 257500 → $257.500. Independiente del código de producción. */
-const enPesos = (n: number) =>
+const inPesos = (n: number) =>
   `${n < 0 ? '-' : ''}$${Math.abs(n)
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`
 
-const numeroDe = (text: string) => Number(text.replace(/\D/g, ''))
+const numberOf = (text: string) => Number(text.replace(/\D/g, ''))
 
 /** Redondeo a la mitad hacia arriba con enteros exactos (DINERO.md, principio 3). */
-function propinaEsperada(balance: number, tarifaBp = 800, tasaBp = 1000): number {
-  const a = BigInt(balance) * 10000n * BigInt(tasaBp)
-  const b = BigInt(10000 + tarifaBp) * 10000n
+function expectedTip(balance: number, rateBp = 800, tipRateBp = 1000): number {
+  const a = BigInt(balance) * 10000n * BigInt(tipRateBp)
+  const b = BigInt(10000 + rateBp) * 10000n
   return Number((2n * a + b) / (2n * b))
 }
 
 /** Reparto por mayor residuo (DINERO.md, principio 4), con el desempate por orden. */
-function repartoPorResiduo(total: number, pesos: number[]): number[] {
+function largestRemainderAllocation(total: number, pesos: number[]): number[] {
   const sum = pesos.reduce((a, b) => a + b, 0)
   const base = pesos.map((p) => Math.floor((total * p) / sum))
   const rest = pesos
@@ -180,16 +180,16 @@ function repartoPorResiduo(total: number, pesos: number[]): number[] {
 }
 
 /** Desde el plano: la mesa por su número (el nombre accesible empieza con «Mesa N:»). */
-const mesaEnPlano = (page: Page, number: number) =>
+const tableOnFloorPlan = (page: Page, number: number) =>
   page.getByRole('button', { name: new RegExp(`^Mesa ${number}: `) })
 
-const mesaEnLista = (page: Page, number: number) =>
+const tableInList = (page: Page, number: number) =>
   page
     .locator('section[aria-label="Mesas"] ul > li')
     .filter({ hasText: new RegExp(`^${number}(?!\\d)`) })
     .getByRole('button')
 
-const buscarEnCarta = (page: Page) => page.getByRole('searchbox', { name: 'Buscar en la carta' })
+const searchMenu = (page: Page) => page.getByRole('searchbox', { name: 'Buscar en la carta' })
 /** Una tarjeta de producto de la carta (su nombre accesible también lleva el precio y la cantidad). */
 const product = (page: Page, name: string) =>
   page.getByRole('region', { name: 'Carta' }).getByRole('button', { name: name }).first()
@@ -204,14 +204,14 @@ const undo = (page: Page, text: string | RegExp) =>
   alert(page, text).getByRole('button', { name: 'Deshacer' })
 
 /** El ticket del pedido: en la caja es la columna fija; en el celular, el panel «Pedido». */
-async function abrirTicket(page: Page, register: boolean): Promise<Locator> {
+async function openTicket(page: Page, register: boolean): Promise<Locator> {
   if (register) return page.locator('aside')
   const panel = page.getByRole('dialog', { name: /^Pedido · Mesa/ })
   if (!(await panel.isVisible())) await page.getByRole('button', { name: /^Pedido \(/ }).click()
   await expect(panel).toBeVisible()
   return panel
 }
-async function cerrarTicket(page: Page, register: boolean) {
+async function closeTicket(page: Page, register: boolean) {
   if (register) return
   const panel = page.getByRole('dialog', { name: /^Pedido · Mesa/ })
   if (await panel.isVisible()) {
@@ -219,7 +219,7 @@ async function cerrarTicket(page: Page, register: boolean) {
     await expect(panel).toBeHidden()
   }
 }
-const nombresDelTicket = (ticket: Locator) =>
+const ticketNames = (ticket: Locator) =>
   ticket
     .locator('ul > li button span.flex-1 > span.font-semibold')
     .evaluateAll((els) => els.map((e) => e.textContent ?? ''))
@@ -247,29 +247,29 @@ test.describe('tamaño táctil de 48×48 px', () => {
     test(`${name}: todo botón, enlace y campo mide al menos 48×48`, async ({ page }) => {
       await page.goto(route)
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-      expect(await medidasPequenas(page)).toEqual([])
+      expect(await smallSizes(page)).toEqual([])
     })
   }
 
   test('inicio de la app (entrar): todo mide al menos 48×48', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'Escribe tu PIN' })).toBeVisible()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
   })
 
   test('índice con las simulaciones elegidas', async ({ page }) => {
     await page.goto('/mockups')
     await page.getByRole('button', { name: 'Sin conexión' }).click()
     await page.getByRole('button', { name: 'Impresora de barra caída' }).click()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
   })
 
   test('plano en vista de lista y con el aviso Deshacer visible', async ({ page }) => {
     await page.goto('/mockups/floor-plan')
     await page.getByRole('button', { name: 'Lista' }).click()
-    await mesaEnLista(page, 18).click()
+    await tableInList(page, 18).click()
     await expect(undo(page, 'Mesa 18 lista para usar')).toBeVisible()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
   })
 
   test('pedido con el panel de opciones, el de un ítem y el de anulación abiertos', async ({
@@ -277,45 +277,45 @@ test.describe('tamaño táctil de 48×48 px', () => {
   }, info) => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=2')
-    await buscarEnCarta(page).fill('tagliata')
+    await searchMenu(page).fill('tagliata')
     await product(page, 'Tagliata di Manzo').click()
     await expect(page.getByRole('dialog', { name: 'Tagliata di Manzo' })).toBeVisible()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
     await page.keyboard.press('Escape')
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     await ticket.getByRole('button', { name: /Aperol Spritz/ }).click()
     await expect(page.getByRole('dialog', { name: 'Aperol Spritz' })).toBeVisible()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
     await page.keyboard.press('Escape')
-    await cerrarTicket(page, register)
+    await closeTicket(page, register)
 
     await page.goto('/mockups/order?table=7')
-    const ticket7 = await abrirTicket(page, register)
+    const ticket7 = await openTicket(page, register)
     await ticket7.getByRole('button', { name: /Spritz Burguer/ }).click()
     await expect(page.getByRole('dialog', { name: 'Anular Spritz Burguer' })).toBeVisible()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
   })
 
   test('precuenta dividida en partes iguales y por ítems', async ({ page }) => {
     await page.goto('/mockups/pre-bill?table=12')
     await page.getByRole('button', { name: 'Partes iguales' }).click()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
     await page.getByRole('button', { name: 'Por ítems' }).click()
     await expect(page.getByRole('group', { name: 'Quién paga Quattro Formaggi' })).toBeVisible()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
   })
 
   test('cobro en tarjeta, con la confirmación y con la mesa pagada', async ({ page }) => {
     await page.goto('/mockups/checkout?table=12')
     await page.getByRole('button', { name: /^Tarjeta/ }).click()
     await page.getByLabel('Número de aprobación').fill('123456')
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
     await page.getByRole('button', { name: /^Cobrar/ }).click()
     await expect(page.getByRole('alertdialog')).toBeVisible()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
     await page.getByRole('button', { name: 'Confirmar' }).click()
     await expect(page.getByRole('button', { name: 'Volver al salón' })).toBeVisible()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
   })
 
   test('KDS con una comanda marcada y el aviso de despacho', async ({ page }) => {
@@ -324,14 +324,14 @@ test.describe('tamaño táctil de 48×48 px', () => {
     await card.getByRole('button', { name: /Pinsa/ }).click()
     await card.getByRole('button', { name: 'Todo listo' }).click()
     await expect(undo(page, 'Mesa 21 despachada')).toBeVisible()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
   })
 
   test('componentes con el panel lateral abierto', async ({ page }) => {
     await page.goto('/mockups/components')
     await page.getByRole('button', { name: 'Abrir panel lateral' }).click()
     await expect(page.getByRole('dialog', { name: 'Panel lateral' })).toBeVisible()
-    expect(await medidasPequenas(page)).toEqual([])
+    expect(await smallSizes(page)).toEqual([])
   })
 })
 
@@ -348,8 +348,8 @@ test.describe('contraste AA en claro y oscuro', () => {
         await page.emulateMedia({ colorScheme: schema })
         await page.goto(route)
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-        expect(await esOscuro(page)).toBe(schema === 'dark')
-        expect(await contrasteInsuficiente(page)).toEqual([])
+        expect(await isDark(page)).toBe(schema === 'dark')
+        expect(await insufficientContrast(page)).toEqual([])
       })
     }
   }
@@ -362,23 +362,23 @@ test.describe('contraste AA en claro y oscuro', () => {
       await page.goto('/mockups/checkout?table=12')
       await page.getByRole('button', { name: '100 mil' }).click()
       await expect(page.getByText('Faltan $181.300')).toBeVisible()
-      expect(await contrasteInsuficiente(page)).toEqual([])
+      expect(await insufficientContrast(page)).toEqual([])
       await page.getByLabel('El cliente entrega').fill('300000')
       await expect(page.getByText('Cambio $18.700')).toBeVisible()
-      expect(await contrasteInsuficiente(page)).toEqual([])
+      expect(await insufficientContrast(page)).toEqual([])
       await page.keyboard.press('Enter')
       await expect(page.getByRole('alertdialog')).toBeVisible()
-      expect(await contrasteInsuficiente(page)).toEqual([])
+      expect(await insufficientContrast(page)).toEqual([])
 
-      await irA(page, '/mockups/pre-bill?table=12')
+      await goTo(page, '/mockups/pre-bill?table=12')
       await page.getByRole('button', { name: 'Por ítems' }).click()
-      expect(await contrasteInsuficiente(page)).toEqual([])
+      expect(await insufficientContrast(page)).toEqual([])
       await page.getByRole('button', { name: 'Partes iguales' }).click()
-      expect(await contrasteInsuficiente(page)).toEqual([])
+      expect(await insufficientContrast(page)).toEqual([])
 
-      await irA(page, '/mockups/kds')
+      await goTo(page, '/mockups/kds')
       await ticketEl(page, 21, 'cocina').getByRole('button', { name: /Pinsa/ }).click()
-      expect(await contrasteInsuficiente(page)).toEqual([])
+      expect(await insufficientContrast(page)).toEqual([])
     })
   }
 
@@ -388,7 +388,7 @@ test.describe('contraste AA en claro y oscuro', () => {
     await page.getByRole('button', { name: 'Sin conexión' }).click()
     await page.getByRole('button', { name: 'Impresora de barra caída' }).click()
     await expect(page.getByText('3 sin confirmar')).toBeVisible()
-    expect(await contrasteInsuficiente(page)).toEqual([])
+    expect(await insufficientContrast(page)).toEqual([])
   })
 
   test('pedido con producto en el pedido, panel y aviso, en claro y oscuro', async ({ page }) => {
@@ -397,11 +397,11 @@ test.describe('contraste AA en claro y oscuro', () => {
       await page.goto('/mockups/order?table=2')
       await product(page, 'Pinsa').click()
       await expect(alert(page, 'Agregaste Pinsa')).toBeVisible()
-      expect(await contrasteInsuficiente(page)).toEqual([])
-      await buscarEnCarta(page).fill('tagliata')
+      expect(await insufficientContrast(page)).toEqual([])
+      await searchMenu(page).fill('tagliata')
       await product(page, 'Tagliata di Manzo').click()
       await expect(page.getByRole('dialog', { name: 'Tagliata di Manzo' })).toBeVisible()
-      expect(await contrasteInsuficiente(page)).toEqual([])
+      expect(await insufficientContrast(page)).toEqual([])
     }
   })
 })
@@ -417,21 +417,21 @@ test.describe('modo oscuro', () => {
 
   test('cambia los colores y se mantiene al recargar', async ({ page }) => {
     await page.goto('/mockups/components')
-    expect(await esOscuro(page)).toBe(false)
+    expect(await isDark(page)).toBe(false)
     await expect(button(page)).toHaveAttribute('aria-pressed', 'false')
-    const fondoClaro = await colorDeFondo(page)
-    const textoClaro = await colorDeTexto(page)
+    const lightBackground = await getBackgroundColor(page)
+    const lightText = await getTextColor(page)
 
     await button(page).click()
-    expect(await esOscuro(page)).toBe(true)
+    expect(await isDark(page)).toBe(true)
     await expect(button(page)).toHaveAttribute('aria-pressed', 'true')
-    expect(await colorDeFondo(page)).not.toBe(fondoClaro)
-    expect(await colorDeTexto(page)).not.toBe(textoClaro)
-    const fondoOscuro = await colorDeFondo(page)
+    expect(await getBackgroundColor(page)).not.toBe(lightBackground)
+    expect(await getTextColor(page)).not.toBe(lightText)
+    const darkBackground = await getBackgroundColor(page)
 
     await page.reload()
-    expect(await esOscuro(page)).toBe(true)
-    expect(await colorDeFondo(page)).toBe(fondoOscuro)
+    expect(await isDark(page)).toBe(true)
+    expect(await getBackgroundColor(page)).toBe(darkBackground)
     await expect(button(page)).toHaveAttribute('aria-pressed', 'true')
   })
 
@@ -442,7 +442,7 @@ test.describe('modo oscuro', () => {
     // Con la app sin ejecutarse (JavaScript de React bloqueado), el HTML ya trae la clase.
     await page.route('**/*.js', (route) => route.abort())
     await page.goto('/mockups', { waitUntil: 'domcontentloaded' })
-    expect(await esOscuro(page)).toBe(true)
+    expect(await isDark(page)).toBe(true)
   })
 
   test('se mantiene al ir a otra pantalla y al volver a abrir la app', async ({ page }) => {
@@ -450,39 +450,39 @@ test.describe('modo oscuro', () => {
     await button(page).click()
     await page.getByRole('link', { name: /Plano de mesas/ }).click()
     await expect(page).toHaveURL(/\/bocetos\/plano$/)
-    expect(await esOscuro(page)).toBe(true)
+    expect(await isDark(page)).toBe(true)
     await page.goto('/')
-    expect(await esOscuro(page)).toBe(true)
+    expect(await isDark(page)).toBe(true)
   })
 
   test('volver al modo claro también se recuerda', async ({ page }) => {
     await page.goto('/mockups')
     await button(page).click()
     await button(page).click()
-    expect(await esOscuro(page)).toBe(false)
+    expect(await isDark(page)).toBe(false)
     await page.reload()
-    expect(await esOscuro(page)).toBe(false)
+    expect(await isDark(page)).toBe(false)
   })
 
   test('lo elegido gana sobre el sistema, y sin elegir se sigue al sistema', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' })
     await page.goto('/mockups')
-    expect(await esOscuro(page)).toBe(true)
+    expect(await isDark(page)).toBe(true)
     await expect(button(page)).toHaveAttribute('aria-pressed', 'true')
     await button(page).click() // elige claro
-    expect(await esOscuro(page)).toBe(false)
+    expect(await isDark(page)).toBe(false)
     await page.reload()
-    expect(await esOscuro(page)).toBe(false)
+    expect(await isDark(page)).toBe(false)
   })
 
   test('sin elegir, un cambio del sistema se aplica sin recargar', async ({ page }) => {
     await page.goto('/mockups')
-    expect(await esOscuro(page)).toBe(false)
+    expect(await isDark(page)).toBe(false)
     await page.emulateMedia({ colorScheme: 'dark' })
-    await expect.poll(() => esOscuro(page)).toBe(true)
+    await expect.poll(() => isDark(page)).toBe(true)
     await expect(button(page)).toHaveAttribute('aria-pressed', 'true')
     await page.emulateMedia({ colorScheme: 'light' })
-    await expect.poll(() => esOscuro(page)).toBe(false)
+    await expect.poll(() => isDark(page)).toBe(false)
   })
 
   test('sin almacenamiento disponible no se rompe y vale en la página abierta', async ({
@@ -497,7 +497,7 @@ test.describe('modo oscuro', () => {
     })
     await page.goto('/mockups')
     await button(page).click()
-    expect(await esOscuro(page)).toBe(true)
+    expect(await isDark(page)).toBe(true)
   })
 })
 
@@ -512,7 +512,7 @@ test.describe('marco de las pantallas', () => {
     await page.goto('/mockups/floor-plan')
     await expect(page).toHaveTitle('Salón · POS')
     await expect(page.getByRole('heading', { level: 1 })).toBeFocused()
-    await mesaEnPlano(page, 3).click()
+    await tableOnFloorPlan(page, 3).click()
     await expect(page).toHaveTitle('Mesa 3 · POS')
     await expect(page.getByRole('heading', { level: 1, name: 'Mesa 3' })).toBeFocused()
   })
@@ -555,11 +555,11 @@ test.describe('marco de las pantallas', () => {
   test('«Volver a los datos de ejemplo» reinicia las mesas', async ({ page }) => {
     await page.goto('/mockups')
     await page.getByRole('link', { name: /Plano de mesas/ }).click()
-    await mesaEnPlano(page, 18).click() // la deja libre
+    await tableOnFloorPlan(page, 18).click() // la deja libre
     await page.getByRole('button', { name: 'Volver' }).click()
     await page.getByRole('button', { name: 'Volver a los datos de ejemplo' }).click()
     await page.getByRole('link', { name: /Plano de mesas/ }).click()
-    await expect(mesaEnPlano(page, 18)).toHaveAccessibleName(/^Mesa 18: Por limpiar/)
+    await expect(tableOnFloorPlan(page, 18)).toHaveAccessibleName(/^Mesa 18: Por limpiar/)
   })
 })
 
@@ -570,31 +570,31 @@ test.describe('marco de las pantallas', () => {
 test.describe('plano de mesas', () => {
   test('muestra el estado de cada mesa con texto, no solo con color', async ({ page }) => {
     await page.goto('/mockups/floor-plan')
-    await expect(mesaEnPlano(page, 1)).toHaveAccessibleName(/^Mesa 1: Libre$/)
-    await expect(mesaEnPlano(page, 2)).toHaveAccessibleName(
+    await expect(tableOnFloorPlan(page, 1)).toHaveAccessibleName(/^Mesa 1: Libre$/)
+    await expect(tableOnFloorPlan(page, 2)).toHaveAccessibleName(
       /^Mesa 2: Tomando pedido, 3 min, \$61\.800$/,
     )
-    await expect(mesaEnPlano(page, 4)).toHaveAccessibleName(/^Mesa 4: En preparación, 18 min, /)
-    await expect(mesaEnPlano(page, 9)).toHaveAccessibleName(/^Mesa 9: Listo para servir, /)
-    await expect(mesaEnPlano(page, 12)).toHaveAccessibleName(
+    await expect(tableOnFloorPlan(page, 4)).toHaveAccessibleName(/^Mesa 4: En preparación, 18 min, /)
+    await expect(tableOnFloorPlan(page, 9)).toHaveAccessibleName(/^Mesa 9: Listo para servir, /)
+    await expect(tableOnFloorPlan(page, 12)).toHaveAccessibleName(
       /^Mesa 12: Por cobrar, 1 h 0[45], \$257\.500$/,
     )
-    await expect(mesaEnPlano(page, 15)).toHaveAccessibleName(/^Mesa 15: Reservada$/)
-    await expect(mesaEnPlano(page, 18)).toHaveAccessibleName(/^Mesa 18: Por limpiar$/)
+    await expect(tableOnFloorPlan(page, 15)).toHaveAccessibleName(/^Mesa 15: Reservada$/)
+    await expect(tableOnFloorPlan(page, 18)).toHaveAccessibleName(/^Mesa 18: Por limpiar$/)
   })
 
   test('la demora se cuenta desde la comanda más vieja: 27 min es demora; 6 y 12, no', async ({
     page,
   }) => {
     await page.goto('/mockups/floor-plan')
-    await expect(mesaEnPlano(page, 7)).toHaveAccessibleName(/^Mesa 7: Demora, 3[5-6] min, /)
-    await expect(mesaEnPlano(page, 21)).toHaveAccessibleName(/^Mesa 21: En preparación, /)
-    await expect(mesaEnPlano(page, 4)).toHaveAccessibleName(/^Mesa 4: En preparación, /)
+    await expect(tableOnFloorPlan(page, 7)).toHaveAccessibleName(/^Mesa 7: Demora, 3[5-6] min, /)
+    await expect(tableOnFloorPlan(page, 21)).toHaveAccessibleName(/^Mesa 21: En preparación, /)
+    await expect(tableOnFloorPlan(page, 4)).toHaveAccessibleName(/^Mesa 4: En preparación, /)
   })
 
   test('la libre lleva ícono de círculo y texto, y va en blanco', async ({ page }) => {
     await page.goto('/mockups/floor-plan')
-    const free = mesaEnPlano(page, 1)
+    const free = tableOnFloorPlan(page, 1)
     await expect(free).toContainText('Libre')
     await expect(free.locator('svg')).toHaveCount(1)
     await expect(free).toHaveClass(/bg-superficie/)
@@ -613,35 +613,35 @@ test.describe('plano de mesas', () => {
     page,
   }) => {
     await page.goto('/mockups/floor-plan')
-    await mesaEnPlano(page, 3).click()
+    await tableOnFloorPlan(page, 3).click()
     await expect(page.getByRole('heading', { name: 'Mesa 3', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Volver' }).click()
-    await expect(mesaEnPlano(page, 3)).toHaveAccessibleName(/^Mesa 3: Libre$/)
+    await expect(tableOnFloorPlan(page, 3)).toHaveAccessibleName(/^Mesa 3: Libre$/)
     await expect(page.getByText('17 libres')).toBeVisible()
   })
 
   test('la mesa queda ocupada al agregar el primer producto', async ({ page }) => {
     await page.goto('/mockups/floor-plan')
-    await mesaEnPlano(page, 3).click()
+    await tableOnFloorPlan(page, 3).click()
     await product(page, 'Pinsa').click()
     await page.getByRole('button', { name: 'Volver' }).click()
-    await expect(mesaEnPlano(page, 3)).toHaveAccessibleName(
+    await expect(tableOnFloorPlan(page, 3)).toHaveAccessibleName(
       /^Mesa 3: Tomando pedido, 0 min, \$20\.900$/,
     )
   })
 
   test('tocar una mesa por limpiar la deja como nueva y se puede deshacer', async ({ page }) => {
     await page.goto('/mockups/floor-plan')
-    await mesaEnPlano(page, 18).click()
-    await expect(mesaEnPlano(page, 18)).toHaveAccessibleName(/^Mesa 18: Libre$/)
+    await tableOnFloorPlan(page, 18).click()
+    await expect(tableOnFloorPlan(page, 18)).toHaveAccessibleName(/^Mesa 18: Libre$/)
     await expect(alert(page, 'Mesa 18 lista para usar')).toBeVisible()
     await undo(page, 'Mesa 18 lista para usar').click()
-    await expect(mesaEnPlano(page, 18)).toHaveAccessibleName(/^Mesa 18: Por limpiar$/)
+    await expect(tableOnFloorPlan(page, 18)).toHaveAccessibleName(/^Mesa 18: Por limpiar$/)
   })
 
   test('tocar una mesa por cobrar abre su precuenta', async ({ page }) => {
     await page.goto('/mockups/floor-plan')
-    await mesaEnPlano(page, 12).click()
+    await tableOnFloorPlan(page, 12).click()
     await expect(page).toHaveURL(/\/bocetos\/precuenta\?mesa=12$/)
     await expect(page.getByRole('heading', { name: 'Precuenta · Mesa 12' })).toBeVisible()
   })
@@ -650,10 +650,10 @@ test.describe('plano de mesas', () => {
     page,
   }) => {
     await page.goto('/mockups/floor-plan')
-    await mesaEnPlano(page, 15).click()
+    await tableOnFloorPlan(page, 15).click()
     await expect(page).toHaveURL(/\/bocetos\/pedido\?mesa=15$/)
     await page.getByRole('button', { name: 'Volver' }).click()
-    await expect(mesaEnPlano(page, 15)).toHaveAccessibleName(/^Mesa 15: Reservada$/)
+    await expect(tableOnFloorPlan(page, 15)).toHaveAccessibleName(/^Mesa 15: Reservada$/)
   })
 
   test('«Cuentas abiertas» aparece desde 768 px (caja) con el saldo de cada mesa', async ({
@@ -688,7 +688,7 @@ test.describe('plano de mesas', () => {
     await expect(page.getByRole('button', { name: 'Plano' })).toBeVisible()
     await expect(page.getByText('Tomando pedido').first()).toBeVisible()
     await page.getByRole('button', { name: 'Plano' }).click()
-    await expect(mesaEnPlano(page, 1)).toBeVisible()
+    await expect(tableOnFloorPlan(page, 1)).toBeVisible()
   })
 })
 
@@ -701,33 +701,33 @@ test.describe('pedido en 3 toques', () => {
     page,
   }) => {
     await page.addInitScript(() => {
-      const w = window as unknown as { __toques: number }
-      w.__toques = 0
+      const w = window as unknown as { __taps: number }
+      w.__taps = 0
       document.addEventListener(
         'click',
         () => {
-          w.__toques += 1
+          w.__taps += 1
         },
         true,
       )
     })
     await page.goto('/mockups/floor-plan')
-    await expect(mesaEnPlano(page, 1)).toBeVisible()
+    await expect(tableOnFloorPlan(page, 1)).toBeVisible()
     await page.evaluate(() => {
-      ;(window as unknown as { __toques: number }).__toques = 0
+      ;(window as unknown as { __taps: number }).__taps = 0
     })
 
-    await mesaEnPlano(page, 1).click() // toque 1
+    await tableOnFloorPlan(page, 1).click() // toque 1
     await expect(page.getByRole('heading', { name: 'Mesa 1', exact: true })).toBeVisible()
     await product(page, 'Pinsa').click() // toque 2
     await expect(alert(page, 'Agregaste Pinsa')).toBeVisible()
     await send(page, 1).click() // toque 3
 
     await expect(page).toHaveURL(/\/bocetos\/plano$/)
-    expect(await page.evaluate(() => (window as unknown as { __toques: number }).__toques)).toBe(3)
+    expect(await page.evaluate(() => (window as unknown as { __taps: number }).__taps)).toBe(3)
     await expect(page.getByRole('dialog')).toHaveCount(0) // sin opciones: ningún panel
 
-    await expect(mesaEnPlano(page, 1)).toHaveAccessibleName(
+    await expect(tableOnFloorPlan(page, 1)).toHaveAccessibleName(
       /^Mesa 1: En preparación, 0 min, \$20\.900$/,
     )
 
@@ -744,15 +744,15 @@ test.describe('pedido en 3 toques', () => {
 
   test('Enviar está deshabilitado mientras no hay nada por enviar', async ({ page }) => {
     await page.goto('/mockups/floor-plan')
-    await mesaEnPlano(page, 1).click()
+    await tableOnFloorPlan(page, 1).click()
     await expect(send(page)).toBeDisabled()
   })
 
   test('comida y bebida: una comanda en cocina y otra en la barra', async ({ page }) => {
     await page.goto('/mockups/floor-plan')
-    await mesaEnPlano(page, 1).click()
+    await tableOnFloorPlan(page, 1).click()
     await product(page, 'Pinsa').click()
-    await buscarEnCarta(page).fill('limonada de coco')
+    await searchMenu(page).fill('limonada de coco')
     await product(page, 'Limonada de Coco').click()
     await send(page, 2).click()
     await page.getByRole('button', { name: 'Volver' }).click()
@@ -765,10 +765,10 @@ test.describe('pedido en 3 toques', () => {
 
   test('una segunda ronda envía solo lo nuevo', async ({ page }) => {
     await page.goto('/mockups/floor-plan')
-    await mesaEnPlano(page, 1).click()
+    await tableOnFloorPlan(page, 1).click()
     await product(page, 'Pinsa').click()
     await send(page, 1).click()
-    await mesaEnPlano(page, 1).click()
+    await tableOnFloorPlan(page, 1).click()
     await expect(page.getByRole('heading', { name: 'Mesa 1', exact: true })).toBeVisible()
     await expect(send(page)).toBeDisabled()
     await product(page, 'Tentazione di Formaggio').click()
@@ -779,7 +779,7 @@ test.describe('pedido en 3 toques', () => {
     page,
   }, info) => {
     const register = isRegister(info.project.name)
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/order?table=2')
     await product(page, 'Pinsa').click()
     await expect(product(page, 'Pinsa')).toContainText('1 en el pedido')
@@ -787,15 +787,15 @@ test.describe('pedido en 3 toques', () => {
     await expect(product(page, 'Pinsa')).toContainText('2 en el pedido')
     await expect(alert(page, 'Pinsa: 2')).toBeVisible()
 
-    let ticket = await abrirTicket(page, register)
+    let ticket = await openTicket(page, register)
     const pinsa = ticket.getByRole('listitem').filter({ hasText: 'Pinsa' })
     await expect(pinsa).toHaveCount(1) // una sola línea
     await expect(pinsa).toContainText('$41.800')
-    await cerrarTicket(page, register)
+    await closeTicket(page, register)
 
     await undo(page, 'Pinsa: 2').click()
     await expect(product(page, 'Pinsa')).toContainText('1 en el pedido')
-    ticket = await abrirTicket(page, register)
+    ticket = await openTicket(page, register)
     await expect(ticket.getByRole('listitem').filter({ hasText: 'Pinsa' })).toContainText('$20.900')
   })
 
@@ -805,11 +805,11 @@ test.describe('pedido en 3 toques', () => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=2')
     await product(page, 'Pinsa').click() // para la mesa
-    let ticket = await abrirTicket(page, register)
+    let ticket = await openTicket(page, register)
     await ticket.getByRole('button', { name: 'Para la persona 2' }).click()
-    await cerrarTicket(page, register)
+    await closeTicket(page, register)
     await product(page, 'Pinsa').click() // para P2
-    ticket = await abrirTicket(page, register)
+    ticket = await openTicket(page, register)
     await expect(ticket.getByRole('listitem').filter({ hasText: 'Pinsa' })).toHaveCount(2)
     await expect(ticket).toContainText('P2 · sin enviar')
   })
@@ -820,7 +820,7 @@ test.describe('pedido en 3 toques', () => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=21')
     await product(page, 'Pinsa').click()
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     const rows = ticket.getByRole('listitem').filter({ hasText: 'Pinsa' })
     await expect(rows).toHaveCount(2)
     await expect(rows.first()).toContainText('enviado')
@@ -829,12 +829,12 @@ test.describe('pedido en 3 toques', () => {
 
   test('deshacer el primer producto deja la mesa libre otra vez', async ({ page }) => {
     await page.goto('/mockups/floor-plan')
-    await mesaEnPlano(page, 3).click()
+    await tableOnFloorPlan(page, 3).click()
     await product(page, 'Pinsa').click()
     await undo(page, 'Agregaste Pinsa').click()
     await expect(send(page)).toBeDisabled()
     await page.getByRole('button', { name: 'Volver' }).click()
-    await expect(mesaEnPlano(page, 3)).toHaveAccessibleName(/^Mesa 3: Libre$/)
+    await expect(tableOnFloorPlan(page, 3)).toHaveAccessibleName(/^Mesa 3: Libre$/)
   })
 
   test('«Cuenta» lleva a la precuenta de la mesa y está deshabilitado sin ítems', async ({
@@ -842,11 +842,11 @@ test.describe('pedido en 3 toques', () => {
   }, info) => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     await expect(ticket.getByRole('button', { name: 'Cuenta' })).toBeDisabled()
-    await cerrarTicket(page, register)
+    await closeTicket(page, register)
     await product(page, 'Pinsa').click()
-    const ticket2 = await abrirTicket(page, register)
+    const ticket2 = await openTicket(page, register)
     await ticket2.getByRole('button', { name: 'Cuenta' }).click()
     await expect(page).toHaveURL(/\/bocetos\/precuenta\?mesa=1$/)
     await expect(page.getByRole('button', { name: 'Cobrar $20.900' })).toBeVisible()
@@ -857,7 +857,7 @@ test.describe('pedido en 3 toques', () => {
   }, info) => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=2')
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     await expect(ticket).toContainText('2 personas')
     await ticket.getByRole('button', { name: 'Una persona más' }).click()
     await expect(ticket).toContainText('3 personas')
@@ -879,10 +879,10 @@ test.describe('pedido en 3 toques', () => {
     await page.goto('/mockups/order?table=2')
     await expect(page.getByRole('heading', { name: 'Mesa 2', exact: true })).toBeVisible()
     await page.keyboard.press('/')
-    await expect(buscarEnCarta(page)).toBeFocused()
-    await expect(buscarEnCarta(page)).toHaveValue('')
+    await expect(searchMenu(page)).toBeFocused()
+    await expect(searchMenu(page)).toHaveValue('')
     await page.keyboard.type('a/b')
-    await expect(buscarEnCarta(page)).toHaveValue('a/b')
+    await expect(searchMenu(page)).toHaveValue('a/b')
   })
 })
 
@@ -896,7 +896,7 @@ test.describe('productos con opciones', () => {
   }, info) => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
-    await buscarEnCarta(page).fill('ramon bilbao crianza')
+    await searchMenu(page).fill('ramon bilbao crianza')
     const card = product(page, 'Ramón Bilbao Crianza')
     await expect(card).toContainText('desde $30.900')
     await card.click()
@@ -934,7 +934,7 @@ test.describe('productos con opciones', () => {
       .click()
     await expect(alert(page, 'Agregaste Ramón Bilbao Crianza (copa)')).toBeVisible()
 
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     await expect(
       ticket.getByRole('button', { name: /Ramón Bilbao Crianza \(botella\)/ }),
     ).toContainText('$129.900')
@@ -951,12 +951,12 @@ test.describe('productos con opciones', () => {
   }, info) => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
-    await buscarEnCarta(page).fill('ramon bilbao crianza')
+    await searchMenu(page).fill('ramon bilbao crianza')
     await product(page, 'Ramón Bilbao Crianza').click()
     const panel = page.getByRole('dialog', { name: 'Ramón Bilbao Crianza' })
     await panel.getByRole('button', { name: 'Uno más' }).click()
     await panel.getByRole('button', { name: /^Botella/ }).click()
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     await expect(
       ticket.getByRole('button', { name: /Ramón Bilbao Crianza \(botella\)/ }),
     ).toContainText('$259.800')
@@ -967,7 +967,7 @@ test.describe('productos con opciones', () => {
   }, info) => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
-    await buscarEnCarta(page).fill('tagliata')
+    await searchMenu(page).fill('tagliata')
     await product(page, 'Tagliata di Manzo').click()
 
     const panel = page.getByRole('dialog', { name: 'Tagliata di Manzo' })
@@ -983,7 +983,7 @@ test.describe('productos con opciones', () => {
     await panel.getByRole('button', { name: 'Tres cuartos' }).click()
     await expect(panel).toBeHidden()
     await expect(alert(page, 'Agregaste Tagliata di Manzo')).toBeVisible()
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     const row = ticket.getByRole('button', { name: /Tagliata di Manzo/ })
     await expect(row).toContainText('Tres cuartos')
     await expect(row).toContainText('$40.900')
@@ -991,7 +991,7 @@ test.describe('productos con opciones', () => {
 
   test('el término y la nota llegan a la cocina, resaltados', async ({ page }) => {
     await page.goto('/mockups/order?table=1')
-    await buscarEnCarta(page).fill('tagliata')
+    await searchMenu(page).fill('tagliata')
     await product(page, 'Tagliata di Manzo').click()
     const panel = page.getByRole('dialog', { name: 'Tagliata di Manzo' })
     await panel.getByLabel('Notas para cocina').fill('sin sal')
@@ -1006,7 +1006,7 @@ test.describe('productos con opciones', () => {
 
   test('cerrar el panel (Escape, la X o tocar fuera) no agrega nada', async ({ page }) => {
     await page.goto('/mockups/order?table=1')
-    await buscarEnCarta(page).fill('tagliata')
+    await searchMenu(page).fill('tagliata')
     const panel = page.getByRole('dialog', { name: 'Tagliata di Manzo' })
 
     await product(page, 'Tagliata di Manzo').click()
@@ -1029,13 +1029,13 @@ test.describe('productos con opciones', () => {
   }, info) => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
-    await buscarEnCarta(page).fill('te hatsu')
+    await searchMenu(page).fill('te hatsu')
     await product(page, 'Té Hatsu').click()
     const panel = page.getByRole('dialog', { name: 'Té Hatsu' })
     await expect(panel.getByRole('button', { name: /^Elige / })).toBeDisabled()
     await panel.getByRole('button', { name: 'Amarillo' }).click()
     await expect(panel).toBeHidden()
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     const row = ticket.getByRole('button', { name: /Té Hatsu/ })
     await expect(row).toContainText('Amarillo')
     await expect(row).toContainText('$13.900')
@@ -1043,7 +1043,7 @@ test.describe('productos con opciones', () => {
 
   test('la hamburguesa también pide el término al tocarla', async ({ page }) => {
     await page.goto('/mockups/order?table=1')
-    await buscarEnCarta(page).fill('spritz burguer')
+    await searchMenu(page).fill('spritz burguer')
     await product(page, 'Spritz Burguer').click()
     await expect(
       page
@@ -1063,7 +1063,7 @@ test.describe('productos con opciones', () => {
     page,
   }) => {
     await page.goto('/mockups/order?table=1')
-    await buscarEnCarta(page).fill('ramon bilbao crianza')
+    await searchMenu(page).fill('ramon bilbao crianza')
     await product(page, 'Ramón Bilbao Crianza').click()
     const notes = page
       .getByRole('dialog', { name: 'Ramón Bilbao Crianza' })
@@ -1080,7 +1080,7 @@ test.describe('productos con opciones', () => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
     await product(page, 'Pinsa').click()
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     await ticket.getByRole('button', { name: /Pinsa/ }).click()
     const notes = page.getByRole('dialog', { name: 'Pinsa' }).getByLabel('Notas para cocina')
     await notes.click()
@@ -1099,14 +1099,14 @@ test.describe('panel lateral modal', () => {
     page,
   }) => {
     await page.goto('/mockups/components')
-    const inerte = () => page.locator('#raiz').evaluate((el) => el.hasAttribute('inert'))
+    const inert = () => page.locator('#raiz').evaluate((el) => el.hasAttribute('inert'))
     const blocked = () => page.evaluate(() => document.body.style.overflow)
-    expect(await inerte()).toBe(false)
+    expect(await inert()).toBe(false)
 
     await page.getByRole('button', { name: 'Abrir panel lateral' }).click()
     const panel = page.getByRole('dialog', { name: 'Panel lateral' })
     await expect(panel).toBeFocused()
-    expect(await inerte()).toBe(true)
+    expect(await inert()).toBe(true)
     expect(await blocked()).toBe('hidden')
     // El panel vive fuera de la raíz: se puede usar aunque el fondo esté inerte.
     expect(
@@ -1117,7 +1117,7 @@ test.describe('panel lateral modal', () => {
 
     await page.keyboard.press('Escape')
     await expect(panel).toBeHidden()
-    expect(await inerte()).toBe(false)
+    expect(await inert()).toBe(false)
     expect(await blocked()).toBe('')
     // El foco vuelve a quien abrió el panel.
     await expect(page.getByRole('button', { name: 'Abrir panel lateral' })).toBeFocused()
@@ -1130,8 +1130,8 @@ test.describe('panel lateral modal', () => {
     for (let i = 0; i < 6; i++) {
       await page.keyboard.press('Tab')
       // El foco pasa por el panel o sale de la página (barra del navegador), nunca al fondo.
-      const enFondo = await page.evaluate(() => !!document.activeElement?.closest('#raiz'))
-      expect(enFondo).toBe(false)
+      const inBackground = await page.evaluate(() => !!document.activeElement?.closest('#raiz'))
+      expect(inBackground).toBe(false)
     }
     await expect(panel).toBeVisible()
   })
@@ -1162,25 +1162,25 @@ test.describe('panel lateral modal', () => {
 test.describe('deshacer y avisos', () => {
   test('deshacer un ítem agregado lo quita del pedido', async ({ page }, info) => {
     const register = isRegister(info.project.name)
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/order?table=1')
     await product(page, 'Tentazione di Formaggio').click()
     await expect(send(page, 1)).toBeVisible()
     await undo(page, 'Agregaste Tentazione di Formaggio').click()
     await expect(send(page)).toBeDisabled()
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     await expect(ticket.getByRole('button', { name: /Tentazione/ })).toHaveCount(0)
   })
 
   test('quitar un ítem y deshacer lo devuelve en su posición original', async ({ page }, info) => {
     const register = isRegister(info.project.name)
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/order?table=1')
     for (const name of ['Pinsa', 'Tentazione di Formaggio', 'Polpette'])
       await product(page, name).click()
 
-    let ticket = await abrirTicket(page, register)
-    expect(await nombresDelTicket(ticket)).toEqual([
+    let ticket = await openTicket(page, register)
+    expect(await ticketNames(ticket)).toEqual([
       'Pinsa',
       'Tentazione di Formaggio',
       'Polpette d’Amore',
@@ -1190,15 +1190,15 @@ test.describe('deshacer y avisos', () => {
       .getByRole('dialog', { name: 'Tentazione di Formaggio' })
       .getByRole('button', { name: 'Quitar' })
       .click()
-    await cerrarTicket(page, register)
+    await closeTicket(page, register)
     await expect(alert(page, 'Quitaste Tentazione di Formaggio')).toBeVisible()
-    ticket = await abrirTicket(page, register)
-    expect(await nombresDelTicket(ticket)).toEqual(['Pinsa', 'Polpette d’Amore'])
-    await cerrarTicket(page, register)
+    ticket = await openTicket(page, register)
+    expect(await ticketNames(ticket)).toEqual(['Pinsa', 'Polpette d’Amore'])
+    await closeTicket(page, register)
 
     await undo(page, 'Quitaste Tentazione di Formaggio').click()
-    ticket = await abrirTicket(page, register)
-    expect(await nombresDelTicket(ticket)).toEqual([
+    ticket = await openTicket(page, register)
+    expect(await ticketNames(ticket)).toEqual([
       'Pinsa',
       'Tentazione di Formaggio',
       'Polpette d’Amore',
@@ -1209,7 +1209,7 @@ test.describe('deshacer y avisos', () => {
     page,
   }, info) => {
     const register = isRegister(info.project.name)
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/order?table=1')
     for (const name of ['Pinsa', 'Tentazione di Formaggio', 'Polpette'])
       await product(page, name).click()
@@ -1217,13 +1217,13 @@ test.describe('deshacer y avisos', () => {
     await expect(alerts).toHaveCount(3)
 
     for (const name of ['Pinsa', 'Tentazione']) {
-      const ticket = await abrirTicket(page, register)
+      const ticket = await openTicket(page, register)
       await ticket.getByRole('button', { name: new RegExp(name) }).click()
       await page
         .getByRole('dialog', { name: new RegExp(name) })
         .getByRole('button', { name: 'Quitar' })
         .click()
-      await cerrarTicket(page, register)
+      await closeTicket(page, register)
     }
     // Nunca más de 3: los más viejos salen.
     await expect(alerts).toHaveCount(3)
@@ -1233,14 +1233,14 @@ test.describe('deshacer y avisos', () => {
 
     await undo(page, 'Quitaste Pinsa').click()
     await undo(page, 'Quitaste Tentazione').click()
-    const ticket = await abrirTicket(page, register)
-    expect((await nombresDelTicket(ticket)).sort()).toEqual(
+    const ticket = await openTicket(page, register)
+    expect((await ticketNames(ticket)).sort()).toEqual(
       ['Pinsa', 'Polpette d’Amore', 'Tentazione di Formaggio'].sort(),
     )
   })
 
   test('un aviso desaparece solo a los 5 segundos', async ({ page }) => {
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/order?table=1')
     await product(page, 'Pinsa').click()
     await expect(undo(page, 'Agregaste Pinsa')).toBeVisible()
@@ -1252,7 +1252,7 @@ test.describe('deshacer y avisos', () => {
   })
 
   test('mientras el puntero está encima de un aviso, su tiempo no corre', async ({ page }) => {
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/order?table=1')
     await product(page, 'Pinsa').click()
     const card = alert(page, 'Agregaste Pinsa')
@@ -1265,7 +1265,7 @@ test.describe('deshacer y avisos', () => {
   })
 
   test('el aviso conserva el tiempo que le quedaba al salir el puntero', async ({ page }) => {
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/order?table=1')
     await product(page, 'Pinsa').click()
     const card = alert(page, 'Agregaste Pinsa')
@@ -1281,19 +1281,19 @@ test.describe('deshacer y avisos', () => {
 
   test('quitar el ítem y dejar vencer el aviso lo deja quitado', async ({ page }, info) => {
     const register = isRegister(info.project.name)
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/order?table=1')
     await product(page, 'Pinsa').click()
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     await ticket.getByRole('button', { name: /Pinsa/ }).click()
     await page
       .getByRole('dialog', { name: 'Pinsa' })
       .getByRole('button', { name: 'Quitar' })
       .click()
-    await cerrarTicket(page, register)
+    await closeTicket(page, register)
     await page.clock.runFor(5_500)
     await expect(alert(page, 'Quitaste Pinsa')).toHaveCount(0)
-    const ticket2 = await abrirTicket(page, register)
+    const ticket2 = await openTicket(page, register)
     await expect(ticket2.getByRole('button', { name: /Pinsa/ })).toHaveCount(0)
   })
 
@@ -1301,7 +1301,7 @@ test.describe('deshacer y avisos', () => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=1')
     await product(page, 'Pinsa').click()
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     await ticket.getByRole('button', { name: /Pinsa/ }).click()
     const item = page.getByRole('dialog', { name: 'Pinsa' })
     await item.getByRole('button', { name: 'Uno más' }).click()
@@ -1325,7 +1325,7 @@ test.describe('anular un ítem enviado', () => {
   }, info) => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=7')
-    let ticket = await abrirTicket(page, register)
+    let ticket = await openTicket(page, register)
     await expect(ticket.getByText('Total').locator('xpath=following-sibling::span[1]')).toHaveText(
       '$53.800',
     )
@@ -1348,9 +1348,9 @@ test.describe('anular un ítem enviado', () => {
     await panel.getByRole('button', { name: 'Sí, anular' }).click()
     await expect(panel).toBeHidden()
 
-    await cerrarTicket(page, register)
+    await closeTicket(page, register)
     await expect(alert(page, 'Anulaste Spritz Burguer (demora)')).toBeVisible()
-    ticket = await abrirTicket(page, register)
+    ticket = await openTicket(page, register)
     const row = ticket.getByRole('listitem').filter({ hasText: 'Spritz Burguer' })
     await expect(row).toContainText('anulado: demora')
     await expect(row.locator('.line-through').first()).toBeVisible()
@@ -1365,23 +1365,23 @@ test.describe('anular un ítem enviado', () => {
   test('lo anulado sale del KDS, del saldo del plano y de la precuenta', async ({ page }, info) => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/order?table=7')
-    const ticket = await abrirTicket(page, register)
+    const ticket = await openTicket(page, register)
     await ticket.getByRole('button', { name: /Spritz Burguer/ }).click()
     const panel = page.getByRole('dialog', { name: 'Anular Spritz Burguer' })
     await panel.getByRole('button', { name: 'Error del mesero' }).click()
     await panel.getByRole('checkbox', { name: /Ya se había preparado/ }).check()
     await panel.getByRole('button', { name: 'Anular', exact: true }).click()
     await panel.getByRole('button', { name: 'Sí, anular' }).click()
-    await cerrarTicket(page, register)
+    await closeTicket(page, register)
 
-    await irA(page, '/mockups/kds')
+    await goTo(page, '/mockups/kds')
     await expect(ticketEl(page, 7, 'cocina')).toHaveCount(0) // solo tenía la hamburguesa
     await expect(ticketEl(page, 7, 'barra')).toBeVisible() // el té sigue
 
-    await irA(page, '/mockups/floor-plan')
-    await expect(mesaEnPlano(page, 7)).toHaveAccessibleName(/\$13\.900$/)
+    await goTo(page, '/mockups/floor-plan')
+    await expect(tableOnFloorPlan(page, 7)).toHaveAccessibleName(/\$13\.900$/)
 
-    await irA(page, '/mockups/pre-bill?table=7')
+    await goTo(page, '/mockups/pre-bill?table=7')
     await expect(page.getByRole('region', { name: 'Ítems' })).not.toContainText('Spritz Burguer')
   })
 })
@@ -1395,21 +1395,21 @@ test.describe('búsqueda en la carta', () => {
 
   test('«hamburgesa» encuentra Spritz Burguer', async ({ page }) => {
     await page.goto('/mockups/order?table=2')
-    await buscarEnCarta(page).fill('hamburgesa')
+    await searchMenu(page).fill('hamburgesa')
     await expect(results(page).first()).toContainText('Spritz Burguer')
   })
 
   test('«quatro formagi» encuentra Quattro Formaggi', async ({ page }) => {
     await page.goto('/mockups/order?table=2')
-    await buscarEnCarta(page).fill('quatro formagi')
+    await searchMenu(page).fill('quatro formagi')
     await expect(results(page).first()).toContainText('Quattro Formaggi')
   })
 
   test('sin tildes, en mayúsculas y con las palabras al revés', async ({ page }) => {
     await page.goto('/mockups/order?table=2')
-    await buscarEnCarta(page).fill('TE hatsu')
+    await searchMenu(page).fill('TE hatsu')
     await expect(product(page, 'Té Hatsu')).toBeVisible()
-    await buscarEnCarta(page).fill('formaggi QUATTRO')
+    await searchMenu(page).fill('formaggi QUATTRO')
     await expect(results(page).first()).toContainText('Quattro Formaggi')
   })
 
@@ -1417,17 +1417,17 @@ test.describe('búsqueda en la carta', () => {
     await page.goto('/mockups/order?table=2')
     const categories = page.getByRole('group', { name: 'Categorías' })
     await expect(categories).toBeVisible()
-    await buscarEnCarta(page).fill('zzzzzz')
+    await searchMenu(page).fill('zzzzzz')
     await expect(page.getByText('No hay nada con «zzzzzz».')).toBeVisible()
     await expect(categories).toBeHidden()
-    await buscarEnCarta(page).fill('')
+    await searchMenu(page).fill('')
     await expect(categories).toBeVisible()
     await expect(product(page, 'Pinsa')).toBeVisible()
   })
 
   test('con más de 30 resultados muestra 30 y avisa cuántos faltan', async ({ page }) => {
     await page.goto('/mockups/order?table=2')
-    await buscarEnCarta(page).fill('s')
+    await searchMenu(page).fill('s')
     await expect(results(page).filter({ hasText: /^Hay \d+ más/ })).toBeVisible()
     await expect(page.getByRole('region', { name: 'Carta' }).locator('ul > li button')).toHaveCount(
       30,
@@ -1435,14 +1435,14 @@ test.describe('búsqueda en la carta', () => {
     const text = await results(page)
       .filter({ hasText: /^Hay \d+ más/ })
       .textContent()
-    expect(numeroDe(text ?? '')).toBeGreaterThan(0)
+    expect(numberOf(text ?? '')).toBeGreaterThan(0)
   })
 
   test('un producto encontrado por búsqueda se agrega igual que desde la categoría', async ({
     page,
   }) => {
     await page.goto('/mockups/order?table=2')
-    await buscarEnCarta(page).fill('pinza')
+    await searchMenu(page).fill('pinza')
     await product(page, 'Pinsa').click()
     await expect(alert(page, 'Agregaste Pinsa')).toBeVisible()
   })
@@ -1470,15 +1470,15 @@ test.describe('búsqueda en la carta', () => {
 // ---------------------------------------------------------------------------------------------
 
 test.describe('precuenta (docs/DINERO.md)', () => {
-  const row = (page: Page, rotulo: RegExp) =>
-    page.locator('dt', { hasText: rotulo }).locator('xpath=following-sibling::dd[1]')
+  const row = (page: Page, caption: RegExp) =>
+    page.locator('dt', { hasText: caption }).locator('xpath=following-sibling::dd[1]')
   const checks = (page: Page) => page.getByRole('region', { name: 'Dividir' }).getByRole('listitem')
   /** Monto y propina de cada cuenta tal como se leen en pantalla. */
-  const leerCuentas = async (page: Page) => {
+  const readChecks = async (page: Page) => {
     const texts = await checks(page).evaluateAll((lis) => lis.map((li) => li.textContent ?? ''))
     return texts.flatMap((t) => {
       const m = /\$([\d.]+) \+ propina \$([\d.]+)/.exec(t)
-      return m ? [{ amount: numeroDe(m[1] as string), tip: numeroDe(m[2] as string) }] : []
+      return m ? [{ amount: numberOf(m[1] as string), tip: numberOf(m[2] as string) }] : []
     })
   }
 
@@ -1502,11 +1502,11 @@ test.describe('precuenta (docs/DINERO.md)', () => {
       page,
     }) => {
       await page.goto(`/mockups/pre-bill?table=${table}`)
-      const total = numeroDe((await row(page, /^Total$/).textContent()) ?? '')
+      const total = numberOf((await row(page, /^Total$/).textContent()) ?? '')
       expect(total).toBeGreaterThan(0)
-      const tip = propinaEsperada(total)
-      await expect(row(page, /Propina sugerida/)).toHaveText(enPesos(tip))
-      await expect(row(page, /^Con propina$/)).toHaveText(enPesos(total + tip))
+      const tip = expectedTip(total)
+      await expect(row(page, /Propina sugerida/)).toHaveText(inPesos(tip))
+      await expect(row(page, /^Con propina$/)).toHaveText(inPesos(total + tip))
     })
   }
 
@@ -1526,19 +1526,19 @@ test.describe('precuenta (docs/DINERO.md)', () => {
     await page.goto('/mockups/pre-bill?table=12')
     await page.getByRole('button', { name: 'Partes iguales' }).click()
     await expect(page.getByRole('button', { name: /^Quitar personas/ })).toBeDisabled()
-    expect(await leerCuentas(page)).toEqual([
+    expect(await readChecks(page)).toEqual([
       { amount: 128_750, tip: 11_922 },
       { amount: 128_750, tip: 11_921 },
     ])
 
     await page.getByRole('button', { name: /^Agregar personas/ }).click()
     // 257.500 / 3 = 85.833,33: el peso sobrante va a la primera cuenta
-    const three = await leerCuentas(page)
+    const three = await readChecks(page)
     expect(three.map((c) => c.amount)).toEqual([85_834, 85_833, 85_833])
-    expect(three.map((c) => c.tip)).toEqual(repartoPorResiduo(23_843, [85_834, 85_833, 85_833]))
+    expect(three.map((c) => c.tip)).toEqual(largestRemainderAllocation(23_843, [85_834, 85_833, 85_833]))
 
     await page.getByRole('button', { name: /^Agregar personas/ }).click()
-    expect((await leerCuentas(page)).map((c) => c.amount)).toEqual([64_375, 64_375, 64_375, 64_375])
+    expect((await readChecks(page)).map((c) => c.amount)).toEqual([64_375, 64_375, 64_375, 64_375])
   })
 
   test('de 2 a 20 personas: los montos suman el saldo, difieren en 1 peso y las propinas suman la total', async ({
@@ -1548,14 +1548,14 @@ test.describe('precuenta (docs/DINERO.md)', () => {
     await page.getByRole('button', { name: 'Partes iguales' }).click()
     const more = page.getByRole('button', { name: /^Agregar personas/ })
     for (let people = 2; people <= 20; people++) {
-      const cuentasLeidas = await leerCuentas(page)
-      expect(cuentasLeidas).toHaveLength(people)
-      const amounts = cuentasLeidas.map((c) => c.amount)
+      const checksRead = await readChecks(page)
+      expect(checksRead).toHaveLength(people)
+      const amounts = checksRead.map((c) => c.amount)
       expect(amounts.reduce((a, b) => a + b, 0)).toBe(257_500)
       expect(Math.max(...amounts) - Math.min(...amounts)).toBeLessThanOrEqual(1)
-      const tips = cuentasLeidas.map((c) => c.tip)
+      const tips = checksRead.map((c) => c.tip)
       expect(tips.reduce((a, b) => a + b, 0)).toBe(23_843)
-      expect(tips).toEqual(repartoPorResiduo(23_843, amounts))
+      expect(tips).toEqual(largestRemainderAllocation(23_843, amounts))
       if (people < 20) await more.click()
     }
     await expect(more).toBeDisabled()
@@ -1568,7 +1568,7 @@ test.describe('precuenta (docs/DINERO.md)', () => {
 
     // Sin asignar nada, todo queda sin asignar y las cuentas valen $0.
     await expect(checks(page)).toContainText(['Cuenta 1', 'Cuenta 2', 'Sin asignar$257.500'])
-    expect((await leerCuentas(page)).map((c) => c.amount)).toEqual([0, 0])
+    expect((await readChecks(page)).map((c) => c.amount)).toEqual([0, 0])
 
     await who('Quattro Formaggi').getByRole('button', { name: 'Cuenta 1' }).click()
     await who('Patatine al Tartufo').getByRole('button', { name: 'Cuenta 1' }).click()
@@ -1579,9 +1579,9 @@ test.describe('precuenta (docs/DINERO.md)', () => {
     await wine.getByRole('button', { name: 'Cuenta 2' }).click()
 
     // Cuenta 1: 44.900 + 27.900 + 64.950 = 137.750 · Cuenta 2: 40.900 + 13.900 + 64.950 = 119.750
-    const leidas = await leerCuentas(page)
-    expect(leidas.map((c) => c.amount)).toEqual([137_750, 119_750])
-    expect(leidas.map((c) => c.tip)).toEqual(repartoPorResiduo(23_843, [137_750, 119_750]))
+    const checksRead = await readChecks(page)
+    expect(checksRead.map((c) => c.amount)).toEqual([137_750, 119_750])
+    expect(checksRead.map((c) => c.tip)).toEqual(largestRemainderAllocation(23_843, [137_750, 119_750]))
     await expect(page.getByText('Sin asignar')).toHaveCount(0)
   })
 
@@ -1594,7 +1594,7 @@ test.describe('precuenta (docs/DINERO.md)', () => {
     const pizza = page.getByRole('group', { name: 'Quién paga Quattro Formaggi' })
     for (const c of [1, 2, 3]) await pizza.getByRole('button', { name: `Cuenta ${c}` }).click()
     // 44.900 / 3 = 14.966,67
-    expect((await leerCuentas(page)).map((c) => c.amount)).toEqual([14_967, 14_967, 14_966])
+    expect((await readChecks(page)).map((c) => c.amount)).toEqual([14_967, 14_967, 14_966])
     await expect(checks(page).filter({ hasText: 'Sin asignar' })).toContainText('$212.600')
   })
 
@@ -1606,10 +1606,10 @@ test.describe('precuenta (docs/DINERO.md)', () => {
       .getByRole('button', { name: 'Cuenta 1' })
     await button.click()
     await expect(button).toHaveAttribute('aria-pressed', 'true')
-    expect((await leerCuentas(page))[0]?.amount).toBe(44_900)
+    expect((await readChecks(page))[0]?.amount).toBe(44_900)
     await button.click()
     await expect(button).toHaveAttribute('aria-pressed', 'false')
-    expect((await leerCuentas(page))[0]?.amount).toBe(0)
+    expect((await readChecks(page))[0]?.amount).toBe(0)
   })
 
   test('quitar una cuenta no rompe la pantalla: lo suyo vuelve a «sin asignar»', async ({
@@ -1627,7 +1627,7 @@ test.describe('precuenta (docs/DINERO.md)', () => {
     await expect(page.getByRole('heading', { name: 'Precuenta · Mesa 12' })).toBeVisible()
     expect(errors).toEqual([])
     // La pizza queda solo en la cuenta 2; la cuenta 3 desapareció.
-    expect((await leerCuentas(page)).map((c) => c.amount)).toEqual([0, 44_900])
+    expect((await readChecks(page)).map((c) => c.amount)).toEqual([0, 44_900])
     await expect(checks(page).filter({ hasText: 'Sin asignar' })).toContainText('$212.600')
     await expect(pizza.getByRole('button', { name: 'Cuenta 3' })).toHaveCount(0)
   })
@@ -1637,7 +1637,7 @@ test.describe('precuenta (docs/DINERO.md)', () => {
     await page.getByRole('button', { name: 'Imprimir' }).click()
     await expect(alert(page, 'Precuenta enviada a la impresora')).toBeVisible()
     await page.getByRole('button', { name: 'Volver' }).click()
-    await expect(mesaEnPlano(page, 4)).toHaveAccessibleName(/^Mesa 4: Por cobrar/)
+    await expect(tableOnFloorPlan(page, 4)).toHaveAccessibleName(/^Mesa 4: Por cobrar/)
   })
 
   test('«Cobrar» de una sola cuenta lleva al cobro de la misma mesa con todo el saldo', async ({
@@ -1683,13 +1683,13 @@ test.describe('precuenta (docs/DINERO.md)', () => {
 
 test.describe('cobro (docs/DINERO.md#pagos)', () => {
   const charge = (page: Page, amount: number) =>
-    page.getByRole('button', { name: `Cobrar ${enPesos(amount)}` })
+    page.getByRole('button', { name: `Cobrar ${inPesos(amount)}` })
   const balance = (page: Page) => page.getByRole('region', { name: 'Saldo' }).locator('p').nth(1)
-  const entrega = (page: Page) => page.getByLabel('El cliente entrega')
+  const tendered = (page: Page) => page.getByLabel('El cliente entrega')
   const tip = (page: Page) => page.getByLabel('Propina', { exact: true })
-  const confirmacion = (page: Page) => page.getByRole('alertdialog')
+  const confirmation = (page: Page) => page.getByRole('alertdialog')
   /** Abre el cobro y espera a que la pantalla (que se carga aparte) esté lista para el teclado. */
-  const irACobro = async (page: Page, route = '/mockups/checkout?table=12') => {
+  const goToCheckout = async (page: Page, route = '/mockups/checkout?table=12') => {
     await page.goto(route)
     await expect(page.getByText('Saldo pendiente')).toBeVisible()
   }
@@ -1702,7 +1702,7 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
     await expect(page.getByText('sugerida $23.843')).toBeVisible()
     await expect(tip(page)).toHaveValue('23.800') // en efectivo, múltiplo de $100
     await expect(page.getByText('A cobrar (venta redondeada a $100 + propina)')).toBeVisible()
-    await expect(entrega(page)).toHaveValue('281.300') // exacto por defecto
+    await expect(tendered(page)).toHaveValue('281.300') // exacto por defecto
     await expect(page.getByText('Cambio $0')).toBeVisible()
     await expect(charge(page, 281_300)).toBeEnabled()
   })
@@ -1710,24 +1710,24 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
   test('efectivo: «Faltan» cuando no alcanza y cambio cuando sobra', async ({ page }) => {
     await page.goto('/mockups/checkout?table=12')
     await page.getByRole('button', { name: '20 mil' }).click()
-    await expect(entrega(page)).toHaveValue('20.000')
+    await expect(tendered(page)).toHaveValue('20.000')
     await expect(page.getByText('Faltan $261.300')).toBeVisible()
     await expect(charge(page, 281_300)).toBeDisabled()
 
     await page.getByRole('button', { name: '100 mil' }).click()
     await expect(page.getByText('Faltan $181.300')).toBeVisible()
 
-    await entrega(page).fill('281299')
+    await tendered(page).fill('281299')
     await expect(page.getByText('Faltan $1', { exact: true })).toBeVisible()
     await expect(charge(page, 281_300)).toBeDisabled()
 
-    await entrega(page).fill('300000')
-    await expect(entrega(page)).toHaveValue('300.000') // se escribe con puntos de miles
+    await tendered(page).fill('300000')
+    await expect(tendered(page)).toHaveValue('300.000') // se escribe con puntos de miles
     await expect(page.getByText('Cambio $18.700')).toBeVisible()
     await expect(charge(page, 281_300)).toBeEnabled()
 
     await page.getByRole('button', { name: 'Exacto' }).click()
-    await expect(entrega(page)).toHaveValue('281.300')
+    await expect(tendered(page)).toHaveValue('281.300')
     await expect(page.getByText('Cambio $0')).toBeVisible()
   })
 
@@ -1736,7 +1736,7 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
   }) => {
     await page.goto('/mockups/checkout?table=12')
     await expect(page.getByRole('button', { name: 'Deja el cambio de propina' })).toHaveCount(0)
-    await entrega(page).fill('300000')
+    await tendered(page).fill('300000')
     await page.getByRole('button', { name: 'Deja el cambio de propina' }).click()
     await expect(tip(page)).toHaveValue('42.500') // 23.800 + 18.700
     await expect(page.getByText('Cambio $0')).toBeVisible()
@@ -1757,9 +1757,9 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
   })
 
   test('los campos de dinero solo aceptan números', async ({ page }) => {
-    await irACobro(page)
-    await entrega(page).fill('3a0b0$000')
-    await expect(entrega(page)).toHaveValue('300.000')
+    await goToCheckout(page)
+    await tendered(page).fill('3a0b0$000')
+    await expect(tendered(page)).toHaveValue('300.000')
     await tip(page).fill('1x0')
     await expect(tip(page)).toHaveValue('10')
   })
@@ -1767,33 +1767,33 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
   test('pide confirmar antes de registrar: nada cambia hasta confirmar, y Cancelar vuelve', async ({
     page,
   }) => {
-    await irACobro(page)
-    await entrega(page).fill('300000')
+    await goToCheckout(page)
+    await tendered(page).fill('300000')
     await charge(page, 281_300).click()
 
-    await expect(confirmacion(page)).toContainText('¿Registrar $281.300 en efectivo?')
+    await expect(confirmation(page)).toContainText('¿Registrar $281.300 en efectivo?')
     await expect(balance(page)).toHaveText('$257.500') // todavía no se registró nada
     // El foco pasa a «Confirmar».
     await expect(page.getByRole('button', { name: 'Confirmar' })).toBeFocused()
 
     await page.getByRole('button', { name: 'Cancelar' }).click()
-    await expect(confirmacion(page)).toBeHidden()
+    await expect(confirmation(page)).toBeHidden()
     await expect(balance(page)).toHaveText('$257.500')
   })
 
   test('Enter pide confirmar y el foco queda en «Confirmar»: otro Enter registra', async ({
     page,
   }) => {
-    await irACobro(page)
-    await entrega(page).fill('300000')
+    await goToCheckout(page)
+    await tendered(page).fill('300000')
 
     await page.keyboard.press('Enter')
-    await expect(confirmacion(page)).toBeVisible()
+    await expect(confirmation(page)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Confirmar' })).toBeFocused()
     await expect(balance(page)).toHaveText('$257.500') // un solo Enter nunca registra
 
     await page.keyboard.press('Escape')
-    await expect(confirmacion(page)).toBeHidden()
+    await expect(confirmation(page)).toBeHidden()
     await expect(balance(page)).toHaveText('$257.500')
 
     await page.keyboard.press('Enter')
@@ -1808,21 +1808,21 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
   })
 
   test('Enter con el foco en «Cancelar» cancela, no registra', async ({ page }) => {
-    await irACobro(page)
+    await goToCheckout(page)
     await page.keyboard.press('Enter')
-    await expect(confirmacion(page)).toBeVisible()
+    await expect(confirmation(page)).toBeVisible()
     await page.keyboard.press('Shift+Tab') // de «Confirmar» a «Cancelar»
     await expect(page.getByRole('button', { name: 'Cancelar' })).toBeFocused()
     await page.keyboard.press('Enter')
-    await expect(confirmacion(page)).toBeHidden()
+    await expect(confirmation(page)).toBeHidden()
     await expect(balance(page)).toHaveText('$257.500')
   })
 
   test('Enter no hace nada si el pago todavía no es válido', async ({ page }) => {
-    await irACobro(page)
-    await entrega(page).fill('100000')
+    await goToCheckout(page)
+    await tendered(page).fill('100000')
     await page.keyboard.press('Enter')
-    await expect(confirmacion(page)).toHaveCount(0)
+    await expect(confirmation(page)).toHaveCount(0)
     await expect(balance(page)).toHaveText('$257.500')
   })
 
@@ -1843,14 +1843,14 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
 
     await page.keyboard.press('F2')
     await expect(cash).toHaveAttribute('aria-pressed', 'true')
-    await expect(entrega(page)).toBeVisible()
+    await expect(tendered(page)).toBeVisible()
     await expect(tip(page)).toHaveValue('23.800')
   })
 
   test('tarjeta: exige un número de aprobación de 4 a 8 dígitos y se cobra con Enter', async ({
     page,
   }) => {
-    await irACobro(page)
+    await goToCheckout(page)
     await page.keyboard.press('F3')
     const approval_code = page.getByLabel('Número de aprobación')
     await expect(page.getByText('Total en el datáfono (venta + propina)')).toBeVisible()
@@ -1865,24 +1865,24 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
     await expect(approval_code).toHaveValue('12345678')
 
     await page.keyboard.press('Enter')
-    await expect(confirmacion(page)).toContainText('¿Registrar $281.343 en tarjeta?')
+    await expect(confirmation(page)).toContainText('¿Registrar $281.343 en tarjeta?')
     await page.keyboard.press('Enter')
     await expect(balance(page)).toHaveText('$0')
     await expect(alert(page, 'Mesa 12 pagada y cerrada')).toBeVisible()
   })
 
   test('cambiar de medio mientras se confirma cierra la confirmación', async ({ page }) => {
-    await irACobro(page)
+    await goToCheckout(page)
     await page.keyboard.press('Enter')
-    await expect(confirmacion(page)).toBeVisible()
+    await expect(confirmation(page)).toBeVisible()
     await page.getByRole('button', { name: /^Tarjeta/ }).click()
-    await expect(confirmacion(page)).toHaveCount(0)
+    await expect(confirmation(page)).toHaveCount(0)
   })
 
   test('al pagar todo la mesa se cierra sola y queda «Por limpiar» en el plano', async ({
     page,
   }) => {
-    await irACobro(page)
+    await goToCheckout(page)
     await page.keyboard.press('Enter')
     await page.keyboard.press('Enter')
     await expect(balance(page)).toHaveText('$0')
@@ -1891,27 +1891,27 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
 
     await page.getByRole('button', { name: 'Volver al salón' }).click()
     await expect(page).toHaveURL(/\/bocetos\/plano$/)
-    await expect(mesaEnPlano(page, 12)).toHaveAccessibleName(/^Mesa 12: Por limpiar$/)
+    await expect(tableOnFloorPlan(page, 12)).toHaveAccessibleName(/^Mesa 12: Por limpiar$/)
     await expect(page.getByText('0 por cobrar')).toBeVisible()
   })
 
   test('Deshacer el cierre deja la mesa «Por cobrar»', async ({ page }) => {
-    await congelarReloj(page)
-    await irACobro(page)
+    await freezeClock(page)
+    await goToCheckout(page)
     await page.keyboard.press('Enter')
     await page.keyboard.press('Enter')
     await undo(page, 'Mesa 12 pagada y cerrada').click()
     await page.getByRole('button', { name: 'Volver al salón' }).click()
-    await expect(mesaEnPlano(page, 12)).toHaveAccessibleName(/^Mesa 12: Por cobrar/)
+    await expect(tableOnFloorPlan(page, 12)).toHaveAccessibleName(/^Mesa 12: Por cobrar/)
   })
 
   test('la mesa por limpiar se deja libre y vacía para el siguiente cliente', async ({ page }) => {
-    await irACobro(page)
+    await goToCheckout(page)
     await page.keyboard.press('Enter')
     await page.keyboard.press('Enter')
     await page.getByRole('button', { name: 'Volver al salón' }).click()
-    await mesaEnPlano(page, 12).click()
-    await expect(mesaEnPlano(page, 12)).toHaveAccessibleName(/^Mesa 12: Libre$/)
+    await tableOnFloorPlan(page, 12).click()
+    await expect(tableOnFloorPlan(page, 12)).toHaveAccessibleName(/^Mesa 12: Libre$/)
   })
 
   test('el monto de la ruta es la parte de una cuenta; si no cabe en el saldo, se cobra el saldo', async ({
@@ -1954,13 +1954,13 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
     await expect(row(/^Ya pagado$/)).toHaveText('-$128.750')
     await expect(row(/^Saldo$/)).toHaveText('$128.750')
     // La propina sugerida se vuelve a calcular sobre el saldo: 128.750 / 1,08 × 10 %.
-    await expect(row(/Propina sugerida/)).toHaveText(enPesos(propinaEsperada(128_750)))
-    await expect(row(/^Con propina$/)).toHaveText(enPesos(128_750 + propinaEsperada(128_750)))
+    await expect(row(/Propina sugerida/)).toHaveText(inPesos(expectedTip(128_750)))
+    await expect(row(/^Con propina$/)).toHaveText(inPesos(128_750 + expectedTip(128_750)))
 
     // El plano sigue mostrando la mesa abierta, con el saldo pendiente.
     await page.getByRole('button', { name: 'Volver' }).click()
-    await expect(mesaEnPlano(page, 12)).toHaveAccessibleName(/\$128\.750$/)
-    await mesaEnPlano(page, 12).click()
+    await expect(tableOnFloorPlan(page, 12)).toHaveAccessibleName(/\$128\.750$/)
+    await tableOnFloorPlan(page, 12).click()
 
     // Con pagos previos ya no se divide por ítems.
     await page.getByRole('button', { name: 'Por ítems' }).click()
@@ -1982,7 +1982,7 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
     await expect(payments.nth(0)).toContainText('$128.750 + propina $11.900')
     await expect(payments.nth(1)).toContainText('$128.750 + propina $11.900 (redondeo -$50)')
     await page.getByRole('button', { name: 'Volver al salón' }).click()
-    await expect(mesaEnPlano(page, 12)).toHaveAccessibleName(/^Mesa 12: Por limpiar$/)
+    await expect(tableOnFloorPlan(page, 12)).toHaveAccessibleName(/^Mesa 12: Por limpiar$/)
   })
 
   test('de punta a punta: pedido nuevo, precuenta y cobro dejan la mesa por limpiar y fuera del KDS', async ({
@@ -1990,22 +1990,22 @@ test.describe('cobro (docs/DINERO.md#pagos)', () => {
   }, info) => {
     const register = isRegister(info.project.name)
     await page.goto('/mockups/floor-plan')
-    await mesaEnPlano(page, 1).click()
+    await tableOnFloorPlan(page, 1).click()
     await product(page, 'Pinsa').click()
     await send(page, 1).click()
-    await mesaEnPlano(page, 1).click() // en preparación: vuelve al pedido
-    const ticket = await abrirTicket(page, register)
+    await tableOnFloorPlan(page, 1).click() // en preparación: vuelve al pedido
+    const ticket = await openTicket(page, register)
     await ticket.getByRole('button', { name: 'Cuenta' }).click()
     await expect(page.getByRole('button', { name: 'Cobrar $20.900' })).toBeVisible()
     await page.getByRole('button', { name: 'Cobrar $20.900' }).click()
     // 20.900 / 1,08 × 10 % = 1.935,19 → 1.935; en efectivo 1.900
     await expect(tip(page)).toHaveValue('1.900')
-    await entrega(page).fill('25000')
+    await tendered(page).fill('25000')
     await expect(page.getByText('Cambio $2.200')).toBeVisible() // 25.000 − 20.900 − 1.900
     await page.keyboard.press('Enter')
     await page.keyboard.press('Enter')
     await page.getByRole('button', { name: 'Volver al salón' }).click()
-    await expect(mesaEnPlano(page, 1)).toHaveAccessibleName(/^Mesa 1: Por limpiar$/)
+    await expect(tableOnFloorPlan(page, 1)).toHaveAccessibleName(/^Mesa 1: Por limpiar$/)
   })
 })
 
@@ -2030,7 +2030,7 @@ test.describe('KDS (cocina y barra)', () => {
     await expect(ticketEl(page, 12, 'cocina')).toHaveCount(0)
     await expect(ticketEl(page, 2, 'barra')).toHaveCount(0)
 
-    const numbers = (await page.locator('main ul > li p.font-titulo').allInnerTexts()).map(numeroDe)
+    const numbers = (await page.locator('main ul > li p.font-titulo').allInnerTexts()).map(numberOf)
     expect(numbers.filter((n, i) => n !== numbers[i - 1])).toEqual([7, 4, 21])
   })
 
@@ -2052,7 +2052,7 @@ test.describe('KDS (cocina y barra)', () => {
   test('el tiempo sube con el reloj, sin esperas reales, y cambia de tono a los 10 y 20 minutos', async ({
     page,
   }) => {
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/kds')
     const t21 = ticketEl(page, 21, 'cocina')
     await expect(t21).toContainText('6 min')
@@ -2068,11 +2068,11 @@ test.describe('KDS (cocina y barra)', () => {
   test('el plano y el KDS cuentan el tiempo igual: la demora del plano sale de la misma comanda', async ({
     page,
   }) => {
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/floor-plan')
-    await expect(mesaEnPlano(page, 21)).toHaveAccessibleName(/^Mesa 21: En preparación/)
+    await expect(tableOnFloorPlan(page, 21)).toHaveAccessibleName(/^Mesa 21: En preparación/)
     await page.clock.runFor(14 * 60_000) // 6 + 14 = 20 min de comanda
-    await expect(mesaEnPlano(page, 21)).toHaveAccessibleName(/^Mesa 21: Demora/)
+    await expect(tableOnFloorPlan(page, 21)).toHaveAccessibleName(/^Mesa 21: Demora/)
   })
 
   test('el filtro de estación muestra solo cocina o solo barra', async ({ page }) => {
@@ -2107,7 +2107,7 @@ test.describe('KDS (cocina y barra)', () => {
   test('«Todo listo» despacha la comanda; Deshacer la devuelve con los ítems marcados', async ({
     page,
   }) => {
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/kds')
     const card = ticketEl(page, 21, 'cocina')
     await card.getByRole('button', { name: /Pinsa/ }).click()
@@ -2132,26 +2132,26 @@ test.describe('KDS (cocina y barra)', () => {
     // Con una estación pendiente, la mesa sigue en preparación.
     await page.getByRole('button', { name: 'Volver' }).click()
     await page.getByRole('link', { name: /Plano de mesas/ }).click()
-    await expect(mesaEnPlano(page, 21)).toHaveAccessibleName(/^Mesa 21: En preparación/)
+    await expect(tableOnFloorPlan(page, 21)).toHaveAccessibleName(/^Mesa 21: En preparación/)
 
     await page.getByRole('button', { name: 'Volver' }).click()
     await page.getByRole('link', { name: /Cocina y barra/ }).click()
     await ticketEl(page, 21, 'barra').getByRole('button', { name: 'Todo listo' }).click()
     await page.getByRole('button', { name: 'Volver' }).click()
     await page.getByRole('link', { name: /Plano de mesas/ }).click()
-    await expect(mesaEnPlano(page, 21)).toHaveAccessibleName(/^Mesa 21: Listo para servir, /)
+    await expect(tableOnFloorPlan(page, 21)).toHaveAccessibleName(/^Mesa 21: Listo para servir, /)
     await expect(page.getByText('2 para servir')).toBeVisible()
   })
 
   test('deshacer el último despacho vuelve la mesa a «En preparación»', async ({ page }) => {
-    await congelarReloj(page)
+    await freezeClock(page)
     await page.goto('/mockups/kds')
     await ticketEl(page, 21, 'cocina').getByRole('button', { name: 'Todo listo' }).click()
     await ticketEl(page, 21, 'barra').getByRole('button', { name: 'Todo listo' }).click()
     await undo(page, 'Mesa 21 despachada (barra)').click()
-    await irA(page, '/mockups/floor-plan')
-    await expect(mesaEnPlano(page, 21)).toHaveAccessibleName(/^Mesa 21: En preparación/)
-    await irA(page, '/mockups/kds')
+    await goTo(page, '/mockups/floor-plan')
+    await expect(tableOnFloorPlan(page, 21)).toHaveAccessibleName(/^Mesa 21: En preparación/)
+    await goTo(page, '/mockups/kds')
     await expect(ticketEl(page, 21, 'barra')).toBeVisible()
     await expect(ticketEl(page, 21, 'cocina')).toHaveCount(0)
   })
@@ -2214,7 +2214,7 @@ test.describe('teclado del PIN (PIN de prueba 2468)', () => {
   const warning = (page: Page) => page.getByRole('alert')
 
   test.beforeEach(async ({ page }) => {
-    await congelarReloj(page)
+    await freezeClock(page)
   })
 
   test('el PIN correcto entra al cuarto dígito, sin tocar «aceptar», y se envía una sola vez', async ({

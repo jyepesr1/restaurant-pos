@@ -19,7 +19,7 @@ applyBrand()
 applyTheme()
 
 const root = document.getElementById('root')
-if (!root) throw new Error('No se encontró el elemento #raiz')
+if (!root) throw new Error('No se encontró el elemento #root')
 
 createRoot(root).render(
   <StrictMode>

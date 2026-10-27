@@ -3,7 +3,7 @@ import { PaymentMethod, Ulid } from './events/common'
 import type { RoundingMode } from './money/arithmetic'
 import type { CashRoundingMode } from './money/cash'
 
-// Restaurant config (`Restaurante.config`, docs/MODELO_DATOS.md#configuración-del-
+// Restaurant config (`restaurants.config`, docs/MODELO_DATOS.md#configuración-del-
 // restaurante). Anything missing takes the pilot default. Tax matters are flagged to be
 // validated with the accountant: none of it is hard-coded.
 
@@ -16,7 +16,7 @@ const CASH_MODES = [
   'up',
 ] as const satisfies readonly CashRoundingMode[]
 
-/** The brands the app knows how to render (apps/pos/src/estilos.css). */
+/** The brands the app knows how to render (apps/pos/src/styles.css). */
 export const BRANDS = ['faro', 'la-spritzzeria'] as const
 
 const TimeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Hora en formato HH:MM')

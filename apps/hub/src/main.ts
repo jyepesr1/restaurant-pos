@@ -21,7 +21,7 @@ const DEFAULT_PORT = 4000
 const ADMIN_PIN_FILE = 'pin-administrador.txt'
 // They can be changed with environment variables; the e2e tests use their own folders so as not
 // to overwrite the app or the data of a hub that is serving real phones.
-const dirApp = process.env.DIR_APP || fileURLToPath(new URL('../../pos/dist', import.meta.url))
+const appDir = process.env.APP_DIR || fileURLToPath(new URL('../../pos/dist', import.meta.url))
 const dataDir = dataDirOf()
 
 function readPort(): number {
@@ -116,7 +116,7 @@ const port = readPort()
 const db = prepareDatabase()
 const { access, restaurantId, floor, queue, timeZone, admin, alerts } = prepareAll(db)
 const app = createAppServer({
-  dirApp,
+  appDir,
   diagnostics: { dataDir },
   access,
   sync: { floor, onFailure: (error) => console.error('Falló la sincronización:', error) },
@@ -163,7 +163,7 @@ try {
   process.exit(1)
 }
 
-if (!existsSync(dirApp)) {
+if (!existsSync(appDir)) {
   console.warn(
     '\n⚠ Falta compilar la app: ejecuta `pnpm --filter @pos/app build` y reinicia el hub.',
   )

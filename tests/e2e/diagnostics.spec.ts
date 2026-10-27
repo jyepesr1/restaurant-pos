@@ -1,16 +1,16 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, type Page, test, type WebSocketRoute } from '@playwright/test'
-import { DATA_DIR_E2E } from './rutas'
+import { DATA_DIR_E2E } from './routes'
 
-const ARCHIVO = join(DATA_DIR_E2E, 'diagnostics.jsonl')
-const MENSAJE_ERROR = '✕ No llegó al hub. Revisa que el equipo esté en el Wi-Fi del local.'
+const FILE = join(DATA_DIR_E2E, 'diagnostics.jsonl')
+const ERROR_MESSAGE = '✕ No llegó al hub. Revisa que el equipo esté en el Wi-Fi del local.'
 
 /**
  * Deja pasar los WebSocket del diagnóstico hasta el hub real, pero guarda cada conexión
  * para poder cortarla desde la prueba (simula Wi-Fi caído o celular que se duerme).
  */
-async function interceptarWs(page: Page) {
+async function interceptWs(page: Page) {
   const connections: WebSocketRoute[] = []
   await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
     ws.connectToServer()
@@ -24,7 +24,7 @@ async function interceptarWs(page: Page) {
  * sin esto, dos eventos del mismo milisegundo (p. ej. "oculta" y "ws-cerrado") pueden
  * quedar invertidos y la prueba dependería de la velocidad de la máquina.
  */
-async function relojSinEmpates(page: Page) {
+async function clockWithoutTies(page: Page) {
   await page.addInitScript(() => {
     const real = Date.now.bind(Date)
     let latest = 0
@@ -53,7 +53,7 @@ async function changeVisibility(page: Page, isHidden: boolean) {
  * Hub que se puede "apagar": mientras `caido` sea true rechaza cada conexión nueva. Guarda en
  * `conexiones` solo las que llegaron al hub real, así su longitud cuenta las conexiones del hub.
  */
-async function hubControlable(page: Page) {
+async function controllableHub(page: Page) {
   const hub = { down: false, connections: [] as WebSocketRoute[] }
   await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
     if (hub.down) {
@@ -70,9 +70,9 @@ async function hubControlable(page: Page) {
  * Envuelve WebSocket en la página para contar sockets vivos (CONNECTING u OPEN) y el máximo
  * que hubo a la vez. Con `window.__colgar = true` los sockets nuevos quedan en CONNECTING
  * para siempre, como un intento hecho con la pantalla bloqueada. Debe registrarse después de
- * `hubControlable`, para envolver el WebSocket que ya intercepta Playwright.
+ * `controllableHub`, para envolver el WebSocket que ya intercepta Playwright.
  */
-async function instrumentarWs(page: Page) {
+async function instrumentWs(page: Page) {
   await page.addInitScript(`(() => {
     const Real = window.WebSocket
     window.__ws = []
@@ -96,32 +96,32 @@ async function instrumentarWs(page: Page) {
   })()`)
 }
 
-interface SocketsEnPagina {
+interface PageSockets {
   live: number
-  maximoSimultaneos: number
+  maxConcurrent: number
   /** readyState de cada socket creado, en orden. */
   statuses: number[]
 }
 
-const leerSockets = (page: Page) =>
+const readSockets = (page: Page) =>
   page.evaluate(`({
     vivos: window.__ws.filter((w) => w.readyState <= 1).length,
     maximoSimultaneos: window.__maxVivos,
     estados: window.__ws.map((w) => w.readyState),
-  })`) as Promise<SocketsEnPagina>
+  })`) as Promise<PageSockets>
 
-const colgarSocketsNuevos = (page: Page, colgar: boolean) =>
-  page.evaluate(`window.__colgar = ${colgar}`)
+const hangNewSockets = (page: Page, hang: boolean) =>
+  page.evaluate(`window.__colgar = ${hang}`)
 
 const row = (page: Page, title: string) => page.getByRole('listitem').filter({ hasText: title })
-const CANAL = 'Canal en tiempo real'
-const BLOQUEO = 'Última vez en segundo plano'
-const wsConectado = (page: Page) => expect(row(page, CANAL)).toContainText('✓ Conectado')
-const wsDesconectado = (page: Page) =>
-  expect(row(page, CANAL)).toContainText('✕ Desconectado, reintentando')
+const CHANNEL = 'Canal en tiempo real'
+const LOCK = 'Última vez en segundo plano'
+const wsConnected = (page: Page) => expect(row(page, CHANNEL)).toContainText('✓ Conectado')
+const wsDisconnected = (page: Page) =>
+  expect(row(page, CHANNEL)).toContainText('✕ Desconectado, reintentando')
 /** Valor (columna derecha) de una fila del diagnóstico. */
 const value = (page: Page, title: string) => row(page, title).locator(':scope > span').last()
-const ponerNombre = (page: Page, name = 'Equipo de pruebas') =>
+const enterName = (page: Page, name = 'Equipo de pruebas') =>
   page.getByLabel('Nombre de este equipo').fill(name)
 
 const submission = (page: Page) =>
@@ -134,7 +134,7 @@ test.describe('pantalla de diagnóstico', () => {
     await page.goto('/diagnostics')
 
     await expect(page.getByRole('heading', { name: 'Diagnóstico del dispositivo' })).toBeVisible()
-    await wsConectado(page)
+    await wsConnected(page)
     await expect(row(page, 'Datos locales (IndexedDB)')).toContainText('✓ Funciona')
     await expect(row(page, 'Tiempo de respuesta')).toContainText('Midiendo')
     // El primer ping sale a los 5 s de abrir el socket.
@@ -150,16 +150,16 @@ test.describe('pantalla de diagnóstico', () => {
   })
 
   test('si el canal se corta muestra "Desconectado" y se reconecta solo', async ({ page }) => {
-    const connections = await interceptarWs(page)
+    const connections = await interceptWs(page)
     await page.goto('/diagnostics')
-    await wsConectado(page)
+    await wsConnected(page)
     expect(connections).toHaveLength(1)
 
     await connections[0]?.close({ code: 1006 })
-    await wsDesconectado(page)
+    await wsDisconnected(page)
 
     // El primer reintento sale al segundo.
-    await wsConectado(page)
+    await wsConnected(page)
     expect(connections).toHaveLength(2)
     // La reconexión se refleja en el contador del resumen (se refresca cada 3 s).
     await expect(value(page, 'Veces que se reconectó')).toHaveText('1', { timeout: 10_000 })
@@ -168,10 +168,10 @@ test.describe('pantalla de diagnóstico', () => {
   test('sigue reintentando mientras el hub rechaza la conexión y se recupera al volver', async ({
     page,
   }) => {
-    let hubCaido = false
+    let hubDown = false
     const connections: WebSocketRoute[] = []
     await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
-      if (hubCaido) {
+      if (hubDown) {
         ws.close({ code: 1011 })
         return
       }
@@ -180,33 +180,33 @@ test.describe('pantalla de diagnóstico', () => {
     })
 
     await page.goto('/diagnostics')
-    await wsConectado(page)
+    await wsConnected(page)
 
-    hubCaido = true
+    hubDown = true
     await connections[0]?.close()
-    await wsDesconectado(page)
+    await wsDisconnected(page)
     // Aguanta varios intentos fallidos seguidos sin perder el aviso.
-    await wsDesconectado(page)
+    await wsDisconnected(page)
 
-    hubCaido = false
-    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 10_000 })
+    hubDown = false
+    await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 10_000 })
   })
 
   test('al ocultar y mostrar la página actualiza el resumen del último bloqueo', async ({
     page,
   }) => {
-    await relojSinEmpates(page)
+    await clockWithoutTies(page)
     await page.goto('/diagnostics')
-    await wsConectado(page)
-    const bloqueo = row(page, BLOQUEO)
-    await expect(bloqueo).toContainText('Aún no ha pasado')
+    await wsConnected(page)
+    const lock = row(page, LOCK)
+    await expect(lock).toContainText('Aún no ha pasado')
 
     await changeVisibility(page, true)
     await changeVisibility(page, false)
 
     // Al volver espera hasta 3 s una respuesta del hub antes de dar la conexión por viva.
-    await expect(bloqueo).toContainText('sin cortes', { timeout: 10_000 })
-    await expect(bloqueo).not.toContainText('Aún no ha pasado')
+    await expect(lock).toContainText('sin cortes', { timeout: 10_000 })
+    await expect(lock).not.toContainText('Aún no ha pasado')
     // Con todo medido y sin cortes, el veredicto queda en verde.
     await expect(page.getByText('Listo para operar')).toBeVisible({ timeout: 15_000 })
   })
@@ -214,18 +214,18 @@ test.describe('pantalla de diagnóstico', () => {
   test('si la conexión se pierde mientras la pantalla está bloqueada lo indica', async ({
     page,
   }) => {
-    const connections = await interceptarWs(page)
-    await relojSinEmpates(page)
+    const connections = await interceptWs(page)
+    await clockWithoutTies(page)
     await page.goto('/diagnostics')
-    await wsConectado(page)
+    await wsConnected(page)
 
     await changeVisibility(page, true)
     await connections[0]?.close({ code: 1006 })
-    await wsDesconectado(page)
+    await wsDisconnected(page)
     await changeVisibility(page, false)
 
-    const bloqueo = row(page, BLOQUEO)
-    await expect(bloqueo).toContainText('se perdió la conexión', { timeout: 10_000 })
+    const lock = row(page, LOCK)
+    await expect(lock).toContainText('se perdió la conexión', { timeout: 10_000 })
     await expect(page.getByText('En segundo plano se pierde la conexión')).toBeVisible()
   })
 
@@ -251,115 +251,115 @@ test.describe('pantalla de diagnóstico', () => {
     })()`)
 
     await page.goto('/diagnostics')
-    await expect(row(page, CANAL)).toContainText('Conectando')
+    await expect(row(page, CHANNEL)).toContainText('Conectando')
     // Se abandona a los 4 s y el siguiente intento sale al segundo.
-    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 10_000 })
+    await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 10_000 })
   })
 
   test('al volver sin conexión reconecta de inmediato, sin esperar el reintento', async ({
     page,
   }) => {
-    let hubCaido = false
+    let hubDown = false
     const connections: WebSocketRoute[] = []
     await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
-      if (hubCaido) {
+      if (hubDown) {
         ws.close({ code: 1011 })
         return
       }
       ws.connectToServer()
       connections.push(ws)
     })
-    await relojSinEmpates(page)
+    await clockWithoutTies(page)
     await page.goto('/diagnostics')
-    await wsConectado(page)
+    await wsConnected(page)
 
     // Con la pantalla bloqueada se corta y los reintentos fallan: la espera entre ellos crece.
     await changeVisibility(page, true)
-    hubCaido = true
+    hubDown = true
     await connections[0]?.close({ code: 1006 })
     await page.waitForTimeout(7000)
 
     // El hub vuelve justo cuando el usuario desbloquea: debe reconectar en menos de 1,5 s,
     // aunque el reintento programado estuviera a varios segundos.
-    hubCaido = false
+    hubDown = false
     await changeVisibility(page, false)
-    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 1500 })
-    await expect(row(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
+    await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 1500 })
+    await expect(row(page, LOCK)).toContainText('volvió en', { timeout: 10_000 })
   })
 
   test('al volver sin conexión no quedan dos sockets abiertos a la vez', async ({ page }) => {
-    const hub = await hubControlable(page)
-    await instrumentarWs(page)
-    await relojSinEmpates(page)
+    const hub = await controllableHub(page)
+    await instrumentWs(page)
+    await clockWithoutTies(page)
     await page.goto('/diagnostics')
-    await wsConectado(page)
+    await wsConnected(page)
 
     // Se corta con la pantalla bloqueada y los reintentos fallan: queda un reintento programado.
     await changeVisibility(page, true)
     hub.down = true
     await hub.connections[0]?.close({ code: 1006 })
-    await wsDesconectado(page)
+    await wsDisconnected(page)
 
     hub.down = false
     await changeVisibility(page, false)
-    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
+    await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 3000 })
 
     // El reintento viejo habría saltado como mucho a los 5 s (espera máxima entre intentos): si
     // no se canceló al volver, abriría un segundo socket. Es una ventana de tiempo real a propósito.
     await page.waitForTimeout(6000)
-    await wsConectado(page)
-    const sockets = await leerSockets(page)
+    await wsConnected(page)
+    const sockets = await readSockets(page)
     expect(sockets.live).toBe(1)
-    expect(sockets.maximoSimultaneos).toBe(1)
+    expect(sockets.maxConcurrent).toBe(1)
   })
 
   test('si al volver un intento sigue en CONNECTING, lo descarta y reconecta sin esperar', async ({
     page,
   }) => {
-    const hub = await hubControlable(page)
-    await instrumentarWs(page)
-    await relojSinEmpates(page)
+    const hub = await controllableHub(page)
+    await instrumentWs(page)
+    await clockWithoutTies(page)
     await page.goto('/diagnostics')
-    await wsConectado(page)
+    await wsConnected(page)
 
     // Pantalla bloqueada: se corta y el reintento (al segundo) queda colgado en CONNECTING.
     await changeVisibility(page, true)
-    await colgarSocketsNuevos(page, true)
+    await hangNewSockets(page, true)
     await hub.connections[0]?.close({ code: 1006 })
-    await expect.poll(async () => (await leerSockets(page)).statuses).toEqual([3, 0])
+    await expect.poll(async () => (await readSockets(page)).statuses).toEqual([3, 0])
 
     // El hub está bien: el usuario vuelve cuando el intento lleva poco tiempo colgado.
-    await colgarSocketsNuevos(page, false)
+    await hangNewSockets(page, false)
     await changeVisibility(page, false)
 
     // Debe reconectar antes de que el límite de 4 s abandone el intento por su cuenta.
-    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
-    const sockets = await leerSockets(page)
+    await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 3000 })
+    const sockets = await readSockets(page)
     expect(sockets.statuses).toEqual([3, 3, 1])
     expect(sockets.live).toBe(1)
     expect(hub.connections).toHaveLength(2)
-    await expect(row(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
+    await expect(row(page, LOCK)).toContainText('volvió en', { timeout: 10_000 })
   })
 
   test('una conexión sana reabierta al volver no se descarta por no haber recibido mensajes aún', async ({
     page,
   }) => {
-    const hub = await hubControlable(page)
-    await relojSinEmpates(page)
+    const hub = await controllableHub(page)
+    await clockWithoutTies(page)
     await page.goto('/diagnostics')
-    await wsConectado(page)
+    await wsConnected(page)
 
     await changeVisibility(page, true)
     hub.down = true
     await hub.connections[0]?.close({ code: 1006 })
-    await wsDesconectado(page)
+    await wsDisconnected(page)
     hub.down = false
     await changeVisibility(page, false)
-    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 3000 })
+    await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 3000 })
 
     // La fila solo cambia tras la comprobación de 3 s al volver, que es cuando podría descartarla.
-    await expect(row(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
-    await wsConectado(page)
+    await expect(row(page, LOCK)).toContainText('volvió en', { timeout: 10_000 })
+    await wsConnected(page)
     // El hub no manda nada nada más abrir (el primer latido sale a los 5 s): eso no es "mudo".
     expect(hub.connections).toHaveLength(2)
     await expect(value(page, 'Veces que se reconectó')).toHaveText('1', { timeout: 10_000 })
@@ -368,11 +368,11 @@ test.describe('pantalla de diagnóstico', () => {
   test('ocultar y volver varias veces seguidas sin conexión no duplica sockets y termina conectado', async ({
     page,
   }) => {
-    const hub = await hubControlable(page)
-    await instrumentarWs(page)
-    await relojSinEmpates(page)
+    const hub = await controllableHub(page)
+    await instrumentWs(page)
+    await clockWithoutTies(page)
     await page.goto('/diagnostics')
-    await wsConectado(page)
+    await wsConnected(page)
 
     await changeVisibility(page, true)
     hub.down = true
@@ -385,18 +385,18 @@ test.describe('pantalla de diagnóstico', () => {
     hub.down = false
     await changeVisibility(page, false)
 
-    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 5000 })
+    await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 5000 })
     // Un intento por vuelta como mucho, y los reintentos programados no deben sumar otro socket.
     await page.waitForTimeout(6000)
-    await wsConectado(page)
-    const sockets = await leerSockets(page)
+    await wsConnected(page)
+    const sockets = await readSockets(page)
     expect(sockets.live).toBe(1)
-    expect(sockets.maximoSimultaneos).toBe(1)
+    expect(sockets.maxConcurrent).toBe(1)
 
-    const bloqueo = row(page, BLOQUEO)
-    await expect(bloqueo).toContainText('se perdió la conexión', { timeout: 10_000 })
-    await expect(bloqueo).toContainText('volvió en')
-    await expect(bloqueo).not.toContainText('aún reconectando')
+    const lock = row(page, LOCK)
+    await expect(lock).toContainText('se perdió la conexión', { timeout: 10_000 })
+    await expect(lock).toContainText('volvió en')
+    await expect(lock).not.toContainText('aún reconectando')
     // Recuperó al instante: no debe salir el aviso de más de 3 s.
     await expect(page.getByText('En segundo plano se pierde la conexión')).toBeVisible()
     await expect(page.getByText('tardó más de 3 s en reconectar')).toBeHidden()
@@ -405,10 +405,10 @@ test.describe('pantalla de diagnóstico', () => {
   test('"aún reconectando" se muestra mientras el hub sigue caído y pasa a "volvió en" al volver', async ({
     page,
   }) => {
-    const hub = await hubControlable(page)
-    await relojSinEmpates(page)
+    const hub = await controllableHub(page)
+    await clockWithoutTies(page)
     await page.goto('/diagnostics')
-    await wsConectado(page)
+    await wsConnected(page)
 
     await changeVisibility(page, true)
     hub.down = true
@@ -416,23 +416,23 @@ test.describe('pantalla de diagnóstico', () => {
     await changeVisibility(page, false)
 
     // La comprobación al volver dura 3 s y el resumen se refresca cada 3 s.
-    const bloqueo = row(page, BLOQUEO)
-    await expect(bloqueo).toContainText('se perdió la conexión', { timeout: 10_000 })
-    await expect(bloqueo).toContainText('(aún reconectando)')
-    await expect(bloqueo).not.toContainText('volvió en')
-    await expect(row(page, CANAL)).toContainText('✕ Desconectado, reintentando')
+    const lock = row(page, LOCK)
+    await expect(lock).toContainText('se perdió la conexión', { timeout: 10_000 })
+    await expect(lock).toContainText('(aún reconectando)')
+    await expect(lock).not.toContainText('volvió en')
+    await expect(row(page, CHANNEL)).toContainText('✕ Desconectado, reintentando')
 
     hub.down = false
-    await expect(row(page, CANAL)).toContainText('✓ Conectado', { timeout: 10_000 })
-    await expect(bloqueo).toContainText(/\(volvió en \d+ s\)/, { timeout: 10_000 })
-    await expect(bloqueo).not.toContainText('aún reconectando')
+    await expect(row(page, CHANNEL)).toContainText('✓ Conectado', { timeout: 10_000 })
+    await expect(lock).toContainText(/\(volvió en \d+ s\)/, { timeout: 10_000 })
+    await expect(lock).not.toContainText('aún reconectando')
   })
 
   test('si al volver tarda más de 3 s en reconectar, el veredicto lo avisa', async ({ page }) => {
-    const hub = await hubControlable(page)
-    await relojSinEmpates(page)
+    const hub = await controllableHub(page)
+    await clockWithoutTies(page)
     await page.goto('/diagnostics')
-    await wsConectado(page)
+    await wsConnected(page)
 
     await changeVisibility(page, true)
     hub.down = true
@@ -440,65 +440,65 @@ test.describe('pantalla de diagnóstico', () => {
     await changeVisibility(page, false)
 
     // "aún reconectando" solo aparece pasados los 3 s de la comprobación: el hub vuelve después.
-    const bloqueo = row(page, BLOQUEO)
-    await expect(bloqueo).toContainText('(aún reconectando)', { timeout: 10_000 })
+    const lock = row(page, LOCK)
+    await expect(lock).toContainText('(aún reconectando)', { timeout: 10_000 })
     hub.down = false
-    await wsConectado(page)
+    await wsConnected(page)
 
     // 3 s o más (el texto redondea al segundo): nunca "menos de 1 s".
-    await expect(bloqueo).toContainText(/\(volvió en (?:[3-9]|\d{2,}) s\)/, { timeout: 10_000 })
+    await expect(lock).toContainText(/\(volvió en (?:[3-9]|\d{2,}) s\)/, { timeout: 10_000 })
     await expect(page.getByText('Al volver tardó más de 3 s en reconectar.')).toBeVisible()
   })
 
   test('si al volver el canal está abierto pero mudo, lo reemplaza sin esperar al vigilante', async ({
     page,
   }) => {
-    let silenciar = false
+    let silence = false
     const connections: WebSocketRoute[] = []
     await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
       const server = ws.connectToServer()
       connections.push(ws)
       // Con `silenciar` la primera conexión deja de recibir del hub, pero sigue abierta.
-      const esLaPrimera = connections.length === 1
+      const isFirst = connections.length === 1
       server.onMessage((message) => {
-        if (!(esLaPrimera && silenciar)) ws.send(message)
+        if (!(isFirst && silence)) ws.send(message)
       })
     })
-    await relojSinEmpates(page)
+    await clockWithoutTies(page)
     await page.goto('/diagnostics')
-    await wsConectado(page)
+    await wsConnected(page)
 
     await changeVisibility(page, true)
-    silenciar = true
+    silence = true
     await changeVisibility(page, false)
     // La comprobación espera 3 s; el vigilante habría tardado 15 s. La reconexión es inmediata,
     // así que "Sin respuesta" dura milisegundos: se comprueba por la segunda conexión en el hub.
     await expect.poll(() => connections.length, { timeout: 6000 }).toBe(2)
-    await wsConectado(page)
-    await expect(row(page, BLOQUEO)).toContainText('volvió en', { timeout: 10_000 })
+    await wsConnected(page)
+    await expect(row(page, LOCK)).toContainText('volvió en', { timeout: 10_000 })
   })
 
   test('si el hub deja de responder sin cerrar el canal, lo detecta y reconecta', async ({
     page,
   }) => {
-    let silenciar = true
+    let silence = true
     const connections: WebSocketRoute[] = []
     await page.routeWebSocket('**/api/diagnostics/ws', (ws) => {
       const server = ws.connectToServer()
       connections.push(ws)
       // La primera conexión queda "muerta": el hub no entrega nada pero el canal sigue abierto.
-      if (silenciar) {
-        silenciar = false
+      if (silence) {
+        silence = false
         server.onMessage(() => {})
       }
     })
 
     await page.goto('/diagnostics')
-    await wsConectado(page)
-    await expect(row(page, CANAL)).toContainText('Sin respuesta, reconectando', {
+    await wsConnected(page)
+    await expect(row(page, CHANNEL)).toContainText('Sin respuesta, reconectando', {
       timeout: 25_000,
     })
-    await wsConectado(page)
+    await wsConnected(page)
     expect(connections).toHaveLength(2)
   })
 
@@ -547,10 +547,10 @@ test.describe('pantalla de diagnóstico', () => {
         : route.fallback(),
     )
     await page.goto('/diagnostics')
-    await ponerNombre(page)
+    await enterName(page)
     await submission(page).click()
 
-    await expect(page.getByRole('status')).toHaveText(MENSAJE_ERROR)
+    await expect(page.getByRole('status')).toHaveText(ERROR_MESSAGE)
     await expect(page.getByText('✓ Resultados enviados')).toBeHidden()
   })
 
@@ -561,9 +561,9 @@ test.describe('pantalla de diagnóstico', () => {
       route.request().method() === 'POST' ? route.abort('connectionrefused') : route.fallback(),
     )
     await page.goto('/diagnostics')
-    await ponerNombre(page)
+    await enterName(page)
     await submission(page).click()
-    await expect(page.getByRole('status')).toHaveText(MENSAJE_ERROR)
+    await expect(page.getByRole('status')).toHaveText(ERROR_MESSAGE)
     // El botón vuelve a quedar disponible.
     await expect(submission(page)).toBeEnabled()
 
@@ -600,11 +600,11 @@ test.describe('pantalla de diagnóstico', () => {
         : route.fallback(),
     )
     await page.goto('/diagnostics')
-    await ponerNombre(page)
+    await enterName(page)
     await submission(page).click()
     await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
-    const recargas = value(page, 'El navegador recargó la página solo')
-    await expect(recargas).toContainText('0 veces en 1 carga')
+    const reloads = value(page, 'El navegador recargó la página solo')
+    await expect(reloads).toContainText('0 veces en 1 carga')
 
     // Cancelar no borra nada.
     await page.getByRole('button', { name: 'Borrar registro y empezar de nuevo' }).click()
@@ -614,7 +614,7 @@ test.describe('pantalla de diagnóstico', () => {
     await page.getByRole('button', { name: 'Borrar registro y empezar de nuevo' }).click()
     await page.getByRole('button', { name: 'Borrar', exact: true }).click()
     await expect(page.getByText('✓ Resultados enviados')).toBeHidden()
-    await expect(recargas).toContainText('0 veces en 0 cargas')
+    await expect(reloads).toContainText('0 veces en 0 cargas')
   })
 })
 
@@ -632,7 +632,7 @@ test('el hub guarda el informe enviado desde la pantalla en diagnosticos.jsonl',
   await submission(page).click()
   await expect(page.getByRole('status')).toHaveText('✓ Resultados enviados')
 
-  const lines = (await readFile(ARCHIVO, 'utf8')).split('\n').filter(Boolean)
+  const lines = (await readFile(FILE, 'utf8')).split('\n').filter(Boolean)
   const own = lines.map((line) => JSON.parse(line)).find((r) => r.data?.name === name)
   expect(own).toBeDefined()
   expect(own.data.indexedDb).toBe(true)

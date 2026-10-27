@@ -13,7 +13,7 @@ import { type SyncOptions, syncRoutes } from './sync'
 
 export interface ServerOptions {
   /** Folder with the built app (`apps/pos/dist`). Without it, the hub only exposes the API. */
-  dirApp?: string
+  appDir?: string
   /** Without this option the diagnostics routes are not exposed. */
   diagnostics?: DiagnosticsOptions
   /** Without this option pairing, sessions and authorizations are not exposed. */
@@ -30,7 +30,7 @@ export interface ServerOptions {
 }
 
 export function createAppServer({
-  dirApp,
+  appDir,
   diagnostics,
   access,
   sync,
@@ -81,8 +81,8 @@ export function createAppServer({
     ...(dbVersion === undefined ? {} : { db_version: dbVersion }),
   }))
 
-  if (dirApp && existsSync(dirApp)) {
-    app.register(fastifyStatic, { root: dirApp })
+  if (appDir && existsSync(appDir)) {
+    app.register(fastifyStatic, { root: appDir })
 
     // The app is a single page: app routes return index.html. A file that does not exist
     // (e.g. a JS file from an earlier version) responds 404, not HTML.

@@ -5,15 +5,15 @@ import { expect, test } from '@playwright/test'
 // nuevo junto con el escenario 14, en la corrida e2e del final (docs/ROADMAP.md).
 test.skip(true, 'Se reescribe con el escenario 14 en la corrida e2e del final')
 
-const SALUD = '**/api/health'
+const HEALTH = '**/api/health'
 
 test('al arrancar muestra "Buscando el hub" hasta que el hub responde', async ({ page }) => {
   let release: () => void = () => {}
-  const retenida = new Promise<void>((resolve) => {
+  const heldPromise = new Promise<void>((resolve) => {
     release = resolve
   })
-  await page.route(SALUD, async (route) => {
-    await retenida
+  await page.route(HEALTH, async (route) => {
+    await heldPromise
     await route.continue()
   })
 
@@ -30,7 +30,7 @@ test('si el hub está colgado (no responde) pasa a "Sin conexión" al vencer el 
   page,
 }) => {
   // La petición queda abierta para siempre: el hub aceptó la conexión pero no contesta.
-  await page.route(SALUD, () => new Promise<void>(() => {}))
+  await page.route(HEALTH, () => new Promise<void>(() => {}))
 
   await page.goto('/')
   await expect(page.getByText('Buscando el hub')).toBeVisible()
@@ -43,16 +43,16 @@ test('si el hub se cuelga estando conectado, avisa y se recupera cuando vuelve a
   await page.goto('/')
   await expect(page.getByText('Conectado al hub')).toBeVisible()
 
-  await page.route(SALUD, () => new Promise<void>(() => {}))
+  await page.route(HEALTH, () => new Promise<void>(() => {}))
   // Peor caso: el siguiente sondeo sale a los 3 s y vence a los 2 s (5 s en total).
   await expect(page.getByText('Sin conexión con el hub')).toBeVisible({ timeout: 10_000 })
 
-  await page.unroute(SALUD)
+  await page.unroute(HEALTH)
   await expect(page.getByText('Conectado al hub')).toBeVisible()
 })
 
 test('si el hub responde con error del servidor, muestra "Sin conexión"', async ({ page }) => {
-  await page.route(SALUD, (route) => route.fulfill({ status: 500, body: 'error' }))
+  await page.route(HEALTH, (route) => route.fulfill({ status: 500, body: 'error' }))
 
   await page.goto('/')
   await expect(page.getByText('Sin conexión con el hub')).toBeVisible()

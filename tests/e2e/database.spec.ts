@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from '@playwright/test'
-import { DATA_DIR_E2E } from './rutas'
+import { DATA_DIR_E2E } from './routes'
 
 // El hub de las pruebas abre y migra su base en DATA_DIR al arrancar, y la toma en exclusiva.
 // Corre en un solo proyecto porque ambos comparten el mismo hub y la misma carpeta.
@@ -11,10 +11,10 @@ test('el hub de pruebas deja su base migrada y la toma en exclusiva', async ({
 }, testInfo) => {
   test.skip(testInfo.project.name !== 'register', 'Una sola ejecución basta')
 
-  const salud = await request.get('/api/health')
-  expect(salud.ok()).toBe(true)
+  const health = await request.get('/api/health')
+  expect(health.ok()).toBe(true)
   // Última migración: 0002 (comprobante de supervisor atado al evento, tarea 0.7).
-  expect(await salud.json()).toMatchObject({ db_version: 2 })
+  expect(await health.json()).toMatchObject({ db_version: 2 })
 
   const route = join(DATA_DIR_E2E, 'pos.sqlite')
   expect(existsSync(route), `falta ${route}`).toBe(true)

@@ -104,6 +104,9 @@ const methodKey = methodKeyOf
  * had payments in the shift (even if already turned off). Card goes on a single line: card
  * terminals from the same provider deliver a single closing report.
  */
+/** How each kind of denomination reads on screen. */
+const DENOMINATION_NAMES = { bill: 'billete', coin: 'moneda' } as const
+
 export function shiftCloseMethods(
   rules: CheckoutRules | null,
   reconciliation: ShiftReconciliation,
@@ -781,7 +784,9 @@ function Closeout({
                 <li key={key(d)} className="flex items-center gap-2">
                   <span className="cifras w-24 shrink-0 font-semibold">
                     {pesos(d.value)}
-                    <span className="block text-sm font-normal text-texto-suave">{d.type}</span>
+                    <span className="block text-sm font-normal text-texto-suave">
+                      {DENOMINATION_NAMES[d.type]}
+                    </span>
                   </span>
                   {/* − and + are for fingers: with a keyboard you type the number (no focus). */}
                   <Button
