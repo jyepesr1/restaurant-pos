@@ -6,6 +6,7 @@ import { accessRoutes } from './access/routes'
 import type { AccessService } from './access/service'
 import { staffRoutes } from './access/staff-routes'
 import { type CatalogOptions, catalogRoutes } from './catalog'
+import { type CloudRouteOptions, cloudRoutes } from './cloud/routes'
 import { type DiagnosticsOptions, diagnosticsRoutes } from './diagnostics'
 import { type PrintingOptions, printingRoutes } from './printing/routes'
 import { reportRoutes } from './reports/routes'
@@ -24,6 +25,8 @@ export interface ServerOptions {
   catalog?: CatalogOptions
   /** Without this option there are no printers, ticket queue or kitchen screens (ADR-015). */
   printOptions?: PrintingOptions
+  /** Without this option the register PC cannot be connected to the cloud (task 1.11). */
+  cloud?: CloudRouteOptions
   /** Database version, to show it in the health check. */
   dbVersion?: number
   logger?: boolean
@@ -36,6 +39,7 @@ export function createAppServer({
   sync,
   catalog,
   printOptions,
+  cloud,
   dbVersion,
   logger = false,
 }: ServerOptions = {}): FastifyInstance {
@@ -59,6 +63,9 @@ export function createAppServer({
   if (printOptions) {
     app.register(printingRoutes, printOptions)
     app.register(reportRoutes, printOptions)
+  }
+  if (cloud) {
+    app.register(cloudRoutes, cloud)
   }
 
   // An internal error is not shown to the device (it could carry SQL or PC paths): it stays in the

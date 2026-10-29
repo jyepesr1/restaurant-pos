@@ -4,12 +4,14 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { currentVersion, type SqliteDatabase } from '@pos/db'
 import type { FloorSync } from '@pos/sync'
+import { CloudConnection } from './cloud/connection'
 import { PrintQueue } from './printing/queue'
 import { jobsForEvent } from './printing/tickets'
 import { createAppServer } from './server'
 import {
   adminLines,
   dataDirOf,
+  hubInstance,
   openData,
   prepareAccess,
   prepareSync,
@@ -86,6 +88,17 @@ function prepareAll(db: SqliteDatabase) {
       onFailure: (error) => console.error('Falló la cola de impresión:', error),
     })
     const tickets = { db, restaurantId: access.restaurantId, timeZone }
+    // Each event the hub saves goes up to the cloud right away; without internet it waits in the
+    // hub and goes up when it comes back (ADR-016).
+    const cloud = new CloudConnection({
+      db,
+      restaurantId: access.restaurantId,
+      dataDir,
+      instance: hubInstance(dataDir),
+      url: process.env.CLOUD_URL || undefined,
+      onStatus: (status) => floor?.notifyCloud(status),
+      onFailure: (error) => console.error('Falló la subida a la nube:', error),
+    })
     floor = prepareSync(
       db,
       dataDir,
@@ -96,6 +109,7 @@ function prepareAll(db: SqliteDatabase) {
         // Inside the event's transaction; the queue starts once it has been saved.
         onSave: (event, changes) => {
           if (jobsForEvent(tickets, event, changes) > 0) setImmediate(() => queue.wake())
+          setImmediate(() => cloud.uploader.wake())
         },
         onSaveFailure: (error, id) => {
           console.error(`No se pudo armar la comanda del evento ${id}:`, error)
@@ -104,7 +118,9 @@ function prepareAll(db: SqliteDatabase) {
       },
     )
     queue.wake()
-    return { ...access, floor, queue, timeZone }
+    floor.notifyCloud(cloud.status())
+    cloud.uploader.wake()
+    return { ...access, floor, queue, timeZone, cloud }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     console.error(`No se pudo preparar el acceso del hub: ${detail}`)
@@ -114,7 +130,7 @@ function prepareAll(db: SqliteDatabase) {
 
 const port = readPort()
 const db = prepareDatabase()
-const { access, restaurantId, floor, queue, timeZone, admin, alerts } = prepareAll(db)
+const { access, restaurantId, floor, queue, timeZone, cloud, admin, alerts } = prepareAll(db)
 const app = createAppServer({
   appDir,
   diagnostics: { dataDir },
@@ -138,6 +154,7 @@ const app = createAppServer({
     allowLocal: process.env.TEST_PRINTER === '1',
     isHubDevice: (ip) => ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1',
   },
+  cloud: { access, cloud },
   dbVersion: currentVersion(db),
   logger: true,
 })
@@ -145,8 +162,10 @@ const app = createAppServer({
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {
     queue.stop()
+    cloud.uploader.stop()
     await app.close()
     await queue.ready()
+    await cloud.uploader.idle()
     db.close()
     process.exit(0)
   })

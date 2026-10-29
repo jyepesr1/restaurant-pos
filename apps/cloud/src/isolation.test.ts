@@ -144,6 +144,7 @@ describe('through the API', () => {
     if (!cb) throw new Error('no code')
     const r = await m.cloud.registerHub({
       code: cb.code,
+      restaurant_id: rb,
       hub_id: newId(),
       location_id: a.hub.locationId,
       name: 'Caja B',

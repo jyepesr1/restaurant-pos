@@ -48,6 +48,8 @@ export {
 } from './hub/store'
 export {
   BATCH_SIZE,
+  type CloudState,
+  type CloudStatus,
   DeviceMessage,
   type DeviceType,
   type ErrorCode,

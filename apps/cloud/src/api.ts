@@ -122,10 +122,21 @@ export async function handle(req: Request, environment: ApiEnv): Promise<Respons
       const data = Registration.safeParse(body)
       if (!data.success) return error(400, 'invalid_data', 'Datos con formato inesperado')
       const r = await cloud.registerHub(data.data)
-      if (!r.ok)
-        return r.reason === 'invalid_code'
-          ? error(403, 'invalid_code', 'El código no existe, ya se usó o venció. Pide uno nuevo.')
-          : error(409, 'hub_already_registered', 'Este PC de caja ya está registrado')
+      if (!r.ok) {
+        if (r.reason === 'invalid_code')
+          return error(
+            403,
+            'invalid_code',
+            'El código no existe, ya se usó o venció. Pide uno nuevo.',
+          )
+        if (r.reason === 'other_restaurant')
+          return error(
+            403,
+            'other_restaurant',
+            'Ese código es de otro restaurante. Pide uno para este restaurante.',
+          )
+        return error(409, 'hub_already_registered', 'Este PC de caja ya está registrado')
+      }
       return json(201, { credential: r.credential, restaurant_id: r.restaurantId })
     }
 

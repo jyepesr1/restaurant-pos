@@ -52,6 +52,33 @@ export type HubMessage =
   | { type: 'catalog'; version: number }
   /** Status of the ticket printers; sent on connect and every time one changes (ADR-015). */
   | { type: 'printers'; printers: PrinterStatus[] }
+  /** How the upload to the cloud is going; sent on connect and every time it changes (ADR-016). */
+  | { type: 'cloud'; cloud: CloudStatus }
+
+/**
+ * The hub's upload to the cloud (task 1.11):
+ * - `not_connected`: this register PC was never connected to the cloud;
+ * - `up_to_date`: everything is in the cloud;
+ * - `uploading`: sending what is pending;
+ * - `offline`: no internet or the cloud did not answer; it retries on its own;
+ * - `revoked`: the cloud no longer accepts this register PC; it needs a new code;
+ * - `stuck`: an event the cloud cannot save stops the upload; someone must review it.
+ */
+export type CloudState =
+  | 'not_connected'
+  | 'up_to_date'
+  | 'uploading'
+  | 'offline'
+  | 'revoked'
+  | 'stuck'
+
+export interface CloudStatus {
+  state: CloudState
+  /** Changes saved in the hub that the cloud has not confirmed yet. */
+  pending: number
+  /** When the cloud last confirmed an upload (or said it was up to date). */
+  last_upload_at: string | null
+}
 
 /** A ticket printer as seen from the devices. */
 export interface PrinterStatus {

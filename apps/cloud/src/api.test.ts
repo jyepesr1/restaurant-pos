@@ -38,6 +38,7 @@ async function world() {
     ).json()
     const r = await request('POST', '/v1/hubs/register', {
       code,
+      restaurant_id: rest,
       hub_id: hubId,
       location_id: location,
       name: 'Caja principal',
@@ -130,6 +131,7 @@ describe('admin and hub registration', () => {
     const record = (code: string, hub_id = newId()) =>
       request('POST', '/v1/hubs/register', {
         code,
+        restaurant_id: restaurant,
         hub_id,
         location_id: location,
         name: 'Caja',
@@ -154,6 +156,7 @@ describe('admin and hub registration', () => {
     ).json()
     const r = await request('POST', '/v1/hubs/register', {
       code,
+      restaurant_id: restaurant,
       hub_id: hubId,
       location_id: location,
       name: 'Caja',
@@ -367,6 +370,7 @@ describe('code review (1.10)', () => {
     const record = (id = hub_id) =>
       request('POST', '/v1/hubs/register', {
         code,
+        restaurant_id: restaurant,
         hub_id: id,
         location_id: location,
         name: 'C',

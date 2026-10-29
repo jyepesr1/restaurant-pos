@@ -13,6 +13,7 @@ import {
 import {
   type Catalog,
   type Channel,
+  type CloudStatus,
   ConnectionManager,
   type ConnectionState,
   type DeviceType,
@@ -265,6 +266,8 @@ export interface Snapshot {
   hubError: { code: ErrorCode; message: string } | null
   /** How the ticket printers are, according to the hub's last notice (ADR-015). */
   printers: PrinterStatus[]
+  /** How the upload to the cloud is going, according to the hub (task 1.11); null if unknown. */
+  cloud: CloudStatus | null
 }
 
 const DEFAULT_MINUTES = 30
@@ -357,8 +360,11 @@ export class Floor {
     sessionClosedBy: null,
     hubError: null,
     printers: [],
+    cloud: null,
   }
   private readonly listeners = new Set<() => void>()
+  /** How many `cloud` notices came over the WebSocket (see `askCloud`). */
+  private cloudNotices = 0
   private loading: Promise<void> | null = null
 
   constructor(options: { db?: DeviceDatabase; open?: (m: Handlers) => Channel } = {}) {
@@ -625,6 +631,29 @@ export class Floor {
     return r
   }
 
+  // ── Cloud (task 1.11) ────────────────────────────────────────────────
+
+  /** Asks the hub how the upload is going (the settings screen, on opening). */
+  async cloudStatus(): Promise<CloudStatus> {
+    return this.askCloud('/api/cloud/status', {})
+  }
+
+  /** Connects this restaurant's register PC to the cloud with the code Faro gave. */
+  async connectCloud(code: string): Promise<CloudStatus> {
+    return this.askCloud('/api/cloud/register', { code })
+  }
+
+  /**
+   * The answer over HTTP is kept only if no `cloud` notice arrived over the WebSocket meanwhile:
+   * that one is newer and must not be overwritten by an older status.
+   */
+  private async askCloud(route: string, body: object): Promise<CloudStatus> {
+    const before = this.cloudNotices
+    const cloud = await this.withSession<CloudStatus>(route, body)
+    if (this.cloudNotices === before) this.patch({ cloud })
+    return this.status.cloud ?? cloud
+  }
+
   // ── Kitchen and printers (ADR-015) ───────────────────────────────────
 
   kitchenConfig(): Promise<KitchenConfig> {
@@ -831,6 +860,10 @@ export class Floor {
         if (m.type === 'catalog' && m.version !== this.status.catalog?.version)
           this.fetchCatalogIfSession()
         if (m.type === 'printers') this.patch({ printers: m.printers })
+        if (m.type === 'cloud') {
+          this.cloudNotices += 1
+          this.patch({ cloud: m.cloud })
+        }
         void client.receive(m)
       },
       onStateChange: (connection) => this.patch({ connection }),

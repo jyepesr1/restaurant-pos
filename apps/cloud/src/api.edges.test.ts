@@ -62,6 +62,7 @@ const ROUTES_WITH_BODY: Route[] = [
     token: () => undefined,
     valid: () => ({
       code: 'ABCD-EFGH-JKMN',
+      restaurant_id: newId(),
       hub_id: newId(),
       location_id: newId(),
       name: 'Caja',
@@ -533,6 +534,7 @@ describe('an internal error never returns details', () => {
       '/v1/hubs/register',
       {
         code: 'ABCD-EFGH-JKMN',
+        restaurant_id: newId(),
         hub_id: newId(),
         location_id: newId(),
         name: 'C',
@@ -626,6 +628,7 @@ describe('an internal error never returns details', () => {
     }
     const r = await requestWith(sql, 'POST', '/v1/hubs/register', {
       code: 'ABCD-EFGH-JKMN',
+      restaurant_id: newId(),
       hub_id: newId(),
       location_id: newId(),
       name: 'C',
@@ -696,6 +699,7 @@ describe('shape of every response', () => {
         () =>
           m.request('POST', '/v1/hubs/register', {
             code: 'NADA',
+            restaurant_id: newId(),
             hub_id: newId(),
             location_id: newId(),
             name: 'C',
@@ -730,6 +734,7 @@ describe('shape of every response', () => {
     if (!code) throw new Error('no code')
     const duplicate = await m.request('POST', '/v1/hubs/register', {
       code: code.code,
+      restaurant_id: h.restaurantId,
       hub_id: h.hub.id,
       location_id: newId(),
       name: 'C',

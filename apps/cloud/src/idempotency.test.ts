@@ -356,6 +356,7 @@ describe('divergent_events', () => {
     if (!secondCode) throw new Error('no code')
     const registration = await m.cloud.registerHub({
       code: secondCode.code,
+      restaurant_id: a.restaurantId,
       hub_id: flatEvent(500).id,
       location_id: a.hub.locationId,
       name: 'Caja 2',
@@ -370,8 +371,33 @@ describe('divergent_events', () => {
     expect(r?.status).toBe('divergent')
     const [same] = await m.cloud.receiveEvents(hub2, [original])
     expect(same?.status).toBe('already_stored')
-    // Each hub sees its own last sequence: the second one uploaded nothing.
-    expect(await m.cloud.lastSequence(hub2)).toBe(0)
+    // Once it sends the same content, the second one has its sequence 1 in the cloud too.
+    expect(await m.cloud.lastSequence(hub2)).toBe(1)
     expect(await m.cloud.lastSequence(a.hub)).toBe(1)
+  })
+
+  it('a hub registered again after a revocation resends everything and catches up', async () => {
+    const a = await m.newHub()
+    await m.cloud.receiveEvents(a.hub, batch(1, 30))
+    expect(await m.cloud.lastSequence(a.hub)).toBe(30)
+    await m.cloud.revokeHub(a.hub.id)
+    const again = await m.newHub(a.restaurantId)
+    expect(await m.cloud.lastSequence(again.hub)).toBe(0)
+    // It resends from 1: the first 30 were already stored and count, the rest are new.
+    const results = await m.cloud.receiveEvents(again.hub, batch(1, 40))
+    expect(results.filter((r) => r.status === 'already_stored')).toHaveLength(30)
+    expect(results.filter((r) => r.status === 'saved')).toHaveLength(10)
+    expect(await m.cloud.lastSequence(again.hub)).toBe(40)
+    expect(await count(m.db, 'events', a.restaurantId)).toBe(40)
+  })
+
+  it('an invalid event still stops the sequence where it is, even with stored ones after it', async () => {
+    const a = await m.newHub()
+    await m.cloud.receiveEvents(a.hub, batch(1, 5))
+    const again = await m.newHub(a.restaurantId)
+    const events = batch(1, 8)
+    events[2] = { ...events[2], business_day: 'nunca' } as (typeof events)[number]
+    await m.cloud.receiveEvents(again.hub, events)
+    expect(await m.cloud.lastSequence(again.hub)).toBe(2)
   })
 })

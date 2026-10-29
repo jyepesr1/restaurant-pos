@@ -35,6 +35,7 @@ describe('sqlFromPg', () => {
     const hubId = newId()
     const r = await cloud.registerHub({
       code: code.code,
+      restaurant_id: restaurant,
       hub_id: hubId,
       location_id: newId(),
       name: 'Caja',

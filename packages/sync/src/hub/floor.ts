@@ -1,4 +1,4 @@
-import { DeviceMessage, type HubMessage, type PrinterStatus } from '../protocol'
+import { type CloudStatus, DeviceMessage, type HubMessage, type PrinterStatus } from '../protocol'
 import type { Connection, HubSync } from './hub'
 
 /** Validates a device's token (task 0.7). `null` if it is not valid. */
@@ -20,6 +20,8 @@ export class FloorSync {
   private readonly participants = new Set<Participant>()
   /** Latest known printer status: told to each device that connects. */
   private printers: PrinterStatus[] = []
+  /** Latest known status of the upload to the cloud (task 1.11), likewise. */
+  private cloud: CloudStatus | null = null
 
   constructor(hub: HubSync, authenticate: Authenticator) {
     this.hub = hub
@@ -85,6 +87,13 @@ export class FloorSync {
       if (p.connection && !p.connection.revokedAt) this.safeSend(p, { type: 'printers', printers })
   }
 
+  /** The upload to the cloud changed (task 1.11): all connected devices see it. */
+  notifyCloud(cloud: CloudStatus) {
+    this.cloud = cloud
+    for (const p of this.participants)
+      if (p.connection && !p.connection.revokedAt) this.safeSend(p, { type: 'cloud', cloud })
+  }
+
   private safeSend(participant: Participant, message: HubMessage) {
     try {
       participant.send(message)
@@ -119,6 +128,8 @@ export class FloorSync {
       participant.send(this.hub.welcomeMessage())
       if (this.printers.length > 0 && !connection.revokedAt)
         participant.send({ type: 'printers', printers: this.printers })
+      if (this.cloud && !connection.revokedAt)
+        participant.send({ type: 'cloud', cloud: this.cloud })
       return
     }
     if (message.type === 'ping') {

@@ -3,6 +3,7 @@ import { Button } from '../ui/Button'
 import { applyBrand, isBrand } from '../ui/brand'
 import { Brand } from './Brand'
 import { Check } from './Check'
+import { CloudSettings } from './CloudSettings'
 import { floor, useFloor } from './context'
 import { FloorFrame } from './FloorFrame'
 import { FloorPlanEditor } from './FloorPlanEditor'
@@ -77,6 +78,7 @@ function Screen({
     return <KitchenSettings />
   if (route === '/register/settings' && permissions.includes('manage_devices'))
     return <RegisterSettings />
+  if (route === '/cloud' && permissions.includes('manage_devices')) return <CloudSettings />
   if (route === '/register') return <Register />
   if (route === '/reports' && permissions.includes('view_reports')) return <Reports />
   if (route === '/check') return <Check key={params.get('order')} />

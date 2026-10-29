@@ -18,18 +18,24 @@ async function restaurantWithCode() {
   await m.cloud.createRestaurant({ id: restaurant, name: 'R' })
   const c = await m.cloud.createCode(restaurant)
   if (!c) throw new Error('no code')
+  restaurantOfCode.set(normalizeCode(c.code), restaurant)
   return { restaurant, code: c.code, expiresAt: c.expiresAt }
 }
 
 const newCodeFor = async (restaurant: string) => {
   const c = await m.cloud.createCode(restaurant)
   if (!c) throw new Error('no code')
+  restaurantOfCode.set(normalizeCode(c.code), restaurant)
   return c.code
 }
+
+/** The code's restaurant, so `record` does not have to be told it every time. */
+const restaurantOfCode = new Map<string, string>()
 
 const record = (code: string, hubId = newId(), extras: Record<string, unknown> = {}) =>
   m.request('POST', '/v1/hubs/register', {
     code,
+    restaurant_id: restaurantOfCode.get(normalizeCode(code)) ?? newId(),
     hub_id: hubId,
     location_id: newId(),
     name: 'Caja',
@@ -227,10 +233,11 @@ describe('mistyped code', () => {
     )
   })
 
-  it('a body that also states a restaurant_id cannot be used to pick the restaurant', async () => {
-    const { code } = await restaurantWithCode()
+  it('the restaurant_id in the body cannot pick the restaurant: another one is refused', async () => {
+    const { restaurant, code } = await restaurantWithCode()
     const r = await record(code, newId(), { restaurant_id: newId() })
-    expect(r.status).toBe(400)
+    expect(r.status).toBe(403)
+    expect(await hubsOf(restaurant)).toHaveLength(0)
   })
 })
 
@@ -280,6 +287,19 @@ describe('code from another restaurant', () => {
     expect(((await r.json()) as { restaurant_id: string }).restaurant_id).toBe(b.restaurant)
     expect(await hubsOf(a.restaurant)).toHaveLength(0)
     expect(await hubsOf(b.restaurant)).toHaveLength(1)
+  })
+
+  it('a hub of one restaurant with a code of another is refused and the code stays unused', async () => {
+    const a = await restaurantWithCode()
+    const b = await restaurantWithCode()
+    const hubId = newId()
+    const wrong = await record(b.code, hubId, { restaurant_id: a.restaurant })
+    expect(wrong.status).toBe(403)
+    expect(((await wrong.json()) as { error: string }).error).toBe('other_restaurant')
+    expect(await hubsOf(a.restaurant)).toHaveLength(0)
+    expect(await hubsOf(b.restaurant)).toHaveLength(0)
+    // The code was not used up: its own restaurant's hub can still register with it.
+    expect((await record(b.code)).status).toBe(201)
   })
 
   it('creating a code for a restaurant that does not exist leaves no trace', async () => {

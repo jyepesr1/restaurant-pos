@@ -82,6 +82,7 @@ export async function createWorld(): Promise<World> {
     if (!code) throw new Error('no code')
     const r = await cloud.registerHub({
       code: code.code,
+      restaurant_id: restaurantId,
       hub_id: newId(),
       location_id: newId(),
       name: 'Caja',

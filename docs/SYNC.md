@@ -211,7 +211,10 @@ Si procesar un evento hace fallar al hub, pero el hub todavía puede guardar, el
 
 ## Hub ↔ nube (ADR-016)
 
-- El hub es un "dispositivo" de la nube: tiene su `ColaSalida` hacia la nube y empuja sus eventos ya secuenciados, apenas los acepta.
+- El hub es un "dispositivo" de la nube y empuja sus eventos ya secuenciados apenas los acepta (tarea 1.11, `apps/hub/src/cloud`). No hay una cola aparte: como la secuencia del hub no tiene huecos, lo pendiente es todo lo que va después de la última secuencia que la nube confirmó (`GET /v1/events/last`). El hub la guarda en su tabla local `counters` (`cloud_confirmed`) para mostrar el pendiente aunque arranque sin internet.
+- Sube en lotes de hasta 500 eventos y 3 MB (`POST /v1/events`); un 413 parte el lote a la mitad. Sin respuesta o con un 5xx: «sin internet», reintento a 1, 2, 5, 10, 20 y 30 s. Un 401: revocado, no sube nada hasta conectarse con un código nuevo. Otro 4xx, un evento que la nube no guarda o una nube con más secuencia que el hub: «atascado», reintento cada 5 minutos. Al día, pregunta a la nube cada minuto.
+- El estado viaja a los equipos por el WebSocket con el mensaje `cloud` (`state`, `pending`, `last_upload_at`), al conectarse y cada vez que cambia.
+- El registro del hub en la nube lleva su restaurante: un código de otro restaurante se rechaza sin gastarlo. La credencial queda en `cloud-link.json` en la carpeta de datos y nunca sale del hub.
 - La nube guarda por `(restaurant_id, id)`, conserva la `sequence` del hub y numera los suyos aparte. No rechaza un evento que el hub ya aceptó: si algo no cuadra, lo marca como conflicto.
 - La carta, la configuración y el personal los escribe la nube; el hub los baja (al conectarse y cuando cambian).
 - Sin internet, el salón no nota nada: la cola del hub crece y se vacía al volver la conexión. La caja muestra cuántos cambios faltan por subir.

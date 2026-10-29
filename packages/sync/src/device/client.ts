@@ -138,7 +138,7 @@ export class SyncClient {
   receive(message: HubMessage): Promise<void> {
     const generation = this.generation
     // A heartbeat or a pong changes nothing stored: the screen has no reason to reread.
-    const writes = !['heartbeat', 'pong', 'catalog', 'printers'].includes(message.type)
+    const writes = !['heartbeat', 'pong', 'catalog', 'printers', 'cloud'].includes(message.type)
     return this.queued(async () => {
       if (generation === this.generation) await this.processEvent(message, generation)
     }, writes).catch((error) => this.onFailure?.(error))
@@ -293,6 +293,7 @@ export class SyncClient {
       case 'heartbeat':
       case 'catalog':
       case 'printers':
+      case 'cloud':
         return
     }
   }

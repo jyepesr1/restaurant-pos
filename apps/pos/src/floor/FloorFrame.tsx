@@ -6,9 +6,11 @@ import {
   type ConnectionState as VisibleStatus,
 } from '../ui/ConnectionIndicator'
 import { Icon, type IconName } from '../ui/icons'
+import { SOFT_TONES } from '../ui/Label'
 import { Logo } from '../ui/Logo'
 import { navigate, useRoute } from '../ui/route'
 import { useTheme } from '../ui/theme'
+import { cloudLabel, SEES_CLOUD } from './cloud'
 import { floor, useFloor } from './context'
 
 // The frame of the operation screens (task 1.3c): a sidebar with the sections the role can use,
@@ -16,8 +18,8 @@ import { floor, useFloor } from './context'
 // sidebar is always visible (icons only on tablet); on the phone it opens from the menu, to leave
 // the screen to the order.
 
-// In Phase 0 there is no cloud: connected to the hub is "Solo red local", the normal case
-// (brief §5, rule 7).
+// Connected to the hub is "Solo red local" until the hub says it reaches the cloud (up to date or
+// uploading, task 1.11): then it is "En línea" (brief §5, rule 7).
 const STATUS: Record<ConnectionState, VisibleStatus> = {
   connected: 'local_only',
   connecting: 'connecting',
@@ -104,6 +106,7 @@ const SECTIONS: readonly { group: string; sections: readonly Section[] }[] = [
         icon: 'brand',
         permissions: ['manage_users'],
       },
+      { route: '/cloud', name: 'Nube', icon: 'cloud', permissions: ['manage_devices'] },
     ],
   },
 ]
@@ -135,7 +138,8 @@ export function FloorFrame({
   children: ReactNode
 }) {
   const { dark, select } = useTheme()
-  const { connection, pendingList, session, simulatingOffline, catalog, printers } = useFloor()
+  const { connection, pendingList, session, simulatingOffline, catalog, printers, cloud } =
+    useFloor()
   const downPrinters = printers.filter((i) => i.status === 'failed')
   const { route } = useRoute()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -155,6 +159,15 @@ export function FloorFrame({
     ),
   })).filter((g) => g.sections.length > 0)
   const withNavigation = session !== null && groups.length > 0
+  const inLine =
+    connection === 'connected' && (cloud?.state === 'up_to_date' || cloud?.state === 'uploading')
+  // The register sees how the upload goes; with no link to the hub, what it last heard is stale.
+  const cloudStatus =
+    connection === 'connected' && cloud && SEES_CLOUD.some((p) => permissions.includes(p))
+      ? cloudLabel(cloud)
+      : null
+  // The admin goes from the label to the «Nube» screen, where a problem is fixed.
+  const cloudLink = cloudStatus !== null && permissions.includes('manage_devices')
 
   useEffect(() => {
     document.title = `${title} · ${restaurant ?? 'Faro'}`
@@ -304,7 +317,36 @@ export function FloorFrame({
               >
                 {title}
               </h1>
-              <ConnectionIndicator status={STATUS[connection]} pendingList={pendingList} compact />
+              <ConnectionIndicator
+                status={inLine ? 'online' : STATUS[connection]}
+                pendingList={pendingList}
+                compact
+                hideStatus={cloudStatus !== null}
+              />
+              {cloudStatus &&
+                (() => {
+                  const content = (
+                    <>
+                      <Icon name={cloudStatus.icon} />
+                      <span className="sm:hidden" aria-hidden="true">
+                        {cloudStatus.short}
+                      </span>
+                      <span className="max-sm:sr-only">{cloudStatus.text}</span>
+                    </>
+                  )
+                  const look = `inline-flex items-center gap-1.5 rounded-full px-3 text-sm font-semibold whitespace-nowrap ${SOFT_TONES[cloudStatus.tone]}`
+                  return cloudLink ? (
+                    <button
+                      type="button"
+                      onClick={() => go('/cloud')}
+                      className={`${look} min-h-12 focus-visible:outline-3 focus-visible:outline-focus`}
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <span className={`${look} py-1`}>{content}</span>
+                  )
+                })()}
               <span aria-live="polite" className="contents">
                 {downPrinters.length > 0 && (
                   <button

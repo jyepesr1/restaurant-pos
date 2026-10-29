@@ -19,6 +19,7 @@ export function ConnectionIndicator({
   pendingList = 0,
   failingPrinters = 0,
   compact = false,
+  hideStatus = false,
 }: {
   status: ConnectionState
   /** Events saved here that the hub has not confirmed yet. */
@@ -29,22 +30,29 @@ export function ConnectionIndicator({
    * on one row. What needs attention (no connection, pending) always shows its full text.
    */
   compact?: boolean
+  /**
+   * Connected to the hub, the register sees the cloud's status instead (task 1.11): a single
+   * label, not «En línea» next to «Nube al día».
+   */
+  hideStatus?: boolean
 }) {
   const e = STATUSES[status]
   return (
     <div className="flex flex-wrap items-center gap-2" role="status">
-      <Label tone={e.tone} icon={e.icon}>
-        {compact && status === 'local_only' ? (
-          <>
-            <span className="sm:hidden" aria-hidden="true">
-              Local
-            </span>
-            <span className="max-sm:sr-only">{e.text}</span>
-          </>
-        ) : (
-          e.text
-        )}
-      </Label>
+      {!hideStatus && (
+        <Label tone={e.tone} icon={e.icon}>
+          {compact && status === 'local_only' ? (
+            <>
+              <span className="sm:hidden" aria-hidden="true">
+                Local
+              </span>
+              <span className="max-sm:sr-only">{e.text}</span>
+            </>
+          ) : (
+            e.text
+          )}
+        </Label>
+      )}
       {pendingList > 0 && (
         <Label tone="progress" icon="clock">{`${pendingList} sin confirmar`}</Label>
       )}

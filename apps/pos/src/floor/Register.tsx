@@ -19,6 +19,7 @@ import { navigate } from '../ui/route'
 import { SidePanel } from '../ui/SidePanel'
 import { useNotify } from '../ui/toasts'
 import { type CheckoutRules, methodName, rulesOf } from './checks'
+import { pendingOnClose } from './cloud'
 import { floor, useFloor, useLocalView } from './context'
 import { FloorFrame } from './FloorFrame'
 import { fieldClass } from './SignIn'
@@ -616,6 +617,9 @@ function Closeout({
   onClose: (reconciliation: ShiftReconciliation) => void
 }) {
   const notify = useNotify()
+  const { cloud, connection } = useFloor()
+  // Without the hub, what it last said about the cloud is stale: better nothing.
+  const cloudPending = connection === 'connected' ? pendingOnClose(cloud) : null
   const [cashCountId, setCashCountId] = useState<string | null>(null)
   // The reconciliation of the other methods with what was reported in the saved count.
   const [others, setOthers] = useState<MethodReconciliation[]>([])
@@ -941,10 +945,16 @@ function Closeout({
               className="rounded-2xl border-2 border-action-strong bg-action-soft p-3 text-action-text"
               role="alertdialog"
               aria-labelledby="confirm-close"
+              aria-describedby={cloudPending ? 'confirm-close-cloud' : undefined}
             >
               <p id="confirm-close" className="mb-3 text-lg font-semibold">
                 ¿Cerrar la caja? Después de cerrar ya no se cobra en este turno.
               </p>
+              {cloudPending && (
+                <p id="confirm-close-cloud" className="mb-3">
+                  {cloudPending}
+                </p>
+              )}
               <div className="grid grid-cols-[2fr_3fr] gap-2">
                 <Button onClick={() => setConfirming(false)}>Volver</Button>
                 <Button variant="main" disabled={taken} onClick={close}>

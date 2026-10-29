@@ -44,6 +44,8 @@ const EventUploaded = z.looseObject({
 
 export const Registration = z.strictObject({
   code: z.string().min(1).max(40),
+  /** The hub's restaurant: a code from another restaurant is refused without using it up. */
+  restaurant_id: Ulid,
   hub_id: Ulid,
   location_id: Ulid,
   name: z.string().trim().min(1).max(60),
@@ -178,13 +180,14 @@ export class Cloud {
    * belongs to a single hub: if the response was lost (the Wi-Fi dropped), the same hub can repeat
    * the registration with the same code until it expires and gets a new credential (the previous
    * one stops working). Another hub with a used code, or the same hub with another code, is not
-   * registered.
+   * registered. A code from another restaurant is refused and stays unused: the hub would end up
+   * uploading its events to the wrong restaurant.
    */
   async registerHub(
     data: Registration,
   ): Promise<
     | { ok: true; credential: string; restaurantId: string }
-    | { ok: false; reason: 'invalid_code' | 'hub_already_registered' }
+    | { ok: false; reason: 'invalid_code' | 'other_restaurant' | 'hub_already_registered' }
   > {
     const fingerprint = await sha256(normalizeCode(data.code))
     const credential = newCredential()
@@ -199,6 +202,8 @@ export class Cloud {
           [fingerprint, now],
         )
         if (!code) return { ok: false, reason: 'invalid_code' } as const
+        if (code.restaurant_id !== data.restaurant_id)
+          return { ok: false, reason: 'other_restaurant' } as const
         if (code.hub_id !== null) {
           // Already used: only the same hub can repeat it, and only if it was not revoked.
           if (code.hub_id !== data.hub_id) return { ok: false, reason: 'invalid_code' } as const
@@ -395,18 +400,6 @@ export class Cloud {
            ON CONFLICT (restaurant_id, event_id, fingerprint) DO NOTHING`,
           [hub.restaurantId, hub.id, JSON.stringify(altered.map((d) => d.row))],
         )
-      // What is stored with no gaps from sequence 1: the hub continues from there (`lastSequence`).
-      await tx.query(
-        `UPDATE hubs SET contiguous_sequence = (
-           SELECT coalesce(max(s.hub_sequence), hubs.contiguous_sequence) FROM (
-             SELECT hub_sequence, row_number() OVER (ORDER BY hub_sequence) AS n
-             FROM (SELECT DISTINCT hub_sequence FROM events
-                   WHERE restaurant_id = $1 AND hub_id = $2
-                     AND hub_sequence > hubs.contiguous_sequence) d
-           ) s WHERE s.hub_sequence = hubs.contiguous_sequence + s.n)
-         WHERE id = $2`,
-        [hub.restaurantId, hub.id],
-      )
       for (const v of [...toSave, ...duplicatesInBatch]) {
         if (!saved.has(v.id)) {
           // A repeat in the batch of one the database rejected: it shares the same fate.
@@ -423,6 +416,29 @@ export class Cloud {
               : 'divergent',
         }
       }
+      // What is stored with no gaps from sequence 1: the hub continues from there (`lastSequence`).
+      // Besides the events this hub saved, what it just sent and was already stored with the same
+      // content counts: a hub registered again after a revocation, or a new PC (task 1.12),
+      // resends events that the previous registration already uploaded. A divergent one does not
+      // count: its sequence is not the stored event's, so it would hide a gap.
+      const received = [...toSave, ...duplicatesInBatch]
+        .filter(
+          (v) =>
+            results[v.index]?.status === 'saved' || results[v.index]?.status === 'already_stored',
+        )
+        .map((v) => Number(v.row.hub_sequence))
+      await tx.query(
+        `UPDATE hubs SET contiguous_sequence = (
+           SELECT coalesce(max(s.q), hubs.contiguous_sequence) FROM (
+             SELECT q, row_number() OVER (ORDER BY q) AS n
+             FROM (SELECT DISTINCT q FROM (
+                     SELECT hub_sequence AS q FROM events WHERE restaurant_id = $1 AND hub_id = $2
+                     UNION SELECT unnest($3::bigint[])
+                   ) u WHERE q > hubs.contiguous_sequence) d
+           ) s WHERE s.q = hubs.contiguous_sequence + s.n)
+         WHERE id = $2`,
+        [hub.restaurantId, hub.id, received],
+      )
       return results
     })
   }
