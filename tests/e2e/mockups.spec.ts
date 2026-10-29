@@ -523,7 +523,7 @@ test.describe('screen frame', () => {
     await page.goto('/mockups/floor-plan')
     const status = page.getByRole('status')
     await expect(status).toContainText('Solo red local')
-    await expect(status.locator('span.rounded-full').first()).toHaveClass(/neutro/)
+    await expect(status.locator('span.rounded-full').first()).toHaveClass(/neutral/)
     await expect(status.locator('svg')).toHaveCount(1)
   })
 
@@ -2062,9 +2062,9 @@ test.describe('KDS (kitchen and bar)', () => {
     await expect(t4).toContainText('atención')
     await expect(t7).toContainText('demora')
     // «A tiempo» is gray (green is reserved for «listo»): neither green nor amber nor red.
-    await expect(t21.locator('span.rounded-full').first()).toHaveClass(/neutro/)
-    await expect(t4.locator('span.rounded-full').first()).toHaveClass(/proceso/)
-    await expect(t7.locator('span.rounded-full').first()).toHaveClass(/alerta/)
+    await expect(t21.locator('span.rounded-full').first()).toHaveClass(/neutral/)
+    await expect(t4.locator('span.rounded-full').first()).toHaveClass(/progress/)
+    await expect(t7.locator('span.rounded-full').first()).toHaveClass(/alert/)
   })
 
   test('time goes up with the clock, without real waits, and changes tone at 10 and 20 minutes', async ({
