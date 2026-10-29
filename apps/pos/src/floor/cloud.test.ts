@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { cloudLabel, pendingOnClose, SEES_CLOUD } from './cloud'
 
 // How the upload to the cloud reads on the register screens (task 1.11): the same words in the
-// top bar, on the «Nube» screen and when closing the register.
+// top bar, on the «Copia en la nube» screen and when closing the register.
 
 const status = (state: CloudState, pending = 0): CloudStatus => ({
   state,

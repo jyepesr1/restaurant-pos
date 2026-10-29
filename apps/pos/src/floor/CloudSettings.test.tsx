@@ -2,7 +2,7 @@ import type { CloudState, CloudStatus } from '@pos/sync'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
-// The «Nube» screen (task 1.11), rendered on the server (no browser): which states ask for the
+// The «Copia en la nube» screen (task 1.11), rendered on the server (no browser): which states ask for the
 // code, what each one explains and how the pending count reads.
 
 const status: { cloud: CloudStatus | null } = { cloud: null }
@@ -21,7 +21,7 @@ const html = (state: CloudState, pending = 0, last_upload_at: string | null = nu
   return renderToStaticMarkup(<CloudSettings />)
 }
 
-describe('the Nube screen', () => {
+describe('the «Copia en la nube» screen', () => {
   it('while the status is unknown it shows neither the status nor the code form', () => {
     status.cloud = null
     const page = renderToStaticMarkup(<CloudSettings />)

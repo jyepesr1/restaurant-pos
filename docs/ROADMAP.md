@@ -38,7 +38,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.8 | Datáfonos nivel 1 y conciliación en el cierre | ✅ (por totales; el importador espera un reporte real de Bold) |
 | 1.9 | Reportes básicos y `docs/KPIS.md` | ✅ |
 | 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ✅ (publicada el 26-oct-2026) |
-| 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja | ✅ código (falta publicar el Worker) |
+| 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja | ✅ (publicada el 29-oct-2026) |
 | 1.11b | Carta, configuración y personal editados en la nube y bajando al hub | ⏳ |
 | 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
 | 1.13 | Hub en el PC de caja (Windows) | ⏳ |
@@ -325,7 +325,7 @@ Decisiones del dueño del 29-oct-2026:
   - El salón nunca espera a internet.
   - Sin internet reintenta solo: a los 1, 2, 5, 10, 20 y 30 segundos, y luego cada 30. Mientras espera, los pedidos nuevos no golpean la puerta de la nube.
   - Al día y sin movimiento, pregunta a la nube cada minuto: si se cae internet con la caja quieta, la barra deja de decir «Nube al día».
-- **Conectar el PC de caja**: en la caja, **Administración → Nube** (solo el administrador). Se escribe una vez el código de un solo uso que da Faro.
+- **Conectar el PC de caja**: en la caja, **Administración → Copia en la nube** (solo el administrador). Se escribe una vez el código de un solo uso que da Faro.
   - Un código de otro restaurante se rechaza sin gastarlo.
   - Si la respuesta se pierde, el mismo código sirve otra vez.
   - Un PC revocado se conecta con un código nuevo y vuelve a subir todo sin duplicar.
@@ -336,7 +336,7 @@ Decisiones del dueño del 29-oct-2026:
   - «12 cambios por subir · sin internet», en gris: el salón sigue normal;
   - «La nube no acepta esta caja · avisa al administrador» y «3 cambios sin subir · avisa a Faro», en rojo.
   
-  En el celular se acorta («Al día», «12 por subir») para caber en una fila. El administrador la toca y llega a la pantalla Nube.
+  En el celular se acorta («Al día», «12 por subir») para caber en una fila. El administrador la toca y llega a la pantalla Copia en la nube.
 - **Al cerrar la caja**, la confirmación dice cuántos cambios faltan y qué pasa con ellos. El cierre se hace igual.
 - **Atascado (`stuck`)**: si la nube no puede guardar un cambio (o dice tener más que el hub), la subida se detiene ahí. Todo sigue guardado en el PC y se reintenta cada 5 minutos.
 - **La nube** (`apps/cloud`):
@@ -359,7 +359,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigió:
 - el aviso de cierre prometía que todo subía solo aunque la caja estuviera revocada o atascada;
 - sin internet se veía en rojo, como una alarma;
 - «En línea» y «Nube al día» aparecían a la vez, y la barra no cabía en una fila en el celular;
-- la pantalla Nube no tenía cómo reintentar si no leía el estado, y el foco se perdía tras conectar.
+- la pantalla Copia en la nube no tenía cómo reintentar si no leía el estado, y el foco se perdía tras conectar.
 
 **Pruebas:** hub 1749 (253 de la subida), app 1037, sync 447 y nube 318. Hay pruebas del hub real contra la API real de la nube sobre Postgres embebido:
 - 1250 eventos;
@@ -370,36 +370,35 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigió:
 
 `pnpm check` pasa. Revisado en el navegador en escritorio y celular.
 
+**Publicada el 29-oct-2026:** el Worker `faro-api` quedó con el registro nuevo (versión `102afa3e`), sin cambios en la base. `/v1/health` responde 200; un registro sin el restaurante da 400 y uno con un código inventado da 403 «el código no existe». La sección se llama **Copia en la nube**, decisión del dueño.
+
 **Queda pendiente:**
-- **Publicar el Worker** con el registro nuevo (`pnpm --filter @pos/cloud run deploy`): la versión publicada no acepta el restaurante en el registro y respondería «el código no existe». Lo hace el dueño (paso 1 abajo).
-- **Contacto de Faro** (WhatsApp o teléfono) en la pantalla Nube, para pedir el código y para «avisa a Faro» **(validar con el dueño)**.
-- **Nombre de la sección**: «Nube» u otro más claro para el dueño, como «Copia en la nube» **(validar con el dueño)**.
+- **Contacto de Faro** (WhatsApp o teléfono) en la pantalla Copia en la nube, para pedir el código y para «avisa a Faro» **(validar con el dueño)**.
 - **Dirección de la nube:** por defecto es `faro-api.johanyepes.workers.dev`, con `CLOUD_URL` para cambiarla. Pasa a un dominio propio junto con el límite de intentos (1.10).
 - **En Windows**, `chmod` no protege `cloud-link.json`: lo protegen los permisos de la carpeta de datos, que pone el instalador (1.13).
 - **Un PC restaurado de una copia vieja**, donde la nube tiene más de lo que tiene el hub, queda «atascado» a propósito. Se resuelve con la 1.12.
 - **La carta, la configuración y el personal** siguen editándose en el hub: es la 1.11b.
 
-**Cómo probarlo a mano** (con el Worker ya publicado; el hub cerrado para los pasos 2 y 3):
-1. **Publica la API nueva.** En una terminal, en la carpeta del proyecto: `nvm use 24` y luego `pnpm --filter @pos/cloud run deploy`. Debes ver «Deployed faro-api» con la dirección `https://faro-api.johanyepes.workers.dev`.
-2. **Crea tu restaurante en la nube** (una sola vez):
+**Cómo probarlo a mano** (el Worker ya está publicado; en una terminal en la carpeta del proyecto, `nvm use 24` primero):
+1. **Crea tu restaurante en la nube** (una sola vez):
 
 ```bash
 CLOUD_URL=https://faro-api.johanyepes.workers.dev pnpm --filter @pos/cloud admin restaurant
 ```
 
    Pega el token de administración (no se ve). Debes ver «Listo: «La Spritzzería» quedó creado en la nube» o «ya estaba en la nube».
-3. **Pide un código:**
+2. **Pide un código:**
 
 ```bash
 CLOUD_URL=https://faro-api.johanyepes.workers.dev pnpm --filter @pos/cloud admin code
 ```
 
    Debes ver un código como `K7PM-QX2R-9DHT` y hasta cuándo sirve.
-4. **Abre el hub:** `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. En `http://localhost:4000` entra con el usuario y la contraseña del administrador. Arriba debes ver «Sin conectar a la nube».
-5. **Conecta el PC:** en el menú, **Nube**. Escribe el código y toca **Conectar a la nube**. Debes ver «El PC de caja quedó conectado a la nube» y, en segundos, «Nube al día» en la barra y en la pantalla, con la hora de la última subida.
-6. **Prueba el corte:** desconecta el Wi-Fi o el cable del PC. Toma un pedido desde un celular y envíalo. En menos de un minuto la barra de la caja dice «1 cambio por subir · sin internet», y la comanda sale igual.
-7. **Vuelve a conectar el internet.** En menos de 30 segundos la barra vuelve a «Nube al día».
-8. **Cierra la caja con internet desconectado y un cambio pendiente:** en la confirmación debes ver «Quedan 1 cambio por subir a la nube. La caja se cierra igual…».
+3. **Abre el hub:** `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. En `http://localhost:4000` entra con el usuario y la contraseña del administrador. Arriba debes ver «Sin conectar a la nube».
+4. **Conecta el PC:** en el menú, **Copia en la nube**. Escribe el código y toca **Conectar a la nube**. Debes ver «El PC de caja quedó conectado a la nube» y, en segundos, «Nube al día» en la barra y en la pantalla, con la hora de la última subida.
+5. **Prueba el corte:** desconecta el Wi-Fi o el cable del PC. Toma un pedido desde un celular y envíalo. En menos de un minuto la barra de la caja dice «1 cambio por subir · sin internet», y la comanda sale igual.
+6. **Vuelve a conectar el internet.** En menos de 30 segundos la barra vuelve a «Nube al día».
+7. **Cierra la caja con internet desconectado y un cambio pendiente:** en la confirmación debes ver «Quedan 1 cambio por subir a la nube. La caja se cierra igual…».
 
 ### 1.10 — La nube: Postgres en Neon y API en Cloudflare Workers ✅
 

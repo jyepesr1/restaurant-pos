@@ -3,7 +3,7 @@ import type { IconName } from '../ui/icons'
 import type { Tone } from '../ui/Label'
 
 // How the upload to the cloud reads on the register (task 1.11): the same words in the top bar,
-// on the «Nube» screen and when closing the register.
+// on the «Copia en la nube» screen and when closing the register.
 
 /** Who sees the upload in the bar: the register and the admin. The waiters do not need it. */
 export const SEES_CLOUD = ['open_register_shift', 'record_payment', 'manage_devices'] as const

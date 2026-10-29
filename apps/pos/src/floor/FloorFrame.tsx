@@ -106,7 +106,7 @@ const SECTIONS: readonly { group: string; sections: readonly Section[] }[] = [
         icon: 'brand',
         permissions: ['manage_users'],
       },
-      { route: '/cloud', name: 'Nube', icon: 'cloud', permissions: ['manage_devices'] },
+      { route: '/cloud', name: 'Copia en la nube', icon: 'cloud', permissions: ['manage_devices'] },
     ],
   },
 ]
@@ -166,7 +166,7 @@ export function FloorFrame({
     connection === 'connected' && cloud && SEES_CLOUD.some((p) => permissions.includes(p))
       ? cloudLabel(cloud)
       : null
-  // The admin goes from the label to the «Nube» screen, where a problem is fixed.
+  // The admin goes from the label to the «Copia en la nube» screen, where a problem is fixed.
   const cloudLink = cloudStatus !== null && permissions.includes('manage_devices')
 
   useEffect(() => {

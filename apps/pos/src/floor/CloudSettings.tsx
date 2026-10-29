@@ -74,7 +74,7 @@ export function CloudSettings() {
   const asksForCode = cloud?.state === 'not_connected' || cloud?.state === 'revoked'
 
   return (
-    <FloorFrame title="Nube">
+    <FloorFrame title="Copia en la nube">
       <div className="mx-auto flex max-w-2xl flex-col gap-5 p-4 md:p-6">
         <p className="text-muted">
           La nube es la copia oficial del restaurante, con respaldos. El PC de caja sube cada cambio
