@@ -5,6 +5,7 @@ Thumbs.db
 # Dependencias y compilados
 node_modules/
 dist/
+dist-panel/
 build/
 .turbo/
 coverage/

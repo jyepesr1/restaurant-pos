@@ -66,6 +66,25 @@ Los tonos `free`, `progress` y `alert` **no cambian con la marca**.
 - **Celular:** barra superior con menú; la barra lateral se abre como cajón desde la izquierda.
 - **Barra superior:** título de la pantalla, conexión y pendientes, acciones de la pantalla y modo oscuro. En el celular cabe en una fila: «Solo red local» se abrevia «Local»; el modo oscuro también está en el menú.
 
+## Panel del dueño en la nube (`panel.html`, tarea 1.11c)
+
+Es otra entrada de la app, con su propio marco (`src/panel/PanelFrame.tsx`) y sin barra lateral:
+
+- **Barra superior:**
+  - el logo del restaurante (o el faro), su nombre y, debajo, quién entró;
+  - modo oscuro;
+  - «Salir», con texto visible también en el celular.
+- **Celular (< 768 px):** las secciones van en una **barra inferior fija**, al alcance del pulgar:
+  - «Hoy» y «Reportes», con ícono y texto, de 56 px de alto;
+  - respeta la zona segura del teléfono (`env(safe-area-inset-bottom)`);
+  - el contenido deja espacio abajo para que la barra no lo tape.
+- **Desde 768 px:** las mismas secciones van como pestañas en la barra superior y la inferior desaparece.
+- **Estado de los datos:** una línea arriba de las cifras:
+  - «Actualizado 9:41 p. m.» en neutro;
+  - «Faltan N datos del local por llegar» en ámbar;
+  - «Sin noticias del restaurante desde…» o «Sin conexión a internet…» en rojo, con la nube tachada y las cifras fechadas («Ventas hasta las 9:38 p. m.»).
+- **Comparación con el mismo día de la semana pasada a la misma hora:** flecha y porcentaje. La subida va en verde; la bajada, en neutro con su flecha (no es una alarma).
+
 ## Pantallas
 
 - **Salón:**

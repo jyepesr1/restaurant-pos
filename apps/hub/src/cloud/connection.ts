@@ -3,6 +3,7 @@ import type { SqliteDatabase } from '@pos/db'
 import type { CloudStatus } from '@pos/sync'
 import { SqliteStore } from '@pos/sync/sqlite'
 import { type CloudLink, readLink, saveLink } from './link'
+import { type Snapshots, SnapshotUploader, type SnapshotUploaderOptions } from './snapshots'
 import { CloudUploader, REQUEST_TIMEOUT_MS, type UploaderOptions } from './uploader'
 
 // This register PC with the cloud (task 1.11): registering it with the single-use code the
@@ -38,6 +39,16 @@ export interface CloudConnectionOptions {
     UploaderOptions,
     'timers' | 'retryDelaysMs' | 'stuckRetryMs' | 'requestTimeoutMs' | 'maxBatchBytes'
   >
+  /**
+   * The snapshots for the owner's panel (docs/PANEL.md#instantáneas): what to upload. Without it,
+   * only events go up.
+   */
+  snapshots?: () => Snapshots
+  /** For the tests: the snapshots' waits. */
+  snapshotOptions?: Pick<
+    SnapshotUploaderOptions,
+    'now' | 'routineEveryMs' | 'refusedRetryMs' | 'requestTimeoutMs' | 'maxBytes'
+  >
 }
 
 /** The cloud did not answer the registration (no internet, timeout). */
@@ -62,6 +73,7 @@ export function checkCloudUrl(url: string): string {
 
 export class CloudConnection {
   readonly uploader: CloudUploader
+  readonly snapshots: SnapshotUploader | null
   private readonly o: CloudConnectionOptions
   private readonly url: string
   private readonly fetch: typeof fetch
@@ -94,11 +106,44 @@ export class CloudConnection {
         write: (sequence) => this.writeConfirmed(sequence),
       },
       onStatus: options.onStatus,
+      // Up to date: a routine look at whether a snapshot changed without anyone saying so.
+      onUpToDate: () => this.snapshots?.check(),
       onFailure: options.onFailure,
       fetch: this.fetch,
       clock: options.clock,
       ...options.uploader,
     })
+    this.snapshots = options.snapshots
+      ? new SnapshotUploader({
+          url: this.url,
+          // A revoked PC sends nothing until it is registered again.
+          credential: () =>
+            this.uploader.current().state === 'revoked' ? null : (this.link?.credential ?? null),
+          hubId: () => this.link?.hubId ?? null,
+          build: options.snapshots,
+          dataDir: options.dataDir,
+          onFailure: options.onFailure,
+          fetch: this.fetch,
+          ...options.snapshotOptions,
+        })
+      : null
+  }
+
+  /** The menu, the staff or the configuration changed: uploads the snapshots that differ. */
+  checkSnapshots() {
+    this.snapshots?.check({ force: true })
+  }
+
+  /** Stops the uploads for good (closing the hub). */
+  stop() {
+    this.uploader.stop()
+    this.snapshots?.stop()
+  }
+
+  /** Resolves once the uploads in progress finish. */
+  async idle() {
+    await this.uploader.idle()
+    await this.snapshots?.idle()
   }
 
   status(): CloudStatus {
@@ -177,6 +222,8 @@ export class CloudConnection {
         // A new registration starts from zero in the cloud: it asks again how far it is.
         this.writeConfirmed(0)
         this.uploader.restart()
+        // The new registration has none of the snapshots yet (they are kept by hub id).
+        this.checkSnapshots()
         return { ok: true }
       }
       const error = String((r.data as { error?: unknown } | null)?.error ?? '')

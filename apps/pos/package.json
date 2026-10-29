@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
+    "dev:panel": "vite --host --config vite.panel.config.ts",
     "build": "vite build",
+    "build:panel": "vite build --config vite.panel.config.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
   },

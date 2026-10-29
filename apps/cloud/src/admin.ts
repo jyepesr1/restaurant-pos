@@ -7,7 +7,8 @@ import { secret } from './console'
 // Reads the restaurant from this machine's hub database (with the hub stopped) so it gets the
 // same id in the cloud.
 //
-//   restaurant       creates this hub's restaurant in the cloud
+//   restaurant [slug] creates this hub's restaurant in the cloud, with the short name the panel
+//                     asks for (by default from its name: `La Spritzzería` → `la-spritzzeria`)
 //   code             gives a code to register the register PC (single use, 24 hours)
 //   revoke <hub>     voids a register PC's credential
 //
@@ -17,7 +18,7 @@ const [command, argument] = process.argv.slice(2)
 const cloud = process.env.CLOUD_URL?.replace(/\/$/, '')
 if (!cloud || !['restaurant', 'code', 'revoke'].includes(command ?? '')) {
   console.error(
-    'Uso: CLOUD_URL=https://faro-api.<tu-cuenta>.workers.dev pnpm --filter @pos/cloud admin restaurant | code | revoke <hub_id>',
+    'Uso: CLOUD_URL=https://faro-api.<tu-cuenta>.workers.dev pnpm --filter @pos/cloud admin restaurant [nombre-corto] | code | revoke <hub_id>',
   )
   process.exit(1)
 }
@@ -53,11 +54,19 @@ const request = async (route: string, body: object) => {
 
 if (command === 'restaurant') {
   const rest = localRestaurant()
-  const r = await request('/v1/admin/restaurants', rest)
+  const r = await request('/v1/admin/restaurants', {
+    ...rest,
+    ...(argument ? { slug: argument.trim().toLowerCase() } : {}),
+  })
   console.log(
     r.status === 'created'
       ? `Listo: «${rest.name}» quedó creado en la nube (id ${rest.id}).`
       : `«${rest.name}» ya estaba en la nube (id ${rest.id}). No se cambió nada.`,
+  )
+  console.log(
+    r.slug
+      ? `Nombre corto para entrar al panel: ${r.slug}`
+      : 'Este restaurante aún no tiene nombre corto para el panel.',
   )
 } else if (command === 'code') {
   const rest = localRestaurant()

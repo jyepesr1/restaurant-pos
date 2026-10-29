@@ -26,7 +26,7 @@ describe('sqlFromPg', () => {
   it('migrates, registers a hub and saves a batch just like with PGlite directly', async () => {
     const db = new PGlite()
     const sql = sqlFromPg(clientOf(db) as never)
-    expect(await migrate(sql)).toEqual([1])
+    expect(await migrate(sql)).toEqual([1, 2])
     const cloud = new Cloud(sql, () => new Date('2026-10-26T15:00:00Z'))
     const restaurant = newId()
     await cloud.createRestaurant({ id: restaurant, name: 'R' })

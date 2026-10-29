@@ -13,7 +13,6 @@ import type { Catalog } from '@pos/sync'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../ui/Button'
 import { digitsOnly, pesos, withDots } from '../ui/format'
-import { Label } from '../ui/Label'
 import { Group, Option } from '../ui/Options'
 import { navigate } from '../ui/route'
 import { SidePanel } from '../ui/SidePanel'
@@ -23,6 +22,7 @@ import { pendingOnClose } from './cloud'
 import { floor, useFloor, useLocalView } from './context'
 import { FloorFrame } from './FloorFrame'
 import { fieldClass } from './SignIn'
+import { Variance } from './Variance'
 
 // This device's register (tasks 1.6 and 1.7): open it with the float, see what was charged in the
 // shift, record cash in, cash out and tip payouts, and close it with a blind cash count: first the
@@ -1085,24 +1085,5 @@ function Result({
         </p>
       )}
     </section>
-  )
-}
-
-/** «Cuadra», «Sobran $X» or «Faltan $X», with its icon. */
-export function Variance({ value }: { value: number }) {
-  if (value === 0)
-    return (
-      <Label tone="free" icon="check">
-        Cuadra
-      </Label>
-    )
-  return value > 0 ? (
-    <Label tone="progress" icon="more">
-      {`Sobran ${pesos(value)}`}
-    </Label>
-  ) : (
-    <Label tone="warning" icon="minus">
-      {`Faltan ${pesos(-value)}`}
-    </Label>
   )
 }

@@ -73,6 +73,8 @@ export interface CloudCall {
   method: string
   route: string
   authorization: string | null
+  /** The heartbeat header (`x-faro-hub-max`), if it came. */
+  hubMax: string | null
   /** The sequences the batch carried (POST only). */
   sequences: number[]
   bytes: number
@@ -90,6 +92,8 @@ export const jsonResponse = (body: unknown, status = 200) =>
  */
 export function fakeCloud(options: { maxEventsPerRequest?: number; credential?: string } = {}) {
   const stored = new Map<number, OrderEvent>()
+  /** The last snapshot of each kind the cloud saved (`PUT /v1/snapshots/:kind`). */
+  const snapshots = new Map<string, { fingerprint: string; content: unknown }>()
   const calls: CloudCall[] = []
   const plan: Reply[] = []
   const state = {
@@ -114,12 +118,19 @@ export function fakeCloud(options: { maxEventsPerRequest?: number; credential?: 
       await Promise.resolve()
       const url = new URL(String(input))
       const headers = (init?.headers ?? {}) as Record<string, string>
-      const body = init?.body ? (JSON.parse(String(init.body)) as { events: OrderEvent[] }) : null
+      const body = init?.body
+        ? (JSON.parse(String(init.body)) as {
+            events?: OrderEvent[]
+            fingerprint?: string
+            content?: unknown
+          })
+        : null
       const call: CloudCall = {
         method: init?.method ?? 'GET',
         route: url.pathname,
         authorization: headers.authorization ?? null,
-        sequences: body?.events.map((e) => e.sequence) ?? [],
+        hubMax: headers['x-faro-hub-max'] ?? null,
+        sequences: body?.events?.map((e) => e.sequence) ?? [],
         bytes: init?.body ? new TextEncoder().encode(String(init.body)).length : 0,
       }
       calls.push(call)
@@ -131,7 +142,14 @@ export function fakeCloud(options: { maxEventsPerRequest?: number; credential?: 
         return jsonResponse({ error: 'invalid_credential' }, 401)
       if (call.route === '/v1/events/last' && call.method === 'GET')
         return jsonResponse({ last_sequence: contiguous() })
-      if (call.route === '/v1/events' && call.method === 'POST' && body) {
+      const kind = /^\/v1\/snapshots\/([a-z_]+)$/.exec(call.route)?.[1]
+      if (kind && call.method === 'PUT') {
+        if (typeof body?.fingerprint !== 'string' || !('content' in body))
+          return jsonResponse({ error: 'invalid_data' }, 400)
+        snapshots.set(kind, { fingerprint: body.fingerprint, content: body.content })
+        return new Response(null, { status: 204 })
+      }
+      if (call.route === '/v1/events' && call.method === 'POST' && body?.events) {
         if (body.events.length > state.maxEventsPerRequest)
           return jsonResponse({ error: 'batch_too_large' }, 413)
         const results = body.events.map((e) => {
@@ -154,12 +172,14 @@ export function fakeCloud(options: { maxEventsPerRequest?: number; credential?: 
   return {
     fetch: fetchCloud,
     stored,
+    snapshots,
     calls,
     plan,
     state,
     credential,
     posts: () => calls.filter((c) => c.method === 'POST'),
     gets: () => calls.filter((c) => c.method === 'GET'),
+    puts: () => calls.filter((c) => c.method === 'PUT'),
     /** Every sequence sent in a POST, in the order they were sent. */
     sent: () => calls.flatMap((c) => c.sequences),
     contiguous,

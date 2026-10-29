@@ -76,8 +76,15 @@ describe('conversion of the old roles', () => {
     expect(newer.admin).toBe(b.roles.Administrador as string)
     expect(newer.cashier).toBe(b.roles.Cajero as string)
     expect(newer.waiter).toBe(b.roles.Mesero as string)
-    // Nobody loses their role or permissions: the conversion does not rewrite permissions.
-    expect(permissions(b.db)).toEqual(before)
+    // Nobody loses their role or permissions: the conversion does not rewrite permissions. The
+    // only new row is the one-time «Entrar desde fuera del local» for the Administrador (ADR-017).
+    const after = permissions(b.db)
+    const isNew = (p: (typeof after)[number]) =>
+      !before.some((q) => q.role_id === p.role_id && q.permission === p.permission)
+    expect(after.filter((p) => !isNew(p))).toEqual(before)
+    expect(after.filter(isNew).map((p) => [p.role_id, p.permission, p.active])).toEqual([
+      [b.roles.Administrador, 'remote_access', 1],
+    ])
     for (const name of ['Gerente', 'Cocina', 'Contador'])
       for (const g of b.people[name] ?? [])
         expect(b.access.permissionsOf(g.userId)).toEqual([...(OLD_ROLES[name] ?? [])].sort())

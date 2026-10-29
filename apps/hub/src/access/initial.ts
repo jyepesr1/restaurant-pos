@@ -97,8 +97,46 @@ export function ensureRoles(
         )
       roles[key] = roleId
     }
+    grantRemoteAccessOnce(db, restaurantId, roles.admin, now)
     return roles
   })
+}
+
+/** Local counter (`counters`, 1 = done): the one-time grant of `remote_access` already happened. */
+export const REMOTE_ACCESS_GRANTED = 'remote_access_granted'
+
+/**
+ * The cloud panel (ADR-017): in a hub from before it, the Administrador role gets «Entrar desde
+ * fuera del local» once. A new restaurant's role already has it (`DEFAULT_ROLES`). If the admin
+ * takes it away afterwards, it is not given back: the row stays archived and the counter says the
+ * grant was already made.
+ */
+function grantRemoteAccessOnce(
+  db: SqliteDatabase,
+  restaurantId: string,
+  adminRole: string,
+  now: string,
+) {
+  const done = db
+    .prepare('SELECT 1 FROM counters WHERE restaurant_id = ? AND name = ?')
+    .get(restaurantId, REMOTE_ACCESS_GRANTED)
+  if (done) return
+  const row = db
+    .prepare('SELECT 1 FROM role_permissions WHERE role_id = ? AND permission = ?')
+    .get(adminRole, 'remote_access')
+  if (!row)
+    insertVersioned(
+      db,
+      'role_permissions',
+      restaurantId,
+      { role_id: adminRole, permission: 'remote_access' },
+      SYSTEM,
+      now,
+    )
+  db.prepare('INSERT INTO counters (restaurant_id, name, value) VALUES (?, ?, 1)').run(
+    restaurantId,
+    REMOTE_ACCESS_GRANTED,
+  )
 }
 
 /** Username the admin who creates the hub signs in with. */

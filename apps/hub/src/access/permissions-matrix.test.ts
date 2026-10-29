@@ -36,6 +36,7 @@ const DOC: Record<Permission, Role[]> = {
   manage_devices: ['admin'],
   view_reports: ['admin', 'manager', 'reports'],
   view_own_reports: ['cashier', 'waiter'],
+  remote_access: ['admin', 'manager'],
 }
 
 /** Which permission each event requires, per the «Permiso» column of the doc's table. */

@@ -6,6 +6,7 @@ import { emptyDatabase, testDatabase } from './testing/pglite'
 // applied is not edited; the numbering is 1, 2, 3…
 
 const m1 = CLOUD_MIGRATIONS[0] as CloudMigration
+const panel = CLOUD_MIGRATIONS[1] as CloudMigration
 const m2: CloudMigration = {
   version: 2,
   name: 'things',
@@ -26,15 +27,18 @@ const sqlTables = async (db: ReturnType<typeof emptyDatabase>['db']) =>
   ).rows.map((r) => r.t)
 
 describe('apply', () => {
-  it('on an empty database applies 1 and leaves the registry with its fingerprint', async () => {
+  it('on an empty database applies 1 and 2 and leaves the registry with their fingerprints', async () => {
     const { sql, db } = emptyDatabase()
-    expect(await migrate(sql)).toEqual([1])
+    expect(await migrate(sql)).toEqual([1, 2])
     const rows = (
       await db.query<{ version: number; name: string; fingerprint: string }>(
         'SELECT version, name, fingerprint FROM migrations',
       )
     ).rows
-    expect(rows).toEqual([{ version: 1, name: 'initial', fingerprint: sqlFingerprint(m1.sql) }])
+    expect(rows).toEqual([
+      { version: 1, name: 'initial', fingerprint: sqlFingerprint(m1.sql) },
+      { version: 2, name: 'panel', fingerprint: sqlFingerprint(panel.sql) },
+    ])
     expect(await sqlTables(db)).toEqual(
       expect.arrayContaining([
         'restaurants',
@@ -42,6 +46,11 @@ describe('apply', () => {
         'hubs',
         'events',
         'divergent_events',
+        'event_aggregates',
+        'snapshots',
+        'remote_users',
+        'panel_sessions',
+        'panel_attempts',
       ]),
     )
   })
@@ -91,7 +100,7 @@ describe('apply', () => {
   it('if the faro_data role already exists on the server (another database), the migration neither fails nor duplicates it', async () => {
     const { sql, db } = emptyDatabase()
     await db.exec('CREATE ROLE faro_data NOLOGIN NOBYPASSRLS')
-    await expect(migrate(sql)).resolves.toEqual([1])
+    await expect(migrate(sql)).resolves.toEqual([1, 2])
     expect(
       (await db.query("SELECT count(*)::int AS n FROM pg_roles WHERE rolname = 'faro_data'")).rows,
     ).toEqual([{ n: 1 }])
@@ -104,17 +113,24 @@ describe('apply', () => {
     expect((await db.query('SELECT version FROM migrations')).rows).toHaveLength(2)
   })
 
-  it('migration 1 leaves row-level security on and the role without extra privileges', async () => {
+  it('the migrations leave row-level security on and the role without extra privileges', async () => {
     const { db } = await testDatabase()
+    const withRls = [
+      'divergent_events',
+      'event_aggregates',
+      'events',
+      'panel_attempts',
+      'panel_sessions',
+      'remote_users',
+      'snapshots',
+    ]
     const rls = (
       await db.query<{ relname: string; relrowsecurity: boolean }>(
-        "SELECT relname, relrowsecurity FROM pg_class WHERE relname IN ('events', 'divergent_events') ORDER BY 1",
+        'SELECT relname, relrowsecurity FROM pg_class WHERE relname = ANY($1) ORDER BY 1',
+        [withRls],
       )
     ).rows
-    expect(rls).toEqual([
-      { relname: 'divergent_events', relrowsecurity: true },
-      { relname: 'events', relrowsecurity: true },
-    ])
+    expect(rls).toEqual(withRls.map((relname) => ({ relname, relrowsecurity: true })))
     const permissions = (
       await db.query<{ t: string; p: string }>(
         `SELECT table_name AS t, privilege_type AS p FROM information_schema.role_table_grants
@@ -125,8 +141,41 @@ describe('apply', () => {
     expect(src('events')).toEqual(['INSERT', 'SELECT'])
     expect(src('divergent_events')).toEqual(['INSERT', 'SELECT'])
     expect(src('restaurants')).toEqual(['INSERT', 'SELECT'])
+    expect(src('event_aggregates')).toEqual(['INSERT', 'SELECT'])
+    // Who can sign in to the panel is replaced whole with each snapshot, and old sign-in attempts
+    // are cleared: the only DELETEs.
+    expect(src('remote_users')).toEqual(['DELETE', 'INSERT', 'SELECT'])
+    expect(src('panel_attempts')).toEqual(['DELETE', 'INSERT', 'SELECT'])
+    // The hubs are read by column: never the credential fingerprint.
+    expect(src('hubs')).toEqual(['INSERT'])
     expect(src('migrations')).toEqual([])
-    for (const t of permissions) expect(['DELETE', 'TRUNCATE']).not.toContain(t.p)
+    for (const t of permissions.filter((x) => !['remote_users', 'panel_attempts'].includes(x.t)))
+      expect(['DELETE', 'TRUNCATE']).not.toContain(t.p)
+    // UPDATE only on the columns the API changes.
+    const columns = (
+      await db.query<{ t: string; c: string }>(
+        `SELECT table_name AS t, column_name AS c FROM information_schema.column_privileges
+         WHERE grantee = 'faro_data' AND privilege_type = 'UPDATE' ORDER BY 1, 2`,
+      )
+    ).rows.map((r) => `${r.t}.${r.c}`)
+    expect(columns).toEqual([
+      'hubs.contiguous_sequence',
+      'hubs.credential_hash',
+      'hubs.hub_max_sequence',
+      'hubs.last_seen_at',
+      'hubs.revoked_at',
+      'panel_attempts.blocked_until',
+      'panel_attempts.failures',
+      'panel_attempts.last_failure_at',
+      'panel_sessions.last_used_at',
+      'panel_sessions.revoked_at',
+      'registration_codes.hub_id',
+      'registration_codes.used_at',
+      'snapshots.content',
+      'snapshots.fingerprint',
+      'snapshots.hub_id',
+      'snapshots.uploaded_at',
+    ])
   })
 })
 
@@ -147,7 +196,7 @@ describe('an applied migration is not edited', () => {
 
   it('on detecting the edit it applies none of the new migrations that come with it', async () => {
     const { sql, db } = emptyDatabase()
-    await migrate(sql)
+    await migrate(sql, [m1])
     await expect(migrate(sql, [{ ...m1, sql: `${m1.sql}\n-- change` }, m2])).rejects.toThrow(
       /cambió/,
     )
@@ -205,7 +254,7 @@ describe('numbering', () => {
 describe('a failing migration', () => {
   it('is rolled back entirely: neither its tables nor its registry row', async () => {
     const { sql, db } = emptyDatabase()
-    await migrate(sql)
+    await migrate(sql, [m1])
     const broken: CloudMigration = {
       version: 2,
       name: 'broken',

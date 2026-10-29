@@ -5,6 +5,7 @@ import {
   DEFAULT_ROLES,
   isPermission,
   ONLY_FROM_REGISTER,
+  PASSWORD_PERMISSIONS,
   PERMISSION_DESCRIPTIONS,
   PERMISSIONS,
   permissionFor,
@@ -32,6 +33,18 @@ describe('permissions', () => {
     expect(DEFAULT_ROLES.reports.permissions).toEqual(['view_reports'])
     for (const role of Object.values(DEFAULT_ROLES))
       for (const permission of role.permissions) expect(PERMISSIONS).toContain(permission)
+  })
+
+  it('entering from outside the restaurant (ADR-017): the admin has it by default, with a password', () => {
+    expect(PERMISSIONS).toContain('remote_access')
+    expect(DEFAULT_ROLES.admin.permissions).toContain('remote_access')
+    expect(PASSWORD_PERMISSIONS.has('remote_access')).toBe(true)
+    for (const role of ['cashier', 'reports', 'waiter'] as const)
+      expect(DEFAULT_ROLES[role].permissions).not.toContain('remote_access')
+    const described = PERMISSION_DESCRIPTIONS.flatMap((g) => g.permissions).find(
+      (p) => p.permission === 'remote_access',
+    )
+    expect(described?.name).toBe('Entrar desde fuera del local')
   })
 
   it('the roles screen describes each permission exactly once', () => {

@@ -13,6 +13,20 @@ export function FaroMark({ className = 'size-9' }: { className?: string }) {
   )
 }
 
+/** Just the drawing: the restaurant's logo with its brand, Faro's otherwise. */
+export function BrandMark({ brand }: { brand?: string | null }) {
+  return brand === 'la-spritzzeria' ? (
+    // La Spritzzería's badge: its logo in the cream circle, as on the menu.
+    <img
+      src="/brand/la-spritzzeria.svg"
+      alt=""
+      className="size-10 shrink-0 rounded-full border-2 border-brand bg-[#fff8ec] p-0.5"
+    />
+  ) : (
+    <FaroMark className="size-9 shrink-0" />
+  )
+}
+
 /** Logo with name: Faro's or, with its brand set, the restaurant's. */
 export function Logo({
   name,

@@ -1,4 +1,4 @@
-import { eventFingerprint } from '@pos/sync'
+import { eventFingerprint, ordersOf } from '@pos/sync'
 import { z } from 'zod'
 import type { Sql } from './sql'
 
@@ -53,10 +53,48 @@ export const Registration = z.strictObject({
 })
 export type Registration = z.infer<typeof Registration>
 
+/** A restaurant's short name: lowercase letters and digits joined by single dashes. */
+export const Slug = z
+  .string()
+  .max(60)
+  .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+
 export const NewRestaurant = z.strictObject({
   id: Ulid,
   name: z.string().trim().min(1).max(120),
+  /** Without it, it comes from the name (`La Spritzzería` → `la-spritzzeria`). */
+  slug: Slug.optional(),
 })
+
+/** The slug of a name: without accents, in lowercase, with dashes (the same as migration 2). */
+export function slugOf(name: string): string {
+  const slug = name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50)
+    .replace(/-+$/, '')
+  return slug || 'restaurante'
+}
+
+const ULID_TEXT = /^[0-9A-HJKMNP-TV-Z]{26}$/
+const ids = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && ULID_TEXT.test(x)) : []
+
+/**
+ * The orders an uploaded event touches, as the hub indexes them (`ordersOf`): its aggregate, the
+ * ones in `related` and the ones in `affects`. The cloud does not validate the data, so only
+ * well-formed ids count.
+ */
+export function aggregatesOf(e: { aggregate_id: string; related?: unknown; affects?: unknown }) {
+  return ordersOf({
+    aggregate_id: e.aggregate_id,
+    related: ids(e.related),
+    affects: ids(e.affects),
+  })
+}
 
 /** What happened to each event in a batch. */
 export type EventResult =
@@ -130,6 +168,36 @@ export const normalizeCode = (code: string) => code.replace(/[\s-]/g, '').toUppe
 
 // ── Operations ─────────────────────────────────────────────────────────
 
+/**
+ * Runs the job inside a single-restaurant transaction: the database's row-level security only
+ * lets it see and write that restaurant's rows, even if a query forgets to filter.
+ */
+export function inRestaurant<T>(
+  sql: Sql,
+  restaurantId: string,
+  job: (tx: Sql) => Promise<T>,
+): Promise<T> {
+  return sql.transaction(async (tx) => {
+    await tx.query("SELECT set_config('faro.restaurant_id', $1, true)", [restaurantId])
+    await tx.query('SET LOCAL ROLE faro_data')
+    return job(tx)
+  })
+}
+
+/**
+ * The location the panel shows: that of the restaurant's hub that called most recently (one not
+ * revoked first). Today each restaurant has one location; several come later.
+ */
+export async function currentLocation(sql: Sql, restaurantId: string): Promise<string | null> {
+  const [row] = await sql.query<{ location_id: string }>(
+    `SELECT location_id FROM hubs WHERE restaurant_id = $1
+     ORDER BY (revoked_at IS NULL) DESC, coalesce(last_seen_at, created_at) DESC, created_at DESC
+     LIMIT 1`,
+    [restaurantId],
+  )
+  return row?.location_id ?? null
+}
+
 export class Cloud {
   private readonly sql: Sql
   private readonly clock: () => Date
@@ -139,27 +207,61 @@ export class Cloud {
     this.clock = clock
   }
 
-  /**
-   * Runs the job inside a single-restaurant transaction: the database's row-level security only
-   * lets it see and write that restaurant's events, even if a query forgets to filter.
-   */
   private inRestaurant<T>(restaurantId: string, job: (tx: Sql) => Promise<T>): Promise<T> {
-    return this.sql.transaction(async (tx) => {
-      await tx.query("SELECT set_config('faro.restaurant_id', $1, true)", [restaurantId])
-      await tx.query('SET LOCAL ROLE faro_data')
-      return job(tx)
-    })
+    return inRestaurant(this.sql, restaurantId, job)
   }
 
-  /** Creates the restaurant if it does not exist (with the same id it has in its hub). */
+  /**
+   * Creates the restaurant if it does not exist (with the same id it has in its hub). Without a
+   * slug it gets one from its name; if that one is taken, `-2`, `-3`… A slug that was asked for and
+   * is taken is not changed: `slug_taken`.
+   */
   async createRestaurant(
     data: z.infer<typeof NewRestaurant>,
-  ): Promise<'created' | 'already_existed'> {
-    const rows = await this.sql.query(
-      'INSERT INTO restaurants (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING RETURNING id',
-      [data.id, data.name],
-    )
-    return rows.length > 0 ? 'created' : 'already_existed'
+  ): Promise<
+    | { status: 'created'; slug: string }
+    | { status: 'already_existed'; slug: string | null }
+    | { status: 'slug_taken' }
+  > {
+    const existing = async () => {
+      const [row] = await this.sql.query<{ slug: string | null }>(
+        'SELECT slug FROM restaurants WHERE id = $1',
+        [data.id],
+      )
+      return row ? ({ status: 'already_existed', slug: row.slug } as const) : null
+    }
+    const already = await existing()
+    if (already) return already
+    const base = data.slug ?? slugOf(data.name)
+    for (let attempt = 0; attempt < 20; attempt++) {
+      let slug = base
+      if (!data.slug) {
+        // The first free one among base, base-2, base-3…
+        const taken = new Set(
+          (
+            await this.sql.query<{ slug: string }>(
+              "SELECT slug FROM restaurants WHERE slug = $1 OR slug LIKE $1 || '-%'",
+              [base],
+            )
+          ).map((r) => r.slug),
+        )
+        for (let n = 2; taken.has(slug); n++) slug = `${base.slice(0, 50)}-${n}`
+      }
+      try {
+        const rows = await this.sql.query(
+          `INSERT INTO restaurants (id, name, slug) VALUES ($1, $2, $3)
+           ON CONFLICT (id) DO NOTHING RETURNING id`,
+          [data.id, data.name, slug],
+        )
+        if (rows.length > 0) return { status: 'created', slug }
+        return (await existing()) ?? { status: 'slug_taken' }
+      } catch (e) {
+        // Another restaurant took that slug in the meantime.
+        if ((e as { code?: string }).code !== '23505') throw e
+        if (data.slug) return (await existing()) ?? { status: 'slug_taken' }
+      }
+    }
+    throw new Error('No se encontró un nombre corto libre para el restaurante')
   }
 
   /** A code to register one of the restaurant's hubs; null if the restaurant does not exist. */
@@ -247,20 +349,54 @@ export class Cloud {
   /** The hub that owns a credential, if it exists and is not revoked. */
   async authenticate(credential: string): Promise<AuthenticatedHub | null> {
     if (!credential || credential.length > 200) return null
+    // Through a function: the API role does not read the credential fingerprints (migration 2).
     const [hub] = await this.sql.query<{ id: string; restaurant_id: string; location_id: string }>(
-      'SELECT id, restaurant_id, location_id FROM hubs WHERE credential_hash = $1 AND revoked_at IS NULL',
+      'SELECT id, restaurant_id, location_id FROM hub_by_credential($1)',
       [await sha256(credential)],
     )
     return hub ? { id: hub.id, restaurantId: hub.restaurant_id, locationId: hub.location_id } : null
   }
 
-  /** Revokes a hub: its credential stops working. */
+  /**
+   * Revokes a hub: its credential stops working. If its location is left without any active hub,
+   * nobody can sign in to the panel with that location's users any more: they are removed (and
+   * their panel sessions end) until another hub of the location uploads them again.
+   */
   async revokeHub(hubId: string): Promise<boolean> {
-    const rows = await this.sql.query(
-      'UPDATE hubs SET revoked_at = $2 WHERE id = $1 AND revoked_at IS NULL RETURNING id',
-      [hubId, this.clock().toISOString()],
+    const [hub] = await this.sql.query<{ restaurant_id: string; location_id: string }>(
+      'SELECT restaurant_id, location_id FROM hubs WHERE id = $1 AND revoked_at IS NULL',
+      [hubId],
     )
-    return rows.length > 0
+    if (!hub) return false
+    const now = this.clock().toISOString()
+    return this.inRestaurant(hub.restaurant_id, async (tx) => {
+      const rows = await tx.query(
+        'UPDATE hubs SET revoked_at = $2 WHERE id = $1 AND revoked_at IS NULL RETURNING id',
+        [hubId, now],
+      )
+      if (rows.length === 0) return false
+      const [active] = await tx.query(
+        `SELECT 1 FROM hubs WHERE restaurant_id = $1 AND location_id = $2 AND revoked_at IS NULL`,
+        [hub.restaurant_id, hub.location_id],
+      )
+      if (!active) {
+        await tx.query(
+          `WITH gone AS (
+             DELETE FROM remote_users WHERE restaurant_id = $1 AND location_id = $2 RETURNING user_id
+           )
+           UPDATE panel_sessions SET revoked_at = $3
+           WHERE restaurant_id = $1 AND revoked_at IS NULL AND user_id IN (SELECT user_id FROM gone)`,
+          [hub.restaurant_id, hub.location_id, now],
+        )
+        // So the next hub's upload is not taken as «already the same».
+        await tx.query(
+          `UPDATE snapshots SET fingerprint = '', content = '{"users": 0}'::jsonb
+           WHERE restaurant_id = $1 AND location_id = $2 AND kind = 'remote_users'`,
+          [hub.restaurant_id, hub.location_id],
+        )
+      }
+      return true
+    })
   }
 
   /**
@@ -275,6 +411,8 @@ export class Cloud {
       id: string
       fingerprint: string
       row: Record<string, unknown>
+      /** The orders it touches (`event_aggregates`). */
+      aggregates: string[]
     }
     const validEntries: ValidEntry[] = []
     /** The same id again in the batch: compared with whatever ends up stored. */
@@ -321,6 +459,7 @@ export class Cloud {
           content: r.data,
           fingerprint,
         },
+        aggregates: aggregatesOf(r.data),
       }
       if (seenSet.has(r.data.id)) duplicatesInBatch.push(valid)
       else {
@@ -427,6 +566,25 @@ export class Cloud {
             results[v.index]?.status === 'saved' || results[v.index]?.status === 'already_stored',
         )
         .map((v) => Number(v.row.hub_sequence))
+      // The orders each event touches, in the same transaction: a report never sees an event
+      // without its orders. Also for one already stored with the same content: the Worker from
+      // before migration 2 saved events without them, and the hub resends them. The hub and the
+      // sequence are the stored event's.
+      const aggregateRows = [...toSave, ...duplicatesInBatch]
+        .filter(
+          (v) =>
+            results[v.index]?.status === 'saved' || results[v.index]?.status === 'already_stored',
+        )
+        .flatMap((v) => v.aggregates.map((a) => ({ event_id: v.id, aggregate_id: a })))
+      if (aggregateRows.length > 0)
+        await tx.query(
+          `INSERT INTO event_aggregates (restaurant_id, event_id, aggregate_id, hub_id, hub_sequence)
+           SELECT $1, e.id, x.aggregate_id, e.hub_id, e.hub_sequence
+           FROM jsonb_to_recordset($2::jsonb) AS x(event_id text, aggregate_id text)
+           JOIN events e ON e.restaurant_id = $1 AND e.id = x.event_id
+           ON CONFLICT DO NOTHING`,
+          [hub.restaurantId, JSON.stringify(aggregateRows)],
+        )
       await tx.query(
         `UPDATE hubs SET contiguous_sequence = (
            SELECT coalesce(max(s.q), hubs.contiguous_sequence) FROM (
@@ -455,4 +613,23 @@ export class Cloud {
     )
     return Number(row?.s ?? 0)
   }
+
+  /**
+   * The hub called: when, and up to which sequence it has (`x-faro-hub-max`, null if it did not
+   * say). With that the panel knows since when there is no news from the location and how much is
+   * left to upload.
+   */
+  async heartbeat(hub: AuthenticatedHub, hubMax: number | null): Promise<void> {
+    await this.sql.query(
+      `UPDATE hubs SET last_seen_at = $2, hub_max_sequence = coalesce($3::bigint, hub_max_sequence)
+       WHERE id = $1`,
+      [hub.id, this.clock().toISOString(), hubMax],
+    )
+  }
+}
+
+/** The `x-faro-hub-max` header as an integer ≥ 0, or null if it is missing or malformed. */
+export function hubMaxOf(header: string | null): number | null {
+  if (header === null || !/^\d{1,15}$/.test(header.trim())) return null
+  return Number(header.trim())
 }

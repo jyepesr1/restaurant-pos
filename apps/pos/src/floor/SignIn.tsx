@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { Button } from '../ui/Button'
+import { fieldClass } from '../ui/field'
 import { PinPad } from '../ui/PinPad'
 import { ApiError } from './api'
 import { floor, useFloor } from './context'
@@ -9,8 +10,8 @@ import { FloorFrame } from './FloorFrame'
 // administration, register and reports with user and password. The hub checks it: a connection
 // is needed to sign in, not to work afterwards (what is done offline with the session open counts).
 
-export const fieldClass =
-  'min-h-12 w-full rounded-xl border border-border bg-surface px-3 text-lg disabled:opacity-60 focus-visible:outline-3 focus-visible:outline-focus'
+// The field style lives in the design system; it is re-exported here for the screens that import it.
+export { fieldClass }
 
 type Mode = 'pin' | 'password'
 

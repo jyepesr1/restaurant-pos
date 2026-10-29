@@ -400,7 +400,7 @@ Decisión del dueño del 24-oct-2026: el mesero no debe pasar por emparejar su c
 - **Equipos**: con contraseña, el equipo pasa a ser de caja solo si esa persona puede cobrar (`CHECKOUT_PERMISSIONS`). Cada equipo registrado aparece en **Personal y roles → Equipos**, con su último uso, para **retirarlo** si se pierde. El emparejamiento por código queda en el hub sin uso: la pantalla de cocina la convierte el administrador desde el propio equipo (tarea 1.4, ADR-015).
 - **PIN de autorización**: el administrador y el cajero tienen además un PIN de 4 dígitos que **no abre sesión**. Solo sirve para autorizar en el celular del mesero (anular lo enviado, descuentos) con el comprobante de un solo uso del ADR-008. Todos los PIN del restaurante, de entrada y de autorización, son únicos y los genera el sistema.
 - **Contraseñas**: mínimo 8 caracteres. El hub guarda solo una huella lenta con sal (scrypt, N = 2^15), en tablas que solo existen en el hub y nunca se sincronizan; no dependen de la clave de los PIN. Espera creciente por IP (o por equipo) y por usuario; la de usuario tiene un tope de 10 s, para que nadie pueda dejar afuera al administrador probando su usuario. Un usuario que no existe, uno archivado y una contraseña errada tardan lo mismo y dan la misma respuesta. Aviso al administrador como con el PIN. El administrador cambia la contraseña de quien la olvide en Personal y roles; si la olvida el propio administrador, `pnpm reset-admin` en el PC del hub le da una nueva. Al instalar, el hub muestra **una sola vez** el usuario del administrador, su contraseña y su PIN para autorizar.
-- **Multirestaurante**: usuarios, roles, PIN y contraseñas son **por restaurante** (`restaurant_id`). El nombre de usuario es único dentro del restaurante, no en todo el sistema. El hub atiende una sola sede, así que su pantalla de entrada no pide escoger restaurante. Cómo se identifica el restaurante al entrar a la nube se decide en la Fase 2.
+- **Multirestaurante**: usuarios, roles, PIN y contraseñas son **por restaurante** (`restaurant_id`). El nombre de usuario es único dentro del restaurante, no en todo el sistema. El hub atiende una sola sede, así que su pantalla de entrada no pide escoger restaurante. Cómo se identifica el restaurante al entrar a la nube: ver la enmienda del 29-oct-2026, abajo.
 - La pantalla de cocina (KDS) ya no tiene rol propio: cómo se identifica lo decide el [ADR-015](#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero) (tarea 1.4).
 
 ### Riesgo aceptado
@@ -421,6 +421,22 @@ Riesgo conocido: comprobar una contraseña (scrypt, unos 50 ms) detiene al hub m
 | Entrar a la caja solo desde el PC del hub | El dueño quiere ver reportes desde su celular dentro del local. |
 
 ---
+
+### Enmienda del 29-oct-2026: entrar desde fuera del local ([ADR-017](#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia))
+
+- **Por qué se enmienda:** el dueño decidió que al panel de la nube entren los mismos usuarios del local. Por eso deja de ser cierto que las huellas de contraseña «nunca se sincronizan».
+- **Qué sube a la nube:**
+  - solo la huella scrypt de las personas **activas** con usuario y contraseña cuyo rol tiene el permiso `remote_access` («Entrar desde fuera del local»);
+  - los PIN, las credenciales de los dispositivos y la clave de los PIN nunca salen del hub.
+- **Qué hace la nube con ella:**
+  - la usa solo para comprobar la entrada al panel;
+  - la reemplaza cuando cambia la contraseña;
+  - la borra cuando a la persona le quitan el permiso o la archivan; con eso, sus sesiones del panel mueren.
+- **Riesgo aceptado:** si alguien robara la base de la nube, podría intentar adivinar esas contraseñas fuera de línea. scrypt N = 2^15 lo hace lento, y son pocas personas.
+- **Para mitigarlo:**
+  - la base de Neon solo la lee el rol de la API, con seguridad por fila;
+  - la entrada al panel tiene límite de intentos.
+- **El restaurante al entrar a la nube:** se identifica con un nombre corto (`slug`, como `la-spritzzeria`), que el panel recuerda en el celular.
 
 ## ADR-014 · Faro: nombre, identidad y estilo del producto
 
@@ -561,7 +577,12 @@ Decisión del dueño del 29-oct-2026. Quiere ver en vivo lo que pasa en el resta
 
 ### Decisión
 
-- **Un panel web en la nube** para el dueño y quien él autorice. Se entra con usuario y contraseña desde cualquier lugar. El acceso va por restaurante: cada cuenta ve solo los restaurantes y sedes que le tocan.
+- **Un panel web en la nube**, pensado primero para el celular. Mientras dure el piloto se abre en la dirección del Worker (`faro-api.johanyepes.workers.dev`), y pasa al dominio propio cuando exista.
+- **Entran los mismos usuarios del local** (decisión del dueño del 29-oct-2026), con el usuario y la contraseña que usan en la caja. No hay cuentas aparte:
+  - entra quien tenga el permiso nuevo **«Entrar desde fuera del local»** (`remote_access`);
+  - el rol Administrador lo trae por defecto, y el administrador se lo puede dar a otro rol (un gerente o un contador). Así el dueño invita a otros sin pasar por Faro;
+  - dentro del panel, cada persona ve y hace solo lo que le permiten sus permisos de siempre (por ejemplo, «Ver todos los reportes»);
+  - el acceso es por restaurante: el usuario es único dentro de su restaurante, así que al entrar se identifica también el restaurante.
 - **En vivo:** el panel se actualiza unos segundos después de cada cambio del local. Los eventos ya llegan a la nube en uno o dos segundos (1.11). Muestra:
   - **Salón:** plano con las mesas ocupadas, cuánto llevan, su total y su pedido.
   - **Tablero del día**, en vivo: ventas, ticket promedio, comensales, propinas, mesas abiertas y lo que va de la jornada, comparado con el mismo día de la semana anterior.

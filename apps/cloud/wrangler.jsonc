@@ -7,6 +7,24 @@
   "compatibility_flags": ["nodejs_compat"],
   "upload_source_maps": true,
   "observability": { "enabled": true },
+  // The owner's panel (task 1.11c-1, docs/PANEL.md): its files are served by Workers Static Assets
+  // without running the Worker; the Worker runs first only for the API. `pnpm run deploy` builds
+  // the panel first (wrangler refuses to deploy if this folder does not exist).
+  "assets": {
+    "directory": "../pos/dist-panel",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/v1/*"]
+  },
+  // First, cheap barrier on panel sign-ins, per IP and per restaurant:user (approximate and per
+  // Cloudflare location; the real limit is panel_attempts in Postgres).
+  "ratelimits": [
+    {
+      "name": "PANEL_LIMITER",
+      // A number unique in the Cloudflare account, written as text (not a secret).
+      "namespace_id": "1001",
+      "simple": { "limit": 10, "period": 60 }
+    }
+  ],
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",

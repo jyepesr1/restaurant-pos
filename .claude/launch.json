@@ -18,6 +18,15 @@
         "source ~/.nvm/nvm.sh >/dev/null && nvm use 24 >/dev/null && pnpm --filter @pos/app exec vite --port 5173 --strictPort"
       ],
       "port": 5173
+    },
+    {
+      "name": "panel",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "source ~/.nvm/nvm.sh >/dev/null && nvm use 24 >/dev/null && pnpm --filter @pos/app exec vite --config vite.panel.config.ts --port 5174 --strictPort"
+      ],
+      "port": 5174
     }
   ]
 }

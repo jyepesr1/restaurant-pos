@@ -39,7 +39,9 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.9 | Reportes básicos y `docs/KPIS.md` | ✅ |
 | 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ✅ (publicada el 26-oct-2026) |
 | 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja | ✅ (publicada el 29-oct-2026) |
-| 1.11c | Panel del dueño en vivo ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia)): entrar desde cualquier lugar y ver, actualizado en segundos, el tablero del día, todos los reportes ([KPIS](KPIS.md)) de hoy o de cualquier período, el salón, la cocina, la caja y las alertas | ⏳ |
+| 1.11c-1 | Panel del dueño ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia), [PANEL](PANEL.md)): entrar con los usuarios del local (permiso «Entrar desde fuera del local»); tablero del día y todos los reportes ([KPIS](KPIS.md)) de hasta 14 días, actualizados cada 15 s | ✅ código (falta publicar) |
+| 1.11c-2 | Panel en vivo: aviso al instante (Durable Object), salón, cocina, caja, alertas y «sin noticias del local desde…» | ⏳ |
+| 1.11c-3 | Panel: períodos largos (más de 14 días) y fotos de los productos | ⏳ |
 | 1.11d | Acciones a distancia desde el panel: agotar un producto, autorizar anulaciones, descuentos y cortesías, y cerrar sesiones o bloquear un usuario | ⏳ |
 | 1.11b | Carta, configuración y personal editados en la nube (también desde el panel) y bajando al hub | ⏳ |
 | 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
@@ -320,6 +322,75 @@ Decisión del dueño ([ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-
 - Las e2e «the home screen links to /diagnostics» y «app start (sign in): everything is at least 48×48» ya fallaban antes de la reescritura: buscan un enlace «Diagnóstico del equipo» y un encabezado «Escribe tu PIN» que la pantalla de entrar no tiene.
 - El historial de esta tarea se limpió antes del push: tres archivos de la carpeta vieja `apps/hub/datos` (la llave de los PIN, `hub-instancia` y `diagnosticos.jsonl`) se habían guardado por error y ya no están en ningún commit.
 - Los celulares y tablets que ya abrieron Faro guardan una base local con los nombres viejos: hay que borrar los datos del sitio en cada uno (paso 6) antes de usarlos de nuevo.
+
+### 1.11c-1 — Panel del dueño: entrar, tablero y reportes ✅ código (falta publicar)
+
+Decisiones del dueño del 29-oct-2026 ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia) y [enmienda de ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)). El contrato entre el hub, la nube y el panel está en [PANEL.md](PANEL.md):
+- se entra con los mismos usuarios del local;
+- se usa primero en el celular;
+- la dirección es la del Worker mientras dure el piloto.
+
+**Lo nuevo:**
+- **Permiso «Entrar desde fuera del local»** (`remote_access`):
+  - el rol Administrador lo trae;
+  - en un hub existente se le da una sola vez y, si el administrador lo quita, no vuelve;
+  - el administrador se lo puede dar a otro rol (gerente, contador).
+- **El hub sube instantáneas** de la carta, la configuración, el personal, los roles y quién puede entrar desde fuera, cada vez que cambian (ver [SYNC.md](SYNC.md#hub--nube-adr-016)). De las contraseñas sube solo la huella scrypt, y solo de quien tiene el permiso. Los PIN nunca salen del hub.
+- **Latido** cada 30 s, con lo que tiene el hub.
+- **La nube** (migración 2):
+  - calcula los reportes con el **mismo código** del hub: con las mismas historias da exactamente los mismos números;
+  - el tablero compara con el mismo día de la semana pasada **a esta misma hora**, cortado por el orden de los cambios y no por el reloj del PC;
+  - entrada con cookie segura y límite de intentos (cada intento se cobra antes de comprobar la contraseña);
+  - la sesión se cierra apenas a la persona le quitan el permiso, cambia la contraseña o la archivan;
+  - revocar el último PC de una sede cierra el panel de esa sede.
+- **El panel** (`apps/pos`, entrada `panel.html`, servido desde el mismo Worker):
+  - **Entrar:** restaurante (por su nombre), usuario y contraseña.
+  - **Hoy:** ventas, ticket promedio, comensales, propinas y medios de pago, comparados con la semana pasada a esta hora. Se actualiza cada 15 s y dice «Sin noticias del restaurante desde las…» si el local lleva más de 2 minutos callado.
+  - **Reportes:** la misma pantalla de la caja, sin reimprimir el cierre Z, con su CSV. Máximo **14 días**: «Este mes» y «Mes pasado» se ven deshabilitados hasta la 1.11c-3.
+  - Lleva la marca del restaurante.
+
+**Revisiones:**
+- **Código:**
+  - el límite de intentos se podía saltar con entradas en paralelo;
+  - la API podía leer la huella de las credenciales de los PC;
+  - un error con un tipo de instantánea frenaba a los demás;
+  - un PC revocado dejaba a su gente con acceso.
+- **Dinero:**
+  - una configuración ilegible caía a la de defecto sin avisar; ahora la nube la rechaza;
+  - el corte de «la semana pasada» dependía del reloj del PC;
+  - el cambio de hora en zonas con horario de verano;
+  - las secuencias repetidas en una sede.
+- **Pantallas:**
+  - un local sin noticias se veía igual que uno al día;
+  - el restaurante se pedía como nombre técnico;
+  - la comparación no decía «a esta hora»;
+  - textos con jerga.
+- **Pruebas** (163 nuevas, entre ellas hub y nube de punta a punta):
+  - el año 0000 daba error 500;
+  - una subida en el mismo instante de la revocación podía revivir accesos;
+  - un Wi-Fi con portal cautivo colgaba el panel.
+
+Todo está corregido y `pnpm check` pasa.
+
+**Medido:**
+- un reporte de 31 días con 1.500 eventos por día tarda ~1,1 s, pero carga ~35 MB, demasiado cerca de los 128 MB de un Worker; por eso el máximo es 14 días;
+- verificar una contraseña en el Worker toma ~31 ms (en workerd local; falta confirmarlo en la nube publicada).
+
+**Queda pendiente:**
+- **Publicar:** la migración 2 en Neon (probada en una rama temporal) y el Worker con el panel.
+- **Salón, cocina, caja, alertas y aviso al instante:** 1.11c-2. «Mesas abiertas» en el tablero llega con el salón.
+- **Períodos de más de 14 días y fotos de los productos:** 1.11c-3.
+- **Pruebas de los hooks del panel:** `@pos/app` no tiene entorno DOM, así que se prueban por partes (cliente, sondeo, render) y no montados. Se verá con Playwright en la 1.14.
+- **Contacto de Faro** en la pantalla Copia en la nube: sigue pendiente de 1.11.
+
+**Cómo probarlo a mano** (cuando esté publicado y el PC de caja conectado a la nube):
+1. En la caja, entra como administrador. En **Personal y roles**, abre el rol **Administrador**: debe tener marcado «Entrar desde fuera del local».
+2. En tu celular, con datos móviles (no el Wi-Fi del local), abre `https://faro-api.johanyepes.workers.dev/r/la-spritzzeria`. Debes ver «Entrar» con el restaurante ya escrito.
+3. Escribe tu usuario y la contraseña de la caja y toca **Entrar**. Debes ver **Hoy**, con las ventas del día y «frente al jueves pasado a esta hora» (o el día que corresponda).
+4. En la caja, cobra y cierra una mesa. En menos de 20 s, las ventas de **Hoy** deben subir en el celular.
+5. Toca **Reportes** → **Ayer**. Deben salir los mismos números que en los reportes de la caja para ayer.
+6. Apaga el PC de caja (o desconecta su internet). A los 2 minutos, **Hoy** debe decir «Sin noticias del restaurante desde las…».
+7. En la caja, quítale el permiso a un rol de prueba con alguien que haya entrado al panel. En menos de un minuto, en su celular debe salir «Tu sesión se cerró».
 
 ### 1.11 — Subida del PC de caja a la nube ✅
 

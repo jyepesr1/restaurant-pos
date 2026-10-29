@@ -23,6 +23,10 @@ export function addDays(day: string, days: number): string {
   return date.toISOString().slice(0, 10)
 }
 
+/** How many business days a period covers, both ends included (as the hub counts them). */
+export const daysIn = ({ from, until }: Period) =>
+  Math.round((Date.parse(`${until}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1
+
 /** Today, yesterday, last 7 days, this month (to date) or last month, from today's business day. */
 export function periodOf(shortcut: Shortcut, today: string): Period {
   if (shortcut === 'yesterday') return { from: addDays(today, -1), until: addDays(today, -1) }

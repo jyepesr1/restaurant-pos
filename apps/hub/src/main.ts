@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { currentVersion, type SqliteDatabase } from '@pos/db'
 import type { FloorSync } from '@pos/sync'
 import { CloudConnection } from './cloud/connection'
+import { readSnapshots } from './cloud/snapshots'
 import { PrintQueue } from './printing/queue'
 import { jobsForEvent } from './printing/tickets'
 import { createAppServer } from './server'
@@ -98,6 +99,8 @@ function prepareAll(db: SqliteDatabase) {
       url: process.env.CLOUD_URL || undefined,
       onStatus: (status) => floor?.notifyCloud(status),
       onFailure: (error) => console.error('Falló la subida a la nube:', error),
+      // The menu, the configuration and the staff for the owner's panel (docs/PANEL.md).
+      snapshots: () => readSnapshots(db, access.restaurantId),
     })
     floor = prepareSync(
       db,
@@ -140,7 +143,11 @@ const app = createAppServer({
     db,
     restaurantId,
     access,
-    onChange: (version) => floor.notifyCatalog(version),
+    // Menu, floor plan, staff and roles: the devices fetch them again and the cloud gets its copy.
+    onChange: (version) => {
+      floor.notifyCatalog(version)
+      cloud.checkSnapshots()
+    },
     occupiedTable: (tableId) => floor.hasOpenOrder(tableId),
     photosDir: join(dataDir, 'photos'),
   },
@@ -150,7 +157,11 @@ const app = createAppServer({
     access,
     queue,
     timeZone,
-    onChange: (version) => floor.notifyCatalog(version),
+    // Kitchen, printers and register configuration.
+    onChange: (version) => {
+      floor.notifyCatalog(version)
+      cloud.checkSnapshots()
+    },
     allowLocal: process.env.TEST_PRINTER === '1',
     isHubDevice: (ip) => ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1',
   },
@@ -162,10 +173,10 @@ const app = createAppServer({
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {
     queue.stop()
-    cloud.uploader.stop()
+    cloud.stop()
     await app.close()
     await queue.ready()
-    await cloud.uploader.idle()
+    await cloud.idle()
     db.close()
     process.exit(0)
   })

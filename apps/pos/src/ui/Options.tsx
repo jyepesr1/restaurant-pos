@@ -28,6 +28,8 @@ export function Option({
   shape = 'pastilla',
   detail,
   label,
+  disabled = false,
+  describedBy,
   children,
 }: {
   selected: boolean
@@ -37,6 +39,9 @@ export function Option({
   detail?: string
   /** Name for the screen reader if the visible text is not enough. */
   label?: string
+  /** Shown but not available; `describedBy` points to the text that says why. */
+  disabled?: boolean
+  describedBy?: string
   children: ReactNode
 }) {
   const base =
@@ -53,8 +58,10 @@ export function Option({
       type="button"
       aria-pressed={selected}
       aria-label={label}
+      aria-describedby={describedBy}
+      disabled={disabled}
       onClick={onChoose}
-      className={`${base} ${color} ${size}`}
+      className={`${base} ${color} ${size} disabled:border-dashed disabled:opacity-45`}
     >
       {selected && <Icon name="check" />}
       <span className="flex flex-1 flex-col">

@@ -29,6 +29,7 @@ export const PERMISSIONS = [
   'manage_devices',
   'view_reports',
   'view_own_reports',
+  'remote_access',
 ] as const
 
 export type Permission = (typeof PERMISSIONS)[number]
@@ -91,6 +92,7 @@ export const PERMISSION_DESCRIPTIONS: readonly {
       { permission: 'edit_prices', name: 'Cambiar precios' },
       { permission: 'manage_users', name: 'Personal y roles (equivale a poder todo)' },
       { permission: 'manage_devices', name: 'Retirar celulares y equipos' },
+      { permission: 'remote_access', name: 'Entrar desde fuera del local' },
     ],
   },
   {
@@ -105,7 +107,8 @@ export const PERMISSION_DESCRIPTIONS: readonly {
 /**
  * Permissions that cannot be used when signing in with just a 4-digit PIN: anyone who has one
  * signs in with username and password (ADR-013). A PIN is easier to guess than a password, and
- * these move money, change the menu or manage the restaurant.
+ * these move money, change the menu or manage the restaurant. Entering the cloud panel from outside
+ * the restaurant (`remote_access`) also needs a password: the panel checks that one.
  */
 export const PASSWORD_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'record_payment',
@@ -121,6 +124,8 @@ export const PASSWORD_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>
   'manage_users',
   'manage_devices',
   'view_reports',
+  // The cloud panel (ADR-017): only the password's scrypt hash goes up, never a PIN.
+  'remote_access',
 ])
 
 /** Checkout permissions: signing in with one makes the device a register (payments, closes). */

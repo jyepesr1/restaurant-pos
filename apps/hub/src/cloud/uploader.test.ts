@@ -763,3 +763,49 @@ describe('unexpected failures', () => {
     expect(m.uploader.current().state).toBe('up_to_date')
   })
 })
+
+describe('the heartbeat for the panel (docs/PANEL.md#latido)', () => {
+  it('up to date, it asks the cloud every 30 seconds', async () => {
+    const m = setup({ events: 2 })
+    await m.settle()
+    expect(CHECK_EVERY_MS).toBe(30_000)
+    expect(m.t.waits()).toEqual([30_000])
+    await m.retry()
+    expect(m.cloud.gets()).toHaveLength(2)
+    expect(m.t.waits()).toEqual([30_000])
+  })
+
+  it('each question carries how far the hub is, in x-faro-hub-max', async () => {
+    const m = setup({ events: 3 })
+    await m.settle()
+    expect(m.cloud.gets().map((c) => c.hubMax)).toEqual(['3'])
+    m.events.add(2)
+    await m.retry()
+    expect(m.cloud.gets().map((c) => c.hubMax)).toEqual(['3', '5'])
+    // The event batches do not carry it: only the question.
+    expect(m.cloud.posts().every((c) => c.hubMax === null)).toBe(true)
+  })
+
+  it('an empty hub says 0', async () => {
+    const m = setup()
+    await m.settle()
+    expect(m.cloud.gets().map((c) => c.hubMax)).toEqual(['0'])
+  })
+
+  it('says each time it is left up to date, and not while it is offline or revoked', async () => {
+    let upToDate = 0
+    const m = setup({ events: 2, uploader: { onUpToDate: () => upToDate++ } })
+    await m.settle()
+    expect(upToDate).toBe(1)
+    await m.retry()
+    expect(upToDate).toBe(2)
+    m.cloud.plan.push(new TypeError('no internet'))
+    await m.retry()
+    expect(m.uploader.current().state).toBe('offline')
+    expect(upToDate).toBe(2)
+    m.cloud.plan.push(jsonResponse({ error: 'invalid_credential' }, 401))
+    await m.retry()
+    expect(m.uploader.current().state).toBe('revoked')
+    expect(upToDate).toBe(2)
+  })
+})

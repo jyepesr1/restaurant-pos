@@ -113,7 +113,7 @@ Las tablas de credenciales **solo existen en el hub** y nunca se sincronizan (AD
 
 Las claves de permiso son fijas y están definidas en `packages/core`, con su nombre para la pantalla (`PERMISSION_DESCRIPTIONS`). **Qué roles las tienen lo decide cada restaurante** en la pantalla **Personal y roles** (`role_permissions`, tarea 1.3b): el administrador crea los roles que quiera y marca sus permisos. Siempre debe quedar al menos una persona activa, con usuario y contraseña, que pueda `manage_users`.
 
-Quien entra con PIN no puede tener ningún permiso de `PASSWORD_PERMISSIONS` (cobrar, anular pagos, cerrar mesas, reabrir cuentas, turnos y movimientos de caja, abrir el cajón, editar la carta o los precios, ver reportes, administrar personal o equipos): el hub no lo deja entrar con PIN y no deja guardar una persona o un rol que quede así.
+Quien entra con PIN no puede tener ningún permiso de `PASSWORD_PERMISSIONS` (cobrar, anular pagos, cerrar mesas, reabrir cuentas, turnos y movimientos de caja, abrir el cajón, editar la carta o los precios, ver reportes, administrar personal o equipos, entrar desde fuera del local): el hub no lo deja entrar con PIN y no deja guardar una persona o un rol que quede así.
 
 Los cuatro roles de fábrica ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)) son solo el punto de partida de un restaurante nuevo:
 
@@ -140,8 +140,9 @@ Los cuatro roles de fábrica ([ADR-013](DECISIONES.md#adr-013--acceso-por-rol-me
 | `manage_users`, `manage_devices` | ✓ | | | |
 | `view_reports` | ✓ | | ✓ | |
 | `view_own_reports` | | ✓ | | ✓ |
+| `remote_access` (entrar al panel de la nube, [ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia)) | ✓ | | | |
 
-Un hub de antes de la 1.3b conserva lo suyo: Contador pasa a llamarse Reportes, y Gerente y Cocina quedan como roles propios del restaurante, con sus permisos y su gente. Los permisos de los roles que ya existían no se tocan.
+Un hub de antes de la 1.3b conserva lo suyo: Contador pasa a llamarse Reportes, y Gerente y Cocina quedan como roles propios del restaurante, con sus permisos y su gente. Los permisos de los roles que ya existían no se tocan, con una excepción: un hub de antes de la 1.11c le da `remote_access` al rol Administrador **una sola vez** al arrancar (contador local `remote_access_granted`); si el administrador se lo quita después, no vuelve.
 
 Una acción está permitida si el usuario tiene el permiso **o** si el evento trae un comprobante válido de un supervisor que lo tiene. Reglas adicionales: pagos, cierres y movimientos de caja **solo desde un dispositivo `register`** (un equipo pasa a ser de caja cuando alguien entra en él con usuario y contraseña); el supervisor no puede autorizarse a sí mismo.
 

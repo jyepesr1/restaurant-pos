@@ -12,7 +12,7 @@
     "test": "vitest run",
     "migrate": "tsx --disable-warning=ExperimentalWarning src/migrate.ts",
     "admin": "tsx --disable-warning=ExperimentalWarning src/admin.ts",
-    "deploy": "npx wrangler@4.149.0 deploy"
+    "deploy": "pnpm --filter @pos/app build:panel && npx wrangler@4.149.0 deploy"
   },
   "dependencies": {
     "@pos/core": "workspace:*",

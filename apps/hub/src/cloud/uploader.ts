@@ -17,10 +17,13 @@ export const RETRY_DELAYS_MS = [1000, 2000, 5000, 10_000, 20_000, 30_000]
 export const STUCK_RETRY_MS = 5 * 60 * 1000
 export const REQUEST_TIMEOUT_MS = 15_000
 /**
- * Up to date and with nothing new, it asks the cloud every minute anyway: if internet drops
- * while the register is idle, the bar stops saying «Nube al día».
+ * Up to date and with nothing new, it asks the cloud every 30 seconds anyway: if internet drops
+ * while the register is idle, the bar stops saying «Nube al día». That question is also the hub's
+ * heartbeat for the owner's panel (docs/PANEL.md#latido): it carries how far the hub is.
  */
-export const CHECK_EVERY_MS = 60_000
+export const CHECK_EVERY_MS = 30_000
+/** The heartbeat header: the hub's last sequence, so the panel knows how much is still to go up. */
+export const HUB_MAX_HEADER = 'x-faro-hub-max'
 
 export interface UploaderOptions {
   /** The cloud's address, without the trailing slash. */
@@ -34,6 +37,8 @@ export interface UploaderOptions {
   /** The last sequence the cloud confirmed, kept by the hub (to know what is pending offline). */
   confirmed: { read(): number; write(sequence: number): void }
   onStatus?: (status: CloudStatus) => void
+  /** Each time it is left up to date (the snapshots are checked then, docs/PANEL.md). */
+  onUpToDate?: () => void
   /** Something unexpected (not a network failure): goes to the hub's log. */
   onFailure?: (error: unknown) => void
   fetch?: typeof fetch
@@ -239,7 +244,9 @@ export class CloudUploader {
     }
     try {
       if (!this.asked) {
-        const r = await this.call(credential, 'GET', '/v1/events/last')
+        const r = await this.call(credential, 'GET', '/v1/events/last', undefined, {
+          [HUB_MAX_HEADER]: String(this.o.events.maxSequence()),
+        })
         if (!isSequence(r.last_sequence)) throw new NoAnswer('last_sequence')
         this.o.confirmed.write(r.last_sequence)
         this.asked = true
@@ -261,6 +268,7 @@ export class CloudUploader {
           this.failures = 0
           this.publish('up_to_date', true)
           this.checkLater()
+          this.o.onUpToDate?.()
           return
         }
         // Catching up after a cut is shown; a single event uploaded right away is not, so the
@@ -329,6 +337,7 @@ export class CloudUploader {
     method: 'GET' | 'POST',
     route: string,
     body?: unknown,
+    extraHeaders: Record<string, string> = {},
   ): Promise<Record<string, unknown>> {
     const controller = new AbortController()
     this.inFlight = controller
@@ -339,6 +348,7 @@ export class CloudUploader {
           method,
           headers: {
             authorization: `Bearer ${credential}`,
+            ...extraHeaders,
             ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           },
           body: body === undefined ? undefined : JSON.stringify(body),

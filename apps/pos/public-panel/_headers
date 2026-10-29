@@ -1,0 +1,11 @@
+# Headers of the panel's static files (Workers Static Assets). The Worker's /v1/* answers carry
+# their own. The CSP allows only what the panel really loads: its scripts, styles, fonts and logos
+# from its own address, and the cloud API on the same origin.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+
+# Built files carry a hash in their name: they never change, so they are kept a year.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
