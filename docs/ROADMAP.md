@@ -40,11 +40,14 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ✅ (publicada el 26-oct-2026) |
 | 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja | ✅ (publicada el 29-oct-2026) |
 | 1.11b | Carta, configuración y personal editados en la nube y bajando al hub | ⏳ |
+| 1.11c | Panel del dueño en la nube: entrar desde cualquier lugar con usuario y contraseña y ver los reportes ([KPIS](KPIS.md)) calculados desde los eventos de la nube | ⏳ |
 | 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
 | 1.13 | Hub en el PC de caja (Windows) | ⏳ |
 | 1.14 | Prueba de aceptación: servicio de 2 horas con un corte de internet y la sincronización al volver (y la e2e de la Fase 0) | ⏳ |
 
 **Cambio de arquitectura (26-oct-2026):** el dueño decidió que Faro funcione principalmente en línea, con la base oficial en Postgres (Neon) y el PC de caja como puente local para no detenerse sin internet ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)). Por eso se agregan las tareas 1.10 a 1.12 antes del instalador del hub (antes 1.10, ahora 1.13) y de la prueba de aceptación (antes 1.11, ahora 1.14).
+
+**Panel del dueño (29-oct-2026):** el dueño quiere ver el restaurante desde fuera del local ya en el piloto. Por eso el panel web de la nube, que el brief dejaba para después, entra como 1.11c, antes de restaurar un hub y del instalador. La entrada a la nube es por restaurante (multirestaurante desde el principio), y los reportes usan las mismas fórmulas de la caja (`docs/KPIS.md`).
 
 **Código en inglés (26-oct-2026):** el dueño decidió que el código y los commits vayan en inglés; la interfaz, lo impreso, la documentación y la conversación siguen en español ([ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-en-inglés-interfaz-y-documentación-en-español), [glosario](GLOSARIO.md)). Se reescribió todo el código sin cambiar la lógica antes de seguir con la 1.11 (sección «Código en inglés» más abajo).
 
