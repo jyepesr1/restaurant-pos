@@ -552,3 +552,37 @@ Decisión del dueño del 26-oct-2026. Faro debe funcionar **principalmente en l�
 - **Nuevas tareas antes del instalador del hub** (ver [ROADMAP.md](ROADMAP.md)): la base y la API en la nube, la subida hub → nube con la carta bajando de la nube, y restaurar un hub desde la nube.
 - **Multirestaurante desde el principio:** cada evento, registro y credencial lleva `restaurant_id`. Cada hub se registra en la nube con una credencial propia de su restaurante y su sede.
 - **(validar)** Costo mensual de Neon y de Workers por restaurante, y la región.
+
+## ADR-017 · Panel del dueño en la nube, en vivo y con acciones a distancia
+
+**Fecha:** 29-oct-2026 · **Estado:** aceptada · **Amplía:** [ADR-016](#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)
+
+Decisión del dueño del 29-oct-2026. Quiere ver en vivo lo que pasa en el restaurante desde fuera del local, y hacer algunas cosas desde allí, ya en el piloto.
+
+### Decisión
+
+- **Un panel web en la nube** para el dueño y quien él autorice. Se entra con usuario y contraseña desde cualquier lugar. El acceso va por restaurante: cada cuenta ve solo los restaurantes y sedes que le tocan.
+- **En vivo:** el panel se actualiza unos segundos después de cada cambio del local. Los eventos ya llegan a la nube en uno o dos segundos (1.11). Muestra:
+  - **Salón:** plano con las mesas ocupadas, cuánto llevan, su total y su pedido.
+  - **Ventas del día:** total, por medio de pago, propinas y ticket promedio. Usa las mismas fórmulas de [KPIS.md](KPIS.md), calculadas desde los eventos de la nube.
+  - **Cocina:** lo enviado sin entregar, por estación, con su demora (ámbar y rojo como en la caja).
+  - **Caja y alertas:** caja abierta o cerrada, efectivo esperado, y cada anulación, descuento o cortesía, con quién la hizo y por qué.
+- **Si el local pierde internet,** el panel muestra lo último que recibió y dice desde qué hora no llega nada. No inventa un estado.
+- **Acciones a distancia:**
+  - agotar o desagotar un producto;
+  - autorizar o rechazar lo que necesita supervisor (anulaciones, descuentos, cortesías);
+  - cerrar sesiones o bloquear un usuario;
+  - editar la carta y los precios (con la 1.11b).
+- **Quién manda en las acciones:** el panel no cambia el salón por su cuenta. Le pide la acción al hub, que la valida con sus reglas y permisos y la registra como evento con usuario, dispositivo y hora. Las acciones funcionan solo mientras el local tiene internet, y el panel dice si se aplicó o no.
+- **Avisos en el celular** (sin abrir el panel): en una tarea posterior.
+
+### Por definir al implementar
+
+- Cómo llega lo nuevo al panel (WebSocket o consultas cada pocos segundos) y el camino nube → hub para las acciones. Antes de escribir código, `investigador-integraciones` revisa la documentación oficial de Cloudflare **(validar)**.
+- Dónde se publica el panel y con qué dirección. Va junto con el dominio propio pendiente de la 1.10.
+- El costo adicional por restaurante **(validar)**.
+
+### Consecuencias
+
+- Hay una entrada a la nube con usuario y contraseña, aparte de la del hub. Las cuentas del panel se crean por restaurante.
+- Las tareas 1.11c (ver) y 1.11d (acciones) van antes de la 1.11b. Esta reutiliza el camino nube → hub de la 1.11d para bajar la carta.

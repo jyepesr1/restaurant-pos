@@ -39,15 +39,21 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.9 | Reportes básicos y `docs/KPIS.md` | ✅ |
 | 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ✅ (publicada el 26-oct-2026) |
 | 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja | ✅ (publicada el 29-oct-2026) |
-| 1.11b | Carta, configuración y personal editados en la nube y bajando al hub | ⏳ |
-| 1.11c | Panel del dueño en la nube: entrar desde cualquier lugar con usuario y contraseña y ver los reportes ([KPIS](KPIS.md)) calculados desde los eventos de la nube | ⏳ |
+| 1.11c | Panel del dueño en vivo ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia)): entrar desde cualquier lugar y ver, actualizado en segundos, el salón, las ventas del día, la cocina, la caja y las alertas | ⏳ |
+| 1.11d | Acciones a distancia desde el panel: agotar un producto, autorizar anulaciones, descuentos y cortesías, y cerrar sesiones o bloquear un usuario | ⏳ |
+| 1.11b | Carta, configuración y personal editados en la nube (también desde el panel) y bajando al hub | ⏳ |
 | 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
 | 1.13 | Hub en el PC de caja (Windows) | ⏳ |
 | 1.14 | Prueba de aceptación: servicio de 2 horas con un corte de internet y la sincronización al volver (y la e2e de la Fase 0) | ⏳ |
 
 **Cambio de arquitectura (26-oct-2026):** el dueño decidió que Faro funcione principalmente en línea, con la base oficial en Postgres (Neon) y el PC de caja como puente local para no detenerse sin internet ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)). Por eso se agregan las tareas 1.10 a 1.12 antes del instalador del hub (antes 1.10, ahora 1.13) y de la prueba de aceptación (antes 1.11, ahora 1.14).
 
-**Panel del dueño (29-oct-2026):** el dueño quiere ver el restaurante desde fuera del local ya en el piloto. Por eso el panel web de la nube, que el brief dejaba para después, entra como 1.11c, antes de restaurar un hub y del instalador. La entrada a la nube es por restaurante (multirestaurante desde el principio), y los reportes usan las mismas fórmulas de la caja (`docs/KPIS.md`).
+**Panel del dueño (29-oct-2026):** el dueño quiere ver **en vivo** lo que pasa en el restaurante desde fuera del local, ya en el piloto ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia)). Por eso el panel web de la nube, que el brief dejaba para después, entra en la Fase 1 antes de restaurar un hub y del instalador, en este orden:
+- **1.11c**, ver: el salón, las ventas, la cocina, la caja y las alertas;
+- **1.11d**, actuar: agotar, autorizar y cerrar sesiones;
+- **1.11b**, la carta: editar la carta y los precios.
+
+Los **avisos en el celular** (anulaciones grandes, cierre Z, cocina con demora) quedan para una tarea posterior, sin fecha.
 
 **Código en inglés (26-oct-2026):** el dueño decidió que el código y los commits vayan en inglés; la interfaz, lo impreso, la documentación y la conversación siguen en español ([ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-en-inglés-interfaz-y-documentación-en-español), [glosario](GLOSARIO.md)). Se reescribió todo el código sin cambiar la lógica antes de seguir con la 1.11 (sección «Código en inglés» más abajo).
 
