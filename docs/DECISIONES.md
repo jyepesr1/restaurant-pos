@@ -564,7 +564,8 @@ Decisión del dueño del 29-oct-2026. Quiere ver en vivo lo que pasa en el resta
 - **Un panel web en la nube** para el dueño y quien él autorice. Se entra con usuario y contraseña desde cualquier lugar. El acceso va por restaurante: cada cuenta ve solo los restaurantes y sedes que le tocan.
 - **En vivo:** el panel se actualiza unos segundos después de cada cambio del local. Los eventos ya llegan a la nube en uno o dos segundos (1.11). Muestra:
   - **Salón:** plano con las mesas ocupadas, cuánto llevan, su total y su pedido.
-  - **Ventas del día:** total, por medio de pago, propinas y ticket promedio. Usa las mismas fórmulas de [KPIS.md](KPIS.md), calculadas desde los eventos de la nube.
+  - **Tablero del día**, en vivo: ventas, ticket promedio, comensales, propinas, mesas abiertas y lo que va de la jornada, comparado con el mismo día de la semana anterior.
+  - **Todos los reportes de la caja, también en vivo:** ventas, medios de pago, meseros, productos, anulaciones y cancelaciones, caja y cierres Z. Sirven para hoy o para cualquier período, y se pueden exportar. Usan las mismas fórmulas de [KPIS.md](KPIS.md), calculadas desde los eventos de la nube: el panel y la caja dan el mismo número.
   - **Cocina:** lo enviado sin entregar, por estación, con su demora (ámbar y rojo como en la caja).
   - **Caja y alertas:** caja abierta o cerrada, efectivo esperado, y cada anulación, descuento o cortesía, con quién la hizo y por qué.
 - **Si el local pierde internet,** el panel muestra lo último que recibió y dice desde qué hora no llega nada. No inventa un estado.

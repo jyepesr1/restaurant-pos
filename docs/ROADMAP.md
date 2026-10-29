@@ -39,7 +39,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.9 | Reportes básicos y `docs/KPIS.md` | ✅ |
 | 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ✅ (publicada el 26-oct-2026) |
 | 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja | ✅ (publicada el 29-oct-2026) |
-| 1.11c | Panel del dueño en vivo ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia)): entrar desde cualquier lugar y ver, actualizado en segundos, el salón, las ventas del día, la cocina, la caja y las alertas | ⏳ |
+| 1.11c | Panel del dueño en vivo ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia)): entrar desde cualquier lugar y ver, actualizado en segundos, el tablero del día, todos los reportes ([KPIS](KPIS.md)) de hoy o de cualquier período, el salón, la cocina, la caja y las alertas | ⏳ |
 | 1.11d | Acciones a distancia desde el panel: agotar un producto, autorizar anulaciones, descuentos y cortesías, y cerrar sesiones o bloquear un usuario | ⏳ |
 | 1.11b | Carta, configuración y personal editados en la nube (también desde el panel) y bajando al hub | ⏳ |
 | 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
@@ -49,7 +49,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 **Cambio de arquitectura (26-oct-2026):** el dueño decidió que Faro funcione principalmente en línea, con la base oficial en Postgres (Neon) y el PC de caja como puente local para no detenerse sin internet ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)). Por eso se agregan las tareas 1.10 a 1.12 antes del instalador del hub (antes 1.10, ahora 1.13) y de la prueba de aceptación (antes 1.11, ahora 1.14).
 
 **Panel del dueño (29-oct-2026):** el dueño quiere ver **en vivo** lo que pasa en el restaurante desde fuera del local, ya en el piloto ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia)). Por eso el panel web de la nube, que el brief dejaba para después, entra en la Fase 1 antes de restaurar un hub y del instalador, en este orden:
-- **1.11c**, ver: el salón, las ventas, la cocina, la caja y las alertas;
+- **1.11c**, ver: el tablero y todos los reportes en vivo, el salón, la cocina, la caja y las alertas;
 - **1.11d**, actuar: agotar, autorizar y cerrar sesiones;
 - **1.11b**, la carta: editar la carta y los precios.
 
