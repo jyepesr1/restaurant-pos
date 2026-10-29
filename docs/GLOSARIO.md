@@ -20,7 +20,7 @@ Reglas generales:
 | Ítem (línea del pedido) | `Item` · tabla `order_items` | `ItemAgregado` → `ItemAdded`, `ItemCambiado` → `ItemChanged`, `ItemQuitado` → `ItemRemoved`, `ItemBorrado` → `ItemDeleted`, `ItemsMovidos` → `ItemsMoved` |
 | Anulación / anular | void | `ItemAnulado` → `ItemVoided`, `PagoAnulado` → `PaymentVoided` |
 | Cancelación / cancelar | cancellation / cancel | |
-| Comanda | `Ticket` (comanda de cocina) | `comandas` → `tickets` |
+| Comanda | `Ticket` (comanda de cocina) | `comandas` → `tickets`; tipos de comanda: nueva → `new`, reimpresión → `reprint`, cambio → `modification`, anular → `void`, nota → `note`, cambio de mesa → `move` |
 | Toma de pedido | order entry | `TomaPedido` → `OrderEntry` |
 | Mesa | `Table` · tabla `dining_tables` | `mesa_id` → `table_id`. La tabla SQL lleva `dining_` porque `table` es palabra reservada |
 | Zona | `Zone` | |
@@ -31,7 +31,7 @@ Reglas generales:
 | Comensal(es) | guest(s) | número de comensales → `guests` |
 | Persona(s) (en la mesa) | people | |
 | Silla | seat | |
-| Curso / tiempo | course | |
+| Curso / tiempo | course | entrada → `starter`, fuerte → `main`, postre → `dessert` |
 | Plato | dish | |
 | Nota | note | |
 | Término (de cocción) | doneness | |
@@ -72,7 +72,7 @@ Reglas generales:
 | Arqueo | cash count | `ArqueoRegistrado` → `CashCountRecorded` |
 | Cuadre | reconciliation | `CuadreTurno` → `ShiftReconciliation` |
 | Diferencia | variance | diferencia del turno |
-| Movimiento de caja | cash movement | `MovimientoCajaRegistrado` → `CashMovementRecorded` |
+| Movimiento de caja | cash movement | `MovimientoCajaRegistrado` → `CashMovementRecorded`; entrada → `cash_in`, salida → `cash_out`, pago de propinas → `tip_payout` |
 | Fondo de propinas | tip pool | |
 | Precuenta | `PreBill` | `PrecuentaImpresa` → `PreBillPrinted`, ruta `pre-bill` |
 | Cuenta (división del pedido) | `Check` | `CuentaDividida` → `CheckSplit` |
@@ -91,7 +91,7 @@ Reglas generales:
 | Monto | amount | |
 | Saldo | balance | |
 | Neto / bruto | net / gross | |
-| Redondeo | rounding | `ajuste_redondeo` → `rounding_adjustment` |
+| Redondeo | rounding | `ajuste_redondeo` → `rounding_adjustment`; los ajustes sumados de un pedido o un informe → `roundingAdjustments` |
 | Reparto (mayor residuo) | allocation (largest remainder) | |
 | Dinero | money | |
 | Pesos | pesos | |

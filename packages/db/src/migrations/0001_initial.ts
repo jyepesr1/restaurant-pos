@@ -424,7 +424,7 @@ CREATE TABLE order_items (
   -- Partial void (1 of 3): the original quantity is kept for the reports.
   voided_quantity INTEGER NOT NULL DEFAULT 0 CHECK (voided_quantity BETWEEN 0 AND quantity),
   guest INTEGER CHECK (guest >= 1),
-  course TEXT CHECK (course IN ('entry', 'main', 'dessert')),
+  course TEXT CHECK (course IN ('starter', 'main', 'dessert')),
   status TEXT NOT NULL CHECK (status IN (${ITEM_STATUSES})),
   added_by TEXT NOT NULL,
   notes TEXT,

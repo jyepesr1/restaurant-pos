@@ -91,11 +91,11 @@ describe('the app brands and the hub brands say the same', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8')
     for (const { brand } of BRANDS) {
       if (brand === DEFAULT_BRAND) continue
-      expect(css, brand).toContain(`:root[data-marca="${brand}"] {`)
-      expect(css, brand).toContain(`:root[data-marca="${brand}"].oscuro {`)
+      expect(css, brand).toContain(`:root[data-brand="${brand}"] {`)
+      expect(css, brand).toContain(`:root[data-brand="${brand}"].dark {`)
     }
     // And there are no brand blocks the app no longer offers.
-    const inTheSheet = [...css.matchAll(/data-marca="([^"]+)"/g)].map((m) => m[1])
+    const inTheSheet = [...css.matchAll(/data-brand="([^"]+)"/g)].map((m) => m[1])
     for (const name of inTheSheet) expect(isBrand(name), name).toBe(true)
   })
 })
@@ -106,15 +106,15 @@ describe('applyBrand', () => {
   it('with a restaurant brand it sets it on <html> and remembers it', () => {
     const { dataset, store } = simulateBrowser()
     applyBrand('la-spritzzeria')
-    expect(dataset.marca).toBe('la-spritzzeria')
+    expect(dataset.brand).toBe('la-spritzzeria')
     expect(store.get(KEY)).toBe('la-spritzzeria')
   })
 
   it('with Faro it removes the attribute (Faro is the unbranded design) and remembers it', () => {
     const { dataset, store } = simulateBrowser()
-    dataset.marca = 'la-spritzzeria'
+    dataset.brand = 'la-spritzzeria'
     applyBrand('faro')
-    expect('marca' in dataset).toBe(false)
+    expect('brand' in dataset).toBe(false)
     expect(store.get(KEY)).toBe('faro')
   })
 
@@ -123,20 +123,20 @@ describe('applyBrand', () => {
     for (const m of ['la-spritzzeria', 'faro', 'faro', 'la-spritzzeria', 'faro'] as const) {
       applyBrand(m)
       expect(store.get(KEY)).toBe(m)
-      expect(dataset.marca).toBe(m === 'faro' ? undefined : m)
+      expect(dataset.brand).toBe(m === 'faro' ? undefined : m)
     }
   })
 
   it('with no argument it applies the one saved on the device', () => {
     const { dataset } = simulateBrowser({ saved: 'la-spritzzeria' })
     applyBrand()
-    expect(dataset.marca).toBe('la-spritzzeria')
+    expect(dataset.brand).toBe('la-spritzzeria')
   })
 
   it('with no argument and nothing saved it looks like Faro', () => {
     const { dataset, store } = simulateBrowser()
     applyBrand()
-    expect('marca' in dataset).toBe(false)
+    expect('brand' in dataset).toBe(false)
     expect(store.get(KEY)).toBe('faro')
   })
 
@@ -153,7 +153,7 @@ describe('applyBrand', () => {
     ]) {
       const { dataset, store } = simulateBrowser({ saved: oldOne })
       applyBrand()
-      expect('marca' in dataset, oldOne).toBe(false)
+      expect('brand' in dataset, oldOne).toBe(false)
       expect(store.get(KEY), oldOne).toBe('faro')
     }
   })
@@ -161,9 +161,9 @@ describe('applyBrand', () => {
   it('without storage (private browsing, quota full) it still applies on the page and does not fail', () => {
     const { dataset } = simulateBrowser({ noStore: true })
     expect(() => applyBrand('la-spritzzeria')).not.toThrow()
-    expect(dataset.marca).toBe('la-spritzzeria')
+    expect(dataset.brand).toBe('la-spritzzeria')
     expect(() => applyBrand()).not.toThrow()
-    expect('marca' in dataset).toBe(false)
+    expect('brand' in dataset).toBe(false)
   })
 
   it('after reloading (another "page" with the same store) the brand stays', () => {
@@ -172,7 +172,7 @@ describe('applyBrand', () => {
     const saved = first.store.get(KEY)
     const second = simulateBrowser({ saved })
     applyBrand()
-    expect(second.dataset.marca).toBe('la-spritzzeria')
+    expect(second.dataset.brand).toBe('la-spritzzeria')
   })
 })
 
@@ -207,12 +207,12 @@ describe('the index.html script that paints before loading', () => {
   })
 
   it('with the restaurant brand saved, it sets it before painting', () => {
-    expect(runScript('la-spritzzeria').dataset.marca).toBe('la-spritzzeria')
+    expect(runScript('la-spritzzeria').dataset.brand).toBe('la-spritzzeria')
   })
 
   it('with no saved brand or with Faro, it sets nothing', () => {
-    expect('marca' in runScript(null).dataset).toBe(false)
-    expect('marca' in runScript('faro').dataset).toBe(false)
+    expect('brand' in runScript(null).dataset).toBe(false)
+    expect('brand' in runScript('faro').dataset).toBe(false)
   })
 
   it('if storage fails, it does not break the page', () => {
@@ -222,10 +222,10 @@ describe('the index.html script that paints before loading', () => {
   it('a saved brand that no longer exists is fixed as soon as the app starts', () => {
     const browser = runScript('bagno')
     // The script sets it as is (it does not know the list)…
-    expect(browser.dataset.marca).toBe('bagno')
+    expect(browser.dataset.brand).toBe('bagno')
     // …and `applyBrand()` in main.tsx sets it back to Faro and clears what was saved.
     applyBrand()
-    expect('marca' in browser.dataset).toBe(false)
+    expect('brand' in browser.dataset).toBe(false)
     expect(browser.store.get(KEY)).toBe('faro')
   })
 })

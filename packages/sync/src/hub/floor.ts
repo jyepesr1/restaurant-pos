@@ -122,7 +122,7 @@ export class FloorSync {
       return
     }
     if (message.type === 'ping') {
-      participant.send({ type: 'pong', brand: message.brand })
+      participant.send({ type: 'pong', stamp: message.stamp })
       return
     }
     const connection = participant.connection

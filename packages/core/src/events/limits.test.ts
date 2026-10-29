@@ -34,8 +34,8 @@ const REASON = { reason: 'Motivo de prueba' }
 const BAD_VALUES = {
   negative: -1,
   fraction: 1000.5,
-  'entero no seguro': 2 ** 53,
-  'sobre el límite': ORDER_TOTAL_LIMIT + 1,
+  'unsafe integer': 2 ** 53,
+  'over the limit': ORDER_TOTAL_LIMIT + 1,
   NaN: Number.NaN,
   Infinity: Number.POSITIVE_INFINITY,
   text: '1000',
@@ -148,7 +148,7 @@ describe('discounts, checks and pre-bill', () => {
     expect(accepts('DiscountApplied', discount({}, value), REASON)).toBe(false)
   })
 
-  it.each(badCases.filter(([name]) => name !== 'sobre el límite'))(
+  it.each(badCases.filter(([name]) => name !== 'over the limit'))(
     'DiscountApplied rejects a value %s',
     (_n, value) => {
       expect(accepts('DiscountApplied', discount({ value }), REASON)).toBe(false)
@@ -206,9 +206,9 @@ describe('items', () => {
 
   it.each([
     ['negative', -1],
-    ['fracción', 40_900.5],
-    ['entero no seguro', 2 ** 53],
-    ['sobre el límite', PRICE_LIMIT + 1],
+    ['fraction', 40_900.5],
+    ['unsafe integer', 2 ** 53],
+    ['over the limit', PRICE_LIMIT + 1],
     ['NaN', Number.NaN],
   ])('rejects a unit_price %s', (_n, value) => {
     expect(accepts('ItemAdded', item({ unit_price: value }))).toBe(false)
@@ -216,17 +216,17 @@ describe('items', () => {
 
   it.each([
     ['negative', -1],
-    ['fracción', 0.5],
-    ['entero no seguro', 2 ** 53],
-    ['sobre el límite', PRICE_LIMIT + 1],
+    ['fraction', 0.5],
+    ['unsafe integer', 2 ** 53],
+    ['over the limit', PRICE_LIMIT + 1],
   ])('rejects an extra_price %s', (_n, value) => {
     const modifier = { modifier_id: newId(), name: 'Extra', extra_price: value }
     expect(accepts('ItemAdded', item({ modifiers: [modifier] }))).toBe(false)
   })
 
   it.each([
-    ['fracción', 1.5],
-    ['entero no seguro', 2 ** 53],
+    ['fraction', 1.5],
+    ['unsafe integer', 2 ** 53],
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
     ['text', '2'],

@@ -107,7 +107,7 @@ export function jobsForEvent(
           .filter((i): i is OrderItem => !!i)
           .map((i) => ticketItem(i))
         build(
-          'newOne',
+          'new',
           {
             ticketId: c.ticket_id,
             stationId: c.station_id,
@@ -125,7 +125,7 @@ export function jobsForEvent(
         sentTickets(o, after.id).find((e) => e.ticketId === event.data.ticket_id) ??
         globalSentTicket(o, event.data.ticket_id)
       if (!sent) break
-      build('reprinting', sent, currentItems(after, sent.itemIds))
+      build('reprint', sent, currentItems(after, sent.itemIds))
       break
     }
     case 'ItemVoided': {
@@ -135,7 +135,7 @@ export function jobsForEvent(
       if (!item || !['sent', 'in_preparation', 'ready'].includes(item.status)) break
       const sent = sentTicketOf(o, after.id, item.id)
       if (!sent) break
-      build('voidEntry', sent, [
+      build('void', sent, [
         ticketItem({ ...item, quantity: event.data.quantity, voidedQuantity: 0 }),
       ])
       break
@@ -143,7 +143,7 @@ export function jobsForEvent(
     case 'OrderCanceled': {
       // What the kitchen had from a canceled order goes out as a void.
       if (!before) break
-      for (const g of inKitchenByTicket(before)) build('voidEntry', g.sent, g.items)
+      for (const g of inKitchenByTicket(before)) build('void', g.sent, g.items)
       break
     }
     case 'OrderMovedTable': {
@@ -453,10 +453,10 @@ function ticketData(
     time: timeOf(o, event.received_at),
     guests: order.guests > 0 ? order.guests : null,
     items,
-    heldCourses: type === 'newOne' ? order.heldCourses.filter((c) => hasCourse(order, c)) : [],
+    heldCourses: type === 'new' ? order.heldCourses.filter((c) => hasCourse(order, c)) : [],
     // On a void or a change, the order note is a distraction: it already went out with the
     // original ticket.
-    orderNote: type === 'newOne' || type === 'reprinting' || type === 'note' ? order.notes : null,
+    orderNote: type === 'new' || type === 'reprint' || type === 'note' ? order.notes : null,
   }
 }
 

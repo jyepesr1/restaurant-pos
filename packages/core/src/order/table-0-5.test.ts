@@ -84,7 +84,11 @@ describe('payments', () => {
       withCard,
     )
     expect(closed.status).toBe('closed')
-    expect(orderTotals(closed)).toMatchObject({ paid: 100_000, balance: 0, settings: -10 })
+    expect(orderTotals(closed)).toMatchObject({
+      paid: 100_000,
+      balance: 0,
+      roundingAdjustments: -10,
+    })
     // Σ charged = Σ amount + Σ adjustment: 99.990 in total.
     const charged = Object.values(closed.payments).reduce(
       (a, p) => a + p.amount + p.roundingAdjustment,
@@ -106,7 +110,7 @@ describe('payments', () => {
         status,
       )
       expect(ready.status).toBe('closed')
-      expect(orderTotals(ready)).toMatchObject({ balance: 0, settings: -rest })
+      expect(orderTotals(ready)).toMatchObject({ balance: 0, roundingAdjustments: -rest })
     }
   })
 
@@ -119,7 +123,7 @@ describe('payments', () => {
       ],
       status,
     )
-    expect(orderTotals(paid)).toMatchObject({ balance: 0, settings: 0 })
+    expect(orderTotals(paid)).toMatchObject({ balance: 0, roundingAdjustments: 0 })
     expect(Object.values(paid.payments)[0]?.roundingAdjustment).toBe(0)
   })
 
@@ -130,7 +134,7 @@ describe('payments', () => {
     const withTip = cashPaymentData(36_810, { rounding_adjustment: -10, tip: 3200, change: 0 })
     expect(withTip.tendered).toBe(40_000)
     const final = applyAll([event(order, 'PaymentRecorded', withTip)], withItem)
-    expect(orderTotals(final)).toMatchObject({ balance: 0, tips: 3200, settings: -10 })
+    expect(orderTotals(final)).toMatchObject({ balance: 0, tips: 3200, roundingAdjustments: -10 })
 
     const withChange = applyAll(
       [
@@ -172,7 +176,7 @@ describe('payments', () => {
       paid: 0,
       balance: 40_900,
       tips: 0,
-      settings: 0,
+      roundingAdjustments: 0,
     })
   })
 
@@ -192,7 +196,7 @@ describe('payments', () => {
       ],
       status,
     )
-    expect(orderTotals(voided)).toMatchObject({ settings: 0, balance: 36_810 })
+    expect(orderTotals(voided)).toMatchObject({ roundingAdjustments: 0, balance: 36_810 })
     expect(issueOf(voided, event(order, 'OrderClosed', {}))).toBe('pending_balance')
   })
 
@@ -279,7 +283,7 @@ describe('check split', () => {
     const { order } = orderOpened()
     expect(equalParts(87_650, 1)).toEqual([87_650])
     expect(() => event(order, 'CheckSplit', { checks: checksOf([87_650]) })).toThrow(
-      /Evento de prueba inválido/,
+      /Invalid test event/,
     )
   })
 

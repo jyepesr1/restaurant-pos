@@ -19,7 +19,7 @@ export const BasisPoints = z.int().min(0).max(BASIS_POINTS)
 export const LocalizedText = z.string().trim().min(1).max(500)
 
 export const Channel = z.enum(['dine_in', 'takeout', 'delivery', 'bar'])
-export const Course = z.enum(['entry', 'main', 'dessert'])
+export const Course = z.enum(['starter', 'main', 'dessert'])
 export const TaxType = z.enum(['inc', 'iva', 'exempt'])
 export const PaymentMethod = z.enum([
   'cash',

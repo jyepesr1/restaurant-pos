@@ -122,7 +122,7 @@ El documento DIAN dice el **total exacto de la venta**; la suma de los `rounding
 esperado_efectivo = base
                   + Σ efectivo (amount + rounding_adjustment + tip)
                   − Σ reversas y reembolsos en efectivo del turno
-                  + entradas − salidas − tip_payout − retiros_parciales
+                  + cash_in − cash_out − tip_payout − retiros_parciales
 
 esperado_otro_medio = Σ (amount + tip) − Σ anulaciones y reembolsos de ese medio
 diferencia          = contado − esperado     (por medio, con signo)

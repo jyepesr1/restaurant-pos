@@ -18,7 +18,7 @@ describe('device diagnostics', () => {
   })
 
   function create(heartbeatIntervalMs = 60_000) {
-    const dataDir = mkdtempSync(join(tmpdir(), 'pos-datos-'))
+    const dataDir = mkdtempSync(join(tmpdir(), 'pos-data-'))
     app = createAppServer({ diagnostics: { dataDir, heartbeatIntervalMs } })
     return { app, dataDir }
   }
@@ -71,7 +71,7 @@ describe('device diagnostics', () => {
   })
 
   it('stops saving when the file reaches the size limit', async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), 'pos-datos-'))
+    const dataDir = mkdtempSync(join(tmpdir(), 'pos-data-'))
     app = createAppServer({ diagnostics: { dataDir, byteLimit: 50 } })
     const send = () =>
       app?.inject({ method: 'POST', url: '/api/diagnostics', payload: { padding: 'x'.repeat(60) } })

@@ -7,14 +7,14 @@ import type { CodePage } from './encoding'
 
 /** `note`: the whole-order note changed with dishes already in the kitchen (allergies: keep it). */
 export type TicketType =
-  | 'newOne'
-  | 'reprinting'
+  | 'new'
+  | 'reprint'
   | 'modification'
-  | 'voidEntry'
+  | 'void'
   | 'note'
   /** Dishes already in the kitchen moved to another table: the kitchen must take them there. */
   | 'move'
-export type TicketCourse = 'entry' | 'main' | 'dessert'
+export type TicketCourse = 'starter' | 'main' | 'dessert'
 
 export interface TicketItem {
   quantity: number
@@ -50,26 +50,26 @@ export interface Ticket {
 }
 
 const TITLE: Record<TicketType, string | null> = {
-  newOne: null,
-  reprinting: 'REIMPRESIÓN',
+  new: null,
+  reprint: 'REIMPRESIÓN',
   modification: 'CAMBIO',
-  voidEntry: 'ANULAR',
+  void: 'ANULAR',
   note: 'NOTA NUEVA',
   move: 'CAMBIO DE MESA',
 }
 
 const COURSE_NAME: Record<TicketCourse, string> = {
-  entry: 'Entrada',
+  starter: 'Entrada',
   main: 'Fuerte',
   dessert: 'Postre',
 }
 
-const COURSE_ORDER: (TicketCourse | null)[] = [null, 'entry', 'main', 'dessert']
+const COURSE_ORDER: (TicketCourse | null)[] = [null, 'starter', 'main', 'dessert']
 
-function itemLines(item: TicketItem, format: Format, voidEntry: boolean): Line[] {
+function itemLines(item: TicketItem, format: Format, isVoid: boolean): Line[] {
   const person = item.guest ? `  P${item.guest}` : ''
   const lines: Line[] = toSides(
-    `${voidEntry ? '-' : ''}${item.quantity} x ${item.name}`,
+    `${isVoid ? '-' : ''}${item.quantity} x ${item.name}`,
     person.trim(),
     format,
     { large: true },
@@ -109,14 +109,14 @@ export function ticketLines(ticket: Ticket, format: { columns: number; page: Cod
     { separator: true },
   ]
 
-  const voidEntry = ticket.type === 'voidEntry'
+  const isVoid = ticket.type === 'void'
   const withCourse = ticket.items.some((i) => i.course)
   for (const course of COURSE_ORDER) {
     const items = ticket.items.filter((i) => i.course === course)
     if (items.length === 0) continue
     if (withCourse && course)
       lines.push(...paragraph(COURSE_NAME[course].toUpperCase(), format, { bold: true }))
-    for (const item of items) lines.push(...itemLines(item, format, voidEntry))
+    for (const item of items) lines.push(...itemLines(item, format, isVoid))
     lines.push({ separator: true })
   }
 

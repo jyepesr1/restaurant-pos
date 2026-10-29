@@ -135,7 +135,7 @@ describe('connection manager', () => {
     vi.advanceTimersByTime(10_000)
     connectionManager.changeVisibility(true)
     vi.advanceTimersByTime(100)
-    latest().handlers.onMessage({ type: 'pong', brand: 'x' })
+    latest().handlers.onMessage({ type: 'pong', stamp: 'x' })
     vi.advanceTimersByTime(5000)
 
     expect(channels).toHaveLength(1)

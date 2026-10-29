@@ -114,13 +114,13 @@ export function Staff() {
         </Group>
 
         {error && (
-          <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto" role="alert">
+          <p className="rounded-xl bg-alert-soft p-3 text-alert-text" role="alert">
             {error}
           </p>
         )}
-        {!data && !error && <p className="text-texto-suave">Cargando…</p>}
+        {!data && !error && <p className="text-muted">Cargando…</p>}
         {onlyOneManages && (
-          <p className="rounded-xl bg-proceso-suave p-3 text-proceso-texto">
+          <p className="rounded-xl bg-progress-soft p-3 text-progress-text">
             Solo una persona puede administrar el personal. Si olvida su contraseña, nadie más podrá
             entrar aquí: crea otra persona con el rol Administrador.
           </p>
@@ -178,14 +178,10 @@ export function Staff() {
                   <Row onTap={() => setRole(r)} off={!r.active}>
                     <span className="font-semibold">
                       {r.name}
-                      {r.system && (
-                        <span className="font-normal text-texto-suave"> · de fábrica</span>
-                      )}
-                      {!r.active && (
-                        <span className="font-normal text-texto-suave"> · archivado</span>
-                      )}
+                      {r.system && <span className="font-normal text-muted"> · de fábrica</span>}
+                      {!r.active && <span className="font-normal text-muted"> · archivado</span>}
                     </span>
-                    <span className="text-sm text-texto-suave">
+                    <span className="text-sm text-muted">
                       {`${roleSummary(r)}${asksPassword(r) ? ' · entra con contraseña' : ''}`}
                     </span>
                   </Row>
@@ -256,7 +252,7 @@ export function Staff() {
         {newPin && (
           <div className="flex flex-col items-center gap-4 text-center">
             <p id={idPin} className="flex flex-col items-center gap-4">
-              <span className="font-titulo rounded-2xl bg-superficie-2 px-6 py-4 text-5xl tracking-[0.3em]">
+              <span className="font-heading rounded-2xl bg-surface-2 px-6 py-4 text-5xl tracking-[0.3em]">
                 {newPin.pin}
               </span>
               <span>
@@ -265,7 +261,7 @@ export function Staff() {
                   : `Con este PIN, ${newPin.name} entra desde su celular.`}
               </span>
             </p>
-            <p className="text-texto-suave">
+            <p className="text-muted">
               Dáselo en persona. No se vuelve a mostrar: si se pierde, toca «Nuevo PIN».
             </p>
           </div>
@@ -288,10 +284,10 @@ function Row({
     <button
       type="button"
       onClick={onTap}
-      className={`flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-borde bg-superficie px-4 py-2 text-left hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco ${off ? 'opacity-70' : ''}`}
+      className={`flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-2 text-left hover:bg-surface-2 focus-visible:outline-3 focus-visible:outline-focus ${off ? 'opacity-70' : ''}`}
     >
       <span className="flex flex-col">{children}</span>
-      <span className="text-texto-suave" aria-hidden="true">
+      <span className="text-muted" aria-hidden="true">
         ›
       </span>
     </button>
@@ -317,9 +313,9 @@ function StaffMemberRow({
       <Row onTap={onTap}>
         <span className="font-semibold">
           {p.name}
-          {isYou && <span className="font-normal text-texto-suave"> · tú</span>}
+          {isYou && <span className="font-normal text-muted"> · tú</span>}
         </span>
-        <span className="text-sm text-texto-suave">
+        <span className="text-sm text-muted">
           {[
             role,
             p.user ? `usuario ${p.user}` : 'entra con PIN',
@@ -327,7 +323,7 @@ function StaffMemberRow({
           ].join(' · ')}
         </span>
         {noAccess && (
-          <span className="text-sm font-semibold text-alerta-texto">
+          <span className="text-sm font-semibold text-alert-text">
             No puede entrar: su rol pide usuario y contraseña
           </span>
         )}
@@ -351,8 +347,8 @@ export function Confirm({
   taken: boolean
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-xl bg-alerta-suave p-3" role="alertdialog">
-      <p className="text-alerta-texto">{question}</p>
+    <div className="flex flex-col gap-2 rounded-xl bg-alert-soft p-3" role="alertdialog">
+      <p className="text-alert-text">{question}</p>
       <div className="flex gap-2">
         <Button variant="danger" className="flex-1" disabled={taken} onClick={onConfirm}>
           {yes}
@@ -379,12 +375,12 @@ function Devices({
   const [error, setError] = useState<string | null>(null)
   return (
     <section aria-label="Equipos" className="flex flex-col gap-2">
-      <p className="text-texto-suave">
+      <p className="text-muted">
         Cada celular, tablet o computador queda aquí la primera vez que alguien entra en él. Si se
         pierde o se lo roban, retíralo: deja de recibir el salón y nadie puede entrar en él.
       </p>
       {error && (
-        <p className="text-alerta-texto" role="alert">
+        <p className="text-alert-text" role="alert">
           {error}
         </p>
       )}
@@ -392,14 +388,14 @@ function Devices({
         {devices.map((e) => (
           <li
             key={e.id}
-            className={`flex flex-col gap-2 rounded-xl border border-borde bg-superficie px-4 py-3 ${e.revokedAt ? 'opacity-70' : ''}`}
+            className={`flex flex-col gap-2 rounded-xl border border-border bg-surface px-4 py-3 ${e.revokedAt ? 'opacity-70' : ''}`}
           >
             <span className="font-semibold">
               {e.name}
-              <span className="font-normal text-texto-suave">{` · ${DEVICE_TYPE[e.type] ?? e.type}`}</span>
-              {e.id === own && <span className="font-normal text-texto-suave"> · este</span>}
+              <span className="font-normal text-muted">{` · ${DEVICE_TYPE[e.type] ?? e.type}`}</span>
+              {e.id === own && <span className="font-normal text-muted"> · este</span>}
             </span>
-            <span className="text-sm text-texto-suave">
+            <span className="text-sm text-muted">
               {e.revokedAt
                 ? `Retirado el ${when(e.revokedAt)}`
                 : e.lastUsed
@@ -433,7 +429,7 @@ function Devices({
               ))}
           </li>
         ))}
-        {devices.length === 0 && <li className="text-texto-suave">Todavía no hay equipos.</li>}
+        {devices.length === 0 && <li className="text-muted">Todavía no hay equipos.</li>}
       </ul>
     </section>
   )
@@ -517,7 +513,7 @@ function StaffMemberPanel({
       onClose={close}
       footer={
         <div className="flex flex-col gap-2">
-          <p key={attempt} className="min-h-6 text-alerta-texto" role="alert">
+          <p key={attempt} className="min-h-6 text-alert-text" role="alert">
             {error ?? ''}
           </p>
           {confirming === 'exit' ? (
@@ -614,12 +610,12 @@ function StaffMemberPanel({
             Con usuario y contraseña
           </Option>
           {requiresPassword && (
-            <p className="text-sm text-texto-suave">
+            <p className="text-sm text-muted">
               {`El rol ${selectedRole?.name} permite cobrar o administrar: se entra con usuario y contraseña.`}
             </p>
           )}
           {person?.user && b.signInMethod === 'pin' && (
-            <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">
+            <p className="rounded-xl bg-alert-soft p-3 text-alert-text">
               Al guardar se borran su usuario y su contraseña: desde entonces entra solo con su PIN.
             </p>
           )}
@@ -658,20 +654,20 @@ function StaffMemberPanel({
                   if (e.key === 'Enter') save()
                 }}
               />
-              <span id={helpId} className="text-sm text-texto-suave">
+              <span id={helpId} className="text-sm text-muted">
                 {person?.user
                   ? 'Déjala vacía para no cambiarla. Si escribes una, al menos 8 caracteres.'
                   : 'Al menos 8 caracteres. Dásela en persona.'}
               </span>
             </label>
-            <p className="text-sm text-texto-suave">
+            <p className="text-sm text-muted">
               Su PIN no le sirve para entrar: con él aprueba anulaciones y descuentos desde el
               celular de un mesero.
             </p>
           </>
         )}
         {changesSignInMethod && (
-          <p className="text-sm text-texto-suave">
+          <p className="text-sm text-muted">
             {isYou
               ? 'Al guardar tendrás que volver a entrar.'
               : 'Si está trabajando, al guardar tendrá que volver a entrar.'}
@@ -760,7 +756,7 @@ function RolePanel({
       onClose={close}
       footer={
         <div className="flex flex-col gap-2">
-          <p key={attempt} className="min-h-6 text-alerta-texto" role="alert">
+          <p key={attempt} className="min-h-6 text-alert-text" role="alert">
             {error ?? ''}
           </p>
           {confirming === 'exit' ? (
@@ -806,17 +802,17 @@ function RolePanel({
             onChange={(e) => setName(e.target.value)}
           />
           {role?.system && (
-            <span className="text-sm text-texto-suave">
+            <span className="text-sm text-muted">
               Es de fábrica: no se renombra ni se archiva, pero sus permisos sí se cambian.
             </span>
           )}
         </label>
         {role && role.people > 0 && (
-          <p className="text-sm text-texto-suave">
+          <p className="text-sm text-muted">
             {`Los cambios valen para ${role.people === 1 ? 'la persona' : `las ${role.people} personas`} con este rol. Si ya están trabajando, deben volver a entrar para ver los botones nuevos.`}
           </p>
         )}
-        <p className="text-sm text-texto-suave">
+        <p className="text-sm text-muted">
           Quien entra con PIN no puede tener permisos para cobrar, manejar la caja, editar la carta,
           ver reportes ni administrar. «Personal y roles» deja dar cualquier permiso: dáselo solo a
           alguien de toda confianza.

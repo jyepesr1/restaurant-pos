@@ -57,12 +57,12 @@ export function Brand() {
   return (
     <FloorFrame title="Marca del restaurante">
       <div className="mx-auto flex max-w-4xl flex-col gap-5 p-4 md:p-6">
-        <p className="max-w-2xl text-texto-suave">
+        <p className="max-w-2xl text-muted">
           Elige cómo se ve el sistema en todos los equipos del restaurante. Los colores de estado
           (verde libre, ámbar en proceso, rojo demora) son los mismos con cualquier marca.
         </p>
         {error && (
-          <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto" role="alert">
+          <p className="rounded-xl bg-alert-soft p-3 text-alert-text" role="alert">
             {error}
           </p>
         )}
@@ -73,7 +73,7 @@ export function Brand() {
             return (
               <li
                 key={m.brand}
-                className={`flex flex-col overflow-hidden rounded-2xl border-2 bg-superficie ${selected ? 'border-accion-fuerte' : 'border-linea'}`}
+                className={`flex flex-col overflow-hidden rounded-2xl border-2 bg-surface ${selected ? 'border-action-strong' : 'border-divider'}`}
               >
                 {/* A preview of the screen in that brand (deliberately outside the current theme). */}
                 <div
@@ -86,7 +86,7 @@ export function Brand() {
                       <FaroMark className="size-10" />
                     ) : (
                       <img
-                        src="/marca/la-spritzzeria.svg"
+                        src="/brand/la-spritzzeria.svg"
                         alt=""
                         className="size-10 rounded-full border-2 bg-[#fff8ec] p-0.5"
                         style={{ borderColor: v.title }}
@@ -121,11 +121,11 @@ export function Brand() {
                 <div className="flex flex-1 flex-col gap-3 p-5">
                   <div>
                     <p className="text-lg font-bold">{m.name}</p>
-                    <p className="text-texto-suave">{m.description}</p>
+                    <p className="text-muted">{m.description}</p>
                   </div>
                   <span className="mt-auto">
                     {selected ? (
-                      <span className="inline-flex min-h-12 items-center gap-2 font-semibold text-accion-texto">
+                      <span className="inline-flex min-h-12 items-center gap-2 font-semibold text-action-text">
                         Es la que usan los equipos
                       </span>
                     ) : (

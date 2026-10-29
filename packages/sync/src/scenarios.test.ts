@@ -585,13 +585,13 @@ describe('hub: validations', () => {
       version_app: 'x',
     })
     link.receive({ type: 'pull', from: 0 })
-    link.receive({ type: 'ping', brand: 'm1' })
+    link.receive({ type: 'ping', stamp: 'm1' })
 
     expect(received).toEqual([
       expect.objectContaining({ type: 'error', code: 'invalid_message' }),
       expect.objectContaining({ type: 'error', code: 'invalid_token' }),
       expect.objectContaining({ type: 'error', code: 'invalid_token' }),
-      { type: 'pong', brand: 'm1' },
+      { type: 'pong', stamp: 'm1' },
     ])
   })
 })

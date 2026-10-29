@@ -278,7 +278,7 @@ describe('transactions', () => {
 
 describe('exclusive open', () => {
   it('a second hub cannot open the same database', () => {
-    const route = join(mkdtempSync(join(tmpdir(), 'pos-exclusiva-')), 'pos.sqlite')
+    const route = join(mkdtempSync(join(tmpdir(), 'pos-exclusive-')), 'pos.sqlite')
     const first = openDatabase(route, { exclusive: true })
 
     expect(() => openDatabase(route, { exclusive: true, waitMs: 50 })).toThrow(DatabaseBusyError)

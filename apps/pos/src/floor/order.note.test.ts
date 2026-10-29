@@ -133,7 +133,7 @@ describe('unitsToSend', () => {
   })
 
   it('held items (course on hold) are not sent with «Enviar»: they do not count; once fired they do', () => {
-    const entry = item({ quantity: 2, course: 'entry' })
+    const entry = item({ quantity: 2, course: 'starter' })
     const main = item({ quantity: 3, course: 'main' })
     const withoutCourse = item({ quantity: 1 })
     const held = stateWith(

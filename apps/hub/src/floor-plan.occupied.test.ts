@@ -109,7 +109,7 @@ function connectWs(url: string, token: string) {
     send,
     async sayHello() {
       await opened
-      send({ type: 'hello', token, hub_instance: null, until: 0, version_app: 'prueba' })
+      send({ type: 'hello', token, hub_instance: null, until: 0, version_app: 'test' })
       return wait('welcome')
     },
     close: () => ws.close(),
@@ -122,7 +122,7 @@ describe('occupied table through the real hub path (main.ts)', () => {
   const openOnes: { close: () => void }[] = []
 
   beforeEach(() => {
-    folder = mkdtempSync(join(tmpdir(), 'pos-ocupada-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-occupied-'))
   })
   afterEach(async () => {
     for (const c of openOnes.splice(0)) c.close()

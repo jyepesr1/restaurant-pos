@@ -12,7 +12,7 @@ const shiftEvent = <T extends OrderEvent['type']>(type: T, data: never) =>
   event(shift, type, data, { aggregate_type: 'register_shift' } as never)
 const open = (base: number) => shiftEvent('ShiftOpened', { register_id: register, base } as never)
 const pay = (data: ReturnType<typeof cashPaymentData>) => event(newId(), 'PaymentRecorded', data)
-const move = (type: 'entry' | 'output' | 'tip_payout', amount: number) =>
+const move = (type: 'cash_in' | 'cash_out' | 'tip_payout', amount: number) =>
   shiftEvent('CashMovementRecorded', {
     movement_id: newId(),
     type,
@@ -44,7 +44,7 @@ describe('shiftReconciliation', () => {
     ])
   })
 
-  it('entries add, outflows subtract; card does not go into cash', () => {
+  it('cash in adds, cash out subtracts; card does not go into cash', () => {
     const card = cashPaymentData(50_000, {
       register_shift_id: shift,
       method: 'card',
@@ -60,10 +60,10 @@ describe('shiftReconciliation', () => {
       },
     })
     const c = shiftReconciliation(
-      [open(100_000), move('entry', 30_000), move('output', 12_000), pay(card)],
+      [open(100_000), move('cash_in', 30_000), move('cash_out', 12_000), pay(card)],
       shift,
     )
-    expect(c?.cash).toMatchObject({ entries: 30_000, outflows: 12_000, expected: 118_000 })
+    expect(c?.cash).toMatchObject({ cashIn: 30_000, cashOut: 12_000, expected: 118_000 })
     expect(c?.byMethod.find((m) => m.method === 'card')?.sale).toBe(50_000)
   })
 
@@ -165,10 +165,10 @@ describe('register schemas (task 1.7)', () => {
   it('only the tip payout says to whom and for which days', () => {
     const m = { movement_id: newId(), amount: 1_000, description: 'x' }
     expect(
-      ok(envelope('CashMovementRecorded', { ...m, type: 'output', to_whom: null, days: [] })),
+      ok(envelope('CashMovementRecorded', { ...m, type: 'cash_out', to_whom: null, days: [] })),
     ).toBe(true)
     expect(
-      ok(envelope('CashMovementRecorded', { ...m, type: 'output', to_whom: 'Ana', days: [] })),
+      ok(envelope('CashMovementRecorded', { ...m, type: 'cash_out', to_whom: 'Ana', days: [] })),
     ).toBe(false)
     expect(
       ok(

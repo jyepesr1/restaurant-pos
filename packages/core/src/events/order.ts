@@ -326,7 +326,7 @@ const dataByType = {
   CashMovementRecorded: z
     .strictObject({
       movement_id: Ulid,
-      type: z.enum(['entry', 'output', 'tip_payout']),
+      type: z.enum(['cash_in', 'cash_out', 'tip_payout']),
       amount: Pesos.min(1),
       description: LocalizedText,
       to_whom: LocalizedText.nullable(),

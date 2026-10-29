@@ -70,7 +70,7 @@ export function event<T extends OrderEventType>(
     ...envelopeFields,
   }
   const validation = validateNewEvent(fresh)
-  if (!validation.ok) throw new Error(`Evento de prueba inválido: ${validation.errors.join('; ')}`)
+  if (!validation.ok) throw new Error(`Invalid test event: ${validation.errors.join('; ')}`)
   sequence += 1
   return {
     ...fresh,

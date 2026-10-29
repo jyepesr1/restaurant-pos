@@ -298,7 +298,7 @@ function CheckoutForm({
 
   const footer = confirming ? (
     <div
-      className="rounded-2xl border-2 border-accion-fuerte bg-accion-suave p-3 text-accion-texto"
+      className="rounded-2xl border-2 border-action-strong bg-action-soft p-3 text-action-text"
       role="alertdialog"
       aria-labelledby="confirm-payment"
     >
@@ -311,7 +311,7 @@ function CheckoutForm({
           ref={confirm}
           type="button"
           disabled={taken}
-          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl bg-accion-fuerte px-4 font-semibold text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-foco disabled:opacity-60"
+          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl bg-action-strong px-4 font-semibold text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-60"
           onClick={record}
         >
           {taken ? 'Registrando…' : `Sí, registrar ${pesos(toCharge)}`}
@@ -334,16 +334,16 @@ function CheckoutForm({
     <SidePanel opened title={`Cobrar · ${charging.name}`} onClose={onClose} footer={footer}>
       <div className="flex flex-col gap-4">
         <section
-          className="rounded-2xl border border-linea bg-superficie-2/60 p-4"
+          className="rounded-2xl border border-divider bg-surface-2/60 p-4"
           aria-label="Saldo"
         >
-          <p className="text-texto-suave">Por cobrar</p>
-          <p className="cifras font-titulo text-4xl font-bold">{pesos(available)}</p>
+          <p className="text-muted">Por cobrar</p>
+          <p className="figures font-heading text-4xl font-bold">{pesos(available)}</p>
           <label className="mt-3 block">
             <span className="font-semibold">Valor de este pago</span>
             <input
               inputMode="numeric"
-              className={`${fieldClass} cifras mt-1 text-xl`}
+              className={`${fieldClass} figures mt-1 text-xl`}
               value={withDots(amount)}
               onChange={(e) => {
                 setAmount(Math.min(digitsOnly(e.target.value), available))
@@ -353,7 +353,7 @@ function CheckoutForm({
             />
           </label>
           {amount < available && amount > 0 && (
-            <p className="mt-2 text-sm text-texto-suave">
+            <p className="mt-2 text-sm text-muted">
               {`Pago parcial: quedan ${pesos(available - amount)} por cobrar.`}
             </p>
           )}
@@ -376,10 +376,10 @@ function CheckoutForm({
           ))}
         </Group>
 
-        <section className="rounded-2xl border border-linea bg-superficie p-4" aria-label="Propina">
+        <section className="rounded-2xl border border-divider bg-surface p-4" aria-label="Propina">
           <div className="flex items-baseline justify-between gap-2">
             <span className="font-semibold">Propina (voluntaria)</span>
-            <span className="cifras font-titulo text-2xl font-bold">{pesos(tip)}</span>
+            <span className="figures font-heading text-2xl font-bold">{pesos(tip)}</span>
           </div>
           <Group label="Propina" className="mt-3 flex flex-wrap gap-2">
             {quickTips.map((p) => {
@@ -419,7 +419,7 @@ function CheckoutForm({
               </span>
               <input
                 inputMode="numeric"
-                className={`${fieldClass} cifras mt-1`}
+                className={`${fieldClass} figures mt-1`}
                 placeholder={inPercent ? 'Ej. 12' : 'Ej. 5.000'}
                 value={
                   inPercent
@@ -450,20 +450,22 @@ function CheckoutForm({
 
         {isCash && calculation && (
           <section
-            className="rounded-2xl border border-linea bg-superficie p-4"
+            className="rounded-2xl border border-divider bg-surface p-4"
             aria-label="Efectivo"
           >
-            <p className="text-texto-suave">
+            <p className="text-muted">
               {calculation.adjustment !== 0
                 ? `A cobrar (venta redondeada a ${pesos(rules.cashRounding)} + propina)`
                 : 'A cobrar (venta + propina)'}
             </p>
-            <p className="cifras font-titulo text-3xl font-bold">{pesos(calculation.amountDue)}</p>
+            <p className="figures font-heading text-3xl font-bold">
+              {pesos(calculation.amountDue)}
+            </p>
             <label className="mt-3 block">
               <span className="font-semibold">El cliente entrega</span>
               <input
                 inputMode="numeric"
-                className={`${fieldClass} cifras mt-1 min-h-14 text-2xl`}
+                className={`${fieldClass} figures mt-1 min-h-14 text-2xl`}
                 value={withDots(served)}
                 onChange={(e) => {
                   setTendered(digitsOnly(e.target.value))
@@ -471,7 +473,7 @@ function CheckoutForm({
                 }}
               />
             </label>
-            <div className="cifras mt-3 flex flex-wrap items-center gap-2 text-lg">
+            <div className="figures mt-3 flex flex-wrap items-center gap-2 text-lg">
               {calculation.missing > 0 ? (
                 <Label
                   tone="warning"
@@ -491,18 +493,18 @@ function CheckoutForm({
 
         {!isCash && (
           <section
-            className="rounded-2xl border border-linea bg-superficie p-4"
+            className="rounded-2xl border border-divider bg-surface p-4"
             aria-label="A cobrar"
           >
-            <p className="text-texto-suave">
+            <p className="text-muted">
               {option.method === 'card'
                 ? 'Total en el datáfono (venta + propina)'
                 : `A cobrar por ${option.name} (venta + propina)`}
             </p>
-            <p className="cifras font-titulo text-3xl font-bold">{pesos(toCharge)}</p>
+            <p className="figures font-heading text-3xl font-bold">{pesos(toCharge)}</p>
             {option.method === 'card' &&
               (cardTerminals.length === 0 ? (
-                <p className="mt-2 rounded-xl bg-proceso-suave p-3 text-proceso-texto">
+                <p className="mt-2 rounded-xl bg-progress-soft p-3 text-progress-text">
                   No hay datáfonos: agrégalos en «Caja y pagos» para cobrar con tarjeta.
                 </p>
               ) : (
@@ -521,9 +523,7 @@ function CheckoutForm({
                 )
               ))}
             {option.method !== 'card' && (
-              <p className="mt-2 text-sm text-texto-suave">
-                Revisa que llegó antes de registrarlo.
-              </p>
+              <p className="mt-2 text-sm text-muted">Revisa que llegó antes de registrarlo.</p>
             )}
           </section>
         )}

@@ -273,7 +273,7 @@ describe('end to end: open shift → split → cash and card → close', () => {
     expect(orderTotals(closed as never)).toMatchObject({
       balance: 0,
       paid: 100_050,
-      settings: -25,
+      roundingAdjustments: -25,
       tips: 9_229,
     })
     // The order is no longer open on the register and everything saved here is confirmed.

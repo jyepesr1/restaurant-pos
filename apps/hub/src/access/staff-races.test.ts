@@ -288,12 +288,12 @@ describe('failures midway through an operation (nested transactions)', () => {
     const connection = m.access.authenticate(phone.device.token)
     if (!connection) throw new Error('no connection')
     m.db.exec(
-      "CREATE TRIGGER sessions_fail BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'falla'); END",
+      "CREATE TRIGGER sessions_fail BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'fails'); END",
     )
     const before = photo(m)
     expect(() =>
       m.access.signIn({ user: 'carlos', password: 'clave-de-carlos' }, connection, '10.0.0.9'),
-    ).toThrow(/falla/)
+    ).toThrow(/fails/)
     expect(photo(m)).toBe(before)
     expect(m.db.prepare('SELECT type FROM devices WHERE id = ?').get(connection.deviceId)).toEqual({
       type: 'waiter',
@@ -319,7 +319,7 @@ describe('failures midway through an operation (nested transactions)', () => {
     const m = setupHub()
     const api = setupApi(m)
     m.db.exec(
-      "CREATE TRIGGER sessions_fail BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'falla'); END",
+      "CREATE TRIGGER sessions_fail BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'fails'); END",
     )
     const before = photo(m)
     expect((await api.post('/api/sign-in', { pin: m.people.waiter.pin })).statusCode).toBe(500)

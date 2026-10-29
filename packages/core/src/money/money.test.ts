@@ -293,22 +293,22 @@ describe('register', () => {
         base: 200_000,
         payments: [{ amount: 36_810, roundingAdjustment: -10, tip: 3000 }],
         refunds: [],
-        entries: [],
-        outflows: [],
+        cashIn: [],
+        cashOut: [],
         tipPayouts: [20_000],
         partialWithdrawals: [],
       }),
     ).toBe(219_800)
   })
 
-  it('subtracts refunds, outflows and withdrawals and adds entries', () => {
+  it('subtracts refunds, cash out and withdrawals and adds cash in', () => {
     expect(
       expectedCash({
         base: 100_000,
         payments: [{ amount: 50_000, roundingAdjustment: 0, tip: 5000 }],
         refunds: [10_000],
-        entries: [20_000],
-        outflows: [5000],
+        cashIn: [20_000],
+        cashOut: [5000],
         tipPayouts: [],
         partialWithdrawals: [50_000],
       }),

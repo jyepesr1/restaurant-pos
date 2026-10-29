@@ -23,7 +23,7 @@ afterEach(async () => {
 
 /** Saves `catalog` as is in a new database and opens the floor on it. */
 async function openWith(catalog: unknown, extra: { device?: Device } = {}) {
-  const db = new DeviceDatabase(`viejo-${newId()}`)
+  const db = new DeviceDatabase(`old-${newId()}`)
   databases.push(db)
   if (catalog !== undefined) await db.saveSetting('catalog', catalog)
   if (extra.device) await db.saveSetting('device', extra.device)
@@ -121,7 +121,7 @@ describe('Floor.load() with a menu saved by an earlier version', () => {
   })
 
   it('opening the same database twice gives the same complete menu (repeating does not break it)', async () => {
-    const db = new DeviceDatabase(`viejo-${newId()}`)
+    const db = new DeviceDatabase(`old-${newId()}`)
     databases.push(db)
     await db.saveSetting('catalog', {
       ...base,

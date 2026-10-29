@@ -253,7 +253,7 @@ function build(c: Case): PeriodReport {
         voided: n1,
         discounts: n2,
         net: n3,
-        settings: n4,
+        roundingAdjustments: n4,
         taxes: [{ type: 'inc', rate: c.rate, base: n5, tax: n6 }],
         tips: n7,
         checks: 3,
@@ -423,7 +423,7 @@ describe('CSV: the whole report', () => {
         )
         expect(sales.get('Neto')).toBe(String(v.net))
         expect(sales.get('Bruto')).toBe(String(v.gross))
-        expect(sales.get('Ajuste por redondeo')).toBe(String(v.settings))
+        expect(sales.get('Ajuste por redondeo')).toBe(String(v.roundingAdjustments))
         expect(sales.get('Propinas')).toBe(String(v.tips))
         expect(sales.get('Ticket promedio')).toBe(String(v.averageTicket))
         // The figure rows (all but the header and the section names) are integers.
@@ -474,7 +474,7 @@ describe('CSV: the whole report', () => {
           voided: 0,
           discounts: 0,
           net: 0,
-          settings: 0,
+          roundingAdjustments: 0,
           taxes: [],
           tips: 0,
           checks: 0,

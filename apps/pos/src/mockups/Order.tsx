@@ -195,10 +195,7 @@ export function Order() {
         <section className="min-w-0 flex-1" aria-label="Carta">
           <label className="relative block">
             <span className="sr-only">Buscar en la carta</span>
-            <Icon
-              name="search"
-              className="absolute top-1/2 left-3 -translate-y-1/2 text-texto-suave"
-            />
+            <Icon name="search" className="absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
             <input
               ref={searchField}
               type="search"
@@ -209,7 +206,7 @@ export function Order() {
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
-              className="min-h-12 w-full rounded-xl border border-borde bg-superficie pr-3 pl-11 text-lg placeholder:text-texto-suave focus-visible:outline-3 focus-visible:outline-foco"
+              className="min-h-12 w-full rounded-xl border border-border bg-surface pr-3 pl-11 text-lg placeholder:text-muted focus-visible:outline-3 focus-visible:outline-focus"
             />
           </label>
           {!searchQuery.trim() && (
@@ -233,17 +230,17 @@ export function Order() {
                   <button
                     type="button"
                     onClick={() => tapProduct(p)}
-                    className="relative flex min-h-20 w-full flex-col justify-between rounded-xl border border-borde bg-superficie p-3 text-left hover:bg-superficie-2 active:scale-[0.98] focus-visible:outline-3 focus-visible:outline-foco"
+                    className="relative flex min-h-20 w-full flex-col justify-between rounded-xl border border-border bg-surface p-3 text-left hover:bg-surface-2 active:scale-[0.98] focus-visible:outline-3 focus-visible:outline-focus"
                   >
                     {quantity > 0 && (
-                      <span className="cifras absolute -top-2 -right-2 flex size-7 items-center justify-center rounded-full bg-accion-fuerte text-sm font-bold text-white">
+                      <span className="figures absolute -top-2 -right-2 flex size-7 items-center justify-center rounded-full bg-action-strong text-sm font-bold text-white">
                         {quantity}
                         <span className="sr-only"> en el pedido</span>
                       </span>
                     )}
                     <span className="font-semibold leading-snug">{p.name}</span>
-                    <span className="cifras mt-1 flex items-center justify-between text-texto-suave">
-                      <span className="font-titulo text-lg">
+                    <span className="figures mt-1 flex items-center justify-between text-muted">
+                      <span className="font-heading text-lg">
                         {p.variants.length > 0 ? `desde ${pesos(p.price)}` : pesos(p.price)}
                       </span>
                       {needsPanel(p) && (
@@ -255,12 +252,12 @@ export function Order() {
               )
             })}
             {found.length === 0 && (
-              <li className="col-span-full p-6 text-center text-texto-suave">
+              <li className="col-span-full p-6 text-center text-muted">
                 No hay nada con «{searchQuery}».
               </li>
             )}
             {found.length > MAX_RESULTS && (
-              <li className="col-span-full p-3 text-center text-texto-suave">
+              <li className="col-span-full p-3 text-center text-muted">
                 {`Hay ${found.length - MAX_RESULTS} más: escribe un poco más.`}
               </li>
             )}
@@ -268,9 +265,9 @@ export function Order() {
         </section>
 
         {/* Tablet and register: the order always visible. */}
-        <aside className="sticky top-20 hidden h-[calc(100dvh-6rem)] w-96 shrink-0 flex-col rounded-2xl border border-borde bg-superficie md:flex">
+        <aside className="sticky top-20 hidden h-[calc(100dvh-6rem)] w-96 shrink-0 flex-col rounded-2xl border border-border bg-surface md:flex">
           {ticket}
-          <div className="flex gap-2 border-t border-borde p-3">
+          <div className="flex gap-2 border-t border-border p-3">
             {checkButton}
             <div className="flex-1">{sendButton}</div>
           </div>
@@ -278,7 +275,7 @@ export function Order() {
       </div>
 
       {/* Phone: fixed bar at the bottom, within reach of the thumb. */}
-      <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-borde bg-superficie p-3 md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-border bg-surface p-3 md:hidden">
         <Button
           variant="secondary"
           large
@@ -286,7 +283,7 @@ export function Order() {
           className="flex-1 flex-col gap-0! text-base! leading-tight"
         >
           <span>{`Pedido (${items.filter((i) => !i.voided).length})`}</span>
-          <span className="cifras font-titulo text-lg">{pesos(tableTotal(table))}</span>
+          <span className="figures font-heading text-lg">{pesos(tableTotal(table))}</span>
         </Button>
         <div className="flex-1">{sendButton}</div>
       </div>
@@ -384,7 +381,7 @@ function Ticket({
   const { items, guests } = table
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-borde p-3">
+      <div className="flex items-center gap-2 border-b border-border p-3">
         <Icon name="people" />
         <span className="font-semibold">{`${guests} ${guests === 1 ? 'persona' : 'personas'}`}</span>
         <Button
@@ -403,7 +400,7 @@ function Ticket({
       </div>
       <Group
         label="Para quién es lo próximo que agregues"
-        className="flex gap-2 overflow-x-auto border-b border-borde p-3"
+        className="flex gap-2 overflow-x-auto border-b border-border p-3"
       >
         {[null, ...Array.from({ length: guests }, (_, i) => i + 1)].map((c) => (
           <Option
@@ -418,27 +415,27 @@ function Ticket({
       </Group>
       <ul className="flex-1 overflow-y-auto">
         {items.length === 0 && (
-          <li className="p-6 text-center text-texto-suave">Toca un producto para agregarlo.</li>
+          <li className="p-6 text-center text-muted">Toca un producto para agregarlo.</li>
         )}
         {items.map((i) => (
           <li key={i.id}>
             <button
               type="button"
               onClick={() => !i.voided && onItemTap(i)}
-              className={`flex min-h-14 w-full items-start gap-3 border-b border-borde px-3 py-2 text-left hover:bg-superficie-2 ${i.voided ? 'text-texto-suave' : ''}`}
+              className={`flex min-h-14 w-full items-start gap-3 border-b border-border px-3 py-2 text-left hover:bg-surface-2 ${i.voided ? 'text-muted' : ''}`}
             >
-              <span className="cifras w-6 font-semibold">{i.quantity}</span>
+              <span className="figures w-6 font-semibold">{i.quantity}</span>
               <span className="flex-1">
                 <span className={`font-semibold ${i.voided ? 'line-through' : ''}`}>
                   {itemName(i)}
                 </span>
                 {i.options.length > 0 && (
-                  <span className="block text-sm font-semibold text-proceso-texto">
+                  <span className="block text-sm font-semibold text-progress-text">
                     {i.options.map((o) => o.name).join(' · ')}
                   </span>
                 )}
-                {i.notes && <span className="block text-sm text-texto-suave">«{i.notes}»</span>}
-                <span className="block text-sm text-texto-suave">
+                {i.notes && <span className="block text-sm text-muted">«{i.notes}»</span>}
+                <span className="block text-sm text-muted">
                   {[
                     i.guest ? `P${i.guest}` : 'Mesa',
                     i.voided
@@ -449,14 +446,14 @@ function Ticket({
                   ].join(' · ')}
                 </span>
               </span>
-              <span className={`cifras ${i.voided ? 'line-through' : ''}`}>
+              <span className={`figures ${i.voided ? 'line-through' : ''}`}>
                 {pesos(lineNet(lineOf(i)))}
               </span>
             </button>
           </li>
         ))}
       </ul>
-      <div className="cifras flex justify-between p-3 text-lg font-semibold">
+      <div className="figures flex justify-between p-3 text-lg font-semibold">
         <span>Total</span>
         <span>{pesos(tableTotal(table))}</span>
       </div>
@@ -538,10 +535,8 @@ function ProductPanel({
         </Button>
       }
     >
-      {product.description && <p className="mb-4 text-texto-suave">{product.description}</p>}
-      {onlyOne && (
-        <p className="mb-3 text-sm text-texto-suave">Toca una opción y queda agregada.</p>
-      )}
+      {product.description && <p className="mb-4 text-muted">{product.description}</p>}
+      {onlyOne && <p className="mb-3 text-sm text-muted">Toca una opción y queda agregada.</p>}
       {product.variants.length > 0 && (
         <OptionList
           title="Tamaño"
@@ -573,7 +568,7 @@ function ProductPanel({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Sin cebolla, bien caliente…"
-          className="mt-2 min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 focus-visible:outline-3 focus-visible:outline-foco"
+          className="mt-2 min-h-12 w-full rounded-xl border border-border bg-surface px-3 focus-visible:outline-3 focus-visible:outline-focus"
         />
       </label>
     </SidePanel>
@@ -621,7 +616,7 @@ function Quantity({ value, onChange }: { value: number; onChange: (n: number) =>
         disabled={value <= 1}
         onClick={() => onChange(value - 1)}
       />
-      <span className="cifras w-8 text-center text-xl font-semibold">{value}</span>
+      <span className="figures w-8 text-center text-xl font-semibold">{value}</span>
       <Button icon="more" aria-label="Uno más" onClick={() => onChange(value + 1)} />
     </div>
   )
@@ -700,7 +695,7 @@ function PanelItem({
           )
         }
       >
-        <p className="mb-4 text-texto-suave">
+        <p className="mb-4 text-muted">
           Ya se envió a cocina o barra: no se puede quitar, solo anular. En la Fase 1 lo autoriza el
           gerente con su PIN y la cocina recibe una comanda de anulación.
         </p>
@@ -772,7 +767,7 @@ function PanelItem({
         <input
           value={draft.notes}
           onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
-          className="mt-2 min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 focus-visible:outline-3 focus-visible:outline-foco"
+          className="mt-2 min-h-12 w-full rounded-xl border border-border bg-surface px-3 focus-visible:outline-3 focus-visible:outline-focus"
         />
       </label>
     </SidePanel>

@@ -293,9 +293,9 @@ describe('preBillLines: 58 mm (32 columns) versus 80 mm (48)', () => {
   })
 
   it('a very long dish name wraps at 58 mm and the value is not lost', () => {
-    const length = 'Pizza Margarita Especial de la Casa con Doble Queso y Albahaca'
+    const longName = 'Pizza Margarita Especial de la Casa con Doble Queso y Albahaca'
     const t = text(
-      { ...preBill, lines: [{ quantity: 1, name: length, options: [], value: 58_900 }] },
+      { ...preBill, lines: [{ quantity: 1, name: longName, options: [], value: 58_900 }] },
       f58,
     )
     expect(t).toContain('$58.900')

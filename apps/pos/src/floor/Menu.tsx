@@ -39,7 +39,7 @@ type Tab = 'products' | 'options' | 'categories'
 const ARCHIVED = 'archived'
 
 const field =
-  'min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 text-lg disabled:opacity-60 focus-visible:outline-3 focus-visible:outline-foco'
+  'min-h-12 w-full rounded-xl border border-border bg-surface px-3 text-lg disabled:opacity-60 focus-visible:outline-3 focus-visible:outline-focus'
 
 export function Menu() {
   const { session } = useFloor()
@@ -93,18 +93,18 @@ export function Menu() {
           </Option>
         </Group>
         {!canDoAll && (
-          <p className="mb-3 rounded-xl bg-neutro-suave p-3 text-neutro-texto">
+          <p className="mb-3 rounded-xl bg-neutral-soft p-3 text-neutral-text">
             Tu rol solo puede cambiar precios.
           </p>
         )}
         {error && (
           <div className="mb-3 flex flex-wrap items-center gap-3" role="alert">
-            <span className="text-alerta-texto">{error}</span>
+            <span className="text-alert-text">{error}</span>
             <Button onClick={() => void load()}>Intentar de nuevo</Button>
           </div>
         )}
         {!c ? (
-          !error && <p className="text-texto-suave">Cargando la carta…</p>
+          !error && <p className="text-muted">Cargando la carta…</p>
         ) : tab === 'products' ? (
           <ProductList
             c={c}
@@ -174,14 +174,14 @@ function Row({
       <button
         type="button"
         onClick={onTap}
-        className="flex min-h-14 w-full items-center gap-3 border-b border-borde px-3 py-2 text-left hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
+        className="flex min-h-14 w-full items-center gap-3 border-b border-border px-3 py-2 text-left hover:bg-surface-2 focus-visible:outline-3 focus-visible:outline-focus"
       >
         <span className="flex-1">
           <span className="font-semibold">{title}</span>
-          {detail && <span className="block text-sm text-texto-suave">{detail}</span>}
+          {detail && <span className="block text-sm text-muted">{detail}</span>}
         </span>
         {archived && <Label tone="neutral">Archivado</Label>}
-        {trailing && <span className="cifras">{trailing}</span>}
+        {trailing && <span className="figures">{trailing}</span>}
       </button>
     </li>
   )
@@ -245,9 +245,9 @@ function ProductList({
           </Option>
         </Group>
       )}
-      <ul className="rounded-2xl border border-borde bg-superficie">
+      <ul className="rounded-2xl border border-border bg-surface">
         {list.length === 0 && (
-          <li className="p-6 text-center text-texto-suave">No hay productos aquí.</li>
+          <li className="p-6 text-center text-muted">No hay productos aquí.</li>
         )}
         {list.map((p) => {
           const variants = variantsOf(p.id)
@@ -296,7 +296,7 @@ function GroupList({
   const groups = [...c.groups].sort((a, b) => Number(b.active) - Number(a.active))
   return (
     <section aria-label="Grupos de opciones">
-      <p className="mb-3 text-texto-suave">
+      <p className="mb-3 text-muted">
         Un grupo de opciones se pide al tomar el producto: el término de la carne, el sabor o
         adicionales con precio. Un mismo grupo sirve para varios productos.
       </p>
@@ -305,9 +305,9 @@ function GroupList({
           Nuevo grupo de opciones
         </Button>
       )}
-      <ul className="rounded-2xl border border-borde bg-superficie">
+      <ul className="rounded-2xl border border-border bg-surface">
         {groups.length === 0 && (
-          <li className="p-6 text-center text-texto-suave">Todavía no hay grupos de opciones.</li>
+          <li className="p-6 text-center text-muted">Todavía no hay grupos de opciones.</li>
         )}
         {groups.map((g) => {
           // Product names tell apart two groups with the same name ("Sabor").
@@ -384,10 +384,10 @@ function PesosField({
           const n = readPesos(text)
           if (n !== null) setText(format(n))
         }}
-        className={`${field} cifras text-right ${valid ? '' : 'border-alerta-fuerte'}`}
+        className={`${field} figures text-right ${valid ? '' : 'border-alert-strong'}`}
       />
       {!valid && (
-        <span id={id} className="text-sm text-alerta-texto">
+        <span id={id} className="text-sm text-alert-text">
           Escribe el valor en pesos, sin centavos
         </span>
       )}
@@ -435,11 +435,11 @@ function SaveFooter({
   return (
     <div className="flex flex-col gap-2">
       {error ? (
-        <p className="min-h-6 text-alerta-texto" role="alert">
+        <p className="min-h-6 text-alert-text" role="alert">
           {error}
         </p>
       ) : (
-        <p className="min-h-6 text-alerta-texto" aria-live="polite">
+        <p className="min-h-6 text-alert-text" aria-live="polite">
           {issues[0] ?? ''}
         </p>
       )}
@@ -526,12 +526,12 @@ function ProductPanel({
       }
     >
       {!canDoAll && (
-        <p className="mb-4 rounded-xl bg-neutro-suave p-3 text-neutro-texto">
+        <p className="mb-4 rounded-xl bg-neutral-soft p-3 text-neutral-text">
           Tu rol solo puede cambiar precios.
         </p>
       )}
       {!b.active && (
-        <p className="mb-4 rounded-xl bg-neutro-suave p-3 text-neutro-texto">
+        <p className="mb-4 rounded-xl bg-neutral-soft p-3 text-neutral-text">
           Archivado: no aparece en la carta de los equipos.
         </p>
       )}
@@ -599,7 +599,7 @@ function ProductPanel({
 
       <fieldset className="mb-4">
         <legend className="mb-1 font-semibold">Tamaños (copa, botella…)</legend>
-        <p className="mb-2 text-sm text-texto-suave">
+        <p className="mb-2 text-sm text-muted">
           Si el producto tiene tamaños, el mesero debe elegir uno y cada uno tiene su precio.
         </p>
         {variants.map((v) => (
@@ -654,7 +654,7 @@ function ProductPanel({
       <fieldset className="mb-4">
         <legend className="mb-1 font-semibold">Grupos de opciones que se piden</legend>
         {groups.length === 0 ? (
-          <p className="text-sm text-texto-suave">
+          <p className="text-sm text-muted">
             Crea grupos (término, sabor, adicionales) en la pestaña Grupos de opciones.
           </p>
         ) : !canDoAll ? (
@@ -703,7 +703,7 @@ function ProductPanel({
           />
           <span>
             <span className="font-semibold">Favorito</span>
-            <span className="block text-texto-suave">
+            <span className="block text-muted">
               Aparece en «Favoritos», lo primero que se ve al tomar el pedido.
             </span>
           </span>
@@ -745,7 +745,7 @@ function Accountant({
         disabled={disabled || value <= minimum}
         onClick={() => onChange(value - 1)}
       />
-      <output className="cifras w-8 text-center text-xl font-semibold">{value}</output>
+      <output className="figures w-8 text-center text-xl font-semibold">{value}</output>
       <Button
         icon="more"
         aria-label={`${labelText}: uno más`}
@@ -797,7 +797,7 @@ function GroupPanel({
       }
     >
       {usage > 0 && (
-        <p className="mb-4 rounded-xl bg-proceso-suave p-3 text-proceso-texto">
+        <p className="mb-4 rounded-xl bg-progress-soft p-3 text-progress-text">
           {`Lo usan ${usage === 1 ? '1 producto' : `${usage} productos`}: un cambio aquí cambia en todos.`}
         </p>
       )}
@@ -828,7 +828,7 @@ function GroupPanel({
           disabled={!canDoAll}
           onChange={(maximum) => patch({ maximum })}
         />
-        <p className="text-sm text-texto-suave">
+        <p className="text-sm text-muted">
           {g.minimum === 0
             ? 'Opcional: el mesero puede no elegir nada.'
             : 'Obligatorio: el mesero no puede agregar el producto sin elegir.'}
@@ -923,7 +923,7 @@ function EditableRow({
     if (!r && fresh) setN('')
   }
   return (
-    <li className="flex flex-wrap items-center gap-2 border-b border-borde p-2">
+    <li className="flex flex-wrap items-center gap-2 border-b border-border p-2">
       <input
         aria-label={fresh ? 'Nombre' : `Nombre de ${name}`}
         className={`${field} min-w-40 flex-1`}
@@ -968,7 +968,7 @@ function EditableRow({
         </>
       )}
       {error && (
-        <p className="w-full text-alerta-texto" role="alert">
+        <p className="w-full text-alert-text" role="alert">
           {error}
         </p>
       )}
@@ -991,10 +991,10 @@ function Categories({
         <h2 id="title-categories" className="mb-1 text-lg font-semibold">
           Categorías
         </h2>
-        <p className="mb-2 text-texto-suave">
+        <p className="mb-2 text-muted">
           La estación dice a dónde va la comanda de sus productos (cocina o barra).
         </p>
-        <ul className="rounded-2xl border border-borde bg-superficie">
+        <ul className="rounded-2xl border border-border bg-surface">
           {c.categories.map((x) => (
             <EditableRow
               key={`${x.id}-${x.version}`}
@@ -1051,7 +1051,7 @@ function Categories({
         <h2 id="title-stations" className="mb-2 text-lg font-semibold">
           Estaciones
         </h2>
-        <ul className="rounded-2xl border border-borde bg-superficie">
+        <ul className="rounded-2xl border border-border bg-surface">
           {c.stations.map((x) => (
             <EditableRow
               key={`${x.id}-${x.version}`}
@@ -1131,11 +1131,11 @@ function ProductPhoto({
     <div className="mb-4 flex flex-col gap-2">
       <p className="font-semibold">Foto (opcional)</p>
       <div className="flex items-center gap-3">
-        <span className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-linea bg-superficie-2">
+        <span className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-divider bg-surface-2">
           {current ? (
             <img src={current} alt="Foto del producto" className="size-full object-cover" />
           ) : (
-            <Icon name="photo" className="size-8 text-texto-suave" />
+            <Icon name="photo" className="size-8 text-muted" />
           )}
         </span>
         <span className="flex flex-col gap-2">
@@ -1167,11 +1167,11 @@ function ProductPhoto({
           }
         }}
       />
-      <p className="text-sm text-texto-suave">
+      <p className="text-sm text-muted">
         Se guarda apenas la eliges y la ven todos los equipos. Mejor de cerca y con buena luz.
       </p>
       {error && (
-        <p className="text-sm text-alerta-texto" role="alert">
+        <p className="text-sm text-alert-text" role="alert">
           {error}
         </p>
       )}

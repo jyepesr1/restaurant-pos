@@ -54,7 +54,7 @@ describe('hub server', () => {
   describe('static app files', () => {
     /** Test folder: `<root>/app` is the app and `<root>/secreto.txt` sits outside it. */
     function createDirs() {
-      const root = mkdtempSync(join(tmpdir(), 'pos-estaticos-'))
+      const root = mkdtempSync(join(tmpdir(), 'pos-static-'))
       const appDir = join(root, 'app')
       mkdirSync(join(appDir, 'assets'), { recursive: true })
       writeFileSync(join(appDir, 'index.html'), '<title>POS</title>')

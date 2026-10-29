@@ -25,7 +25,7 @@ export const DeviceMessage = z.discriminatedUnion('type', [
     events: z.array(z.unknown()).min(1).max(BATCH_SIZE),
   }),
   z.strictObject({ type: z.literal('pull'), from: z.int().min(0) }),
-  z.strictObject({ type: z.literal('ping'), brand: z.string().max(100) }),
+  z.strictObject({ type: z.literal('ping'), stamp: z.string().max(100) }),
 ])
 export type DeviceMessage = z.infer<typeof DeviceMessage>
 
@@ -46,7 +46,7 @@ export type HubMessage =
   | { type: 'events'; events: OrderEvent[]; until: number; has_more: boolean }
   /** `previous_until`: how far the device must have reached for this message to be contiguous. */
   | { type: 'new'; event: OrderEvent; previous_until: number; until: number }
-  | { type: 'pong'; brand: string }
+  | { type: 'pong'; stamp: string }
   | { type: 'heartbeat' }
   /** The catalog changed and is now at this version: the device fetches it again over HTTP. */
   | { type: 'catalog'; version: number }

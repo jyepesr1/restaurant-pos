@@ -31,9 +31,9 @@ const STATUS: Record<ConnectionState, VisibleStatus> = {
  */
 function demoMode(): boolean {
   try {
-    const order = new URLSearchParams(location.search).get('demo')
-    if (order === '1') localStorage.setItem('pos:demo', '1')
-    if (order === '0') localStorage.removeItem('pos:demo')
+    const demo = new URLSearchParams(location.search).get('demo')
+    if (demo === '1') localStorage.setItem('pos:demo', '1')
+    if (demo === '0') localStorage.removeItem('pos:demo')
     return import.meta.env.DEV || localStorage.getItem('pos:demo') === '1'
   } catch {
     return import.meta.env.DEV
@@ -193,7 +193,7 @@ export function FloorFrame({
       {groups.map((g) => (
         <div key={g.group} className="flex flex-col gap-1">
           <p
-            className={`px-3 text-sm font-medium text-texto-suave ${isCompact ? 'lg:block hidden' : ''}`}
+            className={`px-3 text-sm font-medium text-muted ${isCompact ? 'lg:block hidden' : ''}`}
           >
             {g.group}
           </p>
@@ -207,8 +207,8 @@ export function FloorFrame({
                 aria-label={isCompact ? s.name : undefined}
                 title={isCompact ? s.name : undefined}
                 onClick={() => go(s.route)}
-                className={`flex min-h-12 items-center gap-3 rounded-xl px-3 text-left font-medium transition-colors focus-visible:outline-3 focus-visible:outline-foco ${
-                  current ? 'bg-accion-suave text-accion-texto' : 'text-texto hover:bg-superficie-2'
+                className={`flex min-h-12 items-center gap-3 rounded-xl px-3 text-left font-medium transition-colors focus-visible:outline-3 focus-visible:outline-focus ${
+                  current ? 'bg-action-soft text-action-text' : 'text-foreground hover:bg-surface-2'
                 } ${isCompact ? 'justify-center lg:justify-start' : ''}`}
               >
                 <Icon name={s.icon} className="size-5 shrink-0" />
@@ -225,13 +225,13 @@ export function FloorFrame({
     <div className="flex items-center gap-3">
       <span
         aria-hidden="true"
-        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accion-suave font-semibold text-accion-texto"
+        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-action-soft font-semibold text-action-text"
       >
         {initials(session.user.name)}
       </span>
       <span className="flex min-w-0 flex-col leading-tight">
         <span className="truncate font-semibold">{session.user.name}</span>
-        <span className="truncate text-sm text-texto-suave">{session.user.role}</span>
+        <span className="truncate text-sm text-muted">{session.user.role}</span>
       </span>
     </div>
   )
@@ -252,7 +252,7 @@ export function FloorFrame({
       <div ref={page} className="contents">
         {/* Register and tablet: the sidebar always visible (on tablet, icons only). */}
         {withNavigation && (
-          <aside className="sticky top-0 hidden h-dvh w-20 shrink-0 flex-col gap-6 border-r border-linea bg-lateral px-3 py-4 md:flex lg:w-64 lg:px-4">
+          <aside className="sticky top-0 hidden h-dvh w-20 shrink-0 flex-col gap-6 border-r border-divider bg-sidebar px-3 py-4 md:flex lg:w-64 lg:px-4">
             <div className="flex justify-center lg:justify-start lg:px-1">
               <span className="hidden lg:block">
                 <Logo name={restaurant} brand={catalog?.restaurant.brand} />
@@ -261,7 +261,7 @@ export function FloorFrame({
                 <Logo brand={catalog?.restaurant.brand} brandOnly />
               </span>
             </div>
-            <div className="hidden rounded-2xl bg-superficie-2 p-3 lg:block">{who}</div>
+            <div className="hidden rounded-2xl bg-surface-2 p-3 lg:block">{who}</div>
             <div className="-mx-1 flex-1 overflow-y-auto px-1 py-1">{navigation(true)}</div>
             <div className="hidden lg:block">{exit}</div>
             <Button
@@ -275,7 +275,7 @@ export function FloorFrame({
         )}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b border-linea bg-lateral">
+          <header className="sticky top-0 z-30 border-b border-divider bg-sidebar">
             <div className="flex min-h-16 flex-wrap items-center gap-2 px-3 py-2 md:px-5">
               {withNavigation && (
                 <Button
@@ -300,7 +300,7 @@ export function FloorFrame({
               <h1
                 ref={heading}
                 tabIndex={-1}
-                className={`font-titulo mr-auto truncate text-xl font-bold tracking-tight outline-none md:text-2xl ${withNavigation ? '' : 'sr-only'}`}
+                className={`font-heading mr-auto truncate text-xl font-bold tracking-tight outline-none md:text-2xl ${withNavigation ? '' : 'sr-only'}`}
               >
                 {title}
               </h1>
@@ -310,7 +310,7 @@ export function FloorFrame({
                   <button
                     type="button"
                     onClick={() => go('/kitchen')}
-                    className="inline-flex min-h-12 items-center gap-2 rounded-full bg-alerta-fuerte px-3 text-sm font-semibold text-white focus-visible:outline-3 focus-visible:outline-foco"
+                    className="inline-flex min-h-12 items-center gap-2 rounded-full bg-alert-strong px-3 text-sm font-semibold text-white focus-visible:outline-3 focus-visible:outline-focus"
                   >
                     <Icon name="printer" className="size-5" />
                     {downPrinters.length === 1
@@ -342,7 +342,7 @@ export function FloorFrame({
                 />
               </div>
             </div>
-            <div className="firma-marca" aria-hidden="true" />
+            <div className="brand-signature" aria-hidden="true" />
           </header>
           <main className="flex-1">{children}</main>
         </div>
@@ -362,7 +362,7 @@ export function FloorFrame({
             role="dialog"
             aria-modal="true"
             aria-label="Menú"
-            className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col gap-6 bg-lateral p-4 shadow-flota"
+            className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col gap-6 bg-sidebar p-4 shadow-float"
           >
             <div className="flex items-center justify-between">
               <Logo name={restaurant} brand={catalog?.restaurant.brand} />
@@ -374,7 +374,7 @@ export function FloorFrame({
                 onClick={() => setMenuOpen(false)}
               />
             </div>
-            <div className="rounded-2xl bg-superficie-2 p-3">{who}</div>
+            <div className="rounded-2xl bg-surface-2 p-3">{who}</div>
             <div className="-mx-1 flex-1 overflow-y-auto px-1 py-1">{navigation(false)}</div>
             <Button
               variant="ghost"

@@ -124,15 +124,15 @@ export function Reports() {
         {error && (
           <div
             role="alert"
-            className="flex flex-wrap items-center gap-3 rounded-2xl border border-alerta-fuerte bg-alerta-suave p-4"
+            className="flex flex-wrap items-center gap-3 rounded-2xl border border-alert-strong bg-alert-soft p-4"
           >
-            <p className="text-alerta-texto">
+            <p className="text-alert-text">
               {shown ? `${error} Abajo sigue lo de ${periodInWords(shown.period)}.` : error}
             </p>
             <Button onClick={() => load(order)}>Intentar de nuevo</Button>
           </div>
         )}
-        {!shown && !error && <p className="text-texto-suave">Leyendo las ventas…</p>}
+        {!shown && !error && <p className="text-muted">Leyendo las ventas…</p>}
         {shown && (
           <Content
             report={shown.report}
@@ -169,7 +169,7 @@ function DateRange({
   return (
     <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3">
       <label className="flex flex-col gap-1">
-        <span className="text-sm text-texto-suave">Desde</span>
+        <span className="text-sm text-muted">Desde</span>
         <input
           type="date"
           className={`${fieldClass} w-auto`}
@@ -183,7 +183,7 @@ function DateRange({
         />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-sm text-texto-suave">Hasta</span>
+        <span className="text-sm text-muted">Hasta</span>
         <input
           type="date"
           className={`${fieldClass} w-auto`}
@@ -196,7 +196,7 @@ function DateRange({
           }}
         />
       </label>
-      <p className="pb-3 text-sm text-texto-suave">Hasta {MAX_DAYS} días.</p>
+      <p className="pb-3 text-sm text-muted">Hasta {MAX_DAYS} días.</p>
     </form>
   )
 }
@@ -224,10 +224,10 @@ function Content({
       className={`flex flex-col gap-4 transition-opacity ${loading ? 'opacity-60' : ''}`}
     >
       <div className="flex flex-wrap items-baseline gap-x-3">
-        <h2 className="font-titulo text-2xl font-bold tracking-tight first-letter:uppercase">
+        <h2 className="font-heading text-2xl font-bold tracking-tight first-letter:uppercase">
           {periodInWords(period)}
         </h2>
-        {loading && <p className="text-sm text-texto-suave">Actualizando…</p>}
+        {loading && <p className="text-sm text-muted">Actualizando…</p>}
       </div>
 
       <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
@@ -243,7 +243,7 @@ function Content({
       </dl>
 
       {noSales && (
-        <p className="rounded-2xl border border-linea bg-superficie p-4 text-texto-suave">
+        <p className="rounded-2xl border border-divider bg-surface p-4 text-muted">
           No hay ventas cerradas en este período.
         </p>
       )}
@@ -275,8 +275,8 @@ function Content({
             {v.voided > 0 && <Row name="Productos anulados" value={minus(v.voided)} />}
             {v.discounts > 0 && <Row name="Descuentos" value={minus(v.discounts)} />}
             <Row name="Ventas" value={pesos(v.net)} main />
-            {v.settings !== 0 && (
-              <Row name="Ajuste por redondeo del efectivo" value={pesos(v.settings)} />
+            {v.roundingAdjustments !== 0 && (
+              <Row name="Ajuste por redondeo del efectivo" value={pesos(v.roundingAdjustments)} />
             )}
             {v.taxes.length > 0 && (
               <Row
@@ -336,7 +336,7 @@ function Content({
           {rpt.voids.length === 0 && rpt.cancellations.length === 0 ? (
             <EmptyState>Nada anulado ni cancelado.</EmptyState>
           ) : (
-            <ul className="flex flex-col divide-y divide-linea">
+            <ul className="flex flex-col divide-y divide-divider">
               {rpt.voids.map((a) => (
                 <EventItem
                   key={a.eventId}
@@ -383,7 +383,7 @@ function Content({
           {rpt.discounts.length === 0 ? (
             <EmptyState>Sin descuentos en este período.</EmptyState>
           ) : (
-            <ul className="flex flex-col divide-y divide-linea">
+            <ul className="flex flex-col divide-y divide-divider">
               {rpt.discounts.map((d, i) => (
                 <EventItem
                   // biome-ignore lint/suspicious/noArrayIndexKey: an order can have several identical discounts
@@ -488,17 +488,17 @@ function Closeout({
       timeZone: rules?.timeZone ?? 'America/Bogota',
     }).format(new Date(iso))
   return (
-    <li className="flex flex-col gap-3 rounded-xl border border-linea bg-superficie-2 p-3">
+    <li className="flex flex-col gap-3 rounded-xl border border-divider bg-surface-2 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-semibold">
           {`${many ? `${shortDay(c.businessDay)} · ` : ''}Abrió ${who(c.openedBy)} ${time(c.openedAt)} · Cerró ${who(c.closedBy)} ${time(closed.time)}`}
         </p>
         <span className="flex items-center gap-2">
-          <span className="text-sm text-texto-suave">Efectivo</span>
+          <span className="text-sm text-muted">Efectivo</span>
           <Variance value={closed.variance} />
         </span>
       </div>
-      <dl className="cifras grid grid-cols-3 gap-x-4 gap-y-1">
+      <dl className="figures grid grid-cols-3 gap-x-4 gap-y-1">
         <DataPoint name="Base" value={pesos(c.base)} />
         <DataPoint name="Efectivo esperado" value={pesos(closed.expected)} />
         <DataPoint name="Contado" value={pesos(closed.counted)} />
@@ -506,9 +506,9 @@ function Closeout({
       {closed.otherMethods.length > 0 && (
         <ul className="flex flex-col gap-1 text-sm">
           {closed.otherMethods.map((m) => (
-            <li key={methodKeyOf(m)} className="cifras flex flex-wrap justify-between gap-x-3">
+            <li key={methodKeyOf(m)} className="figures flex flex-wrap justify-between gap-x-3">
               <span>{methodName(m.method, m.customMethodId, rules)}</span>
-              <span className="text-texto-suave">
+              <span className="text-muted">
                 {`Según el sistema ${pesos(m.expected)} · Según su cierre ${pesos(m.reported)}`}
                 {m.variance !== 0 &&
                   ` · ${m.variance > 0 ? 'Sobran' : 'Faltan'} ${pesos(Math.abs(m.variance))}`}
@@ -533,15 +533,15 @@ function Closeout({
             <Button icon="printer" onClick={() => navigate('/register/settings')}>
               Elegir impresora
             </Button>
-            <p className="text-sm text-texto-suave">Para imprimir el cierre hace falta una.</p>
+            <p className="text-sm text-muted">Para imprimir el cierre hace falta una.</p>
           </>
         ) : (
-          <p className="text-sm text-texto-suave">
+          <p className="text-sm text-muted">
             Para imprimir el cierre, pide al administrador que elija la impresora en «Caja y pagos».
           </p>
         )}
         {failure && (
-          <p role="alert" className="text-sm text-alerta-texto">
+          <p role="alert" className="text-sm text-alert-text">
             {failure}
           </p>
         )}
@@ -567,15 +567,13 @@ function Figure({
     <div
       className={`flex flex-col gap-1 rounded-2xl border p-4 ${
         highlighted
-          ? 'col-span-2 border-accion-fuerte bg-accion-suave md:col-span-1'
-          : 'border-linea bg-superficie'
+          ? 'col-span-2 border-action-strong bg-action-soft md:col-span-1'
+          : 'border-divider bg-surface'
       }`}
     >
-      <dt className={`text-sm ${highlighted ? 'text-accion-texto' : 'text-texto-suave'}`}>
-        {name}
-      </dt>
-      <dd className="cifras text-3xl font-bold tracking-tight">{value}</dd>
-      {detail && <dd className="cifras text-sm text-texto-suave">{detail}</dd>}
+      <dt className={`text-sm ${highlighted ? 'text-action-text' : 'text-muted'}`}>{name}</dt>
+      <dd className="figures text-3xl font-bold tracking-tight">{value}</dd>
+      {detail && <dd className="figures text-sm text-muted">{detail}</dd>}
     </div>
   )
 }
@@ -592,7 +590,7 @@ function Card({
   return (
     <section
       aria-label={title}
-      className={`flex flex-col rounded-2xl border border-linea bg-superficie p-4 ${wide ? 'lg:col-span-2' : ''}`}
+      className={`flex flex-col rounded-2xl border border-divider bg-surface p-4 ${wide ? 'lg:col-span-2' : ''}`}
     >
       <h3 className="mb-3 text-lg font-semibold">{title}</h3>
       {children}
@@ -601,7 +599,7 @@ function Card({
 }
 
 const Rows = ({ children }: { children: ReactNode }) => (
-  <dl className="cifras grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">{children}</dl>
+  <dl className="figures grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">{children}</dl>
 )
 
 function Row({
@@ -620,7 +618,7 @@ function Row({
       <dt className={main ? 'font-semibold' : ''}>{name}</dt>
       <dd className={`text-right ${main ? 'font-semibold' : ''}`}>
         {value}
-        {detail && <span className="block text-sm text-texto-suave">{detail}</span>}
+        {detail && <span className="block text-sm text-muted">{detail}</span>}
       </dd>
     </div>
   )
@@ -628,7 +626,7 @@ function Row({
 
 const DataPoint = ({ name, value }: { name: string; value: string }) => (
   <div>
-    <dt className="text-sm text-texto-suave">{name}</dt>
+    <dt className="text-sm text-muted">{name}</dt>
     <dd className="font-semibold">{value}</dd>
   </div>
 )
@@ -642,9 +640,9 @@ function DataTable({
 }) {
   return (
     <div className="-mx-1 overflow-x-auto">
-      <table className="cifras w-full border-collapse text-left">
+      <table className="figures w-full border-collapse text-left">
         <thead>
-          <tr className="text-sm text-texto-suave">
+          <tr className="text-sm text-muted">
             {columns.map((c, i) => (
               <th
                 key={c}
@@ -656,7 +654,7 @@ function DataTable({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-linea">
+        <tbody className="divide-y divide-divider">
           {rows.map((f) => (
             <tr key={f.key}>
               {f.cells.map((c, i) => (
@@ -694,11 +692,11 @@ function EventItem({
     <li className="flex flex-col gap-1 py-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <span className="font-semibold">{title}</span>
-        <span className="cifras">{value}</span>
+        <span className="figures">{value}</span>
       </div>
       {reason && <p>{reason}</p>}
       {(extra || label) && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-texto-suave">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
           {label}
           {extra && <span>{extra}</span>}
         </div>
@@ -708,8 +706,8 @@ function EventItem({
 }
 
 const EmptyState = ({ children }: { children: ReactNode }) => (
-  <p className="text-texto-suave">{children}</p>
+  <p className="text-muted">{children}</p>
 )
 const Note = ({ children }: { children: ReactNode }) => (
-  <p className="mt-3 text-sm text-texto-suave">{children}</p>
+  <p className="mt-3 text-sm text-muted">{children}</p>
 )

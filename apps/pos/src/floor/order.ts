@@ -162,10 +162,10 @@ export function ticketsByStation(catalog: Catalog, status: OrderState): SendData
   }
 }
 
-export type Course = 'entry' | 'main' | 'dessert'
+export type Course = 'starter' | 'main' | 'dessert'
 export const COURSES: { course: Course | null; name: string }[] = [
   { course: null, name: 'Sin curso' },
-  { course: 'entry', name: 'Entrada' },
+  { course: 'starter', name: 'Entrada' },
   { course: 'main', name: 'Fuerte' },
   { course: 'dessert', name: 'Postre' },
 ]
@@ -184,7 +184,7 @@ export function matchingLine(status: OrderState | null, d: ItemData): OrderItem 
       .map((m) => `${m.id}:${m.price}`)
       .sort()
       .join()
-  const searchResults = options(
+  const wantedOptions = options(
     d.modifiers.map((m) => ({ id: m.modifier_id, price: m.extra_price })),
   )
   return (
@@ -202,7 +202,7 @@ export function matchingLine(status: OrderState | null, d: ItemData): OrderItem 
         i.rate === d.rate &&
         itemDiscount(status, i.id) === 0 &&
         options(i.modifiers.map((m) => ({ id: m.modifierId, price: m.extraPrice }))) ===
-          searchResults,
+          wantedOptions,
     ) ?? null
   )
 }
@@ -229,7 +229,7 @@ export const CHANNELS = {
 
 /** "la entrada", "el fuerte": for the notices. */
 const COURSE_NAMES: Record<Course, string> = {
-  entry: 'la entrada',
+  starter: 'la entrada',
   main: 'el fuerte',
   dessert: 'el postre',
 }

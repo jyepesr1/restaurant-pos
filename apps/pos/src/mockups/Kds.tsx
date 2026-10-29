@@ -80,7 +80,7 @@ export function Kds() {
           ))}
         </Group>
         {tickets.length === 0 && (
-          <p className="p-10 text-center text-xl text-texto-suave">No hay comandas pendientes.</p>
+          <p className="p-10 text-center text-xl text-muted">No hay comandas pendientes.</p>
         )}
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {tickets.map((c) => {
@@ -88,19 +88,16 @@ export function Kds() {
             const t = ticketAge(m)
             const all = c.items.every((i) => readyIds.has(i.id))
             return (
-              <li
-                key={c.key}
-                className="flex flex-col rounded-2xl border border-borde bg-superficie"
-              >
-                <div className="flex items-center justify-between gap-2 border-b border-borde p-3">
+              <li key={c.key} className="flex flex-col rounded-2xl border border-border bg-surface">
+                <div className="flex items-center justify-between gap-2 border-b border-border p-3">
                   <div>
-                    <p className="font-titulo text-3xl font-bold">Mesa {c.table.number}</p>
-                    <p className="text-texto-suave">
+                    <p className="font-heading text-3xl font-bold">Mesa {c.table.number}</p>
+                    <p className="text-muted">
                       {c.table.waiter} · <span className="capitalize">{c.station}</span>
                     </p>
                   </div>
                   <Label tone={t.tone} icon={t.icon} main>
-                    <span className="cifras text-lg">{minutes(m)}</span>
+                    <span className="figures text-lg">{minutes(m)}</span>
                     <span className="text-sm">{t.text}</span>
                   </Label>
                 </div>
@@ -113,23 +110,23 @@ export function Kds() {
                           type="button"
                           aria-pressed={ready}
                           onClick={() => toggle(i.id)}
-                          className={`flex min-h-14 w-full items-start gap-3 border-b border-borde px-3 py-2 text-left text-lg ${ready ? 'bg-libre-suave text-libre-texto' : ''}`}
+                          className={`flex min-h-14 w-full items-start gap-3 border-b border-border px-3 py-2 text-left text-lg ${ready ? 'bg-free-soft text-free-text' : ''}`}
                         >
-                          <span className="cifras w-8 font-bold">{i.quantity}×</span>
+                          <span className="figures w-8 font-bold">{i.quantity}×</span>
                           <span className="flex-1">
                             <span className={`font-semibold ${ready ? 'line-through' : ''}`}>
                               {itemName(i)}
                             </span>
                             {i.options.length > 0 && (
-                              <span className="block rounded bg-proceso-suave px-1 font-bold text-proceso-texto">
+                              <span className="block rounded bg-progress-soft px-1 font-bold text-progress-text">
                                 {i.options.map((o) => o.name).join(' · ')}
                               </span>
                             )}
                             {i.notes && (
-                              <span className="block font-bold text-alerta-texto">¡{i.notes}!</span>
+                              <span className="block font-bold text-alert-text">¡{i.notes}!</span>
                             )}
                             {i.guest && (
-                              <span className="block text-base text-texto-suave">P{i.guest}</span>
+                              <span className="block text-base text-muted">P{i.guest}</span>
                             )}
                           </span>
                           {ready && <Icon name="check" />}

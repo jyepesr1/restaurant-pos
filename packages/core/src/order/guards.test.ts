@@ -40,7 +40,7 @@ function base() {
   return { order, item, status }
 }
 
-const apply_discount = (order: string, itemId: string, amount: number, discount = newId()) =>
+const applyDiscount = (order: string, itemId: string, amount: number, discount = newId()) =>
   event(
     order,
     'DiscountApplied',
@@ -80,7 +80,7 @@ describe('once the order is split its amounts cannot change', () => {
     ['change an item', event(order, 'ItemChanged', { item_id: pending.item_id, quantity: 2 })],
     ['void', voidItem],
     ['move', event(order, 'ItemsMoved', { target_order_id: newId(), items: [moved(item)] })],
-    ['apply_discount', apply_discount(order, item.item_id, 1000)],
+    ['apply_discount', applyDiscount(order, item.item_id, 1000)],
     [
       'add priced extras',
       event(order, 'ItemModifiedAfterSend', {
@@ -104,7 +104,7 @@ describe('once the order is split its amounts cannot change', () => {
 
   it('remove a discount', () => {
     const discount = newId()
-    const discounted = applyAll([apply_discount(order, item.item_id, 1000, discount)], withPending)
+    const discounted = applyAll([applyDiscount(order, item.item_id, 1000, discount)], withPending)
     const dividedWithDiscount = applyAll(
       [
         event(order, 'CheckSplit', {
@@ -124,7 +124,7 @@ describe('once the order is split its amounts cannot change', () => {
 
 describe('with a discount on the line', () => {
   const { order, item, status } = base()
-  const discounted = applyAll([apply_discount(order, item.item_id, 5000)], status)
+  const discounted = applyAll([applyDiscount(order, item.item_id, 5000)], status)
 
   it('it cannot be voided, moved or have its price changed', () => {
     expect(
@@ -171,8 +171,8 @@ describe('with a discount on the line', () => {
 
   it('a repeated discount or removing one that does not exist', () => {
     const discount = newId()
-    const withDiscount = applyAll([apply_discount(order, item.item_id, 1000, discount)], status)
-    expect(issue(withDiscount, apply_discount(order, item.item_id, 1000, discount))).toBe(
+    const withDiscount = applyAll([applyDiscount(order, item.item_id, 1000, discount)], status)
+    expect(issue(withDiscount, applyDiscount(order, item.item_id, 1000, discount))).toBe(
       'discount_already_exists',
     )
     expect(
@@ -181,9 +181,9 @@ describe('with a discount on the line', () => {
   })
 
   it('discounting a nonexistent item or an already paid order', () => {
-    expect(issue(status, apply_discount(order, newId(), 1000))).toBe('item_not_found')
+    expect(issue(status, applyDiscount(order, newId(), 1000))).toBe('item_not_found')
     const paid = applyAll([event(order, 'PaymentRecorded', cardPaymentData(40_900))], status)
-    expect(issue(paid, apply_discount(order, item.item_id, 1000))).toBe('negative_balance')
+    expect(issue(paid, applyDiscount(order, item.item_id, 1000))).toBe('negative_balance')
   })
 })
 

@@ -46,7 +46,7 @@ type Drag = {
 }
 
 const field =
-  'min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 text-lg focus-visible:outline-3 focus-visible:outline-foco'
+  'min-h-12 w-full rounded-xl border border-border bg-surface px-3 text-lg focus-visible:outline-3 focus-visible:outline-focus'
 
 export function FloorPlanEditor() {
   const notify = useNotify()
@@ -161,7 +161,7 @@ export function FloorPlanEditor() {
   if (!c || !b)
     return (
       <FloorFrame title="Plano" back="/">
-        <p className="p-6 text-texto-suave" role={error ? 'alert' : undefined}>
+        <p className="p-6 text-muted" role={error ? 'alert' : undefined}>
           {error ?? 'Cargando el plano…'}
         </p>
       </FloorFrame>
@@ -253,7 +253,7 @@ export function FloorPlanEditor() {
           </Button>
         </div>
         {several && (
-          <fieldset className="flex flex-wrap items-end gap-3 rounded-2xl border border-borde bg-superficie p-3">
+          <fieldset className="flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-surface p-3">
             <legend className="px-1 font-semibold">Varias mesas iguales, en filas</legend>
             <Group label="Forma" className="flex flex-wrap gap-2">
               {(Object.keys(SHAPES) as TableShape[]).map((f) => (
@@ -308,12 +308,12 @@ export function FloorPlanEditor() {
               focus={focus}
               onFocused={() => setFocus(null)}
             />
-            <p className="mt-2 text-texto-suave">
+            <p className="mt-2 text-muted">
               Arrastra para mover; la esquina cambia el tamaño. Con el teclado, las flechas mueven{' '}
               {GRID} cm (con Mayúsculas, 50), la R gira 15° y Ctrl+Z deshace.
             </p>
           </div>
-          <aside className="w-full shrink-0 rounded-2xl border border-borde bg-superficie p-4 md:w-80">
+          <aside className="w-full shrink-0 rounded-2xl border border-border bg-surface p-4 md:w-80">
             {selection ? (
               <Properties
                 b={b}
@@ -335,9 +335,9 @@ export function FloorPlanEditor() {
           </aside>
         </div>
 
-        <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-borde bg-fondo py-3">
+        <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-border bg-background py-3">
           <p
-            className="flex-1 text-alerta-texto"
+            className="flex-1 text-alert-text"
             role={error ? 'alert' : undefined}
             aria-live="polite"
           >
@@ -520,7 +520,7 @@ function EditableCanvas({
           onPointerCancel={finish}
           onKeyDown={(e) => handleKey(e, type, g)}
           onClick={() => onChoose({ type, id: g.id })}
-          className={`h-full w-full touch-none cursor-move focus-visible:outline-3 focus-visible:outline-foco ${isRound ? 'rounded-full' : 'rounded-lg'} ${selected ? 'ring-4 ring-accion-fuerte' : ''}`}
+          className={`h-full w-full touch-none cursor-move focus-visible:outline-3 focus-visible:outline-focus ${isRound ? 'rounded-full' : 'rounded-lg'} ${selected ? 'ring-4 ring-action-strong' : ''}`}
         >
           {content}
         </button>
@@ -534,7 +534,7 @@ function EditableCanvas({
             // 48 px for the finger; the small square that shows is smaller.
             className="absolute -right-6 -bottom-6 flex size-12 touch-none cursor-nwse-resize items-center justify-center"
           >
-            <span className="size-6 rounded-md border-2 border-white bg-accion-fuerte" />
+            <span className="size-6 rounded-md border-2 border-white bg-action-strong" />
           </span>
         )}
       </div>
@@ -563,7 +563,7 @@ function EditableCanvas({
           'table',
           m,
           <span
-            className={`flex h-full w-full items-center justify-center border-2 border-libre-fuerte bg-superficie font-titulo text-xl font-bold text-libre-texto ${m.shape === 'round' ? 'rounded-full' : 'rounded-lg'}`}
+            className={`flex h-full w-full items-center justify-center border-2 border-free-strong bg-surface font-heading text-xl font-bold text-free-text ${m.shape === 'round' ? 'rounded-full' : 'rounded-lg'}`}
           >
             <span style={m.rotation ? { transform: `rotate(${-m.rotation}deg)` } : undefined}>
               {m.name}
@@ -611,7 +611,7 @@ function NumberField({
       <input
         type="number"
         inputMode="numeric"
-        className={`${field} cifras`}
+        className={`${field} figures`}
         value={editing ? text : String(value)}
         min={min}
         max={max}
@@ -761,7 +761,7 @@ function Properties({
         <Button onClick={() => patch(rotate(g, -15))}>−15°</Button>
         <Button onClick={() => patch(rotate(g, 15))}>+15°</Button>
         <Button onClick={() => patch(rotate(g, 90))}>90°</Button>
-        <span className="cifras text-texto-suave">{`${g.rotation}°`}</span>
+        <span className="figures text-muted">{`${g.rotation}°`}</span>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button icon="more" onClick={duplicateSelected}>
@@ -837,7 +837,7 @@ function ZoneProperties({
         max={100}
         onChange={(level) => onChange({ ...b, level })}
       />
-      <p className="text-texto-suave">
+      <p className="text-muted">
         {`${tables === 1 ? '1 mesa' : `${tables} mesas`}. Toca una mesa o un elemento para cambiarlo.`}
       </p>
       {archivedStaff.length > 0 && (
@@ -861,7 +861,7 @@ function ZoneProperties({
         </Button>
       )}
       {!b.active && (
-        <p className="rounded-xl bg-neutro-suave p-3 text-neutro-texto">
+        <p className="rounded-xl bg-neutral-soft p-3 text-neutral-text">
           Al guardar, la zona y sus mesas dejan de verse en el salón. Una mesa con un pedido abierto
           no se puede archivar.
         </p>

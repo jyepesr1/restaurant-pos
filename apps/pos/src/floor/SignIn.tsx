@@ -10,7 +10,7 @@ import { FloorFrame } from './FloorFrame'
 // is needed to sign in, not to work afterwards (what is done offline with the session open counts).
 
 export const fieldClass =
-  'min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 text-lg disabled:opacity-60 focus-visible:outline-3 focus-visible:outline-foco'
+  'min-h-12 w-full rounded-xl border border-border bg-surface px-3 text-lg disabled:opacity-60 focus-visible:outline-3 focus-visible:outline-focus'
 
 type Mode = 'pin' | 'password'
 
@@ -64,7 +64,7 @@ export function SignIn() {
   const dueToInactivity = sessionClosedBy === 'inactivity'
   return (
     <FloorFrame title={catalog?.restaurant.name ?? device?.name ?? 'Entrar'}>
-      <div className="mx-3 my-4 flex max-w-md sm:mx-auto flex-col gap-6 rounded-3xl border border-linea bg-superficie p-5 shadow-flota sm:my-10 sm:p-8">
+      <div className="mx-3 my-4 flex max-w-md sm:mx-auto flex-col gap-6 rounded-3xl border border-divider bg-surface p-5 shadow-float sm:my-10 sm:p-8">
         {mode === 'pin' ? (
           <>
             <PinPad
@@ -96,7 +96,7 @@ export function SignIn() {
             <Button variant="ghost" onClick={() => changeMode('pin')}>
               Mesero: entrar con PIN
             </Button>
-            <p className="text-sm text-texto-suave">
+            <p className="text-sm text-muted">
               ¿Olvidaste tu contraseña? Pídele a otra persona que administre el personal que te
               ponga una nueva. Si no hay nadie, quien instaló el sistema te la cambia desde el
               computador de la caja.
@@ -195,11 +195,11 @@ function WithPassword({
         />
       </label>
       {/* Only the message change is announced, not every second of the countdown. */}
-      <p key={attempt} className="min-h-6 text-center text-alerta-texto" role="alert">
+      <p key={attempt} className="min-h-6 text-center text-alert-text" role="alert">
         {remaining > 0 ? 'Demasiados intentos.' : taken ? 'Comprobando…' : (missing ?? error ?? '')}
       </p>
       {remaining > 0 && (
-        <p className="cifras text-center text-texto-suave" aria-hidden="true">
+        <p className="figures text-center text-muted" aria-hidden="true">
           {`Espera ${Math.ceil(remaining / 1000)} s`}
         </p>
       )}

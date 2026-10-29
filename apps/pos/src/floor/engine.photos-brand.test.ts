@@ -260,7 +260,7 @@ describe('uploadPhoto', () => {
     const hub = fakeHub(() => json({ photo: PHOTO }))
     const old = oneSession({ lastUsed: Date.now() - 40 * 60_000 })
     const { floor } = await open({ session: old, catalog: menu(5) })
-    // Loading already closed it; if not (race), `enabled()` closes it on the first tap.
+    // Loading already closed it; if not (race), `markUsed()` closes it on the first tap.
     await expect(floor.uploadPhoto(PRODUCT, IMAGE)).rejects.toThrow(/Sin sesión/)
     expect(hub.fakeFetch).not.toHaveBeenCalledWith('/api/catalog/photos', expect.anything())
     expect(floor.snapshot().session).toBeNull()

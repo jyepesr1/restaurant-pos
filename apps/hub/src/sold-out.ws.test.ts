@@ -26,7 +26,7 @@ afterEach(() => rmSync(folder, { recursive: true, force: true }))
 type Session = { session_id: string; secret: string; user: { id: string } }
 
 async function setup() {
-  folder = mkdtempSync(join(tmpdir(), 'pos-agotados-'))
+  folder = mkdtempSync(join(tmpdir(), 'pos-sold-out-'))
   const { db } = openData(folder)
   let floor: ReturnType<typeof prepareSync> | null = null
   const access = prepareAccess(
@@ -98,7 +98,7 @@ async function setup() {
         }
     })
     const send = (m: object) => ws.send(JSON.stringify(m))
-    send({ type: 'hello', token, hub_instance: null, until: 0, version_app: 'prueba' })
+    send({ type: 'hello', token, hub_instance: null, until: 0, version_app: 'test' })
     const wait = <T extends HubMessage['type']>(
       type: T,
       accepts: (m: Extract<HubMessage, { type: T }>) => boolean = () => true,
@@ -225,7 +225,7 @@ describe('sold out over the WebSocket', () => {
       results: [{ id: e.id, status: 'rejected', reason: 'no_permission' }],
     })
     // The pong arrives after everything before it, in order: any message would already be here.
-    atRegister.send({ type: 'ping', brand: 'fin' })
+    atRegister.send({ type: 'ping', stamp: 'end' })
     await atRegister.wait('pong')
     expect(atRegister.received.some((x) => x.type === 'new')).toBe(false)
     expect(onPhone.received.some((x) => x.type === 'new')).toBe(false)

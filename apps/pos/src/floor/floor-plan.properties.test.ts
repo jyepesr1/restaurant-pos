@@ -590,8 +590,8 @@ const reg = { version: 1, active: true }
 const geo = (x: number, y: number) => ({ x, y, width: 80, height: 80, rotation: 0 })
 
 function diningRoom(): EditableCatalog {
-  const a = 'ZONA-SALON'
-  const t = 'ZONA-TERRAZA'
+  const a = 'ZONE-DINING'
+  const t = 'ZONE-PATIO'
   return {
     version: 10,
     zones: [
@@ -863,7 +863,7 @@ const ordered = (b: ZoneDraft): ZoneDraft => ({
 })
 
 describe('save a zone and reopen it', () => {
-  const arbWhere = fc.constantFrom('salon' as const, 'terraza' as const, 'nueva' as const)
+  const arbWhere = fc.constantFrom('dining' as const, 'patio' as const, 'new' as const)
 
   it('applying the changes of an edited draft to the catalog and reopening gives the same draft; saving again changes nothing', () => {
     let checked = 0
@@ -871,9 +871,9 @@ describe('save a zone and reopen it', () => {
       fc.property(arbWhere, fc.array(arbEdit, { maxLength: 25 }), (where, edits) => {
         const c = diningRoom()
         let b: ZoneDraft =
-          where === 'nueva'
+          where === 'new'
             ? { ...newZone(c), name: 'Primer piso', level: 2 }
-            : zoneDraft(c, where === 'salon' ? 'ZONA-SALON' : 'ZONA-TERRAZA')
+            : zoneDraft(c, where === 'dining' ? 'ZONE-DINING' : 'ZONE-PATIO')
         for (const e of edits) b = edit(c, b, e)
 
         const issues = zoneIssues(c, b)
@@ -921,9 +921,9 @@ describe('save a zone and reopen it', () => {
       fc.property(arbWhere, fc.array(arbEdit, { maxLength: 25 }), (where, edits) => {
         const c = diningRoom()
         let b: ZoneDraft =
-          where === 'nueva'
+          where === 'new'
             ? { ...newZone(c), name: 'Patio' }
-            : zoneDraft(c, where === 'salon' ? 'ZONA-SALON' : 'ZONA-TERRAZA')
+            : zoneDraft(c, where === 'dining' ? 'ZONE-DINING' : 'ZONE-PATIO')
         for (const e of edits) b = edit(c, b, e)
         if (zoneIssues(c, b).length > 0) return
         const c2 = apply(c, zoneChanges(c, b))
@@ -938,7 +938,7 @@ describe('save a zone and reopen it', () => {
     fc.assert(
       fc.property(fc.array(arbEdit, { maxLength: 15 }), (edits) => {
         const c = diningRoom()
-        let b = zoneDraft(c, 'ZONA-SALON')
+        let b = zoneDraft(c, 'ZONE-DINING')
         for (const e of edits) b = edit(c, b, e)
         b = { ...b, active: false }
         const changes = zoneChanges(c, b)
@@ -948,9 +948,9 @@ describe('save a zone and reopen it', () => {
         expect(changes.at(-1)).toMatchObject({ entity: 'zones', data: { active: false } })
         if (zoneIssues(c, b).length > 0) return
         const c2 = apply(c, changes)
-        expect(c2.tables.filter((m) => m.zone_id === 'ZONA-SALON' && m.active)).toEqual([])
-        expect(c2.elements.filter((x) => x.zone_id === 'ZONA-SALON' && x.active)).toEqual([])
-        expect(c2.zones.find((z) => z.id === 'ZONA-SALON')?.active).toBe(false)
+        expect(c2.tables.filter((m) => m.zone_id === 'ZONE-DINING' && m.active)).toEqual([])
+        expect(c2.elements.filter((x) => x.zone_id === 'ZONE-DINING' && x.active)).toEqual([])
+        expect(c2.zones.find((z) => z.id === 'ZONE-DINING')?.active).toBe(false)
       }),
       { seed: SEED, numRuns: 200 },
     )

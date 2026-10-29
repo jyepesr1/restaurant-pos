@@ -75,7 +75,7 @@ describe('seed as a real process, with other cases', { timeout: 90_000 }, () => 
 
   it('if the process dies halfway through the catalog nothing is left half done and the next seed completes it', () => {
     // A clean run in another folder gives the expected reference count.
-    const cleanDir = mkdtempSync(join(tmpdir(), 'pos-seed-limpia-'))
+    const cleanDir = mkdtempSync(join(tmpdir(), 'pos-seed-clean-'))
     try {
       expect(run('src/seed/main.ts', { DATA_DIR: cleanDir }).code).toBe(0)
 

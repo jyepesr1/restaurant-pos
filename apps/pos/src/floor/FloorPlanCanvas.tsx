@@ -62,7 +62,7 @@ export function Canvas({
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
       <section
         aria-label={label}
-        className="relative overflow-hidden rounded-2xl border border-linea bg-superficie [background-image:radial-gradient(var(--color-linea)_1.5px,transparent_1.5px)]"
+        className="relative overflow-hidden rounded-2xl border border-divider bg-surface [background-image:radial-gradient(var(--color-divider)_1.5px,transparent_1.5px)]"
         style={{
           height: Math.max(200, box.height * scale),
           backgroundSize: `${50 * scale}px ${50 * scale}px`,
@@ -163,11 +163,11 @@ export function Seats({
 }
 
 const ELEMENT_CLASS: Record<ElementType, string> = {
-  wall: 'bg-texto/70',
-  door: 'border-2 border-dashed border-texto-suave bg-superficie',
-  plant: 'rounded-full bg-libre-suave border-2 border-libre-fuerte/50',
-  bar: 'rounded-lg bg-neutro-suave border-2 border-neutro-fuerte/40',
-  text: 'text-texto-suave',
+  wall: 'bg-foreground/70',
+  door: 'border-2 border-dashed border-muted bg-surface',
+  plant: 'rounded-full bg-free-soft border-2 border-free-strong/50',
+  bar: 'rounded-lg bg-neutral-soft border-2 border-neutral-strong/40',
+  text: 'text-muted',
 }
 
 /** What is not a table: floor plan decoration, with its recognizable shape. */

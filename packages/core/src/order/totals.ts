@@ -39,7 +39,7 @@ export interface OrderTotals extends ItemTotals {
   paid: number
   balance: number
   tips: number
-  settings: number
+  roundingAdjustments: number
 }
 
 export function orderTotals(status: OrderState): OrderTotals {
@@ -53,14 +53,14 @@ export function orderTotals(status: OrderState): OrderTotals {
   }
   let paid = 0
   let tips = 0
-  let settings = 0
+  let roundingAdjustments = 0
   for (const payment of Object.values(status.payments)) {
     if (payment.voided) continue
     paid += payment.amount - payment.refundedSale
     tips += payment.tip - payment.refundedTip
-    settings += payment.roundingAdjustment
+    roundingAdjustments += payment.roundingAdjustment
   }
-  return { ...t, paid, balance: t.net - paid, tips, settings }
+  return { ...t, paid, balance: t.net - paid, tips, roundingAdjustments }
 }
 
 /** Balance of a split check, or of the whole order if `checkId` is null. */

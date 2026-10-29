@@ -71,12 +71,12 @@ export function Check() {
     return (
       <FloorFrame title={closed.title} back="/">
         <div className="mx-auto flex max-w-md flex-col gap-4 p-4">
-          <p className="rounded-2xl bg-libre-suave p-4 text-libre-texto">
+          <p className="rounded-2xl bg-free-soft p-4 text-free-text">
             <span className="block text-lg font-semibold">Pagado y cerrado</span>
             {closed.change !== null && closed.change > 0 && (
               <>
                 <span className="mt-2 block">Cambio a entregar</span>
-                <span className="cifras font-titulo text-4xl font-bold">
+                <span className="figures font-heading text-4xl font-bold">
                   {pesos(closed.change)}
                 </span>
               </>
@@ -94,7 +94,7 @@ export function Check() {
   if (!visibleOrder)
     return (
       <FloorFrame title="Cuenta" back="/">
-        <p className="p-6 text-texto-suave">Este pedido ya no está abierto.</p>
+        <p className="p-6 text-muted">Este pedido ya no está abierto.</p>
       </FloorFrame>
     )
   const order = visibleOrder.status
@@ -104,7 +104,7 @@ export function Check() {
   if (!rules)
     return (
       <FloorFrame title={`Cuenta · ${title}`} back="/">
-        <p className="p-6 text-texto-suave">
+        <p className="p-6 text-muted">
           La caja tiene una versión anterior que no sabe cobrar: hay que actualizarla.
         </p>
       </FloorFrame>
@@ -250,23 +250,21 @@ export function Check() {
     <FloorFrame title={`Cuenta · ${title}`} back={backToOrder}>
       <div className="mx-auto grid max-w-5xl gap-4 p-3 pb-28 md:grid-cols-[1fr_24rem] md:p-5">
         <section
-          className="rounded-2xl border border-linea bg-superficie shadow-flota"
+          className="rounded-2xl border border-divider bg-surface shadow-float"
           aria-label="Precuenta"
         >
           <ul>
             {lines.map((l) => (
-              <li key={l.id} className="border-b border-linea px-4 py-3">
+              <li key={l.id} className="border-b border-divider px-4 py-3">
                 <div className="flex items-start gap-3">
-                  <span className="cifras w-6 font-semibold">{l.quantity}</span>
+                  <span className="figures w-6 font-semibold">{l.quantity}</span>
                   <span className="flex-1">
                     <span className="font-semibold">{l.name}</span>
                     {l.options.length > 0 && (
-                      <span className="block text-sm text-texto-suave">
-                        {l.options.join(' · ')}
-                      </span>
+                      <span className="block text-sm text-muted">{l.options.join(' · ')}</span>
                     )}
                   </span>
-                  <span className="cifras">{pesos(l.net)}</span>
+                  <span className="figures">{pesos(l.net)}</span>
                 </div>
                 {mode === 'products' && byProductsPossible && !order.checks && (
                   <Group label={`Quién paga ${l.name}`} className="mt-2 flex flex-wrap gap-2 pl-9">
@@ -285,22 +283,22 @@ export function Check() {
               </li>
             ))}
             {lines.length === 0 && (
-              <li className="p-4 text-texto-suave">El pedido no tiene productos.</li>
+              <li className="p-4 text-muted">El pedido no tiene productos.</li>
             )}
           </ul>
-          <dl className="cifras grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 p-4">
+          <dl className="figures grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 p-4">
             {taxes.length > 0 && (
               <>
-                <dt className="text-texto-suave">Base sin impuestos</dt>
-                <dd className="text-right text-texto-suave">
+                <dt className="text-muted">Base sin impuestos</dt>
+                <dd className="text-right text-muted">
                   {pesos(taxes.reduce((a, i) => a + i.base, 0))}
                 </dd>
                 {taxes
                   .filter((i) => i.tax > 0)
                   .map((i) => (
                     <div key={`${i.type}${i.rate}`} className="contents">
-                      <dt className="text-texto-suave">{taxName(i.type, i.rate)}</dt>
-                      <dd className="text-right text-texto-suave">{pesos(i.tax)}</dd>
+                      <dt className="text-muted">{taxName(i.type, i.rate)}</dt>
+                      <dd className="text-right text-muted">{pesos(i.tax)}</dd>
                     </div>
                   ))}
               </>
@@ -309,15 +307,15 @@ export function Check() {
             <dd className="text-right font-semibold">{pesos(totals.net)}</dd>
             {totals.paid > 0 && (
               <>
-                <dt className="text-libre-texto">Ya pagado</dt>
-                <dd className="text-right text-libre-texto">{`-${pesos(totals.paid)}`}</dd>
+                <dt className="text-free-text">Ya pagado</dt>
+                <dd className="text-right text-free-text">{`-${pesos(totals.paid)}`}</dd>
                 <dt className="font-semibold">Saldo</dt>
                 <dd className="text-right font-semibold">{pesos(balance)}</dd>
               </>
             )}
             {balance > 0 && (
               <>
-                <dt className="flex items-center gap-2 text-texto-suave">
+                <dt className="flex items-center gap-2 text-muted">
                   {selectedTip === null
                     ? `Propina sugerida (${rules.suggestedTip / 100} %, voluntaria)`
                     : 'Propina (voluntaria)'}
@@ -329,18 +327,18 @@ export function Check() {
                     Cambiar
                   </Button>
                 </dt>
-                <dd className="self-center text-right text-texto-suave">{pesos(shownTip)}</dd>
-                <dt className="font-titulo text-2xl font-bold">
+                <dd className="self-center text-right text-muted">{pesos(shownTip)}</dd>
+                <dt className="font-heading text-2xl font-bold">
                   {shownTip > 0 ? 'Con propina' : 'A pagar'}
                 </dt>
-                <dd className="font-titulo text-right text-2xl font-bold">
+                <dd className="font-heading text-right text-2xl font-bold">
                   {pesos(balance + shownTip)}
                 </dd>
               </>
             )}
           </dl>
           {editingTip && balance > 0 && (
-            <div className="mx-4 mb-4 flex flex-col gap-2 rounded-xl bg-superficie-2/60 p-3">
+            <div className="mx-4 mb-4 flex flex-col gap-2 rounded-xl bg-surface-2/60 p-3">
               <Group label="Propina" className="flex flex-wrap gap-2">
                 <Option
                   selected={selectedTip === null}
@@ -376,7 +374,7 @@ export function Check() {
                 <span className="text-sm font-semibold">Otro valor</span>
                 <input
                   inputMode="numeric"
-                  className={`${fieldClass} cifras mt-1`}
+                  className={`${fieldClass} figures mt-1`}
                   value={selectedTip ? withDots(selectedTip) : ''}
                   placeholder="0"
                   onChange={(e) => setSelectedTip(digitsOnly(e.target.value))}
@@ -386,9 +384,9 @@ export function Check() {
             </div>
           )}
           {payments.length > 0 && (
-            <div className="border-t border-linea p-4">
+            <div className="border-t border-divider p-4">
               <h2 className="mb-2 font-semibold">Pagos</h2>
-              <ul className="cifras flex flex-col gap-2">
+              <ul className="figures flex flex-col gap-2">
                 {payments.map((p) => (
                   <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
                     <span>
@@ -411,9 +409,9 @@ export function Check() {
                 ))}
               </ul>
               {lastChange !== null && lastChange > 0 && (
-                <p className="mt-3 rounded-xl bg-libre-suave p-3 text-libre-texto">
+                <p className="mt-3 rounded-xl bg-free-soft p-3 text-free-text">
                   <span className="block">Cambio a entregar</span>
-                  <span className="cifras text-3xl font-bold">{pesos(lastChange)}</span>
+                  <span className="figures text-3xl font-bold">{pesos(lastChange)}</span>
                 </p>
               )}
             </div>
@@ -435,7 +433,7 @@ export function Check() {
             {rules.printsPreBill ? 'Imprimir precuenta' : 'Pidió la cuenta'}
           </Button>
           {!rules.printsPreBill && (
-            <p className="text-sm text-texto-suave">
+            <p className="text-sm text-muted">
               Sin impresora de precuentas: muéstrale esta pantalla al cliente.
             </p>
           )}
@@ -453,7 +451,7 @@ export function Check() {
           )}
 
           {unsent > 0 && (
-            <div className="rounded-xl bg-proceso-suave p-3 text-proceso-texto">
+            <div className="rounded-xl bg-progress-soft p-3 text-progress-text">
               <p>
                 {unsent === 1
                   ? 'Hay 1 producto que no se ha enviado a cocina.'
@@ -466,11 +464,11 @@ export function Check() {
           )}
 
           {!canCharge && balance > 0 && (
-            <p className="text-sm text-texto-suave">El cobro lo hace la caja.</p>
+            <p className="text-sm text-muted">El cobro lo hace la caja.</p>
           )}
 
           {noCheckout && (
-            <div className="rounded-xl bg-proceso-suave p-3 text-proceso-texto">
+            <div className="rounded-xl bg-progress-soft p-3 text-progress-text">
               <p>{noCheckout}</p>
               {!shift && online && (
                 <Button
@@ -554,13 +552,13 @@ export function Check() {
                         setAssignedChecks((a) => trimAssignments(a, n))
                       }}
                     />
-                    <p className="text-sm text-texto-suave">
+                    <p className="text-sm text-muted">
                       Toca en cada producto quién lo paga. Si lo tocan dos o más, se reparte entre
                       ellos.
                     </p>
                   </>
                 ) : (
-                  <p className="rounded-xl bg-proceso-suave p-3 text-proceso-texto">
+                  <p className="rounded-xl bg-progress-soft p-3 text-progress-text">
                     Ya hay pagos: divide lo que queda en partes iguales.
                   </p>
                 ))}
@@ -570,14 +568,14 @@ export function Check() {
                     {viewAmounts.map((c) => (
                       <li
                         key={c.check_id}
-                        className="cifras flex justify-between rounded-xl border border-linea bg-superficie p-3"
+                        className="figures flex justify-between rounded-xl border border-divider bg-surface p-3"
                       >
                         <span className="font-semibold">{c.name}</span>
                         <span>{`${pesos(c.amount)} + propina ${pesos(c.suggested_tip)}`}</span>
                       </li>
                     ))}
                     {unassignedView > 0 && (
-                      <li className="cifras flex justify-between rounded-xl bg-proceso-suave p-3 text-proceso-texto">
+                      <li className="figures flex justify-between rounded-xl bg-progress-soft p-3 text-progress-text">
                         <span>Sin asignar (se cobra aparte)</span>
                         <span className="font-semibold">{pesos(unassignedView)}</span>
                       </li>
@@ -643,7 +641,7 @@ function SplitChecks({
         {checks.map((c) => (
           <li
             key={c.id}
-            className="flex flex-col gap-2 rounded-xl border border-linea bg-superficie p-3"
+            className="flex flex-col gap-2 rounded-xl border border-divider bg-surface p-3"
           >
             <span className="flex items-baseline justify-between gap-2">
               <span className="font-semibold">{c.name}</span>
@@ -652,7 +650,7 @@ function SplitChecks({
                   Pagada
                 </Label>
               ) : (
-                <span className="cifras text-sm text-texto-suave">{`${pesos(c.balance)} + propina ${pesos(c.pendingTip)}`}</span>
+                <span className="figures text-sm text-muted">{`${pesos(c.balance)} + propina ${pesos(c.pendingTip)}`}</span>
               )}
             </span>
             {c.balance > 0 && (
@@ -688,8 +686,8 @@ function SplitChecks({
           </li>
         ))}
         {unassigned > 0 && (
-          <li className="flex flex-col gap-2 rounded-xl bg-proceso-suave p-3 text-proceso-texto">
-            <span className="cifras flex justify-between">
+          <li className="flex flex-col gap-2 rounded-xl bg-progress-soft p-3 text-progress-text">
+            <span className="figures flex justify-between">
               <span className="font-semibold">Sin asignar</span>
               <span>{pesos(unassigned)}</span>
             </span>
@@ -736,7 +734,7 @@ function Accountant({
   onChange: (n: number) => void
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-linea bg-superficie p-3">
+    <div className="flex items-center gap-3 rounded-2xl border border-divider bg-surface p-3">
       <span className="flex-1 font-semibold">{name}</span>
       <Button
         icon="minus"
@@ -744,7 +742,7 @@ function Accountant({
         disabled={value <= minimum}
         onClick={() => onChange(value - 1)}
       />
-      <span className="cifras w-8 text-center text-xl font-semibold">{value}</span>
+      <span className="figures w-8 text-center text-xl font-semibold">{value}</span>
       <Button
         icon="more"
         aria-label={`Agregar: quedan ${value + 1}`}

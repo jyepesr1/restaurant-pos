@@ -24,7 +24,7 @@ function newShift(base = 0, extras: Hub = {}) {
     opening,
     shiftEvent,
     move: (
-      type: 'entry' | 'output' | 'tip_payout',
+      type: 'cash_in' | 'cash_out' | 'tip_payout',
       amount: number,
       fields: Partial<Data<'CashMovementRecorded'>> = {},
       hub: Hub = {},
@@ -103,8 +103,8 @@ describe('shiftReconciliation: the basics', () => {
       cash: {
         charged: 0,
         refunds: 0,
-        entries: 0,
-        outflows: 0,
+        cashIn: 0,
+        cashOut: 0,
         tipPayouts: 0,
         expected: 150_000,
       },
@@ -172,8 +172,18 @@ describe('shiftReconciliation: the basics', () => {
     const c = shiftReconciliation(
       [
         t.opening,
-        t.move('entry', 5_000, { description: 'Cambio' }, { received_at: '2026-10-26T15:00:00Z' }),
-        t.move('output', 2_000, { description: 'Hielo' }, { received_at: '2026-10-26T16:00:00Z' }),
+        t.move(
+          'cash_in',
+          5_000,
+          { description: 'Cambio' },
+          { received_at: '2026-10-26T15:00:00Z' },
+        ),
+        t.move(
+          'cash_out',
+          2_000,
+          { description: 'Hielo' },
+          { received_at: '2026-10-26T16:00:00Z' },
+        ),
         t.move(
           'tip_payout',
           1_000,
@@ -184,13 +194,13 @@ describe('shiftReconciliation: the basics', () => {
       t.id,
     )
     expect(c?.movements.map((m) => [m.type, m.amount, m.description, m.toWhom, m.time])).toEqual([
-      ['entry', 5_000, 'Cambio', null, '2026-10-26T15:00:00Z'],
-      ['output', 2_000, 'Hielo', null, '2026-10-26T16:00:00Z'],
+      ['cash_in', 5_000, 'Cambio', null, '2026-10-26T15:00:00Z'],
+      ['cash_out', 2_000, 'Hielo', null, '2026-10-26T16:00:00Z'],
       ['tip_payout', 1_000, 'Propinas', 'Ana', '2026-10-26T17:00:00Z'],
     ])
     expect(c?.cash).toMatchObject({
-      entries: 5_000,
-      outflows: 2_000,
+      cashIn: 5_000,
+      cashOut: 2_000,
       tipPayouts: 1_000,
       expected: 2_000,
     })
@@ -199,15 +209,15 @@ describe('shiftReconciliation: the basics', () => {
   it('movements from another shift do not count', () => {
     const a = newShift(100)
     const b = newShift(200)
-    const all = [a.opening, b.opening, a.move('entry', 50), b.move('output', 70)]
+    const all = [a.opening, b.opening, a.move('cash_in', 50), b.move('cash_out', 70)]
     expect(shiftReconciliation(all, a.id)?.cash.expected).toBe(150)
     expect(shiftReconciliation(all, b.id)?.cash.expected).toBe(130)
     expect(shiftReconciliation(all, a.id)?.base).toBe(100)
   })
 
-  it('outflows and tip payouts can leave expected negative (shown as is)', () => {
+  it('cash out and tip payouts can leave expected negative (shown as is)', () => {
     const t = newShift(1_000)
-    const c = shiftReconciliation([t.opening, t.move('output', 5_000)], t.id)
+    const c = shiftReconciliation([t.opening, t.move('cash_out', 5_000)], t.id)
     expect(c?.cash.expected).toBe(-4_000)
   })
 
@@ -520,7 +530,7 @@ describe('shiftReconciliation: properties', () => {
   type Op =
     | { k: 'void'; i: number; thisOne: boolean }
     | { k: 'refund'; i: number; thisOne: boolean; sale: number; tip: number }
-    | { k: 'mov'; type: 'entry' | 'output' | 'tip_payout'; amount: number }
+    | { k: 'mov'; type: 'cash_in' | 'cash_out' | 'tip_payout'; amount: number }
 
   const arbPayment: fc.Arbitrary<PaymentGen> = fc.record({
     method: fc.constantFrom('cash', 'card', 'nequi'),
@@ -540,7 +550,7 @@ describe('shiftReconciliation: properties', () => {
     }),
     fc.record({
       k: fc.constant('mov' as const),
-      type: fc.constantFrom('entry', 'output', 'tip_payout'),
+      type: fc.constantFrom('cash_in', 'cash_out', 'tip_payout'),
       amount: fc.integer({ min: 1, max: 100_000 }),
     }),
   )
@@ -583,7 +593,7 @@ describe('shiftReconciliation: properties', () => {
     for (const op of ops) {
       if (op.k === 'mov') {
         events.push(t.move(op.type, op.amount))
-        expected += op.type === 'entry' ? op.amount : -op.amount
+        expected += op.type === 'cash_in' ? op.amount : -op.amount
         continue
       }
       const d = data[op.i % data.length] as Data<'PaymentRecorded'>

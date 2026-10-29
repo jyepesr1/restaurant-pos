@@ -112,7 +112,7 @@ export class ConnectionManager {
     }
     // Looks open: check with a ping that it responds soon.
     const channel = this.channel
-    channel?.send({ type: 'ping', brand: String(this.t.now()) })
+    channel?.send({ type: 'ping', stamp: String(this.t.now()) })
     const from = this.lastMessageAt
     this.t.clearTimeout(this.pendingCheck)
     this.pendingCheck = this.t.setTimeout(() => {

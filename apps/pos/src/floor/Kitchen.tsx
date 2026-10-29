@@ -31,21 +31,21 @@ const DELAYS: Record<
   on_time: {
     icon: 'clock',
     text: 'A tiempo',
-    card: 'border-borde bg-superficie text-texto',
-    clock: 'border-2 border-borde bg-superficie text-texto',
-    label: 'border-2 border-borde bg-superficie text-texto',
+    card: 'border-border bg-surface text-foreground',
+    clock: 'border-2 border-border bg-surface text-foreground',
+    label: 'border-2 border-border bg-surface text-foreground',
   },
   late: {
     icon: 'clock',
     text: 'Demorada',
-    card: `border-proceso-fuerte/60 ${SOFT_TONES.progress}`,
+    card: `border-progress-strong/60 ${SOFT_TONES.progress}`,
     clock: STRONG_TONES.progress,
     label: SOFT_TONES.progress,
   },
   very_late: {
     icon: 'warning',
     text: 'Muy demorada',
-    card: `border-alerta-fuerte ${SOFT_TONES.warning}`,
+    card: `border-alert-strong ${SOFT_TONES.warning}`,
     clock: STRONG_TONES.warning,
     label: SOFT_TONES.warning,
   },
@@ -86,12 +86,12 @@ export function KitchenScreen() {
   }, [device?.name])
   useScreenOn()
   return (
-    <div className="flex min-h-dvh flex-col bg-fondo text-texto">
-      <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-linea bg-lateral px-4 py-3">
+    <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-divider bg-sidebar px-4 py-3">
         <h1 className="text-2xl font-bold tracking-tight">
           {device?.name ?? 'Pantalla de cocina'}
         </h1>
-        <span className="cifras text-2xl font-semibold text-texto-suave">
+        <span className="figures text-2xl font-semibold text-muted">
           {new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit' }).format(now)}
         </span>
         <span className="flex-1" />
@@ -116,7 +116,7 @@ export function KitchenScreen() {
       </header>
       <main className="flex flex-1 flex-col gap-4 p-4">
         {connection !== 'connected' && (
-          <p className="rounded-2xl bg-alerta-suave p-4 text-xl font-semibold text-alerta-texto">
+          <p className="rounded-2xl bg-alert-soft p-4 text-xl font-semibold text-alert-text">
             Sin conexión con la caja: los pedidos nuevos no llegan hasta que vuelva. Revisa el
             Wi-Fi.
           </p>
@@ -126,7 +126,7 @@ export function KitchenScreen() {
           <Dashboard mode="screen" stations={ownItem.stationIds} />
         ) : (
           // Without knowing its stations nothing is shown: the bar must not see kitchen items.
-          <p className="text-xl text-texto-suave">Leyendo qué estaciones muestra esta pantalla…</p>
+          <p className="text-xl text-muted">Leyendo qué estaciones muestra esta pantalla…</p>
         )}
       </main>
     </div>
@@ -240,7 +240,7 @@ function WithSound() {
         }
         if (soundActive) playSound()
       }}
-      className={`inline-flex min-h-12 items-center gap-2 rounded-xl border px-4 font-semibold focus-visible:outline-3 focus-visible:outline-foco ${active && muted ? 'border-proceso-fuerte bg-proceso-suave text-proceso-texto' : 'border-borde bg-superficie'}`}
+      className={`inline-flex min-h-12 items-center gap-2 rounded-xl border px-4 font-semibold focus-visible:outline-3 focus-visible:outline-focus ${active && muted ? 'border-progress-strong bg-progress-soft text-progress-text' : 'border-border bg-surface'}`}
     >
       <Icon name={active ? 'check' : 'close'} />
       {!active ? 'Sonido: no' : muted ? 'Toca para activar el sonido' : 'Sonido: sí'}
@@ -277,7 +277,7 @@ function Dashboard({
     seenItems.current = ids
   })
 
-  if (!catalog || !view) return <p className="text-texto-suave">Leyendo lo de cocina…</p>
+  if (!catalog || !view) return <p className="text-muted">Leyendo lo de cocina…</p>
   const timers = timersOf(catalog.restaurant)
   // «Listo» is marked by the kitchen (its screen) or by the register when the kitchen calls out; on
   // the waiter's phone this view is read-only, and their action is «Entregar» in the order.
@@ -343,7 +343,7 @@ function Dashboard({
       )}
 
       {mode === 'register' && withoutReceipt.length > 0 && (
-        <p className="rounded-2xl bg-proceso-suave p-4 text-proceso-texto">
+        <p className="rounded-2xl bg-progress-soft p-4 text-progress-text">
           {`${withoutReceipt.map((e) => e.name).join(' y ')} no ${withoutReceipt.length === 1 ? 'tiene' : 'tienen'} impresora ni pantalla: lo que se envía allá no le llega a nadie. Configúralo en «Cocina e impresoras».`}
         </p>
       )}
@@ -360,16 +360,16 @@ function Dashboard({
               <Icon name={DELAYS[d].icon} className="size-4" />
               {DELAYS[d].text}
             </span>
-            <span className="cifras text-texto-suave">{tally(d)}</span>
+            <span className="figures text-muted">{tally(d)}</span>
           </li>
         ))}
-        <li className="text-texto-suave">
+        <li className="text-muted">
           {`Demorada desde ${timers.yellow} min, muy demorada desde ${timers.red} min`}
         </li>
       </ul>
 
       {inProgress.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-borde p-8 text-center text-lg text-texto-suave">
+        <p className="rounded-2xl border border-dashed border-border p-8 text-center text-lg text-muted">
           {mode === 'screen'
             ? 'Nada por preparar. Lo nuevo aparece aquí con un sonido.'
             : 'Nada en cocina por ahora.'}
@@ -446,9 +446,7 @@ function Dashboard({
               </li>
             ))}
           </ul>
-          <p className="text-sm text-texto-suave">
-            Salen de aquí cuando el mesero toca «Entregar».
-          </p>
+          <p className="text-sm text-muted">Salen de aquí cuando el mesero toca «Entregar».</p>
         </section>
       )}
     </div>
@@ -482,7 +480,7 @@ function Card({
       <header className="flex items-baseline justify-between gap-2">
         <span className={`font-bold ${large ? 'text-3xl' : 'text-xl'}`}>{target(catalog, c)}</span>
         {c.number !== null && (
-          <span className={`cifras font-bold ${large ? 'text-3xl' : 'text-lg'}`}>#{c.number}</span>
+          <span className={`figures font-bold ${large ? 'text-3xl' : 'text-lg'}`}>#{c.number}</span>
         )}
       </header>
       <div className={`flex flex-wrap items-center gap-2 ${large ? 'text-lg' : 'text-sm'}`}>
@@ -490,13 +488,13 @@ function Card({
           className={`inline-flex items-center gap-1.5 rounded-full font-bold ${d.clock} ${large ? 'px-3 py-1 text-2xl' : 'px-2.5 py-0.5 text-sm'}`}
         >
           <Icon name={d.icon} className={large ? 'size-6' : 'size-4'} />
-          <span className="cifras">{minutes(from)}</span>
+          <span className="figures">{minutes(from)}</span>
         </span>
         <span>{[station, waiter].filter(Boolean).join(' · ')}</span>
       </div>
       {c.order.status.notes && (
         <p
-          className={`flex items-start gap-2 rounded-lg border-2 border-borde bg-superficie px-2 py-1 text-texto ${large ? 'text-xl' : ''}`}
+          className={`flex items-start gap-2 rounded-lg border-2 border-border bg-surface px-2 py-1 text-foreground ${large ? 'text-xl' : ''}`}
         >
           <Icon
             name="pencil"
@@ -511,7 +509,7 @@ function Card({
       <ul className="flex flex-1 flex-col gap-3">
         {c.items.map((i) => (
           <li key={i.id} className={large ? 'text-2xl' : ''}>
-            <span className="cifras font-bold">{i.quantity - i.voidedQuantity} ×</span>{' '}
+            <span className="figures font-bold">{i.quantity - i.voidedQuantity} ×</span>{' '}
             <span className="font-semibold">{i.name}</span>
             {i.guest !== null && (
               <span className={large ? 'text-xl' : 'text-sm'}> · P{i.guest}</span>
@@ -526,7 +524,7 @@ function Card({
             )}
             {i.notes && (
               <span
-                className={`mt-1 flex items-start gap-2 rounded-lg border-2 border-current bg-superficie px-2 py-1 font-bold ${large ? 'text-xl' : ''}`}
+                className={`mt-1 flex items-start gap-2 rounded-lg border-2 border-current bg-surface px-2 py-1 font-bold ${large ? 'text-xl' : ''}`}
               >
                 <Icon
                   name="warning"
@@ -583,7 +581,7 @@ function PrinterAlert({ large = false }: { large?: boolean }) {
   return (
     <section
       role="alert"
-      className={`flex flex-col gap-3 rounded-2xl border-2 border-alerta-fuerte bg-alerta-suave p-4 text-alerta-texto ${large ? 'text-xl' : ''}`}
+      className={`flex flex-col gap-3 rounded-2xl border-2 border-alert-strong bg-alert-soft p-4 text-alert-text ${large ? 'text-xl' : ''}`}
     >
       {downPrinters.map((i) => (
         <p key={i.id} className="flex items-start gap-2">
@@ -601,11 +599,11 @@ function PrinterAlert({ large = false }: { large?: boolean }) {
           {jobs.map((t) => (
             <li
               key={t.id}
-              className="flex flex-wrap items-center gap-2 rounded-xl bg-superficie p-2 pl-3 text-texto"
+              className="flex flex-wrap items-center gap-2 rounded-xl bg-surface p-2 pl-3 text-foreground"
             >
               <span className="flex-1">
                 <span className="font-semibold">{t.what}</span>
-                <span className="text-sm text-texto-suave">{` · ${t.printer} · ${t.attempts} ${t.attempts === 1 ? 'intento' : 'intentos'}`}</span>
+                <span className="text-sm text-muted">{` · ${t.printer} · ${t.attempts} ${t.attempts === 1 ? 'intento' : 'intentos'}`}</span>
               </span>
               {discarding === t.id ? (
                 <div className="w-full">

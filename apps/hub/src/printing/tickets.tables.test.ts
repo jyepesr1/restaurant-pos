@@ -75,7 +75,7 @@ describe('canceling the order', () => {
     t.send(ana, order, items)
     await t.queue.runOnce()
     expect(cancel(register, order).status).toBe('confirmed')
-    const voids = jobsOfType(t, 'voidEntry')
+    const voids = jobsOfType(t, 'void')
     expect(voids).toHaveLength(2)
     const byStation = Object.fromEntries(voids.map((f) => [t.content(f).station, t.content(f)]))
     expect(byStation.Cocina).toMatchObject({ target: 'Mesa 5', number: 1 })
@@ -114,9 +114,9 @@ describe('canceling the order', () => {
       already_prepared: false,
       ticket_id: null,
     })
-    const before = jobsOfType(t, 'voidEntry').length
+    const before = jobsOfType(t, 'void').length
     cancel(register, order)
-    const newOnes = jobsOfType(t, 'voidEntry').slice(before)
+    const newOnes = jobsOfType(t, 'void').slice(before)
     expect(newOnes).toHaveLength(1)
     expect(t.content(newOnes[0]).items).toMatchObject([{ name: 'Tagliata', quantity: 2 }])
   })
@@ -149,9 +149,9 @@ describe('canceling the order', () => {
     ana.submit(order, 'ItemReady', { item_ids: [items[0]?.id] })
     // The waiter cannot cancel: it is rejected and there is no ticket.
     expect(ana.submit(order, 'OrderCanceled', {}, { reason: 'x' }).status).toBe('rejected')
-    expect(jobsOfType(t, 'voidEntry')).toHaveLength(0)
+    expect(jobsOfType(t, 'void')).toHaveLength(0)
     cancel(register, order)
-    expect(jobsOfType(t, 'voidEntry')).toHaveLength(1)
+    expect(jobsOfType(t, 'void')).toHaveLength(1)
   })
 
   it('carries "Mesa 5 + 6" when the order had merged tables', () => {
@@ -164,7 +164,7 @@ describe('canceling the order', () => {
     ana.submit(order, 'TablesMerged', { table_ids: [m6] })
     t.send(ana, order, items)
     cancel(register, order)
-    expect(t.content(jobsOfType(t, 'voidEntry')[0]).target).toBe('Mesa 5 + 6')
+    expect(t.content(jobsOfType(t, 'void')[0]).target).toBe('Mesa 5 + 6')
   })
 })
 
@@ -427,7 +427,7 @@ describe('reprinting the ticket of dishes that were moved', () => {
     await t.queue.runOnce()
     const ticketId = sent.tickets[0]?.ticket_id
     expect(ana.submit(target, 'TicketReprinted', { ticket_id: ticketId }).status).toBe('confirmed')
-    const reprints = jobsOfType(t, 'reprinting')
+    const reprints = jobsOfType(t, 'reprint')
     expect(reprints).toHaveLength(1)
     expect(t.content(reprints[0])).toMatchObject({ target: 'Mesa 8', number: 1 })
     expect(t.content(reprints[0]).items).toMatchObject([{ name: 'Tagliata' }])
@@ -441,7 +441,7 @@ describe('reprinting the ticket of dishes that were moved', () => {
     const ana = t.device('waiter')
     const { order } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
     ana.submit(order, 'TicketReprinted', { ticket_id: newId() })
-    expect(jobsOfType(t, 'reprinting')).toHaveLength(0)
+    expect(jobsOfType(t, 'reprint')).toHaveLength(0)
   })
 })
 

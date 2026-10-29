@@ -20,25 +20,25 @@ Estrategia contenida: neutros fríos y un acento. Todo par de texto y fondo cump
 
 | Token | Para qué |
 |---|---|
-| `fondo` | El lienzo de la pantalla. |
-| `superficie` | Tarjetas, paneles, el plano. |
-| `superficie-2` | Lo hundido: campos, fondos de foto, la tarjeta de quién entró. |
-| `lateral` | La barra lateral y la superior. |
-| `linea` | Separadores y bordes de tarjeta, que no son controles. |
-| `borde` | Borde de los controles (3:1). |
-| `sombra` (`shadow-flota`) | Lo que flota: tarjetas elegidas, el panel del pedido, los cajones. |
+| `background` | El lienzo de la pantalla. |
+| `surface` | Tarjetas, paneles, el plano. |
+| `surface-2` | Lo hundido: campos, fondos de foto, la tarjeta de quién entró. |
+| `sidebar` | La barra lateral y la superior. |
+| `divider` | Separadores y bordes de tarjeta, que no son controles. |
+| `border` | Borde de los controles (3:1). |
+| `--shadow` (`shadow-float`) | Lo que flota: tarjetas elegidas, el panel del pedido, los cajones. |
 
-**Tonos con significado.** Cada uno tiene `-fuerte` (fondo con texto blanco), `-suave` (fondo tenue) y `-texto` (texto sobre el suave):
+**Tonos con significado.** Cada uno tiene `-strong` (fondo con texto blanco), `-soft` (fondo tenue) y `-text` (texto sobre el `-soft`):
 
 | Tono | Significa |
 |---|---|
-| `accion` | La acción principal y lo elegido. Verde azulado `#0f766e` en Faro; cambia con la marca del restaurante. |
-| `libre` | Verde: libre, listo, pagado. |
-| `proceso` | Ámbar: tomando pedido, en preparación, en espera. |
-| `alerta` | Rojo: demora, error, lo destructivo. |
-| `neutro` | Gris: lo demás. |
+| `action` | La acción principal y lo elegido. Verde azulado `#0f766e` en Faro; cambia con la marca del restaurante. |
+| `free` | Verde: libre, listo, pagado. |
+| `progress` | Ámbar: tomando pedido, en preparación, en espera. |
+| `alert` | Rojo: demora, error, lo destructivo. |
+| `neutral` | Gris: lo demás. |
 
-Los tonos `libre`, `proceso` y `alerta` **no cambian con la marca**.
+Los tonos `free`, `progress` y `alert` **no cambian con la marca**.
 
 ## Letra
 
@@ -50,7 +50,7 @@ Los tonos `libre`, `proceso` y `alerta` **no cambian con la marca**.
   - 20 a 24 px títulos;
   - 30 a 36 px cifras grandes.
 - Nada por debajo de 14 px.
-- Cifras de dinero y tiempo en `.cifras` (dígitos del mismo ancho).
+- Cifras de dinero y tiempo en `.figures` (dígitos del mismo ancho).
 - Títulos en peso 700 con `tracking-tight`.
 
 ## Formas
@@ -93,11 +93,11 @@ Los tonos `libre`, `proceso` y `alerta` **no cambian con la marca**.
 
 ## Marca del restaurante
 
-`data-marca` en `<html>` (`src/ui/brand.ts`) cambia:
+`data-brand` en `<html>` (`src/ui/brand.ts`) cambia:
 - las superficies;
 - la letra;
-- el tono `accion` y `--marca`;
-- el logo: el del restaurante en lugar del faro (`.logo-marca` y `.logo-faro`);
-- la firma bajo la barra superior.
+- el tono `action` y `--brand`;
+- el logo: el del restaurante en lugar del faro (`.brand-logo`);
+- la firma bajo la barra superior (`.brand-signature`).
 
-Una marca nueva es un bloque `:root[data-marca="…"]` en claro y otro en oscuro, con todos los tokens de color, más su entrada en `BRANDS` (`src/ui/brand.ts` y `packages/core/src/config.ts`). La prueba de contraste debe incluirla.
+Una marca nueva es un bloque `:root[data-brand="…"]` en claro y otro en oscuro, con todos los tokens de color, más su entrada en `BRANDS` (`src/ui/brand.ts` y `packages/core/src/config.ts`). La prueba de contraste debe incluirla.

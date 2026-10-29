@@ -45,7 +45,7 @@ export class NetNode {
     this.client = new SyncClient({
       store,
       token,
-      versionApp: 'pruebas',
+      versionApp: 'test',
       now: () => this.network.now() + this.offsetMs,
       send: (m) => {
         if (this.link) this.toHub.push(overNetwork(m))

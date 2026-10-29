@@ -82,7 +82,7 @@ function ToastCard({ alert, onFinish }: { alert: Toast; onFinish: () => void }) 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: it only pauses the timer; not a control
     <div
-      className="pointer-events-auto relative flex w-full max-w-md items-center gap-3 overflow-hidden rounded-2xl bg-neutro-texto py-2 pr-2 pl-4 text-superficie shadow-xl"
+      className="pointer-events-auto relative flex w-full max-w-md items-center gap-3 overflow-hidden rounded-2xl bg-neutral-text py-2 pr-2 pl-4 text-surface shadow-xl"
       onPointerEnter={() => setPaused(true)}
       onPointerLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
@@ -93,7 +93,7 @@ function ToastCard({ alert, onFinish }: { alert: Toast; onFinish: () => void }) 
       {alert.undo && (
         <button
           type="button"
-          className="inline-flex min-h-12 items-center gap-2 rounded-xl px-3 font-bold hover:bg-white/10 focus-visible:outline-3 focus-visible:outline-foco"
+          className="inline-flex min-h-12 items-center gap-2 rounded-xl px-3 font-bold hover:bg-white/10 focus-visible:outline-3 focus-visible:outline-focus"
           onClick={() => {
             alert.undo?.()
             onFinish()
@@ -104,7 +104,7 @@ function ToastCard({ alert, onFinish }: { alert: Toast; onFinish: () => void }) 
         </button>
       )}
       <span
-        className="aviso-tiempo absolute bottom-0 left-0 h-1 bg-accion-fuerte"
+        className="notice-timer absolute bottom-0 left-0 h-1 bg-action-strong"
         style={{
           animationDuration: `${TOAST_DURATION_MS}ms`,
           animationPlayState: paused ? 'paused' : 'running',

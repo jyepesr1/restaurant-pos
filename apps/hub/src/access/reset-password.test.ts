@@ -13,7 +13,7 @@ describe('passwords after restarting the hub or losing the PIN key', () => {
   let folder = ''
   let hubs: ReturnType<typeof hubInDir>
   beforeEach(() => {
-    folder = mkdtempSync(join(tmpdir(), 'pos-reinicio-clave-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-reset-password-'))
     hubs = hubInDir(join(folder, 'data'))
   })
   afterEach(() => {

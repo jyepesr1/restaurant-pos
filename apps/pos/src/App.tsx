@@ -12,7 +12,7 @@ export function App() {
   if (route === '/diagnostics') return <Diagnostics />
   if (route === '/mockups' || route.startsWith('/mockups/'))
     return (
-      <Suspense fallback={<p className="p-6 text-texto-suave">Cargando…</p>}>
+      <Suspense fallback={<p className="p-6 text-muted">Cargando…</p>}>
         <Mockups route={route} />
       </Suspense>
     )

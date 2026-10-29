@@ -47,7 +47,7 @@ const ok = (e: unknown) => validateNewEvent(e).ok
 
 const movement = (fields: Record<string, unknown> = {}) => ({
   movement_id: newId(),
-  type: 'entry',
+  type: 'cash_in',
   amount: 10_000,
   description: 'Cambio de billetes',
   to_whom: null,
@@ -73,8 +73,8 @@ const closeout = (fields: Record<string, unknown> = {}) => ({
 
 describe('CashMovementRecorded: schema', () => {
   it.each([
-    ['entry', movement()],
-    ['output', movement({ type: 'output' })],
+    ['cash_in', movement()],
+    ['cash_out', movement({ type: 'cash_out' })],
     ['tip_payout', tips()],
   ])('accepts a valid %s', (_, data) => {
     expect(ok(envelope('CashMovementRecorded', data))).toBe(true)
@@ -115,9 +115,9 @@ describe('CashMovementRecorded: schema', () => {
 
   it('only the tip payout says to whom; an entry or output with to_whom is rejected', () => {
     expect(ok(envelope('CashMovementRecorded', movement({ to_whom: 'Ana' })))).toBe(false)
-    expect(ok(envelope('CashMovementRecorded', movement({ type: 'output', to_whom: 'Ana' })))).toBe(
-      false,
-    )
+    expect(
+      ok(envelope('CashMovementRecorded', movement({ type: 'cash_out', to_whom: 'Ana' }))),
+    ).toBe(false)
     expect(ok(envelope('CashMovementRecorded', tips({ to_whom: null })))).toBe(false)
     // "to whom" cannot be empty or blank text.
     expect(ok(envelope('CashMovementRecorded', tips({ to_whom: '  ' })))).toBe(false)

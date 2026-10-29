@@ -18,7 +18,7 @@ export interface ChargedByMethod {
 
 export interface ShiftMovement {
   id: string
-  type: 'entry' | 'output' | 'tip_payout'
+  type: 'cash_in' | 'cash_out' | 'tip_payout'
   amount: number
   description: string
   toWhom: string | null
@@ -90,8 +90,8 @@ export interface ShiftReconciliation {
     charged: number
     /** Reversals of voided cash payments and cash refunds of the shift. */
     refunds: number
-    entries: number
-    outflows: number
+    cashIn: number
+    cashOut: number
     tipPayouts: number
     expected: number
   }
@@ -219,7 +219,7 @@ export function shiftReconciliation(
   const opening = events.find((e) => e.type === 'ShiftOpened' && e.aggregate_id === shiftId)
   if (opening?.type !== 'ShiftOpened') return null
   const payments = paymentsById(events)
-  const cash = { charged: 0, refunds: 0, entries: 0, outflows: 0, tipPayouts: 0 }
+  const cash = { charged: 0, refunds: 0, cashIn: 0, cashOut: 0, tipPayouts: 0 }
   const movements: ShiftMovement[] = []
   const cashCounts: ShiftCashCount[] = []
   let closed: ShiftReconciliation['closed'] = null
@@ -243,8 +243,8 @@ export function shiftReconciliation(
       case 'CashMovementRecorded': {
         if (e.aggregate_id !== shiftId) break
         const d = e.data
-        if (d.type === 'entry') cash.entries += d.amount
-        else if (d.type === 'output') cash.outflows += d.amount
+        if (d.type === 'cash_in') cash.cashIn += d.amount
+        else if (d.type === 'cash_out') cash.cashOut += d.amount
         else cash.tipPayouts += d.amount
         movements.push({
           id: d.movement_id,
@@ -305,8 +305,8 @@ export function shiftReconciliation(
         base,
         payments: [{ amount: cash.charged, roundingAdjustment: 0, tip: 0 }],
         refunds: [cash.refunds],
-        entries: [cash.entries],
-        outflows: [cash.outflows],
+        cashIn: [cash.cashIn],
+        cashOut: [cash.cashOut],
         tipPayouts: [cash.tipPayouts],
         partialWithdrawals: [],
       }),

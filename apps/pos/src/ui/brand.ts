@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-// The restaurant's brand over the Faro design system (`data-marca` on <html>, see
+// The restaurant's brand over the Faro design system (`data-brand` on <html>, see
 // styles.css). It is optional: with no brand, the POS looks like Faro. The admin picks it for the
 // whole restaurant and it arrives with the menu (task 1.3c); it is saved here to paint it before
 // loading (index.html reads it) and for the mockups, which pick it on the device to compare.
@@ -35,8 +35,8 @@ function read(): Brand {
 
 /** Sets the brand on the page and remembers it on the device (to paint it before loading). */
 export function applyBrand(brand: Brand = read()) {
-  if (brand === 'faro') delete document.documentElement.dataset.marca
-  else document.documentElement.dataset.marca = brand
+  if (brand === 'faro') delete document.documentElement.dataset.brand
+  else document.documentElement.dataset.brand = brand
   try {
     localStorage.setItem(KEY, brand)
   } catch {

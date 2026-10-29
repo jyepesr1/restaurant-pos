@@ -556,7 +556,7 @@ export class Floor {
    * devices and this one also fetches the new menu.
    */
   async editCatalog(changes: CatalogChange[]): Promise<number> {
-    this.enabled()
+    this.markUsed()
     const session = this.status.session
     if (!session) throw new Error('Sin sesión: escribe tu PIN')
     const { version } = await this.api<{ version: number }>('POST', '/api/catalog/changes', {
@@ -757,7 +757,7 @@ export class Floor {
 
   /** A call with the open session. If the hub says it is no longer valid, asks to sign in again. */
   private async withSession<T>(route: string, body: object): Promise<T> {
-    this.enabled()
+    this.markUsed()
     const session = this.status.session
     if (!session) throw new Error('Sin sesión: vuelve a entrar')
     try {
@@ -786,7 +786,7 @@ export class Floor {
   }
 
   /** Marks use (every tap that does something): postpones the inactivity close. */
-  enabled(now = Date.now()) {
+  markUsed(now = Date.now()) {
     const { session } = this.status
     if (!session) return
     this.expireSessionIfDue(now)
@@ -885,7 +885,7 @@ export class Floor {
   ): Promise<NewEvent> {
     const now = Date.now()
     // Use first: if the session just expired, nothing is signed with it.
-    this.enabled(now)
+    this.markUsed(now)
     const client = this.client
     const { session, device } = this.status
     if (!client || !session || !device) throw new Error('Sin sesión: escribe tu PIN')

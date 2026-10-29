@@ -157,7 +157,7 @@ describe('kitchen and closed orders', () => {
 describe('item changes', () => {
   it('changing the course respects the hold', () => {
     const { order, status } = orderOpened()
-    const entry = itemCopy({ course: 'entry' })
+    const entry = itemCopy({ course: 'starter' })
     const held = applyAll(
       [event(order, 'CourseHeld', { course: 'dessert' }), event(order, 'ItemAdded', entry)],
       status,

@@ -121,27 +121,27 @@ export function Checkout() {
   return (
     <Frame title={`Cobro · Mesa ${number}`} user="Caja" back={`/mockups/pre-bill?table=${number}`}>
       <div className="mx-auto grid max-w-4xl gap-4 p-3 md:grid-cols-2">
-        <section className="rounded-2xl border border-borde bg-superficie p-4" aria-label="Saldo">
-          <p className="text-texto-suave">Saldo pendiente</p>
+        <section className="rounded-2xl border border-border bg-surface p-4" aria-label="Saldo">
+          <p className="text-muted">Saldo pendiente</p>
           <p
-            className={`cifras font-titulo text-5xl font-bold ${balance === 0 ? 'text-libre-texto' : ''}`}
+            className={`figures font-heading text-5xl font-bold ${balance === 0 ? 'text-free-text' : ''}`}
           >
             {pesos(balance)}
           </p>
-          <p className="cifras mt-1 text-texto-suave">{`de ${pesos(total)}`}</p>
+          <p className="figures mt-1 text-muted">{`de ${pesos(total)}`}</p>
           {amount > 0 && amount < balance && (
             <p className="mt-2">
               <Label tone="action" icon="people">{`Esta cuenta: ${pesos(amount)}`}</Label>
             </p>
           )}
           {lastChange !== null && (
-            <p className="mt-4 rounded-xl bg-libre-suave p-3 text-libre-texto">
+            <p className="mt-4 rounded-xl bg-free-soft p-3 text-free-text">
               <span className="block">Cambio a entregar</span>
-              <span className="cifras text-3xl font-bold">{pesos(lastChange)}</span>
+              <span className="figures text-3xl font-bold">{pesos(lastChange)}</span>
             </p>
           )}
           {table.payments.length > 0 && (
-            <ul className="cifras mt-4 flex flex-col gap-1 border-t border-borde pt-3">
+            <ul className="figures mt-4 flex flex-col gap-1 border-t border-border pt-3">
               {table.payments.map((p, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: payments are never reordered
                 <li key={i} className="flex justify-between gap-2">
@@ -189,10 +189,10 @@ export function Checkout() {
               ))}
             </Group>
 
-            <div className="rounded-2xl border border-borde bg-superficie p-4">
+            <div className="rounded-2xl border border-border bg-surface p-4">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-semibold">Propina (voluntaria)</span>
-                <span className="cifras text-sm text-texto-suave">{`sugerida ${pesos(suggested)}`}</span>
+                <span className="figures text-sm text-muted">{`sugerida ${pesos(suggested)}`}</span>
               </div>
               <input
                 inputMode="numeric"
@@ -200,7 +200,7 @@ export function Checkout() {
                 value={withDots(tip)}
                 onChange={(e) => setTip(digitsOnly(e.target.value))}
                 placeholder="0"
-                className="cifras mt-2 min-h-12 w-full rounded-xl border border-borde bg-superficie px-3 text-xl focus-visible:outline-3 focus-visible:outline-foco"
+                className="figures mt-2 min-h-12 w-full rounded-xl border border-border bg-surface px-3 text-xl focus-visible:outline-3 focus-visible:outline-focus"
               />
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button onClick={() => setTip(method === 'cash' ? cashTip(suggested) : suggested)}>
@@ -211,13 +211,13 @@ export function Checkout() {
             </div>
 
             {method === 'cash' && calculation ? (
-              <div className="rounded-2xl border border-borde bg-superficie p-4">
-                <p className="text-texto-suave">
+              <div className="rounded-2xl border border-border bg-surface p-4">
+                <p className="text-muted">
                   {amount === balance
                     ? 'A cobrar (venta redondeada a $100 + propina)'
                     : 'A cobrar (venta + propina)'}
                 </p>
-                <p className="cifras font-titulo text-3xl font-bold">
+                <p className="figures font-heading text-3xl font-bold">
                   {pesos(calculation.amountDue)}
                 </p>
                 <label className="mt-3 block">
@@ -226,7 +226,7 @@ export function Checkout() {
                     inputMode="numeric"
                     value={withDots(served)}
                     onChange={(e) => setTendered(digitsOnly(e.target.value))}
-                    className="cifras mt-2 min-h-14 w-full rounded-xl border border-borde bg-superficie px-3 text-2xl focus-visible:outline-3 focus-visible:outline-foco"
+                    className="figures mt-2 min-h-14 w-full rounded-xl border border-border bg-surface px-3 text-2xl focus-visible:outline-3 focus-visible:outline-focus"
                   />
                 </label>
                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-2 lg:grid-cols-4">
@@ -237,7 +237,7 @@ export function Checkout() {
                     </Button>
                   ))}
                 </div>
-                <div className="cifras mt-3 flex flex-wrap items-center gap-2 text-lg">
+                <div className="figures mt-3 flex flex-wrap items-center gap-2 text-lg">
                   {calculation.missing > 0 ? (
                     <Label
                       tone="warning"
@@ -254,16 +254,16 @@ export function Checkout() {
                 </div>
               </div>
             ) : (
-              <div className="rounded-2xl border border-borde bg-superficie p-4">
-                <p className="text-texto-suave">Total en el datáfono (venta + propina)</p>
-                <p className="cifras font-titulo text-3xl font-bold">{pesos(toCharge)}</p>
+              <div className="rounded-2xl border border-border bg-surface p-4">
+                <p className="text-muted">Total en el datáfono (venta + propina)</p>
+                <p className="figures font-heading text-3xl font-bold">{pesos(toCharge)}</p>
                 <label className="mt-3 block">
                   <span className="font-semibold">Número de aprobación</span>
                   <input
                     inputMode="numeric"
                     value={approval_code}
                     onChange={(e) => setApprovalCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                    className="cifras mt-2 min-h-14 w-full rounded-xl border border-borde bg-superficie px-3 text-2xl focus-visible:outline-3 focus-visible:outline-foco"
+                    className="figures mt-2 min-h-14 w-full rounded-xl border border-border bg-surface px-3 text-2xl focus-visible:outline-3 focus-visible:outline-focus"
                   />
                 </label>
               </div>
@@ -271,7 +271,7 @@ export function Checkout() {
 
             {confirming ? (
               <div
-                className="rounded-2xl border-2 border-accion-fuerte bg-accion-suave p-4 text-accion-texto"
+                className="rounded-2xl border-2 border-action-strong bg-action-soft p-4 text-action-text"
                 role="alertdialog"
                 aria-labelledby="confirm-payment"
               >
@@ -283,7 +283,7 @@ export function Checkout() {
                   <button
                     ref={confirm}
                     type="button"
-                    className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl bg-accion-fuerte px-4 font-semibold text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-foco"
+                    className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl bg-action-strong px-4 font-semibold text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus"
                     onClick={record}
                   >
                     Confirmar
@@ -295,7 +295,7 @@ export function Checkout() {
                 {`Cobrar ${pesos(toCharge)}`}
               </Button>
             )}
-            <p className="text-sm text-texto-suave">
+            <p className="text-sm text-muted">
               Teclado: F2 efectivo · F3 tarjeta · Enter cobra · Esc cancela
             </p>
           </section>

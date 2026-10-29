@@ -73,7 +73,7 @@ describe('access with the real hub process', () => {
   let hub: StartedHub | undefined
 
   beforeEach(() => {
-    folder = mkdtempSync(join(tmpdir(), 'pos-acceso-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-access-'))
   })
   afterEach(async () => {
     await hub?.stop()

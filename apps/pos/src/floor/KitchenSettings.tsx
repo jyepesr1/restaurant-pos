@@ -66,7 +66,7 @@ export function KitchenSettings() {
     return (
       <FloorFrame title="Cocina e impresoras">
         <div className="mx-auto flex max-w-3xl flex-col items-start gap-3 p-6">
-          <p className="text-alerta-texto">{error}</p>
+          <p className="text-alert-text">{error}</p>
           <Button onClick={load}>Intentar de nuevo</Button>
         </div>
       </FloorFrame>
@@ -74,7 +74,7 @@ export function KitchenSettings() {
   if (!config)
     return (
       <FloorFrame title="Cocina e impresoras">
-        <p className="p-6 text-texto-suave">Leyendo la configuración de la caja…</p>
+        <p className="p-6 text-muted">Leyendo la configuración de la caja…</p>
       </FloorFrame>
     )
 
@@ -114,7 +114,7 @@ export function KitchenSettings() {
               return (
                 <li
                   key={e.id}
-                  className="flex flex-col gap-2 rounded-2xl border border-linea bg-superficie p-4"
+                  className="flex flex-col gap-2 rounded-2xl border border-divider bg-surface p-4"
                 >
                   <span className="text-lg font-semibold">{e.name}</span>
                   {imp.map((i) => (
@@ -138,7 +138,7 @@ export function KitchenSettings() {
               )
             })}
           </ul>
-          <p className="text-sm text-texto-suave">
+          <p className="text-sm text-muted">
             Sin pantalla, el mesero marca «Entregado» al llevar el plato y la caja ve lo pendiente
             en «Pedidos en cocina».
           </p>
@@ -149,8 +149,8 @@ export function KitchenSettings() {
             Impresoras de comandas
           </h2>
           {config.printers.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-borde p-6 text-center">
-              <p className="text-texto-suave">
+            <div className="rounded-2xl border border-dashed border-border p-6 text-center">
+              <p className="text-muted">
                 Todavía no hay impresoras. Agrega la de cocina y la de barra con su dirección de
                 red.
               </p>
@@ -170,12 +170,12 @@ export function KitchenSettings() {
               return (
                 <li
                   key={i.id}
-                  className={`flex flex-wrap items-center gap-3 rounded-2xl border border-linea bg-superficie p-4 ${i.active ? '' : 'opacity-60'}`}
+                  className={`flex flex-wrap items-center gap-3 rounded-2xl border border-divider bg-surface p-4 ${i.active ? '' : 'opacity-60'}`}
                 >
                   <Icon name="printer" className="size-6" />
                   <div className="flex min-w-48 flex-1 flex-col items-start gap-1">
                     <span className="text-lg font-semibold">{i.name}</span>
-                    <span className="cifras text-sm text-texto-suave">
+                    <span className="figures text-sm text-muted">
                       {i.connection === 'network'
                         ? `${i.address}:${i.port ?? 9100} · ${i.width} mm`
                         : `USB · ${i.width} mm`}
@@ -187,7 +187,7 @@ export function KitchenSettings() {
                         Archivada
                       </Label>
                     ) : status?.status === 'failed' ? (
-                      <span className="text-sm font-semibold text-alerta-texto">
+                      <span className="text-sm font-semibold text-alert-text">
                         <Icon name="warning" className="mr-1 inline size-4" />
                         {status.error}
                         {status.pendingList > 0 && ` (${status.pendingList} esperando)`}
@@ -309,7 +309,7 @@ function EditPrinter({
       footer={
         <div className="flex flex-col gap-2">
           {error && (
-            <p role="alert" className="text-alerta-texto">
+            <p role="alert" className="text-alert-text">
               {error}
             </p>
           )}
@@ -371,7 +371,7 @@ function EditPrinter({
             onChange={(ids) => patch({ station_ids: ids })}
           />
           {b.station_ids.length === 0 && (
-            <span className="text-sm text-texto-suave">
+            <span className="text-sm text-muted">
               Sin cocina ni barra: solo imprime cuando otra impresora no responde.
             </span>
           )}
@@ -387,7 +387,7 @@ function EditPrinter({
               Cable de red
             </Option>
           </Group>
-          <span className="text-sm text-texto-suave">
+          <span className="text-sm text-muted">
             Por USB, próximamente (con el programa de instalación para Windows). Por ahora, conecta
             la impresora con su cable de red al router.
           </span>
@@ -398,7 +398,7 @@ function EditPrinter({
             <label className="flex flex-1 flex-col gap-1">
               <span className="font-semibold">Dirección de red (IP)</span>
               <input
-                className={`${fieldClass} cifras`}
+                className={`${fieldClass} figures`}
                 value={b.address}
                 inputMode="decimal"
                 autoCapitalize="off"
@@ -411,7 +411,7 @@ function EditPrinter({
             <label className="flex w-28 flex-col gap-1">
               <span className="font-semibold">Puerto</span>
               <input
-                className={`${fieldClass} cifras`}
+                className={`${fieldClass} figures`}
                 value={b.port ?? ''}
                 inputMode="numeric"
                 onChange={(e) => {
@@ -431,7 +431,7 @@ function EditPrinter({
             />
           </label>
         )}
-        <p className="-mt-3 text-sm text-texto-suave">
+        <p className="-mt-3 text-sm text-muted">
           La IP sale al imprimir la hoja de configuración: con la impresora apagada, mantén
           presionado el botón de avance de papel y préndela.
         </p>
@@ -462,7 +462,7 @@ function EditPrinter({
               </Option>
             ))}
           </Group>
-          <span className="text-sm text-texto-suave">
+          <span className="text-sm text-muted">
             Guarda y toca «Imprimir prueba»: si la ñ y las tildes salen bien, queda así.
           </span>
         </div>
@@ -483,7 +483,7 @@ function EditPrinter({
               </Option>
             ))}
           </Group>
-          <span className="text-sm text-texto-suave">
+          <span className="text-sm text-muted">
             Tras 3 intentos fallidos, sus comandas salen por la de respaldo y todos ven la alerta.
           </span>
         </div>
@@ -527,7 +527,7 @@ function Screens({ config, onChange }: { config: KitchenConfig; onChange: () => 
       <h2 id="title-screens" className="text-xl font-bold tracking-tight">
         Pantallas de cocina
       </h2>
-      <p className="text-texto-suave">
+      <p className="text-muted">
         Opcionales. Una tablet (o un televisor táctil) en la cocina o la barra muestra las comandas
         y el cocinero toca «Listo». Un televisor sin pantalla táctil solo sirve para mirar.
       </p>
@@ -536,11 +536,11 @@ function Screens({ config, onChange }: { config: KitchenConfig; onChange: () => 
           {config.screens.map((p) => (
             <li
               key={p.device_id}
-              className="flex flex-col gap-2 rounded-2xl border border-linea bg-superficie p-4"
+              className="flex flex-col gap-2 rounded-2xl border border-divider bg-surface p-4"
             >
               <span className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="text-lg font-semibold">{p.name}</span>
-                <span className="text-sm text-texto-suave">
+                <span className="text-sm text-muted">
                   {p.last_used
                     ? `Última señal: ${new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(p.last_used))}`
                     : 'Sin señal todavía'}
@@ -557,9 +557,9 @@ function Screens({ config, onChange }: { config: KitchenConfig; onChange: () => 
         </ul>
       )}
 
-      <div className="flex flex-col gap-3 rounded-2xl border border-linea bg-superficie-2/60 p-4">
+      <div className="flex flex-col gap-3 rounded-2xl border border-divider bg-surface-2/60 p-4">
         <span className="text-lg font-semibold">Usar este equipo como pantalla de cocina</span>
-        <p className="text-sm text-texto-suave">
+        <p className="text-sm text-muted">
           Hazlo desde la tablet de la cocina: entra con tu usuario en ella, ven aquí y conviértela.
           Ese equipo ya no servirá para tomar pedidos ni para la caja. Para deshacerlo, desde la
           caja ve a Personal y roles, Equipos, y toca «Retirar» en la pantalla; luego en la tablet
@@ -578,10 +578,10 @@ function Screens({ config, onChange }: { config: KitchenConfig; onChange: () => 
         <span className="font-semibold">Qué estaciones muestra</span>
         <Stations config={config} selectedIds={stations} onChange={setStations} />
         {stations.length === 0 && (
-          <span className="text-sm text-texto-suave">Elige al menos una estación.</span>
+          <span className="text-sm text-muted">Elige al menos una estación.</span>
         )}
         {error && (
-          <p role="alert" className="text-alerta-texto">
+          <p role="alert" className="text-alert-text">
             {error}
           </p>
         )}
@@ -638,7 +638,7 @@ function Timers({ config, onChange }: { config: KitchenConfig; onChange: () => v
           <span className="font-semibold">Demorada desde</span>
           <span className="flex items-center gap-2">
             <input
-              className={`${fieldClass} cifras`}
+              className={`${fieldClass} figures`}
               inputMode="numeric"
               value={yellow}
               onChange={(e) => setYellow(e.target.value.replace(/\D/g, ''))}
@@ -650,7 +650,7 @@ function Timers({ config, onChange }: { config: KitchenConfig; onChange: () => v
           <span className="font-semibold">Muy demorada desde</span>
           <span className="flex items-center gap-2">
             <input
-              className={`${fieldClass} cifras`}
+              className={`${fieldClass} figures`}
               inputMode="numeric"
               value={red}
               onChange={(e) => setRed(e.target.value.replace(/\D/g, ''))}
@@ -663,7 +663,7 @@ function Timers({ config, onChange }: { config: KitchenConfig; onChange: () => v
         </Button>
       </div>
       {!valid && (
-        <p className="text-sm text-alerta-texto">
+        <p className="text-sm text-alert-text">
           Escribe minutos enteros: «muy demorada» debe llegar después de «demorada», hasta 240.
         </p>
       )}
@@ -692,7 +692,7 @@ function Courses({ config, onChange }: { config: KitchenConfig; onChange: () => 
       <h2 id="title-courses" className="text-xl font-bold tracking-tight">
         Cursos
       </h2>
-      <p className="text-texto-suave">
+      <p className="text-muted">
         Entrada, fuerte y postre por separado, con «Retener» y «Marchar» para que el fuerte salga
         cuando lo pidan. Si no los usan, déjalos apagados: el pedido se toma más rápido.
       </p>
@@ -701,11 +701,11 @@ function Courses({ config, onChange }: { config: KitchenConfig; onChange: () => 
         role="switch"
         aria-checked={active}
         onClick={patch}
-        className="inline-flex min-h-12 w-max items-center gap-3 rounded-xl border border-borde bg-superficie px-4 font-semibold focus-visible:outline-3 focus-visible:outline-foco"
+        className="inline-flex min-h-12 w-max items-center gap-3 rounded-xl border border-border bg-surface px-4 font-semibold focus-visible:outline-3 focus-visible:outline-focus"
       >
         <span
           aria-hidden="true"
-          className={`relative h-7 w-12 rounded-full transition-colors ${active ? 'bg-accion-fuerte' : 'bg-borde'}`}
+          className={`relative h-7 w-12 rounded-full transition-colors ${active ? 'bg-action-strong' : 'bg-border'}`}
         >
           <span
             className={`absolute top-1 size-5 rounded-full bg-white transition-all ${active ? 'left-6' : 'left-1'}`}

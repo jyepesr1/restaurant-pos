@@ -82,7 +82,7 @@ export function PinPad({
   }, [tap, erase])
 
   const hotkey =
-    'flex h-16 items-center justify-center rounded-2xl bg-superficie-2 text-2xl font-semibold text-texto active:scale-95 transition disabled:opacity-45 focus-visible:outline-3 focus-visible:outline-foco'
+    'flex h-16 items-center justify-center rounded-2xl bg-surface-2 text-2xl font-semibold text-foreground active:scale-95 transition disabled:opacity-45 focus-visible:outline-3 focus-visible:outline-focus'
   const seconds = Math.ceil(remaining / 1000)
 
   return (
@@ -96,16 +96,16 @@ export function PinPad({
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: fixed PIN positions
             key={i}
-            className={`size-4 rounded-full border-2 ${i < pin.length ? 'border-accion-fuerte bg-accion-fuerte' : 'border-borde'}`}
+            className={`size-4 rounded-full border-2 ${i < pin.length ? 'border-action-strong bg-action-strong' : 'border-border'}`}
           />
         ))}
       </output>
       {/* Only the message change is announced, not every second of the countdown. */}
       {/* `key`: the same error twice in a row is announced too. */}
-      <p key={attempt} className="min-h-6 text-center text-alerta-texto" role="alert">
+      <p key={attempt} className="min-h-6 text-center text-alert-text" role="alert">
         {remaining > 0 ? 'Demasiados intentos.' : taken ? 'Comprobando…' : (error ?? '')}
       </p>
-      <p className="cifras min-h-6 text-center text-texto-suave" aria-hidden="true">
+      <p className="figures min-h-6 text-center text-muted" aria-hidden="true">
         {remaining > 0 ? `Espera ${seconds} s` : ''}
       </p>
       <div className="mt-3 grid grid-cols-3 gap-3">

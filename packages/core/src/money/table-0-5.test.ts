@@ -188,8 +188,8 @@ describe('register: reversals', () => {
     const movements = {
       base: 200_000,
       payments: [payment],
-      entries: [],
-      outflows: [],
+      cashIn: [],
+      cashOut: [],
       tipPayouts: [],
       partialWithdrawals: [],
     }
@@ -206,8 +206,8 @@ describe('register: reversals', () => {
       base: 100_000,
       payments: [{ amount: 50_000, roundingAdjustment: 0, tip: 0 }],
       refunds: [],
-      entries: [],
-      outflows: [],
+      cashIn: [],
+      cashOut: [],
       tipPayouts: [],
       partialWithdrawals: [],
     })
@@ -215,8 +215,8 @@ describe('register: reversals', () => {
       base: shift1,
       payments: [],
       refunds: [50_000],
-      entries: [],
-      outflows: [],
+      cashIn: [],
+      cashOut: [],
       tipPayouts: [],
       partialWithdrawals: [],
     })

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { BRANDS } from './brand'
 
-// New colors from task 1.3c: `lateral` (side and top bar) and `linea` (separators that
+// New colors from task 1.3c: `sidebar` (side and top bar) and `divider` (separators that
 // are not controls), in Faro and in each restaurant brand, in light and dark. They are read from
 // styles.css, same as contrast.test.ts.
 
@@ -21,9 +21,9 @@ const blockOf = (selector: string) => blocks.find((b) => b.selectors.includes(se
 function variables(brand: string | null, dark: boolean): Record<string, string> {
   const applying = [
     ':root',
-    ...(dark ? [':root.oscuro'] : []),
-    ...(brand ? [`:root[data-marca="${brand}"]`] : []),
-    ...(brand && dark ? [`:root[data-marca="${brand}"].oscuro`] : []),
+    ...(dark ? [':root.dark'] : []),
+    ...(brand ? [`:root[data-brand="${brand}"]`] : []),
+    ...(brand && dark ? [`:root[data-brand="${brand}"].dark`] : []),
   ]
   const v: Record<string, string> = {}
   for (const b of blocks)
@@ -47,53 +47,50 @@ function contrast(a: string, b: string): number {
 const CASES = BRANDS.flatMap(({ brand, name }) =>
   [false, true].map(
     (dark) =>
-      [`${name} ${dark ? 'oscuro' : 'claro'}`, brand === 'faro' ? null : brand, dark] as const,
+      [`${name} ${dark ? 'dark' : 'light'}`, brand === 'faro' ? null : brand, dark] as const,
   ),
 )
 
-describe('lateral and linea: defined', () => {
+describe('sidebar and divider: defined', () => {
   it('Faro defines them in its light base and in the dark one', () => {
-    for (const selector of [':root', ':root.oscuro'])
-      for (const name of ['lateral', 'linea'])
+    for (const selector of [':root', ':root.dark'])
+      for (const name of ['sidebar', 'divider'])
         expect(blockOf(selector)?.variables[name], `${selector} ${name}`).toMatch(/^#[0-9a-f]{6}$/i)
   })
 
   it.each(BRANDS.filter((m) => m.brand !== 'faro'))(
     '$name defines them in its own block, by day and by night (does not inherit them from Faro)',
     ({ brand }) => {
-      for (const selector of [
-        `:root[data-marca="${brand}"]`,
-        `:root[data-marca="${brand}"].oscuro`,
-      ])
-        for (const name of ['lateral', 'linea'])
+      for (const selector of [`:root[data-brand="${brand}"]`, `:root[data-brand="${brand}"].dark`])
+        for (const name of ['sidebar', 'divider'])
           expect(blockOf(selector)?.variables[name], `${selector} ${name}`).toMatch(
             /^#[0-9a-f]{6}$/i,
           )
     },
   )
 
-  it('the restaurant brand does not repeat the lateral or linea of Faro (it shows it is another one)', () => {
+  it('the restaurant brand does not repeat the sidebar or divider of Faro (it shows it is another one)', () => {
     for (const { brand } of BRANDS.filter((m) => m.brand !== 'faro'))
       for (const dark of [false, true]) {
         const faro = variables(null, dark)
         const ownItem = variables(brand, dark)
-        expect(ownItem.side, `${brand} ${dark} lateral`).not.toBe(faro.lateral)
-        expect(ownItem.linea, `${brand} ${dark} linea`).not.toBe(faro.linea)
+        expect(ownItem.sidebar, `${brand} ${dark} sidebar`).not.toBe(faro.sidebar)
+        expect(ownItem.divider, `${brand} ${dark} divider`).not.toBe(faro.divider)
       }
   })
 
   it('they are written as six-digit #rrggbb (the contrast test would not read another format)', () => {
     for (const b of blocks)
-      for (const name of ['lateral', 'linea']) {
+      for (const name of ['sidebar', 'divider']) {
         const lines = [...b.text.matchAll(new RegExp(`--${name}:\\s*([^;]+);`, 'g'))]
         for (const l of lines)
           expect(l[1]?.trim(), `${b.selectors} ${name}`).toMatch(/^#[0-9a-f]{6}$/i)
       }
   })
 
-  it('Tailwind knows them as color-lateral and color-linea', () => {
-    expect(css).toMatch(/--color-lateral:\s*var\(--lateral\)/)
-    expect(css).toMatch(/--color-linea:\s*var\(--linea\)/)
+  it('Tailwind knows them as color-sidebar and color-divider', () => {
+    expect(css).toMatch(/--color-sidebar:\s*var\(--sidebar\)/)
+    expect(css).toMatch(/--color-divider:\s*var\(--divider\)/)
   })
 
   it('every variable a Tailwind color uses is defined in the base (no orphan colors)', () => {
@@ -104,50 +101,50 @@ describe('lateral and linea: defined', () => {
   })
 })
 
-describe.each(CASES)('lateral and linea: %s', (_name, brand, dark) => {
+describe.each(CASES)('sidebar and divider: %s', (_name, brand, dark) => {
   const v = variables(brand, dark)
 
-  it('the text and the soft text read over the lateral (AA, 4.5:1)', () => {
-    for (const text of ['texto', 'texto-suave'])
+  it('the text and the soft text read over the sidebar (AA, 4.5:1)', () => {
+    for (const text of ['foreground', 'muted'])
       expect(
-        contrast(v[text] as string, v.lateral as string),
-        `${text} sobre lateral`,
+        contrast(v[text] as string, v.sidebar as string),
+        `${text} over sidebar`,
       ).toBeGreaterThanOrEqual(4.5)
   })
 
-  it('the focus ring shows over the lateral (3:1)', () => {
-    expect(contrast(v.foco as string, v.lateral as string)).toBeGreaterThanOrEqual(3)
+  it('the focus ring shows over the sidebar (3:1)', () => {
+    expect(contrast(v.focus as string, v.sidebar as string)).toBeGreaterThanOrEqual(3)
   })
 
-  it('the brand color (logo, headings) is enough over the lateral (3:1)', () => {
-    expect(contrast(v.marca as string, v.lateral as string)).toBeGreaterThanOrEqual(3)
+  it('the brand color (logo, headings) is enough over the sidebar (3:1)', () => {
+    expect(contrast(v.brand as string, v.sidebar as string)).toBeGreaterThanOrEqual(3)
   })
 
   it('the action tone text over its soft background (active menu option) is readable', () => {
-    expect(
-      contrast(v['accion-texto'] as string, v['accion-suave'] as string),
-    ).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(v['action-text'] as string, v['action-soft'] as string)).toBeGreaterThanOrEqual(
+      4.5,
+    )
   })
 
-  it('the control border stands out from the lateral (3:1)', () => {
-    expect(contrast(v.borde as string, v.lateral as string)).toBeGreaterThanOrEqual(3)
+  it('the control border stands out from the sidebar (3:1)', () => {
+    expect(contrast(v.border as string, v.sidebar as string)).toBeGreaterThanOrEqual(3)
   })
 
-  it('the linea is a discreet separator: it stands out from the background, but is softer than a control border', () => {
-    for (const background of ['fondo', 'superficie', 'lateral']) {
-      const c = contrast(v.linea as string, v[background] as string)
+  it('the divider is a discreet separator: it stands out from the background, but is softer than a control border', () => {
+    for (const background of ['background', 'surface', 'sidebar']) {
+      const c = contrast(v.divider as string, v[background] as string)
       // It is not a control (it does not need 3:1), but it is not invisible nor equal to the
       // background color either.
-      expect(v.linea, `linea vs ${background}`).not.toBe(v[background])
-      expect(c, `linea sobre ${background}`).toBeGreaterThan(1.03)
-      expect(c, `linea sobre ${background}`).toBeLessThan(
-        contrast(v.borde as string, v[background] as string),
+      expect(v.divider, `divider vs ${background}`).not.toBe(v[background])
+      expect(c, `divider over ${background}`).toBeGreaterThan(1.03)
+      expect(c, `divider over ${background}`).toBeLessThan(
+        contrast(v.border as string, v[background] as string),
       )
     }
   })
 
-  it('lateral and fondo are not the same color (the bar separates from the screen, if not with a linea)', () => {
-    // Either the color changes or, if it is the same as the surface, the linea does the job.
-    expect(v.lateral === v.fondo, 'lateral igual al fondo').toBe(false)
+  it('sidebar and background are not the same color (the bar separates from the screen, if not with a divider)', () => {
+    // Either the color changes or, if it is the same as the surface, the divider does the job.
+    expect(v.sidebar === v.background, 'sidebar equal to background').toBe(false)
   })
 })

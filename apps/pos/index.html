@@ -5,19 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>Faro</title>
-    <link rel="icon" href="/marca/faro.svg" />
+    <link rel="icon" href="/brand/faro.svg" />
     <script>
       // Dark mode before painting: no white flash in the bar at night (see src/ui/theme.ts).
       try {
         // Restaurant brand (src/ui/brand.ts, which only saves brands that exist): Faro unless
         // the restaurant has its own.
         const m = localStorage.getItem('pos-brand') || 'faro'
-        if (m !== 'faro') document.documentElement.dataset.marca = m
+        if (m !== 'faro') document.documentElement.dataset.brand = m
       } catch {}
       try {
         const t = localStorage.getItem('pos-theme')
         if (t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches))
-          document.documentElement.classList.add('oscuro')
+          document.documentElement.classList.add('dark')
       } catch {}
     </script>
   </head>

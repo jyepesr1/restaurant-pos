@@ -26,7 +26,7 @@ describe('reset-admin with the hub open', { timeout: 90_000 }, () => {
   afterEach(() => rmSync(folder, { recursive: true, force: true }))
 
   it('does not change the password, exits with code 1, explains the hub must be closed and writes no files', () => {
-    folder = mkdtempSync(join(tmpdir(), 'pos-restablecer-abierto-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-reset-open-'))
     expect(run('src/seed/main.ts', folder).code).toBe(0)
     const before = readdirSync(folder).sort()
 
@@ -59,7 +59,7 @@ describe('reset-admin with the hub open', { timeout: 90_000 }, () => {
   })
 
   it('once the hub is closed, the same command works and the old password stops working', () => {
-    folder = mkdtempSync(join(tmpdir(), 'pos-restablecer-abierto-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-reset-open-'))
     run('src/seed/main.ts', folder)
     const hub = openDatabase(join(folder, 'pos.sqlite'), { exclusive: true })
     expect(run('src/reset.ts', folder).code).toBe(1)

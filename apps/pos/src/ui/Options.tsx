@@ -40,10 +40,10 @@ export function Option({
   children: ReactNode
 }) {
   const base =
-    'inline-flex shrink-0 items-center gap-2 border-2 font-semibold transition focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-foco'
+    'inline-flex shrink-0 items-center gap-2 border-2 font-semibold transition focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus'
   const color = selected
-    ? 'border-accion-fuerte bg-accion-fuerte text-white'
-    : 'border-borde bg-superficie text-texto'
+    ? 'border-action-strong bg-action-strong text-white'
+    : 'border-border bg-surface text-foreground'
   const size =
     shape === 'pastilla'
       ? 'min-h-12 min-w-12 rounded-full px-4'
@@ -59,7 +59,7 @@ export function Option({
       {selected && <Icon name="check" />}
       <span className="flex flex-1 flex-col">
         <span>{children}</span>
-        {detail && <span className="cifras text-sm font-normal">{detail}</span>}
+        {detail && <span className="figures text-sm font-normal">{detail}</span>}
       </span>
     </button>
   )

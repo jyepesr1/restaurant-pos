@@ -427,7 +427,7 @@ describe('report: taxes and rounding adjustment (money audit)', () => {
       events: x.events,
       config: CONFIG,
     })
-    expect(r.sales).toMatchObject({ net: 36_810, settings: -10 })
+    expect(r.sales).toMatchObject({ net: 36_810, roundingAdjustments: -10 })
     expect(r.byMethod[0]).toMatchObject({ method: 'cash', sale: 36_800 })
   })
 

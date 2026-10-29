@@ -21,9 +21,9 @@ function read(): Theme {
 const resolve = (theme: Theme, systemDark: boolean) =>
   theme === 'dark' || (theme === 'system' && systemDark)
 
-/** Adds or removes the `oscuro` class on <html>. */
+/** Adds or removes the `dark` class on <html>. */
 export function applyTheme(theme: Theme = read()) {
-  document.documentElement.classList.toggle('oscuro', resolve(theme, query().matches))
+  document.documentElement.classList.toggle('dark', resolve(theme, query().matches))
 }
 
 /** The chosen theme, whether the screen is dark right now, and how to change it. */
@@ -40,7 +40,7 @@ export function useTheme(): { theme: Theme; dark: boolean; select: (theme: Theme
 
   const dark = resolve(theme, systemDark)
   useEffect(() => {
-    document.documentElement.classList.toggle('oscuro', dark)
+    document.documentElement.classList.toggle('dark', dark)
   }, [dark])
 
   const select = (fresh: Theme) => {

@@ -14,7 +14,7 @@ afterEach(() => {
   for (const c of folders.splice(0)) rmSync(c, { recursive: true, force: true })
 })
 const folder = () => {
-  const c = mkdtempSync(join(tmpdir(), 'pos-fotos-'))
+  const c = mkdtempSync(join(tmpdir(), 'pos-photos-'))
   folders.push(c)
   return c
 }

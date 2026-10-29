@@ -27,8 +27,8 @@ import {
 // exceeds the printer width and the text never gives commands to the paper.
 
 const WIDTHS = [58, 80] as const
-const TYPES: TicketType[] = ['newOne', 'reprinting', 'modification', 'voidEntry']
-const COURSES: TicketCourse[] = ['entry', 'main', 'dessert']
+const TYPES: TicketType[] = ['new', 'reprint', 'modification', 'void']
+const COURSES: TicketCourse[] = ['starter', 'main', 'dessert']
 
 /** Commands that a malicious text (or a name pasted from another app) could carry. */
 const HOSTILE = [
@@ -91,7 +91,7 @@ const width = fc.constantFrom(...WIDTHS)
  * values. Any other command, or a stray control byte, is an injected command.
  */
 function parse(bytes: Uint8Array) {
-  const check = { begin: 0, tableName: 0, feed: 0, cuts: 0, breaks: 0, printable: 0 }
+  const check = { begin: 0, codePageTable: 0, feed: 0, cuts: 0, breaks: 0, printable: 0 }
   for (let i = 0; i < bytes.length; i++) {
     const b = bytes[i] as number
     const n = bytes[i + 1]
@@ -101,7 +101,7 @@ function parse(bytes: Uint8Array) {
         check.begin += 1
         i += 1
       } else if (n === 0x74 && (m === 2 || m === 16)) {
-        check.tableName += 1
+        check.codePageTable += 1
         i += 2
       } else if ((n === 0x61 || n === 0x45) && (m === 0 || m === 1)) i += 2
       else if (n === 0x64 && m === 4) {
@@ -277,7 +277,7 @@ describe('properties: a text never gives commands to the printer', () => {
         expect(check.begin).toBe(1)
         expect(check.cuts).toBe(1)
         expect(check.feed).toBe(1)
-        expect(check.tableName).toBe(p === 'no_accents' ? 0 : 1)
+        expect(check.codePageTable).toBe(p === 'no_accents' ? 0 : 1)
         expect([...bytes.slice(-4)]).toEqual([0x1d, 0x56, 0x42, 0x00])
         expect(readEscpos(bytes).cuts).toBe(1)
       }),
@@ -287,7 +287,7 @@ describe('properties: a text never gives commands to the printer', () => {
 
   it('drawer and cut commands written in a name print as harmless text', () => {
     const base: Ticket = {
-      type: 'newOne',
+      type: 'new',
       station: '\x1dV\x00Cocina',
       number: 1,
       target: '\x1bp\x00\x19\x19Mesa 1',
@@ -361,7 +361,7 @@ describe('properties: reading what was printed returns the text', () => {
         (name, p, mm, quantity) => {
           const format = { columns: COLUMNS[mm], page: p }
           const c: Ticket = {
-            type: 'newOne',
+            type: 'new',
             station: 'Cocina',
             number: 7,
             target: 'Mesa 6',
@@ -421,7 +421,7 @@ const tagliata: TicketItem = {
   notes: null,
 }
 const newOne: Ticket = {
-  type: 'newOne',
+  type: 'new',
   station: 'Cocina',
   number: 12,
   target: 'Mesa 6',
@@ -435,7 +435,7 @@ const read = (c: Ticket, f = f80) => asText(ticketLines(c, f), f.columns)
 
 describe('void, modification and reprint', () => {
   it('a void puts ANULAR at the top, the original number and quantities with a minus sign', () => {
-    const text = read({ ...newOne, type: 'voidEntry' })
+    const text = read({ ...newOne, type: 'void' })
     const rows = text.split('\n')
     expect(rows[0]).toContain('[ANULAR · COCINA]')
     expect(text).toMatch(/MESA 6 +#12/)
@@ -449,7 +449,7 @@ describe('void, modification and reprint', () => {
   it('a void does not put the sign on options or notes, only on the quantity', () => {
     const text = read({
       ...newOne,
-      type: 'voidEntry',
+      type: 'void',
       items: [{ ...tagliata, notes: 'sin sal', options: ['Sin rúgula'] }],
     })
     expect(text).toContain('> Sin rúgula')
@@ -471,7 +471,7 @@ describe('void, modification and reprint', () => {
   })
 
   it('a reprint says REIMPRESIÓN and keeps the original ticket number', () => {
-    const text = read({ ...newOne, type: 'reprinting', number: 5 })
+    const text = read({ ...newOne, type: 'reprint', number: 5 })
     expect(text.split('\n')[0]).toContain('[REIMPRESIÓN · COCINA]')
     expect(text).toMatch(/MESA 6 +#5/)
   })
@@ -529,7 +529,7 @@ describe('courses', () => {
   it('groups by course in the order entry, main, dessert, regardless of input order', () => {
     const text = read({
       ...newOne,
-      items: [item('Tiramisú', 'dessert'), item('Tagliata', 'main'), item('Burrata', 'entry')],
+      items: [item('Tiramisú', 'dessert'), item('Tagliata', 'main'), item('Burrata', 'starter')],
     })
     const pos = (s: string) => text.indexOf(s)
     expect(pos('ENTRADA')).toBeGreaterThan(-1)
@@ -553,7 +553,7 @@ describe('courses', () => {
   })
 
   it('a course without products is not printed', () => {
-    const text = read({ ...newOne, items: [item('Burrata', 'entry')] })
+    const text = read({ ...newOne, items: [item('Burrata', 'starter')] })
     expect(text).toContain('ENTRADA')
     expect(text).not.toContain('FUERTE')
     expect(text).not.toContain('POSTRE')
@@ -569,7 +569,7 @@ describe('courses', () => {
   })
 
   it('the held courses notice fits at 58 mm', () => {
-    const text = read({ ...newOne, heldCourses: ['entry', 'main', 'dessert'] }, f58)
+    const text = read({ ...newOne, heldCourses: ['starter', 'main', 'dessert'] }, f58)
     for (const row of text.split('\n')) expect(row.length).toBeLessThanOrEqual(32)
     expect(text.replaceAll('\n', ' ')).toContain('En espera: Entrada, Fuerte, Postre.')
   })

@@ -118,7 +118,7 @@ describe('firing a course', () => {
   it("sends only the course's items, by station", () => {
     const catalog = withDishes()
     const order = newId()
-    const entry = item({ product_id: simple.id, course: 'entry' })
+    const entry = item({ product_id: simple.id, course: 'starter' })
     const main = item({ product_id: simple.id, course: 'main' })
     const status = rebuild(
       [

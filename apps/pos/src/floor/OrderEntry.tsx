@@ -119,7 +119,7 @@ export function OrderEntry() {
   if (!catalog || (tableId && !table) || (!tableId && !newChannel && !params.get('order'))) {
     return (
       <FloorFrame title="Pedido" back="/">
-        <p className="p-6 text-texto-suave">Esta mesa o este pedido no existe.</p>
+        <p className="p-6 text-muted">Esta mesa o este pedido no existe.</p>
       </FloorFrame>
     )
   }
@@ -682,10 +682,7 @@ export function OrderEntry() {
           <div className="flex gap-2">
             <label className="relative min-w-0 flex-1">
               <span className="sr-only">Buscar en la carta</span>
-              <Icon
-                name="search"
-                className="absolute top-1/2 left-3 -translate-y-1/2 text-texto-suave"
-              />
+              <Icon name="search" className="absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
               <input
                 ref={searchField}
                 type="search"
@@ -704,7 +701,7 @@ export function OrderEntry() {
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
-                className="min-h-12 w-full rounded-xl border border-linea bg-superficie pr-3 pl-11 text-lg shadow-flota placeholder:text-texto-suave focus-visible:outline-3 focus-visible:outline-foco"
+                className="min-h-12 w-full rounded-xl border border-divider bg-surface pr-3 pl-11 text-lg shadow-float placeholder:text-muted focus-visible:outline-3 focus-visible:outline-focus"
               />
             </label>
             {canMarkSoldOut && (
@@ -718,7 +715,7 @@ export function OrderEntry() {
             )}
           </div>
           {markingSoldOut && (
-            <p className="mt-2 rounded-xl bg-alerta-suave p-3 text-alerta-texto" role="status">
+            <p className="mt-2 rounded-xl bg-alert-soft p-3 text-alert-text" role="status">
               Toca un producto para marcarlo agotado o disponible. Se ve al instante en todos los
               equipos. Toca «Listo» al terminar.
             </p>
@@ -766,7 +763,7 @@ export function OrderEntry() {
           />
 
           {orders === null && (
-            <p className="mt-3 text-texto-suave" role="status">
+            <p className="mt-3 text-muted" role="status">
               Leyendo los pedidos de este equipo…
             </p>
           )}
@@ -792,19 +789,19 @@ export function OrderEntry() {
                       ...(quantity > 0 ? [`${quantity} en el pedido`] : []),
                     ].join(', ')}
                     onClick={() => tapProduct(p)}
-                    className={`group flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition active:scale-[0.98] focus-visible:outline-3 focus-visible:outline-foco ${
+                    className={`group flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition active:scale-[0.98] focus-visible:outline-3 focus-visible:outline-focus ${
                       outOfStock
-                        ? 'border-dashed border-alerta-fuerte bg-alerta-suave text-alerta-texto'
+                        ? 'border-dashed border-alert-strong bg-alert-soft text-alert-text'
                         : quantity > 0
-                          ? 'border-accion-fuerte bg-superficie shadow-flota'
-                          : 'border-linea bg-superficie hover:border-borde hover:shadow-flota'
+                          ? 'border-action-strong bg-surface shadow-float'
+                          : 'border-divider bg-surface hover:border-border hover:shadow-float'
                     }`}
                   >
                     <span
                       className={`relative flex w-full items-center justify-center ${
                         p.photo
-                          ? 'aspect-video bg-superficie-2 sm:aspect-[4/3]'
-                          : 'h-14 bg-superficie-2/70 sm:h-20'
+                          ? 'aspect-video bg-surface-2 sm:aspect-[4/3]'
+                          : 'h-14 bg-surface-2/70 sm:h-20'
                       }`}
                     >
                       <PhotoOrIcon
@@ -813,12 +810,12 @@ export function OrderEntry() {
                         off={outOfStock}
                       />
                       {quantity > 0 && (
-                        <span className="cifras absolute top-2 right-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-accion-fuerte px-2 text-sm font-bold text-white shadow-flota">
+                        <span className="figures absolute top-2 right-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-action-strong px-2 text-sm font-bold text-white shadow-float">
                           {`×${quantity}`}
                         </span>
                       )}
                       {outOfStock && (
-                        <span className="absolute top-2 left-2 rounded-full bg-alerta-fuerte px-2.5 py-0.5 text-sm font-semibold text-white">
+                        <span className="absolute top-2 left-2 rounded-full bg-alert-strong px-2.5 py-0.5 text-sm font-semibold text-white">
                           Agotado
                         </span>
                       )}
@@ -830,20 +827,18 @@ export function OrderEntry() {
                         {p.name}
                       </span>
                       <span className="mt-auto flex items-center justify-between gap-2">
-                        <span className="cifras text-lg font-bold">
+                        <span className="figures text-lg font-bold">
                           {p.variants.length > 0
                             ? `desde ${pesos(Math.min(...p.variants.map((v) => v.price)))}`
                             : pesos(p.price)}
                         </span>
                         {!outOfStock &&
                           (asksForOptions(p) ? (
-                            <span className="text-sm whitespace-nowrap text-texto-suave">
-                              opciones ›
-                            </span>
+                            <span className="text-sm whitespace-nowrap text-muted">opciones ›</span>
                           ) : (
                             <span
                               aria-hidden="true"
-                              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accion-fuerte text-white transition group-hover:brightness-110"
+                              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-action-strong text-white transition group-hover:brightness-110"
                             >
                               <Icon name="more" className="size-5" />
                             </span>
@@ -855,14 +850,14 @@ export function OrderEntry() {
               )
             })}
             {list.length === 0 && (
-              <li className="col-span-full p-6 text-center text-texto-suave">
+              <li className="col-span-full p-6 text-center text-muted">
                 {searchQuery.trim()
                   ? `No hay nada con «${searchQuery}».`
                   : 'No hay productos aquí.'}
               </li>
             )}
             {list.length > MAX_RESULTS && (
-              <li className="col-span-full p-3 text-center text-texto-suave">
+              <li className="col-span-full p-3 text-center text-muted">
                 {`Hay ${list.length - MAX_RESULTS} más: escribe un poco más.`}
               </li>
             )}
@@ -870,20 +865,20 @@ export function OrderEntry() {
         </section>
 
         {/* Tablet and register: the order always in view. */}
-        <aside className="sticky top-21 hidden h-[calc(100dvh-6.5rem)] w-80 shrink-0 lg:w-96 flex-col overflow-hidden rounded-2xl border border-linea bg-superficie shadow-flota md:flex">
-          <div className="flex items-center justify-between gap-2 border-b border-linea px-4 py-3">
+        <aside className="sticky top-21 hidden h-[calc(100dvh-6.5rem)] w-80 shrink-0 lg:w-96 flex-col overflow-hidden rounded-2xl border border-divider bg-surface shadow-float md:flex">
+          <div className="flex items-center justify-between gap-2 border-b border-divider px-4 py-3">
             <h2 className="text-lg font-bold">{title}</h2>
             {order?.status.dayNumber && (
-              <span className="cifras text-sm text-texto-suave">{`Pedido #${order.status.dayNumber}`}</span>
+              <span className="figures text-sm text-muted">{`Pedido #${order.status.dayNumber}`}</span>
             )}
           </div>
           {ticket}
-          <div className="border-t border-linea p-4">{ticketFooter}</div>
+          <div className="border-t border-divider p-4">{ticketFooter}</div>
         </aside>
       </div>
 
       {/* Phone: fixed bar at the bottom, within thumb reach. */}
-      <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-linea bg-lateral p-3 shadow-flota md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-divider bg-sidebar p-3 shadow-float md:hidden">
         <Button
           variant="secondary"
           large
@@ -891,7 +886,7 @@ export function OrderEntry() {
           className="flex-1 flex-col gap-0! text-base! leading-tight"
         >
           <span>{`Pedido (${order ? currentItems(order.status).reduce((n, i) => n + i.quantity - i.voidedQuantity, 0) : 0})`}</span>
-          <span className="cifras font-titulo text-lg">{pesos(order?.total ?? 0)}</span>
+          <span className="figures font-heading text-lg">{pesos(order?.total ?? 0)}</span>
         </Button>
         {/* With everything sent, the thumb delivers what is in the kitchen at once (ADR-015). */}
         <div className="flex-1">
@@ -1056,7 +1051,7 @@ function PhotoOrIcon({ photo, icon, off }: { photo: string | null; icon: IconNam
         className={`size-full object-cover ${off ? 'opacity-40 grayscale' : ''}`}
       />
     )
-  return <Icon name={icon} className={`size-9 ${off ? 'text-alerta-texto' : 'text-texto-suave'}`} />
+  return <Icon name={icon} className={`size-9 ${off ? 'text-alert-text' : 'text-muted'}`} />
 }
 
 /** Without a photo, the product shows an icon: a glass if it goes out at the bar, a dish if not. */
@@ -1094,7 +1089,7 @@ function SelectFor({
     <div className="mt-3 flex flex-col gap-2">
       {askGuestCount && (
         <Group label="Cuántas personas hay en la mesa" className={row}>
-          <span className="shrink-0 font-semibold text-texto-suave">¿Cuántas personas?</span>
+          <span className="shrink-0 font-semibold text-muted">¿Cuántas personas?</span>
           {QUICK_GUEST_COUNTS.map((n) => (
             <Option key={n} selected={false} onChoose={() => onGuestCount(n)}>
               {String(n)}
@@ -1104,7 +1099,7 @@ function SelectFor({
       )}
       {guests > 0 && (
         <Group label="Para quién es lo que agregues" className={row}>
-          <span className="shrink-0 font-semibold text-texto-suave">Para</span>
+          <span className="shrink-0 font-semibold text-muted">Para</span>
           {peopleFor(guests).map((c) => (
             <Option
               key={c ?? 'table'}
@@ -1119,7 +1114,7 @@ function SelectFor({
       )}
       {coursesEnabled && (
         <Group label="En qué curso va lo que agregues" className={row}>
-          <span className="shrink-0 font-semibold text-texto-suave">Curso</span>
+          <span className="shrink-0 font-semibold text-muted">Curso</span>
           {COURSES.map((c) => (
             <Option
               key={c.course ?? 'ninguno'}
@@ -1174,7 +1169,7 @@ function Ticket({
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Outside dine-in, people are not counted. */}
       {dineIn && (
-        <div className="flex items-center gap-2 border-b border-linea p-3">
+        <div className="flex items-center gap-2 border-b border-divider p-3">
           <Icon name="people" />
           <span className="font-semibold">
             {guests === 0
@@ -1201,11 +1196,11 @@ function Ticket({
         <button
           type="button"
           onClick={onActions}
-          className="flex min-h-12 w-full items-center gap-2 border-b border-linea px-4 py-2 text-left font-semibold hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
+          className="flex min-h-12 w-full items-center gap-2 border-b border-divider px-4 py-2 text-left font-semibold hover:bg-surface-2 focus-visible:outline-3 focus-visible:outline-focus"
         >
           <Icon name="table" className="size-5 shrink-0" />
           Mesa y pedido
-          <span className="ml-auto text-sm font-normal text-texto-suave">
+          <span className="ml-auto text-sm font-normal text-muted">
             Cambiar, unir, mover, cancelar
           </span>
         </button>
@@ -1213,21 +1208,21 @@ function Ticket({
       <button
         type="button"
         onClick={onEditNote}
-        className="flex min-h-12 w-full items-start gap-2 border-b border-linea px-4 py-2 text-left hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
+        className="flex min-h-12 w-full items-start gap-2 border-b border-divider px-4 py-2 text-left hover:bg-surface-2 focus-visible:outline-3 focus-visible:outline-focus"
       >
         <Icon name="pencil" className="mt-0.5 size-5 shrink-0" />
         {order?.status.notes ? (
           <span>
-            <span className="block text-sm text-texto-suave">Nota del pedido</span>
+            <span className="block text-sm text-muted">Nota del pedido</span>
             <span className="font-semibold">{order.status.notes}</span>
           </span>
         ) : (
-          <span className="font-semibold text-accion-texto">Nota del pedido</span>
+          <span className="font-semibold text-action-text">Nota del pedido</span>
         )}
       </button>
       <div className="flex-1 overflow-y-auto">
         {items.length === 0 && (
-          <p className="p-6 text-center text-texto-suave">Toca un producto para agregarlo.</p>
+          <p className="p-6 text-center text-muted">Toca un producto para agregarlo.</p>
         )}
         {order &&
           byCourse.map((c) => {
@@ -1236,11 +1231,11 @@ function Ticket({
             return (
               <section key={c.course ?? 'ninguno'} aria-label={c.name}>
                 {(byCourse.length > 1 || c.course !== null) && (
-                  <div className="flex min-h-12 items-center justify-between gap-2 bg-superficie-2/60 px-4">
+                  <div className="flex min-h-12 items-center justify-between gap-2 bg-surface-2/60 px-4">
                     <span className="font-semibold">
                       {c.name}
                       {heldCourses > 0 && (
-                        <span className="font-normal text-proceso-texto"> · espera</span>
+                        <span className="font-normal text-progress-text"> · espera</span>
                       )}
                     </span>
                     {c.course !== null && heldCourses > 0 && (
@@ -1272,7 +1267,7 @@ function Ticket({
           })}
       </div>
       {onServe && toServe.length > 1 && (
-        <div className="border-t border-linea px-3 pt-3">
+        <div className="border-t border-divider px-3 pt-3">
           <Button
             icon="serve"
             className="w-full"
@@ -1288,18 +1283,18 @@ function Ticket({
         </div>
       )}
       {waitingCount > 0 && (
-        <p className="border-t border-linea px-3 pt-2 text-sm text-proceso-texto">
+        <p className="border-t border-divider px-3 pt-2 text-sm text-progress-text">
           {`${waitingCount} ${waitingCount === 1 ? 'espera' : 'esperan'} su curso: «Enviar» no ${waitingCount === 1 ? 'lo manda' : 'los manda'}; sale${waitingCount === 1 ? '' : 'n'} al tocar «Marchar».`}
         </p>
       )}
-      <div className="flex flex-col gap-1 border-t border-linea px-4 py-3">
-        <div className="flex justify-between text-sm text-texto-suave">
+      <div className="flex flex-col gap-1 border-t border-divider px-4 py-3">
+        <div className="flex justify-between text-sm text-muted">
           <span>Productos</span>
-          <span className="cifras">
+          <span className="figures">
             {items.reduce((total, i) => total + i.quantity - i.voidedQuantity, 0)}
           </span>
         </div>
-        <div className="cifras flex items-baseline justify-between">
+        <div className="figures flex items-baseline justify-between">
           <span className="text-lg font-semibold">Total</span>
           <span className="text-2xl font-bold">{pesos(order?.total ?? 0)}</span>
         </div>
@@ -1324,28 +1319,28 @@ function TicketLine({
   const unsent = i.status === 'pending' || i.status === 'held'
   const pendingConfirmation = order.itemsToConfirm.has(i.id)
   return (
-    <li className="flex min-h-14 items-center gap-1 border-b border-linea pr-2">
+    <li className="flex min-h-14 items-center gap-1 border-b border-divider pr-2">
       <button
         type="button"
         onClick={onTap}
-        className="flex min-h-14 flex-1 items-start gap-3 px-3 py-2 text-left hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
+        className="flex min-h-14 flex-1 items-start gap-3 px-3 py-2 text-left hover:bg-surface-2 focus-visible:outline-3 focus-visible:outline-focus"
       >
-        <span className="cifras w-6 font-semibold">{i.quantity - i.voidedQuantity}</span>
+        <span className="figures w-6 font-semibold">{i.quantity - i.voidedQuantity}</span>
         <span className="flex-1">
           <span className="font-semibold">{i.name}</span>
           {i.modifiers.length > 0 && (
-            <span className="block text-sm font-semibold text-proceso-texto">
+            <span className="block text-sm font-semibold text-progress-text">
               {i.modifiers.map((m) => m.name).join(' · ')}
             </span>
           )}
           {i.notes && <span className="block text-sm font-semibold">«{i.notes}»</span>}
           {unsent && !i.notes && (
-            <span className="flex items-center gap-1 whitespace-nowrap text-sm text-accion-texto">
+            <span className="flex items-center gap-1 whitespace-nowrap text-sm text-action-text">
               <Icon name="pencil" className="size-4" />
               Toca para nota
             </span>
           )}
-          <span className="flex flex-wrap items-center gap-1 text-sm text-texto-suave">
+          <span className="flex flex-wrap items-center gap-1 text-sm text-muted">
             {[
               ...(i.guest === null ? [] : [guestName(i.guest)]),
               STATUS_TEXT[i.status] ?? i.status,
@@ -1359,7 +1354,7 @@ function TicketLine({
             )}
           </span>
         </span>
-        <span className="cifras">{pesos(itemTotals(order.status, i).net)}</span>
+        <span className="figures">{pesos(itemTotals(order.status, i).net)}</span>
       </button>
       {unsent && (
         <>
@@ -1419,7 +1414,7 @@ function Quantity({
         disabled={value <= minimum}
         onClick={() => onChange(value - 1)}
       />
-      <output className="cifras w-10 text-center text-xl font-semibold">{value}</output>
+      <output className="figures w-10 text-center text-xl font-semibold">{value}</output>
       <Button
         icon="more"
         aria-label="Uno más"
@@ -1431,7 +1426,7 @@ function Quantity({
 }
 
 const noteClass =
-  'rounded-xl border border-borde bg-superficie px-3 py-2 text-lg focus-visible:outline-3 focus-visible:outline-foco'
+  'rounded-xl border border-border bg-surface px-3 py-2 text-lg focus-visible:outline-3 focus-visible:outline-focus'
 
 /**
  * Size, options, quantity and note of a product. If there is only one thing to choose, tapping it
@@ -1520,9 +1515,9 @@ function ProductPanel({
         </Button>
       }
     >
-      {product.description && <p className="mb-4 text-texto-suave">{product.description}</p>}
+      {product.description && <p className="mb-4 text-muted">{product.description}</p>}
       {onlyOne && (
-        <p className="mb-3 text-texto-suave">
+        <p className="mb-3 text-muted">
           Toca una opción y queda agregada. Si quieres cantidad o nota, cámbialas antes.
         </p>
       )}
@@ -1533,7 +1528,7 @@ function ProductPanel({
             soldOutVariant(v.id) ? (
               <p
                 key={v.id}
-                className="flex min-h-14 items-center rounded-xl border-2 border-dashed border-alerta-fuerte px-3 text-alerta-texto"
+                className="flex min-h-14 items-center rounded-xl border-2 border-dashed border-alert-strong px-3 text-alert-text"
               >
                 {`${v.name} · agotado`}
               </p>
@@ -1555,9 +1550,9 @@ function ProductPanel({
         <Group key={g.id} label={g.name} className="mb-4 flex flex-col gap-2">
           <p className="font-semibold">
             {g.name}
-            {g.minimum > 0 && <span className="font-normal text-texto-suave"> (obligatorio)</span>}
+            {g.minimum > 0 && <span className="font-normal text-muted"> (obligatorio)</span>}
             {g.maximum > 1 && (
-              <span className="font-normal text-texto-suave">{` · hasta ${g.maximum}`}</span>
+              <span className="font-normal text-muted">{` · hasta ${g.maximum}`}</span>
             )}
           </p>
           {g.options.map((o) => (
@@ -1679,13 +1674,13 @@ function PanelItem({
       }
     >
       {!unsent && item.status === 'served' && (
-        <p className="rounded-xl bg-neutro-suave p-3 text-neutro-texto">
+        <p className="rounded-xl bg-neutral-soft p-3 text-neutral-text">
           Ya se entregó en la mesa. Si hay que anularlo, toca «Anular».
         </p>
       )}
       {!unsent && item.status !== 'served' && (
         <div className="flex flex-col gap-4">
-          <p className="rounded-xl bg-neutro-suave p-3 text-neutro-texto">
+          <p className="rounded-xl bg-neutral-soft p-3 text-neutral-text">
             Ya salió a cocina. Si cambias la nota, la cocina recibe una comanda «CAMBIO».
           </p>
           <label className="flex flex-col gap-1">
@@ -1794,7 +1789,7 @@ function OrderNotePanel({
           className={noteClass}
         />
       </label>
-      <p className="mt-2 text-sm text-texto-suave">
+      <p className="mt-2 text-sm text-muted">
         Sale en cada comanda que envíes. Si ya hay platos en cocina, la nota nueva sale además en
         papel a cada estación que tenga algo pendiente.
       </p>
@@ -1823,7 +1818,7 @@ function SoldOutPanel({
   ]
   return (
     <SidePanel opened title={`Agotar ${product.name}`} onClose={onClose}>
-      <p className="mb-4 text-texto-suave">
+      <p className="mb-4 text-muted">
         Toca lo que se acabó; tócalo otra vez cuando vuelva a haber.
       </p>
       <Group label="Qué se acabó" className="flex flex-col gap-2">

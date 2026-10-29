@@ -19,9 +19,9 @@ const blocks = [...withoutComments.matchAll(/([^{};]+)\{([^{}]*)\}/g)].map((m) =
 function variables(brand: string | null, dark: boolean): Record<string, string> {
   const applying = [
     ':root',
-    ...(dark ? [':root.oscuro'] : []),
-    ...(brand ? [`:root[data-marca="${brand}"]`] : []),
-    ...(brand && dark ? [`:root[data-marca="${brand}"].oscuro`] : []),
+    ...(dark ? [':root.dark'] : []),
+    ...(brand ? [`:root[data-brand="${brand}"]`] : []),
+    ...(brand && dark ? [`:root[data-brand="${brand}"].dark`] : []),
   ]
   const v: Record<string, string> = {}
   for (const b of blocks)
@@ -42,7 +42,7 @@ function contrast(a: string, b: string): number {
   return (x + 0.05) / (y + 0.05)
 }
 
-const TONES = ['accion', 'libre', 'proceso', 'alerta', 'neutro']
+const TONES = ['action', 'free', 'progress', 'alert', 'neutral']
 
 describe.each([
   ['Faro light', null, false],
@@ -54,63 +54,61 @@ describe.each([
 
   it('defines all the colors', () => {
     for (const name of [
-      'fondo',
-      'superficie',
-      'superficie-2',
-      'borde',
-      'texto',
-      'texto-suave',
-      'foco',
+      'background',
+      'surface',
+      'surface-2',
+      'border',
+      'foreground',
+      'muted',
+      'focus',
     ])
       expect(v[name], name).toBeDefined()
     for (const tone of TONES)
-      for (const variant of ['fuerte', 'suave', 'texto'])
+      for (const variant of ['strong', 'soft', 'text'])
         expect(v[`${tone}-${variant}`], `${tone}-${variant}`).toBeDefined()
   })
 
   it('text is readable on the background and the surfaces', () => {
-    for (const background of ['fondo', 'superficie', 'superficie-2'])
-      for (const text of ['texto', 'texto-suave'])
+    for (const background of ['background', 'surface', 'surface-2'])
+      for (const text of ['foreground', 'muted'])
         expect(
           contrast(v[text] as string, v[background] as string),
-          `${text} sobre ${background}`,
+          `${text} over ${background}`,
         ).toBeGreaterThanOrEqual(4.5)
   })
 
   it('the controls border stands out from its background (3:1, WCAG 1.4.11)', () => {
-    for (const background of ['fondo', 'superficie', 'superficie-2'])
+    for (const background of ['background', 'surface', 'surface-2'])
       expect(
-        contrast(v.borde as string, v[background] as string),
-        `borde sobre ${background}`,
+        contrast(v.border as string, v[background] as string),
+        `border over ${background}`,
       ).toBeGreaterThanOrEqual(3)
   })
 
   it('the focus ring is visible on any background (3:1)', () => {
-    for (const background of ['fondo', 'superficie', 'superficie-2'])
-      expect(contrast(v.foco as string, v[background] as string)).toBeGreaterThanOrEqual(3)
+    for (const background of ['background', 'surface', 'surface-2'])
+      expect(contrast(v.focus as string, v[background] as string)).toBeGreaterThanOrEqual(3)
   })
 
   it('the brand color is enough for large titles (3:1)', () => {
-    expect(contrast(v.marca as string, v.fondo as string)).toBeGreaterThanOrEqual(3)
+    expect(contrast(v.brand as string, v.background as string)).toBeGreaterThanOrEqual(3)
   })
 
   it('the notice (surface text on a neutral background) is readable', () => {
-    expect(contrast(v.superficie as string, v['neutro-texto'] as string)).toBeGreaterThanOrEqual(
-      4.5,
-    )
+    expect(contrast(v.surface as string, v['neutral-text'] as string)).toBeGreaterThanOrEqual(4.5)
   })
 
   it.each(TONES)('%s: white text on the strong tone and its text on the soft one', (tone) => {
-    expect(contrast('#ffffff', v[`${tone}-fuerte`] as string)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast('#ffffff', v[`${tone}-strong`] as string)).toBeGreaterThanOrEqual(4.5)
     expect(
-      contrast(v[`${tone}-texto`] as string, v[`${tone}-suave`] as string),
+      contrast(v[`${tone}-text`] as string, v[`${tone}-soft`] as string),
     ).toBeGreaterThanOrEqual(4.5)
   })
 })
 
 describe('status colors do not change with the brand (ADR-014)', () => {
-  const STATUS = ['libre', 'proceso', 'alerta'].flatMap((t) =>
-    ['fuerte', 'suave', 'texto'].map((n) => `${t}-${n}`),
+  const STATUS = ['free', 'progress', 'alert'].flatMap((t) =>
+    ['strong', 'soft', 'text'].map((n) => `${t}-${n}`),
   )
   it.each([false, true])('La Spritzzería has the Faro ones (dark: %s)', (dark) => {
     const faro = variables(null, dark)
@@ -125,7 +123,7 @@ describe('status colors do not change with the brand (ADR-014)', () => {
     ['la-spritzzeria', true],
   ] as const)('text and soft text are readable on the sidebar (%s, dark: %s)', (m, dark) => {
     const v = variables(m, dark)
-    expect(contrast(v.texto as string, v.lateral as string)).toBeGreaterThanOrEqual(4.5)
-    expect(contrast(v['texto-suave'] as string, v.lateral as string)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(v.foreground as string, v.sidebar as string)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(v.muted as string, v.sidebar as string)).toBeGreaterThanOrEqual(4.5)
   })
 })

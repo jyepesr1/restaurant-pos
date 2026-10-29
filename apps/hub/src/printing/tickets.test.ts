@@ -83,13 +83,13 @@ async function setup() {
       guest: 1,
     }
     const drink = { ...item(), name: 'Aperol Spritz' }
-    const en = { aggregate_id: order }
+    const inOrder = { aggregate_id: order }
     const base = m.db.prepare('SELECT coalesce(max(sequence), 0) AS s FROM events').get()
       ?.s as number
     const r = hub.receiveBatch(connection, [
-      m.event(connection, session, 'OrderOpened', OPEN_ORDER, { ...en, base_sequence: base }),
-      m.event(connection, session, 'ItemAdded', dish, { ...en, base_sequence: base + 1 }),
-      m.event(connection, session, 'ItemAdded', drink, { ...en, base_sequence: base + 2 }),
+      m.event(connection, session, 'OrderOpened', OPEN_ORDER, { ...inOrder, base_sequence: base }),
+      m.event(connection, session, 'ItemAdded', dish, { ...inOrder, base_sequence: base + 1 }),
+      m.event(connection, session, 'ItemAdded', drink, { ...inOrder, base_sequence: base + 2 }),
       m.event(
         connection,
         session,
@@ -100,7 +100,7 @@ async function setup() {
             { ticket_id: newId(), station_id: bar, item_ids: [drink.item_id] },
           ],
         },
-        { ...en, base_sequence: base + 3 },
+        { ...inOrder, base_sequence: base + 3 },
       ),
     ])
     expect(r.results.map((x) => x.status)).toEqual([

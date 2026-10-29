@@ -128,7 +128,7 @@ export function reportCsv(
       ['Anulado', v.voided],
       ['Descuentos', v.discounts],
       ['Neto', v.net],
-      ['Ajuste por redondeo', v.settings],
+      ['Ajuste por redondeo', v.roundingAdjustments],
       ...v.taxes.flatMap((i) => [
         [`Base ${i.type.toUpperCase()} ${pointsAsPercent(i.rate)}`, i.base],
         [`Impuesto ${i.type.toUpperCase()} ${pointsAsPercent(i.rate)}`, i.tax],

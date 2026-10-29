@@ -475,7 +475,7 @@ const sortedPlan = fc.record<HistoryPlan>({
     .map(([a, b]) => [Math.min(a, b), Math.max(a, b)] as [number, number]),
 })
 
-const FIELDS = ['gross', 'voided', 'discounts', 'net', 'settings', 'tips'] as const
+const FIELDS = ['gross', 'voided', 'discounts', 'net', 'roundingAdjustments', 'tips'] as const
 
 describe('what was reported for a day does not change', () => {
   it('the report of a day is the same today as after any later event on other days', () => {
@@ -524,7 +524,14 @@ describe('Σ by days = the final state', () => {
         const h = buildHistory(p)
         const { memory } = stores(h.events)
         const days = DAYS.map((d) => salesOf(memory, d).sales)
-        const expected = { gross: 0, voided: 0, discounts: 0, net: 0, settings: 0, tips: 0 }
+        const expected = {
+          gross: 0,
+          voided: 0,
+          discounts: 0,
+          net: 0,
+          roundingAdjustments: 0,
+          tips: 0,
+        }
         let checks = 0
         let guests = 0
         for (const id of h.service.orders) {
@@ -542,7 +549,7 @@ describe('Σ by days = the final state', () => {
           expected.voided += final.voided
           expected.discounts += final.discount
           expected.net += final.net
-          expected.settings += final.settings
+          expected.roundingAdjustments += final.roundingAdjustments
           expected.tips += final.tips
           const initial = stateIn(firstOne.sequence)
           guests += initial.guests

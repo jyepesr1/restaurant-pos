@@ -61,8 +61,8 @@ const closeout = fc.record<ZReport>({
     base: pesosArb,
     charged: pesosArb,
     refunds: pesosArb,
-    entries: pesosArb,
-    outflows: pesosArb,
+    cashIn: pesosArb,
+    cashOut: pesosArb,
     tipPayouts: pesosArb,
     expected: withSign,
     counted: pesosArb,
@@ -79,7 +79,7 @@ const closeout = fc.record<ZReport>({
       maxLength: 4,
     }),
     tips: withSign,
-    settings: withSign,
+    roundingAdjustments: withSign,
     checks: fc.nat(9_999),
     guests: fc.nat(99_999),
     averageTicket: pesosArb,
@@ -166,10 +166,9 @@ describe('printed Z report properties', () => {
         }
         // Cash amounts print in full even if the line wraps: at each width, without spaces or
         // line breaks, the amount appears.
-        const floorPlan = (t: string) => t.replace(/\s+/g, '')
+        const flatten = (t: string) => t.replace(/\s+/g, '')
         for (const amount of [z.cash.expected, z.cash.counted, z.cash.base])
-          for (const t of [t80, t58])
-            expect(floorPlan(t)).toContain(floorPlan(pesos(Math.abs(amount))))
+          for (const t of [t80, t58]) expect(flatten(t)).toContain(flatten(pesos(Math.abs(amount))))
         // A reprint says so and an original does not.
         expect(t80.includes('Reimpresión')).toBe(Boolean(z.reprinted))
       }),
@@ -189,8 +188,8 @@ describe('printed Z report properties', () => {
         base: 0,
         charged: 0,
         refunds: 0,
-        entries: 0,
-        outflows: 0,
+        cashIn: 0,
+        cashOut: 0,
         tipPayouts: 0,
         expected: 100,
         counted: 100,

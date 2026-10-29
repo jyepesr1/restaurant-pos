@@ -25,7 +25,7 @@ type Action =
   | { t: 'serve'; node: number; direction: Direction; index: number }
   | { t: 'settle' }
   | { t: 'crashHub' }
-  | { t: 'crashOnSave'; en: number }
+  | { t: 'crashOnSave'; at: number }
 
 const MESSAGE_TYPES: Record<Direction, string[]> = {
   to_hub: ['push', 'pull', 'hello'],
@@ -82,7 +82,7 @@ const arbAction: fc.Arbitrary<Action> = fc.oneof(
     weight: 1,
     arbitrary: fc.record({
       t: fc.constant('crashOnSave' as const),
-      en: fc.integer({ min: 1, max: 4 }),
+      at: fc.integer({ min: 1, max: 4 }),
     }),
   },
 )
@@ -193,7 +193,7 @@ async function execute(devices: number, actions: Action[], orderedChannel = fals
         m.network.crashHub()
         break
       case 'crashOnSave':
-        store.crashAt = action.en
+        store.crashAt = action.at
         break
     }
   }

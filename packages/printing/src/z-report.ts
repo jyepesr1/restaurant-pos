@@ -29,8 +29,8 @@ export interface ZReport {
     base: number
     charged: number
     refunds: number
-    entries: number
-    outflows: number
+    cashIn: number
+    cashOut: number
     tipPayouts: number
     expected: number
     counted: number
@@ -49,7 +49,7 @@ export interface ZReport {
     guests: number
     averageTicket: number
     /** Cash rounding adjustment: what was charged over or under when rounding. */
-    settings?: number
+    roundingAdjustments?: number
     voided: number
     canceled: number
     discounts: number
@@ -86,8 +86,8 @@ export function zReportLines(z: ZReport, format: { columns: number; page: CodePa
     ...row('Cobrado', pesos(e.charged)),
   ]
   if (e.refunds) lines.push(...row('Devoluciones', `-${pesos(e.refunds)}`))
-  if (e.entries) lines.push(...row('Entradas', pesos(e.entries)))
-  if (e.outflows) lines.push(...row('Salidas', `-${pesos(e.outflows)}`))
+  if (e.cashIn) lines.push(...row('Entradas', pesos(e.cashIn)))
+  if (e.cashOut) lines.push(...row('Salidas', `-${pesos(e.cashOut)}`))
   if (e.tipPayouts) lines.push(...row('Pago de propinas', `-${pesos(e.tipPayouts)}`))
   lines.push(
     ...row('Esperado', pesos(e.expected), { bold: true }),
@@ -119,7 +119,7 @@ export function zReportLines(z: ZReport, format: { columns: number; page: CodePa
     for (const i of v.taxes) if (i.value > 0) lines.push(...row(i.name, pesos(i.value)))
   }
   lines.push(
-    ...(v.settings ? row('Ajuste por redondeo', pesos(v.settings)) : []),
+    ...(v.roundingAdjustments ? row('Ajuste por redondeo', pesos(v.roundingAdjustments)) : []),
     ...row('Propinas', pesos(v.tips)),
     ...row('Cuentas', String(v.checks)),
     ...row('Comensales', String(v.guests)),

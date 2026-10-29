@@ -33,17 +33,17 @@ describe('transfer ticket', () => {
   })
 
   it('the other types do not show CAMBIO DE MESA', () => {
-    for (const type of ['newOne', 'reprinting', 'modification', 'voidEntry', 'note'] as const)
+    for (const type of ['new', 'reprint', 'modification', 'void', 'note'] as const)
       expect(text({ ...base, type, before: null })).not.toContain('CAMBIO DE MESA')
   })
 
   it('also fits at 58 mm, with a long table name, without exceeding the width', () => {
-    const length = {
+    const longName = {
       ...base,
       target: 'Mesa Terraza Norte 12 + Terraza Norte 13',
       before: 'Mesa Barra Principal 1',
     }
-    const l = ticketLines(length, { columns: COLUMNS[58], page: 'pc850' })
+    const l = ticketLines(longName, { columns: COLUMNS[58], page: 'pc850' })
     for (const line of asText(l, COLUMNS[58]).split('\n'))
       expect([...line].length).toBeLessThanOrEqual(COLUMNS[58] * 2)
     expect(asText(l, COLUMNS[58])).toContain('Antes:')

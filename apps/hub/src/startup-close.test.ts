@@ -30,7 +30,7 @@ function world() {
     token: register.token,
     hub_instance: null,
     until: 0,
-    version_app: 'pruebas',
+    version_app: 'test',
   })
   let batch = 0
   const maxSequence = () =>
@@ -43,7 +43,7 @@ function world() {
     batch += 1
     link.receive({
       type: 'push',
-      batch_id: `lote-${batch}`,
+      batch_id: `batch-${batch}`,
       events: [
         m.event(register.connection, session, type, data, {
           aggregate_id: aggregate,

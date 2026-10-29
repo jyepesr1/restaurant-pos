@@ -31,33 +31,33 @@ const STATUSES: Record<DemoTableStatus, { tone: Tone; icon: IconName; text: stri
 
 /** Table border and seat color, by the tone of its status (full classes). */
 const BORDER: Record<Tone, string> = {
-  free: 'border-libre-fuerte/45',
-  progress: 'border-proceso-fuerte/45',
-  warning: 'border-alerta-fuerte/45',
-  action: 'border-accion-fuerte/45',
-  neutral: 'border-neutro-fuerte/45',
+  free: 'border-free-strong/45',
+  progress: 'border-progress-strong/45',
+  warning: 'border-alert-strong/45',
+  action: 'border-action-strong/45',
+  neutral: 'border-neutral-strong/45',
 }
 const SEAT: Record<Tone, string> = {
-  free: 'bg-libre-fuerte/55',
-  progress: 'bg-proceso-fuerte/70',
-  warning: 'bg-alerta-fuerte/70',
-  action: 'bg-accion-fuerte/60',
-  neutral: 'bg-neutro-fuerte/55',
+  free: 'bg-free-strong/55',
+  progress: 'bg-progress-strong/70',
+  warning: 'bg-alert-strong/70',
+  action: 'bg-action-strong/60',
+  neutral: 'bg-neutral-strong/55',
 }
 /** The halo and the strip that join on the plan the tables of the same order (task 1.5). */
 const UNION: Record<Tone, string> = {
-  free: 'text-libre-fuerte',
-  progress: 'text-proceso-fuerte',
-  warning: 'text-alerta-fuerte',
-  action: 'text-accion-fuerte',
-  neutral: 'text-neutro-fuerte',
+  free: 'text-free-strong',
+  progress: 'text-progress-strong',
+  warning: 'text-alert-strong',
+  action: 'text-action-strong',
+  neutral: 'text-neutral-strong',
 }
 const DOT: Record<Tone, string> = {
-  free: 'bg-libre-fuerte',
-  progress: 'bg-proceso-fuerte',
-  warning: 'bg-alerta-fuerte',
-  action: 'bg-accion-fuerte',
-  neutral: 'bg-neutro-fuerte',
+  free: 'bg-free-strong',
+  progress: 'bg-progress-strong',
+  warning: 'bg-alert-strong',
+  action: 'bg-action-strong',
+  neutral: 'bg-neutral-strong',
 }
 
 type Table = Catalog['tables'][number]
@@ -223,15 +223,15 @@ export function Tables() {
               </Group>
             )}
             <span className="flex-1" />
-            <Group label="Ver el salón como" className="flex rounded-xl bg-superficie-2 p-1">
+            <Group label="Ver el salón como" className="flex rounded-xl bg-surface-2 p-1">
               {(['floorPlan', 'list'] as const).map((v) => (
                 <button
                   key={v}
                   type="button"
                   aria-pressed={view === v}
                   onClick={() => selectView(v)}
-                  className={`flex min-h-12 items-center gap-2 rounded-lg px-3 font-semibold transition-colors focus-visible:outline-3 focus-visible:outline-foco ${
-                    view === v ? 'bg-superficie text-texto shadow-flota' : 'text-texto-suave'
+                  className={`flex min-h-12 items-center gap-2 rounded-lg px-3 font-semibold transition-colors focus-visible:outline-3 focus-visible:outline-focus ${
+                    view === v ? 'bg-surface text-foreground shadow-float' : 'text-muted'
                   }`}
                 >
                   <Icon name={v === 'floorPlan' ? 'floorPlan' : 'list'} className="size-4" />
@@ -250,7 +250,7 @@ export function Tables() {
                   className={`size-3 rounded-full ${DOT[STATUSES[status].tone]}`}
                 />
                 <span className="font-medium">{STATUSES[status].text}</span>
-                <span className="cifras text-texto-suave">{inZone(status)}</span>
+                <span className="figures text-muted">{inZone(status)}</span>
               </li>
             ))}
           </ul>
@@ -258,9 +258,9 @@ export function Tables() {
           <OrdersOffFloorPlan catalog={catalog} orders={orders ?? []} />
 
           {zones.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-borde bg-superficie p-8 text-center">
+            <div className="rounded-2xl border border-dashed border-border bg-surface p-8 text-center">
               <p className="text-lg font-semibold">Todavía no hay mesas</p>
-              <p className="mt-1 text-texto-suave">
+              <p className="mt-1 text-muted">
                 Quien administra el restaurante las dibuja en «Plano del salón».
               </p>
             </div>
@@ -344,7 +344,7 @@ function OpenOrders({
         <h2 id="title-orders" className="text-lg font-semibold">
           Pedidos abiertos
         </h2>
-        <span className="cifras text-texto-suave">{openOnes.length}</span>
+        <span className="figures text-muted">{openOnes.length}</span>
       </div>
       <div className="grid grid-cols-3 gap-2">
         {(Object.keys(CHANNELS) as (keyof typeof CHANNELS)[]).map((c) => (
@@ -352,7 +352,7 @@ function OpenOrders({
             key={c}
             type="button"
             onClick={() => navigate(`/order?channel=${c}`)}
-            className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border border-linea bg-superficie px-2 text-sm font-semibold transition-colors hover:border-accion-fuerte hover:text-accion-texto focus-visible:outline-3 focus-visible:outline-foco"
+            className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border border-divider bg-surface px-2 text-sm font-semibold transition-colors hover:border-action-strong hover:text-action-text focus-visible:outline-3 focus-visible:outline-focus"
           >
             <Icon name={CHANNEL_ICON[c]} className="size-5" />
             <span className="leading-tight">{CHANNELS[c]}</span>
@@ -360,7 +360,7 @@ function OpenOrders({
         ))}
       </div>
       {openOnes.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-borde p-5 text-center text-sm text-texto-suave">
+        <p className="rounded-2xl border border-dashed border-border p-5 text-center text-sm text-muted">
           Sin pedidos por ahora. Toca una mesa para empezar uno.
         </p>
       ) : (
@@ -385,11 +385,11 @@ function OpenOrders({
                         : `/order?order=${p.status.id}`,
                     )
                   }
-                  className={`flex w-full flex-col gap-2 rounded-2xl p-4 text-left transition active:scale-[0.98] focus-visible:outline-3 focus-visible:outline-foco ${SOFT_TONES[v.tone]}`}
+                  className={`flex w-full flex-col gap-2 rounded-2xl p-4 text-left transition active:scale-[0.98] focus-visible:outline-3 focus-visible:outline-focus ${SOFT_TONES[v.tone]}`}
                 >
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="text-lg font-bold">{orderName(catalog, p)}</span>
-                    <span className="cifras font-semibold">{pesos(p.total)}</span>
+                    <span className="figures font-semibold">{pesos(p.total)}</span>
                   </span>
                   <span className="text-sm">
                     {[
@@ -426,7 +426,7 @@ function OrdersOffFloorPlan({ catalog, orders }: { catalog: Catalog; orders: Vis
   return (
     <section
       aria-label="Pedidos en mesas que ya no están en el plano"
-      className="mb-3 rounded-2xl border-2 border-alerta-fuerte bg-alerta-suave p-3 text-alerta-texto"
+      className="mb-3 rounded-2xl border-2 border-alert-strong bg-alert-soft p-3 text-alert-text"
     >
       <p className="font-semibold">
         {outside.length === 1
@@ -436,7 +436,7 @@ function OrdersOffFloorPlan({ catalog, orders }: { catalog: Catalog; orders: Vis
       </p>
       <ul className="mt-1">
         {outside.map((p) => (
-          <li key={p.status.id} className="cifras">
+          <li key={p.status.id} className="figures">
             {[catalog.staff.find((u) => u.id === p.status.assignedWaiterId)?.name, pesos(p.total)]
               .filter(Boolean)
               .join(' · ')}
@@ -635,7 +635,7 @@ function TableOnFloorPlan({
         onClick={onTap}
         aria-label={`${describeTable(table, r)}, ${table.capacity} ${table.capacity === 1 ? 'puesto' : 'puestos'}`}
         style={tappable}
-        className={`flex items-center justify-center border-2 p-1 shadow-flota transition active:scale-95 focus-visible:outline-3 focus-visible:outline-foco ${
+        className={`flex items-center justify-center border-2 p-1 shadow-float transition active:scale-95 focus-visible:outline-3 focus-visible:outline-focus ${
           table.shape === 'round' ? 'rounded-full' : 'rounded-2xl'
         } ${tableClass(r)}`}
       >
@@ -645,7 +645,7 @@ function TableOnFloorPlan({
           style={table.rotation ? { transform: `rotate(${-table.rotation}deg)` } : undefined}
         >
           <span className="flex items-center gap-1">
-            <span className="font-titulo text-xl font-bold">{table.name}</span>
+            <span className="font-heading text-xl font-bold">{table.name}</span>
             <Icon name={r.pendingConfirmation ? 'clock' : v.icon} className="size-4" />
           </span>
           {detail && r.mergedWith && (
@@ -655,7 +655,7 @@ function TableOnFloorPlan({
             <span className="max-w-full truncate text-sm font-semibold">{`con la ${r.mergedIntoTable}`}</span>
           )}
           {detail && r.status !== 'free' && !r.mergedIntoTable && (
-            <span className="cifras text-sm">
+            <span className="figures text-sm">
               {r.minutes !== null && minutes(r.minutes)}
               <br />
               {pesos(r.total)}
@@ -678,10 +678,10 @@ function TableInList({ table, r, onTap }: { table: Table; r: Summary; onTap: () 
       type="button"
       onClick={onTap}
       aria-label={describeTable(table, r)}
-      className="flex min-h-18 w-full items-center gap-3 rounded-2xl border border-linea bg-superficie px-3 py-2 text-left transition-colors hover:border-borde focus-visible:outline-3 focus-visible:outline-foco"
+      className="flex min-h-18 w-full items-center gap-3 rounded-2xl border border-divider bg-surface px-3 py-2 text-left transition-colors hover:border-border focus-visible:outline-3 focus-visible:outline-focus"
     >
       <span
-        className={`font-titulo flex size-12 shrink-0 items-center justify-center rounded-xl text-2xl font-bold ${tableClass(r)}`}
+        className={`font-heading flex size-12 shrink-0 items-center justify-center rounded-xl text-2xl font-bold ${tableClass(r)}`}
       >
         {table.name}
       </span>
@@ -690,7 +690,7 @@ function TableInList({ table, r, onTap }: { table: Table; r: Summary; onTap: () 
           {r.pendingConfirmation ? `${v.text} · sin confirmar` : v.text}
         </Label>
         {takenPath && (
-          <span className="mt-1 block text-sm text-texto-suave">
+          <span className="mt-1 block text-sm text-muted">
             {[
               r.mergedIntoTable ? null : r.waiter,
               r.minutes !== null && !r.mergedIntoTable ? minutes(r.minutes) : null,
@@ -704,7 +704,7 @@ function TableInList({ table, r, onTap }: { table: Table; r: Summary; onTap: () 
         )}
       </span>
       {takenPath && !r.mergedIntoTable && (
-        <span className="cifras font-semibold">{pesos(r.total)}</span>
+        <span className="figures font-semibold">{pesos(r.total)}</span>
       )}
     </button>
   )

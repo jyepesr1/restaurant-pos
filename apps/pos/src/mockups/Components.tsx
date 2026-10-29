@@ -29,12 +29,12 @@ export function Components() {
     <Frame title="Design system">
       <div className="mx-auto flex max-w-4xl flex-col gap-8 p-4">
         <section>
-          <h2 className="font-titulo mb-3 text-2xl font-semibold">Colores con significado</h2>
+          <h2 className="font-heading mb-3 text-2xl font-semibold">Colores con significado</h2>
           <ul className="grid gap-2 sm:grid-cols-2">
             {TONES.map((t) => (
               <li
                 key={t.tone}
-                className="flex items-center gap-3 rounded-xl border border-borde bg-superficie p-3"
+                className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3"
               >
                 <Label tone={t.tone} main>
                   {t.name}
@@ -43,14 +43,14 @@ export function Components() {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-sm text-texto-suave">
+          <p className="mt-2 text-sm text-muted">
             Contraste AA en claro y oscuro (lo verifica una prueba automática). El color siempre va
             con un ícono y un texto.
           </p>
         </section>
 
         <section>
-          <h2 className="font-titulo mb-3 text-2xl font-semibold">Botones (mínimo 48 px)</h2>
+          <h2 className="font-heading mb-3 text-2xl font-semibold">Botones (mínimo 48 px)</h2>
           <div className="flex flex-wrap gap-2">
             <Button variant="main" icon="send">
               Enviar
@@ -71,7 +71,7 @@ export function Components() {
         </section>
 
         <section>
-          <h2 className="font-titulo mb-3 text-2xl font-semibold">Estado de conexión</h2>
+          <h2 className="font-heading mb-3 text-2xl font-semibold">Estado de conexión</h2>
           <div className="flex flex-col gap-2">
             <ConnectionIndicator status="online" />
             <ConnectionIndicator status="local_only" />
@@ -80,7 +80,7 @@ export function Components() {
         </section>
 
         <section>
-          <h2 className="font-titulo mb-3 text-2xl font-semibold">
+          <h2 className="font-heading mb-3 text-2xl font-semibold">
             Aviso con Deshacer y panel lateral
           </h2>
           <div className="flex flex-wrap gap-2">
@@ -106,11 +106,11 @@ export function Components() {
         </section>
 
         <section>
-          <h2 className="font-titulo mb-3 text-2xl font-semibold">Teclado del PIN</h2>
-          <p className="mb-3 text-sm text-texto-suave">
+          <h2 className="font-heading mb-3 text-2xl font-semibold">Teclado del PIN</h2>
+          <p className="mb-3 text-sm text-muted">
             De prueba: el PIN correcto es 2468. Tras tres errores pide esperar.
           </p>
-          <div className="rounded-2xl border border-borde bg-superficie p-4">
+          <div className="rounded-2xl border border-border bg-surface p-4">
             <PinPad
               error={error}
               attempt={attempts}

@@ -292,7 +292,7 @@ describe('end to end: open shift → checkout → cash in → tips → cash coun
     const entry = await resolve(
       floor.recordConfirmed('CashMovementRecorded', shift, {
         movement_id: newId(),
-        type: 'entry',
+        type: 'cash_in',
         amount: 20_000,
         description: 'Cambio para el turno',
         to_whom: null,
@@ -316,7 +316,7 @@ describe('end to end: open shift → checkout → cash in → tips → cash coun
     const before = registerReconciliation(await locals(floor), shift)
     expect(before?.cash).toMatchObject({
       charged: 105_000,
-      entries: 20_000,
+      cashIn: 20_000,
       tipPayouts: 5_000,
       expected: 320_000,
     })
@@ -362,7 +362,7 @@ describe('end to end: open shift → checkout → cash in → tips → cash coun
     const after = await locals(floor)
     expect(shiftOfRegister(after, e.deviceId)).toMatchObject({ id: fresh, base: 50_000 })
     expect(registerReconciliation(after, fresh)).toMatchObject({
-      cash: { charged: 0, entries: 0, expected: 50_000 },
+      cash: { charged: 0, cashIn: 0, expected: 50_000 },
       byMethod: [],
       cashCounts: [],
       closed: null,
@@ -471,7 +471,7 @@ describe('the rejected close, with the reason in words', () => {
     await resolve(
       t.floor.recordConfirmed('CashMovementRecorded', t.shift, {
         movement_id: newId(),
-        type: 'output',
+        type: 'cash_out',
         amount: 5_000,
         description: 'Hielo',
         to_whom: null,
@@ -501,7 +501,7 @@ describe('the rejected close, with the reason in words', () => {
     const m = await resolve(
       floor.recordConfirmed('CashMovementRecorded', shift, {
         movement_id: newId(),
-        type: 'entry',
+        type: 'cash_in',
         amount: 1_000,
         description: 'x',
         to_whom: null,
@@ -521,7 +521,7 @@ describe('the rejected close, with the reason in words', () => {
     const r = await resolve(
       another.floor.recordConfirmed('CashMovementRecorded', t.shift, {
         movement_id: newId(),
-        type: 'entry',
+        type: 'cash_in',
         amount: 1_000,
         description: 'x',
         to_whom: null,
@@ -529,7 +529,7 @@ describe('the rejected close, with the reason in words', () => {
       }),
     )
     expect(message(r)).toBe('Ese turno es de otra caja: cobra desde la caja donde se abrió.')
-    expect(t.h.hub.reconciliation(t.shift)?.cash.entries).toBe(0)
+    expect(t.h.hub.reconciliation(t.shift)?.cash.cashIn).toBe(0)
   })
 })
 
@@ -568,7 +568,7 @@ describe('offline', () => {
     floor.simulateOffline(true)
     await floor.record('CashMovementRecorded', shift, {
       movement_id: newId(),
-      type: 'output',
+      type: 'cash_out',
       amount: 3_000,
       description: 'Taxi',
       to_whom: null,

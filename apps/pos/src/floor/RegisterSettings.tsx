@@ -62,7 +62,7 @@ export function RegisterSettings() {
     return (
       <FloorFrame title="Caja y pagos">
         <div className="mx-auto flex max-w-3xl flex-col items-start gap-3 p-6">
-          <p className="text-alerta-texto">{error}</p>
+          <p className="text-alert-text">{error}</p>
           <Button onClick={load}>Intentar de nuevo</Button>
         </div>
       </FloorFrame>
@@ -70,7 +70,7 @@ export function RegisterSettings() {
   if (!register || !kitchen)
     return (
       <FloorFrame title="Caja y pagos">
-        <p className="p-6 text-texto-suave">Leyendo la configuración de la caja…</p>
+        <p className="p-6 text-muted">Leyendo la configuración de la caja…</p>
       </FloorFrame>
     )
 
@@ -147,7 +147,7 @@ export function RegisterSettings() {
           <h2 id="title-methods" className="text-xl font-bold tracking-tight">
             Medios de pago
           </h2>
-          <p className="text-texto-suave">Los que salen al cobrar. El efectivo siempre está.</p>
+          <p className="text-muted">Los que salen al cobrar. El efectivo siempre está.</p>
           <Group label="Medios de pago" className="flex flex-wrap gap-2">
             {METHODS.map((m) => (
               <Option
@@ -170,7 +170,7 @@ export function RegisterSettings() {
               Agregar
             </Button>
           </div>
-          <p className="text-sm text-texto-suave">
+          <p className="text-sm text-muted">
             Los que recibe este restaurante con su nombre: Sodexo, QR Bancolombia, Rappi…
           </p>
           <ul className="flex flex-col gap-2">
@@ -179,7 +179,7 @@ export function RegisterSettings() {
                 <button
                   type="button"
                   onClick={() => setEditingMethod(m)}
-                  className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-linea bg-superficie px-4 text-left hover:border-borde focus-visible:outline-3 focus-visible:outline-foco"
+                  className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-divider bg-surface px-4 text-left hover:border-border focus-visible:outline-3 focus-visible:outline-focus"
                 >
                   <span className="flex-1 font-semibold">{m.name}</span>
                   {!m.active && <Label tone="neutral">Archivado</Label>}
@@ -193,7 +193,7 @@ export function RegisterSettings() {
           <h2 id="title-tip" className="text-xl font-bold tracking-tight">
             Propina sugerida
           </h2>
-          <p className="text-texto-suave">
+          <p className="text-muted">
             La que sale en la precuenta y aparece marcada al cobrar, sobre la base sin impuestos. Es
             voluntaria: el cajero la quita o la cambia en cada cobro.
           </p>
@@ -210,7 +210,7 @@ export function RegisterSettings() {
           <h2 id="title-threshold" className="text-xl font-bold tracking-tight">
             Cierre de caja
           </h2>
-          <p className="text-texto-suave">
+          <p className="text-muted">
             Desde qué diferencia (sobrante o faltante) el cajero debe explicar por qué no cuadra.
           </p>
           <Group label="Justificar desde" className="flex flex-wrap gap-2">
@@ -230,7 +230,7 @@ export function RegisterSettings() {
           <h2 id="title-pre-bill" className="text-xl font-bold tracking-tight">
             Impresora de precuentas
           </h2>
-          <p className="text-texto-suave">
+          <p className="text-muted">
             Dónde sale la precuenta que pide el mesero o la caja. Sin impresora, se muestra en la
             pantalla.
           </p>
@@ -251,7 +251,7 @@ export function RegisterSettings() {
             ))}
           </Group>
           {printers.length === 0 && (
-            <p className="text-sm text-texto-suave">
+            <p className="text-sm text-muted">
               Agrega la impresora en «Cocina e impresoras» y luego elígela aquí.
             </p>
           )}
@@ -269,7 +269,7 @@ export function RegisterSettings() {
               Agregar
             </Button>
           </div>
-          <p className="text-texto-suave">
+          <p className="text-muted">
             Los de un mismo proveedor entregan un solo cierre: al cobrar no se pregunta en cuál se
             pasó la tarjeta. Si hay de proveedores distintos (Bold y Redeban), se elige el
             proveedor.
@@ -280,10 +280,10 @@ export function RegisterSettings() {
                 <button
                   type="button"
                   onClick={() => setEditing(d)}
-                  className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-linea bg-superficie px-4 text-left hover:border-borde focus-visible:outline-3 focus-visible:outline-foco"
+                  className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-divider bg-surface px-4 text-left hover:border-border focus-visible:outline-3 focus-visible:outline-focus"
                 >
                   <span className="flex-1 font-semibold">{d.name}</span>
-                  <span className="text-texto-suave">
+                  <span className="text-muted">
                     {PROVIDERS.find((p) => p.value === d.provider)?.name}
                   </span>
                   {!d.active && <Label tone="neutral">Archivado</Label>}
@@ -291,7 +291,7 @@ export function RegisterSettings() {
               </li>
             ))}
             {register.cardTerminals.length === 0 && (
-              <li className="text-texto-suave">
+              <li className="text-muted">
                 Sin datáfonos: no se puede cobrar con tarjeta hasta agregar uno.
               </li>
             )}

@@ -33,7 +33,7 @@ const open = (base: number, register = REGISTER, status: LocalState = 'confirmed
 }
 const move = (
   shift: string,
-  type: 'entry' | 'output' | 'tip_payout',
+  type: 'cash_in' | 'cash_out' | 'tip_payout',
   amount: number,
   status: LocalState = 'confirmed',
 ) =>
@@ -187,7 +187,7 @@ describe('shiftOfRegister: closed shifts', () => {
 
   it('movements and counts are not shifts', () => {
     const t = open(100)
-    expect(shiftOfRegister([move(t.shift, 'entry', 5), count(t.shift, 5).e], REGISTER)).toBeNull()
+    expect(shiftOfRegister([move(t.shift, 'cash_in', 5), count(t.shift, 5).e], REGISTER)).toBeNull()
   })
 
   it('a shift closed by a confirmed close of ANOTHER shift with a different id is not confused', () => {
@@ -222,7 +222,7 @@ describe('registerReconciliation', () => {
     const c = registerReconciliation(
       [
         t.e,
-        move(t.shift, 'entry', 5_000, 'pending'),
+        move(t.shift, 'cash_in', 5_000, 'pending'),
         payment(t.shift, { amount: 1_000, tendered: 1_000 }, 'pending').e,
       ],
       t.shift,
@@ -237,7 +237,7 @@ describe('registerReconciliation', () => {
     const c = registerReconciliation(
       [
         t.e,
-        move(t.shift, 'output', 5_000, 'rejected'),
+        move(t.shift, 'cash_out', 5_000, 'rejected'),
         payment(t.shift, { amount: 1_000, tendered: 1_000 }, 'rejected').e,
         a.e,
         close(t.shift, a.cashCount, 10_000, 10_000, 'rejected'),
@@ -245,7 +245,7 @@ describe('registerReconciliation', () => {
       t.shift,
     )
     expect(c).toMatchObject({
-      cash: { expected: 10_000, outflows: 0, charged: 0 },
+      cash: { expected: 10_000, cashOut: 0, charged: 0 },
       movements: [],
       cashCounts: [],
       byMethod: [],

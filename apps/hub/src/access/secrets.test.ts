@@ -50,7 +50,7 @@ describe('hub key', () => {
   afterEach(() => rmSync(folder, { recursive: true, force: true }))
 
   it('is created once, readable only by the hub, and then read back the same', () => {
-    folder = mkdtempSync(join(tmpdir(), 'pos-clave-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-key-'))
     const first = loadKey(folder)
     const second = loadKey(folder)
 
@@ -62,7 +62,7 @@ describe('hub key', () => {
   })
 
   it('a damaged key stops startup with a clear message', () => {
-    folder = mkdtempSync(join(tmpdir(), 'pos-clave-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-key-'))
     writeFileSync(join(folder, KEY_FILE), 'corta')
     expect(() => loadKey(folder)).toThrow(/dañada/)
   })

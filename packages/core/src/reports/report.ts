@@ -52,7 +52,7 @@ export interface SalesSummary {
   discounts: number
   net: number
   /** Σ cash rounding adjustment in those orders' payments (DINERO.md: Z report line). */
-  settings: number
+  roundingAdjustments: number
   taxes: ItemizedTax[]
   tips: number
   checks: number
@@ -150,7 +150,7 @@ export function report(entry: ReportInput): Report {
   let voided = 0
   let discounts = 0
   let net = 0
-  let settings = 0
+  let roundingAdjustments = 0
   let tips = 0
   let checks = 0
   let guests = 0
@@ -163,7 +163,7 @@ export function report(entry: ReportInput): Report {
     voided += sign * t.voided
     discounts += sign * t.discount
     net += sign * t.net
-    settings += sign * t.settings
+    roundingAdjustments += sign * t.roundingAdjustments
     tips += sign * t.tips
     // A check and its guests are counted once: at the first close.
     if (firstOne) {
@@ -273,7 +273,7 @@ export function report(entry: ReportInput): Report {
       voided,
       discounts,
       net,
-      settings,
+      roundingAdjustments,
       taxes: taxesOfOrders(
         closings.map((c) => c.after),
         mode,

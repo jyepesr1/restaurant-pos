@@ -71,7 +71,7 @@ describe('CSV', () => {
         voided: 0,
         discounts: 0,
         net: 50_000,
-        settings: 0,
+        roundingAdjustments: 0,
         taxes: [{ type: 'inc', rate: 800, base: 46_296, tax: 3_704 }],
         tips: 5_000,
         checks: 1,

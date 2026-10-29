@@ -6,18 +6,18 @@ import { Icon, type IconName } from './icons'
 export type Variant = 'main' | 'secondary' | 'success' | 'danger' | 'ghost'
 
 const VARIANTS: Record<Variant, string> = {
-  main: 'bg-accion-fuerte text-white hover:brightness-110',
-  secondary: 'bg-superficie text-texto border border-borde hover:bg-superficie-2',
-  success: 'bg-libre-fuerte text-white hover:brightness-110',
-  danger: 'bg-alerta-fuerte text-white hover:brightness-110',
-  ghost: 'bg-transparent text-texto hover:bg-superficie-2',
+  main: 'bg-action-strong text-white hover:brightness-110',
+  secondary: 'bg-surface text-foreground border border-border hover:bg-surface-2',
+  success: 'bg-free-strong text-white hover:brightness-110',
+  danger: 'bg-alert-strong text-white hover:brightness-110',
+  ghost: 'bg-transparent text-foreground hover:bg-surface-2',
 }
 
 export const buttonClass = (variant: Variant = 'secondary', large = false) =>
   [
     'inline-flex items-center justify-center gap-2 rounded-xl font-semibold select-none',
     'transition active:scale-[0.97] disabled:opacity-45 disabled:active:scale-100',
-    'focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-foco',
+    'focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus',
     large ? 'min-h-14 min-w-14 px-5 text-lg' : 'min-h-12 min-w-12 px-4 text-base',
     VARIANTS[variant],
   ].join(' ')

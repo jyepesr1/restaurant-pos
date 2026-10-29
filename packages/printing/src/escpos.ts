@@ -10,7 +10,7 @@ const GS = 0x1d
 const LF = 0x0a
 
 const begin = [ESC, 0x40]
-const tableName = (n: number) => [ESC, 0x74, n]
+const codePageTable = (n: number) => [ESC, 0x74, n]
 const align = (center: boolean) => [ESC, 0x61, center ? 1 : 0]
 const bold = (yes: boolean) => [ESC, 0x45, yes ? 1 : 0]
 const reversed = (yes: boolean) => [GS, 0x42, yes ? 1 : 0]
@@ -27,7 +27,7 @@ export function escpos(
 ): Uint8Array {
   const bytes: number[] = [...begin]
   const n = CODE_PAGE_NUMBER[format.page]
-  if (n !== null) bytes.push(...tableName(n))
+  if (n !== null) bytes.push(...codePageTable(n))
   for (const line of lines) {
     if ('separator' in line) {
       bytes.push(...align(false), ...size(false), ...bold(false), ...reversed(false))

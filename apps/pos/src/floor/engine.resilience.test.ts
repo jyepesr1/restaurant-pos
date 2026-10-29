@@ -699,7 +699,7 @@ describe('session that expires from inactivity', () => {
   it('each tap postpones the close: with taps every 10 minutes it never expires', async () => {
     const h = setupHub()
     const { floor, session } = await device(h, 'Ana')
-    for (let i = 1; i <= 12; i++) floor.enabled(session.lastUsed + i * 10 * MIN)
+    for (let i = 1; i <= 12; i++) floor.markUsed(session.lastUsed + i * 10 * MIN)
     expect(floor.snapshot().session).not.toBeNull()
     expect(floor.snapshot().session?.lastUsed).toBe(session.lastUsed + 120 * MIN)
     // And after 30 minutes without taps, it does.
@@ -710,10 +710,10 @@ describe('session that expires from inactivity', () => {
   it('an already expired tap does not revive the session', async () => {
     const h = setupHub()
     const { floor, session } = await device(h, 'Ana')
-    floor.enabled(session.lastUsed + 40 * MIN)
+    floor.markUsed(session.lastUsed + 40 * MIN)
     expect(floor.snapshot().session).toBeNull()
-    floor.enabled(session.lastUsed + 40 * MIN + 1)
-    floor.enabled(session.lastUsed + 41 * MIN)
+    floor.markUsed(session.lastUsed + 40 * MIN + 1)
+    floor.markUsed(session.lastUsed + 41 * MIN)
     expect(floor.snapshot().session).toBeNull()
     await settle(10)
     expect(await databases[0]?.readSetting('session')).toBeUndefined()
@@ -745,7 +745,7 @@ describe('fast taps', () => {
     const h = setupHub()
     const { floor, session, db } = await device(h, 'Ana')
     const write = vi.spyOn(db, 'saveSetting')
-    for (let i = 0; i < 300; i++) floor.enabled(session.lastUsed + i * 3)
+    for (let i = 0; i < 300; i++) floor.markUsed(session.lastUsed + i * 3)
     expect(write).not.toHaveBeenCalled()
     expect(floor.snapshot().session?.lastUsed).toBe(session.lastUsed)
   })
@@ -755,7 +755,7 @@ describe('fast taps', () => {
     const { floor, session, db } = await device(h, 'Ana')
     const write = vi.spyOn(db, 'saveSetting')
     const t = session.lastUsed + 15_000
-    for (let i = 0; i < 50; i++) floor.enabled(t)
+    for (let i = 0; i < 50; i++) floor.markUsed(t)
     expect(write).toHaveBeenCalledTimes(1)
     expect(write).toHaveBeenCalledWith('session', expect.objectContaining({ lastUsed: t }))
     await settle(5)
@@ -765,13 +765,13 @@ describe('fast taps', () => {
   it('14.9 s does not write; taps every 10 s for two hours keep the session alive without writing on each one', async () => {
     const h = setupHub()
     const { floor, session, db } = await device(h, 'Ana')
-    floor.enabled(session.lastUsed + 14_999)
+    floor.markUsed(session.lastUsed + 14_999)
     const write = vi.spyOn(db, 'saveSetting')
     expect(write).not.toHaveBeenCalled()
 
     let taps = 0
     for (let t = 10_000; t <= 120 * MIN; t += 10_000) {
-      floor.enabled(session.lastUsed + t)
+      floor.markUsed(session.lastUsed + t)
       taps += 1
     }
     expect(floor.snapshot().session).not.toBeNull()

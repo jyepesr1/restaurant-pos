@@ -124,7 +124,7 @@ function environment(options: { threshold?: number } = {}) {
   const movement = (
     node: NetNode,
     shift: string,
-    type: 'entry' | 'output' | 'tip_payout',
+    type: 'cash_in' | 'cash_out' | 'tip_payout',
     amount: number,
   ) =>
     one(
@@ -232,7 +232,7 @@ function environment(options: { threshold?: number } = {}) {
 
 describe('movement, cash count and close: shift and register', () => {
   const three = (e: ReturnType<typeof environment>, node: NetNode, shift: string) => ({
-    movement: e.movement(node, shift, 'entry', 1_000),
+    movement: e.movement(node, shift, 'cash_in', 1_000),
     cashCount: e.count(node, shift, 1_000).result,
     closeout: e.close(node, shift, newId(), 1_000, 1_000),
   })
@@ -251,7 +251,7 @@ describe('movement, cash count and close: shift and register', () => {
     const e = environment()
     e.openShift(e.register)
     const order = e.openOrder(e.register)
-    expect(reason(e.movement(e.register, order, 'entry', 1_000))).toBe('no_shift')
+    expect(reason(e.movement(e.register, order, 'cash_in', 1_000))).toBe('no_shift')
   })
 
   it('the shift of ANOTHER register: other_register_shift in all three, and the shift stays intact', () => {
@@ -284,7 +284,7 @@ describe('movement, cash count and close: shift and register', () => {
     const shift = e.openShift(e.register)
     const mov = e.raw(e.register2, 'CashMovementRecorded', shift, {
       movement_id: newId(),
-      type: 'entry',
+      type: 'cash_in',
       amount: 5,
       description: 'x',
       to_whom: null,
@@ -299,8 +299,8 @@ describe('movement, cash count and close: shift and register', () => {
   it('movements and cash counts of the own shift are accepted and the reconciliation reflects them', () => {
     const e = environment()
     const shift = e.openShift(e.register, 100_000)
-    expect(reason(e.movement(e.register, shift, 'entry', 20_000))).toBe('confirmed')
-    expect(reason(e.movement(e.register, shift, 'output', 5_000))).toBe('confirmed')
+    expect(reason(e.movement(e.register, shift, 'cash_in', 20_000))).toBe('confirmed')
+    expect(reason(e.movement(e.register, shift, 'cash_out', 5_000))).toBe('confirmed')
     expect(reason(e.movement(e.register, shift, 'tip_payout', 3_000))).toBe('confirmed')
     const firstOne = e.count(e.register, shift, 110_000)
     const secondOne = e.count(e.register, shift, 112_000)
@@ -308,20 +308,20 @@ describe('movement, cash count and close: shift and register', () => {
     expect(reason(secondOne.result)).toBe('confirmed')
     const c = e.status.hub.reconciliation(shift)
     expect(c?.cash).toMatchObject({
-      entries: 20_000,
-      outflows: 5_000,
+      cashIn: 20_000,
+      cashOut: 5_000,
       tipPayouts: 3_000,
       expected: 112_000,
     })
     expect(c?.cashCounts.map((a) => a.counted)).toEqual([110_000, 112_000])
-    expect(c?.movements.map((x) => x.type)).toEqual(['entry', 'output', 'tip_payout'])
+    expect(c?.movements.map((x) => x.type)).toEqual(['cash_in', 'cash_out', 'tip_payout'])
   })
 
   it('the reconciliation time comes from the hub, not from the device clock', () => {
     const e = environment()
     e.register.offsetMs = -3 * 60 * 60 * 1000
     const shift = e.openShift(e.register)
-    e.movement(e.register, shift, 'entry', 1_000)
+    e.movement(e.register, shift, 'cash_in', 1_000)
     const saved = eventsOf(e.m).find((x) => x.type === 'CashMovementRecorded')
     const c = e.status.hub.reconciliation(shift)
     expect(c?.movements[0]?.time).toBe(saved?.received_at)
@@ -335,7 +335,7 @@ describe('movement, cash count and close: shift and register', () => {
       e.register,
       e.raw(e.register, 'CashMovementRecorded', shift, {
         movement_id: newId(),
-        type: 'output',
+        type: 'cash_out',
         amount: 100,
         description: 'x',
         to_whom: 'Ana',
@@ -384,7 +384,7 @@ describe('register close: the four rules and the correct close', () => {
     const t = shiftCharged()
     const mov = t.raw(t.register, 'CashMovementRecorded', t.shift, {
       movement_id: newId(),
-      type: 'entry',
+      type: 'cash_in',
       amount: 1_000,
       description: 'x',
       to_whom: null,
@@ -420,11 +420,11 @@ describe('register close: the four rules and the correct close', () => {
 
   describe('stale_cash_count: there was money after the last count', () => {
     it('a movement (entry, output or tip payout) after counting', () => {
-      for (const type of ['entry', 'output', 'tip_payout'] as const) {
+      for (const type of ['cash_in', 'cash_out', 'tip_payout'] as const) {
         const t = shiftCharged()
         const { cashCount } = t.count(t.register, t.shift, 132_000)
         t.movement(t.register, t.shift, type, 1_000)
-        const newExpected = type === 'entry' ? 133_000 : 131_000
+        const newExpected = type === 'cash_in' ? 133_000 : 131_000
         expect(
           reason(t.close(t.register, t.shift, cashCount, newExpected, 132_000, 'x')),
           type,
@@ -488,7 +488,7 @@ describe('register close: the four rules and the correct close', () => {
     it('counting again fixes it: the new count is the latest and the expected amount is the new one', () => {
       const t = shiftCharged()
       const oldOne = t.count(t.register, t.shift, 132_000)
-      t.movement(t.register, t.shift, 'output', 12_000)
+      t.movement(t.register, t.shift, 'cash_out', 12_000)
       const fresh = t.count(t.register, t.shift, 120_000)
       expect(reason(t.close(t.register, t.shift, oldOne.cashCount, 120_000, 132_000, 'x'))).toBe(
         'cash_count_not_latest',
@@ -502,7 +502,9 @@ describe('register close: the four rules and the correct close', () => {
       const t = shiftCharged()
       t.openShift(t.register2, 0)
       const { cashCount } = t.count(t.register, t.shift, 132_000)
-      expect(reason(t.movement(t.register2, t.shift, 'entry', 1_000))).toBe('other_register_shift')
+      expect(reason(t.movement(t.register2, t.shift, 'cash_in', 1_000))).toBe(
+        'other_register_shift',
+      )
       const anotherOrder = t.openOrder(t.register2)
       t.charge(
         t.register2,
@@ -515,7 +517,7 @@ describe('register close: the four rules and the correct close', () => {
     it('after restarting the hub, the count is still stale', () => {
       const t = shiftCharged()
       const { cashCount } = t.count(t.register, t.shift, 132_000)
-      t.movement(t.register, t.shift, 'entry', 1_000)
+      t.movement(t.register, t.shift, 'cash_in', 1_000)
       t.status.hub = t.newHub()
       expect(reason(t.close(t.register, t.shift, cashCount, 133_000, 132_000, 'x'))).toBe(
         'stale_cash_count',
@@ -568,7 +570,7 @@ describe('register close: the four rules and the correct close', () => {
     // Everything wrong at once, and no justification.
     expect(reason(t.close(t.register, t.shift, newId(), 1, 2))).toBe('cash_count_not_found')
     expect(reason(t.close(t.register, t.shift, a1.cashCount, 1, 2))).toBe('cash_count_not_latest')
-    t.movement(t.register, t.shift, 'entry', 1_000)
+    t.movement(t.register, t.shift, 'cash_in', 1_000)
     expect(reason(t.close(t.register, t.shift, a2.cashCount, 1, 2))).toBe('stale_cash_count')
     const a3 = t.count(t.register, t.shift, 133_000)
     expect(reason(t.close(t.register, t.shift, a3.cashCount, 1, 2))).toBe('counted_mismatch')
@@ -817,7 +819,7 @@ describe('after the close', () => {
 
   it('a movement, another cash count and another close on the closed shift: no_shift', () => {
     const c = closed()
-    expect(reason(c.movement(c.register, c.shift, 'entry', 1_000))).toBe('no_shift')
+    expect(reason(c.movement(c.register, c.shift, 'cash_in', 1_000))).toBe('no_shift')
     expect(reason(c.count(c.register, c.shift, 1_000).result)).toBe('no_shift')
     expect(reason(c.close(c.register, c.shift, newId(), 0, 0))).toBe('no_shift')
   })
@@ -844,7 +846,7 @@ describe('after the close', () => {
     })
     expect(c.status.hub.reconciliation(fresh)?.cash).toMatchObject({
       charged: 0,
-      entries: 0,
+      cashIn: 0,
       expected: 30_000,
     })
     expect(c.status.hub.reconciliation(fresh)?.byMethod).toEqual([])
@@ -897,10 +899,10 @@ describe('voiding, on this shift, the payment of a previous shift', () => {
 
   it('with other shift 2 movements everything adds up: base + entry + charge − reversal − output', () => {
     const d = twoShifts()
-    d.movement(d.register, d.t2, 'entry', 5_000)
+    d.movement(d.register, d.t2, 'cash_in', 5_000)
     d.charge(d.register, d.order, d.cashPaymentOf(d.t2, 10_000))
     d.voidItem(d.register, d.order, d.payment, d.t2)
-    d.movement(d.register, d.t2, 'output', 1_000)
+    d.movement(d.register, d.t2, 'cash_out', 1_000)
     expect(d.status.hub.reconciliation(d.t2)?.cash.expected).toBe(
       100_000 + 5_000 + 10_000 - 32_000 - 1_000,
     )
@@ -978,11 +980,11 @@ describe('hub restart with a shift half done', () => {
     const a1 = e.count(e.register, t1, 32_000)
     e.close(e.register, t1, a1.cashCount, 32_000, 32_000)
     const t2 = e.openShift(e.register, 100_000)
-    e.movement(e.register, t2, 'entry', 5_000)
+    e.movement(e.register, t2, 'cash_in', 5_000)
     e.charge(e.register, order, e.cashPaymentOf(t2, 10_000))
     e.charge(e.register, order, e.nequiPaymentOf(t2, 800, 100))
     e.voidItem(e.register, order, payment1, t2)
-    e.movement(e.register, t2, 'output', 1_000)
+    e.movement(e.register, t2, 'cash_out', 1_000)
     e.count(e.register, t2, 82_000)
     return { ...e, t1, t2, order, payment1 }
   }
@@ -1016,7 +1018,7 @@ describe('hub restart with a shift half done', () => {
     a.status.hub = a.newHub()
     expect(a.status.hub.openShift(a.register.deviceId)).toBeNull()
     expect(a.status.hub.reconciliation(a.t2)?.closed).not.toBeNull()
-    expect(reason(a.movement(a.register, a.t2, 'entry', 1_000))).toBe('no_shift')
+    expect(reason(a.movement(a.register, a.t2, 'cash_in', 1_000))).toBe('no_shift')
     expect(reason(a.count(a.register, a.t2, 1_000).result)).toBe('no_shift')
     const next = a.openShift(a.register, 5_000)
     expect(a.status.hub.reconciliation(next)?.cash.expected).toBe(5_000)
@@ -1024,10 +1026,10 @@ describe('hub restart with a shift half done', () => {
 
   it('rejected counts or movements do not reappear after the restart', () => {
     const a = halfway()
-    a.movement(a.register2, a.t2, 'entry', 99_000) // from another register: rejected
+    a.movement(a.register2, a.t2, 'cash_in', 99_000) // from another register: rejected
     a.close(a.register, a.t2, newId(), 0, 0) // no count: rejected
     const restarted = a.newHub()
-    expect(restarted.reconciliation(a.t2)?.cash.entries).toBe(5_000)
+    expect(restarted.reconciliation(a.t2)?.cash.cashIn).toBe(5_000)
     expect(restarted.reconciliation(a.t2)?.cash.expected).toBe(EXPECTED)
   })
 
@@ -1045,12 +1047,12 @@ describe('hub restart with a shift half done', () => {
       )
     }
     for (let i = 0; i < padding.length; i += 100) e.send(e.ana, padding.slice(i, i + 100))
-    e.movement(e.register, shift, 'entry', 2_000)
+    e.movement(e.register, shift, 'cash_in', 2_000)
     e.status.hub = e.newHub()
     expect(eventsOf(e.m).length).toBeGreaterThan(PAGE_SIZE)
     expect(e.status.hub.reconciliation(shift)?.cash).toMatchObject({
       charged: 20_000,
-      entries: 2_000,
+      cashIn: 2_000,
       expected: 23_000,
     })
   })
@@ -1108,7 +1110,7 @@ describe('multi-restaurant: the reconciliation belongs to each restaurant', () =
     expect(
       inB('CashMovementRecorded', {
         movement_id: newId(),
-        type: 'entry',
+        type: 'cash_in',
         amount: 1_000,
         description: 'x',
         to_whom: null,
@@ -1143,7 +1145,7 @@ describe('multi-restaurant: the reconciliation belongs to each restaurant', () =
           shiftB,
           {
             movement_id: newId(),
-            type: 'entry',
+            type: 'cash_in',
             amount: 3_000,
             description: 'x',
             to_whom: null,
@@ -1155,7 +1157,7 @@ describe('multi-restaurant: the reconciliation belongs to each restaurant', () =
       d.hubB,
     )
     expect(rB.results.map(reason)).toEqual(['confirmed', 'confirmed'])
-    d.movement(d.register, shiftA, 'output', 4_000)
+    d.movement(d.register, shiftA, 'cash_out', 4_000)
     expect(d.status.hub.reconciliation(shiftA)?.cash.expected).toBe(6_000)
     expect(d.hubB.reconciliation(shiftB)?.cash.expected).toBe(23_000)
 
@@ -1169,7 +1171,7 @@ describe('multi-restaurant: the reconciliation belongs to each restaurant', () =
     expect(d.newHub().openShift(d.register.deviceId)).toBeNull()
     const restartedB = d.newHubB()
     expect(restartedB.reconciliation(shiftB)?.cash).toMatchObject({
-      entries: 3_000,
+      cashIn: 3_000,
       expected: 23_000,
     })
     expect(restartedB.reconciliation(shiftA)).toBeNull()
@@ -1232,7 +1234,7 @@ describe('with the simulated network: the register closes offline, the hub shuts
       'CashMovementRecorded',
       {
         movement_id: newId(),
-        type: 'entry',
+        type: 'cash_in',
         amount: 20_000,
         description: 'Cambio',
         to_whom: null,

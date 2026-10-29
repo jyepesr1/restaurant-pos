@@ -378,6 +378,6 @@ describe('report: tables merged or moved after a void', () => {
       events: [],
       config: CONFIG,
     })
-    expect(r.sales.settings).toBe(20)
+    expect(r.sales.roundingAdjustments).toBe(20)
   })
 })

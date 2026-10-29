@@ -61,10 +61,10 @@ function AuthorizeWithPin({
   onPin: (pin: string) => void
 }) {
   if (!online)
-    return <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">{NO_CONNECTION}</p>
-  if (!ready) return <p className="text-texto-suave">{missing}</p>
+    return <p className="rounded-xl bg-alert-soft p-3 text-alert-text">{NO_CONNECTION}</p>
+  if (!ready) return <p className="text-muted">{missing}</p>
   return (
-    <div className="flex flex-col gap-2 rounded-2xl border border-linea bg-superficie-2/60 p-3">
+    <div className="flex flex-col gap-2 rounded-2xl border border-divider bg-surface-2/60 p-3">
       <p className="font-semibold">Pásale el celular al cajero o al administrador</p>
       <PinPad
         title={taken ? 'Comprobando el PIN…' : 'Que escriba su PIN para autorizar'}
@@ -176,7 +176,7 @@ export function VoidPanel({
         withPermission ? (
           <div className="flex flex-col gap-2">
             {pin.error && (
-              <p role="alert" className="text-alerta-texto">
+              <p role="alert" className="text-alert-text">
                 {pin.error}
               </p>
             )}
@@ -204,14 +204,14 @@ export function VoidPanel({
                 disabled={quantity <= 1}
                 onClick={() => setQuantity((c) => Math.max(1, c - 1))}
               />
-              <span className="cifras w-10 text-center text-xl font-bold">{quantity}</span>
+              <span className="figures w-10 text-center text-xl font-bold">{quantity}</span>
               <Button
                 icon="more"
                 aria-label="Una más"
                 disabled={quantity >= netQuantity}
                 onClick={() => setQuantity((c) => Math.min(netQuantity, c + 1))}
               />
-              <span className="text-texto-suave">{`de ${netQuantity}`}</span>
+              <span className="text-muted">{`de ${netQuantity}`}</span>
             </div>
           </div>
         )}
@@ -226,7 +226,7 @@ export function VoidPanel({
               Sí, ya se hizo
             </Option>
           </Group>
-          <span className="text-sm text-texto-suave">Lo que ya se hizo cuenta como pérdida.</span>
+          <span className="text-sm text-muted">Lo que ya se hizo cuenta como pérdida.</span>
         </div>
         {!withPermission && (
           <AuthorizeWithPin
@@ -238,7 +238,7 @@ export function VoidPanel({
             onPin={(key) => voidItem(key)}
           />
         )}
-        <p className="text-sm text-texto-suave">
+        <p className="text-sm text-muted">
           Si la cocina todavía no lo había entregado, recibe una comanda «ANULAR».
         </p>
       </div>
@@ -269,7 +269,7 @@ function SelectTable({
         if (tables.length === 0) return null
         return (
           <Group key={z.id} label={z.name} className="flex flex-col gap-2">
-            <span className="text-sm font-semibold text-texto-suave">{z.name}</span>
+            <span className="text-sm font-semibold text-muted">{z.name}</span>
             <div className="flex flex-wrap gap-2">
               {tables.map((m) => {
                 const takenPath = occupiedIds.get(m.id)
@@ -277,7 +277,7 @@ function SelectTable({
                 return locked ? (
                   <span
                     key={m.id}
-                    className="inline-flex min-h-12 items-center rounded-full border-2 border-dashed border-borde px-4 text-texto-suave"
+                    className="inline-flex min-h-12 items-center rounded-full border-2 border-dashed border-border px-4 text-muted"
                   >
                     {`${m.name} · ${takenPath}`}
                   </span>
@@ -327,7 +327,7 @@ export function ChangeTablePanel({
       footer={
         <div className="flex flex-col gap-2">
           {error && (
-            <p role="alert" className="text-alerta-texto">
+            <p role="alert" className="text-alert-text">
               {error}
             </p>
           )}
@@ -344,9 +344,9 @@ export function ChangeTablePanel({
       }
     >
       {!online && (
-        <p className="mb-4 rounded-xl bg-alerta-suave p-3 text-alerta-texto">{NO_NETWORK_TABLES}</p>
+        <p className="mb-4 rounded-xl bg-alert-soft p-3 text-alert-text">{NO_NETWORK_TABLES}</p>
       )}
-      <p className="mb-4 text-texto-suave">
+      <p className="mb-4 text-muted">
         Todo el pedido pasa a la mesa nueva. Si la cocina ya tiene algo, le llega «CAMBIO DE MESA».
       </p>
       <SelectTable
@@ -392,7 +392,7 @@ export function MergeTablesPanel({
       footer={
         <div className="flex flex-col gap-2">
           {error && (
-            <p role="alert" className="text-alerta-texto">
+            <p role="alert" className="text-alert-text">
               {error}
             </p>
           )}
@@ -409,9 +409,9 @@ export function MergeTablesPanel({
       }
     >
       {!online && (
-        <p className="mb-4 rounded-xl bg-alerta-suave p-3 text-alerta-texto">{NO_NETWORK_TABLES}</p>
+        <p className="mb-4 rounded-xl bg-alert-soft p-3 text-alert-text">{NO_NETWORK_TABLES}</p>
       )}
-      <p className="mb-4 text-texto-suave">
+      <p className="mb-4 text-muted">
         Para un grupo grande: las mesas que elijas quedan ocupadas con este mismo pedido y en el
         plano se ven unidas. Toca una unida para soltarla.
       </p>
@@ -468,7 +468,7 @@ export function MovePanel({
       footer={
         <div className="flex flex-col gap-2">
           {error && (
-            <p role="alert" className="text-alerta-texto">
+            <p role="alert" className="text-alert-text">
               {error}
             </p>
           )}
@@ -523,7 +523,7 @@ export function MovePanel({
         </div>
         <div className="flex flex-col gap-2">
           <span className="font-semibold">A qué mesa</span>
-          <span className="text-sm text-texto-suave">
+          <span className="text-sm text-muted">
             Si la mesa ya tiene pedido, se suman a ese; si está libre, se abre uno.
           </span>
           <SelectTable
@@ -584,7 +584,7 @@ export function CancelPanel({
       footer={
         <div className="flex flex-col gap-2">
           {withPermission && pin.error && (
-            <p role="alert" className="text-alerta-texto">
+            <p role="alert" className="text-alert-text">
               {pin.error}
             </p>
           )}
@@ -609,11 +609,11 @@ export function CancelPanel({
     >
       <div className="flex flex-col gap-5">
         {withPayments ? (
-          <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">
+          <p className="rounded-xl bg-alert-soft p-3 text-alert-text">
             Este pedido ya tiene pagos: primero hay que anularlos en caja.
           </p>
         ) : (
-          <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">
+          <p className="rounded-xl bg-alert-soft p-3 text-alert-text">
             {inKitchen > 0
               ? `Se quita todo el pedido y la cocina recibe «ANULAR» de lo que tenía (${inKitchen}). La mesa queda libre.`
               : 'Se quita todo el pedido y la mesa queda libre.'}
@@ -687,7 +687,7 @@ export function OrderActionsPanel({
       : []),
   ]
   const cssClass =
-    'flex min-h-16 w-full items-center gap-3 rounded-xl border border-borde bg-superficie px-4 text-left focus-visible:outline-3 focus-visible:outline-foco'
+    'flex min-h-16 w-full items-center gap-3 rounded-xl border border-border bg-surface px-4 text-left focus-visible:outline-3 focus-visible:outline-focus'
   return (
     <SidePanel opened title="Mesa y pedido" onClose={onClose}>
       <ul className="flex flex-col gap-2">
@@ -697,7 +697,7 @@ export function OrderActionsPanel({
               <Icon name={o.icon} className="size-6 shrink-0" />
               <span className="flex flex-col">
                 <span className="font-semibold">{o.text}</span>
-                <span className="text-sm text-texto-suave">{o.detail}</span>
+                <span className="text-sm text-muted">{o.detail}</span>
               </span>
             </button>
           </li>
@@ -705,11 +705,11 @@ export function OrderActionsPanel({
       </ul>
       {withOrder && (
         // Away from everything else: it is the only thing that cannot be undone.
-        <div className="mt-8 border-t border-linea pt-4">
+        <div className="mt-8 border-t border-divider pt-4">
           <button
             type="button"
             onClick={() => onChoose('cancel')}
-            className={`${cssClass} border-alerta-fuerte/50 text-alerta-texto`}
+            className={`${cssClass} border-alert-strong/50 text-alert-text`}
           >
             <Icon name="erase" className="size-6 shrink-0" />
             <span className="flex flex-col">

@@ -146,7 +146,7 @@ const getBackgroundColor = (page: Page) =>
   page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 const getTextColor = (page: Page) => page.evaluate(() => getComputedStyle(document.body).color)
 const isDark = (page: Page) =>
-  page.evaluate(() => document.documentElement.classList.contains('oscuro'))
+  page.evaluate(() => document.documentElement.classList.contains('dark'))
 
 /** Money as the UI writes it: 257500 → $257.500. Independent of the production code. */
 const inPesos = (n: number) =>
@@ -599,7 +599,7 @@ test.describe('table floor plan', () => {
     const free = tableOnFloorPlan(page, 1)
     await expect(free).toContainText('Libre')
     await expect(free.locator('svg')).toHaveCount(1)
-    await expect(free).toHaveClass(/bg-superficie/)
+    await expect(free).toHaveClass(/bg-surface/)
   })
 
   test('the summary counts tables by status', async ({ page }) => {
@@ -2046,7 +2046,9 @@ test.describe('KDS (kitchen and bar)', () => {
     await expect(ticketEl(page, 12, 'cocina')).toHaveCount(0)
     await expect(ticketEl(page, 2, 'barra')).toHaveCount(0)
 
-    const numbers = (await page.locator('main ul > li p.font-titulo').allInnerTexts()).map(numberOf)
+    const numbers = (await page.locator('main ul > li p.font-heading').allInnerTexts()).map(
+      numberOf,
+    )
     expect(numbers.filter((n, i) => n !== numbers[i - 1])).toEqual([7, 4, 21])
   })
 

@@ -21,7 +21,7 @@ describe('hub restarts and crashes', () => {
   let folder = ''
   let hubs: ReturnType<typeof hubInDir>
   beforeEach(() => {
-    folder = mkdtempSync(join(tmpdir(), 'pos-reinicio-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-restart-'))
     hubs = hubInDir(join(folder, 'data'))
   })
   afterEach(() => {

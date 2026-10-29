@@ -1142,7 +1142,11 @@ describe("the checkout panel's data passes the schema and the reducer", () => {
     const r = apply(36_810, payment)
     expect(r.ok).toBe(true)
     expect(r.payments).toHaveLength(1)
-    expect(orderTotals(r.status)).toMatchObject({ balance: 0, settings: -10, tips: 3_000 })
+    expect(orderTotals(r.status)).toMatchObject({
+      balance: 0,
+      roundingAdjustments: -10,
+      tips: 3_000,
+    })
   })
 
   it('exact cash by default (the customer hands over the exact amount): change 0', () => {
@@ -1221,7 +1225,7 @@ describe("the checkout panel's data passes the schema and the reducer", () => {
     })
     const r = apply(36_851, payment)
     expect(r.ok).toBe(true)
-    expect(orderTotals(r.status)).toMatchObject({ balance: 0, settings: 0 })
+    expect(orderTotals(r.status)).toMatchObject({ balance: 0, roundingAdjustments: 0 })
   })
 
   it('payment to a split check: it carries the check_id and the reducer accepts it', () => {

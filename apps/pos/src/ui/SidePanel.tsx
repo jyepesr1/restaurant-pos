@@ -99,9 +99,9 @@ export function SidePanel({
         aria-labelledby={id}
         aria-describedby={descriptionId}
         tabIndex={-1}
-        className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col rounded-t-3xl bg-superficie shadow-2xl outline-none md:inset-y-0 md:right-0 md:left-auto md:max-h-none md:w-[26rem] md:rounded-none md:rounded-l-3xl"
+        className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col rounded-t-3xl bg-surface shadow-2xl outline-none md:inset-y-0 md:right-0 md:left-auto md:max-h-none md:w-[26rem] md:rounded-none md:rounded-l-3xl"
       >
-        <div className="flex items-center justify-between gap-3 border-b border-borde p-3 pl-5">
+        <div className="flex items-center justify-between gap-3 border-b border-border p-3 pl-5">
           <h2 id={id} className="text-xl font-semibold">
             {title}
           </h2>
@@ -115,7 +115,7 @@ export function SidePanel({
           )}
         </div>
         <div className="flex-1 overflow-y-auto p-5">{children}</div>
-        {footer && <div className="border-t border-borde p-4">{footer}</div>}
+        {footer && <div className="border-t border-border p-4">{footer}</div>}
       </div>
     </div>,
     document.body,

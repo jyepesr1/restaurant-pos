@@ -388,7 +388,7 @@ describe('courseTickets with pending items from other courses', () => {
   })
 
   it('only sends the fired course: other courses and items without course stay pending', () => {
-    const entry = item({ product_id: simple.id, course: 'entry' })
+    const entry = item({ product_id: simple.id, course: 'starter' })
     const barMain = item({ product_id: simple.id, course: 'main' })
     const kitchenMain = item({ product_id: 'P-PLATO', course: 'main' })
     const dessert = item({ product_id: 'P-PLATO', course: 'dessert' })
@@ -421,7 +421,7 @@ describe('courseTickets with pending items from other courses', () => {
     )
     if (!status) throw new Error('missing')
     expect(courseTickets(catalogTwo, status, 'main')).toBeNull()
-    expect(courseTickets(catalogTwo, status, 'entry')).toBeNull()
+    expect(courseTickets(catalogTwo, status, 'starter')).toBeNull()
     expect(courseTickets(catalogTwo, status, 'dessert')?.tickets).toHaveLength(1)
   })
 

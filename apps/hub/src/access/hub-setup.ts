@@ -61,16 +61,16 @@ export function orderWithSentItem(
   const order = newId()
   const it = item(modifiers)
   const ticketId = newId()
-  const en = { aggregate_id: order }
+  const inOrder = { aggregate_id: order }
   const r = m.hub.receiveBatch(connection, [
-    m.event(connection, session, 'OrderOpened', OPEN_ORDER, en),
-    m.event(connection, session, 'ItemAdded', it, { ...en, base_sequence: 1 }),
+    m.event(connection, session, 'OrderOpened', OPEN_ORDER, inOrder),
+    m.event(connection, session, 'ItemAdded', it, { ...inOrder, base_sequence: 1 }),
     m.event(
       connection,
       session,
       'ItemsSent',
       { tickets: [{ ticket_id: ticketId, station_id: newId(), item_ids: [it.item_id] }] },
-      { ...en, base_sequence: 2 },
+      { ...inOrder, base_sequence: 2 },
     ),
   ])
   expect(r.results.map((x) => x.status)).toEqual(['confirmed', 'confirmed', 'confirmed'])

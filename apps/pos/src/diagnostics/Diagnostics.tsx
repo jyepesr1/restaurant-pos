@@ -8,7 +8,7 @@ const SUMMARY_INTERVAL_MS = 3000
 const IDEAL_LATENCY_MS = 200
 const IDEAL_RECOVERY_MS = 3000
 
-type SendStatus = 'ready' | 'enviando' | 'sent' | 'error' | 'missing-name'
+type SendStatus = 'ready' | 'sending' | 'sent' | 'error' | 'missing-name'
 type Severity = 'ok' | 'error' | 'alert' | 'measuring' | 'info'
 
 function detectCapabilities() {
@@ -184,7 +184,7 @@ export function Diagnostics() {
       nameField.current?.focus()
       return
     }
-    setSubmission('enviando')
+    setSubmission('sending')
     try {
       const events = await readEvents()
       const res = await fetch('/api/diagnostics', {
@@ -408,10 +408,10 @@ export function Diagnostics() {
           <button
             type="button"
             onClick={send}
-            disabled={submission === 'enviando'}
+            disabled={submission === 'sending'}
             className={`${buttonClass} w-full bg-blue-700 text-white`}
           >
-            {submission === 'enviando' ? 'Enviando…' : 'Enviar resultados al hub'}
+            {submission === 'sending' ? 'Enviando…' : 'Enviar resultados al hub'}
           </button>
           <p role="status" className="mt-2 min-h-6 text-center">
             {submission === 'sent' && '✓ Resultados enviados'}

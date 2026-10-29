@@ -22,7 +22,7 @@ let folder = ''
 afterEach(() => rmSync(folder, { recursive: true, force: true }))
 
 async function setup() {
-  folder = mkdtempSync(join(tmpdir(), 'pos-aviso-'))
+  folder = mkdtempSync(join(tmpdir(), 'pos-alert-'))
   const { db } = openData(folder)
   let floor: ReturnType<typeof prepareSync> | null = null
   const access = prepareAccess(
@@ -85,14 +85,14 @@ async function setup() {
     const ws: WebSocket = await app.injectWS('/api/sync/ws')
     ws.on('message', (d) => received.push(JSON.parse(d.toString())))
     const send = (m: object) => ws.send(JSON.stringify(m))
-    if (token) send({ type: 'hello', token, hub_instance: null, until: 0, version_app: 'prueba' })
+    if (token) send({ type: 'hello', token, hub_instance: null, until: 0, version_app: 'test' })
     const wait = (type: string) =>
       waitFor(() => received.find((m) => m.type === type) as HubMessage)
     /** A ping as a barrier: when the pong comes back, everything before it has arrived. */
     const barrier = async () => {
-      const brand = `b${received.length}`
-      send({ type: 'ping', brand })
-      await waitFor(() => received.find((m) => m.type === 'pong' && m.brand === brand))
+      const stamp = `b${received.length}`
+      send({ type: 'ping', stamp })
+      await waitFor(() => received.find((m) => m.type === 'pong' && m.stamp === stamp))
     }
     const catalogs = () => received.filter((m) => m.type === 'catalog')
     return { ws, received, send, wait, barrier, catalogs }

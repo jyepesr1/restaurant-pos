@@ -98,21 +98,21 @@ export function PreBill() {
   return (
     <Frame title={`Precuenta · Mesa ${number}`} user="Caja" back="/mockups/floor-plan">
       <div className="mx-auto grid max-w-5xl gap-4 p-3 pb-28 md:grid-cols-[1fr_22rem] md:pb-3">
-        <section className="rounded-2xl border border-borde bg-superficie" aria-label="Ítems">
+        <section className="rounded-2xl border border-border bg-surface" aria-label="Ítems">
           <ul>
             {items.map((i) => (
-              <li key={i.id} className="border-b border-borde px-4 py-3">
+              <li key={i.id} className="border-b border-border px-4 py-3">
                 <div className="flex items-start gap-3">
-                  <span className="cifras w-6 font-semibold">{i.quantity}</span>
+                  <span className="figures w-6 font-semibold">{i.quantity}</span>
                   <span className="flex-1">
                     <span className="font-semibold">{itemName(i)}</span>
                     {i.options.length > 0 && (
-                      <span className="block text-sm text-texto-suave">
+                      <span className="block text-sm text-muted">
                         {i.options.map((o) => o.name).join(' · ')}
                       </span>
                     )}
                   </span>
-                  <span className="cifras">{pesos(lineNet(lineOf(i)))}</span>
+                  <span className="figures">{pesos(lineNet(lineOf(i)))}</span>
                 </div>
                 {mode === 'items' && byItemsPossible && (
                   <Group
@@ -134,23 +134,23 @@ export function PreBill() {
               </li>
             ))}
           </ul>
-          <dl className="cifras grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 p-4">
+          <dl className="figures grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 p-4">
             <dt>Total</dt>
             <dd className="text-right">{pesos(total)}</dd>
             {paid > 0 && (
               <>
-                <dt className="text-libre-texto">Ya pagado</dt>
-                <dd className="text-right text-libre-texto">{`-${pesos(paid)}`}</dd>
+                <dt className="text-free-text">Ya pagado</dt>
+                <dd className="text-right text-free-text">{`-${pesos(paid)}`}</dd>
                 <dt className="font-semibold">Saldo</dt>
                 <dd className="text-right font-semibold">{pesos(balance)}</dd>
               </>
             )}
-            <dt className="text-texto-suave">Propina sugerida (10 %, voluntaria)</dt>
-            <dd className="text-right text-texto-suave">{pesos(tip)}</dd>
-            <dt className="font-titulo text-2xl font-bold">Con propina</dt>
-            <dd className="font-titulo text-right text-2xl font-bold">{pesos(balance + tip)}</dd>
+            <dt className="text-muted">Propina sugerida (10 %, voluntaria)</dt>
+            <dd className="text-right text-muted">{pesos(tip)}</dd>
+            <dt className="font-heading text-2xl font-bold">Con propina</dt>
+            <dd className="font-heading text-right text-2xl font-bold">{pesos(balance + tip)}</dd>
           </dl>
-          <p className="px-4 pb-4 text-sm text-texto-suave">Precios con INC incluido.</p>
+          <p className="px-4 pb-4 text-sm text-muted">Precios con INC incluido.</p>
         </section>
 
         <section className="flex flex-col gap-3" aria-label="Dividir">
@@ -187,12 +187,12 @@ export function PreBill() {
                   maximum={10}
                   onChange={changeChecks}
                 />
-                <p className="text-sm text-texto-suave">
+                <p className="text-sm text-muted">
                   Toca en cada ítem quién lo paga. Si lo tocan dos o más, se reparte entre ellos.
                 </p>
               </>
             ) : (
-              <p className="rounded-xl bg-proceso-suave p-3 text-proceso-texto">
+              <p className="rounded-xl bg-progress-soft p-3 text-progress-text">
                 Ya hay pagos: divide el saldo en partes iguales.
               </p>
             ))}
@@ -203,11 +203,11 @@ export function PreBill() {
                 <li
                   // biome-ignore lint/suspicious/noArrayIndexKey: the checks are positions
                   key={c}
-                  className="flex items-center gap-2 rounded-xl border border-borde bg-superficie p-2 pl-3"
+                  className="flex items-center gap-2 rounded-xl border border-border bg-surface p-2 pl-3"
                 >
                   <span className="flex-1">
                     <span className="block font-semibold">{`Cuenta ${c + 1}`}</span>
-                    <span className="cifras text-sm text-texto-suave">
+                    <span className="figures text-sm text-muted">
                       {`${pesos(amount)} + propina ${pesos(tips[c] ?? 0)}`}
                     </span>
                   </span>
@@ -221,7 +221,7 @@ export function PreBill() {
                 </li>
               ))}
               {unassigned > 0 && (
-                <li className="cifras flex justify-between rounded-xl bg-proceso-suave p-3 text-proceso-texto">
+                <li className="figures flex justify-between rounded-xl bg-progress-soft p-3 text-progress-text">
                   <span>Sin asignar</span>
                   <span className="font-semibold">{pesos(unassigned)}</span>
                 </li>
@@ -234,7 +234,7 @@ export function PreBill() {
       </div>
 
       {/* Phone: the actions at the bottom, within thumb reach. */}
-      <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-borde bg-superficie p-3 md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-border bg-surface p-3 md:hidden">
         {actions}
       </div>
     </Frame>
@@ -255,7 +255,7 @@ function Accountant({
   onChange: (n: number) => void
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-borde bg-superficie p-3">
+    <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3">
       <span className="flex-1 font-semibold">{name}</span>
       <Button
         icon="minus"
@@ -263,7 +263,7 @@ function Accountant({
         disabled={value <= minimum}
         onClick={() => onChange(value - 1)}
       />
-      <span className="cifras w-8 text-center text-xl font-semibold">{value}</span>
+      <span className="figures w-8 text-center text-xl font-semibold">{value}</span>
       <Button
         icon="more"
         aria-label={`Agregar ${name.toLowerCase()}: quedan ${value + 1}`}

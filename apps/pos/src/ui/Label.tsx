@@ -6,19 +6,19 @@ import { Icon, type IconName } from './icons'
 export type Tone = 'free' | 'progress' | 'warning' | 'action' | 'neutral'
 
 export const SOFT_TONES: Record<Tone, string> = {
-  free: 'bg-libre-suave text-libre-texto',
-  progress: 'bg-proceso-suave text-proceso-texto',
-  warning: 'bg-alerta-suave text-alerta-texto',
-  action: 'bg-accion-suave text-accion-texto',
-  neutral: 'bg-neutro-suave text-neutro-texto',
+  free: 'bg-free-soft text-free-text',
+  progress: 'bg-progress-soft text-progress-text',
+  warning: 'bg-alert-soft text-alert-text',
+  action: 'bg-action-soft text-action-text',
+  neutral: 'bg-neutral-soft text-neutral-text',
 }
 
 export const STRONG_TONES: Record<Tone, string> = {
-  free: 'bg-libre-fuerte text-white',
-  progress: 'bg-proceso-fuerte text-white',
-  warning: 'bg-alerta-fuerte text-white',
-  action: 'bg-accion-fuerte text-white',
-  neutral: 'bg-neutro-fuerte text-white',
+  free: 'bg-free-strong text-white',
+  progress: 'bg-progress-strong text-white',
+  warning: 'bg-alert-strong text-white',
+  action: 'bg-action-strong text-white',
+  neutral: 'bg-neutral-strong text-white',
 }
 
 export function Label({

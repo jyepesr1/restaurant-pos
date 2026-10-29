@@ -228,7 +228,7 @@ export function setupPrinting(options: SetupOptions = {}) {
     name: string
     station: string
     options?: string[]
-    course?: 'entry' | 'main' | 'dessert' | null
+    course?: 'starter' | 'main' | 'dessert' | null
     notes?: string | null
     guest?: number | null
     quantity?: number

@@ -38,7 +38,7 @@ describe('pnpm reset-admin (real process)', { timeout: 60_000 }, () => {
   afterEach(() => rmSync(folder, { recursive: true, force: true }))
 
   it('gives the admin a new password; the previous one stops working', () => {
-    folder = mkdtempSync(join(tmpdir(), 'pos-restablecer-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-reset-'))
     expect(run('src/seed/main.ts', folder).code).toBe(0)
     const old = passwordOf(folder, /-administrador\.txt$/)
 
@@ -54,7 +54,7 @@ describe('pnpm reset-admin (real process)', { timeout: 60_000 }, () => {
   })
 
   it('with a freshly installed hub (no database) it creates the admin and shows their password', () => {
-    folder = mkdtempSync(join(tmpdir(), 'pos-restablecer-'))
+    folder = mkdtempSync(join(tmpdir(), 'pos-reset-'))
     const r = run('src/reset.ts', folder)
     expect(r.code).toBe(0)
     expect(passwordMatches(passwordOf(folder, /^restablecer-/), savedHash(folder))).toBe(true)

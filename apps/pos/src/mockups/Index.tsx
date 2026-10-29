@@ -66,15 +66,15 @@ export function Index() {
   return (
     <Frame title="Bocetos del POS" back="/">
       <div className="mx-auto max-w-3xl p-4">
-        <p className="mb-4 text-texto-suave">
+        <p className="mb-4 text-muted">
           Bocetos navegables con la carta real de La Spritzzería. Los datos son de ejemplo y no se
           guardan: recargar la página los reinicia.
         </p>
         <section className="mb-6" aria-labelledby="address">
-          <h2 id="address" className="font-titulo mb-1 text-2xl font-semibold">
+          <h2 id="address" className="font-heading mb-1 text-2xl font-semibold">
             Dirección visual
           </h2>
-          <p className="mb-3 text-sm text-texto-suave">
+          <p className="mb-3 text-sm text-muted">
             Faro es el estilo del sistema. La Spritzzería muestra cómo se ve con la marca de un
             restaurante. Aquí se elige solo en este equipo, para comparar.
           </p>
@@ -112,22 +112,22 @@ export function Index() {
                   e.preventDefault()
                   navigate(p.route)
                 }}
-                className="flex min-h-20 items-center gap-4 rounded-2xl border border-borde bg-superficie p-4 hover:bg-superficie-2 focus-visible:outline-3 focus-visible:outline-foco"
+                className="flex min-h-20 items-center gap-4 rounded-2xl border border-border bg-surface p-4 hover:bg-surface-2 focus-visible:outline-3 focus-visible:outline-focus"
               >
-                <span className="rounded-xl bg-accion-suave p-3 text-accion-texto">
+                <span className="rounded-xl bg-action-soft p-3 text-action-text">
                   <Icon name={p.icon} width="1.5em" height="1.5em" />
                 </span>
                 <span>
-                  <span className="font-titulo block text-2xl font-semibold">{p.title}</span>
-                  <span className="text-texto-suave">{p.audience}</span>
+                  <span className="font-heading block text-2xl font-semibold">{p.title}</span>
+                  <span className="text-muted">{p.audience}</span>
                 </span>
               </a>
             </li>
           ))}
         </ul>
-        <section className="mt-8 rounded-2xl border border-borde bg-superficie p-4">
+        <section className="mt-8 rounded-2xl border border-border bg-surface p-4">
           <h2 className="mb-1 text-lg font-semibold">Simular</h2>
-          <p className="mb-3 text-sm text-texto-suave">
+          <p className="mb-3 text-sm text-muted">
             Para ver en cada pantalla el indicador de conexión, los eventos por enviar y una
             impresora que no responde.
           </p>

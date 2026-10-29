@@ -532,7 +532,7 @@ describe('data the ticket carries', () => {
     const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], t.table('7'))
     t.send(ana, order, items)
     expect(t.content(t.jobs()[0])).toMatchObject({
-      type: 'newOne',
+      type: 'new',
       station: 'Cocina',
       target: 'Mesa 7',
       waiter: 'Ana',
@@ -629,7 +629,7 @@ describe('held courses', () => {
     const entry = t.add(ana, order, {
       name: 'Burrata',
       station: t.kitchen,
-      course: 'entry',
+      course: 'starter',
     })
     t.add(ana, order, { name: 'Tagliata', station: t.kitchen, course: 'main' })
     t.send(ana, order, [entry])
@@ -662,7 +662,7 @@ describe('held courses', () => {
     const r = t.send(ana, order, [dish])
     expect(t.content(t.jobs()[0]).heldCourses).toEqual(['dessert'])
     ana.submit(order, 'TicketReprinted', { ticket_id: r.tickets[0]?.ticket_id })
-    expect(t.content(t.jobs().at(-1))).toMatchObject({ type: 'reprinting', heldCourses: [] })
+    expect(t.content(t.jobs().at(-1))).toMatchObject({ type: 'reprint', heldCourses: [] })
   })
 })
 

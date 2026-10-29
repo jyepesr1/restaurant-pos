@@ -33,18 +33,18 @@ export function Frame({
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="sticky top-0 z-30 flex flex-wrap items-center gap-2 border-b border-borde bg-superficie/95 px-2 py-2 backdrop-blur">
+      <header className="sticky top-0 z-30 flex flex-wrap items-center gap-2 border-b border-border bg-surface/95 px-2 py-2 backdrop-blur">
         <Button variant="ghost" icon="back" aria-label="Volver" onClick={() => navigate(back)} />
         {/* The restaurant badge: the logo in its cream circle, as on the menu. */}
         <img
-          src="/marca/la-spritzzeria.svg"
+          src="/brand/la-spritzzeria.svg"
           alt=""
-          className="logo-marca size-10 rounded-full border-2 border-marca bg-[#fff8ec] p-0.5"
+          className="brand-logo size-10 rounded-full border-2 border-brand bg-[#fff8ec] p-0.5"
         />
         <h1
           ref={heading}
           tabIndex={-1}
-          className="font-titulo mr-auto text-2xl font-semibold leading-none outline-none"
+          className="font-heading mr-auto text-2xl font-semibold leading-none outline-none"
         >
           {title}
         </h1>
@@ -53,7 +53,7 @@ export function Frame({
           pendingList={pendingList}
           failingPrinters={failingPrinters}
         />
-        <span className="hidden text-texto-suave sm:inline">{user}</span>
+        <span className="hidden text-muted sm:inline">{user}</span>
         {actions}
         <Button
           variant="ghost"
@@ -63,7 +63,7 @@ export function Frame({
           onClick={() => select(dark ? 'light' : 'dark')}
         />
       </header>
-      <div className="firma-marca" aria-hidden="true" />
+      <div className="brand-signature" aria-hidden="true" />
       <main className="flex-1">{children}</main>
     </div>
   )

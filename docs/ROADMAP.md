@@ -286,13 +286,15 @@ Decisión del dueño ([ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-
 **Qué cambió:**
 - **Todo el código en inglés**, con un nombre por término según [GLOSARIO.md](GLOSARIO.md): identificadores, archivos y carpetas (`apps/nube` → `apps/cloud`, `src/sala` → `src/floor`, `src/bocetos` → `src/mockups`…), paquetes (`@pos/cloud`), comentarios y títulos de las pruebas.
 - **Valores de código:** tipos de evento (`ItemAnulado` → `ItemVoided`), estados, canales, permisos, códigos de error, rutas de la API (`/api/caja/precuenta` → `/api/register/pre-bill`, `/v1/salud` → `/v1/health`), rutas de la app (`/pedido?mesa=` → `/order?table=`) y claves de IndexedDB y localStorage.
+- **Traducciones literales corregidas** (segunda pasada, sin cambiar lógica): el curso «entrada» es `starter` (también en el `CHECK` de `order_items.course` de la migración 1); los movimientos de caja son `cash_in`/`cash_out`/`tip_payout` (contadores `cashIn`/`cashOut`); los tipos de comanda son `new`, `reprint`, `modification`, `void`, `note` y `move`; los ajustes por redondeo sumados de un pedido o un informe son `roundingAdjustments`; el campo del `ping`/`pong` es `stamp`; y nombres sueltos de las pruebas (prefijos de carpetas temporales, `version_app: 'test'`, casos de `limits.test.ts`) quedaron en inglés.
+- **Tokens de color** de `apps/pos/src/styles.css` y las clases de Tailwind que los usan, también en inglés, sin cambiar ningún color ni tamaño: `--fondo` → `--background`, `--superficie` → `--surface`, `--texto-suave` → `--muted`, `--borde` → `--border`, `--linea` → `--divider`, `--lateral` → `--sidebar`, los tonos `accion`/`libre`/`proceso`/`alerta`/`neutro` → `action`/`free`/`progress`/`alert`/`neutral` con `-strong`/`-soft`/`-text` (`bg-alert-soft`, `text-action-text`), `font-heading`, `shadow-float`, la clase del modo oscuro `.oscuro` → `.dark`, el atributo `data-marca` → `data-brand`, la carpeta `public/marca` → `public/brand` y las clases `.logo-marca`, `.firma-marca`, `.aviso-tiempo` y `.cifras` → `.brand-logo`, `.brand-signature`, `.notice-timer` y `.figures`.
 - **Bases de datos nuevas:**
   - SQLite: las 8 migraciones se cambiaron por **una sola migración 1** con el mismo esquema final, en inglés y con tablas en plural (`orders`, `order_items`, `dining_tables`, `print_jobs`…). Se comprobó objeto por objeto (35 tablas, 38 disparadores) que el esquema es el mismo.
   - Neon: se borró el esquema en español (vacío) y se aplicó la migración 1 nueva con su huella. El rol `faro_api` es miembro de `faro_data`, sin `BYPASSRLS`. La seguridad por fila se comprobó como `faro_api`: cada restaurante ve solo lo suyo y no puede escribir en otro (prueba revertida, la base quedó vacía).
   - El Worker `faro-api` se volvió a publicar con el mismo Hyperdrive y el mismo secreto `TOKEN_ADMIN`: `/v1/health` responde 200 y las rutas de hub y de administración dan 401.
 - **Comandos renombrados:** `pnpm reset-admin`, `pnpm --filter @pos/hub test-printer`, `pnpm seed --no-staff`, `pnpm --filter @pos/cloud migrate`, `CLOUD_URL=… pnpm --filter @pos/cloud admin restaurant | code | revoke`, `pnpm --filter @pos/cloud run deploy`. La carpeta de datos del hub es `apps/hub/data` y las variables `DATA_DIR`, `APP_DIR`, `DIE_AT`, `CLOUD_URL`.
 
-**Se quedan en español a propósito:** todo lo que ve o imprime el restaurante; la carta del piloto (`docs/datos/carta-la-spritzzeria.yaml`) y sus claves, porque es un formato exportado; los tokens de color de `apps/pos/src/styles.css` (`fondo`, `superficie`, `.oscuro`, `data-marca`); los archivos que abre el dueño (`pin-administrador.txt`, `pines-….txt`, `restablecer-….txt`).
+**Se quedan en español a propósito:** todo lo que ve o imprime el restaurante; la carta del piloto (`docs/datos/carta-la-spritzzeria.yaml`) y sus claves, porque es un formato exportado; los archivos que abre el dueño (`pin-administrador.txt`, `pines-….txt`, `restablecer-….txt`).
 
 **Cómo probarlo a mano** (la base del hub se crea de nuevo, porque la vieja está en la versión 8 y en español):
 1. Cierra el hub si está abierto (en la ventana donde corre, `Ctrl+C`).
@@ -305,8 +307,6 @@ Decisión del dueño ([ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-
 8. Toca la mesa 5, agrega un producto y envíalo. Debes ver la mesa «En preparación» en el plano. Todos los textos siguen en español.
 
 **Pendiente (no cambia lógica, se hace aparte):**
-- Nombres que se pueden mejorar: el curso «entrada» quedó como `entry` (mejor `starter`); los movimientos de caja `entry`/`output` (mejor `cash_in`/`cash_out`); `settings` para los ajustes de redondeo (mejor `roundingAdjustments`); los tipos de comanda `newOne`/`voidEntry`; algunos nombres sueltos señalados en la revisión.
-- Los tokens de color de `styles.css` y las clases de Tailwind que los usan, en español.
 - Las e2e «the home screen links to /diagnostics» y «app start (sign in): everything is at least 48×48» ya fallaban antes de la reescritura: buscan un enlace «Diagnóstico del equipo» y un encabezado «Escribe tu PIN» que la pantalla de entrar no tiene.
 - **Antes de cualquier push:** el commit «Rename apps/hub to English» guardó por error tres archivos de la carpeta vieja `apps/hub/datos` (la llave de los PIN, `hub-instancia` y `diagnosticos.jsonl`). Ya no se versionan, pero siguen en el historial local de ese commit: hay que sacarlos del historial (por ejemplo con `git filter-branch` sobre los commits de esta tarea) antes de subir.
 - Los celulares y tablets que ya abrieron Faro guardan una base local con los nombres viejos: hay que borrar los datos del sitio en cada uno (paso 6) antes de usarlos de nuevo.
@@ -746,7 +746,7 @@ Decisión del dueño del 25-oct-2026 ([ADR-014](DECISIONES.md#adr-014--faro-nomb
   - el hub la guarda en `data/photos`.
 
 **Por dentro:**
-- Tokens de color en `apps/pos/src/styles.css`; una marca nueva es un bloque `data-marca` en claro y oscuro, más su entrada en `BRANDS`.
+- Tokens de color en `apps/pos/src/styles.css`; una marca nueva es un bloque `data-brand` en claro y oscuro, más su entrada en `BRANDS`.
 - `brand` en la configuración del restaurante (por defecto `faro`); `POST /api/restaurant/brand`.
 - Fotos:
   - `POST /api/catalog/photos` (permiso de editar la carta, máximo 1 MB, solo WebP, JPEG o PNG comprobados por su contenido);

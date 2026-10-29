@@ -43,9 +43,9 @@ const active = (m: Table) => ACTIVE_TABLE_STATUSES.includes(m.status)
 /** Free ones are shown in white: that way the ones needing attention stand out. */
 const tableClass = (table: Table, v: Visible) =>
   table.status === 'free'
-    ? 'border-borde bg-superficie text-libre-texto'
+    ? 'border-border bg-surface text-free-text'
     : v.tone === 'warning'
-      ? `border-alerta-fuerte ${SOFT_TONES.warning}`
+      ? `border-alert-strong ${SOFT_TONES.warning}`
       : `border-transparent ${SOFT_TONES[v.tone]}`
 
 export function FloorPlan() {
@@ -122,15 +122,15 @@ export function FloorPlan() {
                 <button
                   type="button"
                   onClick={() => navigate(`/mockups/pre-bill?table=${table.number}`)}
-                  className="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-borde bg-superficie px-4 text-left hover:bg-superficie-2"
+                  className="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 text-left hover:bg-surface-2"
                 >
                   <span>
                     <span className="font-semibold">Mesa {table.number}</span>
-                    <span className="block text-sm text-texto-suave">
+                    <span className="block text-sm text-muted">
                       {visibleStatus(table, now).text}
                     </span>
                   </span>
-                  <span className="cifras font-semibold">{pesos(tableBalance(table))}</span>
+                  <span className="figures font-semibold">{pesos(tableBalance(table))}</span>
                 </button>
               </li>
             ))}
@@ -159,15 +159,15 @@ function TableOnFloorPlan({ table, now, onTap }: { table: Table; now: number; on
       type="button"
       onClick={onTap}
       aria-label={`Mesa ${table.number}: ${v.text}${takenPath ? `, ${elapsed}, ${pesos(tableBalance(table))}` : ''}`}
-      className={`flex aspect-square w-full flex-col justify-between rounded-2xl border-2 p-2 text-left transition active:scale-95 focus-visible:outline-3 focus-visible:outline-foco ${tableClass(table, v)}`}
+      className={`flex aspect-square w-full flex-col justify-between rounded-2xl border-2 p-2 text-left transition active:scale-95 focus-visible:outline-3 focus-visible:outline-focus ${tableClass(table, v)}`}
     >
       <span className="flex items-start justify-between">
-        <span className="font-titulo text-3xl font-bold leading-none">{table.number}</span>
+        <span className="font-heading text-3xl font-bold leading-none">{table.number}</span>
         <Icon name={v.icon} />
       </span>
       <span className="text-sm leading-tight font-semibold">{v.text}</span>
       {takenPath && (
-        <span className="cifras text-sm leading-tight">
+        <span className="figures text-sm leading-tight">
           {elapsed}
           <br />
           {pesos(tableBalance(table))}
@@ -183,18 +183,18 @@ function TableInList({ table, now, onTap }: { table: Table; now: number; onTap: 
     <button
       type="button"
       onClick={onTap}
-      className="flex min-h-16 w-full items-center gap-3 rounded-2xl border border-borde bg-superficie px-3 text-left hover:bg-superficie-2"
+      className="flex min-h-16 w-full items-center gap-3 rounded-2xl border border-border bg-surface px-3 text-left hover:bg-surface-2"
     >
-      <span className="font-titulo w-10 text-center text-3xl font-bold">{table.number}</span>
+      <span className="font-heading w-10 text-center text-3xl font-bold">{table.number}</span>
       <span className="flex-1">
         <Label tone={v.tone} icon={v.icon}>
           {v.text}
         </Label>
         {active(table) && (
-          <span className="mt-1 block text-sm text-texto-suave">{detail(table, now)}</span>
+          <span className="mt-1 block text-sm text-muted">{detail(table, now)}</span>
         )}
       </span>
-      {active(table) && <span className="cifras font-semibold">{pesos(tableBalance(table))}</span>}
+      {active(table) && <span className="figures font-semibold">{pesos(tableBalance(table))}</span>}
     </button>
   )
 }

@@ -37,7 +37,7 @@ export function Operation({ route, params }: { route: string; params: URLSearchP
   useEffect(() => {
     floor.load().catch((e) => console.error('No se pudo abrir la base del equipo:', e))
     const onVisibilityChange = () => floor.changeVisibility(!document.hidden)
-    const onTap = () => floor.enabled()
+    const onTap = () => floor.markUsed()
     const review = setInterval(() => floor.expireSessionIfDue(), CHECK_SESSION_MS)
     document.addEventListener('visibilitychange', onVisibilityChange)
     window.addEventListener('pointerdown', onTap, { passive: true })
@@ -48,7 +48,7 @@ export function Operation({ route, params }: { route: string; params: URLSearchP
     }
   }, [])
 
-  if (!status.loaded) return <p className="p-6 text-texto-suave">Cargando…</p>
+  if (!status.loaded) return <p className="p-6 text-muted">Cargando…</p>
   if (status.hubError && status.hubError.code !== 'invalid_message')
     return <RejectedDevice message={status.hubError.message} code={status.hubError.code} />
   // With no device yet, signing in registers it with the hub (it is no longer paired first).
@@ -98,7 +98,7 @@ function RejectedDevice({ code, message }: { code: string; message: string }) {
   const forget = () => void floor.forgetDevice()
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-4">
-      <h1 className="font-titulo text-3xl font-semibold">
+      <h1 className="font-heading text-3xl font-semibold">
         Este equipo no puede entrar al POS del restaurante
       </h1>
       <p role="alert">{message}</p>
@@ -142,7 +142,7 @@ function NoCatalog() {
     <FloorFrame title="Salón">
       <div className="flex flex-col items-start gap-3 p-6">
         <p>Falta traer la carta y las mesas del restaurante.</p>
-        <p className="text-alerta-texto" role="alert">
+        <p className="text-alert-text" role="alert">
           {error ?? ''}
         </p>
         <Button

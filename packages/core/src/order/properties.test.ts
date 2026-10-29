@@ -50,7 +50,7 @@ function verifyState(status: OrderState) {
   expect(charged).toBe(
     sum(currentOnes.map((p) => p.amount)) + sum(currentOnes.map((p) => p.roundingAdjustment)),
   )
-  expect(t.paid + sum(currentOnes.map((p) => p.refundedSale)) + t.settings).toBe(charged)
+  expect(t.paid + sum(currentOnes.map((p) => p.refundedSale)) + t.roundingAdjustments).toBe(charged)
   if (status.status === 'closed') {
     expect(t.balance).toBe(0)
     expect(sum(currentOnes.map((p) => p.amount - p.refundedSale))).toBe(t.net)

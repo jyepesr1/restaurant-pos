@@ -14,7 +14,7 @@ import {
 } from './index'
 
 const ticket: Ticket = {
-  type: 'newOne',
+  type: 'new',
   station: 'Cocina',
   number: 12,
   target: 'Mesa 6',
@@ -27,7 +27,7 @@ const ticket: Ticket = {
       quantity: 2,
       name: 'Burrata Spritz',
       guest: 1,
-      course: 'entry',
+      course: 'starter',
       options: ['Sin rúgula'],
       notes: null,
     },
@@ -58,10 +58,10 @@ describe('ticket', () => {
   })
 
   it('void and reprint are marked at the top', () => {
-    expect(asText(ticketLines({ ...ticket, type: 'voidEntry' }, format80), 48)).toContain(
+    expect(asText(ticketLines({ ...ticket, type: 'void' }, format80), 48)).toContain(
       '[ANULAR · COCINA]',
     )
-    expect(asText(ticketLines({ ...ticket, type: 'reprinting' }, format80), 48)).toContain(
+    expect(asText(ticketLines({ ...ticket, type: 'reprint' }, format80), 48)).toContain(
       'REIMPRESIÓN',
     )
   })

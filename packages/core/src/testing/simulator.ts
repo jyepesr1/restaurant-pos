@@ -74,7 +74,7 @@ export interface Movement {
 
 const PRICES = [0, 200, 12_900, 12_950, 14_900, 16_000, 29_900, 40_900, 100_000]
 const RATES = [800, 1900, 0] as const
-const COURSES = [null, 'entry', 'main', 'dessert'] as const
+const COURSES = [null, 'starter', 'main', 'dessert'] as const
 const BPS = [500, 1000, 1500, 5000, 9500, 10_000]
 const DAYS = ['2026-10-24', '2026-10-25']
 
@@ -531,7 +531,7 @@ export class Service {
         )
       }
       case 23: {
-        const course = (['entry', 'main', 'dessert'] as const)[a % 3] ?? 'entry'
+        const course = (['starter', 'main', 'dessert'] as const)[a % 3] ?? 'starter'
         return only(event(id, b % 2 === 0 ? 'CourseHeld' : 'CourseFired', { course }))
       }
       case 24: {

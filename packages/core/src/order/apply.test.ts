@@ -81,7 +81,7 @@ describe('full service', () => {
       balance: 0,
       paid: 68_700,
       tips: 6361,
-      settings: 0,
+      roundingAdjustments: 0,
     })
     expect(closed.items[pizza.item_id]?.status).toBe('served')
     expect(closed.items[beer.item_id]?.status).toBe('sent')
@@ -687,7 +687,7 @@ describe('splitting and payments', () => {
       ],
       withItem,
     )
-    expect(orderTotals(paid)).toMatchObject({ balance: 0, settings: -10 })
+    expect(orderTotals(paid)).toMatchObject({ balance: 0, roundingAdjustments: -10 })
   })
 
   it('voiding a payment restores the balance; voiding it twice does not', () => {

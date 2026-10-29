@@ -28,17 +28,17 @@ import { fieldClass } from './SignIn'
 // bills and coins are counted (the count is saved), then the expected amount and the variance are
 // shown, and from the restaurant's threshold up it must be justified. Everything needs the hub.
 
-type Movement = 'entry' | 'output' | 'tip_payout'
+type Movement = 'cash_in' | 'cash_out' | 'tip_payout'
 
 const MOVEMENT_NAME: Record<Movement, string> = {
-  entry: 'Entrada',
-  output: 'Salida',
+  cash_in: 'Entrada',
+  cash_out: 'Salida',
   tip_payout: 'Pago de propinas',
 }
 
 const REASONS: Record<Exclude<Movement, 'tip_payout'>, string[]> = {
-  entry: ['Cambio para la caja'],
-  output: ['Compra', 'Pago a proveedor'],
+  cash_in: ['Cambio para la caja'],
+  cash_out: ['Compra', 'Pago a proveedor'],
 }
 
 /** What the schema accepts per denomination. */
@@ -190,14 +190,14 @@ export function Register() {
     })
 
   const noNetwork = !online && (
-    <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">{NO_NETWORK}</p>
+    <p className="rounded-xl bg-alert-soft p-3 text-alert-text">{NO_NETWORK}</p>
   )
 
   return (
     <FloorFrame title="Caja">
       <div className="mx-auto flex max-w-xl flex-col gap-4 p-3 md:p-5">
         {!isRegister ? (
-          <p className="rounded-2xl bg-proceso-suave p-4 text-proceso-texto">
+          <p className="rounded-2xl bg-progress-soft p-4 text-progress-text">
             Este equipo no es de caja. Para cobrar, entra con el usuario y la contraseña de caja en
             el computador de la caja.
           </p>
@@ -229,17 +229,17 @@ export function Register() {
           />
         ) : shift && reconciliation ? (
           <>
-            <section className="rounded-2xl border border-linea bg-superficie p-4 shadow-flota">
+            <section className="rounded-2xl border border-divider bg-surface p-4 shadow-float">
               <p className="text-lg font-semibold">
                 {`Caja abierta desde ${when(shift.openedAt)}`}
                 {shift.pendingConfirmation && (
-                  <span className="ml-2 text-sm font-normal text-texto-suave">(sin confirmar)</span>
+                  <span className="ml-2 text-sm font-normal text-muted">(sin confirmar)</span>
                 )}
               </p>
-              <p className="cifras text-texto-suave">{`Base: ${pesos(shift.base)}`}</p>
+              <p className="figures text-muted">{`Base: ${pesos(shift.base)}`}</p>
             </section>
             {fromOtherDay && (
-              <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">
+              <p className="rounded-xl bg-alert-soft p-3 text-alert-text">
                 Esta caja sigue abierta de un día anterior. Ciérrala para cuadrar ese día y ábrela
                 de nuevo con la base de hoy.
               </p>
@@ -253,7 +253,7 @@ export function Register() {
             {noNetwork}
             {canMove && (
               <div className="grid grid-cols-3 gap-2">
-                {(['entry', 'output', 'tip_payout'] as const).map((t) => (
+                {(['cash_in', 'cash_out', 'tip_payout'] as const).map((t) => (
                   <Button key={t} disabled={!online || taken} onClick={() => setMoving(t)}>
                     {MOVEMENT_NAME[t]}
                   </Button>
@@ -294,20 +294,20 @@ export function Register() {
           <>
             {closed && <Result reconciliation={closed} rules={rules} />}
             {!canOpen ? (
-              <p className="rounded-2xl bg-proceso-suave p-4 text-proceso-texto">
+              <p className="rounded-2xl bg-progress-soft p-4 text-progress-text">
                 La caja está cerrada. Pídele a quien tenga el permiso que la abra.
               </p>
             ) : (
-              <section className="flex flex-col gap-3 rounded-2xl border border-linea bg-superficie p-4 shadow-flota">
+              <section className="flex flex-col gap-3 rounded-2xl border border-divider bg-surface p-4 shadow-float">
                 <h2 className="text-lg font-semibold">Abrir la caja</h2>
                 <label>
                   <span className="font-semibold">Base en efectivo</span>
-                  <span className="block text-sm text-texto-suave">
+                  <span className="block text-sm text-muted">
                     El efectivo con que empieza la caja, para dar cambio.
                   </span>
                   <input
                     inputMode="numeric"
-                    className={`${fieldClass} cifras mt-2 min-h-14 text-2xl`}
+                    className={`${fieldClass} figures mt-2 min-h-14 text-2xl`}
                     value={withDots(base)}
                     placeholder="0"
                     onChange={(e) => setBase(digitsOnly(e.target.value))}
@@ -348,12 +348,12 @@ function Charged({
   if (!withAmounts)
     return (
       <section
-        className="rounded-2xl border border-linea bg-superficie p-4"
+        className="rounded-2xl border border-divider bg-surface p-4"
         aria-label="Cobrado en este turno"
       >
         <h2 className="mb-2 font-semibold">Cobrado en este turno</h2>
         {reconciliation.byMethod.length === 0 ? (
-          <p className="text-texto-suave">Todavía no hay pagos.</p>
+          <p className="text-muted">Todavía no hay pagos.</p>
         ) : (
           <>
             <ul className="flex flex-col gap-1">
@@ -363,7 +363,7 @@ function Charged({
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-sm text-texto-suave">
+            <p className="mt-2 text-sm text-muted">
               Los totales se ven al cerrar la caja, después de contar.
             </p>
           </>
@@ -372,18 +372,18 @@ function Charged({
     )
   return (
     <section
-      className="rounded-2xl border border-linea bg-superficie p-4"
+      className="rounded-2xl border border-divider bg-surface p-4"
       aria-label="Cobrado en este turno"
     >
       <h2 className="mb-2 font-semibold">Cobrado en este turno</h2>
       {reconciliation.byMethod.length === 0 ? (
-        <p className="text-texto-suave">Todavía no hay pagos.</p>
+        <p className="text-muted">Todavía no hay pagos.</p>
       ) : (
-        <dl className="cifras grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+        <dl className="figures grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
           <dt className="font-semibold">Total</dt>
           <dd className="text-right font-semibold">
             {pesos(sale)}
-            <span className="block text-sm font-normal text-texto-suave">{`+ propinas ${pesos(tips)}`}</span>
+            <span className="block text-sm font-normal text-muted">{`+ propinas ${pesos(tips)}`}</span>
           </dd>
           {reconciliation.byMethod.map((m) => (
             <div key={`${m.method}${m.customMethodId ?? ''}`} className="contents">
@@ -391,7 +391,7 @@ function Charged({
               <dd className="text-right">
                 {pesos(m.sale)}
                 {m.tip !== 0 && (
-                  <span className="block text-sm text-texto-suave">{`+ propina ${pesos(m.tip)}`}</span>
+                  <span className="block text-sm text-muted">{`+ propina ${pesos(m.tip)}`}</span>
                 )}
               </dd>
             </div>
@@ -406,18 +406,18 @@ function Movements({ reconciliation }: { reconciliation: ShiftReconciliation }) 
   if (reconciliation.movements.length === 0) return null
   return (
     <section
-      className="rounded-2xl border border-linea bg-superficie p-4"
+      className="rounded-2xl border border-divider bg-surface p-4"
       aria-label="Movimientos de efectivo"
     >
       <h2 className="mb-2 font-semibold">Movimientos de efectivo</h2>
-      <ul className="cifras flex flex-col gap-1">
+      <ul className="figures flex flex-col gap-1">
         {reconciliation.movements.map((m) => (
           <li key={m.id} className="flex justify-between gap-2">
             <span>
               {MOVEMENT_NAME[m.type]}
-              <span className="text-texto-suave">{` · ${m.toWhom ?? m.description}`}</span>
+              <span className="text-muted">{` · ${m.toWhom ?? m.description}`}</span>
             </span>
-            <span>{`${m.type === 'entry' ? '+' : '-'}${pesos(m.amount)}`}</span>
+            <span>{`${m.type === 'cash_in' ? '+' : '-'}${pesos(m.amount)}`}</span>
           </li>
         ))}
       </ul>
@@ -455,7 +455,7 @@ function MovementPanel({
   const [toWhom, setToWhom] = useState('')
   const [confirming, setConfirming] = useState(false)
   const tips = reconciliation.byMethod.reduce((a, m) => a + m.tip, 0)
-  const isOutflow = type === 'output' || type === 'tip_payout'
+  const isCashOut = type === 'cash_out' || type === 'tip_payout'
   const description =
     type === 'tip_payout' ? 'Pago de propinas' : reason === 'other' ? other.trim() : (reason ?? '')
   const ready =
@@ -484,7 +484,7 @@ function MovementPanel({
             aria-labelledby="confirm-movement"
           >
             <p id="confirm-movement" className="text-lg font-semibold">
-              {`¿${isOutflow ? 'Sacar' : 'Meter'} ${pesos(amount)} del cajón?`}
+              {`¿${isCashOut ? 'Sacar' : 'Meter'} ${pesos(amount)} del cajón?`}
             </p>
             <div className="grid grid-cols-[2fr_3fr] gap-2">
               <Button onClick={() => setConfirming(false)}>Volver</Button>
@@ -509,11 +509,11 @@ function MovementPanel({
       <div className="flex flex-col gap-4">
         <label>
           <span className="font-semibold">
-            {isOutflow ? '¿Cuánto sale del cajón?' : '¿Cuánto entra al cajón?'}
+            {isCashOut ? '¿Cuánto sale del cajón?' : '¿Cuánto entra al cajón?'}
           </span>
           <input
             inputMode="numeric"
-            className={`${fieldClass} cifras mt-1 min-h-14 text-2xl`}
+            className={`${fieldClass} figures mt-1 min-h-14 text-2xl`}
             value={withDots(amount)}
             placeholder="0"
             // biome-ignore lint/a11y/noAutofocus: the panel opens to type the amount
@@ -525,14 +525,14 @@ function MovementPanel({
           />
         </label>
         {/* Without the expected figure: the cash count is blind. */}
-        {isOutflow && amount > reconciliation.cash.expected && (
-          <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">
+        {isCashOut && amount > reconciliation.cash.expected && (
+          <p className="rounded-xl bg-alert-soft p-3 text-alert-text">
             Es más de lo que debería haber en el cajón. Revisa el valor.
           </p>
         )}
         {type === 'tip_payout' ? (
           <>
-            <p className="text-sm text-texto-suave">{`Propinas de este turno: ${pesos(tips)} (de todos los medios).`}</p>
+            <p className="text-sm text-muted">{`Propinas de este turno: ${pesos(tips)} (de todos los medios).`}</p>
             <label>
               <span className="font-semibold">¿A quién se entregaron?</span>
               <input
@@ -749,11 +749,11 @@ function Closeout({
         </Button>
       </div>
       {openTables.length > 0 && (
-        <div className="rounded-xl bg-proceso-suave p-3 text-proceso-texto">
+        <div className="rounded-xl bg-progress-soft p-3 text-progress-text">
           <p>
             {`${openTables.length === 1 ? 'Queda 1 mesa abierta' : `Quedan ${openTables.length} mesas abiertas`} con ${pesos(outstanding)} por cobrar. Lo que se cobre después de cerrar cae en el próximo turno.`}
           </p>
-          <ul className="cifras mt-1">
+          <ul className="figures mt-1">
             {openTables.slice(0, 8).map((m) => (
               <li key={m.id}>{`${m.name} · ${pesos(m.balance)}`}</li>
             ))}
@@ -762,11 +762,11 @@ function Closeout({
       )}
       {cashCountId === null ? (
         <section
-          className="flex flex-col gap-3 rounded-2xl border border-linea bg-superficie p-4"
+          className="flex flex-col gap-3 rounded-2xl border border-divider bg-surface p-4"
           aria-label="Conteo del efectivo"
         >
           <p>Cuenta el efectivo del cajón: cuántos billetes y monedas hay de cada uno.</p>
-          <p className="text-sm text-texto-suave">
+          <p className="text-sm text-muted">
             {threshold <= 1
               ? 'Si algo no cuadra, se pide explicarlo.'
               : `Si algo no cuadra desde ${pesos(threshold)}, se pide explicarlo.`}
@@ -782,9 +782,9 @@ function Closeout({
                 })
               return (
                 <li key={key(d)} className="flex items-center gap-2">
-                  <span className="cifras w-24 shrink-0 font-semibold">
+                  <span className="figures w-24 shrink-0 font-semibold">
                     {pesos(d.value)}
-                    <span className="block text-sm font-normal text-texto-suave">
+                    <span className="block text-sm font-normal text-muted">
                       {DENOMINATION_NAMES[d.type]}
                     </span>
                   </span>
@@ -802,7 +802,7 @@ function Closeout({
                     }}
                     inputMode="numeric"
                     aria-label={`Cantidad de ${name}`}
-                    className={`${fieldClass} cifras w-16 text-center`}
+                    className={`${fieldClass} figures w-16 text-center`}
                     value={n ? String(n) : ''}
                     placeholder="0"
                     onFocus={(e) => e.currentTarget.select()}
@@ -821,21 +821,21 @@ function Closeout({
                     aria-label={`Agregar uno: ${name}`}
                     onClick={() => put(n + 1)}
                   />
-                  <span className="cifras ml-auto text-right text-texto-suave">
+                  <span className="figures ml-auto text-right text-muted">
                     {pesos(d.value * n)}
                   </span>
                 </li>
               )
             })}
           </ul>
-          <p className="cifras flex items-baseline justify-between border-t border-linea pt-3">
+          <p className="figures flex items-baseline justify-between border-t border-divider pt-3">
             <span className="font-semibold">Contado</span>
-            <span className="font-titulo text-3xl font-bold">{pesos(counted)}</span>
+            <span className="font-heading text-3xl font-bold">{pesos(counted)}</span>
           </p>
           {methods.length > 0 && (
-            <div className="flex flex-col gap-2 border-t border-linea pt-3">
+            <div className="flex flex-col gap-2 border-t border-divider pt-3">
               <h3 className="font-semibold">Los demás medios</h3>
-              <p className="text-sm text-texto-suave">
+              <p className="text-sm text-muted">
                 {`Escribe el total del cierre del datáfono (en su app o en el papel del cierre) y lo que llegó a cada app, desde las ${dayStart} de hoy. Si solo hubo devoluciones, empieza con «-».`}
               </p>
               {methods.map((m, j) => (
@@ -846,7 +846,7 @@ function Closeout({
                       fields.current[DENOMINATIONS.length + j] = el
                     }}
                     inputMode="numeric"
-                    className={`${fieldClass} cifras w-40 text-right`}
+                    className={`${fieldClass} figures w-40 text-right`}
                     value={reports[m.key] ?? ''}
                     placeholder={withCharges.has(m.key) ? 'Escríbelo' : '0'}
                     onFocus={(e) => e.currentTarget.select()}
@@ -869,7 +869,7 @@ function Closeout({
             </div>
           )}
           {notEntered.length > 0 && (
-            <p className="text-sm text-texto-suave">
+            <p className="text-sm text-muted">
               {`Falta escribir: ${notEntered.map((m) => m.name).join(', ')}.`}
             </p>
           )}
@@ -883,7 +883,7 @@ function Closeout({
           >
             {taken ? 'Guardando…' : 'Guardar el conteo'}
           </Button>
-          <p className="text-sm text-texto-suave">
+          <p className="text-sm text-muted">
             Lo que debería haber se ve después de guardar el conteo.
           </p>
         </section>
@@ -905,7 +905,7 @@ function Closeout({
             title="Así queda la caja"
           />
           {changedAfter && (
-            <p className="rounded-xl bg-alerta-suave p-3 text-alerta-texto">
+            <p className="rounded-xl bg-alert-soft p-3 text-alert-text">
               Entró un pago o un movimiento después del conteo: vuelve a contar.
             </p>
           )}
@@ -917,7 +917,7 @@ function Closeout({
                   : '¿Por qué no cuadra? (opcional)'}
               </span>
               {requiresJustification && (
-                <span className="block text-sm text-texto-suave">
+                <span className="block text-sm text-muted">
                   {threshold <= 1
                     ? 'Toda diferencia se explica; queda en el informe.'
                     : `Desde ${pesos(threshold)} de diferencia hay que explicarla; queda en el informe.`}
@@ -934,11 +934,11 @@ function Closeout({
           )}
           {noNetwork}
           {requiresJustification && !justification.trim() && (
-            <p className="text-sm text-texto-suave">Para cerrar, falta explicar la diferencia.</p>
+            <p className="text-sm text-muted">Para cerrar, falta explicar la diferencia.</p>
           )}
           {confirming ? (
             <div
-              className="rounded-2xl border-2 border-accion-fuerte bg-accion-suave p-3 text-accion-texto"
+              className="rounded-2xl border-2 border-action-strong bg-action-soft p-3 text-action-text"
               role="alertdialog"
               aria-labelledby="confirm-close"
             >
@@ -1011,22 +1011,22 @@ function Result({
     )
   return (
     <section
-      className="flex flex-col gap-3 rounded-2xl border border-linea bg-superficie p-4 shadow-flota"
+      className="flex flex-col gap-3 rounded-2xl border border-divider bg-surface p-4 shadow-float"
       aria-label="Cuadre de la caja"
     >
       <h2 className="text-lg font-semibold">
         {title}
         {c.time && (
-          <span className="ml-2 text-sm font-normal text-texto-suave">{`· cerrada a ${when(c.time)}`}</span>
+          <span className="ml-2 text-sm font-normal text-muted">{`· cerrada a ${when(c.time)}`}</span>
         )}
       </h2>
-      <dl className="cifras grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+      <dl className="figures grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
         <dt>Base</dt>
         <dd className="text-right">{pesos(reconciliation.base)}</dd>
         {row('Efectivo cobrado (con propinas)', reconciliation.cash.charged, '+')}
         {row('Devoluciones', reconciliation.cash.refunds, '-')}
-        {row('Entradas', reconciliation.cash.entries, '+')}
-        {row('Salidas', reconciliation.cash.outflows, '-')}
+        {row('Entradas', reconciliation.cash.cashIn, '+')}
+        {row('Salidas', reconciliation.cash.cashOut, '-')}
         {row('Pago de propinas', reconciliation.cash.tipPayouts, '-')}
         <dt className="font-semibold">Debería haber</dt>
         <dd className="text-right font-semibold">{pesos(c.expected)}</dd>
@@ -1041,12 +1041,12 @@ function Result({
       {c.otherMethods.length > 0 ? (
         <div>
           <h3 className="font-semibold">Los demás medios</h3>
-          <ul className="cifras mt-1 flex flex-col gap-2">
+          <ul className="figures mt-1 flex flex-col gap-2">
             {c.otherMethods.map((m) => (
               <li key={methodKey(m)} className="flex flex-wrap items-center justify-between gap-2">
                 <span>
                   {methodName(m.method, m.customMethodId, rules)}
-                  <span className="block text-sm text-texto-suave">{`En la caja ${pesos(m.expected)} · según su cierre ${pesos(m.reported)}`}</span>
+                  <span className="block text-sm text-muted">{`En la caja ${pesos(m.expected)} · según su cierre ${pesos(m.reported)}`}</span>
                 </span>
                 <Variance value={m.variance} />
               </li>
@@ -1057,7 +1057,7 @@ function Result({
         digital.length > 0 && (
           <div>
             <h3 className="font-semibold">Los demás medios</h3>
-            <ul className="cifras mt-1 flex flex-col gap-1">
+            <ul className="figures mt-1 flex flex-col gap-1">
               {digital.map((m) => (
                 <li key={methodKey(m)} className="flex justify-between">
                   <span>{methodName(m.method, m.customMethodId, rules)}</span>
@@ -1069,7 +1069,7 @@ function Result({
         )
       )}
       {c.justification && (
-        <p className="border-t border-linea pt-2 text-sm">
+        <p className="border-t border-divider pt-2 text-sm">
           <span className="font-semibold">Por qué no cuadra: </span>
           {c.justification}
         </p>
