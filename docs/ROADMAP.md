@@ -372,6 +372,8 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigió:
 
 **Publicada el 29-oct-2026:** el Worker `faro-api` quedó con el registro nuevo (versión `102afa3e`), sin cambios en la base. `/v1/health` responde 200; un registro sin el restaurante da 400 y uno con un código inventado da 403 «el código no existe». La sección se llama **Copia en la nube**, decisión del dueño.
 
+**Bases al día (29-oct-2026):** Neon tiene la migración 1 con la misma huella que el código, y no hay migraciones nuevas. La Spritzzería ya está creada en la nube con el mismo id del hub; aún sin PC de caja ni eventos. La base del hub ya tiene la migración 1, y el seed se volvió a correr sin cambios: lo editado a mano en impuestos y datáfonos se respetó. Por eso el paso 1 de abajo debe decir «ya estaba en la nube».
+
 **Queda pendiente:**
 - **Contacto de Faro** (WhatsApp o teléfono) en la pantalla Copia en la nube, para pedir el código y para «avisa a Faro» **(validar con el dueño)**.
 - **Dirección de la nube:** por defecto es `faro-api.johanyepes.workers.dev`, con `CLOUD_URL` para cambiarla. Pasa a un dominio propio junto con el límite de intentos (1.10).
