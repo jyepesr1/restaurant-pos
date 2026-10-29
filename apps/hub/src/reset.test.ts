@@ -45,12 +45,12 @@ describe('pnpm reset-admin (real process)', { timeout: 60_000 }, () => {
     const r = run('src/reset.ts', folder)
     expect(r.code).toBe(0)
     expect(r.output).toMatch(/La contraseña nueva quedó en/)
-    const newOne = passwordOf(folder, /^restablecer-/)
-    expect(newOne).not.toBe(old)
-    expect(passwordMatches(newOne, savedHash(folder))).toBe(true)
+    const newPassword = passwordOf(folder, /^restablecer-/)
+    expect(newPassword).not.toBe(old)
+    expect(passwordMatches(newPassword, savedHash(folder))).toBe(true)
     expect(passwordMatches(old, savedHash(folder))).toBe(false)
     // The password does not show on screen.
-    expect(r.output).not.toContain(newOne)
+    expect(r.output).not.toContain(newPassword)
   })
 
   it('with a freshly installed hub (no database) it creates the admin and shows their password', () => {

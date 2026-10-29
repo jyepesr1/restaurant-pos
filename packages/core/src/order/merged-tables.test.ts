@@ -128,18 +128,18 @@ describe('TablesMerged', () => {
   it('an already applied event is ignored (idempotent by sequence)', () => {
     const { order, status } = withTable()
     const e = merge(order, newId())
-    const makeOne = applyEvent(status, e)
-    expect(makeOne.issue).toBeNull()
-    const another = applyEvent(makeOne.status, e)
+    const once = applyEvent(status, e)
+    expect(once.issue).toBeNull()
+    const another = applyEvent(once.status, e)
     expect(another.issue?.type).toBe('event_already_applied')
-    expect(another.status?.mergedTables).toEqual(makeOne.status?.mergedTables)
+    expect(another.status?.mergedTables).toEqual(once.status?.mergedTables)
   })
 
   it('the same event with another id and sequence does not duplicate: tables_already_merged', () => {
     const { order, status } = withTable()
     const e = merge(order, newId())
-    const makeOne = applyAll([e], status)
-    expect(issueOf(makeOne, again(e))).toBe('tables_already_merged')
+    const once = applyAll([e], status)
+    expect(issueOf(once, again(e))).toBe('tables_already_merged')
   })
 
   it('having merged tables changes neither the totals nor the items', () => {
@@ -222,9 +222,9 @@ describe('changing tables with merged tables', () => {
 
   it('moving to a new table keeps the group (the merged ones stay merged)', () => {
     const { order, status } = withTable()
-    const [a, newOne] = [newId(), newId()]
-    const r = applyAll([merge(order, a), moveToTable(order, newOne)], status)
-    expect(r).toMatchObject({ tableId: newOne, mergedTables: [a] })
+    const [a, newTable] = [newId(), newId()]
+    const r = applyAll([merge(order, a), moveToTable(order, newTable)], status)
+    expect(r).toMatchObject({ tableId: newTable, mergedTables: [a] })
   })
 
   it('moving to the table it is already at is valid and does not touch the merged ones', () => {

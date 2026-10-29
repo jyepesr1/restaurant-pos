@@ -33,7 +33,7 @@ export function prepareAccess(
   onNotify: (alert: string) => void = () => {},
   onRevoke?: (deviceId: string, revokedAt: string) => void,
 ) {
-  const { key, newOne, createdAt } = loadKey(dataDir)
+  const { key, isNew, createdAt } = loadKey(dataDir)
   const now = new Date().toISOString()
   const restaurantId = ensureRestaurant(db, now)
   const roles = ensureRoles(db, restaurantId, now)
@@ -46,7 +46,7 @@ export function prepareAccess(
     keyFrom: createdAt,
     onRevoke,
   })
-  const admin = ensureAdmin(db, access, roles.admin, newOne)
+  const admin = ensureAdmin(db, access, roles.admin, isNew)
   return { access, restaurantId, roles, admin, alerts: admin.alerts }
 }
 
@@ -101,9 +101,9 @@ export function hubInstance(dataDir: string): string {
     const saved = readFileSync(route, 'utf8').trim()
     if (saved) return saved
   }
-  const newOne = newId()
-  writeFileSync(route, `${newOne}\n`)
-  return newOne
+  const created = newId()
+  writeFileSync(route, `${created}\n`)
+  return created
 }
 
 /** The time zone of the main location: the one for ticket times and the business day. */

@@ -14,11 +14,11 @@ const ip = (n: number) => `10.1.${Math.floor(n / 250)}.${(n % 250) + 1}`
 
 /** A PIN with a valid format that belongs to no one in the setup. */
 function otherPins(m: { people: Record<string, { pin: string }> }, howMany: number) {
-  const ownOnes = new Set(Object.values(m.people).map((p) => p.pin))
+  const taken = new Set(Object.values(m.people).map((p) => p.pin))
   const r: string[] = []
   for (let n = 0; r.length < howMany; n++) {
     const pin = String(n).padStart(4, '0')
-    if (!ownOnes.has(pin)) r.push(pin)
+    if (!taken.has(pin)) r.push(pin)
   }
   return r
 }

@@ -146,11 +146,11 @@ export class SyncClient {
 
   /** State of an order: confirmed events by sequence and, on top, its own pending ones. */
   async order(id: string): Promise<OrderState | null> {
-    const currentOnes = (await this.store.ofOrder(id)).filter(
+    const live = (await this.store.ofOrder(id)).filter(
       (l) => l.status === 'confirmed' || l.status === 'pending',
     )
     return rebuild(
-      currentOnes.map((l) => l.event),
+      live.map((l) => l.event),
       id,
     )
   }

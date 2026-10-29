@@ -462,17 +462,17 @@ function SaveFooter({
 
 /** What the panels share: mistyped prices and the confirmation when closing with changes. */
 function usePanel(noChanges: boolean, onClose: () => void) {
-  const [badOnes, setBadOnes] = useState<ReadonlySet<string>>(new Set())
+  const [invalidPrices, setInvalidPrices] = useState<ReadonlySet<string>>(new Set())
   const [confirming, setConfirming] = useState(false)
   const validate = (key: string) => (valid: boolean) =>
-    setBadOnes((m) => {
+    setInvalidPrices((m) => {
       const fresh = new Set(m)
       if (valid) fresh.delete(key)
       else fresh.add(key)
       return fresh
     })
   return {
-    badPrice: badOnes.size > 0 ? ['Hay un precio mal escrito'] : [],
+    badPrice: invalidPrices.size > 0 ? ['Hay un precio mal escrito'] : [],
     validate,
     confirming,
     close: () => (noChanges ? onClose() : setConfirming(true)),

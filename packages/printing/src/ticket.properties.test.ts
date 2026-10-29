@@ -148,8 +148,8 @@ describe('properties: no line exceeds the width', () => {
         const format = { columns, page: p }
         const lines = ticketLines(c, format)
         const readResult = readEscpos(escpos(lines, format))
-        const printedOnes = readResult.text.split('\n').slice(0, lines.length)
-        printedOnes.forEach((printed, i) => {
+        const printedLines = readResult.text.split('\n').slice(0, lines.length)
+        printedLines.forEach((printed, i) => {
           const source = lines[i] as Line
           const fits = 'text' in source && source.large ? Math.floor(columns / 2) : columns
           expect(printed.length).toBeLessThanOrEqual(fits)
@@ -420,7 +420,7 @@ const tagliata: TicketItem = {
   options: ['Término medio'],
   notes: null,
 }
-const newOne: Ticket = {
+const newTicket: Ticket = {
   type: 'new',
   station: 'Cocina',
   number: 12,
@@ -435,20 +435,20 @@ const read = (c: Ticket, f = f80) => asText(ticketLines(c, f), f.columns)
 
 describe('void, modification and reprint', () => {
   it('a void puts ANULAR at the top, the original number and quantities with a minus sign', () => {
-    const text = read({ ...newOne, type: 'void' })
+    const text = read({ ...newTicket, type: 'void' })
     const rows = text.split('\n')
     expect(rows[0]).toContain('[ANULAR · COCINA]')
     expect(text).toMatch(/MESA 6 +#12/)
     expect(text).toContain('-2 X TAGLIATA')
     // A new ticket, by contrast, has no sign or extra title.
-    expect(read(newOne)).not.toContain('-2 X')
-    expect(read(newOne).split('\n')[0]).toBe(read(newOne).split('\n')[0]?.trimEnd())
-    expect(read(newOne)).not.toContain('ANULAR')
+    expect(read(newTicket)).not.toContain('-2 X')
+    expect(read(newTicket).split('\n')[0]).toBe(read(newTicket).split('\n')[0]?.trimEnd())
+    expect(read(newTicket)).not.toContain('ANULAR')
   })
 
   it('a void does not put the sign on options or notes, only on the quantity', () => {
     const text = read({
-      ...newOne,
+      ...newTicket,
       type: 'void',
       items: [{ ...tagliata, notes: 'sin sal', options: ['Sin rúgula'] }],
     })
@@ -459,7 +459,7 @@ describe('void, modification and reprint', () => {
 
   it('a modification says CAMBIO with the station and has the product with its new options', () => {
     const text = read({
-      ...newOne,
+      ...newTicket,
       type: 'modification',
       station: 'Barra',
       items: [{ ...tagliata, options: ['Sin hielo'], notes: 'doble' }],
@@ -471,7 +471,7 @@ describe('void, modification and reprint', () => {
   })
 
   it('a reprint says REIMPRESIÓN and keeps the original ticket number', () => {
-    const text = read({ ...newOne, type: 'reprint', number: 5 })
+    const text = read({ ...newTicket, type: 'reprint', number: 5 })
     expect(text.split('\n')[0]).toContain('[REIMPRESIÓN · COCINA]')
     expect(text).toMatch(/MESA 6 +#5/)
   })
@@ -479,7 +479,7 @@ describe('void, modification and reprint', () => {
   it('the four types are distinguished in the header, at any width', () => {
     const titles = [58, 80].flatMap((mm) =>
       TYPES.map((type) =>
-        read({ ...newOne, type }, { columns: COLUMNS[mm as 58 | 80], page: 'pc850' })
+        read({ ...newTicket, type }, { columns: COLUMNS[mm as 58 | 80], page: 'pc850' })
           .split('\n')
           .slice(0, 3)
           .join(' '),
@@ -493,12 +493,12 @@ describe('void, modification and reprint', () => {
   })
 
   it('without a ticket number no # is made up', () => {
-    expect(read({ ...newOne, number: null })).not.toContain('#')
-    expect(read({ ...newOne, number: null })).toContain('MESA 6')
+    expect(read({ ...newTicket, number: null })).not.toContain('#')
+    expect(read({ ...newTicket, number: null })).toContain('MESA 6')
   })
 
   it('without order, guests or waiter the data line leaves no stray separators', () => {
-    const text = read({ ...newOne, order: null, guests: null, waiter: '', time: '9:10 a. m.' })
+    const text = read({ ...newTicket, order: null, guests: null, waiter: '', time: '9:10 a. m.' })
     expect(text).toContain('9:10 a. m.')
     expect(text).not.toContain('Pedido')
     expect(text).not.toContain('pers.')
@@ -506,13 +506,13 @@ describe('void, modification and reprint', () => {
   })
 
   it('a ticket without products does not fail and has only the header', () => {
-    const lines = ticketLines({ ...newOne, items: [] }, f80)
+    const lines = ticketLines({ ...newTicket, items: [] }, f80)
     expect(() => escpos(lines, f80)).not.toThrow()
     expect(asText(lines, 48)).not.toContain('X')
   })
 
   it('a long target wraps to the next line and the number is not lost (58 mm)', () => {
-    const text = read({ ...newOne, target: 'Mesa 6 terraza del segundo piso' }, f58)
+    const text = read({ ...newTicket, target: 'Mesa 6 terraza del segundo piso' }, f58)
     expect(text).toContain('#12')
     for (const row of text.split('\n')) expect(row.length).toBeLessThanOrEqual(32)
   })
@@ -528,7 +528,7 @@ describe('courses', () => {
 
   it('groups by course in the order entry, main, dessert, regardless of input order', () => {
     const text = read({
-      ...newOne,
+      ...newTicket,
       items: [item('Tiramisú', 'dessert'), item('Tagliata', 'main'), item('Burrata', 'starter')],
     })
     const pos = (s: string) => text.indexOf(s)
@@ -541,41 +541,41 @@ describe('courses', () => {
   })
 
   it('items without a course print first and without a course header', () => {
-    const text = read({ ...newOne, items: [item('Limonada', null), item('Tagliata', 'main')] })
+    const text = read({ ...newTicket, items: [item('Limonada', null), item('Tagliata', 'main')] })
     expect(text.indexOf('1 X LIMONADA')).toBeLessThan(text.indexOf('FUERTE'))
     expect(text).not.toContain('ENTRADA')
     expect(text).not.toContain('POSTRE')
   })
 
   it('if no product has a course no course header prints', () => {
-    const text = read({ ...newOne, items: [item('Limonada', null), item('Cerveza', null)] })
+    const text = read({ ...newTicket, items: [item('Limonada', null), item('Cerveza', null)] })
     expect(text).not.toMatch(/ENTRADA|FUERTE|POSTRE/)
   })
 
   it('a course without products is not printed', () => {
-    const text = read({ ...newOne, items: [item('Burrata', 'starter')] })
+    const text = read({ ...newTicket, items: [item('Burrata', 'starter')] })
     expect(text).toContain('ENTRADA')
     expect(text).not.toContain('FUERTE')
     expect(text).not.toContain('POSTRE')
   })
 
   it('notes the held courses in the given order and only on the ticket that carries them', () => {
-    const text = read({ ...newOne, heldCourses: ['main', 'dessert'] })
+    const text = read({ ...newTicket, heldCourses: ['main', 'dessert'] })
     expect(text.replaceAll('\n', ' ')).toContain(
       'En espera: Fuerte, Postre. Sale cuando el mesero lo marche.',
     )
-    expect(read({ ...newOne, heldCourses: [] })).not.toContain('En espera')
-    expect(read({ ...newOne })).not.toContain('En espera')
+    expect(read({ ...newTicket, heldCourses: [] })).not.toContain('En espera')
+    expect(read({ ...newTicket })).not.toContain('En espera')
   })
 
   it('the held courses notice fits at 58 mm', () => {
-    const text = read({ ...newOne, heldCourses: ['starter', 'main', 'dessert'] }, f58)
+    const text = read({ ...newTicket, heldCourses: ['starter', 'main', 'dessert'] }, f58)
     for (const row of text.split('\n')) expect(row.length).toBeLessThanOrEqual(32)
     expect(text.replaceAll('\n', ' ')).toContain('En espera: Entrada, Fuerte, Postre.')
   })
 
   it('the notice goes at the end, after the last separator', () => {
-    const lines = ticketLines({ ...newOne, heldCourses: ['dessert'] }, f80)
+    const lines = ticketLines({ ...newTicket, heldCourses: ['dessert'] }, f80)
     const latest = lines.at(-1)
     expect(latest && 'text' in latest && latest.text).toMatch(/marche\.$/)
     expect(lines.findLastIndex((l) => 'separator' in l)).toBeLessThan(lines.length - 1)
@@ -585,7 +585,7 @@ describe('courses', () => {
 describe('style of what the kitchen cannot miss', () => {
   it('the header is large, reversed and centered; notes, reversed; options, bold', () => {
     const lines = ticketLines(
-      { ...newOne, items: [{ ...tagliata, notes: 'alergia al maní' }] },
+      { ...newTicket, items: [{ ...tagliata, notes: 'alergia al maní' }] },
       f80,
     )
     const t = texts(lines)
@@ -598,7 +598,7 @@ describe('style of what the kitchen cannot miss', () => {
   it('a long note wraps and every chunk stays reversed', () => {
     const lines = texts(
       ticketLines(
-        { ...newOne, items: [{ ...tagliata, notes: 'palabra '.repeat(20).trim() }] },
+        { ...newTicket, items: [{ ...tagliata, notes: 'palabra '.repeat(20).trim() }] },
         f58,
       ),
     ).filter((l) => l.reversed && !l.large)

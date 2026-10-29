@@ -770,8 +770,8 @@ describe('alerts to the devices', () => {
   it('an archived printer does not appear in the status', () => {
     const t = setupPrinting()
     t.newPrinter('Vieja', [t.kitchen], { active: 0 })
-    const goodOne = t.newPrinter('Buena', [t.bar])
-    expect(t.queue.status().map((e) => e.id)).toEqual([goodOne.id])
+    const activePrinter = t.newPrinter('Buena', [t.bar])
+    expect(t.queue.status().map((e) => e.id)).toEqual([activePrinter.id])
   })
 })
 

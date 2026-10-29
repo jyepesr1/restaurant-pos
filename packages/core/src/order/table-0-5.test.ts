@@ -233,20 +233,24 @@ describe('payments', () => {
 
     it('partial and cumulative, split into sale and tip, without exceeding what was paid', () => {
       const { status, payment, issueRefund } = withPayment('card')
-      const firstOne = applyAll([issueRefund(5000, 500)], status)
-      expect(firstOne.payments[payment.payment_id]).toMatchObject({
+      const afterFirstRefund = applyAll([issueRefund(5000, 500)], status)
+      expect(afterFirstRefund.payments[payment.payment_id]).toMatchObject({
         refundedSale: 5000,
         refundedTip: 500,
       })
-      expect(orderTotals(firstOne)).toMatchObject({ paid: 15_000, tips: 1500, balance: 5000 })
+      expect(orderTotals(afterFirstRefund)).toMatchObject({
+        paid: 15_000,
+        tips: 1500,
+        balance: 5000,
+      })
 
       // Second refund: sale and tip each count separately against their own cap.
-      expect(issueOf(firstOne, issueRefund(15_001, 0))).toBe('refund_exceeds')
-      expect(issueOf(firstOne, issueRefund(0, 1501))).toBe('refund_exceeds')
-      const secondOne = applyAll([issueRefund(15_000, 1500)], firstOne)
-      expect(orderTotals(secondOne)).toMatchObject({ paid: 0, tips: 0, balance: 20_000 })
-      expect(issueOf(secondOne, issueRefund(1, 0))).toBe('refund_exceeds')
-      expect(issueOf(secondOne, issueRefund(0, 1))).toBe('refund_exceeds')
+      expect(issueOf(afterFirstRefund, issueRefund(15_001, 0))).toBe('refund_exceeds')
+      expect(issueOf(afterFirstRefund, issueRefund(0, 1501))).toBe('refund_exceeds')
+      const afterSecondRefund = applyAll([issueRefund(15_000, 1500)], afterFirstRefund)
+      expect(orderTotals(afterSecondRefund)).toMatchObject({ paid: 0, tips: 0, balance: 20_000 })
+      expect(issueOf(afterSecondRefund, issueRefund(1, 0))).toBe('refund_exceeds')
+      expect(issueOf(afterSecondRefund, issueRefund(0, 1))).toBe('refund_exceeds')
     })
 
     it('a tip-only refund does not touch the sale', () => {
@@ -508,18 +512,18 @@ describe('discounts in the reducer', () => {
     )
     const base = orderTotals(withItems).net
     const lines = [40_900, 12_900]
-    const firstOne = allocateOrderDiscount(percent(base, 1000), lines) ?? []
-    const leftover = lines.map((l, i) => l - (firstOne[i] ?? 0))
-    const secondOne = allocateOrderDiscount(percent(base, 1000), leftover) ?? []
+    const firstAllocation = allocateOrderDiscount(percent(base, 1000), lines) ?? []
+    const leftover = lines.map((l, i) => l - (firstAllocation[i] ?? 0))
+    const secondAllocation = allocateOrderDiscount(percent(base, 1000), leftover) ?? []
     const final = applyAll(
       [
         discountEvent(order, 'order', 'percent', 1000, [
-          [pizza.item_id, firstOne[0] ?? 0],
-          [pasta.item_id, firstOne[1] ?? 0],
+          [pizza.item_id, firstAllocation[0] ?? 0],
+          [pasta.item_id, firstAllocation[1] ?? 0],
         ]),
         discountEvent(order, 'order', 'percent', 1000, [
-          [pizza.item_id, secondOne[0] ?? 0],
-          [pasta.item_id, secondOne[1] ?? 0],
+          [pizza.item_id, secondAllocation[0] ?? 0],
+          [pasta.item_id, secondAllocation[1] ?? 0],
         ]),
       ],
       withItems,

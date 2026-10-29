@@ -181,12 +181,10 @@ export function FloorPlanEditor() {
   }
   const addSeveral = () => {
     if (!several) return
-    const newOnes = severalTables(b, several.shape, several.quantity, several.perRow, usedNames)
-    edit({ ...b, tables: [...b.tables, ...newOnes] })
+    const added = severalTables(b, several.shape, several.quantity, several.perRow, usedNames)
+    edit({ ...b, tables: [...b.tables, ...added] })
     setSeveral(null)
-    notify(
-      `Agregaste ${newOnes.length} mesas: de la ${newOnes[0]?.name} a la ${newOnes.at(-1)?.name}`,
-    )
+    notify(`Agregaste ${added.length} mesas: de la ${added[0]?.name} a la ${added.at(-1)?.name}`)
   }
   const addElement = (type: ElementType) => {
     const e = newElement(b, type)

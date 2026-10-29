@@ -124,11 +124,11 @@ describe('discounts', () => {
   it('two discounts adding up to 100 % with tied remainders leave no negatives', () => {
     const lines = [12_900, 12_950, 12_950]
     const base = add(lines)
-    const firstOne = allocateOrderDiscount(percent(base, 500), lines) ?? []
-    const leftover = lines.map((l, i) => l - (firstOne[i] ?? 0))
-    const secondOne = allocateOrderDiscount(percent(base, 9500), leftover) ?? []
+    const firstAllocation = allocateOrderDiscount(percent(base, 500), lines) ?? []
+    const leftover = lines.map((l, i) => l - (firstAllocation[i] ?? 0))
+    const secondAllocation = allocateOrderDiscount(percent(base, 9500), leftover) ?? []
 
-    expect(leftover.map((r, i) => r - (secondOne[i] ?? 0))).toEqual([0, 0, 0])
+    expect(leftover.map((r, i) => r - (secondAllocation[i] ?? 0))).toEqual([0, 0, 0])
   })
 
   it('a discount greater than what is left is rejected', () => {

@@ -153,7 +153,7 @@ describe('who can call each route', () => {
   it('the permission decides: manage_devices for the configuration; the queue, also record_payment', async () => {
     const m = await world()
     const { t, makeCall } = m
-    const imp = t.newPrinter('Cocina', [t.kitchen])
+    const printer = t.newPrinter('Cocina', [t.kitchen])
     const { order, items } = t.orderWith(t.device('waiter2'), [
       { name: 'Pizza', station: t.kitchen },
     ])
@@ -165,8 +165,8 @@ describe('who can call each route', () => {
         `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
          VALUES (?, ?, ?, 'test', '{"printer":"x","stations":[],"time":"y"}', ?)`,
       )
-      .run(jobId, t.restaurantId, imp.id, new Date(t.clock()).toISOString())
-    for (const route of ROUTES(m, { printer: imp.id, job: jobId, screen: newId() })) {
+      .run(jobId, t.restaurantId, printer.id, new Date(t.clock()).toISOString())
+    for (const route of ROUTES(m, { printer: printer.id, job: jobId, screen: newId() })) {
       for (const who of ALL) {
         const device = m[who]
         const r = await makeCall(device, route.url, route.body)
@@ -272,7 +272,7 @@ describe('validAddress', () => {
 })
 
 describe('POST /api/printers: invalid data', () => {
-  const badOnes: [string, Json][] = [
+  const invalid: [string, Json][] = [
     ['IP with a name', { address: 'impresora.local' }],
     ['odd IP', { address: '999.1.1.1' }],
     ['public IP', { address: '8.8.8.8' }],
@@ -304,7 +304,7 @@ describe('POST /api/printers: invalid data', () => {
     ['id that does not exist', { id: newId() }],
   ]
 
-  it.each(badOnes)('rejects %s with 400 and saves nothing', async (_, fields) => {
+  it.each(invalid)('rejects %s with 400 and saves nothing', async (_, fields) => {
     const m = await world()
     const r = await m.makeCall(m.admin, '/api/printers', { printer: m.validPrinter(fields) })
     expect(r.statusCode).toBe(400)
@@ -631,8 +631,8 @@ describe('with the test printer (allowLocal)', () => {
 describe('POST /api/printers/test', () => {
   it('queues a test page and the queue prints it', async () => {
     const m = await world()
-    const imp = m.t.newPrinter('Cocina', [m.t.kitchen])
-    const r = await m.makeCall(m.admin, '/api/printers/test', { printer_id: imp.id })
+    const printer = m.t.newPrinter('Cocina', [m.t.kitchen])
+    const r = await m.makeCall(m.admin, '/api/printers/test', { printer_id: printer.id })
     expect(r.statusCode).toBe(201)
     const jobId = r.json().job_id as string
     await m.t.queue.ready()
@@ -640,18 +640,18 @@ describe('POST /api/printers/test', () => {
     expect(m.t.jobs().find((f) => f.id === jobId)).toMatchObject({
       type: 'test',
       status: 'printed',
-      printer_id: imp.id,
+      printer_id: printer.id,
     })
-    const text = imp.paper.texts()[0] as string
+    const text = printer.paper.texts()[0] as string
     expect(text.replaceAll('\n', ' ')).toContain('PRUEBA DE IMPRESIÓN')
     expect(text).toContain('Imprime: Cocina')
   })
 
   it('with the printer off it stays pending and shows up in the pending list', async () => {
     const m = await world()
-    const imp = m.t.newPrinter('Cocina', [m.t.kitchen])
-    imp.paper.off = true
-    await m.makeCall(m.admin, '/api/printers/test', { printer_id: imp.id })
+    const printer = m.t.newPrinter('Cocina', [m.t.kitchen])
+    printer.paper.off = true
+    await m.makeCall(m.admin, '/api/printers/test', { printer_id: printer.id })
     await m.t.queue.ready()
     await m.t.queue.runOnce()
     const list = (await m.makeCall(m.admin, '/api/printing/pending')).json()
@@ -672,16 +672,16 @@ describe('POST /api/printers/test', () => {
 
   it('an archived printer is not tested', async () => {
     const m = await world()
-    const imp = m.t.newPrinter('Vieja', [], { active: 0 })
-    const r = await m.makeCall(m.admin, '/api/printers/test', { printer_id: imp.id })
+    const printer = m.t.newPrinter('Vieja', [], { active: 0 })
+    const r = await m.makeCall(m.admin, '/api/printers/test', { printer_id: printer.id })
     expect(r.statusCode).toBe(400)
     expect(m.t.jobs()).toEqual([])
   })
 
   it("the test's time is in the restaurant's time zone and includes the station names", async () => {
     const m = await world()
-    const imp = m.t.newPrinter('Mixta', [m.t.kitchen, m.t.bar])
-    const r = await m.makeCall(m.admin, '/api/printers/test', { printer_id: imp.id })
+    const printer = m.t.newPrinter('Mixta', [m.t.kitchen, m.t.bar])
+    const r = await m.makeCall(m.admin, '/api/printers/test', { printer_id: printer.id })
     const row = m.t.jobs().find((f) => f.id === r.json().job_id)
     const content = m.t.content(row)
     expect(content.stations).toEqual(['Cocina', 'Barra'])
@@ -693,8 +693,8 @@ describe('POST /api/printers/test', () => {
 describe('POST /api/printing/pending and /discard', () => {
   async function withPendingJobs() {
     const m = await world()
-    const imp = m.t.newPrinter('Cocina', [m.t.kitchen])
-    imp.paper.off = true
+    const printer = m.t.newPrinter('Cocina', [m.t.kitchen])
+    printer.paper.off = true
     const ana = m.t.device('waiter2')
     for (let i = 0; i < 3; i++) {
       const { order, items } = m.t.orderWith(
@@ -706,7 +706,7 @@ describe('POST /api/printing/pending and /discard', () => {
       m.t.advance(1000)
     }
     await m.t.queue.runOnce()
-    return { m, imp }
+    return { m, printer }
   }
 
   it('lists what has not printed, in order, with what it is, how many attempts and why it failed', async () => {
@@ -724,8 +724,8 @@ describe('POST /api/printing/pending and /discard', () => {
   })
 
   it('does not list what was printed or discarded', async () => {
-    const { m, imp } = await withPendingJobs()
-    imp.paper.off = false
+    const { m, printer } = await withPendingJobs()
+    printer.paper.off = false
     m.t.advance(2000)
     await m.t.queue.runOnce()
     await m.t.queue.runOnce()
@@ -741,10 +741,10 @@ describe('POST /api/printing/pending and /discard', () => {
 
   it('discarding marks the job with who and from which device, does not delete it and it leaves the list', async () => {
     const { m } = await withPendingJobs()
-    const [firstOne] = (await m.makeCall(m.cashier, '/api/printing/pending')).json()
-    const r = await m.makeCall(m.cashier, '/api/printing/discard', { job_id: firstOne.id })
+    const [first] = (await m.makeCall(m.cashier, '/api/printing/pending')).json()
+    const r = await m.makeCall(m.cashier, '/api/printing/discard', { job_id: first.id })
     expect(r.statusCode).toBe(204)
-    const row = m.t.db.prepare('SELECT * FROM print_jobs WHERE id = ?').get(firstOne.id)
+    const row = m.t.db.prepare('SELECT * FROM print_jobs WHERE id = ?').get(first.id)
     expect(row).toMatchObject({
       status: 'discarded',
       discarded_by_id: m.cashier.session.user.id,
@@ -757,20 +757,20 @@ describe('POST /api/printing/pending and /discard', () => {
   })
 
   it('discarding twice, or something already printed, or something that does not exist, gives 400', async () => {
-    const { m, imp } = await withPendingJobs()
-    const [firstOne, secondOne] = (await m.makeCall(m.admin, '/api/printing/pending')).json()
+    const { m, printer } = await withPendingJobs()
+    const [first, second] = (await m.makeCall(m.admin, '/api/printing/pending')).json()
     expect(
-      (await m.makeCall(m.admin, '/api/printing/discard', { job_id: firstOne.id })).statusCode,
+      (await m.makeCall(m.admin, '/api/printing/discard', { job_id: first.id })).statusCode,
     ).toBe(204)
-    const another = await m.makeCall(m.admin, '/api/printing/discard', { job_id: firstOne.id })
+    const another = await m.makeCall(m.admin, '/api/printing/discard', { job_id: first.id })
     expect(another.statusCode).toBe(400)
     expect(another.json().message).toBe('Esa comanda ya salió o ya se descartó')
-    imp.paper.off = false
+    printer.paper.off = false
     m.t.advance(2000)
     await m.t.queue.runOnce()
     await m.t.queue.runOnce()
     expect(
-      (await m.makeCall(m.admin, '/api/printing/discard', { job_id: secondOne.id })).statusCode,
+      (await m.makeCall(m.admin, '/api/printing/discard', { job_id: second.id })).statusCode,
     ).toBe(400)
     expect(
       (await m.makeCall(m.admin, '/api/printing/discard', { job_id: newId() })).statusCode,
@@ -778,13 +778,13 @@ describe('POST /api/printing/pending and /discard', () => {
   })
 
   it('what was discarded is not printed even if the printer comes back', async () => {
-    const { m, imp } = await withPendingJobs()
+    const { m, printer } = await withPendingJobs()
     for (const x of (await m.makeCall(m.admin, '/api/printing/pending')).json())
       await m.makeCall(m.admin, '/api/printing/discard', { job_id: x.id })
-    imp.paper.off = false
+    printer.paper.off = false
     m.t.advance(60_000)
     await m.t.queue.runOnce()
-    expect(imp.paper.received).toHaveLength(0)
+    expect(printer.paper.received).toHaveLength(0)
   })
 
   it("another restaurant's job cannot be discarded", async () => {
@@ -821,7 +821,7 @@ describe('POST /api/printing/pending and /discard', () => {
 
   it('the list is cut at 200 tickets', async () => {
     const m = await world()
-    const imp = m.t.newPrinter('Cocina', [m.t.kitchen])
+    const printer = m.t.newPrinter('Cocina', [m.t.kitchen])
     const insert = m.t.db.prepare(
       `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
        VALUES (?, ?, ?, 'ticket', '{"station":"Cocina","target":"Mesa","number":1}', ?)`,
@@ -830,7 +830,7 @@ describe('POST /api/printing/pending and /discard', () => {
       insert.run(
         newId(),
         m.t.restaurantId,
-        imp.id,
+        printer.id,
         new Date(Date.UTC(2026, 9, 24, 20, 0, i)).toISOString(),
       )
     const list = (await m.makeCall(m.admin, '/api/printing/pending')).json()
@@ -847,14 +847,14 @@ describe('POST /api/printing/pending and /discard', () => {
 
   it('a ticket without a number or with odd texts does not break the list', async () => {
     const m = await world()
-    const imp = m.t.newPrinter('Cocina', [m.t.kitchen])
+    const printer = m.t.newPrinter('Cocina', [m.t.kitchen])
     for (const content of ['{}', '{"station":"Cocina"}', '{"number":null,"target":"Mesa 1"}', '[]'])
       m.t.db
         .prepare(
           `INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
            VALUES (?, ?, ?, 'ticket', ?, ?)`,
         )
-        .run(newId(), m.t.restaurantId, imp.id, content, new Date(m.t.clock()).toISOString())
+        .run(newId(), m.t.restaurantId, printer.id, content, new Date(m.t.clock()).toISOString())
     const r = await m.makeCall(m.admin, '/api/printing/pending')
     expect(r.statusCode).toBe(200)
     expect(r.json()).toHaveLength(4)
@@ -997,14 +997,14 @@ describe('POST /api/kitchen/config and /api/screens/stations', () => {
 
   it('the configuration includes the printer statuses', async () => {
     const m = await world()
-    const imp = m.t.newPrinter('Cocina', [m.t.kitchen])
-    imp.paper.off = true
+    const printer = m.t.newPrinter('Cocina', [m.t.kitchen])
+    printer.paper.off = true
     const ana = m.t.device('waiter2')
     const { order, items } = m.t.orderWith(ana, [{ name: 'Pizza', station: m.t.kitchen }])
     m.t.send(ana, order, items)
     await m.t.queue.runOnce()
     expect((await m.config()).statuses).toEqual([
-      expect.objectContaining({ id: imp.id, status: 'failed', pendingList: 1 }),
+      expect.objectContaining({ id: printer.id, status: 'failed', pendingList: 1 }),
     ])
   })
 })

@@ -153,21 +153,21 @@ describe('shiftOfRegister: closed shifts', () => {
   })
 
   it("the first one closed and the second one open: the second is the register's shift", () => {
-    const oldOne = open(100_000, REGISTER, 'confirmed', 8)
+    const previous = open(100_000, REGISTER, 'confirmed', 8)
     const fresh = open(50_000, REGISTER, 'confirmed', 20)
-    const a = count(oldOne.shift, 100_000)
-    const events = [oldOne.e, a.e, close(oldOne.shift, a.cashCount, 100_000, 100_000), fresh.e]
+    const a = count(previous.shift, 100_000)
+    const events = [previous.e, a.e, close(previous.shift, a.cashCount, 100_000, 100_000), fresh.e]
     expect(shiftOfRegister(events, REGISTER)).toMatchObject({ id: fresh.shift, base: 50_000 })
     // Also if the list order is different.
     expect(shiftOfRegister([...events].reverse(), REGISTER)?.id).toBe(fresh.shift)
   })
 
   it('a new shift still pending, with the previous one closed, is already the shift (to be confirmed)', () => {
-    const oldOne = open(100_000, REGISTER, 'confirmed', 8)
+    const previous = open(100_000, REGISTER, 'confirmed', 8)
     const fresh = open(50_000, REGISTER, 'pending', 20)
-    const a = count(oldOne.shift, 100_000)
+    const a = count(previous.shift, 100_000)
     const r = shiftOfRegister(
-      [oldOne.e, a.e, close(oldOne.shift, a.cashCount, 100_000, 100_000), fresh.e],
+      [previous.e, a.e, close(previous.shift, a.cashCount, 100_000, 100_000), fresh.e],
       REGISTER,
     )
     expect(r).toMatchObject({ id: fresh.shift, pendingConfirmation: true })
@@ -287,9 +287,9 @@ describe('registerReconciliation', () => {
   })
 
   it('a void in this shift of a payment from the previous shift subtracts from this drawer', () => {
-    const oldOne = open(0, REGISTER, 'confirmed', 8)
+    const previous = open(0, REGISTER, 'confirmed', 8)
     const today = open(100_000, REGISTER, 'confirmed', 20)
-    const p = payment(oldOne.shift, { amount: 30_000, tip: 2_000, tendered: 32_000 })
+    const p = payment(previous.shift, { amount: 30_000, tip: 2_000, tendered: 32_000 })
     const voidEntry = local(
       'PaymentVoided',
       newId(),
@@ -297,7 +297,7 @@ describe('registerReconciliation', () => {
       'confirmed',
       { reason: 'Error' },
     )
-    const c = registerReconciliation([oldOne.e, today.e, p.e, voidEntry], today.shift)
+    const c = registerReconciliation([previous.e, today.e, p.e, voidEntry], today.shift)
     expect(c?.cash).toMatchObject({ refunds: 32_000, expected: 68_000 })
   })
 
@@ -337,9 +337,9 @@ describe('shiftSummary: rejected payments and shifts', () => {
 
   it("a refund of a custom-method payment from a previous shift stays in the custom method's row", () => {
     const SODEXO = newId()
-    const oldOne = open(0, REGISTER, 'confirmed', 8)
+    const previous = open(0, REGISTER, 'confirmed', 8)
     const today = open(0, REGISTER, 'confirmed', 20)
-    const p = payment(oldOne.shift, {
+    const p = payment(previous.shift, {
       method: 'other',
       custom_method_id: SODEXO,
       amount: 20_000,
@@ -361,7 +361,7 @@ describe('shiftSummary: rejected payments and shifts', () => {
       { reason: 'Devolución' },
     )
     expect(
-      shiftSummary([oldOne.e, today.e, p.e, refund] as LocalEvent[], today.shift).byMethod,
+      shiftSummary([previous.e, today.e, p.e, refund] as LocalEvent[], today.shift).byMethod,
     ).toEqual([{ method: 'other', customMethodId: SODEXO, sale: -5_000, tip: 0, payments: 0 }])
   })
 })

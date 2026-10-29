@@ -54,8 +54,8 @@ describe('hub key', () => {
     const first = loadKey(folder)
     const second = loadKey(folder)
 
-    expect(first.newOne).toBe(true)
-    expect(second.newOne).toBe(false)
+    expect(first.isNew).toBe(true)
+    expect(second.isNew).toBe(false)
     expect(second.key.equals(first.key)).toBe(true)
     if (process.platform !== 'win32')
       expect(statSync(join(folder, KEY_FILE)).mode & 0o777).toBe(0o600)

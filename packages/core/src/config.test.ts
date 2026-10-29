@@ -80,8 +80,8 @@ describe('restaurant config', () => {
         { brand: 'la-spritzzeria' },
         { brand: 'faro', cash_rounding: 50 },
       ]) {
-        const makeOne = fullConfig(partial)
-        expect(fullConfig(makeOne)).toEqual(makeOne)
+        const once = fullConfig(partial)
+        expect(fullConfig(once)).toEqual(once)
       }
     })
   })

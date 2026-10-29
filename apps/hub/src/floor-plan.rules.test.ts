@@ -113,12 +113,12 @@ describe('moving a table or an element to another zone', () => {
 
   it('cannot be moved to an archived zone or to one that does not exist', async () => {
     const m = await setup()
-    const emptyOne = zone('Vacía')
-    await m.edit([emptyOne])
-    await m.edit([{ entity: 'zones', id: emptyOne.id, data: { active: false } }])
+    const emptyZone = zone('Vacía')
+    await m.edit([emptyZone])
+    await m.edit([{ entity: 'zones', id: emptyZone.id, data: { active: false } }])
     const one = m.catalog().tables[0]?.id
     const toArchived = await m.edit([
-      { entity: 'dining_tables', id: one, data: { zone_id: emptyOne.id } },
+      { entity: 'dining_tables', id: one, data: { zone_id: emptyZone.id } },
     ])
     expect(toArchived.code).toBe(400)
     expect(toArchived.body.message).toMatch(/zona está archivado/)
@@ -130,14 +130,14 @@ describe('moving a table or an element to another zone', () => {
 
   it('a single save can empty the old zone: move its tables and archive it', async () => {
     const m = await setup()
-    const newOne = zone('Nueva', { position: 0 })
+    const newZone = zone('Nueva', { position: 0 })
     const diningRoom = m.diningRoom()
     const r = await m.edit([
-      newOne,
+      newZone,
       ...m.catalog().tables.map((x) => ({
         entity: 'dining_tables',
         id: x.id,
-        data: { zone_id: newOne.id },
+        data: { zone_id: newZone.id },
       })),
       { entity: 'zones', id: diningRoom, data: { active: false } },
     ])
@@ -252,11 +252,11 @@ describe('table names that almost repeat', () => {
     ['differs only in case (all of it)', 'MESA A', 'mesa a'],
     ['with spaces at the start and end', '70', '  70  '],
     ['with spaces and uppercase', 'Barra', ' BARRA '],
-  ])('%s: rejected', async (_case, firstOne, secondOne) => {
+  ])('%s: rejected', async (_case, firstName, secondName) => {
     const m = await setup()
     const s = m.diningRoom()
-    expect((await m.edit([table(s, firstOne)])).code).toBe(200)
-    const r = await m.edit([table(s, secondOne)])
+    expect((await m.edit([table(s, firstName)])).code).toBe(200)
+    const r = await m.edit([table(s, secondName)])
     expect(r.code).toBe(400)
     expect(r.body.message).toMatch(/dos mesas que se llaman/)
   })
@@ -364,8 +364,8 @@ describe('large batch of changes', () => {
   it('a single bad change after 150 good ones leaves everything as it was', async () => {
     const m = await setup()
     const before = { version: m.catalog().version, tables: m.editView().tables.length }
-    const goodOnes = Array.from({ length: 150 }, (_, i) => table(m.diningRoom(), `B${i}`))
-    const r = await m.edit([...goodOnes, table(m.diningRoom(), 'Mala', { rotation: 360 })])
+    const valid = Array.from({ length: 150 }, (_, i) => table(m.diningRoom(), `B${i}`))
+    const r = await m.edit([...valid, table(m.diningRoom(), 'Mala', { rotation: 360 })])
     expect(r.code).toBe(400)
     expect(m.catalog().version).toBe(before.version)
     expect(m.editView().tables).toHaveLength(before.tables)
@@ -374,8 +374,8 @@ describe('large batch of changes', () => {
   it('a repeated name hidden among 150 new tables brings down the whole batch', async () => {
     const m = await setup()
     const before = m.editView().tables.length
-    const goodOnes = Array.from({ length: 150 }, (_, i) => table(m.diningRoom(), `B${i}`))
-    const r = await m.edit([...goodOnes, table(m.diningRoom(), 'b77')])
+    const valid = Array.from({ length: 150 }, (_, i) => table(m.diningRoom(), `B${i}`))
+    const r = await m.edit([...valid, table(m.diningRoom(), 'b77')])
     expect(r.code).toBe(400)
     expect(r.body.message).toMatch(/dos mesas que se llaman «B77»|«b77»/i)
     expect(m.editView().tables).toHaveLength(before)
@@ -384,10 +384,10 @@ describe('large batch of changes', () => {
   it('archiving all 25 tables at once and creating 25 new ones with the same names works', async () => {
     const m = await setup()
     const s = m.diningRoom()
-    const oldOnes = m.catalog().tables
+    const oldTables = m.catalog().tables
     const r = await m.edit([
-      ...oldOnes.map((x) => ({ entity: 'dining_tables', id: x.id, data: { active: false } })),
-      ...oldOnes.map((x) => table(s, x.name, { x: x.x, y: x.y })),
+      ...oldTables.map((x) => ({ entity: 'dining_tables', id: x.id, data: { active: false } })),
+      ...oldTables.map((x) => table(s, x.name, { x: x.x, y: x.y })),
     ])
     expect(r.code).toBe(200)
     expect(m.catalog().tables).toHaveLength(25)
@@ -397,8 +397,8 @@ describe('large batch of changes', () => {
 
   it('each touched record in the batch bumps its version only once and the versions differ', async () => {
     const m = await setup()
-    const newOnes = Array.from({ length: 40 }, (_, i) => table(m.diningRoom(), `V${i}`))
-    await m.edit(newOnes)
+    const newTables = Array.from({ length: 40 }, (_, i) => table(m.diningRoom(), `V${i}`))
+    await m.edit(newTables)
     const versions = m.editView().tables.map((x) => Number(x.version))
     expect(new Set(versions).size).toBe(versions.length)
     expect(Math.max(...versions)).toBe(m.catalog().version)
@@ -438,11 +438,11 @@ describe('the seed after drawing the dining room', () => {
 
   it('if the person archived the seed dining room (with its tables) and drew another, the seed does not bring it back', async () => {
     const m = await setup()
-    const oldOnes = m.catalog().tables
-    const newOne = zone('Nuevo salón', { position: 0 })
+    const oldTables = m.catalog().tables
+    const newZone = zone('Nuevo salón', { position: 0 })
     await m.edit([
-      newOne,
-      ...oldOnes.map((x) => ({ entity: 'dining_tables', id: x.id, data: { active: false } })),
+      newZone,
+      ...oldTables.map((x) => ({ entity: 'dining_tables', id: x.id, data: { active: false } })),
       { entity: 'zones', id: m.diningRoom(), data: { active: false } },
     ])
     m.seedDiningRoom()

@@ -274,18 +274,18 @@ describe('WebSocket: the socket closes midway', () => {
     const session = await m.post('/api/sign-in', m.credentialsOf('Mesero 1'), phone.token)
     const event = orderEvent(session, phone.device_id)
 
-    const firstOne = await m.connect(phone.token)
-    await firstOne.wait('welcome')
-    firstOne.send({ type: 'push', batch_id: 'a', events: [event] })
-    const closed = closeout(firstOne.ws)
-    firstOne.ws.terminate() // no response: the phone lost signal
+    const firstSocket = await m.connect(phone.token)
+    await firstSocket.wait('welcome')
+    firstSocket.send({ type: 'push', batch_id: 'a', events: [event] })
+    const closed = closeout(firstSocket.ws)
+    firstSocket.ws.terminate() // no response: the phone lost signal
     await closed
 
     // Reconnects and resends the same batch: the hub recognizes the event and stores it only once.
-    const secondOne = await m.connect(phone.token)
-    await secondOne.wait('welcome')
-    secondOne.send({ type: 'push', batch_id: 'b', events: [event] })
-    expect(await secondOne.wait('result')).toMatchObject({
+    const reconnected = await m.connect(phone.token)
+    await reconnected.wait('welcome')
+    reconnected.send({ type: 'push', batch_id: 'b', events: [event] })
+    expect(await reconnected.wait('result')).toMatchObject({
       batch_id: 'b',
       results: [{ id: event.id, status: 'confirmed' }],
     })
@@ -298,7 +298,7 @@ describe('WebSocket: the socket closes midway', () => {
     expect((fetched as { events: unknown[] }).events).toHaveLength(1)
     expect(failures).toEqual([])
 
-    secondOne.ws.terminate()
+    reconnected.ws.terminate()
     atRegister.ws.terminate()
     await m.app.close()
   })

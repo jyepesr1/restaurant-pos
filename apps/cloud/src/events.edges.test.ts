@@ -54,14 +54,14 @@ describe('last_sequence: contiguous from 1', () => {
           let i = 0
           const arrivals: number[] = []
           while (from < sequences.length) {
-            const sz = sizes[i++ % sizes.length] ?? 1
-            const chunk = sequences.slice(from, from + sz)
+            const batchSize = sizes[i++ % sizes.length] ?? 1
+            const chunk = sequences.slice(from, from + batchSize)
             await m.cloud.receiveEvents(
               hub,
               chunk.map((s) => flatEvent(s)),
             )
             arrivals.push(...chunk)
-            from += sz
+            from += batchSize
             const now = await m.cloud.lastSequence(hub)
             expect(now).toBe(largestContiguous(arrivals))
             // It never goes back.
@@ -276,11 +276,11 @@ describe('text Postgres does not accept', () => {
     ['\\u0000 in an extra field', (t) => ({ extra: t })],
     ['\\u0000 in an extra field name', (t) => ({ [t]: 1 })],
   ]
-  const badOnes = ['a\u0000b', '\ud800', 'x\udfff', '\u0000']
+  const badTexts = ['a\u0000b', '\ud800', 'x\udfff', '\u0000']
   for (const [name, act] of cases)
     it(`${name} or a lone surrogate: that event is invalid and the batch continues`, async () => {
       const { hub, restaurantId } = await m.newHub()
-      for (const [i, t] of badOnes.entries()) {
+      for (const [i, t] of badTexts.entries()) {
         const r = await m.cloud.receiveEvents(hub, [
           flatEvent(10 * i + 1),
           flatEvent(10 * i + 2, act(t)),
@@ -292,7 +292,7 @@ describe('text Postgres does not accept', () => {
         })
         expect([r[0]?.status, r[2]?.status]).toEqual(['saved', 'saved'])
       }
-      expect(await count(m.db, 'events', restaurantId)).toBe(badOnes.length * 2)
+      expect(await count(m.db, 'events', restaurantId)).toBe(badTexts.length * 2)
     })
 
   it('odd but valid text (emojis, accents, ñ, common controls, full surrogate pair) is saved', async () => {

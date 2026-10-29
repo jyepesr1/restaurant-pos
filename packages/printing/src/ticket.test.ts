@@ -42,7 +42,7 @@ const ticket: Ticket = {
   ],
 }
 
-const firstOne = ticket.items[0] as Ticket['items'][number]
+const firstItem = ticket.items[0] as Ticket['items'][number]
 const format80 = { columns: COLUMNS[80], page: 'pc850' as const }
 
 describe('ticket', () => {
@@ -89,7 +89,7 @@ describe('ticket', () => {
             {
               ...ticket,
               target: name,
-              items: [{ ...firstOne, name, notes, options: [notes] }],
+              items: [{ ...firstItem, name, notes, options: [notes] }],
             },
             { columns, page },
           )

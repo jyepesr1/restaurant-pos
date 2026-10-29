@@ -282,7 +282,7 @@ describe('drop with a batch and a `pull` in flight', () => {
 
         ana.disconnect()
         await ana.connect()
-        if (withLate) for (const oldOne of oldEntries) await ana.client.receive(oldOne)
+        if (withLate) for (const lateEntry of oldEntries) await ana.client.receive(lateEntry)
         await m.network.deliverOne(ana, 'to_hub') // hello
         await m.network.deliverOne(ana, 'to_device') // welcome
 

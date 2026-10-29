@@ -96,14 +96,14 @@ export function seed(
     sqlTables[tableName][change] += 1
   }
   const id = (key: string) => stableId(restaurantId, key)
-  const currentOnes = new Map<string, Set<string>>()
+  const savedIds = new Map<string, Set<string>>()
   const save = (
     tableName: string,
     recordId: string,
     fields: Record<string, SqlValue>,
     options: { createOnly?: boolean } = {},
   ) => {
-    currentOnes.set(tableName, (currentOnes.get(tableName) ?? new Set()).add(recordId))
+    savedIds.set(tableName, (savedIds.get(tableName) ?? new Set()).add(recordId))
     count(
       tableName,
       saveVersioned(db, tableName, restaurantId, recordId, fields, SYSTEM, now, options),
@@ -217,7 +217,7 @@ export function seed(
     // What the seed loaded before and is no longer on the menu is archived (never deleted). Only
     // the system's: what a person created does not belong to the seed.
     for (const tableName of SEEDED_TABLES) {
-      const kept = currentOnes.get(tableName) ?? new Set<string>()
+      const kept = savedIds.get(tableName) ?? new Set<string>()
       const leftover = db
         .prepare(
           `SELECT id FROM ${tableName} WHERE restaurant_id = ? AND active = 1 AND user_id IS NULL`,

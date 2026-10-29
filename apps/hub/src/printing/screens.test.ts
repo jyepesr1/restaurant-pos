@@ -96,11 +96,11 @@ describe('convert a device into a kitchen screen', () => {
     const tablet = t.device('admin', 'waiter')
     const old = tablet.sessionBody
     const r = await convert(t, tablet)
-    const newOne = r.json()
+    const converted = r.json()
     const openHandles = t.db
       .prepare('SELECT id FROM sessions WHERE device_id = ? AND closed_at IS NULL')
       .all(tablet.connection.deviceId)
-    expect(openHandles).toEqual([{ id: newOne.session_id }])
+    expect(openHandles).toEqual([{ id: converted.session_id }])
     // The admin session is no longer good for anything: not even to convert again.
     const another = await t.post('/api/kitchen/config', old, tablet.token)
     expect(another.statusCode).toBe(401)
@@ -151,10 +151,10 @@ describe('convert a device into a kitchen screen', () => {
       t.post(url, { ...admin.sessionBody, ...body }, admin.token)
 
     // A new person in the hidden role.
-    const newOne = await makeCall('/api/staff/people', {
+    const created = await makeCall('/api/staff/people', {
       person: { name: 'Intruso', role_id: hiddenRole },
     })
-    expect(newOne.statusCode).toBe(400)
+    expect(created.statusCode).toBe(400)
     // Move a real person to the hidden role.
     const ana = String(t.db.prepare("SELECT id FROM users WHERE name = 'Ana'").get()?.id)
     const move = await makeCall('/api/staff/people', {
@@ -236,8 +236,8 @@ describe('convert a device into a kitchen screen', () => {
     expect(d).toMatchObject({ name: 'Cocina y barra' })
     expect(JSON.parse(String(d?.station_ids))).toEqual([t.kitchen, t.bar])
     // The previous technical session was closed; the new one can mark.
-    const newOne = r.json()
-    expect(newOne.session_id).not.toBe(p.session.sessionId)
+    const converted = r.json()
+    expect(converted.session_id).not.toBe(p.session.sessionId)
     expect(
       t.db
         .prepare('SELECT count(*) AS n FROM sessions WHERE device_id = ? AND closed_at IS NULL')

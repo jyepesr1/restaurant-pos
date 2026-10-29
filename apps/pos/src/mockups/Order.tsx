@@ -489,13 +489,13 @@ function ProductPanel({
   }
   if (!product) return null
 
-  const onlyOne = choiceCount(product) === 1
+  const addsOnTap = choiceCount(product) === 1
   const selectedOf = (o: Record<string, string>) =>
     product.groups.flatMap((g) => {
       const x = g.options.find((op) => op.name === o[g.key])
       return x ? [x] : []
     })
-  const missingOnes = [
+  const missingChoices = [
     ...(product.variants.length > 0 && !variant ? ['tamaño'] : []),
     ...product.groups
       .filter((g) => g.minimum > 0 && !options[g.key])
@@ -528,21 +528,21 @@ function ProductPanel({
           variant="main"
           large
           className="w-full"
-          disabled={missingOnes.length > 0}
+          disabled={missingChoices.length > 0}
           onClick={() => addWith(variant, options)}
         >
-          {missingOnes.length > 0 ? `Elige ${missingOnes[0]}` : `Agregar · ${pesos(net)}`}
+          {missingChoices.length > 0 ? `Elige ${missingChoices[0]}` : `Agregar · ${pesos(net)}`}
         </Button>
       }
     >
       {product.description && <p className="mb-4 text-muted">{product.description}</p>}
-      {onlyOne && <p className="mb-3 text-sm text-muted">Toca una opción y queda agregada.</p>}
+      {addsOnTap && <p className="mb-3 text-sm text-muted">Toca una opción y queda agregada.</p>}
       {product.variants.length > 0 && (
         <OptionList
           title="Tamaño"
           options={product.variants.map((v) => ({ name: v.name, detail: pesos(v.price) }))}
           selected={variant}
-          onChoose={(v) => (onlyOne ? addWith(v, options) : setVariant(v))}
+          onChoose={(v) => (addsOnTap ? addWith(v, options) : setVariant(v))}
         />
       )}
       {product.groups.map((g: MenuGroup) => (
@@ -555,9 +555,9 @@ function ProductPanel({
           }))}
           selected={options[g.key] ?? null}
           onChoose={(name) => {
-            const newOnes = { ...options, [g.key]: name }
-            if (onlyOne) addWith(variant, newOnes)
-            else setOptions(newOnes)
+            const nextOptions = { ...options, [g.key]: name }
+            if (addsOnTap) addWith(variant, nextOptions)
+            else setOptions(nextOptions)
           }}
         />
       ))}

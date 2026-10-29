@@ -157,7 +157,7 @@ export function report(entry: ReportInput): Report {
   const waiters = new Map<string, { net: number; orders: Set<string> }>()
   const products = new Map<string, ProductSales>()
   const discountList: ReportDiscount[] = []
-  const add = (p: OrderState, sign: 1 | -1, firstOne: boolean) => {
+  const add = (p: OrderState, sign: 1 | -1, firstClose: boolean) => {
     const t = orderTotals(p)
     gross += sign * t.gross
     voided += sign * t.voided
@@ -166,7 +166,7 @@ export function report(entry: ReportInput): Report {
     roundingAdjustments += sign * t.roundingAdjustments
     tips += sign * t.tips
     // A check and its guests are counted once: at the first close.
-    if (firstOne) {
+    if (firstClose) {
       guests += p.guests
       if (t.net > 0) checks += 1
     }
@@ -175,7 +175,7 @@ export function report(entry: ReportInput): Report {
       const waiter = config.sales_by_waiter === 'added_by' ? item.addedBy : p.assignedWaiterId
       const m = waiters.get(waiter) ?? { net: 0, orders: new Set<string>() }
       m.net += sign * ti.net
-      if (firstOne && ti.net > 0) m.orders.add(p.id)
+      if (firstClose && ti.net > 0) m.orders.add(p.id)
       waiters.set(waiter, m)
       const units = Math.max(0, item.quantity - item.voidedQuantity)
       if (units === 0 && ti.net === 0) continue

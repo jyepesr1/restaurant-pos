@@ -43,9 +43,9 @@ function applyToModel(m: Model, p: Step): { model: Model; issue: string | null }
   const given = p.tables.map((i) => TABLES[i] as string)
   if (p.t === 'merge') {
     if (!m.main) return { model: m, issue: 'no_table' }
-    const newOnes = given.filter((x) => x !== m.main && !m.merged.includes(x))
-    if (newOnes.length === 0) return { model: m, issue: 'tables_already_merged' }
-    return { model: { ...m, merged: [...m.merged, ...newOnes] }, issue: null }
+    const newTables = given.filter((x) => x !== m.main && !m.merged.includes(x))
+    if (newTables.length === 0) return { model: m, issue: 'tables_already_merged' }
+    return { model: { ...m, merged: [...m.merged, ...newTables] }, issue: null }
   }
   if (!m.merged.some((x) => given.includes(x))) return { model: m, issue: 'tables_not_merged' }
   return { model: { ...m, merged: m.merged.filter((x) => !given.includes(x)) }, issue: null }

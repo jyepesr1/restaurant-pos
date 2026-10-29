@@ -136,9 +136,9 @@ export const ELEMENT_TYPES: Record<ElementType, { name: string; width: number; h
 
 /** The first number not used by any active table in the restaurant (in any zone). */
 export function nextName(names: readonly string[]): string {
-  const usedOnes = new Set(names.map((n) => n.trim().toLowerCase()))
+  const used = new Set(names.map((n) => n.trim().toLowerCase()))
   let n = 1
-  while (usedOnes.has(String(n))) n += 1
+  while (used.has(String(n))) n += 1
   return String(n)
 }
 
@@ -217,10 +217,10 @@ export function severalTables(
     columns * (f.width + spacing) - spacing,
     rows * (f.height + spacing) - spacing,
   )
-  const usedOnes = [...usedNames]
+  const takenNames = [...usedNames]
   return Array.from({ length: quantity }, (_, i) => {
-    const name = nextName(usedOnes)
-    usedOnes.push(name)
+    const name = nextName(takenNames)
+    takenNames.push(name)
     const row = Math.floor(i / columns)
     const column = i % columns
     return {

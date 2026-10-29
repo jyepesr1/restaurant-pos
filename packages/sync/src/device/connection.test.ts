@@ -222,11 +222,11 @@ describe('connection manager', () => {
   it('an old channel that reports late does not affect the current one, and stopping cuts everything', () => {
     const { connectionManager, channels, latest, events } = setup()
     connectionManager.begin()
-    const oldOne = latest()
+    const stale = latest()
     vi.advanceTimersByTime(4000 + 1000)
     latest().handlers.onOpen()
-    oldOne.handlers.onOpen()
-    oldOne.handlers.onClose()
+    stale.handlers.onOpen()
+    stale.handlers.onClose()
     expect(events.connected).toBe(1)
 
     connectionManager.stop()

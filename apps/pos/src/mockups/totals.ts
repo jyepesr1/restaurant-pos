@@ -11,7 +11,7 @@ export const itemName = (i: OrderItem) =>
   [i.product.name, i.variant && `(${i.variant.toLowerCase()})`].filter(Boolean).join(' ')
 
 /** The items that count: voided ones stay visible, but are not charged. */
-export const currentOnes = (table: Table) => table.items.filter((i) => !i.voided)
+export const currentItems = (table: Table) => table.items.filter((i) => !i.voided)
 
 export const lineOf = (i: OrderItem): CheckLine => ({
   id: i.id,
@@ -20,7 +20,7 @@ export const lineOf = (i: OrderItem): CheckLine => ({
   extras: i.options.map((o) => o.extraPrice),
 })
 
-export const tableTotal = (table: Table) => checkTotal(currentOnes(table).map(lineOf))
+export const tableTotal = (table: Table) => checkTotal(currentItems(table).map(lineOf))
 export const tableBalance = (table: Table) => balanceOf(tableTotal(table), table.payments)
 
 /** Minutes between `from` and `now`. */
@@ -29,7 +29,7 @@ export const minutesSince = (from: number | null, now: number) =>
 
 /** What was sent that the kitchen or bar has not delivered yet. */
 export const inPreparation = (table: Table) =>
-  currentOnes(table).filter((i) => i.sentAt !== null && !i.dispatched)
+  currentItems(table).filter((i) => i.sentAt !== null && !i.dispatched)
 
 /** Minutes of the oldest ticket still in preparation (0 if there is none). */
 export function longestWait(table: Table, now: number): number {

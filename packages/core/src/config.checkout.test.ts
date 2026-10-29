@@ -44,8 +44,8 @@ describe('config.payment_methods', () => {
   })
 
   it('completing an already complete config does not change the methods (idempotent)', () => {
-    const makeOne = fullConfig({ payment_methods: ['cash', 'breb'] })
-    expect(fullConfig(makeOne).payment_methods).toEqual(['cash', 'breb'])
+    const once = fullConfig({ payment_methods: ['cash', 'breb'] })
+    expect(fullConfig(once).payment_methods).toEqual(['cash', 'breb'])
   })
 
   it('the default value is not shared: changing one config list does not touch the next', () => {
@@ -144,7 +144,7 @@ describe('config.custom_methods', () => {
   })
 
   it('completing twice changes nothing', () => {
-    const makeOne = fullConfig({ custom_methods: [own()] })
-    expect(fullConfig(makeOne)).toEqual(makeOne)
+    const once = fullConfig({ custom_methods: [own()] })
+    expect(fullConfig(once)).toEqual(once)
   })
 })

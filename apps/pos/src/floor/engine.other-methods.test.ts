@@ -508,7 +508,7 @@ describe('end to end (1.8): open shift → charge by card and Nequi → count wi
   it('a Nequi charge after the count makes the close stale: it says so in words and, after recounting, closes', async () => {
     const h = setupHub()
     const { floor, e, shift } = await shiftCharged(h)
-    const oldOne = await closeAsRegister(
+    const firstClose = await closeAsRegister(
       floor,
       shift,
       50_000,
@@ -516,7 +516,7 @@ describe('end to end (1.8): open shift → charge by card and Nequi → count wi
       null,
     )
     // That close was accepted; to test the mismatch another shift is set up.
-    expect(oldOne.closeout.ok).toBe(true)
+    expect(firstClose.closeout.ok).toBe(true)
 
     const t2 = await floor.openShift(0)
     const order = await orderOfHundred(floor)

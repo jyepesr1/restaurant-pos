@@ -51,13 +51,13 @@ describe('pairing: approve with the admin PIN', () => {
     const m = setupAccess()
     const register = m.pair('register').connection
     const phone = m.pair('waiter')
-    const thirdOne = m.pair('register', 'Tercera').connection
-    const admin = m.signIn(thirdOne, 'admin')
+    const third = m.pair('register', 'Tercera').connection
+    const admin = m.signIn(third, 'admin')
     for (const d of [register, phone.connection])
-      m.access.revokeDevice(thirdOne, { ...admin, deviceId: d.deviceId })
+      m.access.revokeDevice(third, { ...admin, deviceId: d.deviceId })
 
     expect(request(m, null, m.people.admin.pin)).toMatchObject({ code: 'unpaired_device' })
-    expect(request(m, thirdOne, m.people.admin.pin)).toMatchObject({ ok: true })
+    expect(request(m, third, m.people.admin.pin)).toMatchObject({ ok: true })
   })
 
   it('a waiter PIN does not approve, and uses up device attempts like any failure', () => {
@@ -84,12 +84,12 @@ describe('pairing: redeem the code from an IP', () => {
 
   it('a success from another IP does not reset the wait of whoever keeps failing', () => {
     const m = setupAccess()
-    const goodOne = newCode(m)
+    const valid = newCode(m)
     for (let i = 0; i < 3; i++) m.access.pair('AAAAAAAA', '10.0.0.66')
     const delay = () => m.access.pair('AAAAAAAA', '10.0.0.66')
     expect(delay()).toMatchObject({ code: 'wait' })
 
-    expect(m.access.pair(goodOne.code, '10.0.0.5')).toMatchObject({ ok: true })
+    expect(m.access.pair(valid.code, '10.0.0.5')).toMatchObject({ ok: true })
 
     expect(delay()).toMatchObject({ code: 'wait' })
   })
@@ -374,7 +374,7 @@ describe('PIN on a device', () => {
     const m = setupAccess()
     const { connection } = m.pair()
     const pin = m.people.waiter.pin
-    const oddOnes = [
+    const malformed = [
       `${pin}\n`,
       ` ${pin}`,
       `${pin} `,
@@ -387,13 +387,13 @@ describe('PIN on a device', () => {
       '-123',
     ]
 
-    const responses = oddOnes.slice(0, 2).map((p) => m.access.startSession(connection, p))
+    const responses = malformed.slice(0, 2).map((p) => m.access.startSession(connection, p))
     expect(responses).toEqual([
       { ok: false, code: 'wrong_pin', message: 'PIN incorrecto', waitMs: 0 },
       { ok: false, code: 'wrong_pin', message: 'PIN incorrecto', waitMs: 0 },
     ])
-    m.access.startSession(connection, oddOnes[2] as string)
-    for (const p of oddOnes.slice(3)) {
+    m.access.startSession(connection, malformed[2] as string)
+    for (const p of malformed.slice(3)) {
       m.advance(60_000)
       expect(m.access.startSession(connection, p), JSON.stringify(p)).toMatchObject({
         code: 'wrong_pin',

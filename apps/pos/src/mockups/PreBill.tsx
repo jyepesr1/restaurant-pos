@@ -7,7 +7,7 @@ import { useNotify } from '../ui/toasts'
 import { byItems, checkTips, inEqualParts, lineNet, tipOn, trimAssignments } from './check'
 import { Frame } from './Frame'
 import { changeTable, useRouteTable, useTables } from './state'
-import { currentOnes, itemName, lineOf, tableBalance, tableTotal } from './totals'
+import { currentItems, itemName, lineOf, tableBalance, tableTotal } from './totals'
 
 // Pre-bill and split (brief §4.5, docs/DINERO.md#división-de-la-cuenta). The BALANCE is split:
 // what was already paid stays apart. The amounts and the tip of each check are calculated by
@@ -26,7 +26,7 @@ export function PreBill() {
   const [assignedChecks, setAssignedChecks] = useState<Map<string, number[]>>(new Map())
   if (!table) return null
 
-  const items = currentOnes(table)
+  const items = currentItems(table)
   const total = tableTotal(table)
   const balance = tableBalance(table)
   const paid = total - balance
@@ -38,11 +38,11 @@ export function PreBill() {
     setAssignedChecks((a) => {
       const b = new Map(a)
       const currentChecks = b.get(id) ?? []
-      const newOnes = currentChecks.includes(check)
+      const nextChecks = currentChecks.includes(check)
         ? currentChecks.filter((c) => c !== check)
         : [...currentChecks, check].sort((x, y) => x - y)
-      if (newOnes.length === 0) b.delete(id)
-      else b.set(id, newOnes)
+      if (nextChecks.length === 0) b.delete(id)
+      else b.set(id, nextChecks)
       return b
     })
 

@@ -108,16 +108,16 @@ export function KitchenSettings() {
           </h2>
           <ul className="grid gap-3 sm:grid-cols-2">
             {config.stations.map((e) => {
-              const imp = activePrinters.filter((i) => i.station_ids.includes(e.id))
+              const stationPrinters = activePrinters.filter((i) => i.station_ids.includes(e.id))
               const stationScreens = config.screens.filter((p) => p.station_ids.includes(e.id))
-              const nothing = imp.length === 0 && stationScreens.length === 0
+              const nothing = stationPrinters.length === 0 && stationScreens.length === 0
               return (
                 <li
                   key={e.id}
                   className="flex flex-col gap-2 rounded-2xl border border-divider bg-surface p-4"
                 >
                   <span className="text-lg font-semibold">{e.name}</span>
-                  {imp.map((i) => (
+                  {stationPrinters.map((i) => (
                     <span key={i.id} className="flex items-center gap-2">
                       <Icon name="printer" className="size-5" />
                       {i.name}

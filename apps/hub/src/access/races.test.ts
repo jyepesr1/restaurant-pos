@@ -540,12 +540,12 @@ describe('sessions and clock', () => {
     expect(latest()).toBe(m.clock())
 
     // An old event arriving later does not move the last use back.
-    const oldOne = add(m.clock(), -5 * 60_000)
+    const earlier = add(m.clock(), -5 * 60_000)
     m.advance(1000)
     m.hub.receiveBatch(connection, [
       m.event(connection, session, 'OrderOpened', OPEN_ORDER, {
-        device_time: oldOne,
-        hub_estimated_time: oldOne,
+        device_time: earlier,
+        hub_estimated_time: earlier,
       }),
     ])
     expect(latest()).toBe(add(m.clock(), -1000))

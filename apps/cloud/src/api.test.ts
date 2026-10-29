@@ -375,10 +375,10 @@ describe('code review (1.10)', () => {
     const first = (await (await record()).json()).credential
     const second = await record()
     expect(second.status).toBe(201)
-    const newOne = (await second.json()).credential
-    expect(newOne).not.toBe(first)
+    const newCredential = (await second.json()).credential
+    expect(newCredential).not.toBe(first)
     expect((await request('GET', '/v1/events/last', undefined, first)).status).toBe(401)
-    expect((await request('GET', '/v1/events/last', undefined, newOne)).status).toBe(200)
+    expect((await request('GET', '/v1/events/last', undefined, newCredential)).status).toBe(200)
     // Another hub with that used code, no.
     expect((await record(newId())).status).toBe(403)
   })

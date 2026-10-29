@@ -558,12 +558,12 @@ function apply(status: OrderState | null, event: ApplicableEvent): Result {
     case 'TablesMerged': {
       if (!status.tableId) return unchanged(status, 'no_table', 'Un pedido sin mesa no une mesas')
       const fresh = clone(status)
-      const newOnes = event.data.table_ids.filter(
+      const newTables = event.data.table_ids.filter(
         (m) => m !== status.tableId && !status.mergedTables.includes(m),
       )
-      if (newOnes.length === 0)
+      if (newTables.length === 0)
         return unchanged(status, 'tables_already_merged', 'Esas mesas ya están unidas')
-      fresh.mergedTables = [...fresh.mergedTables, ...newOnes]
+      fresh.mergedTables = [...fresh.mergedTables, ...newTables]
       return ready(fresh)
     }
 

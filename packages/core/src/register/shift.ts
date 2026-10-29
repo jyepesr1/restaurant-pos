@@ -41,10 +41,10 @@ export const METHOD_NAME: Record<PaymentMethod, string> = {
 export function methodName(
   method: PaymentMethod,
   customMethodId: string | null | undefined,
-  ownOnes: readonly { id: string; name: string }[],
+  customMethods: readonly { id: string; name: string }[],
 ): string {
   return method === 'other'
-    ? (ownOnes.find((m) => m.id === customMethodId)?.name ?? METHOD_NAME.other)
+    ? (customMethods.find((m) => m.id === customMethodId)?.name ?? METHOD_NAME.other)
     : METHOD_NAME[method]
 }
 

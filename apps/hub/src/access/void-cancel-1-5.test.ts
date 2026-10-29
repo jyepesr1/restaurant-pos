@@ -126,10 +126,10 @@ describe('voiding what was sent (ItemVoided)', () => {
     const { approval } = e.authorize(pinOf(e.m, 'manager'), draft, 'void_sent_item')
     // The waiter closes their session and opens another: the event comes from the new session.
     e.m.access.closeSession(e.connection, e.session)
-    const newOne = e.m.signIn(e.connection, 'waiter')
-    const fromNew = sign(newOne, {
+    const newSession = e.m.signIn(e.connection, 'waiter')
+    const fromNew = sign(newSession, {
       ...draft,
-      session_id: newOne.sessionId,
+      session_id: newSession.sessionId,
       authorization_id: approval.authorizationId,
     })
     expect(e.send(fromNew)).toMatchObject({
@@ -165,15 +165,15 @@ describe('voiding what was sent (ItemVoided)', () => {
 
   it('a used approval does not work for another event', () => {
     const e = scenario()
-    const firstOne = e.voidItem()
-    const { event, approval } = e.authorize(pinOf(e.m, 'manager'), firstOne, 'void_sent_item')
+    const firstVoid = e.voidItem()
+    const { event, approval } = e.authorize(pinOf(e.m, 'manager'), firstVoid, 'void_sent_item')
     expect(e.send(event)?.status).toBe('confirmed')
     // A different event with the same approval.
-    const secondOne = sign(e.session, {
+    const secondVoid = sign(e.session, {
       ...e.voidItem(),
       authorization_id: approval.authorizationId,
     })
-    expect(e.send(secondOne)).toMatchObject({
+    expect(e.send(secondVoid)).toMatchObject({
       status: 'rejected',
       reason: 'invalid_authorization',
     })
@@ -183,8 +183,8 @@ describe('voiding what was sent (ItemVoided)', () => {
       pin: pinOf(e.m, 'admin'),
       action: 'void_sent_item',
       aggregateId: e.order,
-      eventId: firstOne.id,
-      fingerprint: authorizableFingerprint(firstOne),
+      eventId: firstVoid.id,
+      fingerprint: authorizableFingerprint(firstVoid),
     })
     expect(another).toMatchObject({ ok: false, code: 'already_authorized' })
   })

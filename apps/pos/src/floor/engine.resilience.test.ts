@@ -441,7 +441,7 @@ describe('invalid or revoked token', () => {
 
   it('outdated_app also stops the connection', async () => {
     const h = setupHub()
-    const oldOne = new Floor({
+    const outdated = new Floor({
       db: (() => {
         const db = new DeviceDatabase(`resiliencia-${newId()}`)
         databases.push(db)
@@ -461,18 +461,18 @@ describe('invalid or revoked token', () => {
         }
       },
     })
-    floors.push(oldOne)
-    await oldOne.sync // no device yet
-    const db = (oldOne as unknown as { db: DeviceDatabase }).db
+    floors.push(outdated)
+    await outdated.sync // no device yet
+    const db = (outdated as unknown as { db: DeviceDatabase }).db
     await db.saveSetting('device', {
       deviceId: newId(),
       token: 't',
       name: 'Viejo',
       type: 'waiter',
     })
-    await oldOne.load()
-    await until(() => oldOne.snapshot().hubError !== null)
-    expect(oldOne.snapshot().hubError).toMatchObject({ code: 'outdated_app' })
+    await outdated.load()
+    await until(() => outdated.snapshot().hubError !== null)
+    expect(outdated.snapshot().hubError).toMatchObject({ code: 'outdated_app' })
     const attempts = h.openings
     await advance(30_000)
     expect(h.openings).toBe(attempts)

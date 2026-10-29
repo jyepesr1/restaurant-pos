@@ -53,12 +53,12 @@ export function ensureRoles(
           'SELECT id FROM roles WHERE restaurant_id = ? AND system = 1 AND name = ? ORDER BY created_at LIMIT 1',
         )
         .get(restaurantId, name)
-    for (const [oldOne, fresh] of Object.entries(RETIRED_ROLES.rename)) {
-      const role = findSystemRole(oldOne)
+    for (const [oldName, fresh] of Object.entries(RETIRED_ROLES.rename)) {
+      const role = findSystemRole(oldName)
       if (role && !findSystemRole(fresh))
         updateVersioned(db, 'roles', restaurantId, String(role.id), { name: fresh }, SYSTEM, now)
     }
-    for (const name of RETIRED_ROLES.ownOnes) {
+    for (const name of RETIRED_ROLES.toCustom) {
       const role = findSystemRole(name)
       if (role)
         updateVersioned(db, 'roles', restaurantId, String(role.id), { system: 0 }, SYSTEM, now)

@@ -110,9 +110,9 @@ describe('OrderNoteChanged: the reducer', () => {
 
   it('the same note twice in a row is valid and leaves the same state', () => {
     const { order, status } = opened()
-    const makeOne = applyAll([note(order, 'sin sal')], status)
-    const two = applyAll([note(order, 'sin sal')], makeOne)
-    expect({ ...two, lastSequence: 0 }).toEqual({ ...makeOne, lastSequence: 0 })
+    const once = applyAll([note(order, 'sin sal')], status)
+    const two = applyAll([note(order, 'sin sal')], once)
+    expect({ ...two, lastSequence: 0 }).toEqual({ ...once, lastSequence: 0 })
   })
 
   it('does not touch items, discounts, payments or totals', () => {

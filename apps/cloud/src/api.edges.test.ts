@@ -404,7 +404,7 @@ describe('method and route', () => {
     },
   )
 
-  const nonexistentOnes = [
+  const nonexistentRoutes = [
     '/',
     '/v1',
     '/v1/',
@@ -427,7 +427,7 @@ describe('method and route', () => {
     '/.env',
     '/v1/admin/../health',
   ]
-  it.each(nonexistentOnes)(
+  it.each(nonexistentRoutes)(
     '%s does not exist: 404 (or 401 if it is the admin area)',
     async (route) => {
       for (const httpMethod of ['GET', 'POST']) {

@@ -293,19 +293,19 @@ export function completeEdit(c: Partial<EditableCatalog> & { version: number }):
  * update does not leave the screen blank.
  */
 export function completeCatalog(c: Catalog): Catalog {
-  const oldOne = c as Partial<Catalog> &
+  const saved = c as Partial<Catalog> &
     Pick<Catalog, 'version' | 'restaurant' | 'stations' | 'categories'>
   return {
     ...c,
-    zones: (oldOne.zones ?? []).map((z) => ({ ...z, level: z.level ?? 1 })),
-    tables: (oldOne.tables ?? []).map((m) => ({
+    zones: (saved.zones ?? []).map((z) => ({ ...z, level: z.level ?? 1 })),
+    tables: (saved.tables ?? []).map((m) => ({
       ...m,
       width: m.width ?? 80,
       height: m.height ?? 80,
       rotation: m.rotation ?? 0,
     })),
-    elements: oldOne.elements ?? [],
-    staff: oldOne.staff ?? [],
+    elements: saved.elements ?? [],
+    staff: saved.staff ?? [],
   }
 }
 
@@ -792,9 +792,9 @@ export class Floor {
     this.expireSessionIfDue(now)
     // Every tap counts, but there is no need to write to IndexedDB with each one.
     if (!this.status.session || now - session.lastUsed < 15_000) return
-    const newOne = { ...session, lastUsed: now }
-    this.status = { ...this.status, session: newOne }
-    this.db.saveSetting(KEYS.session, newOne).catch(notifyFailure)
+    const refreshed = { ...session, lastUsed: now }
+    this.status = { ...this.status, session: refreshed }
+    this.db.saveSetting(KEYS.session, refreshed).catch(notifyFailure)
   }
 
   // ── Sync ─────────────────────────────────────────────────────────────

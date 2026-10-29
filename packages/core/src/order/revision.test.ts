@@ -70,9 +70,9 @@ describe('idempotency and foreign events', () => {
       },
       REASON,
     )
-    const makeOne = applyAll([refund], paid)
+    const refundedOnce = applyAll([refund], paid)
 
-    expect(issueOf(makeOne, again(refund))).toBe('refund_already_exists')
+    expect(issueOf(refundedOnce, again(refund))).toBe('refund_already_exists')
   })
 
   it('projects an own event not yet confirmed (no sequence or hub fields)', () => {

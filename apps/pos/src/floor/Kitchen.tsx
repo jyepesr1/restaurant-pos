@@ -646,9 +646,9 @@ export function ReadyAlert() {
     )
     const ids = new Set(mine.map((c) => c.key))
     if (knownIds.current) {
-      const newOnes = mine.filter((c) => !knownIds.current?.ids.has(c.key))
-      for (const c of newOnes) notify(`${target(catalog, c)}: listo para llevar`)
-      if (newOnes.length > 0) navigator.vibrate?.([80, 60, 80])
+      const newlyReady = mine.filter((c) => !knownIds.current?.ids.has(c.key))
+      for (const c of newlyReady) notify(`${target(catalog, c)}: listo para llevar`)
+      if (newlyReady.length > 0) navigator.vibrate?.([80, 60, 80])
     }
     knownIds.current = { user: session.user.id, ids }
   }, [view, catalog, session, notify])

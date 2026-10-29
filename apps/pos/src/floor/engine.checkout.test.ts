@@ -338,15 +338,15 @@ describe('end to end: open shift → split → cash and card → close', () => {
   it('a second shift of the same register is rejected (shift_already_open) and the first one continues', async () => {
     const h = setupHub()
     const { floor, e } = await register(h)
-    const firstOne = await floor.openShift(100)
+    const firstShift = await floor.openShift(100)
     await until(() => noPending(floor))
     await floor.openShift(999)
     await until(() => noPending(floor))
-    expect(h.hub.openShift(e.deviceId)).toMatchObject({ id: firstOne, base: 100 })
+    expect(h.hub.openShift(e.deviceId)).toMatchObject({ id: firstShift, base: 100 })
     const rejectedList = (await locals(floor)).filter((l) => l.status === 'rejected')
     expect(rejectedList).toHaveLength(1)
     expect(rejectedList[0]?.reason).toBe('shift_already_open')
-    expect(shiftOfRegister(await locals(floor), e.deviceId)?.id).toBe(firstOne)
+    expect(shiftOfRegister(await locals(floor), e.deviceId)?.id).toBe(firstShift)
   })
 
   it('a card with a card terminal that no longer exists is rejected with its message', async () => {

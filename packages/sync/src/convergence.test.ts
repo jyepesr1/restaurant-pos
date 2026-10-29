@@ -138,14 +138,14 @@ async function execute(devices: number, actions: Action[], orderedChannel = fals
         break
       }
       case 'add': {
-        const openOnes = await openOrdersOf(node)
-        const order = openOnes[action.order % openOnes.length]
+        const openOrders = await openOrdersOf(node)
+        const order = openOrders[action.order % openOrders.length]
         if (order) await record(node, order, 'ItemAdded', item(action.price))
         break
       }
       case 'send': {
-        const openOnes = await openOrdersOf(node)
-        const order = openOnes[action.order % openOnes.length]
+        const openOrders = await openOrdersOf(node)
+        const order = openOrders[action.order % openOrders.length]
         const status = order ? await node.client.order(order) : null
         const ids = Object.values(status?.items ?? {})
           .filter((i) => i.status === 'pending')
@@ -158,8 +158,8 @@ async function execute(devices: number, actions: Action[], orderedChannel = fals
         break
       }
       case 'remove': {
-        const openOnes = await openOrdersOf(node)
-        const order = openOnes[action.order % openOnes.length]
+        const openOrders = await openOrdersOf(node)
+        const order = openOrders[action.order % openOrders.length]
         const status = order ? await node.client.order(order) : null
         const removable = Object.values(status?.items ?? {}).filter((i) => i.status === 'pending')
         const selectedProduct = removable[action.item % removable.length]

@@ -17,7 +17,7 @@ import {
   zoneIssues,
 } from './floor-plan'
 
-const reg = { version: 1, active: true }
+const rowBase = { version: 1, active: true }
 const geo = (x: number, y: number, width = 80, height = 80) => ({
   x,
   y,
@@ -32,12 +32,12 @@ function editView(): EditableCatalog {
   return {
     version: 5,
     zones: [
-      { ...reg, id: diningRoom, name: 'Salón', position: 0, level: 1 },
-      { ...reg, id: patio, name: 'Terraza', position: 1, level: 1 },
+      { ...rowBase, id: diningRoom, name: 'Salón', position: 0, level: 1 },
+      { ...rowBase, id: patio, name: 'Terraza', position: 1, level: 1 },
     ],
     tables: [
       {
-        ...reg,
+        ...rowBase,
         ...geo(0, 0),
         id: newId(),
         zone_id: diningRoom,
@@ -46,7 +46,7 @@ function editView(): EditableCatalog {
         capacity: 4,
       },
       {
-        ...reg,
+        ...rowBase,
         ...geo(120, 0),
         id: newId(),
         zone_id: diningRoom,
@@ -55,7 +55,7 @@ function editView(): EditableCatalog {
         capacity: 4,
       },
       {
-        ...reg,
+        ...rowBase,
         ...geo(0, 0),
         id: newId(),
         zone_id: patio,
@@ -66,7 +66,7 @@ function editView(): EditableCatalog {
     ],
     elements: [
       {
-        ...reg,
+        ...rowBase,
         ...geo(0, 200, 300, 20),
         id: newId(),
         zone_id: diningRoom,

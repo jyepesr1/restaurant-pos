@@ -174,12 +174,12 @@ describe('sign in without pairing', () => {
 describe('startup of a hub from before ADR-013', () => {
   it('Contador becomes Reportes; Gerente and Cocina stay as custom roles, with their people', () => {
     const m = setupAccess()
-    const oldOne = (name: string) =>
+    const legacyRole = (name: string) =>
       insertVersioned(m.db, 'roles', m.restaurantId, { name, system: 1 }, SYSTEM, m.clock())
     // An old database: without Reportes and with the three old ones.
     m.db.prepare("UPDATE roles SET name = 'Contador' WHERE id = ?").run(m.roles.reports)
-    const manager = oldOne('Gerente')
-    const kitchen = oldOne('Cocina')
+    const manager = legacyRole('Gerente')
+    const kitchen = legacyRole('Cocina')
     const gloria = m.access.createUser({ name: 'Gloria V', roleId: manager })
 
     const roles = ensureRoles(m.db, m.restaurantId, m.clock())

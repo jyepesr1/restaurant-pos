@@ -115,16 +115,16 @@ describe('price_mismatch with the catalog changed afterwards', () => {
     const wine = m.product('Ramón Bilbao Crianza')
     const [glass, bottle] = wine.variants
     if (!glass || !bottle) throw new Error('missing')
-    const oldOne = (extra = {}) =>
+    const bottleItem = (extra = {}) =>
       m.data(wine, { variant_id: bottle.id, unit_price: bottle.price, ...extra })
     const oldVersion = m.history.currentVersion()
-    expect(m.variance(oldOne())).toBeNull()
+    expect(m.variance(bottleItem())).toBeNull()
 
     const v = m.patch('variants', bottle.id, { active: 0 })
     // The device still on the old menu sold the bottle: it matches its version.
-    expect(m.variance(oldOne({ catalog_version: oldVersion }))).toBeNull()
+    expect(m.variance(bottleItem({ catalog_version: oldVersion }))).toBeNull()
     // With the version where it was already archived, the bottle does not exist.
-    expect(m.variance(oldOne({ catalog_version: v }))).toMatch(/sin elegir una de sus opciones/)
+    expect(m.variance(bottleItem({ catalog_version: v }))).toMatch(/sin elegir una de sus opciones/)
     // The glass is still there.
     expect(
       m.variance(
@@ -163,21 +163,21 @@ describe('price_mismatch with the catalog changed afterwards', () => {
     const m = setup()
     const pizza = m.product('Burrata Spritz')
     const before = m.history.currentVersion()
-    const newOne = m.create('variants', {
+    const familyVariant = m.create('variants', {
       product_id: pizza.id,
       name: 'Familiar',
       price: 90_000,
       position: 0,
     })
     expect(m.variance(m.data(pizza, { catalog_version: before }))).toBeNull()
-    expect(m.variance(m.data(pizza, { catalog_version: newOne.version }))).toMatch(
+    expect(m.variance(m.data(pizza, { catalog_version: familyVariant.version }))).toMatch(
       /sin elegir una de sus opciones/,
     )
     expect(
       m.variance(
         m.data(pizza, {
-          catalog_version: newOne.version,
-          variant_id: newOne.id,
+          catalog_version: familyVariant.version,
+          variant_id: familyVariant.id,
           unit_price: 90_000,
         }),
       ),
@@ -185,7 +185,11 @@ describe('price_mismatch with the catalog changed afterwards', () => {
     // The variant did not exist yet in the old version.
     expect(
       m.variance(
-        m.data(pizza, { catalog_version: before, variant_id: newOne.id, unit_price: 90_000 }),
+        m.data(pizza, {
+          catalog_version: before,
+          variant_id: familyVariant.id,
+          unit_price: 90_000,
+        }),
       ),
     ).toMatch(/opción que el producto no tiene/)
   })

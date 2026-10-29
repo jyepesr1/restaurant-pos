@@ -81,7 +81,7 @@ describe('passwords after restarting the hub or losing the PIN key', () => {
     const anaSession = d.access.signIn({ pin: pinAna }, null, '10.0.1.2')
     if (!anaSession.ok || !anaSession.device) throw new Error('Ana did not sign in')
     const connection = d.access.authenticate(anaSession.device.token) as never
-    const oldOne = d.access.authorize(connection, {
+    const withOldPin = d.access.authorize(connection, {
       sessionId: anaSession.sessionId,
       secret: anaSession.secret,
       pin: cashier.pin,
@@ -90,7 +90,7 @@ describe('passwords after restarting the hub or losing the PIN key', () => {
       eventId: '1'.repeat(26),
       fingerprint: 'a'.repeat(64),
     })
-    if (cashier.pin !== pinCarlos) expect(oldOne).toMatchObject({ ok: false })
+    if (cashier.pin !== pinCarlos) expect(withOldPin).toMatchObject({ ok: false })
     const fresh = d.access.authorize(connection, {
       sessionId: anaSession.sessionId,
       secret: anaSession.secret,
@@ -153,7 +153,7 @@ describe('passwords after restarting the hub or losing the PIN key', () => {
       more_expensive.signIn({ user: 'carlos', password: 'clave-de-carlos' }, null, '10.0.2.1'),
     ).toMatchObject({ ok: true })
     // New ones are stored with the new cost, and coexist with the old ones.
-    const newOne = more_expensive.createUser({
+    const newUser = more_expensive.createUser({
       name: 'Nueva',
       roleId: h.roles.reports,
       user: 'nueva',
@@ -162,7 +162,7 @@ describe('passwords after restarting the hub or losing the PIN key', () => {
     expect(
       h.db
         .prepare('SELECT password_hash AS h FROM user_credentials WHERE user_id = ?')
-        .get(newOne.userId)?.h,
+        .get(newUser.userId)?.h,
     ).toMatch(/^scrypt\$6\$/)
     expect(
       more_expensive.signIn({ user: 'nueva', password: 'clave-de-nueva-1' }, null, '10.0.2.2'),

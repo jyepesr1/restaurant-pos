@@ -136,8 +136,8 @@ export function hubInDir(dataDir: string) {
     const db = openDatabase(join(dataDir, 'pos.sqlite'))
     openHandles.push(db as unknown as { close(): void })
     applyMigrations(db)
-    const { key, newOne } = loadKey(dataDir)
-    if (newOne) keyFrom = clock()
+    const { key, isNew } = loadKey(dataDir)
+    if (isNew) keyFrom = clock()
     const restaurantId = ensureRestaurant(db, clock())
     const roles = ensureRoles(db, restaurantId, clock())
     const access = new AccessService({
@@ -149,7 +149,7 @@ export function hubInDir(dataDir: string) {
       keyFrom,
       passwordCost: 1,
     })
-    const admin = ensureAdmin(db, access, roles.admin, newOne)
+    const admin = ensureAdmin(db, access, roles.admin, isNew)
     const hub = new HubSync(new SqliteStore(db, restaurantId), {
       restaurantId,
       timeZone: 'America/Bogota',
@@ -158,7 +158,7 @@ export function hubInDir(dataDir: string) {
       clock,
       access,
     })
-    return { db, access, hub, roles, restaurantId, admin, newKey: newOne }
+    return { db, access, hub, roles, restaurantId, admin, newKey: isNew }
   }
 
   return {

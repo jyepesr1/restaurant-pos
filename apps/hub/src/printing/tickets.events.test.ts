@@ -44,17 +44,17 @@ describe('ticket numbering per business day', () => {
     const t = setupPrinting()
     withPrinters(t)
     const ana = t.device('waiter')
-    const sendOne = () => {
+    const sendOrder = () => {
       const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
       t.send(ana, order, items)
     }
-    sendOne() // 3:00 p.m. on the 24th
+    sendOrder() // 3:00 p.m. on the 24th
     t.advance(14 * 3_600_000 + 59 * 60_000) // 5:59 a.m. on the 25th: still the 24th
-    sendOne()
+    sendOrder()
     t.advance(60_000) // 6:00 a.m.
-    sendOne()
+    sendOrder()
     t.advance(60_000)
-    sendOne()
+    sendOrder()
     expect(t.jobs().map((f) => t.content(f).number)).toEqual([1, 2, 1, 2])
   })
 
@@ -214,7 +214,7 @@ describe('a send made offline that arrives late', () => {
 describe('reprint, void and change of what was already sent', () => {
   async function withSentOrder() {
     const t = setupPrinting()
-    const imp = withPrinters(t)
+    const printers = withPrinters(t)
     const ana = t.device('waiter')
     const register = t.device('admin', 'register')
     const table = t.table('12')
@@ -235,32 +235,32 @@ describe('reprint, void and change of what was already sent', () => {
     )
     const sent = t.send(ana, order, items)
     await t.queue.runOnce()
-    return { t, imp, ana, register, order, items, sent, table }
+    return { t, printers, ana, register, order, items, sent, table }
   }
 
   it('TicketReprinted prints the ticket again with its original number, marked as a reprint', async () => {
-    const { t, imp, ana, order, sent } = await withSentOrder()
+    const { t, printers, ana, order, sent } = await withSentOrder()
     const kitchen = sent.tickets.find((c) => c.station_id === t.kitchen)
     ana.submit(order, 'TicketReprinted', { ticket_id: kitchen?.ticket_id })
     expect(t.pendingList()).toBe(1)
     await t.queue.runOnce()
-    expect(imp.kitchen.paper.received).toHaveLength(2)
-    const text = imp.kitchen.paper.texts()[1] as string
+    expect(printers.kitchen.paper.received).toHaveLength(2)
+    const text = printers.kitchen.paper.texts()[1] as string
     expect(text).toContain('REIMPRESIÓN')
     expect(text).toMatch(/Mesa 12 +#1/)
     expect(text).toContain('3 x Tagliata')
     expect(text).toContain('Risotto')
     // The bar does not print the kitchen items.
-    expect(imp.bar.paper.received).toHaveLength(1)
+    expect(printers.bar.paper.received).toHaveLength(1)
   })
 
   it('reprinting twice prints two tickets (each event is different)', async () => {
-    const { t, imp, ana, order, sent } = await withSentOrder()
+    const { t, printers, ana, order, sent } = await withSentOrder()
     const bar = sent.tickets.find((c) => c.station_id === t.bar)
     ana.submit(order, 'TicketReprinted', { ticket_id: bar?.ticket_id })
     ana.submit(order, 'TicketReprinted', { ticket_id: bar?.ticket_id })
     await t.queue.runOnce()
-    expect(imp.bar.paper.received).toHaveLength(3)
+    expect(printers.bar.paper.received).toHaveLength(3)
   })
 
   it('reprinting a ticket that does not exist, or from another order, prints nothing and the event is accepted', async () => {
@@ -276,7 +276,7 @@ describe('reprint, void and change of what was already sent', () => {
   })
 
   it('the reprint excludes voided items and shows the remaining units', async () => {
-    const { t, imp, register, ana, order, items, sent } = await withSentOrder()
+    const { t, printers, register, ana, order, items, sent } = await withSentOrder()
     register.submit(order, 'ItemVoided', {
       item_id: items[0]?.id,
       quantity: 1,
@@ -293,7 +293,7 @@ describe('reprint, void and change of what was already sent', () => {
     const kitchen = sent.tickets.find((c) => c.station_id === t.kitchen)
     ana.submit(order, 'TicketReprinted', { ticket_id: kitchen?.ticket_id })
     await t.queue.runOnce()
-    const text = imp.kitchen.paper.texts().at(-1) as string
+    const text = printers.kitchen.paper.texts().at(-1) as string
     expect(text).toContain('REIMPRESIÓN')
     expect(text).toContain('2 x Tagliata')
     expect(text).not.toContain('Risotto')
@@ -316,7 +316,7 @@ describe('reprint, void and change of what was already sent', () => {
   })
 
   it('ItemVoided of what is in the kitchen prints the void ticket with the voided quantity', async () => {
-    const { t, imp, register, order, items } = await withSentOrder()
+    const { t, printers, register, order, items } = await withSentOrder()
     const r = register.submit(order, 'ItemVoided', {
       item_id: items[0]?.id,
       quantity: 2,
@@ -325,13 +325,13 @@ describe('reprint, void and change of what was already sent', () => {
     })
     expect(r.status).toBe('confirmed')
     await t.queue.runOnce()
-    const text = imp.kitchen.paper.texts().at(-1) as string
+    const text = printers.kitchen.paper.texts().at(-1) as string
     expect(text).toContain('ANULAR')
     expect(text).toMatch(/Mesa 12 +#1/)
     expect(text).toContain('-2 x Tagliata')
     expect(text).toContain('> Término medio')
     expect(text).not.toContain('Risotto')
-    expect(imp.bar.paper.received).toHaveLength(1)
+    expect(printers.bar.paper.received).toHaveLength(1)
   })
 
   it.each(['sent', 'in_preparation', 'ready'] as const)(
@@ -382,7 +382,7 @@ describe('reprint, void and change of what was already sent', () => {
   })
 
   it('voiding the same dish twice (partial quantity and then the rest) prints two voids', async () => {
-    const { t, imp, register, order, items } = await withSentOrder()
+    const { t, printers, register, order, items } = await withSentOrder()
     for (const quantity of [1, 2])
       register.submit(order, 'ItemVoided', {
         item_id: items[0]?.id,
@@ -391,13 +391,13 @@ describe('reprint, void and change of what was already sent', () => {
         ticket_id: null,
       })
     await t.queue.runOnce()
-    const texts = imp.kitchen.paper.texts()
+    const texts = printers.kitchen.paper.texts()
     expect(texts.at(-2)).toContain('-1 x Tagliata')
     expect(texts.at(-1)).toContain('-2 x Tagliata')
   })
 
   it('ItemModifiedAfterSend prints the change ticket with the new options and notes', async () => {
-    const { t, imp, ana, order, items, sent } = await withSentOrder()
+    const { t, printers, ana, order, items, sent } = await withSentOrder()
     const kitchen = sent.tickets.find((c) => c.station_id === t.kitchen)
     const r = ana.submit(order, 'ItemModifiedAfterSend', {
       item_id: items[1]?.id,
@@ -406,7 +406,7 @@ describe('reprint, void and change of what was already sent', () => {
     })
     expect(r.status).toBe('confirmed')
     await t.queue.runOnce()
-    const text = imp.kitchen.paper.texts().at(-1) as string
+    const text = printers.kitchen.paper.texts().at(-1) as string
     expect(text).toContain('CAMBIO')
     expect(text).toMatch(/Mesa 12 +#1/)
     expect(text).toContain('Risotto')
@@ -415,7 +415,7 @@ describe('reprint, void and change of what was already sent', () => {
   })
 
   it('a change of options prints the new ones; removing the note leaves it without NOTA', async () => {
-    const { t, imp, ana, order, items, sent } = await withSentOrder()
+    const { t, printers, ana, order, items, sent } = await withSentOrder()
     const kitchen = sent.tickets.find((c) => c.station_id === t.kitchen)
     ana.submit(order, 'ItemModifiedAfterSend', {
       item_id: items[1]?.id,
@@ -424,7 +424,7 @@ describe('reprint, void and change of what was already sent', () => {
       modifiers: [{ modifier_id: newId(), name: 'Bien cocido', extra_price: 0 }],
     })
     await t.queue.runOnce()
-    const text = imp.kitchen.paper.texts().at(-1) as string
+    const text = printers.kitchen.paper.texts().at(-1) as string
     expect(text).toContain('> Bien cocido')
     expect(text).not.toContain('NOTA')
   })
@@ -581,13 +581,13 @@ describe('data the ticket carries', () => {
 
   it('a table name with odd characters is printed without printer commands', async () => {
     const t = setupPrinting()
-    const imp = withPrinters(t)
+    const printers = withPrinters(t)
     const ana = t.device('waiter')
     const table = t.table('\x1bp\x00T\x1dV1')
     const { order, items } = t.orderWith(ana, [{ name: 'Pizza\x1b@', station: t.kitchen }], table)
     t.send(ana, order, items)
     await t.queue.runOnce()
-    const bytes = imp.kitchen.paper.received[0] as Uint8Array
+    const bytes = printers.kitchen.paper.received[0] as Uint8Array
     expect(readEscpos(bytes).cuts).toBe(1)
     expect(readEscpos(bytes).text).toContain('Pizza')
   })
@@ -729,13 +729,13 @@ describe('stations and printers', () => {
 
   it('an archived station with old tickets keeps printing with its name', async () => {
     const t = setupPrinting()
-    const imp = t.newPrinter('Cocina', [t.kitchen])
+    const printer = t.newPrinter('Cocina', [t.kitchen])
     const ana = t.device('waiter')
     const { order, items } = t.orderWith(ana, [{ name: 'Tagliata', station: t.kitchen }])
     t.send(ana, order, items)
     t.db.prepare('UPDATE stations SET active = 0 WHERE id = ?').run(t.kitchen)
     await t.queue.runOnce()
-    expect(imp.paper.texts()[0]).toContain('COCINA')
+    expect(printer.paper.texts()[0]).toContain('COCINA')
   })
 
   it('a station that does not exist in the database is printed as «Estación»', () => {

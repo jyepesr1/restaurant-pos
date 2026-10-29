@@ -613,7 +613,7 @@ export function OrderEntry() {
           )
           .reduce((s, i) => s + i.quantity, 0)
       : 0
-  const missingOnes = order ? unitsToSend(order.status) : 0
+  const unsentUnits = order ? unitsToSend(order.status) : 0
   const editedItem = order && editing ? (order.status.items[editing] ?? null) : null
 
   const inKitchen = order ? currentItems(order.status).filter((i) => IN_KITCHEN.has(i.status)) : []
@@ -623,10 +623,10 @@ export function OrderEntry() {
       large
       icon="send"
       className="w-full"
-      disabled={missingOnes === 0}
+      disabled={unsentUnits === 0}
       onClick={send}
     >
-      {missingOnes === 0 ? 'Enviar' : `Enviar ${missingOnes}`}
+      {unsentUnits === 0 ? 'Enviar' : `Enviar ${unsentUnits}`}
     </Button>
   )
   // The pre-bill, split and checkout (task 1.6), on their own screen.
@@ -890,7 +890,7 @@ export function OrderEntry() {
         </Button>
         {/* With everything sent, the thumb delivers what is in the kitchen at once (ADR-015). */}
         <div className="flex-1">
-          {missingOnes === 0 && canServe && inKitchen.length > 0 ? (
+          {unsentUnits === 0 && canServe && inKitchen.length > 0 ? (
             <Button
               variant="success"
               large
@@ -905,7 +905,7 @@ export function OrderEntry() {
             >
               {`Entregar ${unitsOf(inKitchen)}`}
             </Button>
-          ) : missingOnes === 0 && withProducts ? (
+          ) : unsentUnits === 0 && withProducts ? (
             checkButton
           ) : (
             sendButton
@@ -1464,13 +1464,13 @@ function ProductPanel({
   if (!product) return null
 
   const [single, ...others] = product.groups
-  const onlyOne =
+  const addsOnTap =
     (product.variants.length > 0 && !single) ||
     (product.variants.length === 0 &&
       others.length === 0 &&
       single?.minimum === 1 &&
       single.maximum === 1)
-  const missingOnes = missingSelection(product, variantId, selectedIds)
+  const missingChoices = missingSelection(product, variantId, selectedIds)
   const price = selectedPrice(product, variantId, selectedIds)
   const soldOutVariant = (id: string) => soldOutIds.has(soldOutKey(product.id, id))
 
@@ -1484,15 +1484,15 @@ function ProductPanel({
   }
   const tapOption = (groupId: string, maximum: number, optionId: string) => {
     const currentChecks = selectedIds[groupId] ?? []
-    const newOnes = currentChecks.includes(optionId)
+    const nextSelection = currentChecks.includes(optionId)
       ? currentChecks.filter((o) => o !== optionId)
       : maximum === 1
         ? [optionId]
         : currentChecks.length < maximum
           ? [...currentChecks, optionId]
           : currentChecks
-    const allRows = { ...selectedIds, [groupId]: newOnes }
-    if (onlyOne) addWith(null, allRows)
+    const allRows = { ...selectedIds, [groupId]: nextSelection }
+    if (addsOnTap) addWith(null, allRows)
     else setSelectedIds(allRows)
   }
 
@@ -1506,17 +1506,17 @@ function ProductPanel({
           variant="main"
           large
           className="w-full"
-          disabled={missingOnes.length > 0}
+          disabled={missingChoices.length > 0}
           onClick={() => addWith(variantId, selectedIds)}
         >
-          {missingOnes.length > 0
-            ? `Elige ${missingOnes[0]}`
+          {missingChoices.length > 0
+            ? `Elige ${missingChoices[0]}`
             : `Agregar ${quantity > 1 ? `${quantity} · ` : '· '}${pesos(price * quantity)}`}
         </Button>
       }
     >
       {product.description && <p className="mb-4 text-muted">{product.description}</p>}
-      {onlyOne && (
+      {addsOnTap && (
         <p className="mb-3 text-muted">
           Toca una opción y queda agregada. Si quieres cantidad o nota, cámbialas antes.
         </p>
@@ -1538,7 +1538,7 @@ function ProductPanel({
                 shape="card"
                 selected={v.id === variantId}
                 detail={pesos(v.price)}
-                onChoose={() => (onlyOne ? addWith(v.id, selectedIds) : setVariantId(v.id))}
+                onChoose={() => (addsOnTap ? addWith(v.id, selectedIds) : setVariantId(v.id))}
               >
                 {v.name}
               </Option>
@@ -1626,12 +1626,12 @@ function PanelItem({
    * splitting the line.
    */
   const saveNote = () => {
-    const newOne = notes.trim() || null
-    if (newOne === item.notes) return
-    if (unsent) onChange({ notes: newOne })
+    const newNote = notes.trim() || null
+    if (newNote === item.notes) return
+    if (unsent) onChange({ notes: newNote })
     // Already sent and not delivered: what was written is not lost on close, it goes to the
     // kitchen as «CAMBIO».
-    else if (item.status !== 'served' && item.status !== 'voided') onSentNoteChange(newOne)
+    else if (item.status !== 'served' && item.status !== 'voided') onSentNoteChange(newNote)
   }
   const close = () => {
     saveNote()
@@ -1764,15 +1764,15 @@ function OrderNotePanel({
   onSave: (note: string | null) => void
 }) {
   const [text, setText] = useState(note ?? '')
-  const newOne = text.trim() || null
+  const newNote = text.trim() || null
   return (
     <SidePanel
       opened
       title="Nota del pedido"
       onClose={onClose}
       footer={
-        <Button variant="main" large className="w-full" onClick={() => onSave(newOne)}>
-          {newOne === null && note !== null ? 'Quitar la nota' : 'Guardar'}
+        <Button variant="main" large className="w-full" onClick={() => onSave(newNote)}>
+          {newNote === null && note !== null ? 'Quitar la nota' : 'Guardar'}
         </Button>
       }
     >

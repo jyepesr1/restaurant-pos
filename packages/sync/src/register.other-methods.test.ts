@@ -38,7 +38,7 @@ const res = (method: string, reported: number, own: string | null = null): Perio
   custom_method_id: own,
   reported,
 })
-const ln = (
+const line = (
   method: string,
   expected: number,
   reported: number,
@@ -293,8 +293,8 @@ describe('close with card and Nequi', () => {
     expect(t.status.hub.openShift(t.register.deviceId)).toBeNull()
     const saved = eventsOf(t.m).find((x) => x.type === 'ShiftClosed')
     expect(saved?.type === 'ShiftClosed' && saved.data.other_methods).toEqual([
-      ln('card', 110_000, 110_000),
-      ln('nequi', 30_000, 30_000),
+      line('card', 110_000, 110_000),
+      line('nequi', 30_000, 30_000),
     ])
   })
 
@@ -316,8 +316,8 @@ describe('close with card and Nequi', () => {
     ).toBe('confirmed')
     const saved = eventsOf(t.m).find((x) => x.type === 'ShiftClosed')
     expect(saved?.type === 'ShiftClosed' && saved.data.other_methods).toEqual([
-      ln('card', 110_000, 105_000),
-      ln('nequi', 30_000, 31_500),
+      line('card', 110_000, 105_000),
+      line('nequi', 30_000, 31_500),
     ])
   })
 
@@ -331,8 +331,8 @@ describe('close with card and Nequi', () => {
       res('daviplata', 5_000),
     ])
     expect(e.linesOf(shift, cashCount)).toEqual([
-      ln('other', 20_000, 20_000, SODEXO),
-      ln('daviplata', 0, 5_000),
+      line('other', 20_000, 20_000, SODEXO),
+      line('daviplata', 0, 5_000),
     ])
     expect(reason(e.close(e.register, shift, cashCount, 0, 0))).toBe('missing_justification')
     expect(
@@ -353,7 +353,7 @@ describe('close with card and Nequi', () => {
     expect(
       reason(
         t.close(t.register, t.shift, cashCount, 100_000, 100_000, {
-          other_methods: [ln('nequi', 30_000, 30_000), ln('card', 110_000, 110_000)],
+          other_methods: [line('nequi', 30_000, 30_000), line('card', 110_000, 110_000)],
         }),
       ),
     ).toBe('confirmed')
@@ -368,8 +368,8 @@ describe('close with card and Nequi', () => {
       res('nequi', 30_000),
     ])
     expect(t.linesOf(t.shift, cashCount)).toEqual([
-      ln('card', 110_000, 110_000),
-      ln('nequi', 30_000, 30_000),
+      line('card', 110_000, 110_000),
+      line('nequi', 30_000, 30_000),
     ])
     expect(reason(t.close(t.register, t.shift, cashCount, 100_000, 100_000))).toBe('confirmed')
   })
@@ -388,7 +388,7 @@ describe('other_methods_mismatch', () => {
   }
 
   it('a method is missing: the close does not carry the Nequi', () => {
-    expect(ready().closeWith([ln('card', 110_000, 110_000)])).toBe('other_methods_mismatch')
+    expect(ready().closeWith([line('card', 110_000, 110_000)])).toBe('other_methods_mismatch')
   })
 
   it('everything is missing: an empty list with digital payments', () => {
@@ -409,9 +409,9 @@ describe('other_methods_mismatch', () => {
   it('an extra method: a line with a reported amount the count does not have', () => {
     expect(
       ready().closeWith([
-        ln('card', 110_000, 110_000),
-        ln('nequi', 30_000, 30_000),
-        ln('daviplata', 0, 5_000),
+        line('card', 110_000, 110_000),
+        line('nequi', 30_000, 30_000),
+        line('daviplata', 0, 5_000),
       ]),
     ).toBe('other_methods_mismatch')
   })
@@ -419,9 +419,9 @@ describe('other_methods_mismatch', () => {
   it('an extra method at 0 and 0: the hub does not list it, so the close with it differs', () => {
     expect(
       ready().closeWith([
-        ln('card', 110_000, 110_000),
-        ln('nequi', 30_000, 30_000),
-        ln('daviplata', 0, 0),
+        line('card', 110_000, 110_000),
+        line('nequi', 30_000, 30_000),
+        line('daviplata', 0, 0),
       ]),
     ).toBe('other_methods_mismatch')
   })
@@ -431,52 +431,52 @@ describe('other_methods_mismatch', () => {
   it('a repeated line: the schema rejects it', () => {
     expect(
       ready().closeWith([
-        ln('card', 110_000, 110_000),
-        ln('card', 110_000, 110_000),
-        ln('nequi', 30_000, 30_000),
+        line('card', 110_000, 110_000),
+        line('card', 110_000, 110_000),
+        line('nequi', 30_000, 30_000),
       ]),
     ).toMatch(/^schema: .*Un medio aparece dos veces/)
   })
 
   it('another expected: says $1 less or more than what the hub recorded', () => {
-    expect(ready().closeWith([ln('card', 109_999, 110_000), ln('nequi', 30_000, 30_000)])).toBe(
+    expect(ready().closeWith([line('card', 109_999, 110_000), line('nequi', 30_000, 30_000)])).toBe(
       'other_methods_mismatch',
     )
-    expect(ready().closeWith([ln('card', 110_001, 110_000), ln('nequi', 30_000, 30_000)])).toBe(
+    expect(ready().closeWith([line('card', 110_001, 110_000), line('nequi', 30_000, 30_000)])).toBe(
       'other_methods_mismatch',
     )
   })
 
   it('another reported: says a value other than the count, even if the variance is consistent', () => {
-    expect(ready().closeWith([ln('card', 110_000, 100_000), ln('nequi', 30_000, 30_000)])).toBe(
+    expect(ready().closeWith([line('card', 110_000, 100_000), line('nequi', 30_000, 30_000)])).toBe(
       'other_methods_mismatch',
     )
-    expect(ready().closeWith([ln('card', 110_000, 110_000), ln('nequi', 30_000, 30_001)])).toBe(
+    expect(ready().closeWith([line('card', 110_000, 110_000), line('nequi', 30_000, 30_001)])).toBe(
       'other_methods_mismatch',
     )
   })
 
   it('a line with a miscalculated variance does not get through: the schema rejects it', () => {
     const r = ready().closeWith([
-      { ...ln('card', 110_000, 110_000), variance: 5 },
-      ln('nequi', 30_000, 30_000),
+      { ...line('card', 110_000, 110_000), variance: 5 },
+      line('nequi', 30_000, 30_000),
     ])
     expect(r).toMatch(/^schema:/)
   })
 
   it('cash among the other methods: the schema rejects it', () => {
     const r = ready().closeWith([
-      ln('cash', 0, 0),
-      ln('card', 110_000, 110_000),
-      ln('nequi', 30_000, 30_000),
+      line('cash', 0, 0),
+      line('card', 110_000, 110_000),
+      line('nequi', 30_000, 30_000),
     ])
     expect(r).toMatch(/^schema:/)
   })
 
   it('one method swapped for another (Nequi stated as Daviplata)', () => {
-    expect(ready().closeWith([ln('card', 110_000, 110_000), ln('daviplata', 30_000, 30_000)])).toBe(
-      'other_methods_mismatch',
-    )
+    expect(
+      ready().closeWith([line('card', 110_000, 110_000), line('daviplata', 30_000, 30_000)]),
+    ).toBe('other_methods_mismatch')
   })
 
   it('a custom method with another id: different', () => {
@@ -488,14 +488,14 @@ describe('other_methods_mismatch', () => {
     expect(
       reason(
         e.close(e.register, shift, cashCount, 0, 0, {
-          other_methods: [ln('other', 20_000, 20_000, QR)],
+          other_methods: [line('other', 20_000, 20_000, QR)],
         }),
       ),
     ).toBe('other_methods_mismatch')
     expect(
       reason(
         e.close(e.register, shift, cashCount, 0, 0, {
-          other_methods: [ln('other', 20_000, 20_000, SODEXO)],
+          other_methods: [line('other', 20_000, 20_000, SODEXO)],
         }),
       ),
     ).toBe('confirmed')
@@ -510,7 +510,7 @@ describe('other_methods_mismatch', () => {
     expect(
       reason(
         e.close(e.register, shift, cashCount, 0, 0, {
-          other_methods: [ln('other', 20_000, 20_000, null)],
+          other_methods: [line('other', 20_000, 20_000, null)],
         }),
       ),
     ).toMatch(/^schema: .*Un medio propio dice cuál es/)
@@ -579,12 +579,12 @@ describe('other_methods_mismatch', () => {
 
   it('with several counts only the last report counts', () => {
     const t = withCardAndNequi()
-    const firstOne = t.count(t.register, t.shift, 100_000, [res('card', 1), res('nequi', 1)])
+    const firstCount = t.count(t.register, t.shift, 100_000, [res('card', 1), res('nequi', 1)])
     const latest = t.count(t.register, t.shift, 100_000, [
       res('card', 110_000),
       res('nequi', 30_000),
     ])
-    expect(reason(t.close(t.register, t.shift, firstOne.cashCount, 100_000, 100_000))).toBe(
+    expect(reason(t.close(t.register, t.shift, firstCount.cashCount, 100_000, 100_000))).toBe(
       'cash_count_not_latest',
     )
     expect(reason(t.close(t.register, t.shift, latest.cashCount, 100_000, 100_000))).toBe(
@@ -594,13 +594,13 @@ describe('other_methods_mismatch', () => {
 
   it('cash count reports with a broken schema (cash, repeated, custom method without id) are rejected', () => {
     const t = withCardAndNequi()
-    const badOnes: PeriodReport[][] = [
+    const badReports: PeriodReport[][] = [
       [res('cash', 1)],
       [res('card', 1), res('card', 2)],
       [res('other', 1, null)],
       [res('card', 1, SODEXO)],
     ]
-    for (const others of badOnes)
+    for (const others of badReports)
       expect(reason(t.count(t.register, t.shift, 100_000, others).result)).toMatch(/^schema:/)
   })
 })
@@ -686,7 +686,7 @@ describe('missing_justification for a non-cash method', () => {
     const t2 = e.openShift(e.register, 0)
     e.voidItem(e.register, order, payment, t2)
     const a2 = e.count(e.register, t2, 0, [])
-    expect(e.linesOf(t2, a2.cashCount)).toEqual([ln('card', -5_000, 0)])
+    expect(e.linesOf(t2, a2.cashCount)).toEqual([line('card', -5_000, 0)])
     expect(reason(e.close(e.register, t2, a2.cashCount, 0, 0))).toBe('missing_justification')
     expect(
       reason(e.close(e.register, t2, a2.cashCount, 0, 0, { justification: 'Devolución de ayer' })),
@@ -703,13 +703,13 @@ describe('missing_justification for a non-cash method', () => {
     const t2 = e.openShift(e.register, 0)
     e.voidItem(e.register, order, payment, t2)
     const a2 = e.count(e.register, t2, 0, [res('card', -5_000)])
-    expect(e.linesOf(t2, a2.cashCount)).toEqual([ln('card', -5_000, -5_000)])
+    expect(e.linesOf(t2, a2.cashCount)).toEqual([line('card', -5_000, -5_000)])
     expect(reason(e.close(e.register, t2, a2.cashCount, 0, 0))).toBe('confirmed')
     const saved = eventsOf(e.m)
       .filter((x) => x.type === 'ShiftClosed')
       .at(-1)
     expect(saved?.type === 'ShiftClosed' && saved.data.other_methods).toEqual([
-      ln('card', -5_000, -5_000),
+      line('card', -5_000, -5_000),
     ])
   })
 
@@ -766,7 +766,7 @@ describe('missing_justification for a non-cash method', () => {
             counted_cash: 0,
             variance: 0,
             justification: null,
-            other_methods: [ln('nequi', 10_000, reported)],
+            other_methods: [line('nequi', 10_000, reported)],
           }),
         ]).results[0],
       )
@@ -834,7 +834,7 @@ describe('compatibility with 1.7: no digital payments', () => {
     expect(reason(e.close(e.register, shift, cashCount, 0, 0, { withoutField: true }))).toBe(
       'other_methods_mismatch',
     )
-    expect(e.linesOf(shift, cashCount)).toEqual([ln('nequi', 8_000, 0)])
+    expect(e.linesOf(shift, cashCount)).toEqual([line('nequi', 8_000, 0)])
     expect(reason(e.close(e.register, shift, cashCount, 0, 0))).toBe('missing_justification')
     expect(
       reason(
@@ -877,9 +877,9 @@ describe('hub restart with card and Nequi midway', () => {
     const restarted = t.newHub()
     const lines = t.linesOf(t.shift, t.cashCount, restarted)
     expect(lines).toEqual([
-      ln('card', 110_000, 108_000),
-      ln('nequi', 30_000, 30_000),
-      ln('other', 20_000, 20_000, SODEXO),
+      line('card', 110_000, 108_000),
+      line('nequi', 30_000, 30_000),
+      line('other', 20_000, 20_000, SODEXO),
     ])
     expect(
       reason(
@@ -1030,7 +1030,7 @@ describe('multi-restaurant: the other methods belong to each restaurant', () => 
       counted_cash: 0,
       others: [res('nequi', 7_000)],
     })
-    expect(d.linesOf(shiftB, cashCountB, d.hubB)).toEqual([ln('nequi', 7_000, 7_000)])
+    expect(d.linesOf(shiftB, cashCountB, d.hubB)).toEqual([line('nequi', 7_000, 7_000)])
     expect(reason(d.close(d.register, shiftA, a.cashCount, 0, 0))).toBe('confirmed')
     expect(d.status.hub.openShift(d.register.deviceId)).toBeNull()
     // B's stays open until it is closed with its own.

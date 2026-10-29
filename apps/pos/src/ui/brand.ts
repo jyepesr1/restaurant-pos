@@ -46,9 +46,9 @@ export function applyBrand(brand: Brand = read()) {
 
 export function useBrand(): [Brand, (brand: Brand) => void] {
   const [brand, setBrand] = useState<Brand>(read)
-  const select = (newOne: Brand) => {
-    applyBrand(newOne)
-    setBrand(newOne)
+  const select = (chosen: Brand) => {
+    applyBrand(chosen)
+    setBrand(chosen)
   }
   return [brand, select]
 }

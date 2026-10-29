@@ -206,7 +206,7 @@ describe('signature and fingerprint of a product event', () => {
     const e = base()
     const f = signEvent(e, 'secret')
     const data = e.data as { product_id: string; variant_id: string | null }
-    const differentOnes = [
+    const differentSignatures = [
       signEvent(e, 'other'),
       signEvent({ ...e, type: 'ProductAvailable' } as NewEvent, 'secret'),
       signEvent({ ...e, data: { ...data, variant_id: newId() } } as NewEvent, 'secret'),
@@ -214,8 +214,8 @@ describe('signature and fingerprint of a product event', () => {
       signEvent({ ...e, aggregate_type: 'order' } as NewEvent, 'secret'),
       signEvent({ ...e, device_time: '2026-10-24T20:00:00.001Z' }, 'secret'),
     ]
-    for (const another of differentOnes) expect(another).not.toBe(f)
-    expect(new Set([f, ...differentOnes]).size).toBe(differentOnes.length + 1)
+    for (const another of differentSignatures) expect(another).not.toBe(f)
+    expect(new Set([f, ...differentSignatures]).size).toBe(differentSignatures.length + 1)
   })
 
   it('with a null or missing variant in canonical JSON the signature equals the one without the key', () => {

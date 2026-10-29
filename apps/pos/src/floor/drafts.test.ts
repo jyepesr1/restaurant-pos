@@ -14,7 +14,7 @@ import {
 } from './drafts'
 import type { EditableCatalog } from './engine'
 
-const reg = { version: 1, active: true }
+const rowBase = { version: 1, active: true }
 
 function editView(): EditableCatalog {
   const tax = newId()
@@ -27,12 +27,12 @@ function editView(): EditableCatalog {
     zones: [],
     tables: [],
     elements: [],
-    taxes: [{ ...reg, id: tax, name: 'INC 8 %', type: 'inc', rate: 800 }],
+    taxes: [{ ...rowBase, id: tax, name: 'INC 8 %', type: 'inc', rate: 800 }],
     stations: [],
-    categories: [{ ...reg, id: category, name: 'Vinos', position: 0, station_id: null }],
+    categories: [{ ...rowBase, id: category, name: 'Vinos', position: 0, station_id: null }],
     products: [
       {
-        ...reg,
+        ...rowBase,
         id: wine,
         category_id: category,
         name: 'Ramón Bilbao',
@@ -42,7 +42,7 @@ function editView(): EditableCatalog {
         favorite: false,
       },
       {
-        ...reg,
+        ...rowBase,
         id: tagliata,
         category_id: category,
         name: 'Tagliata',
@@ -53,14 +53,14 @@ function editView(): EditableCatalog {
       },
     ],
     variants: [
-      { ...reg, id: newId(), product_id: wine, name: 'Botella', price: 129_900, position: 1 },
-      { ...reg, id: newId(), product_id: wine, name: 'Copa', price: 30_900, position: 0 },
+      { ...rowBase, id: newId(), product_id: wine, name: 'Botella', price: 129_900, position: 1 },
+      { ...rowBase, id: newId(), product_id: wine, name: 'Copa', price: 30_900, position: 0 },
     ],
-    groups: [{ ...reg, id: doneness, name: 'Término', minimum: 1, maximum: 1 }],
-    links: [{ ...reg, id: newId(), product_id: tagliata, group_id: doneness, position: 0 }],
+    groups: [{ ...rowBase, id: doneness, name: 'Término', minimum: 1, maximum: 1 }],
+    links: [{ ...rowBase, id: newId(), product_id: tagliata, group_id: doneness, position: 0 }],
     modifiers: [
-      { ...reg, id: newId(), group_id: doneness, name: 'Medio', extra_price: 0, position: 1 },
-      { ...reg, id: newId(), group_id: doneness, name: 'Rojo', extra_price: 0, position: 0 },
+      { ...rowBase, id: newId(), group_id: doneness, name: 'Medio', extra_price: 0, position: 1 },
+      { ...rowBase, id: newId(), group_id: doneness, name: 'Rojo', extra_price: 0, position: 0 },
     ],
   }
 }

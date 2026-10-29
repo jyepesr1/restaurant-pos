@@ -73,8 +73,8 @@ describe('single-use code', () => {
     const credentials = await Promise.all(
       responses.map(async (r) => ((await r.json()) as { credential: string }).credential),
     )
-    const validOnes = await Promise.all(credentials.map((c) => m.cloud.authenticate(c)))
-    expect(validOnes.filter((h) => h !== null)).toHaveLength(1)
+    const authenticated = await Promise.all(credentials.map((c) => m.cloud.authenticate(c)))
+    expect(authenticated.filter((h) => h !== null)).toHaveLength(1)
   })
 
   it('a code used by another hub does not work for a third one', async () => {
@@ -184,7 +184,7 @@ describe('mistyped code', () => {
     const { restaurant, code } = await restaurantWithCode()
     const letters = code.replaceAll('-', '')
     const another = letters[0] === 'A' ? 'B' : 'A'
-    const badOnes = [
+    const badCodes = [
       `${another}${letters.slice(1)}`,
       letters.slice(1),
       letters.slice(0, -1),
@@ -194,7 +194,7 @@ describe('mistyped code', () => {
       letters.replaceAll(/[2-9]/g, 'O'),
       `${letters.slice(0, 6)}${letters.slice(6).toLowerCase().replace(/[a-z]/, 'l')}`,
     ].filter((c) => normalizeCode(c) !== letters)
-    for (const badCase of badOnes) expect((await record(badCase)).status, badCase).toBe(403)
+    for (const badCase of badCodes) expect((await record(badCase)).status, badCase).toBe(403)
     expect(await hubsOf(restaurant)).toHaveLength(0)
     expect((await record(code)).status).toBe(201)
   })

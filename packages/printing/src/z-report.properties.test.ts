@@ -143,8 +143,8 @@ describe('printed Z report properties', () => {
         const lines = zReportLines(z, format)
         const bytes = escpos(lines, format)
         parse(bytes)
-        const printedOnes = readEscpos(bytes).text.split('\n').slice(0, lines.length)
-        printedOnes.forEach((printed, i) => {
+        const printedLines = readEscpos(bytes).text.split('\n').slice(0, lines.length)
+        printedLines.forEach((printed, i) => {
           const source = lines[i] as Line
           const fits = 'text' in source && source.large ? Math.floor(columns / 2) : columns
           expect(printed.length).toBeLessThanOrEqual(fits)

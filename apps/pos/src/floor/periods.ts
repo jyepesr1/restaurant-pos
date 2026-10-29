@@ -27,10 +27,10 @@ export function addDays(day: string, days: number): string {
 export function periodOf(shortcut: Shortcut, today: string): Period {
   if (shortcut === 'yesterday') return { from: addDays(today, -1), until: addDays(today, -1) }
   if (shortcut === 'week') return { from: addDays(today, -6), until: today }
-  const firstOne = `${today.slice(0, 8)}01`
-  if (shortcut === 'month') return { from: firstOne, until: today }
+  const monthStart = `${today.slice(0, 8)}01`
+  if (shortcut === 'month') return { from: monthStart, until: today }
   if (shortcut === 'lastMonth') {
-    const latest = addDays(firstOne, -1)
+    const latest = addDays(monthStart, -1)
     return { from: `${latest.slice(0, 8)}01`, until: latest }
   }
   return { from: today, until: today }
@@ -109,8 +109,8 @@ export function reportCsv(
   rules: CheckoutRules | null,
   restaurant: string,
 ): string {
-  const { report: rpt } = r
-  const v = rpt.sales
+  const { report: summary } = r
+  const v = summary.sales
   const who = (id: string | null) => (id ? (r.users[id] ?? '') : '')
   const time = (iso: string) => csvDateTime(iso, rules?.timeZone ?? 'America/Bogota')
   const order = (n: number | null) => (n === null ? '' : n)
@@ -141,13 +141,13 @@ export function reportCsv(
     ],
     [
       ['Medio de pago', 'Venta', 'Propina', 'Pagos'],
-      ...rpt.byMethod.map((m) => [method(m), m.sale, m.tip, m.payments]),
+      ...summary.byMethod.map((m) => [method(m), m.sale, m.tip, m.payments]),
     ],
     [
       ['Mesero', 'Neto', 'Cuentas', 'Ticket promedio'],
-      ...rpt.byWaiter.map((m) => [who(m.userId), m.net, m.checks, m.averageTicket]),
+      ...summary.byWaiter.map((m) => [who(m.userId), m.net, m.checks, m.averageTicket]),
     ],
-    [['Producto', 'Unidades', 'Neto'], ...rpt.byProduct.map((p) => [p.name, p.units, p.net])],
+    [['Producto', 'Unidades', 'Neto'], ...summary.byProduct.map((p) => [p.name, p.units, p.net])],
     [
       [
         'Anulación',
@@ -160,7 +160,7 @@ export function reportCsv(
         'Autorizó',
         'Hora',
       ],
-      ...rpt.voids.map((a) => [
+      ...summary.voids.map((a) => [
         a.name,
         order(a.orderNumber),
         a.units,
@@ -174,7 +174,7 @@ export function reportCsv(
     ],
     [
       ['Pedido cancelado', 'Valor', 'Motivo', 'Quién', 'Autorizó', 'Hora'],
-      ...rpt.cancellations.map((c) => [
+      ...summary.cancellations.map((c) => [
         order(c.orderNumber),
         c.value,
         c.reason ?? '',
@@ -185,7 +185,7 @@ export function reportCsv(
     ],
     [
       ['Descuento', 'Pedido', 'Valor', 'Monto', 'Motivo'],
-      ...rpt.discounts.map((d) => [
+      ...summary.discounts.map((d) => [
         RULE_NAME[d.rule],
         order(d.orderNumber),
         d.rule === 'percent' ? pointsAsPercent(d.value) : d.value,
@@ -229,9 +229,9 @@ export function reportCsv(
     ],
     [
       ['Fondo de propinas', 'Pesos'],
-      ['Propinas registradas', rpt.tipPool.tips],
-      ['Pagadas desde la caja', rpt.tipPool.paidOut],
-      ['Saldo', rpt.tipPool.balance],
+      ['Propinas registradas', summary.tipPool.tips],
+      ['Pagadas desde la caja', summary.tipPool.paidOut],
+      ['Saldo', summary.tipPool.balance],
     ],
   ]
   return `﻿${sections.map((s) => s.map(csvRow).join('\r\n')).join('\r\n\r\n')}\r\n`

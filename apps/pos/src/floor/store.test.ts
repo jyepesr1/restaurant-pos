@@ -59,8 +59,8 @@ describe('IndexedDbStore', () => {
     expect((await idb.ownPending()).map((l) => l.position)).toEqual([3, 5])
     expect(await idb.ofOrder(order)).toEqual(await memory.ofOrder(order))
     expect((await idb.ofOrder(order)).map((l) => l.position)).toEqual([1, 2, 3])
-    const [firstOne] = events as [LocalEvent]
-    expect(await idb.get(firstOne.event.id)).toEqual(firstOne)
+    const [first] = events as [LocalEvent]
+    expect(await idb.get(first.event.id)).toEqual(first)
     expect(await idb.get(newId())).toBeUndefined()
   })
 

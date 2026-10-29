@@ -178,10 +178,10 @@ describe.each(['memory', 'sqlite'] as const)('ticket number (%s)', (store) => {
     const { order, ids } = withDishes(m, 1)
     const c = ticket([ids[0] as string])
     const event = m.raw(WAITER, order, 'ItemsSent', { tickets: [c] })
-    const firstOne = m.hub.receiveBatch(WAITER, [event])
+    const original = m.hub.receiveBatch(WAITER, [event])
     const duplicate = m.hub.receiveBatch(WAITER, [event])
     expect(duplicate.acceptedEvents).toHaveLength(0)
-    expect(duplicate.results[0]).toEqual(firstOne.results[0])
+    expect(duplicate.results[0]).toEqual(original.results[0])
     const other = withDishes(m, 1)
     const c2 = ticket([other.ids[0] as string])
     expect(numbers(m.send(WAITER, other.order, 'ItemsSent', { tickets: [c2] }).accepted)).toEqual({
@@ -190,7 +190,7 @@ describe.each(['memory', 'sqlite'] as const)('ticket number (%s)', (store) => {
   })
 
   describe('business day', () => {
-    const sendOne = (m: Setup, time: string) => {
+    const sendTicketAt = (m: Setup, time: string) => {
       m.setFor(time)
       const { order, ids } = withDishes(m, 1)
       const c = ticket([ids[0] as string])
@@ -200,23 +200,23 @@ describe.each(['memory', 'sqlite'] as const)('ticket number (%s)', (store) => {
 
     it('at 6:00 a.m. a new day starts and numbering goes back to 1', () => {
       const m = setup(store)
-      expect(sendOne(m, '2026-10-24T20:00:00')).toEqual({ number: 1, day: '2026-10-24' })
-      expect(sendOne(m, '2026-10-24T21:00:00')).toEqual({ number: 2, day: '2026-10-24' })
-      expect(sendOne(m, '2026-10-25T05:59:00')).toEqual({ number: 3, day: '2026-10-24' })
-      expect(sendOne(m, '2026-10-25T06:00:00')).toEqual({ number: 1, day: '2026-10-25' })
-      expect(sendOne(m, '2026-10-25T06:01:00')).toEqual({ number: 2, day: '2026-10-25' })
+      expect(sendTicketAt(m, '2026-10-24T20:00:00')).toEqual({ number: 1, day: '2026-10-24' })
+      expect(sendTicketAt(m, '2026-10-24T21:00:00')).toEqual({ number: 2, day: '2026-10-24' })
+      expect(sendTicketAt(m, '2026-10-25T05:59:00')).toEqual({ number: 3, day: '2026-10-24' })
+      expect(sendTicketAt(m, '2026-10-25T06:00:00')).toEqual({ number: 1, day: '2026-10-25' })
+      expect(sendTicketAt(m, '2026-10-25T06:01:00')).toEqual({ number: 2, day: '2026-10-25' })
     })
 
     it('the early hours (after midnight) still belong to the previous day', () => {
       const m = setup(store)
-      sendOne(m, '2026-10-24T22:00:00')
-      expect(sendOne(m, '2026-10-25T01:30:00')).toEqual({ number: 2, day: '2026-10-24' })
+      sendTicketAt(m, '2026-10-24T22:00:00')
+      expect(sendTicketAt(m, '2026-10-25T01:30:00')).toEqual({ number: 2, day: '2026-10-24' })
     })
 
     it('a send with yesterday device time that arrives today counts on yesterday', () => {
       const m = setup(store)
-      sendOne(m, '2026-10-24T22:00:00')
-      sendOne(m, '2026-10-25T07:00:00')
+      sendTicketAt(m, '2026-10-24T22:00:00')
+      sendTicketAt(m, '2026-10-25T07:00:00')
       // Offline since 11 p.m.; the hub receives it at 7:10 a.m., within the 12 h window.
       m.setFor('2026-10-25T07:10:00')
       const { order, ids } = withDishes(
@@ -236,12 +236,12 @@ describe.each(['memory', 'sqlite'] as const)('ticket number (%s)', (store) => {
       expect(r.accepted?.business_day).toBe('2026-10-24')
       expect(numbers(r.accepted)).toEqual({ [c.ticket_id]: 2 })
       // Today does not move.
-      expect(sendOne(m, '2026-10-25T07:20:00')).toEqual({ number: 2, day: '2026-10-25' })
+      expect(sendTicketAt(m, '2026-10-25T07:20:00')).toEqual({ number: 2, day: '2026-10-25' })
     })
 
     it('a device with a clock far behind does not put its ticket in an old day: the hub time wins', () => {
       const m = setup(store)
-      sendOne(m, '2026-10-24T20:00:00')
+      sendTicketAt(m, '2026-10-24T20:00:00')
       m.setFor('2026-10-25T10:00:00')
       const { order, ids } = withDishes(m, 1)
       const c = ticket([ids[0] as string])
@@ -274,8 +274,8 @@ describe.each(['memory', 'sqlite'] as const)('ticket number (%s)', (store) => {
 
     it('the day start is configurable (4:00 a.m.)', () => {
       const m = setup(store, { businessDayStart: '04:00' })
-      expect(sendOne(m, '2026-10-25T03:59:00').day).toBe('2026-10-24')
-      expect(sendOne(m, '2026-10-25T04:00:00')).toEqual({ number: 1, day: '2026-10-25' })
+      expect(sendTicketAt(m, '2026-10-25T03:59:00').day).toBe('2026-10-24')
+      expect(sendTicketAt(m, '2026-10-25T04:00:00')).toEqual({ number: 1, day: '2026-10-25' })
     })
   })
 
@@ -728,8 +728,8 @@ describe('printers message', () => {
     const bad = floor.connect(() => {
       if (broken) throw new Error('socket closed')
     })
-    const goodOne = floor.connect((msg) => received.push(msg))
-    for (const e of [bad, goodOne])
+    const healthy = floor.connect((msg) => received.push(msg))
+    for (const e of [bad, healthy])
       e.receive({ type: 'hello', token: 't', hub_instance: null, until: 0, version_app: 'x' })
     broken = true
     expect(() => floor.notifyPrinters(STATUSES)).not.toThrow()

@@ -175,11 +175,11 @@ describe('register shift: one per register', () => {
 
   it('a second shift on the same register is rejected with shift_already_open and the first stays', () => {
     const { m, register, status, openShift } = device()
-    const firstOne = openShift(register)
+    const firstOpen = openShift(register)
     const before = m.store.maxSequence()
-    const secondOne = openShift(register, 50_000)
-    expect(secondOne.result).toMatchObject({ status: 'rejected', reason: 'shift_already_open' })
-    expect(status.hub.openShift(register.deviceId)?.id).toBe(firstOne.shift)
+    const secondOpen = openShift(register, 50_000)
+    expect(secondOpen.result).toMatchObject({ status: 'rejected', reason: 'shift_already_open' })
+    expect(status.hub.openShift(register.deviceId)?.id).toBe(firstOpen.shift)
     expect(status.hub.openShift(register.deviceId)?.base).toBe(200_000)
     expect(m.store.maxSequence()).toBe(before)
   })
@@ -494,11 +494,11 @@ describe('cash rounding: that of the restaurant', () => {
     const order = e.openOrder(e.register, 36_810)
     const { shift } = e.openShift(e.register)
     rule = { ...RULES, multiple: 50 }
-    const oldOne = e.one(
+    const withOldRule = e.one(
       e.register,
       e.raw(e.register, 'PaymentRecorded', order, e.cashPaymentData(shift, 36_810, -10, ROUNDING)),
     )
-    expect(reason(oldOne)).toBe('rounding_mismatch')
+    expect(reason(withOldRule)).toBe('rounding_mismatch')
   })
 
   it('a payment with no rounding (partial or balance already round) is not compared', () => {
@@ -823,10 +823,10 @@ describe('the shift survives a hub restart', () => {
 
   it('the rejected shift does not reappear after the restart, and the open one keeps its base', () => {
     const e = device()
-    const firstOne = e.openShift(e.register, 100)
+    const firstOpen = e.openShift(e.register, 100)
     e.openShift(e.register, 999)
     const restarted = hubWithRules(e.m)
-    expect(restarted.openShift(e.register.deviceId)?.id).toBe(firstOne.shift)
+    expect(restarted.openShift(e.register.deviceId)?.id).toBe(firstOpen.shift)
     expect(restarted.openShift(e.register.deviceId)?.base).toBe(100)
   })
 

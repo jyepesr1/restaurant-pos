@@ -119,13 +119,13 @@ function connectWs(url: string, token: string) {
 describe('occupied table through the real hub path (main.ts)', () => {
   let folder = ''
   let hub: StartedHub | undefined
-  const openOnes: { close: () => void }[] = []
+  const openSockets: { close: () => void }[] = []
 
   beforeEach(() => {
     folder = mkdtempSync(join(tmpdir(), 'pos-occupied-'))
   })
   afterEach(async () => {
-    for (const c of openOnes.splice(0)) c.close()
+    for (const c of openSockets.splice(0)) c.close()
     await hub?.stop()
     hub = undefined
     rmSync(folder, { recursive: true, force: true })
@@ -203,7 +203,7 @@ describe('occupied table through the real hub path (main.ts)', () => {
     const wsUrl = `${url.replace('http', 'ws')}/api/sync/ws`
     const onPhone = connectWs(wsUrl, phone.token)
     const atRegister = connectWs(wsUrl, register.token)
-    openOnes.push(onPhone, atRegister)
+    openSockets.push(onPhone, atRegister)
     await onPhone.sayHello()
     await atRegister.sayHello()
 
@@ -417,7 +417,7 @@ describe('occupied table through the real hub path (main.ts)', () => {
     expect(e.port).toBeGreaterThan(0)
 
     // Outage: the process dies without warning and starts again with the same data folder.
-    for (const c of openOnes.splice(0)) c.close()
+    for (const c of openSockets.splice(0)) c.close()
     await hub?.stop()
     hub = undefined
     await spinUp(e.dataDir, e.port)

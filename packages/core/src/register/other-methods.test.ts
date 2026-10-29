@@ -271,8 +271,8 @@ describe('otherMethodsReconciliation: voids and refunds', () => {
   it('voiding here a payment from an EARLIER shift: expected goes negative and, with no report, an overage', () => {
     const previous = newId()
     const { others } = build((t) => {
-      const oldOne = card(previous, 25_000, 2_500)
-      return { events: [pay(oldOne), voidItem(oldOne, t.id)] }
+      const earlierPayment = card(previous, 25_000, 2_500)
+      return { events: [pay(earlierPayment), voidItem(earlierPayment, t.id)] }
     })
     expect(others).toEqual([
       {
@@ -288,9 +288,9 @@ describe('otherMethodsReconciliation: voids and refunds', () => {
   it('a refund of an earlier payment, in this shift, subtracts from this shift expected', () => {
     const previous = newId()
     const { others } = build((t) => {
-      const oldOne = nequi(previous, 25_000)
+      const earlierPayment = nequi(previous, 25_000)
       return {
-        events: [pay(oldOne), issueRefund(oldOne, t.id, 5_000)],
+        events: [pay(earlierPayment), issueRefund(earlierPayment, t.id, 5_000)],
         others: [report('nequi', 0)],
       }
     })
@@ -330,8 +330,11 @@ describe('otherMethodsReconciliation: a day of only refunds', () => {
   it('negative expected and equally negative reported: it reconciles', () => {
     const previous = newId()
     const { others } = build((t) => {
-      const oldOne = card(previous, 25_000, 2_500)
-      return { events: [pay(oldOne), voidItem(oldOne, t.id)], others: [report('card', -27_500)] }
+      const earlierPayment = card(previous, 25_000, 2_500)
+      return {
+        events: [pay(earlierPayment), voidItem(earlierPayment, t.id)],
+        others: [report('card', -27_500)],
+      }
     })
     expect(others).toEqual([
       {
@@ -531,8 +534,8 @@ describe('otherMethodsReconciliation: properties', () => {
                 ? { ...nequi(t.id, p.amount, p.tip), method: 'daviplata' as const }
                 : card(t.id, p.amount, p.tip)
       if (p.action === 'void_earlier') {
-        const oldOne = { ...base, register_shift_id: previous }
-        events.push(pay(oldOne), voidItem(oldOne, t.id))
+        const earlierPayment = { ...base, register_shift_id: previous }
+        events.push(pay(earlierPayment), voidItem(earlierPayment, t.id))
         continue
       }
       events.push(pay(base))
@@ -698,11 +701,11 @@ describe('shiftReconciliation: `others` of the cash count and `otherMethods` of 
 
   it('the close stores the other methods with their expected, reported and signed variance', () => {
     const t = newShift(10_000)
-    const cc = t.cashCount()
+    const cashCount = t.cashCount()
     const closeout = t.shiftEvent(
       'ShiftClosed',
       {
-        cash_count_id: cc.data.cash_count_id,
+        cash_count_id: cashCount.data.cash_count_id,
         expected_cash: 10_000,
         counted_cash: 0,
         variance: -10_000,
@@ -726,7 +729,7 @@ describe('shiftReconciliation: `others` of the cash count and `otherMethods` of 
       },
       { received_at: '2026-10-26T21:00:00Z' },
     )
-    const c = shiftReconciliation([t.opening, cc, closeout] as never[], t.id)
+    const c = shiftReconciliation([t.opening, cashCount, closeout] as never[], t.id)
     expect(c?.closed?.otherMethods).toEqual([
       {
         method: 'card',
@@ -742,16 +745,16 @@ describe('shiftReconciliation: `others` of the cash count and `otherMethods` of 
 
   it('a close from 1.7, without `other_methods`, ends with `otherMethods: []`', () => {
     const t = newShift(0)
-    const cc = t.cashCount()
+    const cashCount = t.cashCount()
     const closeout = t.shiftEvent('ShiftClosed', {
-      cash_count_id: cc.data.cash_count_id,
+      cash_count_id: cashCount.data.cash_count_id,
       expected_cash: 0,
       counted_cash: 0,
       variance: 0,
       justification: null,
     })
     expect(
-      shiftReconciliation([t.opening, cc, closeout] as never[], t.id)?.closed?.otherMethods,
+      shiftReconciliation([t.opening, cashCount, closeout] as never[], t.id)?.closed?.otherMethods,
     ).toEqual([])
   })
 

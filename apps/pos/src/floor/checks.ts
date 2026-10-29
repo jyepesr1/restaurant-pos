@@ -233,9 +233,9 @@ export function byProducts(
 ): { checks: NewCheck[]; unassigned: number } {
   const lines = linesOf(order)
   // A product that another device voided while splitting no longer counts.
-  const currentOnes = new Set(lines.map((l) => l.id))
+  const currentItemIds = new Set(lines.map((l) => l.id))
   const assignments = [...assignedChecks]
-    .filter(([itemId]) => currentOnes.has(itemId))
+    .filter(([itemId]) => currentItemIds.has(itemId))
     .flatMap(([itemId, src]) =>
       src
         .filter((c) => c < checks)
@@ -266,12 +266,12 @@ export function trimAssignments(
   assignedChecks: ReadonlyMap<string, readonly number[]>,
   checks: number,
 ): Map<string, number[]> {
-  const newOnes = new Map<string, number[]>()
+  const trimmed = new Map<string, number[]>()
   for (const [item, src] of assignedChecks) {
     const kept = src.filter((c) => c < checks)
-    if (kept.length > 0) newOnes.set(item, kept)
+    if (kept.length > 0) trimmed.set(item, kept)
   }
-  return newOnes
+  return trimmed
 }
 
 export interface CashCalculation {

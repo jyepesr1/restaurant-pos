@@ -182,7 +182,7 @@ function productsOf(section: z.infer<typeof Section>): MenuProduct[] {
       const key = `${section.clave}:${keyOf(name)}`
       if (seenSet.has(key)) throw new Error(`Plato repetido en ${section.clave}: ${name}`)
       seenSet.add(key)
-      const firstOne = group[0] as z.infer<typeof Dish>
+      const firstDish = group[0] as z.infer<typeof Dish>
       const variants = withVariants
         ? group
             .map((p) => ({
@@ -210,7 +210,7 @@ function productsOf(section: z.infer<typeof Section>): MenuProduct[] {
         key,
         name,
         description: flavors ? null : description,
-        price: variants.length > 0 ? Math.min(...variants.map((v) => v.price)) : firstOne.precio,
+        price: variants.length > 0 ? Math.min(...variants.map((v) => v.price)) : firstDish.precio,
         variants,
         groups,
       })

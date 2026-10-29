@@ -149,7 +149,7 @@ describe('odd names and path traversal', () => {
   it('readPhoto rejects any name that is not the hash with its extension', () => {
     const { photosDir, secret } = withSecret()
     const h = 'a'.repeat(24)
-    const oddOnes = [
+    const invalidNames = [
       '',
       '.',
       '..',
@@ -183,7 +183,7 @@ describe('odd names and path traversal', () => {
       'toString',
       '𝟏𝟐𝟑',
     ]
-    for (const name of oddOnes) {
+    for (const name of invalidNames) {
       expect(PHOTO_NAME.test(name), JSON.stringify(name)).toBe(false)
       expect(readPhoto(photosDir, name), JSON.stringify(name)).toBeNull()
       expect(photoUrl(name), JSON.stringify(name)).toBeNull()
@@ -592,7 +592,7 @@ describe("another restaurant's products, archived ones and odd data", () => {
     const m = await setup()
     const burrata = m.product('Burrata Spritz')
     const s = m.session('admin')
-    const badOnes: unknown[] = [
+    const invalid: unknown[] = [
       null,
       [],
       {},
@@ -606,7 +606,7 @@ describe("another restaurant's products, archived ones and odd data", () => {
       { session_id: s.session_id, product_id: burrata.id, image: null },
       { ...s, secret: '', product_id: burrata.id, image: null },
     ]
-    for (const body of badOnes) {
+    for (const body of invalid) {
       const r = await m.post('/api/catalog/photos', body)
       expect(r.statusCode, JSON.stringify(body)).toBe(400)
     }
@@ -897,9 +897,9 @@ describe('session, device and permissions when uploading photos', () => {
     expect((await m.post('/api/catalog/photos', body, null)).statusCode).toBe(401)
     expect((await m.post('/api/catalog/photos', body, 'token-inventado')).statusCode).toBe(401)
 
-    const secondOne = m.pair('waiter')
-    const admin2 = m.signIn(secondOne.connection, 'admin')
-    const withdraw = m.access.revokeDevice(secondOne.connection, {
+    const secondDevice = m.pair('waiter')
+    const admin2 = m.signIn(secondDevice.connection, 'admin')
+    const withdraw = m.access.revokeDevice(secondDevice.connection, {
       sessionId: admin2.sessionId,
       secret: admin2.secret,
       deviceId: m.register.connection.deviceId,
@@ -915,11 +915,11 @@ describe('session, device and permissions when uploading photos', () => {
   it('with the wrong secret, with a closed session or one from another device: 401 invalid_session', async () => {
     const m = await setup()
     const burrata = m.product('Burrata Spritz')
-    const goodOne = m.session('admin')
+    const validSession = m.session('admin')
     const base = { product_id: burrata.id, image: asData('png', PNG) }
 
     const badSecret = await m.post('/api/catalog/photos', {
-      ...goodOne,
+      ...validSession,
       secret: 'other',
       ...base,
     })
@@ -927,7 +927,7 @@ describe('session, device and permissions when uploading photos', () => {
     expect(badSecret.json().error).toBe('invalid_session')
 
     const nonexistent = await m.post('/api/catalog/photos', {
-      ...goodOne,
+      ...validSession,
       session_id: newId(),
       ...base,
     })

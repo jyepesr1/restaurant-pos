@@ -54,7 +54,7 @@ describe('access API with odd bodies', () => {
   it('extra, missing or wrongly typed fields: 400 with the same error body, no echo of what was sent', async () => {
     const api = await withPairedDevice()
     const secret = 'SECRETO-QUE-NO-DEBE-VOLVER'
-    const badOnes: [string, unknown][] = [
+    const invalid: [string, unknown][] = [
       ['/api/pairings', { pin: '1234', name: 'X', type: 'register', extra: secret }],
       ['/api/pairings', { pin: 1234, name: 'X', type: 'register' }],
       ['/api/pairings', { pin: '1234', name: ['X'], type: 'register' }],
@@ -105,7 +105,7 @@ describe('access API with odd bodies', () => {
         },
       ],
     ]
-    for (const [url, body] of badOnes) {
+    for (const [url, body] of invalid) {
       const r = await api.send(url, { payload: body as object, token: api.token })
       expect(r.statusCode, `${url} ${JSON.stringify(body)}`).toBe(400)
       expect(r.json()).toEqual({
@@ -212,7 +212,7 @@ describe('access API with odd bodies', () => {
 
   it('text with Unicode, nulls, SQL and tags is stored as data, not as instructions', async () => {
     const api = await withPairedDevice()
-    const oddOnes = [
+    const oddNames = [
       "Caja'); DROP TABLE dispositivo;--",
       '<script>alert(1)</script>',
       'Cocina 🍕 ñandú',
@@ -222,7 +222,7 @@ describe('access API with odd bodies', () => {
     ]
     // Only a kitchen screen is paired, from an already registered device (ADR-013).
     const token = api.token
-    for (const name of oddOnes) {
+    for (const name of oddNames) {
       const c = await api.send('/api/pairings', {
         payload: { pin: api.people.admin.pin, name, type: 'kds' },
         token,
@@ -234,7 +234,7 @@ describe('access API with odd bodies', () => {
     }
     // Plus the phone from the setup.
     expect(Number(api.db.prepare('SELECT count(*) AS n FROM devices').get()?.n)).toBe(
-      oddOnes.length + 1,
+      oddNames.length + 1,
     )
     // Spaces-only and names longer than 60 characters fail the service rule.
     for (const name of ['   ', 'x'.repeat(61)]) {

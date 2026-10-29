@@ -601,7 +601,7 @@ describe('moving products to another table', () => {
     const hub = e.m.hub()
     const connection = connectionOf(e.m, e.ana)
     const base = e.m.store.maxSequence()
-    const mov = e.movement(target)
+    const move = e.movement(target)
     const envelope = (type: string, order: string, data: unknown, extras = {}) => ({
       id: newId(),
       type,
@@ -622,7 +622,7 @@ describe('moving products to another table', () => {
     })
     const r = hub.receiveBatch(connection, [
       envelope('OrderOpened', target, { channel: 'dine_in', table_id: free, guests: 1 }),
-      envelope('ItemsMoved', mov.order, mov.data, mov.extras),
+      envelope('ItemsMoved', move.order, move.data, move.extras),
     ])
     expect(r.results.map((x) => x.status)).toEqual(['confirmed', 'confirmed'])
     expect(hub.order(target)?.items[e.it.item_id]).toMatchObject({
@@ -638,7 +638,7 @@ describe('moving products to another table', () => {
     const takenPath = newId()
     e.open(e.beto, takenPath)
     const target = newId()
-    const mov = e.movement(target)
+    const move = e.movement(target)
     const base = e.m.store.maxSequence()
     const envelope = (type: string, order: string, data: unknown, extras = {}) => ({
       id: newId(),
@@ -662,7 +662,7 @@ describe('moving products to another table', () => {
       .hub()
       .receiveBatch(connectionOf(e.m, e.ana), [
         envelope('OrderOpened', target, { channel: 'dine_in', table_id: takenPath, guests: 1 }),
-        envelope('ItemsMoved', mov.order, mov.data, mov.extras),
+        envelope('ItemsMoved', move.order, move.data, move.extras),
       ])
     expect(r.results[0]).toMatchObject({ status: 'rejected', reason: 'table_occupied' })
     expect(r.results[1]).toMatchObject({ status: 'rejected', reason: 'depends_on_rejected' })
@@ -673,8 +673,8 @@ describe('moving products to another table', () => {
   it('to an existing order with another device up to date is accepted without conflict', () => {
     const e = withSentDish()
     const target = e.open(e.beto, newId()).order
-    const mov = e.movement(target)
-    const r = e.submit(e.ana, mov.order, mov.type, mov.data, mov.extras)
+    const move = e.movement(target)
+    const r = e.submit(e.ana, move.order, move.type, move.data, move.extras)
     expect(r).toMatchObject({ status: 'confirmed', conflict: null })
   })
 
@@ -691,9 +691,9 @@ describe('moving products to another table', () => {
         ticket_id: null,
       })?.status,
     ).toBe('confirmed')
-    const mov = e.movement(target)
-    const r = e.submit(e.ana, mov.order, mov.type, mov.data, {
-      ...mov.extras,
+    const move = e.movement(target)
+    const r = e.submit(e.ana, move.order, move.type, move.data, {
+      ...move.extras,
       base_sequence: anaBase,
     })
     expect(r).toMatchObject({ status: 'rejected' })
@@ -729,10 +729,10 @@ describe('moving products to another table', () => {
       already_prepared: false,
       ticket_id: null,
     })
-    const mov = e.movement(target)
+    const move = e.movement(target)
     expect(
-      e.submit(e.ana, mov.order, mov.type, mov.data, {
-        ...mov.extras,
+      e.submit(e.ana, move.order, move.type, move.data, {
+        ...move.extras,
         base_sequence: anaBase,
       }),
     ).toMatchObject({ status: 'rejected', reason: 'mismatched_copy' })
@@ -741,10 +741,10 @@ describe('moving products to another table', () => {
   it('up to date and with a dish no longer in the source: rejected (item_not_found)', () => {
     const e = withSentDish()
     const target = e.open(e.ana, newId()).order
-    const mov = e.movement(target)
-    expect(e.submit(e.ana, mov.order, mov.type, mov.data, mov.extras)?.status).toBe('confirmed')
+    const move = e.movement(target)
+    expect(e.submit(e.ana, move.order, move.type, move.data, move.extras)?.status).toBe('confirmed')
     // Moving it again from the source: it is no longer there.
-    expect(e.submit(e.ana, mov.order, mov.type, mov.data, mov.extras)).toMatchObject({
+    expect(e.submit(e.ana, move.order, move.type, move.data, move.extras)).toMatchObject({
       status: 'rejected',
       reason: 'item_not_found',
     })
@@ -753,15 +753,15 @@ describe('moving products to another table', () => {
   it('the same move resent (lost response) gets the same answer and does not move twice', () => {
     const e = withSentDish()
     const target = e.open(e.ana, newId()).order
-    const mov = e.movement(target)
+    const move = e.movement(target)
     const event = {
       id: newId(),
-      type: mov.type,
+      type: move.type,
       schema_version: 1,
       aggregate_type: 'order',
-      aggregate_id: mov.order,
+      aggregate_id: move.order,
       related: [target],
-      data: mov.data,
+      data: move.data,
       session_id: null,
       user_id: e.ana.userId,
       device_id: e.ana.deviceId,
@@ -783,8 +783,8 @@ describe('moving products to another table', () => {
   it('the event reaches both orders: the hub counts it in the source and in the target', () => {
     const e = withSentDish()
     const target = e.open(e.ana, newId()).order
-    const mov = e.movement(target)
-    e.submit(e.ana, mov.order, mov.type, mov.data, mov.extras)
+    const move = e.movement(target)
+    e.submit(e.ana, move.order, move.type, move.data, move.extras)
     const ofTarget = e.m.store.aggregateEvents(target).map((x) => x.type)
     expect(ofTarget).toEqual(['OrderOpened', 'ItemsMoved'])
   })
@@ -840,41 +840,51 @@ describe('several restaurants in the same database', () => {
 
   it('the same table in two restaurants does not clash: not when opening, merging or moving', () => {
     const { one, two } = twoHubs()
-    const [cOne, cTwo] = [deviceConn(), deviceConn()]
+    const [firstConn, secondConn] = [deviceConn(), deviceConn()]
     const [table, another] = [newId(), newId()]
     const a = newId()
     const b = newId()
     expect(
-      one.receiveBatch(cOne, [
-        envelope(cOne, a, 'OrderOpened', { channel: 'dine_in', table_id: table, guests: 1 }),
+      one.receiveBatch(firstConn, [
+        envelope(firstConn, a, 'OrderOpened', { channel: 'dine_in', table_id: table, guests: 1 }),
       ]).results[0]?.status,
     ).toBe('confirmed')
     expect(
-      two.receiveBatch(cTwo, [
-        envelope(cTwo, b, 'OrderOpened', { channel: 'dine_in', table_id: table, guests: 1 }),
+      two.receiveBatch(secondConn, [
+        envelope(secondConn, b, 'OrderOpened', { channel: 'dine_in', table_id: table, guests: 1 }),
       ]).results[0],
     ).toMatchObject({ status: 'confirmed', conflict: null })
     // Merging it in one does not occupy it in the other.
-    one.receiveBatch(cOne, [envelope(cOne, a, 'TablesMerged', { table_ids: [another] }, 1)])
+    one.receiveBatch(firstConn, [
+      envelope(firstConn, a, 'TablesMerged', { table_ids: [another] }, 1),
+    ])
     expect(one.hasOpenOrder(another)).toBe(true)
     expect(two.hasOpenOrder(another)).toBe(false)
     expect(
-      two.receiveBatch(cTwo, [
-        envelope(cTwo, b, 'OrderMovedTable', { target_table_id: another }, 1),
+      two.receiveBatch(secondConn, [
+        envelope(secondConn, b, 'OrderMovedTable', { target_table_id: another }, 1),
       ]).results[0]?.status,
     ).toBe('confirmed')
   })
 
   it('each hub only sees and numbers its own', () => {
     const { one, two, db, restaurantId, other } = twoHubs()
-    const [cOne, cTwo] = [deviceConn(), deviceConn()]
+    const [firstConn, secondConn] = [deviceConn(), deviceConn()]
     const table = newId()
-    one.receiveBatch(cOne, [
-      envelope(cOne, newId(), 'OrderOpened', { channel: 'dine_in', table_id: table, guests: 1 }),
+    one.receiveBatch(firstConn, [
+      envelope(firstConn, newId(), 'OrderOpened', {
+        channel: 'dine_in',
+        table_id: table,
+        guests: 1,
+      }),
     ])
     expect(two.hasOpenOrder(table)).toBe(false)
-    two.receiveBatch(cTwo, [
-      envelope(cTwo, newId(), 'OrderOpened', { channel: 'dine_in', table_id: table, guests: 1 }),
+    two.receiveBatch(secondConn, [
+      envelope(secondConn, newId(), 'OrderOpened', {
+        channel: 'dine_in',
+        table_id: table,
+        guests: 1,
+      }),
     ])
     const check = (r: string) =>
       db.prepare('SELECT count(*) AS n FROM events WHERE restaurant_id = ?').get(r)?.n

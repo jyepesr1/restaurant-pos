@@ -536,9 +536,9 @@ describe('Σ by days = the final state', () => {
         let guests = 0
         for (const id of h.service.orders) {
           const closings = h.events.filter((e) => e.type === 'OrderClosed' && e.aggregate_id === id)
-          const firstOne = closings.at(0)
+          const firstClosing = closings.at(0)
           const latest = closings.at(-1)
-          if (!firstOne || !latest) continue
+          if (!firstClosing || !latest) continue
           const stateIn = (sequence: number) =>
             rebuild(
               h.events.filter((e) => e.sequence <= sequence),
@@ -551,7 +551,7 @@ describe('Σ by days = the final state', () => {
           expected.net += final.net
           expected.roundingAdjustments += final.roundingAdjustments
           expected.tips += final.tips
-          const initial = stateIn(firstOne.sequence)
+          const initial = stateIn(firstClosing.sequence)
           guests += initial.guests
           if (orderTotals(initial).net > 0) checks += 1
         }

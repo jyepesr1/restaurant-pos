@@ -532,7 +532,7 @@ describe('invalid ids and data', () => {
     const e = newId()
     await m.edit(session, [station(e)])
     await m.edit(session, [{ entity: 'stations', id: e, data: { active: false } }])
-    const newOne = (active: boolean) => [
+    const newCategory = (active: boolean) => [
       {
         entity: 'categories',
         id: newId(),
@@ -540,11 +540,11 @@ describe('invalid ids and data', () => {
       },
     ]
     const alerts = m.alerts.length
-    const r = await m.edit(session, newOne(true))
+    const r = await m.edit(session, newCategory(true))
     expect(r.code).toBe(400)
     expect(r.body.message).toMatch(/archivado/)
     expect(m.alerts).toHaveLength(alerts)
-    expect((await m.edit(session, newOne(false))).code).toBe(200)
+    expect((await m.edit(session, newCategory(false))).code).toBe(200)
   })
 
   it('a product id cannot be reused as a variant id', async () => {
@@ -726,29 +726,29 @@ describe('invalid ids and data', () => {
 
   it('tax and group rules: exempt without rate, maximum rate, minimum and maximum', async () => {
     const m = await setupServer()
-    const imp = (data: object) => [
+    const newTax = (data: object) => [
       { entity: 'taxes', id: newId(), data: { name: 'I', active: true, ...data } },
     ]
-    await rejected(m, imp({ type: 'exempt', rate: 1 }))
-    await rejected(m, imp({ type: 'inc', rate: 10_001 }))
-    await rejected(m, imp({ type: 'inc', rate: -1 }))
-    await rejected(m, imp({ type: 'inc', rate: 8.5 }))
-    await rejected(m, imp({ type: 'other', rate: 8 }))
-    const grp = (data: object) => [
+    await rejected(m, newTax({ type: 'exempt', rate: 1 }))
+    await rejected(m, newTax({ type: 'inc', rate: 10_001 }))
+    await rejected(m, newTax({ type: 'inc', rate: -1 }))
+    await rejected(m, newTax({ type: 'inc', rate: 8.5 }))
+    await rejected(m, newTax({ type: 'other', rate: 8 }))
+    const newGroup = (data: object) => [
       {
         entity: 'modifier_groups',
         id: newId(),
         data: { name: 'G', active: true, ...data },
       },
     ]
-    await rejected(m, grp({ minimum: 2, maximum: 1 }))
-    await rejected(m, grp({ minimum: 0, maximum: 0 }))
-    await rejected(m, grp({ minimum: -1, maximum: 1 }))
-    await rejected(m, grp({ minimum: 0, maximum: 21 }))
+    await rejected(m, newGroup({ minimum: 2, maximum: 1 }))
+    await rejected(m, newGroup({ minimum: 0, maximum: 0 }))
+    await rejected(m, newGroup({ minimum: -1, maximum: 1 }))
+    await rejected(m, newGroup({ minimum: 0, maximum: 21 }))
     const session = m.sessionOf('manager')
-    expect((await m.edit(session, imp({ type: 'exempt', rate: 0 }))).code).toBe(200)
-    expect((await m.edit(session, imp({ type: 'iva', rate: 1_900 }))).code).toBe(200)
-    expect((await m.edit(session, grp({ minimum: 1, maximum: 1 }))).code).toBe(200)
+    expect((await m.edit(session, newTax({ type: 'exempt', rate: 0 }))).code).toBe(200)
+    expect((await m.edit(session, newTax({ type: 'iva', rate: 1_900 }))).code).toBe(200)
+    expect((await m.edit(session, newGroup({ minimum: 1, maximum: 1 }))).code).toBe(200)
   })
 
   it('raising a group minimum above its maximum is rejected on update', async () => {
@@ -781,14 +781,14 @@ describe('changes that change nothing', () => {
     const burrata = burrataOf(m)
     const session = m.sessionOf('manager')
     const order = [{ entity: 'products', id: burrata.id, data: { price: burrata.price + 700 } }]
-    const firstOne = await m.edit(session, order)
-    expect(firstOne.body.changedCount).toBe(1)
+    const first = await m.edit(session, order)
+    expect(first.body.changedCount).toBe(1)
     const rows = m.history().length
-    const secondOne = await m.edit(session, order)
-    expect(secondOne.code).toBe(200)
-    expect(secondOne.body).toEqual({ version: firstOne.body.version, changedCount: 0 })
+    const second = await m.edit(session, order)
+    expect(second.code).toBe(200)
+    expect(second.body).toEqual({ version: first.body.version, changedCount: 0 })
     expect(m.history()).toHaveLength(rows)
-    expect(m.alerts).toEqual([firstOne.body.version])
+    expect(m.alerts).toEqual([first.body.version])
   })
 
   it('with one field equal and another different only the different one counts', async () => {
@@ -881,9 +881,9 @@ describe('archive what others use', () => {
     const m = await setupServer()
     const session = m.sessionOf('manager')
     const before = m.catalog().version
-    const imp = await m.edit(session, archive('taxes', m.taxId))
-    expect(imp.code).toBe(400)
-    expect(imp.body.message).toMatch(/lo usan \d+ productos/)
+    const tax = await m.edit(session, archive('taxes', m.taxId))
+    expect(tax.code).toBe(400)
+    expect(tax.body.message).toMatch(/lo usan \d+ productos/)
     const cat = await m.edit(session, archive('categories', m.categoryId))
     expect(cat.code).toBe(400)
     expect(m.catalog().version).toBe(before)

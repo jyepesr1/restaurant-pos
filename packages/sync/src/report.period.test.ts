@@ -246,12 +246,12 @@ describe('period: reopened orders (what was already reported for a day does not 
   it('each close carries the order at close and as it was at the previous one (null for the first)', () => {
     const { x, events } = withAddition()
     for (const a of applyToBoth(events)) {
-      const [firstOne] = reportData(a, D24, D24).closings
-      expect(firstOne?.before).toBeNull()
-      expect(firstOne?.after.id).toBe(x.id)
-      const [secondOne] = reportData(a, D25, D25).closings
-      expect(Object.keys(secondOne?.before?.items ?? {})).toHaveLength(1)
-      expect(Object.keys(secondOne?.after.items ?? {})).toHaveLength(2)
+      const [firstClosing] = reportData(a, D24, D24).closings
+      expect(firstClosing?.before).toBeNull()
+      expect(firstClosing?.after.id).toBe(x.id)
+      const [secondClosing] = reportData(a, D25, D25).closings
+      expect(Object.keys(secondClosing?.before?.items ?? {})).toHaveLength(1)
+      expect(Object.keys(secondClosing?.after.items ?? {})).toHaveLength(2)
       // A period spanning both brings both, in order.
       expect(reportData(a, D24, D25).closings.map((c) => c.before === null)).toEqual([true, false])
     }

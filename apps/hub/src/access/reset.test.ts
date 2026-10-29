@@ -33,15 +33,15 @@ describe('hub restarts and crashes', () => {
   function firstStartup() {
     const h = hubs.spinUp()
     const adminPin = h.admin.pin as string
-    let firstOne: string | null = null
+    let firstToken: string | null = null
     const fresh = (type: 'waiter' | 'register', name: string) => {
       // The first device is approved without a device; the following ones, from that one.
-      const approver = firstOne ? h.access.authenticate(firstOne) : null
+      const approver = firstToken ? h.access.authenticate(firstToken) : null
       const c = h.access.createPairing({ pin: adminPin, name, type }, approver)
       if (!c.ok) throw new Error(c.message)
       const r = h.access.pair(c.code, '10.0.0.9')
       if (!r.ok) throw new Error(r.message)
-      firstOne ??= r.token
+      firstToken ??= r.token
       return {
         token: r.token,
         connection: h.access.authenticate(r.token) as NonNullable<
@@ -138,11 +138,11 @@ describe('hub restarts and crashes', () => {
       hubs.advance(30_000)
 
       const after = hubs.spinUp()
-      const newOne = after.access.authenticate(token) as NonNullable<typeof connection>
-      const r = after.hub.receiveBatch(newOne, [opened])
+      const reconnected = after.access.authenticate(token) as NonNullable<typeof connection>
+      const r = after.hub.receiveBatch(reconnected, [opened])
       expect(r.results[0]?.status).toBe('confirmed')
-      expect(after.access.closeSession(newOne, s)).toEqual({ ok: true })
-      expect(after.access.closeSession(newOne, { ...s, secret: 'other' })).toMatchObject({
+      expect(after.access.closeSession(reconnected, s)).toEqual({ ok: true })
+      expect(after.access.closeSession(reconnected, { ...s, secret: 'other' })).toMatchObject({
         ok: false,
       })
     })

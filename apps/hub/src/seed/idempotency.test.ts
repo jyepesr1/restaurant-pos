@@ -353,14 +353,16 @@ describe('menu changes', () => {
   it('renaming a dish creates the new one and archives the old one: the waiter menu is not duplicated', () => {
     const h = hub()
     h.load()
-    const oldOne = stableId(h.restaurantId, 'product:PIZZAS:quattro-formaggi')
+    const quattroId = stableId(h.restaurantId, 'product:PIZZAS:quattro-formaggi')
     const before = Number(
-      h.db.prepare('SELECT version FROM products WHERE id = ?').get(oldOne)?.version,
+      h.db.prepare('SELECT version FROM products WHERE id = ?').get(quattroId)?.version,
     )
     const r = h.load(MENU_TEXT.replace('es: Quattro Formaggi', 'es: Cuatro Quesos'), LATER)
 
     expect(r.sqlTables.products).toMatchObject({ created: 1, updated: 0, archived: 1 })
-    const row = h.db.prepare('SELECT active, price, version FROM products WHERE id = ?').get(oldOne)
+    const row = h.db
+      .prepare('SELECT active, price, version FROM products WHERE id = ?')
+      .get(quattroId)
     expect(row).toMatchObject({ active: 0, price: 44_900 })
     // Archiving is one more catalog change: it bumps the version so devices receive it.
     expect(Number(row?.version)).toBeGreaterThan(before)
@@ -379,10 +381,10 @@ describe('menu changes', () => {
   it('if the name goes back to the previous one, the archived product is reactivated with the same ID', () => {
     const h = hub()
     h.load()
-    const oldOne = stableId(h.restaurantId, 'product:PIZZAS:quattro-formaggi')
+    const quattroId = stableId(h.restaurantId, 'product:PIZZAS:quattro-formaggi')
     h.load(MENU_TEXT.replace('es: Quattro Formaggi', 'es: Cuatro Quesos'), LATER)
     h.load(MENU_TEXT, '2026-10-26T09:00:00.000Z')
-    expect(h.db.prepare('SELECT active FROM products WHERE id = ?').get(oldOne)?.active).toBe(1)
+    expect(h.db.prepare('SELECT active FROM products WHERE id = ?').get(quattroId)?.active).toBe(1)
     expect(
       count(h.db, "SELECT count(*) AS n FROM products WHERE name = 'Cuatro Quesos' AND active = 1"),
     ).toBe(0)

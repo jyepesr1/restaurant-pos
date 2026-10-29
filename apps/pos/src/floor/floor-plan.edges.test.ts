@@ -16,7 +16,7 @@ import {
 // catalog without zones. Fixed seed.
 
 const SEED = 20_261_024
-const emptyOne = (): EditableCatalog => ({
+const emptyCatalog = (): EditableCatalog => ({
   version: 0,
   zones: [],
   tables: [],
@@ -41,8 +41,8 @@ describe('severalTables', () => {
         fc.integer({ min: 1, max: 15 }),
         fc.array(fc.integer({ min: 1, max: 80 }).map(String), { maxLength: 20 }),
         fc.integer({ min: 0, max: 5 }),
-        (shape, quantity, perRow, usedOnes, previousCount) => {
-          const b = newZone(emptyOne())
+        (shape, quantity, perRow, usedNames, previousCount) => {
+          const b = newZone(emptyCatalog())
           for (let i = 0; i < previousCount; i++)
             b.tables.push(
               newTable(
@@ -51,21 +51,21 @@ describe('severalTables', () => {
                 b.tables.map((m) => m.name),
               ),
             )
-          const newOnes = severalTables(b, shape, quantity, perRow, usedOnes)
-          expect(newOnes).toHaveLength(quantity)
-          const names = newOnes.map((m) => m.name)
+          const added = severalTables(b, shape, quantity, perRow, usedNames)
+          expect(added).toHaveLength(quantity)
+          const names = added.map((m) => m.name)
           expect(new Set(names).size).toBe(quantity)
-          for (const n of names) expect(usedOnes).not.toContain(n)
+          for (const n of names) expect(usedNames).not.toContain(n)
           // The smallest free ones, in increasing order.
           expect(names.map(Number)).toEqual([...names.map(Number)].sort((a, c) => a - c))
-          for (const m of newOnes) {
+          for (const m of added) {
             expect(m.x % 10).toBe(0)
             expect(m.y % 10).toBe(0)
             expect(m.fresh && m.active).toBe(true)
           }
-          expect(new Set(newOnes.map((m) => m.y)).size).toBe(Math.ceil(quantity / perRow))
+          expect(new Set(added.map((m) => m.y)).size).toBe(Math.ceil(quantity / perRow))
           // None on top of another nor of what was there.
-          const allRows = [...b.tables, ...newOnes]
+          const allRows = [...b.tables, ...added]
           for (const [i, a] of allRows.entries())
             for (const c of allRows.slice(i + 1))
               expect(
@@ -81,11 +81,11 @@ describe('severalTables', () => {
   })
 
   it('zero tables gives an empty list', () => {
-    expect(severalTables(newZone(emptyOne()), 'square', 0, 5, [])).toEqual([])
+    expect(severalTables(newZone(emptyCatalog()), 'square', 0, 5, [])).toEqual([])
   })
 
   it('a row of a single table per row stacks downward', () => {
-    const m = severalTables(newZone(emptyOne()), 'square', 3, 1, [])
+    const m = severalTables(newZone(emptyCatalog()), 'square', 3, 1, [])
     expect(new Set(m.map((x) => x.x)).size).toBe(1)
     expect(new Set(m.map((x) => x.y)).size).toBe(3)
   })
@@ -94,7 +94,7 @@ describe('severalTables', () => {
   // fila" to 1..20, but `severalTables(…, 0, …)` gives x = NaN (division by zero).
   it('with perRow 0 the tables do not end up with invalid coordinates', () => {
     // An empty field on the screen could give 0: no position must be NaN or infinite.
-    const m = severalTables(newZone(emptyOne()), 'square', 3, 0, [])
+    const m = severalTables(newZone(emptyCatalog()), 'square', 3, 0, [])
     for (const x of m) {
       expect(Number.isFinite(x.x)).toBe(true)
       expect(Number.isFinite(x.y)).toBe(true)
@@ -102,7 +102,7 @@ describe('severalTables', () => {
   })
 
   it('the tables placed several at once are saved together in a single edit', () => {
-    const c = emptyOne()
+    const c = emptyCatalog()
     const b: ZoneDraft = { ...newZone(c), name: 'Patio' }
     b.tables.push(...severalTables(b, 'round', 12, 4, []))
     expect(zoneIssues(c, b)).toEqual([])
@@ -121,7 +121,7 @@ describe('the editor facing an editing catalog without zones', () => {
   }
 
   it('without zones it builds a new, empty «Salón» that cannot be saved untouched', () => {
-    const c = emptyOne()
+    const c = emptyCatalog()
     const b = open(c)
     expect(b).toMatchObject({
       fresh: true,
@@ -138,7 +138,7 @@ describe('the editor facing an editing catalog without zones', () => {
   })
 
   it('with a table placed, saving creates the zone before the table', () => {
-    const c = emptyOne()
+    const c = emptyCatalog()
     const b = open(c)
     b.tables.push(newTable(b, 'square', []))
     const changes = zoneChanges(c, b)
@@ -147,7 +147,7 @@ describe('the editor facing an editing catalog without zones', () => {
   })
 
   it('with every zone archived it also builds a new one, without opening the archived one', () => {
-    const c = emptyOne()
+    const c = emptyCatalog()
     c.zones.push({ id: 'Z', version: 3, active: false, name: 'Vieja', position: 0, level: 1 })
     const b = open(c)
     expect(b.fresh).toBe(true)
@@ -156,7 +156,7 @@ describe('the editor facing an editing catalog without zones', () => {
   })
 
   it('requesting the draft of a zone that does not exist throws a clear error', () => {
-    expect(() => zoneDraft(emptyOne(), 'NO-EXISTE')).toThrow('Esa zona no existe')
+    expect(() => zoneDraft(emptyCatalog(), 'NO-EXISTE')).toThrow('Esa zona no existe')
   })
 
   // Found by qa-pruebas in 1.2 and already fixed: A hub older than the app (or a cut-off
@@ -172,7 +172,7 @@ describe('the editor facing an editing catalog without zones', () => {
 })
 
 describe('completeCatalog', () => {
-  const goodOne = {
+  const valid = {
     version: 9,
     restaurant: { name: 'X', sessionIdleMin: 30 },
     zones: [{ id: 'Z', name: 'Salón', level: 2 }],
@@ -209,24 +209,24 @@ describe('completeCatalog', () => {
   } as unknown as Parameters<typeof completeCatalog>[0]
 
   it('a complete menu stays the same and the original is not modified', () => {
-    const copy = structuredClone(goodOne)
-    expect(completeCatalog(goodOne)).toEqual(goodOne)
-    expect(goodOne).toEqual(copy)
+    const copy = structuredClone(valid)
+    expect(completeCatalog(valid)).toEqual(valid)
+    expect(valid).toEqual(copy)
   })
 
   it('is idempotent and respects zeros (rotation 0, width 0 are not replaced by the default value)', () => {
     const old = {
-      ...goodOne,
-      tables: [{ ...(goodOne.tables[0] as object), width: 0, height: 0, rotation: 0 }],
-    } as unknown as typeof goodOne
-    const makeOne = completeCatalog(old)
-    expect(makeOne.tables[0]).toMatchObject({ width: 0, height: 0, rotation: 0 })
-    expect(completeCatalog(makeOne)).toEqual(makeOne)
+      ...valid,
+      tables: [{ ...(valid.tables[0] as object), width: 0, height: 0, rotation: 0 }],
+    } as unknown as typeof valid
+    const completed = completeCatalog(old)
+    expect(completed.tables[0]).toMatchObject({ width: 0, height: 0, rotation: 0 })
+    expect(completeCatalog(completed)).toEqual(completed)
   })
 
   it('completes only what is missing, table by table', () => {
     const mixed = {
-      ...goodOne,
+      ...valid,
       zones: [
         { id: 'A', name: 'A' },
         { id: 'B', name: 'B', level: 3 },
@@ -246,7 +246,7 @@ describe('completeCatalog', () => {
           capacity: 1,
         },
       ],
-    } as unknown as typeof goodOne
+    } as unknown as typeof valid
     const c = completeCatalog(mixed)
     expect(c.zones.map((z) => z.level)).toEqual([1, 3])
     expect(c.tables[0]).toMatchObject({ width: 80, height: 80, rotation: 0 })
@@ -255,7 +255,7 @@ describe('completeCatalog', () => {
 
   it('null values (from an odd save) are completed too', () => {
     const odd = {
-      ...goodOne,
+      ...valid,
       zones: null,
       tables: [
         {
@@ -273,7 +273,7 @@ describe('completeCatalog', () => {
       ],
       elements: null,
       staff: null,
-    } as unknown as typeof goodOne
+    } as unknown as typeof valid
     const c = completeCatalog(odd)
     expect(c.zones).toEqual([])
     expect(c.elements).toEqual([])

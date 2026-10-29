@@ -296,8 +296,8 @@ describe('client: reconnections and clock', () => {
     await client.onConnect()
     const belated = client.receive(welcome())
     client.onDisconnect()
-    const newOne = client.onConnect()
-    await Promise.all([belated, newOne])
+    const reconnecting = client.onConnect()
+    await Promise.all([belated, reconnecting])
 
     expect(sentList.map((x) => x.type)).toEqual(['hello', 'hello'])
   })

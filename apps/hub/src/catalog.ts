@@ -50,7 +50,7 @@ export function readCatalog(db: SqliteDatabase, restaurantId: string): Catalog {
     const list = JSON.parse(String(v ?? '[]'))
     return Array.isArray(list) ? list.map(String) : []
   }
-  const printedOnes = new Set(
+  const printedStations = new Set(
     activeRows('printers', 'name').flatMap((f) => jsonList(f.station_ids)),
   )
   const screens = allRows(
@@ -137,7 +137,7 @@ export function readCatalog(db: SqliteDatabase, restaurantId: string): Catalog {
     stations: activeRows('stations').map((f) => ({
       id: text(f.id),
       name: text(f.name),
-      prints: printedOnes.has(text(f.id)),
+      prints: printedStations.has(text(f.id)),
       screen: screens.some((p) => p.stationIds.includes(text(f.id))),
     })),
     screens,

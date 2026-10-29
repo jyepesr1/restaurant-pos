@@ -214,10 +214,10 @@ function Content({
   rules: ReturnType<typeof rulesOf>
   canSelectPrinter: boolean
 }) {
-  const { report: rpt, users } = report
-  const v = rpt.sales
+  const { report: summary, users } = report
+  const v = summary.sales
   const who = (id: string | null) => (id ? (users[id] ?? 'Alguien') : '')
-  const noSales = v.net === 0 && v.checks === 0 && rpt.byMethod.length === 0
+  const noSales = v.net === 0 && v.checks === 0 && summary.byMethod.length === 0
   return (
     <div
       aria-busy={loading}
@@ -298,11 +298,11 @@ function Content({
         </Card>
 
         <Card title="Por medio de pago">
-          {rpt.byMethod.length === 0 ? (
+          {summary.byMethod.length === 0 ? (
             <EmptyState>Sin pagos en este período.</EmptyState>
           ) : (
             <Rows>
-              {rpt.byMethod.map((m) => (
+              {summary.byMethod.map((m) => (
                 <Row
                   key={methodKeyOf(m)}
                   name={`${methodName(m.method, m.customMethodId, rules)}${m.payments > 0 ? ` · ${m.payments} ${m.payments === 1 ? 'pago' : 'pagos'}` : ''}`}
@@ -316,12 +316,12 @@ function Content({
         </Card>
 
         <Card title="Por mesero">
-          {rpt.byWaiter.length === 0 ? (
+          {summary.byWaiter.length === 0 ? (
             <EmptyState>Sin ventas en este período.</EmptyState>
           ) : (
             <DataTable
               columns={['Mesero', 'Ventas', 'Cuentas', 'Ticket']}
-              rows={rpt.byWaiter.map((m) => ({
+              rows={summary.byWaiter.map((m) => ({
                 key: m.userId,
                 cells: [who(m.userId), pesos(m.net), String(m.checks), pesos(m.averageTicket)],
               }))}
@@ -333,11 +333,11 @@ function Content({
         <Products report={report} />
 
         <Card title="Anulaciones y cancelaciones">
-          {rpt.voids.length === 0 && rpt.cancellations.length === 0 ? (
+          {summary.voids.length === 0 && summary.cancellations.length === 0 ? (
             <EmptyState>Nada anulado ni cancelado.</EmptyState>
           ) : (
             <ul className="flex flex-col divide-y divide-divider">
-              {rpt.voids.map((a) => (
+              {summary.voids.map((a) => (
                 <EventItem
                   key={a.eventId}
                   title={`${a.units} × ${a.name}`}
@@ -359,7 +359,7 @@ function Content({
                   }
                 />
               ))}
-              {rpt.cancellations.map((c) => (
+              {summary.cancellations.map((c) => (
                 <EventItem
                   key={c.eventId}
                   title={c.orderNumber ? `Pedido ${c.orderNumber} cancelado` : 'Pedido cancelado'}
@@ -380,11 +380,11 @@ function Content({
         </Card>
 
         <Card title="Descuentos y cortesías">
-          {rpt.discounts.length === 0 ? (
+          {summary.discounts.length === 0 ? (
             <EmptyState>Sin descuentos en este período.</EmptyState>
           ) : (
             <ul className="flex flex-col divide-y divide-divider">
-              {rpt.discounts.map((d, i) => (
+              {summary.discounts.map((d, i) => (
                 <EventItem
                   // biome-ignore lint/suspicious/noArrayIndexKey: an order can have several identical discounts
                   key={`${d.orderId}${i}`}
@@ -407,9 +407,9 @@ function Content({
 
         <Card title="Fondo de propinas">
           <Rows>
-            <Row name="Propinas cobradas" value={pesos(rpt.tipPool.tips)} />
-            <Row name="Pagadas desde la caja" value={minus(rpt.tipPool.paidOut)} />
-            <Row name="Saldo del período" value={pesos(rpt.tipPool.balance)} main />
+            <Row name="Propinas cobradas" value={pesos(summary.tipPool.tips)} />
+            <Row name="Pagadas desde la caja" value={minus(summary.tipPool.paidOut)} />
+            <Row name="Saldo del período" value={pesos(summary.tipPool.balance)} main />
           </Rows>
           <Note>
             Entra la propina de cada pago cobrado en el período y sale lo que se entregó al equipo
@@ -425,7 +425,7 @@ function Products({ report }: { report: PeriodReport }) {
   const [all, setAll] = useState(false)
   const { byProduct } = report.report
   const net = report.report.sales.net
-  const visibleOnes = all ? byProduct : byProduct.slice(0, VISIBLE_PRODUCTS)
+  const visibleProducts = all ? byProduct : byProduct.slice(0, VISIBLE_PRODUCTS)
   return (
     <Card title="Por producto">
       {byProduct.length === 0 ? (
@@ -434,7 +434,7 @@ function Products({ report }: { report: PeriodReport }) {
         <>
           <DataTable
             columns={['Producto', 'Unidades', 'Ventas', '% de ventas']}
-            rows={visibleOnes.map((p) => ({
+            rows={visibleProducts.map((p) => ({
               key: `${p.productId}${p.variantId ?? ''}`,
               cells: [p.name, String(p.units), pesos(p.net), percent(p.net, net)],
             }))}

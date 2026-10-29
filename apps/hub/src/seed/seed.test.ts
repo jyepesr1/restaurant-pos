@@ -107,7 +107,7 @@ describe('reading the menu', () => {
   })
 
   it('rejects prices with decimals, negative or as text, and repeated sections', () => {
-    const makeOne = (price: unknown, key = 'A') => ({
+    const section = (price: unknown, key = 'A') => ({
       clave: key,
       nombre: 'X',
       grupo: 'comida',
@@ -115,8 +115,8 @@ describe('reading the menu', () => {
       platos: [{ nombre: { es: 'Plato' }, precio: price }],
     })
     for (const price of [20_900.5, -1, '20900', 200_000_000])
-      expect(() => readMenu(stringify({ secciones: [makeOne(price)] }))).toThrow()
-    expect(() => readMenu(stringify({ secciones: [makeOne(1), makeOne(2)] }))).toThrow(/repetida/)
+      expect(() => readMenu(stringify({ secciones: [section(price)] }))).toThrow()
+    expect(() => readMenu(stringify({ secciones: [section(1), section(2)] }))).toThrow(/repetida/)
     expect(() => readMenu('secciones: []')).toThrow()
     expect(() => readMenu('no es: [una carta')).toThrow()
   })

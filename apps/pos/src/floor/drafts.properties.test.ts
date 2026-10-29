@@ -142,11 +142,11 @@ function apply(source: EditableCatalog, changes: CatalogChange[]): EditableCatal
     if (!current) {
       for (const k of FIELDS[change.entity])
         if (!(k in change.data)) throw new Error(`${where}: missing ${k} on create`)
-      const newOne = { id: change.id, version: ++version, ...change.data } as Registration & {
+      const created = { id: change.id, version: ++version, ...change.data } as Registration & {
         id: string
       }
-      validate(change.entity, newOne, where)
-      rows.push(newOne)
+      validate(change.entity, created, where)
+      rows.push(created)
     } else {
       for (const k of PARENTS[change.entity] ?? [])
         if (k in change.data && change.data[k] !== current[k])
@@ -159,14 +159,14 @@ function apply(source: EditableCatalog, changes: CatalogChange[]): EditableCatal
     }
     if (change.entity === 'product_modifier_groups') {
       const pair = (f: Registration) => `${f.product_id}|${f.group_id}`
-      const sameOnes = tableName('product_modifier_groups').filter(
+      const samePairLinks = tableName('product_modifier_groups').filter(
         (f) =>
           pair(f) ===
           pair(
             tableName('product_modifier_groups').find((x) => x.id === change.id) as Registration,
           ),
       )
-      if (sameOnes.length > 1) throw new Error(`${where}: that product already has that group`)
+      if (samePairLinks.length > 1) throw new Error(`${where}: that product already has that group`)
     }
     touched.push({ entity: change.entity, id: change.id, where })
   }
@@ -204,7 +204,7 @@ const arbDescription = fc.oneof(
 )
 const arbPrice = fc.integer({ min: 0, max: 400_000 })
 const arbPositivePrice = fc.integer({ min: 1, max: 400_000 })
-const reg = (id: string, active: boolean) => ({ id, version: 1, active })
+const rowBase = (id: string, active: boolean) => ({ id, version: 1, active })
 
 interface EditSeed {
   activeTaxes: boolean[]
@@ -269,26 +269,26 @@ function editOf(s: EditSeed, contiguous = true): EditableCatalog {
   const arrange = <T extends { active: boolean }>(list: T[]) =>
     contiguous ? [...list.filter((x) => x.active), ...list.filter((x) => !x.active)] : list
   const taxes = s.activeTaxes.map((a, i) => ({
-    ...reg(`IMP${i}`, i === 0 || a),
+    ...rowBase(`IMP${i}`, i === 0 || a),
     name: `INC ${i}`,
     type: 'inc' as const,
     rate: 800,
   }))
   const categories = s.activeCategories.map((a, i) => ({
-    ...reg(`CAT${i}`, i === 0 || a),
+    ...rowBase(`CAT${i}`, i === 0 || a),
     name: `Cat ${i}`,
     position: i,
     station_id: null,
   }))
   const groups = s.groups.map((g, i) => ({
-    ...reg(`GRP${i}`, i === 0 || g.active),
+    ...rowBase(`GRP${i}`, i === 0 || g.active),
     name: `Grupo ${i}`,
     minimum: 0,
     maximum: Math.max(g.max, g.min, 1),
   }))
   const modifiers = s.groups.flatMap((g, gi) =>
     arrange(g.options).map((o, oi) => ({
-      ...reg(`MOD${gi}_${oi}`, o.active && groups[gi]?.active === true),
+      ...rowBase(`MOD${gi}_${oi}`, o.active && groups[gi]?.active === true),
       group_id: `GRP${gi}`,
       name: `Opción ${gi}.${oi}`,
       extra_price: o.extra,
@@ -302,7 +302,7 @@ function editOf(s: EditSeed, contiguous = true): EditableCatalog {
     // With active sizes, the product's price is the cheapest one's (docs/DINERO.md).
     const from = p.variants.filter((v) => v.active && active).map((v) => v.price)
     return {
-      ...reg(`PRO${i}`, active),
+      ...rowBase(`PRO${i}`, active),
       category_id: (cats[i % cats.length] ?? categories[0])?.id as string,
       name: `Producto ${i}`,
       description: p.desc,
@@ -313,7 +313,7 @@ function editOf(s: EditSeed, contiguous = true): EditableCatalog {
   })
   const variants = s.products.flatMap((p, pi) =>
     arrange(p.variants).map((v, vi) => ({
-      ...reg(`VAR${pi}_${vi}`, v.active && products[pi]?.active === true),
+      ...rowBase(`VAR${pi}_${vi}`, v.active && products[pi]?.active === true),
       product_id: `PRO${pi}`,
       name: `Tamaño ${vi}`,
       price: v.price,
@@ -330,7 +330,7 @@ function editOf(s: EditSeed, contiguous = true): EditableCatalog {
         }))
         .filter(({ e }) => e.uses),
     ).map(({ gi, active }, position) => ({
-      ...reg(`ENL${pi}_${gi}`, active),
+      ...rowBase(`ENL${pi}_${gi}`, active),
       product_id: `PRO${pi}`,
       group_id: `GRP${gi}`,
       position,
@@ -415,7 +415,7 @@ interface ProductEdit {
   taxes: number | null
   active: boolean | null
   variants: { name: string | null; price: number | null; active: boolean | null }[]
-  newOnes: { price: number; active: boolean }[]
+  newVariants: { price: number; active: boolean }[]
   variantKeys: number[]
   groups: boolean[]
   groupKeys: number[]
@@ -437,7 +437,7 @@ const arbProductEdit: fc.Arbitrary<ProductEdit> = fc.record({
     }),
     { maxLength: 4 },
   ),
-  newOnes: fc.array(fc.record({ price: arbPositivePrice, active: fc.boolean() }), {
+  newVariants: fc.array(fc.record({ price: arbPositivePrice, active: fc.boolean() }), {
     maxLength: 3,
   }),
   variantKeys: fc.array(fc.nat(3), { maxLength: 8 }),
@@ -465,7 +465,7 @@ function editProduct(c: EditableCatalog, e: ProductEdit): ProductDraft {
     if (ed.price !== null) v.price = ed.price
     if (ed.active !== null) v.active = ed.active
   })
-  for (const [i, n] of e.newOnes.entries())
+  for (const [i, n] of e.newVariants.entries())
     b.variants.push({
       id: `NUEVA${i}`,
       fresh: true,
@@ -615,7 +615,7 @@ interface GroupEdit {
   maximum: number | null
   active: boolean | null
   options: { name: string | null; extra: number | null; active: boolean | null }[]
-  newOnes: { extra: number; active: boolean }[]
+  newOptions: { extra: number; active: boolean }[]
   keys: number[]
 }
 
@@ -633,7 +633,7 @@ const arbGroupEdit: fc.Arbitrary<GroupEdit> = fc.record({
     }),
     { maxLength: 5 },
   ),
-  newOnes: fc.array(fc.record({ extra: arbPrice, active: fc.boolean() }), { maxLength: 3 }),
+  newOptions: fc.array(fc.record({ extra: arbPrice, active: fc.boolean() }), { maxLength: 3 }),
   keys: fc.array(fc.nat(3), { maxLength: 8 }),
 })
 
@@ -650,7 +650,7 @@ function editGroup(c: EditableCatalog, e: GroupEdit): GroupDraft {
     if (ed.extra !== null) o.extraPrice = ed.extra
     if (ed.active !== null) o.active = ed.active
   })
-  for (const [i, n] of e.newOnes.entries())
+  for (const [i, n] of e.newOptions.entries())
     g.options.push({
       id: `NUEVAOP${i}`,
       fresh: true,
@@ -758,9 +758,9 @@ describe('order of sizes and options when there are archived ones in between', (
     const c = editOf(fc.sample(arbSeed, { seed: SEED, numRuns: 1 })[0] as EditSeed, false)
     c.variants = c.variants.filter((v) => v.product_id !== 'PRO0')
     c.variants.push(
-      { ...reg('V0', true), product_id: 'PRO0', name: 'Copa', price: 10, position: 0 },
-      { ...reg('V1', false), product_id: 'PRO0', name: 'Media', price: 20, position: 1 },
-      { ...reg('V2', true), product_id: 'PRO0', name: 'Botella', price: 30, position: 2 },
+      { ...rowBase('V0', true), product_id: 'PRO0', name: 'Copa', price: 10, position: 0 },
+      { ...rowBase('V1', false), product_id: 'PRO0', name: 'Media', price: 20, position: 1 },
+      { ...rowBase('V2', true), product_id: 'PRO0', name: 'Botella', price: 30, position: 2 },
     )
     const p = c.products.find((x) => x.id === 'PRO0')
     if (p) {
@@ -788,7 +788,7 @@ describe('order of sizes and options when there are archived ones in between', (
     const c = editOf(fc.sample(arbSeed, { seed: SEED, numRuns: 1 })[0] as EditSeed)
     c.variants = c.variants.filter((v) => v.product_id !== 'PRO0')
     c.variants.push({
-      ...reg('V0', true),
+      ...rowBase('V0', true),
       product_id: 'PRO0',
       name: 'Copa',
       price: 10,

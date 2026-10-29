@@ -137,13 +137,10 @@ describe('openOrders with moved products', () => {
 
   it('the move does not duplicate the target order nor leave foreign events in a third one', () => {
     const e = scenario()
-    const thirdOne = newId()
-    const v = openOrders([
-      ...e.all,
-      local('OrderOpened', thirdOne, { ...opening, table_id: newId() }),
-    ])
-    expect(v.map((p) => p.status.id).sort()).toEqual([e.source, e.target, thirdOne].sort())
-    expect(ofOrder(v, thirdOne)?.status.items).toEqual({})
+    const third = newId()
+    const v = openOrders([...e.all, local('OrderOpened', third, { ...opening, table_id: newId() })])
+    expect(v.map((p) => p.status.id).sort()).toEqual([e.source, e.target, third].sort())
+    expect(ofOrder(v, third)?.status.items).toEqual({})
   })
 
   it('round trip: the dish returns to the source', () => {

@@ -61,7 +61,7 @@ const cancel = (register: Device, order: string) =>
 describe('canceling the order', () => {
   it('what the kitchen had prints as ANULAR, one ticket per ticket it went out on, with its number', async () => {
     const t = setupPrinting()
-    const imp = withPrinters(t)
+    const printers = withPrinters(t)
     const ana = t.device('waiter')
     const register = t.device('admin', 'register')
     const { order, items } = t.orderWith(
@@ -82,7 +82,7 @@ describe('canceling the order', () => {
     expect(byStation.Cocina.items).toMatchObject([{ name: 'Tagliata', quantity: 2 }])
     expect(byStation.Barra.items).toMatchObject([{ name: 'Aperol Spritz', quantity: 1 }])
     await t.queue.runOnce()
-    expect(imp.kitchen.paper.texts().at(-1)).toContain('ANULAR')
+    expect(printers.kitchen.paper.texts().at(-1)).toContain('ANULAR')
   })
 
   it('only what is still in the kitchen is voided: not what was served or voided, and the remaining units', async () => {
@@ -116,9 +116,9 @@ describe('canceling the order', () => {
     })
     const before = jobsOfType(t, 'void').length
     cancel(register, order)
-    const newOnes = jobsOfType(t, 'void').slice(before)
-    expect(newOnes).toHaveLength(1)
-    expect(t.content(newOnes[0]).items).toMatchObject([{ name: 'Tagliata', quantity: 2 }])
+    const newJobs = jobsOfType(t, 'void').slice(before)
+    expect(newJobs).toHaveLength(1)
+    expect(t.content(newJobs[0]).items).toMatchObject([{ name: 'Tagliata', quantity: 2 }])
   })
 
   it('with nothing in the kitchen (only pending, served or an empty order) prints nothing', () => {
@@ -171,7 +171,7 @@ describe('canceling the order', () => {
 describe('changing tables (transfer)', () => {
   it('with dishes in the kitchen, each station receives CAMBIO DE MESA with the new table and «Antes: Mesa 5»', async () => {
     const t = setupPrinting()
-    const imp = withPrinters(t)
+    const printers = withPrinters(t)
     const ana = t.device('waiter')
     const { order, items } = t.orderWith(
       ana,
@@ -190,7 +190,7 @@ describe('changing tables (transfer)', () => {
     for (const f of moves)
       expect(t.content(f)).toMatchObject({ target: 'Mesa 6', before: 'Mesa 5' })
     await t.queue.runOnce()
-    const text = imp.kitchen.paper.texts().at(-1) as string
+    const text = printers.kitchen.paper.texts().at(-1) as string
     expect(text).toContain('CAMBIO DE MESA')
     expect(text).toContain('Antes: Mesa 5')
     expect(text).toMatch(/Mesa 6 +#1/)
@@ -302,7 +302,7 @@ describe('changing tables (transfer)', () => {
 describe('moving products (transfer)', () => {
   function sourceWithTwoStations() {
     const t = setupPrinting()
-    const imp = withPrinters(t)
+    const printers = withPrinters(t)
     const ana = t.device('waiter')
     const m5 = t.table('5')
     const { order, items } = t.orderWith(
@@ -315,11 +315,11 @@ describe('moving products (transfer)', () => {
       m5,
     )
     t.send(ana, order, items)
-    return { t, imp, ana, order, items, m5 }
+    return { t, printers, ana, order, items, m5 }
   }
 
   it('to a free table (new order): only what was moved prints, with the destination and «Antes: Mesa 5»', async () => {
-    const { t, imp, ana, order, items } = sourceWithTwoStations()
+    const { t, printers, ana, order, items } = sourceWithTwoStations()
     const target = newId()
     ana.submit(target, 'OrderOpened', { channel: 'dine_in', table_id: t.table('8'), guests: 1 })
     expect(move(t, ana, order, target, [items[1]?.id as string]).status).toBe('confirmed')
@@ -333,7 +333,7 @@ describe('moving products (transfer)', () => {
     })
     expect(t.content(moves[0]).items).toMatchObject([{ name: 'Risotto' }])
     await t.queue.runOnce()
-    expect(imp.kitchen.paper.texts().at(-1)).toContain('Antes: Mesa 5')
+    expect(printers.kitchen.paper.texts().at(-1)).toContain('Antes: Mesa 5')
   })
 
   it("to an existing order with products: the destination is that order's table", () => {
@@ -413,7 +413,7 @@ describe('moving products (transfer)', () => {
 describe('reprinting the ticket of dishes that were moved', () => {
   it('TicketReprinted on the destination order finds the source ticket', async () => {
     const t = setupPrinting()
-    const imp = withPrinters(t)
+    const printers = withPrinters(t)
     const ana = t.device('waiter')
     const { order, items } = t.orderWith(
       ana,
@@ -432,7 +432,7 @@ describe('reprinting the ticket of dishes that were moved', () => {
     expect(t.content(reprints[0])).toMatchObject({ target: 'Mesa 8', number: 1 })
     expect(t.content(reprints[0]).items).toMatchObject([{ name: 'Tagliata' }])
     await t.queue.runOnce()
-    expect(imp.kitchen.paper.texts().at(-1)).toContain('REIMPRESIÓN')
+    expect(printers.kitchen.paper.texts().at(-1)).toContain('REIMPRESIÓN')
   })
 
   it('a ticket that does not exist in any order prints nothing', () => {

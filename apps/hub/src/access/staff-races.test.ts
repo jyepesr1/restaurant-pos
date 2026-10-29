@@ -68,12 +68,12 @@ describe('two requests at the same time', () => {
   it('two devices create a person with the same username: one gets in and the other gets «someone already has it»', async () => {
     const { m, x, y, person } = await withTwoAdmins()
     const before = count(m, 'SELECT count(*) AS n FROM users')
-    const newOne = (n: string) => ({
+    const carlaBody = (n: string) => ({
       name: `Carla ${n}`,
       role_id: m.roles.cashier,
       access: { type: 'password', user: 'carla', password: `clave-de-carla-${n}` },
     })
-    const [a, b] = await Promise.all([person(x, newOne('uno')), person(y, newOne('dos'))])
+    const [a, b] = await Promise.all([person(x, carlaBody('uno')), person(y, carlaBody('dos'))])
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 400])
     const bad = a.statusCode === 400 ? a : b
     expect(bad.json().message).toMatch(/Ya hay alguien con el usuario «carla»/)

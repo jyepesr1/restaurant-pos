@@ -493,9 +493,12 @@ describe('register events: the order reducer ignores them', () => {
     const item = event(order, 'ItemAdded', itemCopy({ unit_price: 10_000 }), {
       sequence: 5,
     })
-    const [mov, cc, closeEvent] = registerEvents().map((e, i) => ({ ...e, sequence: 2 + i }))
+    const [movementEvent, countEvent, closeEvent] = registerEvents().map((e, i) => ({
+      ...e,
+      sequence: 2 + i,
+    }))
     const without = rebuild([opened, item], order)
-    const withIt = rebuild([opened, mov, cc, closeEvent, item] as never, order)
+    const withIt = rebuild([opened, movementEvent, countEvent, closeEvent, item] as never, order)
     expect(withIt).toEqual(without)
   })
 

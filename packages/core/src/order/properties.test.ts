@@ -45,15 +45,15 @@ function verifyState(status: OrderState) {
   }
 
   // Σ charged = Σ amount + Σ rounding_adjustment, and a closed order charged exactly its net.
-  const currentOnes = Object.values(status.payments).filter((p) => !p.voided)
-  const charged = sum(currentOnes.map((p) => p.amount + p.roundingAdjustment))
+  const active = Object.values(status.payments).filter((p) => !p.voided)
+  const charged = sum(active.map((p) => p.amount + p.roundingAdjustment))
   expect(charged).toBe(
-    sum(currentOnes.map((p) => p.amount)) + sum(currentOnes.map((p) => p.roundingAdjustment)),
+    sum(active.map((p) => p.amount)) + sum(active.map((p) => p.roundingAdjustment)),
   )
-  expect(t.paid + sum(currentOnes.map((p) => p.refundedSale)) + t.roundingAdjustments).toBe(charged)
+  expect(t.paid + sum(active.map((p) => p.refundedSale)) + t.roundingAdjustments).toBe(charged)
   if (status.status === 'closed') {
     expect(t.balance).toBe(0)
-    expect(sum(currentOnes.map((p) => p.amount - p.refundedSale))).toBe(t.net)
+    expect(sum(active.map((p) => p.amount - p.refundedSale))).toBe(t.net)
     expect(status.businessDay).not.toBeNull()
   }
 
@@ -127,14 +127,14 @@ describe('reducer properties with two orders', () => {
 
     // The simulator exercises every order event except the rescue one, which creates another order.
     // Product (sold out) and register events do not belong to an order.
-    const missingOnes = ORDER_EVENT_TYPES.filter(
+    const missing = ORDER_EVENT_TYPES.filter(
       (type) =>
         type !== 'RescueOrderCreated' &&
         !PRODUCT_EVENT_TYPES.includes(type) &&
         !SHIFT_EVENT_TYPES.includes(type) &&
         !seenSet.has(type),
     )
-    expect(missingOnes).toEqual([])
+    expect(missing).toEqual([])
   })
 
   it('merging preserves the total: the source order arrives whole at the target', () => {

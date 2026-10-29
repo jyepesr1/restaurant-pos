@@ -21,7 +21,7 @@ describe('people with odd data', () => {
   it('extra, missing or wrongly typed fields: 400 and the database neither changes nor notifies', async () => {
     const { api, person, version } = await admin()
     const v = version()
-    const oddOnes: unknown[] = [
+    const invalid: unknown[] = [
       null,
       42,
       'text',
@@ -52,7 +52,7 @@ describe('people with odd data', () => {
       },
       { ...validBody(api.roles.waiter), name: 'n'.repeat(101) },
     ]
-    for (const p of oddOnes) {
+    for (const p of invalid) {
       const r = await person(p)
       expect(r.statusCode, JSON.stringify(p)).toBe(400)
     }

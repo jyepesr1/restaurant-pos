@@ -93,8 +93,8 @@ describe('split', () => {
           const lines = prices.map((p, i) => l(`i${i}`, 1, p))
           const assignedChecks = new Map<string, number[]>()
           who.forEach((src, i) => {
-            const validOnes = [...new Set(src.filter((c) => c < checks))]
-            if (i < lines.length && validOnes.length > 0) assignedChecks.set(`i${i}`, validOnes)
+            const validChecks = [...new Set(src.filter((c) => c < checks))]
+            if (i < lines.length && validChecks.length > 0) assignedChecks.set(`i${i}`, validChecks)
           })
           const r = byItems(lines, assignedChecks, checks)
           const sum = r.amounts.reduce((s, m) => s + m, 0) + r.unassigned

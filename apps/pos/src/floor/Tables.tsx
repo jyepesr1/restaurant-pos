@@ -94,14 +94,14 @@ interface Summary {
 }
 
 function summarize(orders: VisibleOrder[], staff: Catalog['staff'], now: number): Summary {
-  const firstOne = orders[0]
+  const first = orders[0]
   return {
     status: tableStatus(orders),
     orders,
     total: orders.reduce((s, p) => s + p.total, 0),
-    minutes: firstOne ? Math.max(0, (now - Date.parse(firstOne.status.openedAt)) / 60_000) : null,
-    waiter: firstOne
-      ? (staff.find((u) => u.id === firstOne.status.assignedWaiterId)?.name ?? null)
+    minutes: first ? Math.max(0, (now - Date.parse(first.status.openedAt)) / 60_000) : null,
+    waiter: first
+      ? (staff.find((u) => u.id === first.status.assignedWaiterId)?.name ?? null)
       : null,
     pendingConfirmation: orders.some((p) => p.pendingConfirmation),
     mergedWith: null,
@@ -332,7 +332,7 @@ function OpenOrders({
   orders: VisibleOrder[]
   now: number
 }) {
-  const openOnes = orders
+  const openOrders = orders
     .filter((p) => currentItems(p.status).length > 0 || p.status.tableId === null)
     .sort((a, b) => Date.parse(b.status.openedAt) - Date.parse(a.status.openedAt))
   return (
@@ -344,7 +344,7 @@ function OpenOrders({
         <h2 id="title-orders" className="text-lg font-semibold">
           Pedidos abiertos
         </h2>
-        <span className="figures text-muted">{openOnes.length}</span>
+        <span className="figures text-muted">{openOrders.length}</span>
       </div>
       <div className="grid grid-cols-3 gap-2">
         {(Object.keys(CHANNELS) as (keyof typeof CHANNELS)[]).map((c) => (
@@ -359,13 +359,13 @@ function OpenOrders({
           </button>
         ))}
       </div>
-      {openOnes.length === 0 ? (
+      {openOrders.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-border p-5 text-center text-sm text-muted">
           Sin pedidos por ahora. Toca una mesa para empezar uno.
         </p>
       ) : (
         <ul className="-mx-3 flex gap-3 overflow-x-auto px-3 pb-1 lg:mx-0 lg:max-h-[calc(100dvh-18rem)] lg:flex-col lg:overflow-y-auto lg:px-0">
-          {openOnes.map((p) => {
+          {openOrders.map((p) => {
             const status = tableStatus([p])
             const v = STATUSES[status]
             const items = currentItems(p.status).reduce(

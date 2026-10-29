@@ -107,8 +107,8 @@ describe('Z report: only once', () => {
       ...closeWithEvent(admin, x.shift, x.expected),
       base_sequence: maxSequence(t),
     }
-    const firstOne = t.hub.receiveBatch(admin.connection, [raw as never])
-    expect(firstOne.results[0]?.status).toBe('confirmed')
+    const first = t.hub.receiveBatch(admin.connection, [raw as never])
+    expect(first.results[0]?.status).toBe('confirmed')
     expect(zReports()).toHaveLength(1)
     const another = t.hub.receiveBatch(admin.connection, [raw as never])
     // The resend is not a new event: it is not saved again and does not trigger the hook.
@@ -540,10 +540,10 @@ describe('report routes: permissions, bodies and dates', () => {
     for (const bad of ['2026-02-29', '2026-04-31', '2026-06-31', '2027-02-29'])
       expect((await report(m, { from: bad })).statusCode, JSON.stringify(bad)).toBe(400)
     expect((await report(m, { from: '2026-10-24', until: '2026-02-29' })).statusCode).toBe(400)
-    for (const goodOne of ['2028-02-29', '2026-12-31', '2027-01-01', '2026-01-01', '2036-12-31']) {
-      const r = await report(m, { from: goodOne })
-      expect(r.statusCode, goodOne).toBe(200)
-      expect(r.json().report).toMatchObject({ from: goodOne, until: goodOne })
+    for (const good of ['2028-02-29', '2026-12-31', '2027-01-01', '2026-01-01', '2036-12-31']) {
+      const r = await report(m, { from: good })
+      expect(r.statusCode, good).toBe(200)
+      expect(r.json().report).toMatchObject({ from: good, until: good })
     }
   })
 

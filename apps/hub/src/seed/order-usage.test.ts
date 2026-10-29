@@ -18,13 +18,13 @@ const MENU_TEXT = readFileSync(
 )
 const NOW = '2026-10-24T20:00:00.000Z'
 
-const makeOne = (db: SqliteDatabase, sql: string, ...p: string[]) => {
+const getRow = (db: SqliteDatabase, sql: string, ...p: string[]) => {
   const row = db.prepare(sql).get(...p)
   if (!row) throw new Error(`No result: ${sql}`)
   return row
 }
 const catalogVersion = (db: SqliteDatabase) =>
-  Number(makeOne(db, "SELECT value FROM counters WHERE name = 'catalog'").value)
+  Number(getRow(db, "SELECT value FROM counters WHERE name = 'catalog'").value)
 
 /** The item the app would build when tapping that product: all copied from the seeded database. */
 function catalogItem(
@@ -32,14 +32,14 @@ function catalogItem(
   product: string,
   options: { variant?: string; modifiers?: string[] } = {},
 ) {
-  const p = makeOne(
+  const p = getRow(
     db,
     `SELECT p.id, p.name, p.price, i.type, i.rate FROM products p
      JOIN taxes i ON i.id = p.tax_id WHERE p.name = ? AND p.active = 1`,
     product,
   )
   const v = options.variant
-    ? makeOne(
+    ? getRow(
         db,
         'SELECT id, price FROM variants WHERE product_id = ? AND name = ?',
         String(p.id),
@@ -47,7 +47,7 @@ function catalogItem(
       )
     : null
   const modifiers = (options.modifiers ?? []).map((name) => {
-    const m = makeOne(
+    const m = getRow(
       db,
       `SELECT m.id, m.name, m.extra_price FROM modifiers m
        JOIN product_modifier_groups pg ON pg.group_id = m.group_id
@@ -228,7 +228,7 @@ describe('the hub starts after the seed', () => {
       const paired = a.access.pair(code.code, '10.0.0.9')
       if (!paired.ok) throw new Error(paired.message)
       const token = paired.token
-      const products = makeOne(a.db, 'SELECT count(*) AS n FROM products').n
+      const products = getRow(a.db, 'SELECT count(*) AS n FROM products').n
       const versions = catalogVersion(a.db)
       hubs.shutDown()
       hubs.advance(60_000)
@@ -237,9 +237,9 @@ describe('the hub starts after the seed', () => {
       expect(b.restaurantId).toBe(a.restaurantId)
       expect(b.admin).toEqual({ pin: null, user: null, password: null, alerts: [] })
       expect(b.newKey).toBe(false)
-      expect(makeOne(b.db, 'SELECT count(*) AS n FROM products').n).toBe(products)
-      expect(makeOne(b.db, 'SELECT count(*) AS n FROM users WHERE active = 1').n).toBe(6)
-      expect(makeOne(b.db, 'SELECT name FROM restaurants').name).toBe('La Spritzzería')
+      expect(getRow(b.db, 'SELECT count(*) AS n FROM products').n).toBe(products)
+      expect(getRow(b.db, 'SELECT count(*) AS n FROM users WHERE active = 1').n).toBe(6)
+      expect(getRow(b.db, 'SELECT name FROM restaurants').name).toBe('La Spritzzería')
       expect(catalogVersion(b.db)).toBe(versions)
 
       // The paired device and a seed waiter PIN are still valid with the hub restarted.

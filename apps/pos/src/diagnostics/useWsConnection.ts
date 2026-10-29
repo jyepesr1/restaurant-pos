@@ -112,17 +112,21 @@ export function useWsConnection(): WsState {
     }
 
     /** Releases a socket no longer in use: its late events must not affect the state. */
-    function release(oldOne: WebSocket) {
-      oldOne.onopen = null
-      oldOne.onmessage = null
-      oldOne.onclose = null
-      oldOne.close()
+    function release(staleSocket: WebSocket) {
+      staleSocket.onopen = null
+      staleSocket.onmessage = null
+      staleSocket.onclose = null
+      staleSocket.close()
     }
 
     /** Abandons a hung or dead socket without waiting for the browser to close it. */
-    function discard(oldOne: WebSocket, detail: Record<string, unknown>, channel: ChannelState) {
-      onClose(oldOne, detail, channel)
-      release(oldOne)
+    function discard(
+      staleSocket: WebSocket,
+      detail: Record<string, unknown>,
+      channel: ChannelState,
+    ) {
+      onClose(staleSocket, detail, channel)
+      release(staleSocket)
     }
 
     /** Connects now, without waiting for the scheduled retry (the browser may have frozen it). */

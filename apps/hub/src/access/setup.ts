@@ -46,7 +46,7 @@ export function setupAccess() {
     passwordCost: 1,
   })
   const admin = ensureAdmin(db, access, roles.admin, false)
-  const ownOnes = {
+  const customRoles = {
     manager: saveRole(
       db,
       restaurantId,
@@ -69,7 +69,7 @@ export function setupAccess() {
       clock(),
     ),
   }
-  const allRoles = { ...roles, ...ownOnes }
+  const allRoles = { ...roles, ...customRoles }
   const people: Record<
     'admin' | 'manager' | 'cashier' | 'waiter' | 'waiter2',
     { userId: string; pin: string; user?: string; password?: string }
@@ -84,7 +84,7 @@ export function setupAccess() {
     manager: {
       ...access.createUser({
         name: 'Gloria',
-        roleId: ownOnes.manager,
+        roleId: customRoles.manager,
         user: 'gloria',
         password: 'clave-de-gloria',
       }),

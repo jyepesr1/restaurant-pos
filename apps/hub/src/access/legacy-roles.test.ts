@@ -135,13 +135,13 @@ describe('conversion of the old roles', () => {
       b.db.prepare('SELECT system, active FROM roles WHERE id = ?').get(b.roles.Gerente as string),
     ).toEqual({ system: 0, active: 0 })
 
-    const newOne = openDatabase(':memory:')
-    applyMigrations(newOne)
-    const id = ensureRestaurant(newOne, NOW)
-    ensureRoles(newOne, id, NOW)
-    const photo = roles(newOne)
-    ensureRoles(newOne, id, LATER)
-    expect(roles(newOne)).toEqual(photo)
+    const freshDb = openDatabase(':memory:')
+    applyMigrations(freshDb)
+    const id = ensureRestaurant(freshDb, NOW)
+    ensureRoles(freshDb, id, NOW)
+    const photo = roles(freshDb)
+    ensureRoles(freshDb, id, LATER)
+    expect(roles(freshDb)).toEqual(photo)
     expect(photo).toHaveLength(4)
   })
 

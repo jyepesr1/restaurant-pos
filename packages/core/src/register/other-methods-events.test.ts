@@ -149,12 +149,13 @@ describe('CashCountRecorded.others: schema', () => {
   })
 
   it('up to 30 methods; 31 is rejected', () => {
-    const ownOnes = (n: number) => Array.from({ length: n }, () => report('other', 1, newId()))
+    const customMethods = (n: number) =>
+      Array.from({ length: n }, () => report('other', 1, newId()))
     const standard = ['card', 'nequi', 'daviplata', 'breb', 'transfer', 'voucher'].map((m) =>
       report(m, 1),
     )
-    expect(ok(withOthers([...standard, ...ownOnes(24)]))).toBe(true)
-    expect(ok(withOthers([...standard, ...ownOnes(25)]))).toBe(false)
+    expect(ok(withOthers([...standard, ...customMethods(24)]))).toBe(true)
+    expect(ok(withOthers([...standard, ...customMethods(25)]))).toBe(false)
   })
 
   it('strict schema: an extra field in a method is rejected', () => {
@@ -257,9 +258,10 @@ describe('ShiftClosed.other_methods: schema', () => {
   })
 
   it('up to 30 lines', () => {
-    const ownOnes = (n: number) => Array.from({ length: n }, () => line('other', 1, 1, newId()))
-    expect(ok(withMethods(ownOnes(30)))).toBe(true)
-    expect(ok(withMethods(ownOnes(31)))).toBe(false)
+    const customMethods = (n: number) =>
+      Array.from({ length: n }, () => line('other', 1, 1, newId()))
+    expect(ok(withMethods(customMethods(30)))).toBe(true)
+    expect(ok(withMethods(customMethods(31)))).toBe(false)
   })
 
   it('cash still requires its exact variance even with other methods', () => {

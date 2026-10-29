@@ -242,21 +242,21 @@ describe('shiftReconciliation: voids', () => {
   })
 
   it('voiding here a payment from an EARLIER shift subtracts from this drawer; the original is not counted here', () => {
-    const oldOne = newShift(0)
+    const yesterday = newShift(0)
     const today = newShift(100_000)
     const p = cashPaymentData(30_000, {
-      register_shift_id: oldOne.id,
+      register_shift_id: yesterday.id,
       tip: 3_000,
       rounding_adjustment: -20,
     })
-    const events = [oldOne.opening, today.opening, pay(p), voidItem(p, today.id)]
+    const events = [yesterday.opening, today.opening, pay(p), voidItem(p, today.id)]
     const c = shiftReconciliation(events, today.id)
     expect(c?.cash).toMatchObject({ charged: 0, refunds: 32_980, expected: 67_020 })
     expect(c?.byMethod).toEqual([
       { method: 'cash', customMethodId: null, sale: -29_980, tip: -3_000, payments: -1 },
     ])
     // The earlier shift still sees its full charge: the void lands in the shift that records it.
-    const v = shiftReconciliation(events, oldOne.id)
+    const v = shiftReconciliation(events, yesterday.id)
     expect(v?.cash).toMatchObject({ charged: 32_980, refunds: 0, expected: 32_980 })
     expect(v?.byMethod).toEqual([
       { method: 'cash', customMethodId: null, sale: 29_980, tip: 3_000, payments: 1 },
@@ -276,11 +276,11 @@ describe('shiftReconciliation: voids', () => {
   })
 
   it('voiding a card payment from an earlier shift gives negative card amounts', () => {
-    const oldOne = newShift(0)
+    const yesterday = newShift(0)
     const today = newShift(0)
-    const cardPay = card(oldOne.id, 40_000, 4_000)
+    const cardPay = card(yesterday.id, 40_000, 4_000)
     const c = shiftReconciliation(
-      [oldOne.opening, today.opening, pay(cardPay), voidItem(cardPay, today.id)],
+      [yesterday.opening, today.opening, pay(cardPay), voidItem(cardPay, today.id)],
       today.id,
     )
     expect(c?.byMethod).toEqual([
@@ -334,16 +334,16 @@ describe('shiftReconciliation: refunds', () => {
   })
 
   it('refunding in this shift a payment from an earlier shift subtracts from this drawer', () => {
-    const oldOne = newShift(0)
+    const yesterday = newShift(0)
     const today = newShift(80_000)
-    const p = cashPaymentData(25_000, { register_shift_id: oldOne.id })
-    const events = [oldOne.opening, today.opening, pay(p), issueRefund(p, today.id, 5_000)]
+    const p = cashPaymentData(25_000, { register_shift_id: yesterday.id })
+    const events = [yesterday.opening, today.opening, pay(p), issueRefund(p, today.id, 5_000)]
     expect(shiftReconciliation(events, today.id)?.cash).toMatchObject({
       charged: 0,
       refunds: 5_000,
       expected: 75_000,
     })
-    expect(shiftReconciliation(events, oldOne.id)?.cash.expected).toBe(25_000)
+    expect(shiftReconciliation(events, yesterday.id)?.cash.expected).toBe(25_000)
   })
 
   it('a card refund does not touch cash and subtracts from what was charged by card', () => {
@@ -405,11 +405,11 @@ describe('shiftReconciliation: custom methods and several methods', () => {
   })
 
   it('voiding a custom method payment (even from another shift) subtracts from that method', () => {
-    const oldOne = newShift(0)
+    const yesterday = newShift(0)
     const today = newShift(0)
-    const p = own(oldOne.id, SODEXO, 10_000, 1_000)
+    const p = own(yesterday.id, SODEXO, 10_000, 1_000)
     const c = shiftReconciliation(
-      [oldOne.opening, today.opening, pay(p), voidItem(p, today.id)],
+      [yesterday.opening, today.opening, pay(p), voidItem(p, today.id)],
       today.id,
     )
     expect(c?.byMethod).toEqual([
@@ -480,11 +480,11 @@ describe('shiftReconciliation: counts and close', () => {
 
   it('the close is stored with expected, counted, variance, justification and time', () => {
     const t = newShift(10_000)
-    const cc = t.cashCount([{ value: 5_000, quantity: 1 }])
+    const cashCount = t.cashCount([{ value: 5_000, quantity: 1 }])
     const closeout = t.shiftEvent(
       'ShiftClosed',
       {
-        cash_count_id: cc.data.cash_count_id,
+        cash_count_id: cashCount.data.cash_count_id,
         expected_cash: 10_000,
         counted_cash: 5_000,
         variance: -5_000,
@@ -492,7 +492,7 @@ describe('shiftReconciliation: counts and close', () => {
       },
       { received_at: '2026-10-26T21:00:00Z' },
     )
-    const c = shiftReconciliation([t.opening, cc, closeout], t.id)
+    const c = shiftReconciliation([t.opening, cashCount, closeout], t.id)
     expect(c?.closed).toEqual({
       expected: 10_000,
       counted: 5_000,
@@ -524,32 +524,32 @@ describe('shiftReconciliation: properties', () => {
     amount: number
     adjustment: number
     tip: number
-    thisOne: boolean
+    inThisShift: boolean
   }
 
   type Op =
-    | { k: 'void'; i: number; thisOne: boolean }
-    | { k: 'refund'; i: number; thisOne: boolean; sale: number; tip: number }
-    | { k: 'mov'; type: 'cash_in' | 'cash_out' | 'tip_payout'; amount: number }
+    | { k: 'void'; i: number; inThisShift: boolean }
+    | { k: 'refund'; i: number; inThisShift: boolean; sale: number; tip: number }
+    | { k: 'movement'; type: 'cash_in' | 'cash_out' | 'tip_payout'; amount: number }
 
   const arbPayment: fc.Arbitrary<PaymentGen> = fc.record({
     method: fc.constantFrom('cash', 'card', 'nequi'),
     amount: fc.integer({ min: 100, max: 500_000 }),
     adjustment: fc.integer({ min: -49, max: 50 }),
     tip: fc.integer({ min: 0, max: 50_000 }),
-    thisOne: fc.boolean(),
+    inThisShift: fc.boolean(),
   })
   const arbOp: fc.Arbitrary<Op> = fc.oneof(
-    fc.record({ k: fc.constant('void' as const), i: fc.nat(20), thisOne: fc.boolean() }),
+    fc.record({ k: fc.constant('void' as const), i: fc.nat(20), inThisShift: fc.boolean() }),
     fc.record({
       k: fc.constant('refund' as const),
       i: fc.nat(20),
-      thisOne: fc.boolean(),
+      inThisShift: fc.boolean(),
       sale: fc.integer({ min: 1, max: 10_000 }),
       tip: fc.integer({ min: 0, max: 1_000 }),
     }),
     fc.record({
-      k: fc.constant('mov' as const),
+      k: fc.constant('movement' as const),
       type: fc.constantFrom('cash_in', 'cash_out', 'tip_payout'),
       amount: fc.integer({ min: 1, max: 100_000 }),
     }),
@@ -571,7 +571,7 @@ describe('shiftReconciliation: properties', () => {
       byMethod.set(method, m)
     }
     for (const p of payments) {
-      const shift = p.thisOne ? t.id : other
+      const shift = p.inThisShift ? t.id : other
       const d =
         p.method === 'cash'
           ? cashPaymentData(p.amount, {
@@ -584,30 +584,30 @@ describe('shiftReconciliation: properties', () => {
             : nequi(shift, p.amount, p.tip)
       data.push(d)
       events.push(pay(d))
-      if (p.thisOne) {
+      if (p.inThisShift) {
         const sale = p.method === 'cash' ? p.amount + p.adjustment : p.amount
         add(p.method, sale, p.tip, 1)
         if (p.method === 'cash') expected += p.amount + p.adjustment + p.tip
       }
     }
     for (const op of ops) {
-      if (op.k === 'mov') {
+      if (op.k === 'movement') {
         events.push(t.move(op.type, op.amount))
         expected += op.type === 'cash_in' ? op.amount : -op.amount
         continue
       }
       const d = data[op.i % data.length] as Data<'PaymentRecorded'>
       const p = payments[op.i % data.length] as PaymentGen
-      const shift = op.thisOne ? t.id : other
+      const shift = op.inThisShift ? t.id : other
       if (op.k === 'void') {
         events.push(voidItem(d, shift))
-        if (!op.thisOne) continue
+        if (!op.inThisShift) continue
         const sale = p.method === 'cash' ? p.amount + p.adjustment : p.amount
         add(p.method, -sale, -p.tip, -1)
         if (p.method === 'cash') expected -= p.amount + p.adjustment + p.tip
       } else {
         events.push(issueRefund(d, shift, op.sale, op.tip))
-        if (!op.thisOne) continue
+        if (!op.inThisShift) continue
         add(p.method, -op.sale, -op.tip, 0)
         if (p.method === 'cash') expected -= op.sale + op.tip
       }
@@ -616,7 +616,7 @@ describe('shiftReconciliation: properties', () => {
   }
   fc.sample(arbPayment, 1)[0] as ReturnType<typeof arbPayment.generate> extends never
     ? never
-    : { method: string; amount: number; adjustment: number; tip: number; thisOne: boolean }
+    : { method: string; amount: number; adjustment: number; tip: number; inThisShift: boolean }
 
   const normal = (list: ChargedByMethod[]) =>
     list.map((m) => `${m.method}|${m.customMethodId}|${m.sale}|${m.tip}|${m.payments}`).sort()

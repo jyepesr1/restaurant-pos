@@ -70,17 +70,17 @@ const ordersById = (store: HubStore, ids: Iterable<string>): OrderState[] =>
 
 /**
  * A shift's reconciliation from what is stored in the database (also works for one already
- * closed). `ownOnes` are the shift's events if they were already read.
+ * closed). `shiftEvents` are the shift's events if they were already read.
  */
 export function savedReconciliation(
   store: HubStore,
   shiftId: string,
-  ownOnes: OrderEvent[] = store.aggregateEvents(shiftId),
+  shiftEvents: OrderEvent[] = store.aggregateEvents(shiftId),
 ): ShiftReconciliation | null {
-  const opening = ownOnes.find((e) => e.type === 'ShiftOpened')
+  const opening = shiftEvents.find((e) => e.type === 'ShiftOpened')
   if (!opening) return null
   const events = withOriginalPayments(store, [
-    ...ownOnes,
+    ...shiftEvents,
     ...store.shiftCharges(shiftId, opening.business_day),
   ])
   return shiftReconciliation(events, shiftId)

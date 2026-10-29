@@ -170,11 +170,11 @@ function largestRemainderAllocation(total: number, pesos: number[]): number[] {
   const rest = pesos
     .map((p, i) => ({ i, r: (total * p) % sum }))
     .sort((x, y) => y.r - x.r || x.i - y.i)
-  let missingOnes = total - base.reduce((a, b) => a + b, 0)
+  let remaining = total - base.reduce((a, b) => a + b, 0)
   for (const { i } of rest) {
-    if (missingOnes <= 0) break
+    if (remaining <= 0) break
     base[i] = (base[i] as number) + 1
-    missingOnes--
+    remaining--
   }
   return base
 }

@@ -455,13 +455,13 @@ describe('«printers» message', () => {
     floor.subscribe(() => {
       alerts += 1
     })
-    const firstOne = statuses('Barra', 'Cocina')
-    h.hubFloor.notifyPrinters(firstOne)
+    const initial = statuses('Barra', 'Cocina')
+    h.hubFloor.notifyPrinters(initial)
     await wait(() => floor.snapshot().printers.length === 2)
-    expect(floor.snapshot().printers).toEqual(firstOne)
+    expect(floor.snapshot().printers).toEqual(initial)
     expect(alerts).toBeGreaterThan(0)
 
-    const healthy = firstOne.map((e) => ({
+    const healthy = initial.map((e) => ({
       ...e,
       status: 'ready' as const,
       error: null,

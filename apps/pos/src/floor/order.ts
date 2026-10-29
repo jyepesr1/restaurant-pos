@@ -57,8 +57,8 @@ export function itemData(
     notes?: string
   } = {},
 ): ItemData {
-  const missingOnes = missingSelection(p, variantId, selectedIds)
-  if (missingOnes.length > 0) throw new Error(`Falta elegir: ${missingOnes.join(', ')}`)
+  const missing = missingSelection(p, variantId, selectedIds)
+  if (missing.length > 0) throw new Error(`Falta elegir: ${missing.join(', ')}`)
   const variant = p.variants.find((v) => v.id === variantId) ?? null
   const modifiers = p.groups.flatMap((g) => {
     const groupSelected = selectedOf(g, selectedIds)

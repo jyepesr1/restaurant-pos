@@ -314,9 +314,9 @@ describe('nextName', () => {
       fc.property(fc.array(arbName, { maxLength: 60 }), (names) => {
         const n = nextName(names)
         expect(n).toMatch(/^[1-9][0-9]*$/)
-        const usedOnes = new Set(names.map((x) => x.trim().toLowerCase()))
-        expect(usedOnes.has(n)).toBe(false)
-        for (let k = 1; k < Number(n); k++) expect(usedOnes.has(String(k))).toBe(true)
+        const usedNames = new Set(names.map((x) => x.trim().toLowerCase()))
+        expect(usedNames.has(n)).toBe(false)
+        for (let k = 1; k < Number(n); k++) expect(usedNames.has(String(k))).toBe(true)
       }),
       { seed: SEED, numRuns: RUNS },
     )
@@ -586,7 +586,7 @@ function apply(source: EditableCatalog, sentList: CatalogChange[]): EditableCata
   return c
 }
 
-const reg = { version: 1, active: true }
+const rowBase = { version: 1, active: true }
 const geo = (x: number, y: number) => ({ x, y, width: 80, height: 80, rotation: 0 })
 
 function diningRoom(): EditableCatalog {
@@ -595,14 +595,14 @@ function diningRoom(): EditableCatalog {
   return {
     version: 10,
     zones: [
-      { ...reg, id: a, name: 'Salón', position: 0, level: 1 },
-      { ...reg, id: t, name: 'Terraza', position: 1, level: 1 },
+      { ...rowBase, id: a, name: 'Salón', position: 0, level: 1 },
+      { ...rowBase, id: t, name: 'Terraza', position: 1, level: 1 },
     ],
     tables: [
-      { ...reg, ...geo(0, 0), id: 'M1', zone_id: a, name: '1', shape: 'square', capacity: 4 },
-      { ...reg, ...geo(120, 0), id: 'M2', zone_id: a, name: '2', shape: 'round', capacity: 2 },
+      { ...rowBase, ...geo(0, 0), id: 'M1', zone_id: a, name: '1', shape: 'square', capacity: 4 },
+      { ...rowBase, ...geo(120, 0), id: 'M2', zone_id: a, name: '2', shape: 'round', capacity: 2 },
       {
-        ...reg,
+        ...rowBase,
         ...geo(0, 120),
         id: 'M3',
         zone_id: a,
@@ -610,10 +610,10 @@ function diningRoom(): EditableCatalog {
         shape: 'rectangular',
         capacity: 6,
       },
-      { ...reg, ...geo(0, 0), id: 'M10', zone_id: t, name: '10', shape: 'round', capacity: 2 },
+      { ...rowBase, ...geo(0, 0), id: 'M10', zone_id: t, name: '10', shape: 'round', capacity: 2 },
       // Archived: they are not in the editor, but their names do not count.
       {
-        ...reg,
+        ...rowBase,
         ...geo(0, 0),
         id: 'M4',
         zone_id: a,
@@ -625,7 +625,7 @@ function diningRoom(): EditableCatalog {
     ],
     elements: [
       {
-        ...reg,
+        ...rowBase,
         ...geo(0, 300),
         id: 'E1',
         zone_id: a,
@@ -635,7 +635,7 @@ function diningRoom(): EditableCatalog {
         height: 20,
         rotation: 30,
       },
-      { ...reg, ...geo(500, 0), id: 'E2', zone_id: a, type: 'text', text: 'Baños' },
+      { ...rowBase, ...geo(500, 0), id: 'E2', zone_id: a, type: 'text', text: 'Baños' },
     ],
     taxes: [],
     stations: [],
@@ -762,8 +762,8 @@ function edit(c: EditableCatalog, b: ZoneDraft, e: Edit): ZoneDraft {
   const tables = b.tables.filter((m) => m.active)
   const elements = b.elements.filter((x) => x.active)
   const table = tables.length ? tables[e && 'i' in e ? e.i % tables.length : 0] : undefined
-  const elem = elements.length ? elements[e && 'i' in e ? e.i % elements.length : 0] : undefined
-  const usedOnes = [
+  const element = elements.length ? elements[e && 'i' in e ? e.i % elements.length : 0] : undefined
+  const usedNames = [
     ...c.tables.filter((m) => m.active && m.zone_id !== b.id).map((m) => m.name),
     ...tables.map((m) => m.name),
   ]
@@ -774,7 +774,7 @@ function edit(c: EditableCatalog, b: ZoneDraft, e: Edit): ZoneDraft {
     ...b,
     tables: b.tables.map((m) => (m.id === id ? f(m) : m)),
   })
-  const changeElem = (
+  const changeElement = (
     id: string,
     f: (m: (typeof b.elements)[number]) => (typeof b.elements)[number],
   ) => ({
@@ -783,22 +783,22 @@ function edit(c: EditableCatalog, b: ZoneDraft, e: Edit): ZoneDraft {
   })
   switch (e.t) {
     case 'table':
-      return { ...b, tables: [...b.tables, newTable(b, e.shape, usedOnes)] }
+      return { ...b, tables: [...b.tables, newTable(b, e.shape, usedNames)] }
     case 'element':
       return { ...b, elements: [...b.elements, newElement(b, e.type)] }
     case 'move':
       if (table) return changeTable(table.id, (m) => move(m, e.x, e.y))
-      return elem ? changeElem(elem.id, (m) => move(m, e.x, e.y)) : b
+      return element ? changeElement(element.id, (m) => move(m, e.x, e.y)) : b
     case 'measure':
       if (table) return changeTable(table.id, (m) => measure(m, e.a, e.h))
-      return elem ? changeElem(elem.id, (m) => measure(m, e.a, e.h)) : b
+      return element ? changeElement(element.id, (m) => measure(m, e.a, e.h)) : b
     case 'rotate':
       if (table) return changeTable(table.id, (m) => rotate(m, e.g))
-      return elem ? changeElem(elem.id, (m) => rotate(m, e.g)) : b
+      return element ? changeElement(element.id, (m) => rotate(m, e.g)) : b
     case 'remove':
       return table ? changeTable(table.id, (m) => ({ ...m, active: false })) : b
     case 'removeElement':
-      return elem ? changeElem(elem.id, (m) => ({ ...m, active: false })) : b
+      return element ? changeElement(element.id, (m) => ({ ...m, active: false })) : b
     case 'rename':
       return table ? changeTable(table.id, (m) => ({ ...m, name: e.name })) : b
     case 'places':
@@ -806,22 +806,24 @@ function edit(c: EditableCatalog, b: ZoneDraft, e: Edit): ZoneDraft {
     case 'shape':
       return table ? changeTable(table.id, (m) => ({ ...m, shape: e.shape })) : b
     case 'text':
-      return elem?.type === 'text' ? changeElem(elem.id, (m) => ({ ...m, text: e.text })) : b
+      return element?.type === 'text'
+        ? changeElement(element.id, (m) => ({ ...m, text: e.text }))
+        : b
     case 'duplicate': {
       if (table) {
         const side = move(table, table.x + table.width + GRID * 2, table.y)
         return {
           ...b,
-          tables: [...b.tables, { ...side, id: newId(), fresh: true, name: nextName(usedOnes) }],
+          tables: [...b.tables, { ...side, id: newId(), fresh: true, name: nextName(usedNames) }],
         }
       }
-      if (elem)
+      if (element)
         return {
           ...b,
           elements: [
             ...b.elements,
             {
-              ...move(elem, elem.x + elem.width + GRID * 2, elem.y),
+              ...move(element, element.x + element.width + GRID * 2, element.y),
               id: newId(),
               fresh: true,
             },

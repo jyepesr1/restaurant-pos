@@ -143,7 +143,7 @@ export const KEY_FILE = 'pin-key'
  */
 export function loadKey(dataDir: string): {
   key: Buffer
-  newOne: boolean
+  isNew: boolean
   /** Since when this key exists: earlier sessions were signed with another one. */
   createdAt: string
 } {
@@ -151,9 +151,9 @@ export function loadKey(dataDir: string): {
   if (existsSync(route)) {
     const key = readFileSync(route)
     if (key.length !== 32) throw new Error(`La clave de los PIN (${route}) está dañada.`)
-    return { key, newOne: false, createdAt: statSync(route).mtime.toISOString() }
+    return { key, isNew: false, createdAt: statSync(route).mtime.toISOString() }
   }
   const key = randomBytes(32)
   writeFileSync(route, key, { mode: 0o600, flag: 'wx' })
-  return { key, newOne: true, createdAt: statSync(route).mtime.toISOString() }
+  return { key, isNew: true, createdAt: statSync(route).mtime.toISOString() }
 }

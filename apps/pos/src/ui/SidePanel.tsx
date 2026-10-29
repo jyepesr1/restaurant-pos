@@ -65,16 +65,16 @@ export function SidePanel({
   useEffect(() => {
     if (!opened) return
     const previous = document.activeElement as HTMLElement | null
-    const thisOne = {}
-    lockBackground(thisOne)
+    const panelToken = {}
+    lockBackground(panelToken)
     panel.current?.focus()
     const onKeystroke = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && stack.at(-1) === thisOne && !onlyRef.current) close.current()
+      if (e.key === 'Escape' && stack.at(-1) === panelToken && !onlyRef.current) close.current()
     }
     window.addEventListener('keydown', onKeystroke)
     return () => {
       window.removeEventListener('keydown', onKeystroke)
-      releaseBackground(thisOne)
+      releaseBackground(panelToken)
       previous?.focus()
     }
   }, [opened])

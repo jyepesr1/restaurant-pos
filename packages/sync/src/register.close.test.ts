@@ -282,7 +282,7 @@ describe('movement, cash count and close: shift and register', () => {
   it('the rejection repeats the same if the same event is resent', () => {
     const e = environment()
     const shift = e.openShift(e.register)
-    const mov = e.raw(e.register2, 'CashMovementRecorded', shift, {
+    const movementEvent = e.raw(e.register2, 'CashMovementRecorded', shift, {
       movement_id: newId(),
       type: 'cash_in',
       amount: 5,
@@ -290,8 +290,8 @@ describe('movement, cash count and close: shift and register', () => {
       to_whom: null,
       days: [],
     })
-    const a = e.one(e.register2, mov)
-    const b = e.one(e.register2, mov)
+    const a = e.one(e.register2, movementEvent)
+    const b = e.one(e.register2, movementEvent)
     expect(reason(a)).toBe('other_register_shift')
     expect(b).toEqual(a)
   })
@@ -302,10 +302,10 @@ describe('movement, cash count and close: shift and register', () => {
     expect(reason(e.movement(e.register, shift, 'cash_in', 20_000))).toBe('confirmed')
     expect(reason(e.movement(e.register, shift, 'cash_out', 5_000))).toBe('confirmed')
     expect(reason(e.movement(e.register, shift, 'tip_payout', 3_000))).toBe('confirmed')
-    const firstOne = e.count(e.register, shift, 110_000)
-    const secondOne = e.count(e.register, shift, 112_000)
-    expect(reason(firstOne.result)).toBe('confirmed')
-    expect(reason(secondOne.result)).toBe('confirmed')
+    const firstCount = e.count(e.register, shift, 110_000)
+    const secondCount = e.count(e.register, shift, 112_000)
+    expect(reason(firstCount.result)).toBe('confirmed')
+    expect(reason(secondCount.result)).toBe('confirmed')
     const c = e.status.hub.reconciliation(shift)
     expect(c?.cash).toMatchObject({
       cashIn: 20_000,
@@ -382,7 +382,7 @@ describe('register close: the four rules and the correct close', () => {
 
   it('cash_count_not_found: the cash count id belongs to a movement', () => {
     const t = shiftCharged()
-    const mov = t.raw(t.register, 'CashMovementRecorded', t.shift, {
+    const movementEvent = t.raw(t.register, 'CashMovementRecorded', t.shift, {
       movement_id: newId(),
       type: 'cash_in',
       amount: 1_000,
@@ -390,8 +390,8 @@ describe('register close: the four rules and the correct close', () => {
       to_whom: null,
       days: [],
     })
-    t.one(t.register, mov)
-    const id = (mov.data as { movement_id: string }).movement_id
+    t.one(t.register, movementEvent)
+    const id = (movementEvent.data as { movement_id: string }).movement_id
     expect(reason(t.close(t.register, t.shift, id, 133_000, 1_000))).toBe('cash_count_not_found')
   })
 
@@ -487,12 +487,12 @@ describe('register close: the four rules and the correct close', () => {
 
     it('counting again fixes it: the new count is the latest and the expected amount is the new one', () => {
       const t = shiftCharged()
-      const oldOne = t.count(t.register, t.shift, 132_000)
+      const staleCount = t.count(t.register, t.shift, 132_000)
       t.movement(t.register, t.shift, 'cash_out', 12_000)
       const fresh = t.count(t.register, t.shift, 120_000)
-      expect(reason(t.close(t.register, t.shift, oldOne.cashCount, 120_000, 132_000, 'x'))).toBe(
-        'cash_count_not_latest',
-      )
+      expect(
+        reason(t.close(t.register, t.shift, staleCount.cashCount, 120_000, 132_000, 'x')),
+      ).toBe('cash_count_not_latest')
       expect(reason(t.close(t.register, t.shift, fresh.cashCount, 120_000, 120_000))).toBe(
         'confirmed',
       )
@@ -726,14 +726,14 @@ describe('register close: the four rules and the correct close', () => {
   it('a rejected close is rejected the same when resent; with the corrected expected amount and another id it is accepted', () => {
     const t = shiftCharged()
     const { cashCount } = t.count(t.register, t.shift, t.expected)
-    const oldOne = t.raw(
+    const rejectedClose = t.raw(
       t.register,
       'ShiftClosed',
       t.shift,
       t.closeData(cashCount, 130_000, 132_000, 'x'),
     )
-    expect(reason(t.one(t.register, oldOne))).toBe('expected_mismatch')
-    expect(reason(t.one(t.register, oldOne))).toBe('expected_mismatch')
+    expect(reason(t.one(t.register, rejectedClose))).toBe('expected_mismatch')
+    expect(reason(t.one(t.register, rejectedClose))).toBe('expected_mismatch')
     expect(reason(t.close(t.register, t.shift, cashCount, t.expected, t.expected))).toBe(
       'confirmed',
     )

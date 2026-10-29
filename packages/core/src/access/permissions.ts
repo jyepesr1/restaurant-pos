@@ -180,7 +180,7 @@ export const DEFAULT_ROLES: Record<RoleKey, { name: string; permissions: readonl
  */
 export const RETIRED_ROLES = {
   rename: { Contador: 'Reportes' },
-  ownOnes: ['Gerente', 'Cocina'],
+  toCustom: ['Gerente', 'Cocina'],
 } as const
 
 /** `null`: no device can create it; only the hub emits it. */

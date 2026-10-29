@@ -83,11 +83,11 @@ describe('convert the menu', () => {
   })
 
   it('rejects what does not fit', () => {
-    const makeOne = (extra: object) => ({
+    const menuWith = (extra: object) => ({
       secciones: [section('A', 'comida', [dish('X', 1)], extra)],
     })
     expect(() => convertMenu({ secciones: [] })).toThrow()
-    expect(() => convertMenu(makeOne({ clave: 'A B' }))).toThrow()
+    expect(() => convertMenu(menuWith({ clave: 'A B' }))).toThrow()
     expect(() =>
       convertMenu({
         secciones: [section('A', 'comida', []), section('A', 'barra', [], { visible: false })],

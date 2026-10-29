@@ -32,8 +32,8 @@ describe('resending a batch', () => {
         async (n, times) => {
           const { hub, restaurantId } = await m.newHub()
           const events = batch(1, n)
-          const firstOne = await m.cloud.receiveEvents(hub, events)
-          expect(statuses(firstOne).every((e) => e === 'saved')).toBe(true)
+          const firstResult = await m.cloud.receiveEvents(hub, events)
+          expect(statuses(firstResult).every((e) => e === 'saved')).toBe(true)
           const before = await savedEvents(m.db, restaurantId)
           for (let i = 1; i < times; i++) {
             const another = await m.cloud.receiveEvents(hub, events)
@@ -93,8 +93,8 @@ describe('resending a batch', () => {
           let i = 0
           const savedTotals = new Map<string, number>()
           while (from < events.length) {
-            const sz = sizes[i++ % sizes.length] ?? 1
-            const chunk = events.slice(from, from + sz)
+            const batchSize = sizes[i++ % sizes.length] ?? 1
+            const chunk = events.slice(from, from + batchSize)
             // With overlap, the batch repeats the last two events of the previous one (a partial
             // retry).
             const sent = overlap ? [...events.slice(Math.max(0, from - 2), from), ...chunk] : chunk
@@ -102,7 +102,7 @@ describe('resending a batch', () => {
             for (const x of r)
               if (x.status === 'saved' && x.id)
                 savedTotals.set(x.id, (savedTotals.get(x.id) ?? 0) + 1)
-            from += sz
+            from += batchSize
           }
           // Each event was saved exactly once over the whole run.
           expect([...savedTotals.values()].every((v) => v === 1)).toBe(true)
@@ -140,9 +140,9 @@ describe('the same id within the same batch', () => {
           const r = await m.cloud.receiveEvents(hub, events)
           const seen = new Set<number>()
           const expected = numbers.map((n) => {
-            const firstOne = !seen.has(n)
+            const firstTime = !seen.has(n)
             seen.add(n)
-            return firstOne ? 'saved' : 'already_stored'
+            return firstTime ? 'saved' : 'already_stored'
           })
           expect(statuses(r)).toEqual(expected)
           expect(await count(m.db, 'events', restaurantId)).toBe(new Set(numbers).size)
@@ -352,17 +352,17 @@ describe('divergent_events', () => {
 
   it('a hub at the same location that sends other content for an existing id is also kept for review', async () => {
     const a = await m.newHub()
-    const secondOne = await m.cloud.createCode(a.restaurantId)
-    if (!secondOne) throw new Error('no code')
-    const reg = await m.cloud.registerHub({
-      code: secondOne.code,
+    const secondCode = await m.cloud.createCode(a.restaurantId)
+    if (!secondCode) throw new Error('no code')
+    const registration = await m.cloud.registerHub({
+      code: secondCode.code,
       hub_id: flatEvent(500).id,
       location_id: a.hub.locationId,
       name: 'Caja 2',
       instance: 'i2',
     })
-    if (!reg.ok) throw new Error(reg.reason)
-    const hub2 = await m.cloud.authenticate(reg.credential)
+    if (!registration.ok) throw new Error(registration.reason)
+    const hub2 = await m.cloud.authenticate(registration.credential)
     if (!hub2) throw new Error('no hub 2')
     const original = flatEvent(1)
     await m.cloud.receiveEvents(a.hub, [original])

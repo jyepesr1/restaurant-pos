@@ -261,16 +261,16 @@ describe('sync scenarios', () => {
     const order = await openOrder(ana)
     await m.network.settle()
 
-    const firstOne = item(10_000)
-    const secondOne = item(20_000)
-    await ana.create(order, 'ItemAdded', firstOne)
+    const firstItem = item(10_000)
+    const secondItem = item(20_000)
+    await ana.create(order, 'ItemAdded', firstItem)
     await m.network.settle()
-    await luis.create(order, 'ItemAdded', secondOne)
+    await luis.create(order, 'ItemAdded', secondItem)
     await m.network.settle()
 
     const status = m.hub().order(order)
-    expect(status?.items[firstOne.item_id]?.position).toBe(1)
-    expect(status?.items[secondOne.item_id]?.position).toBe(2)
+    expect(status?.items[firstItem.item_id]?.position).toBe(1)
+    expect(status?.items[secondItem.item_id]?.position).toBe(2)
     // Luis's device time is 5 hours "earlier", but the order does not change.
     const [, e1, e2] = eventsOf(m)
     expect((e2?.device_time ?? '') < (e1?.device_time ?? '')).toBe(true)
@@ -441,13 +441,13 @@ describe('hub: validations', () => {
     const m = setup()
     const ana = m.network.device('ana')
     const event = raw(ana)
-    const firstOne = m.hub().receiveBatch(connectionOf(m, ana), [event])
+    const original = m.hub().receiveBatch(connectionOf(m, ana), [event])
     const duplicate = m.hub().receiveBatch(connectionOf(m, ana), [event])
     const different = m
       .hub()
       .receiveBatch(connectionOf(m, ana), [{ ...event, data: { ...event.data, guests: 5 } }])
 
-    expect(duplicate.results).toEqual(firstOne.results)
+    expect(duplicate.results).toEqual(original.results)
     expect(duplicate.acceptedEvents).toEqual([])
     expect(different.results[0]).toMatchObject({ status: 'rejected', reason: 'duplicate_id' })
   })

@@ -856,14 +856,14 @@ describe('shiftOfRegister', () => {
   })
 
   it('with two shifts on the same register the most recent wins, regardless of the list order', () => {
-    const oldOne = shiftEvent(REGISTER, 100, 'pending', {
+    const older = shiftEvent(REGISTER, 100, 'pending', {
       hub_estimated_time: '2026-10-24T10:00:00.000Z',
     })
     const fresh = shiftEvent(REGISTER, 200, 'pending', {
       hub_estimated_time: '2026-10-24T22:00:00.000Z',
     })
-    expect(shiftOfRegister([oldOne, fresh], REGISTER)?.base).toBe(200)
-    expect(shiftOfRegister([fresh, oldOne], REGISTER)?.base).toBe(200)
+    expect(shiftOfRegister([older, fresh], REGISTER)?.base).toBe(200)
+    expect(shiftOfRegister([fresh, older], REGISTER)?.base).toBe(200)
   })
 
   it('with different registers, each one sees its own', () => {

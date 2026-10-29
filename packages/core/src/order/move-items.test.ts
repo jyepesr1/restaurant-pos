@@ -258,10 +258,10 @@ describe('ItemsMoved: what is rejected', () => {
 
   it('an order that is neither source nor target ignores the event', () => {
     const m = twoOrders()
-    const thirdOne = applyAll([
+    const unrelated = applyAll([
       event(newId(), 'OrderOpened', { channel: 'dine_in', table_id: null, guests: 1 }),
     ])
-    expect(issueOf(thirdOne, m.move([moved(m.item)]))).toBe('foreign_event')
+    expect(issueOf(unrelated, m.move([moved(m.item)]))).toBe('foreign_event')
   })
 
   it('a source with a split check does not move', () => {

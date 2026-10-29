@@ -31,7 +31,7 @@ export function openOrders(locals: readonly LocalEvent[]): VisibleOrder[] {
     // An event can touch two orders: moving products goes in the source and reaches the target.
     for (const id of ordersOf(l.event)) byOrder.set(id, [...(byOrder.get(id) ?? []), l])
   }
-  const visibleOnes: VisibleOrder[] = []
+  const visible: VisibleOrder[] = []
   for (const [id, events] of byOrder) {
     const status = rebuild(
       events.map((l) => l.event),
@@ -39,14 +39,14 @@ export function openOrders(locals: readonly LocalEvent[]): VisibleOrder[] {
     )
     if (status?.status !== 'open') continue
     const pendingList = events.filter((l) => l.status === 'pending')
-    visibleOnes.push({
+    visible.push({
       status,
       total: orderTotals(status).net,
       itemsToConfirm: new Set(pendingList.flatMap((l) => itemsOf(l))),
       pendingConfirmation: pendingList.length > 0,
     })
   }
-  return visibleOnes.sort((a, b) => a.status.openedAt.localeCompare(b.status.openedAt))
+  return visible.sort((a, b) => a.status.openedAt.localeCompare(b.status.openedAt))
 }
 
 export const currentItems = (status: OrderState): OrderItem[] =>

@@ -94,17 +94,17 @@ describe('tax breakdown: edges', () => {
 describe('discounts: several without cascading and a $0 order', () => {
   it('two order discounts are computed on the same base, not one on top of the other', () => {
     const base = 53_800
-    const firstOne = percent(base, 1000)
-    const secondOne = percent(base, 1000)
-    expect(firstOne).toBe(5380)
-    expect(secondOne).toBe(5380)
+    const firstDiscount = percent(base, 1000)
+    const secondDiscount = percent(base, 1000)
+    expect(firstDiscount).toBe(5380)
+    expect(secondDiscount).toBe(5380)
     // Cascading, the second would be 4.842 (10 % of what is left).
-    expect(secondOne).not.toBe(percent(base - firstOne, 1000))
+    expect(secondDiscount).not.toBe(percent(base - firstDiscount, 1000))
 
     const lines = [40_900, 12_900]
-    const a = allocateOrderDiscount(firstOne, lines) ?? []
+    const a = allocateOrderDiscount(firstDiscount, lines) ?? []
     const leftover = lines.map((l, i) => l - (a[i] ?? 0))
-    const b = allocateOrderDiscount(secondOne, leftover) ?? []
+    const b = allocateOrderDiscount(secondDiscount, leftover) ?? []
     expect(sum(a) + sum(b)).toBe(10_760)
     expect(lines.map((l, k) => l - (a[k] ?? 0) - (b[k] ?? 0))).toEqual([32_720, 10_320])
   })
@@ -146,12 +146,12 @@ describe('check split: allocation of amounts', () => {
   it('several shared: each check adds its shares and the checks total the order', () => {
     const bottle = 40_900 // among 3
     const picada = 38_500 // among 2 of the 3
-    const ownOnes = [12_900, 0, 14_900]
+    const ownItems = [12_900, 0, 14_900]
     const fromBottle = allocate(bottle, [1, 1, 1])
     const fromPicada = allocate(picada, [1, 1, 0])
-    const checks = ownOnes.map((p, i) => p + (fromBottle[i] ?? 0) + (fromPicada[i] ?? 0))
+    const checks = ownItems.map((p, i) => p + (fromBottle[i] ?? 0) + (fromPicada[i] ?? 0))
     expect(checks).toEqual([12_900 + 13_634 + 19_250, 13_633 + 19_250, 14_900 + 13_633])
-    expect(sum(checks)).toBe(sum(ownOnes) + bottle + picada)
+    expect(sum(checks)).toBe(sum(ownItems) + bottle + picada)
   })
 
   it('property: the checks add up to the total, with or without shared items', () => {

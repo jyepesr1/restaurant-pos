@@ -328,13 +328,13 @@ describe('matchingLine: held, voided and options in another order', () => {
     const product = newId()
     const old = item({ product_id: product, unit_price: 9_900, catalog_version: 1 })
     const { status } = orderWith(aggregate(old))
-    const newOne = (fields: Record<string, unknown>) =>
+    const matchForNew = (fields: Record<string, unknown>) =>
       matchingLine(status, item({ product_id: product, unit_price: 9_900, ...fields }))
-    expect(newOne({ unit_price: 10_900, catalog_version: 2 })).toBeNull()
-    expect(newOne({ catalog_version: 2 })?.id).toBe(old.item_id)
-    expect(newOne({ tax_type: 'iva', rate: 1_900 })).toBeNull()
-    expect(newOne({ rate: 1_900 })).toBeNull()
-    expect(newOne({ tax_type: 'exempt', rate: 0 })).toBeNull()
+    expect(matchForNew({ unit_price: 10_900, catalog_version: 2 })).toBeNull()
+    expect(matchForNew({ catalog_version: 2 })?.id).toBe(old.item_id)
+    expect(matchForNew({ tax_type: 'iva', rate: 1_900 })).toBeNull()
+    expect(matchForNew({ rate: 1_900 })).toBeNull()
+    expect(matchForNew({ tax_type: 'exempt', rate: 0 })).toBeNull()
   })
 
   it('the same option with another extra price is not the same line', () => {

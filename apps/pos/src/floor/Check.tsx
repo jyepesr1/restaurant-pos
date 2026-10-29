@@ -153,9 +153,9 @@ export function Check() {
       notify(rules.printsPreBill ? 'Precuenta enviada a la impresora' : `${title}: pidió la cuenta`)
     })
 
-  const split = (newOnes: ReturnType<typeof inEqualParts>) =>
+  const split = (equalParts: ReturnType<typeof inEqualParts>) =>
     act(async () => {
-      await floor.record('CheckSplit', order.id, { checks: newOnes })
+      await floor.record('CheckSplit', order.id, { checks: equalParts })
       setMode('single')
       setAssignedChecks(new Map())
     })
@@ -238,11 +238,11 @@ export function Check() {
     setAssignedChecks((a) => {
       const b = new Map(a)
       const currentChecks = b.get(id) ?? []
-      const newOnes = currentChecks.includes(check)
+      const nextChecks = currentChecks.includes(check)
         ? currentChecks.filter((c) => c !== check)
         : [...currentChecks, check].sort((x, y) => x - y)
-      if (newOnes.length === 0) b.delete(id)
-      else b.set(id, newOnes)
+      if (nextChecks.length === 0) b.delete(id)
+      else b.set(id, nextChecks)
       return b
     })
 

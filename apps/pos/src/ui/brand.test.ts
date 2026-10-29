@@ -141,7 +141,7 @@ describe('applyBrand', () => {
   })
 
   it('if what is saved is an old or made-up brand (from an earlier version), it goes back to Faro and fixes it', () => {
-    for (const oldOne of [
+    for (const savedValue of [
       'bagno',
       'taller',
       'noche',
@@ -151,10 +151,10 @@ describe('applyBrand', () => {
       'null',
       '{"x":1}',
     ]) {
-      const { dataset, store } = simulateBrowser({ saved: oldOne })
+      const { dataset, store } = simulateBrowser({ saved: savedValue })
       applyBrand()
-      expect('brand' in dataset, oldOne).toBe(false)
-      expect(store.get(KEY), oldOne).toBe('faro')
+      expect('brand' in dataset, savedValue).toBe(false)
+      expect(store.get(KEY), savedValue).toBe('faro')
     }
   })
 
