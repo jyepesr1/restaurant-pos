@@ -308,7 +308,7 @@ Decisión del dueño ([ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-
 
 **Pendiente (no cambia lógica, se hace aparte):**
 - Las e2e «the home screen links to /diagnostics» y «app start (sign in): everything is at least 48×48» ya fallaban antes de la reescritura: buscan un enlace «Diagnóstico del equipo» y un encabezado «Escribe tu PIN» que la pantalla de entrar no tiene.
-- **Antes de cualquier push:** el commit «Rename apps/hub to English» guardó por error tres archivos de la carpeta vieja `apps/hub/datos` (la llave de los PIN, `hub-instancia` y `diagnosticos.jsonl`). Ya no se versionan, pero siguen en el historial local de ese commit: hay que sacarlos del historial (por ejemplo con `git filter-branch` sobre los commits de esta tarea) antes de subir.
+- El historial de esta tarea se limpió antes del push: tres archivos de la carpeta vieja `apps/hub/datos` (la llave de los PIN, `hub-instancia` y `diagnosticos.jsonl`) se habían guardado por error y ya no están en ningún commit.
 - Los celulares y tablets que ya abrieron Faro guardan una base local con los nombres viejos: hay que borrar los datos del sitio en cada uno (paso 6) antes de usarlos de nuevo.
 
 ### 1.10 — La nube: Postgres en Neon y API en Cloudflare Workers ✅
