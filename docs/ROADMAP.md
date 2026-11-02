@@ -82,6 +82,8 @@ Los resultados se envían al hub y quedan en `apps/hub/data/diagnostics.jsonl` (
 
 ## Antes de probar cualquier tarea
 
+Para dejar Faro funcionando en el local, de principio a fin, sigue [PUESTA_EN_MARCHA.md](PUESTA_EN_MARCHA.md).
+
 En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.

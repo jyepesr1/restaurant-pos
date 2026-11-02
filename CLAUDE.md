@@ -9,6 +9,7 @@
 - `docs/DINERO.md`: fórmulas exactas de todo cálculo de dinero y las pruebas que deben cubrirlas.
 - `docs/KPIS.md`: fórmulas de los reportes (ventas, medios, meseros, productos, anulaciones, cierre Z).
 - `docs/ROADMAP.md`: estado de cada tarea y cómo probarla a mano.
+- `docs/PUESTA_EN_MARCHA.md`: pasos para dejar Faro funcionando en un restaurante, del PC de caja al panel del dueño.
 - `docs/GLOSARIO.md`: el nombre en inglés de cada término del dominio, para el código.
 - `apps/pos/PRODUCT.md` y `apps/pos/DESIGN.md`: qué es el producto para quien diseña, y su sistema visual.
 
