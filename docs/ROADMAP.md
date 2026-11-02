@@ -39,7 +39,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.9 | Reportes básicos y `docs/KPIS.md` | ✅ |
 | 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ✅ (publicada el 26-oct-2026) |
 | 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja | ✅ (publicada el 29-oct-2026) |
-| 1.11c-1 | Panel del dueño ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia), [PANEL](PANEL.md)): entrar con los usuarios del local (permiso «Entrar desde fuera del local»); tablero del día y todos los reportes ([KPIS](KPIS.md)) de hasta 14 días, actualizados cada 15 s | ✅ código (falta publicar) |
+| 1.11c-1 | Panel del dueño ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia), [PANEL](PANEL.md)): entrar con los usuarios del local (permiso «Entrar desde fuera del local»); tablero del día y todos los reportes ([KPIS](KPIS.md)) de hasta 14 días, actualizados cada 15 s | ✅ (publicada el 2-nov-2026) |
 | 1.11c-2 | Panel en vivo: aviso al instante (Durable Object), salón, cocina, caja, alertas y «sin noticias del local desde…» | ⏳ |
 | 1.11c-3 | Panel: períodos largos (más de 14 días) y fotos de los productos | ⏳ |
 | 1.11d | Acciones a distancia desde el panel: agotar un producto, autorizar anulaciones, descuentos y cortesías, y cerrar sesiones o bloquear un usuario | ⏳ |
@@ -323,7 +323,7 @@ Decisión del dueño ([ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-
 - El historial de esta tarea se limpió antes del push: tres archivos de la carpeta vieja `apps/hub/datos` (la llave de los PIN, `hub-instancia` y `diagnosticos.jsonl`) se habían guardado por error y ya no están en ningún commit.
 - Los celulares y tablets que ya abrieron Faro guardan una base local con los nombres viejos: hay que borrar los datos del sitio en cada uno (paso 6) antes de usarlos de nuevo.
 
-### 1.11c-1 — Panel del dueño: entrar, tablero y reportes ✅ código (falta publicar)
+### 1.11c-1 — Panel del dueño: entrar, tablero y reportes ✅
 
 Decisiones del dueño del 29-oct-2026 ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia) y [enmienda de ADR-013](DECISIONES.md#adr-013--acceso-por-rol-meseros-con-pin-desde-la-ip-caja-con-usuario-y-contraseña)). El contrato entre el hub, la nube y el panel está en [PANEL.md](PANEL.md):
 - se entra con los mismos usuarios del local;
@@ -374,16 +374,21 @@ Todo está corregido y `pnpm check` pasa.
 
 **Medido:**
 - un reporte de 31 días con 1.500 eventos por día tarda ~1,1 s, pero carga ~35 MB, demasiado cerca de los 128 MB de un Worker; por eso el máximo es 14 días;
-- verificar una contraseña en el Worker toma ~31 ms (en workerd local; falta confirmarlo en la nube publicada).
+- verificar una contraseña en el Worker toma ~31 ms en workerd local; en la nube publicada, un intento de entrar usó 94 ms de CPU y ~1,3 s en total, casi todo esperando a la base en São Paulo.
+
+**Publicada el 2-nov-2026:**
+- la migración 2 se aplicó en Neon (la base quedó en las migraciones 1 y 2, La Spritzzería con `la-spritzzeria`, la API sin acceso a las credenciales de los PC de caja) y se borró la rama temporal;
+- el Worker `faro-api` sirve el panel en `https://faro-api.johanyepes.workers.dev/r/la-spritzzeria`;
+- revisado en vivo: la pantalla de entrar se ve en el celular, `/v1/panel/me` sin sesión da 401, un `POST` sin `Origin` da 403, una contraseña errada da 401 y al tercer fallo seguido pide esperar (429).
 
 **Queda pendiente:**
-- **Publicar:** la migración 2 en Neon (probada en una rama temporal) y el Worker con el panel.
+- **Plan de Cloudflare:** entrar usa ~94 ms de CPU. El plan gratuito de Workers permite 10 ms por petición; si la cuenta está en el gratuito, algunas entradas pueden fallar. No se pudo ver el plan desde aquí: revisarlo en el panel de Cloudflare y, si hace falta, pasar a Workers Paid.
 - **Salón, cocina, caja, alertas y aviso al instante:** 1.11c-2. «Mesas abiertas» en el tablero llega con el salón.
 - **Períodos de más de 14 días y fotos de los productos:** 1.11c-3.
 - **Pruebas de los hooks del panel:** `@pos/app` no tiene entorno DOM, así que se prueban por partes (cliente, sondeo, render) y no montados. Se verá con Playwright en la 1.14.
 - **Contacto de Faro** en la pantalla Copia en la nube: sigue pendiente de 1.11.
 
-**Cómo probarlo a mano** (cuando esté publicado y el PC de caja conectado a la nube):
+**Cómo probarlo a mano** (con el PC de caja conectado a la nube):
 1. En la caja, entra como administrador. En **Personal y roles**, abre el rol **Administrador**: debe tener marcado «Entrar desde fuera del local».
 2. En tu celular, con datos móviles (no el Wi-Fi del local), abre `https://faro-api.johanyepes.workers.dev/r/la-spritzzeria`. Debes ver «Entrar» con el restaurante ya escrito.
 3. Escribe tu usuario y la contraseña de la caja y toca **Entrar**. Debes ver **Hoy**, con las ventas del día y «frente al jueves pasado a esta hora» (o el día que corresponda).
