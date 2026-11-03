@@ -19,8 +19,8 @@ function run(): number {
   } catch (error) {
     console.error(
       error instanceof DatabaseBusyError
-        ? 'No se cambió nada: el hub está abierto. Ciérralo y vuelve a correr esto.'
-        : `No se cambió nada: ${message(error)}`,
+        ? 'Nothing was changed: the hub is open. Close it and run this again.'
+        : `Nothing was changed: ${message(error)}`,
     )
     return 1
   }
@@ -33,30 +33,30 @@ function run(): number {
     if (!admin.password) {
       // Startup leaves the admin with a username: it is the first in the list.
       const id = admins(db, restaurantId)[0]
-      if (!id) throw new Error('No hay ningún administrador activo')
+      if (!id) throw new Error('There is no active admin')
       const user = access.userOf(id) ?? ADMIN_USERNAME
       const password = generatePassword()
       access.assignPassword(id, user, password)
       lines = [
-        `  Usuario:          ${user}`,
-        `  Contraseña:       ${password}`,
+        `  Username:         ${user}`,
+        `  Password:         ${password}`,
         ...lines.filter((l) => l.includes('PIN')),
       ]
     }
     showPins(dataDir, {
       consoleLines: [
-        '\nContraseña nueva del administrador:',
+        "\nThe admin's new password:",
         ...lines,
-        'Anótala en un lugar seguro: no se vuelve a mostrar. La anterior ya no sirve.',
+        'Write it down somewhere safe: it is not shown again. The old one no longer works.',
       ],
-      file: `restablecer-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`,
+      file: `reset-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`,
       content: `${lines.join('\n')}\n`,
       alert: (route) =>
-        `\nLa contraseña nueva quedó en ${route} (solo la puede leer el hub): anótala y borra ese archivo.`,
+        `\nThe new password was saved to ${route} (only the hub can read it): write it down and delete that file.`,
     })
     return 0
   } catch (error) {
-    console.error(`No se cambió nada: ${message(error)}`)
+    console.error(`Nothing was changed: ${message(error)}`)
     return 1
   } finally {
     db.close()

@@ -62,7 +62,7 @@ describe('passwords after restarting the hub or losing the PIN key', () => {
     // The admin got a new PIN to authorize and was not given another password.
     expect(d.admin.pin).toMatch(/^\d{4}$/)
     expect(d.admin.password).toBeNull()
-    expect(d.admin.alerts.join(' ')).toMatch(/clave de los PIN/)
+    expect(d.admin.alerts.join(' ')).toMatch(/PIN key/)
   })
 
   it('with the key lost, the waiter PIN and the cashier authorize PIN stop working until regenerated', () => {

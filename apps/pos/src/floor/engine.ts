@@ -313,7 +313,7 @@ export function completeCatalog(c: Catalog): Catalog {
 }
 
 /** A background job failed (IndexedDB full or closed): it stays in the console. */
-const notifyFailure = (error: unknown) => console.error('Equipo:', error)
+const notifyFailure = (error: unknown) => console.error('Device:', error)
 const KEYS = { device: 'device', session: 'session', catalog: 'catalog' }
 
 function openWebSocket(m: Handlers): Channel {
@@ -842,7 +842,7 @@ export class Floor {
         if (code === 'invalid_token' || code === 'outdated_app') connectionManager.stop()
         this.patch({ hubError: { code, message } })
       },
-      onFailure: (error) => console.error('Sincronización:', error),
+      onFailure: (error) => console.error('Sync:', error),
     })
     const connectionManager = new ConnectionManager({
       open: this.open,

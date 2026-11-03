@@ -202,7 +202,7 @@ describe('floor plan elements on a migrated database', () => {
     const editedList = MIGRATIONS.map((m) =>
       m.version === 1 ? { ...m, sql: `${m.sql}\n-- editada` } : m,
     )
-    expect(() => applyMigrations(db, editedList)).toThrow(/cambió después de aplicarse/)
+    expect(() => applyMigrations(db, editedList)).toThrow(/changed after it was applied/)
   })
 
   it('if the migration fails midway, the database stays at version 0 without the table', () => {

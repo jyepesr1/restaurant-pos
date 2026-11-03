@@ -231,7 +231,9 @@ export async function readConfig(
   const tz = row?.content?.time_zone
   const timeZone = typeof tz === 'string' && validTimeZone(tz) ? tz : DEFAULT_TIME_ZONE
   if (row && timeZone !== tz)
-    console.warn('Zona horaria ilegible en la configuración; se usa la de Bogotá', { restaurantId })
+    console.warn('Unreadable time zone in the configuration; using America/Bogota', {
+      restaurantId,
+    })
   return { config: configFrom(row?.content?.config, restaurantId), timeZone }
 }
 
@@ -250,7 +252,7 @@ export function configFrom(partial: unknown, restaurantId = ''): RestaurantConfi
       if (keys?.length) for (const k of keys) bad.add(k)
       else if (issue.path[0] !== undefined) bad.add(String(issue.path[0]))
     }
-    console.warn('Configuración ilegible en la nube: esos campos toman su valor por defecto', {
+    console.warn('Unreadable configuration in the cloud: those fields take their default value', {
       restaurantId,
       fields: [...bad],
     })

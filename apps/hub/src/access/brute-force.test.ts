@@ -195,7 +195,9 @@ describe('pairing: redeem the code from an IP', () => {
       m.advance(61_000) // never hits the wait nor goes 10 minutes without errors
       m.access.startSession(connection, BAD_VALUES[i % 8] as string)
     }
-    expect(m.alerts.filter((a) => a.includes(`${DEVICE_FAILURES_FOR_ALERT} PIN`))).toHaveLength(1)
+    expect(
+      m.alerts.filter((a) => a.includes(`${DEVICE_FAILURES_FOR_ALERT} wrong PINs`)),
+    ).toHaveLength(1)
   })
 })
 

@@ -325,7 +325,7 @@ export async function migrate(
 ): Promise<number[]> {
   migrations.forEach((m, i) => {
     if (m.version !== i + 1)
-      throw new Error(`Las migraciones van numeradas 1, 2, 3…: falla en «${m.name}»`)
+      throw new Error(`Migrations must be numbered 1, 2, 3…: "${m.name}" is out of order`)
   })
   await sql.query(CREATE_REGISTRY)
   const appliedMigrations = await sql.query<{ version: number; name: string; fingerprint: string }>(
@@ -335,7 +335,7 @@ export async function migrate(
     const m = migrations[row.version - 1]
     if (m && sqlFingerprint(m.sql) !== row.fingerprint)
       throw new Error(
-        `La migración ${row.version} («${row.name}») cambió después de aplicarse. Las migraciones publicadas no se editan: crea una nueva.`,
+        `Migration ${row.version} ("${row.name}") changed after it was applied. Published migrations are not edited: create a new one.`,
       )
   }
   const doneVersions: number[] = []

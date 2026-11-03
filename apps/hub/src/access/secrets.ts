@@ -150,7 +150,7 @@ export function loadKey(dataDir: string): {
   const route = join(dataDir, KEY_FILE)
   if (existsSync(route)) {
     const key = readFileSync(route)
-    if (key.length !== 32) throw new Error(`La clave de los PIN (${route}) está dañada.`)
+    if (key.length !== 32) throw new Error(`The PIN key (${route}) is damaged.`)
     return { key, isNew: false, createdAt: statSync(route).mtime.toISOString() }
   }
   const key = randomBytes(32)

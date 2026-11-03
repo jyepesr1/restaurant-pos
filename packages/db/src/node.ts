@@ -13,7 +13,9 @@ export interface OpenOptions {
 
 export class DatabaseBusyError extends Error {
   constructor() {
-    super('Otro hub ya está usando esta base de datos. Cierra el otro antes de abrir este.')
+    super(
+      'Another hub is already using this database. Close the other one before opening this one.',
+    )
   }
 }
 
@@ -34,7 +36,7 @@ export function openDatabase(
 
     const mode = db.prepare('PRAGMA journal_mode = WAL').get()?.journal_mode
     if (route !== ':memory:' && mode !== 'wal') {
-      throw new Error(`No se pudo activar el modo WAL (quedó en "${String(mode)}")`)
+      throw new Error(`Could not turn on WAL mode (it stayed at "${String(mode)}")`)
     }
     // FULL: without a UPS, a power outage must not lose the last committed transaction (ADR-003).
     // recursive_triggers: extra safeguard so a REPLACE fires the delete blocks.

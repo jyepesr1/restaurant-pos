@@ -27,7 +27,7 @@ export default {
     const sql = lazySql(async () => {
       client = new Client({ connectionString: environment.HYPERDRIVE.connectionString })
       // A connection drop midway through the request must not go unhandled.
-      client.on('error', (e) => console.error('Conexión con la base perdida:', e.message))
+      client.on('error', (e) => console.error('Database connection lost:', e.message))
       await client.connect()
       return sqlFromPg(client)
     })

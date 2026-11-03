@@ -72,14 +72,14 @@ pnpm seed
 ```
 
 Debes ver:
-- **la primera vez**, «PIN y contraseñas nuevos» con el usuario y la contraseña del **Administrador**. Guárdalos en tu gestor de contraseñas: no se vuelven a mostrar;
-- `Datos de La Spritzzería cargados en …`;
-- una línea por tabla, por ejemplo `products  98 nuevos, 0 cambiados, 0 iguales`;
+- **la primera vez**, «New PINs and passwords» con el usuario y la contraseña del **Administrador**. Guárdalos en tu gestor de contraseñas: no se vuelven a mostrar;
+- `Loaded La Spritzzería's data into …`;
+- una línea por tabla, por ejemplo `products  98 new, 0 changed, 0 unchanged`;
 - al final, el usuario y la contraseña de **Caja** y de **Reportes**, y el PIN de **Mesero 1, 2 y 3**. Son **cuentas de ejemplo** para probar: en el paso 5 se reemplazan por la gente real.
 
-Los PIN y contraseñas también quedan en un archivo `pines-….txt`, en la carpeta de datos (`apps/hub/data`). El mensaje dice dónde: cuando los hayas guardado, **borra ese archivo**.
+Los PIN y contraseñas también quedan en un archivo `pins-….txt`, en la carpeta de datos (`apps/hub/data`). El mensaje dice dónde: cuando los hayas guardado, **borra ese archivo**.
 
-Se puede repetir sin duplicar nada. La segunda vez, las líneas dicen `0 nuevos, 0 cambiados`, lo editado a mano se respeta y al final dice «No se creó personal nuevo: cada quien conserva su PIN».
+Se puede repetir sin duplicar nada. La segunda vez, las líneas dicen `0 new, 0 changed`, lo editado a mano se respeta y al final dice «No new staff was created: everyone keeps their PIN».
 
 ## 4. Prender el PC de caja
 
@@ -88,11 +88,11 @@ pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
 Debes ver:
-- `Base de datos en la versión 1.`;
-- `Hub en marcha`;
+- `Database at version 1.`;
+- `Hub running`;
 - la dirección para los celulares, por ejemplo `http://192.168.1.20:4000`.
 
-Si el administrador aún no tenía contraseña, aquí aparece «Administrador (para entrar a la caja)» con su usuario y contraseña. Guárdalos igual que en el paso 3. Si se pierden, ver «Si algo falla».
+Si el administrador aún no tenía contraseña, aquí aparece «Admin (to sign in at the register)» con su usuario y contraseña. Guárdalos igual que en el paso 3. Si se pierden, ver «Si algo falla».
 
 Esta ventana debe quedar abierta: cerrarla apaga Faro en el local.
 
@@ -152,7 +152,7 @@ Así cada venta queda guardada también en la nube y se ve desde el panel del du
 CLOUD_URL=https://faro-api.johanyepes.workers.dev pnpm --filter @pos/cloud admin restaurant
 ```
 
-   Pega el token de administración (no se ve al pegarlo) y presiona Enter. Debes ver «ya estaba en la nube» (o «Listo: «La Spritzzería» quedó creado en la nube»).
+   Pega el token de administración (no se ve al pegarlo) y presiona Enter. Debes ver «was already in the cloud» (o «Done: "La Spritzzería" was created in the cloud»).
 2. **Pide un código para el PC de caja:**
 
 ```bash
@@ -200,7 +200,7 @@ Hazla con una mesa de prueba, de principio a fin:
 pnpm --filter @pos/hub start
 ```
 
-   Debes ver `Hub en marcha`.
+   Debes ver `Hub running`.
 4. Abre la caja con la base de efectivo.
 
 **Al cerrar:** cierra la caja (sale el cierre impreso). Después puedes cerrar Faro con **Ctrl+C**. Si la barra no dice «Nube al día», déjalo prendido unos minutos más con internet para que termine de subir.

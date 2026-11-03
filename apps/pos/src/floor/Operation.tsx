@@ -36,7 +36,7 @@ export function Operation({ route, params }: { route: string; params: URLSearchP
   }, [withMenu, brand])
 
   useEffect(() => {
-    floor.load().catch((e) => console.error('No se pudo abrir la base del equipo:', e))
+    floor.load().catch((e) => console.error('Could not open the device database:', e))
     const onVisibilityChange = () => floor.changeVisibility(!document.hidden)
     const onTap = () => floor.markUsed()
     const review = setInterval(() => floor.expireSessionIfDue(), CHECK_SESSION_MS)

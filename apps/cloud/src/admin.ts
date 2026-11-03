@@ -18,7 +18,7 @@ const [command, argument] = process.argv.slice(2)
 const cloud = process.env.CLOUD_URL?.replace(/\/$/, '')
 if (!cloud || !['restaurant', 'code', 'revoke'].includes(command ?? '')) {
   console.error(
-    'Uso: CLOUD_URL=https://faro-api.<tu-cuenta>.workers.dev pnpm --filter @pos/cloud admin restaurant [nombre-corto] | code | revoke <hub_id>',
+    'Usage: CLOUD_URL=https://faro-api.<your-account>.workers.dev pnpm --filter @pos/cloud admin restaurant [slug] | code | revoke <hub_id>',
   )
   process.exit(1)
 }
@@ -29,15 +29,14 @@ function localRestaurant(): { id: string; name: string } {
   const db = openDatabase(join(dir, 'pos.sqlite'))
   try {
     const row = db.prepare('SELECT id, name FROM restaurants LIMIT 1').get()
-    if (!row)
-      throw new Error(`La base del hub en ${dir} no tiene restaurante. Corre primero pnpm seed.`)
+    if (!row) throw new Error(`The hub database in ${dir} has no restaurant. Run pnpm seed first.`)
     return { id: String(row.id), name: String(row.name) }
   } finally {
     db.close()
   }
 }
 
-const token = await secret('TOKEN_ADMIN', 'Token de administración de la nube: ')
+const token = await secret('TOKEN_ADMIN', 'Cloud admin token: ')
 const request = async (route: string, body: object) => {
   const r = await fetch(`${cloud}${route}`, {
     method: 'POST',
@@ -46,7 +45,7 @@ const request = async (route: string, body: object) => {
   })
   const data = r.status === 204 ? null : await r.json().catch(() => null)
   if (!r.ok) {
-    console.error(`La nube respondió ${r.status}: ${data?.message ?? 'sin detalle'}`)
+    console.error(`The cloud responded with ${r.status}: ${data?.message ?? 'no detail'}`)
     process.exit(1)
   }
   return data
@@ -60,29 +59,29 @@ if (command === 'restaurant') {
   })
   console.log(
     r.status === 'created'
-      ? `Listo: «${rest.name}» quedó creado en la nube (id ${rest.id}).`
-      : `«${rest.name}» ya estaba en la nube (id ${rest.id}). No se cambió nada.`,
+      ? `Done: "${rest.name}" was created in the cloud (id ${rest.id}).`
+      : `"${rest.name}" was already in the cloud (id ${rest.id}). Nothing was changed.`,
   )
   console.log(
     r.slug
-      ? `Nombre corto para entrar al panel: ${r.slug}`
-      : 'Este restaurante aún no tiene nombre corto para el panel.',
+      ? `Slug to sign in to the panel: ${r.slug}`
+      : 'This restaurant has no slug for the panel yet.',
   )
 } else if (command === 'code') {
   const rest = localRestaurant()
   const r = await request('/v1/admin/codes', { restaurant_id: rest.id })
-  const expiry = new Intl.DateTimeFormat('es-CO', {
+  const expiry = new Intl.DateTimeFormat('en-US', {
     dateStyle: 'long',
     timeStyle: 'short',
     timeZone: 'America/Bogota',
   }).format(new Date(r.expires_at))
-  console.log(`Código para registrar el PC de caja de «${rest.name}»: ${r.code}`)
-  console.log(`Sirve una sola vez y vence el ${expiry}.`)
+  console.log(`Code to register the cash register PC for "${rest.name}": ${r.code}`)
+  console.log(`It can be used only once and expires on ${expiry}.`)
 } else {
   if (!argument) {
-    console.error('Falta el id del hub: pnpm --filter @pos/cloud admin revoke <hub_id>')
+    console.error('Missing the hub id: pnpm --filter @pos/cloud admin revoke <hub_id>')
     process.exit(1)
   }
   await request('/v1/admin/hubs/revoke', { hub_id: argument })
-  console.log(`Listo: el hub ${argument} ya no puede subir nada a la nube.`)
+  console.log(`Done: hub ${argument} can no longer upload anything to the cloud.`)
 }

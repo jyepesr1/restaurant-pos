@@ -31,7 +31,7 @@ export function inTransaction<T>(db: SqliteDatabase, job: () => T): T {
   if (inProgress.has(db)) {
     const result = job()
     if (typeof (result as { then?: unknown } | undefined)?.then === 'function')
-      throw new Error('inTransaction no admite funciones asíncronas')
+      throw new Error('inTransaction does not accept async functions')
     return result
   }
   db.exec('BEGIN IMMEDIATE')
@@ -39,7 +39,7 @@ export function inTransaction<T>(db: SqliteDatabase, job: () => T): T {
   try {
     const result = job()
     if (typeof (result as { then?: unknown } | undefined)?.then === 'function') {
-      throw new Error('inTransaction no admite funciones asíncronas')
+      throw new Error('inTransaction does not accept async functions')
     }
     db.exec('COMMIT')
     return result

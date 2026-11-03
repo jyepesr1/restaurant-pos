@@ -46,7 +46,7 @@ function startHub(env: Record<string, string>): Promise<StartedHub> {
 
   return new Promise((resolve, reject) => {
     const review = () => {
-      if (text.includes('Hub en marcha')) {
+      if (text.includes('Hub running')) {
         child.stdout?.off('data', review)
         resolve({
           child,
@@ -66,7 +66,7 @@ function startHub(env: Record<string, string>): Promise<StartedHub> {
   })
 }
 
-const ADMIN_PIN_FILE = 'pin-administrador.txt'
+const ADMIN_PIN_FILE = 'admin-pin.txt'
 
 describe('access with the real hub process', () => {
   let folder: string
@@ -92,9 +92,9 @@ describe('access with the real hub process', () => {
     if (erase) rmSync(pinPath())
     const datum = (label: string) => new RegExp(`${label}:\\s+(\\S+)`).exec(text)?.[1]
     return {
-      user: datum('Usuario'),
-      password: datum('Contraseña'),
-      pin: datum('PIN para autorizar'),
+      user: datum('Username'),
+      password: datum('Password'),
+      pin: datum('PIN to authorize'),
     }
   }
   const environment = async () => ({
@@ -126,8 +126,8 @@ describe('access with the real hub process', () => {
     hub = await startHub({ ...(await environment()), DATA_DIR: dataDir() })
     // Nothing new is shown or written: the admin already exists.
     expect(existsSync(pinPath())).toBe(false)
-    expect(hub.output()).not.toMatch(/datos del administrador|Contraseña:/)
-    expect(hub.output()).not.toMatch(/clave de los PIN/)
+    expect(hub.output()).not.toMatch(/admin's sign-in details|Password:/)
+    expect(hub.output()).not.toMatch(/PIN key/)
     const another = await signIn(hub, { user, password }, token)
     expect(another.status).toBe(201)
     // With the token it does not register another device.
@@ -158,7 +158,7 @@ describe('access with the real hub process', () => {
     rmSync(join(dataDir(), KEY_FILE))
 
     hub = await startHub({ ...env, PORT: String(await freePort()) })
-    expect(hub.output()).toMatch(/Falta la clave de los PIN/)
+    expect(hub.output()).toMatch(/The PIN key is missing/)
     const newer = fileData()
     expect(newer.pin).toMatch(/^\d{4}$/)
     // The password does not depend on that key: it is not changed or shown again.
@@ -177,7 +177,7 @@ describe('access with the real hub process', () => {
     writeFileSync(join(dataDir(), KEY_FILE), 'corta')
 
     await expect(startHub({ ...env, PORT: String(await freePort()) })).rejects.toThrow(
-      /No se pudo preparar el acceso del hub.*dañada/s,
+      /Could not prepare the hub's access.*damaged/s,
     )
   })
 
@@ -191,7 +191,7 @@ describe('access with the real hub process', () => {
 
     const output = hub.output()
     // They go to the file in the data folder (readable only by the hub), not to the screen.
-    expect(output).not.toMatch(/Contraseña:\s+\S|PIN para autorizar:\s+\d/)
+    expect(output).not.toMatch(/Password:\s+\S|PIN to authorize:\s+\d/)
     expect(output).toContain(ADMIN_PIN_FILE)
     if (process.platform !== 'win32') expect(statSync(pinPath()).mode & 0o777).toBe(0o600)
     expect(pin).toMatch(/^\d{4}$/)

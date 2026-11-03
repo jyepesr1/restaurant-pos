@@ -103,7 +103,7 @@ describe('migrations', () => {
       "INSERT INTO migrations (version, name, hash, applied_at) VALUES (99, 'futura', 'x', ?)",
     ).run(NOW)
 
-    expect(() => applyMigrations(db)).toThrow(/más nueva que esta aplicación/)
+    expect(() => applyMigrations(db)).toThrow(/newer than this app/)
   })
 
   it('if a migration fails, the database stays at the previous version', () => {
@@ -127,7 +127,7 @@ describe('migrations', () => {
     const db = openDatabase(':memory:')
     const migrations = [{ version: 2, name: 'salta', sql: 'SELECT 1;' }]
 
-    expect(() => applyMigrations(db, migrations)).toThrow(/numeradas/)
+    expect(() => applyMigrations(db, migrations)).toThrow(/numbered/)
   })
 })
 

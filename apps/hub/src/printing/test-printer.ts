@@ -74,6 +74,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log(`\n${text}\n`)
   })
   console.log(
-    `Impresora de prueba lista en 127.0.0.1:${printer.port}. En «Cocina e impresoras» ponle la IP 127.0.0.1 y el puerto ${printer.port}.`,
+    `Test printer ready at 127.0.0.1:${printer.port}. In "Cocina e impresoras", give it the IP 127.0.0.1 and the port ${printer.port}.`,
   )
 }

@@ -55,7 +55,7 @@ export function jobsForEvent(
     try {
       return enqueueZReport(o, event.aggregate_id, { event }) === 'queued' ? 1 : 0
     } catch (error) {
-      console.error(`No se pudo armar el cierre Z del turno ${event.aggregate_id}:`, error)
+      console.error(`Could not build the Z report for shift ${event.aggregate_id}:`, error)
       return 0
     }
   }

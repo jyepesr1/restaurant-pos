@@ -46,7 +46,7 @@ function startHub(env: Record<string, string>): Promise<StartedHub> {
 
   return new Promise((resolve, reject) => {
     const review = () => {
-      if (text.includes('Hub en marcha')) {
+      if (text.includes('Hub running')) {
         child.stdout?.off('data', review)
         resolve({
           child,
@@ -90,7 +90,7 @@ describe('hub startup (real process)', () => {
     expect(existsSync(dataDir)).toBe(false)
 
     hub = await startHub(await environment(dataDir))
-    expect(hub.output()).toContain(`Base de datos actualizada a la versión ${LATEST}.`)
+    expect(hub.output()).toContain(`Database updated to version ${LATEST}.`)
     await hub.stop()
     hub = undefined
 
@@ -108,14 +108,14 @@ describe('hub startup (real process)', () => {
   it('restarting with the same folder does not migrate again and keeps the data', async () => {
     const dataDir = join(folder, 'data')
     hub = await startHub(await environment(dataDir))
-    expect(hub.output()).toContain('Los datos del administrador quedaron en')
+    expect(hub.output()).toContain("The admin's sign-in details were saved to")
     await hub.stop()
 
     hub = await startHub(await environment(dataDir))
-    expect(hub.output()).toContain(`Base de datos en la versión ${LATEST}.`)
-    expect(hub.output()).not.toContain('actualizada')
+    expect(hub.output()).toContain(`Database at version ${LATEST}.`)
+    expect(hub.output()).not.toContain('updated')
     // The credentials were shown only once; the restaurant and its roles are not duplicated.
-    expect(hub.output()).not.toContain('datos del administrador quedaron')
+    expect(hub.output()).not.toContain('sign-in details were saved')
     await hub.stop()
     hub = undefined
 
@@ -131,13 +131,13 @@ describe('hub startup (real process)', () => {
     const env = await environment(join(folder, 'data'))
     hub = await startHub(env)
     // Without a window (output to a process, as in a service) the credentials go to a separate file.
-    const file = readFileSync(join(env.DATA_DIR, 'pin-administrador.txt'), 'utf8')
+    const file = readFileSync(join(env.DATA_DIR, 'admin-pin.txt'), 'utf8')
     const datum = (label: string) => new RegExp(`${label}:\\s+(\\S+)`).exec(file)?.[1] as string
     const url = `http://127.0.0.1:${env.PORT}`
     const signIn = await fetch(`${url}/api/sign-in`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ user: datum('Usuario'), password: datum('Contraseña') }),
+      body: JSON.stringify({ user: datum('Username'), password: datum('Password') }),
     })
 
     expect(signIn.status).toBe(201)
@@ -148,10 +148,10 @@ describe('hub startup (real process)', () => {
     expect(r.user.role).toBe('Administrador')
     // The hub registered this browser as a register device and gave it its token.
     expect(r.device.type).toBe('register')
-    expect(datum('PIN para autorizar')).toMatch(/^\d{4}$/)
+    expect(datum('PIN to authorize')).toMatch(/^\d{4}$/)
     // The hub log does not record bodies: neither the password nor the token gets written.
     expect(hub.output()).not.toContain('"password"')
-    expect(hub.output()).not.toContain(datum('Contraseña'))
+    expect(hub.output()).not.toContain(datum('Password'))
     expect(hub.output()).not.toContain(r.device.token)
   })
 
@@ -167,8 +167,6 @@ describe('hub startup (real process)', () => {
     ).run()
     ;(db as unknown as { close(): void }).close()
 
-    await expect(startHub(await environment(dataDir))).rejects.toThrow(
-      /más nueva que esta aplicación/,
-    )
+    await expect(startHub(await environment(dataDir))).rejects.toThrow(/newer than this app/)
   })
 })

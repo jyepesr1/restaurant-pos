@@ -50,7 +50,7 @@ export function useLocalView(): LocalView | null {
           reconciliation: shift ? registerReconciliation(locals, shift.id) : null,
         })
       })
-      .catch((error) => console.error('No se pudieron leer los pedidos:', error))
+      .catch((error) => console.error('Could not read the orders:', error))
     return () => {
       current = false
     }

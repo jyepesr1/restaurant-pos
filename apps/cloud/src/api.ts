@@ -210,7 +210,7 @@ async function respond(req: Request, environment: ApiEnv): Promise<Response> {
       // what makes uploading fail.
       await cloud.heartbeat(hub, hubMaxOf(req.headers.get('x-faro-hub-max'))).catch((e) => {
         const { code, message } = (e ?? {}) as Record<string, unknown>
-        console.error('No se pudo registrar el latido del hub:', { code, message })
+        console.error('Could not record the hub heartbeat:', { code, message })
       })
       if (route === 'GET /v1/events/last')
         return json(200, { last_sequence: await cloud.lastSequence(hub) })
@@ -228,7 +228,7 @@ async function respond(req: Request, environment: ApiEnv): Promise<Response> {
     // An internal error is not shown to the hub, and only the bare minimum goes to the log: the
     // detail of a Postgres error may carry row values (restaurant data).
     const { code, constraint, message } = (e ?? {}) as Record<string, unknown>
-    console.error('Error en la API de la nube:', { route, code, constraint, message })
+    console.error('Cloud API error:', { route, code, constraint, message })
     return error(500, 'internal_error', 'La nube tuvo un problema. Se reintentará.')
   }
 }

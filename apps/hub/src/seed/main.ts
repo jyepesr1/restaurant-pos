@@ -23,17 +23,17 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 function announce(whoCan: string, lines: readonly string[]) {
   if (lines.length === 0) return
   // One file per run: that way a new run does not overwrite PINs nobody has read.
-  const file = `pines-${new Date().toISOString().replace(/[:.]/g, '-')}-${whoCan}.txt`
+  const file = `pins-${new Date().toISOString().replace(/[:.]/g, '-')}-${whoCan}.txt`
   showPins(dataDir, {
     consoleLines: [
-      '\nPIN y contraseñas nuevos:',
+      '\nNew PINs and passwords:',
       ...lines,
-      'Anótalos en un lugar seguro: no se vuelven a mostrar.',
+      'Write them down somewhere safe: they are not shown again.',
     ],
     file,
     content: `${lines.join('\n')}\n`,
     alert: (route) =>
-      `\nLos PIN y contraseñas nuevos quedaron en ${route}: anótalos y borra ese archivo.`,
+      `\nThe new PINs and passwords were saved to ${route}: write them down and delete that file.`,
   })
 }
 
@@ -41,8 +41,8 @@ function announce(whoCan: string, lines: readonly string[]) {
 const lineOf = (p: { name: string; pin: string | null; user?: string; password?: string }) =>
   [
     `  ${p.name.padEnd(14)}`,
-    p.user ? `usuario ${p.user}  contraseña ${p.password}` : '',
-    p.pin ? (p.user ? `PIN para autorizar ${p.pin}` : `PIN ${p.pin}`) : '',
+    p.user ? `username ${p.user}  password ${p.password}` : '',
+    p.pin ? (p.user ? `PIN to authorize ${p.pin}` : `PIN ${p.pin}`) : '',
   ]
     .filter(Boolean)
     .join('  ')
@@ -52,11 +52,11 @@ function run(): number {
   try {
     menu = readMenu(readFileSync(menuPath, 'utf8'))
   } catch (error) {
-    console.error(`No se cargaron los datos: la carta (${menuPath}) no sirve: ${message(error)}`)
+    console.error(`No data was loaded: the menu (${menuPath}) is not valid: ${message(error)}`)
     return 1
   }
   for (const name of rulesWithoutDish(menu))
-    console.warn(`⚠ La carta ya no tiene «${name}»: revisa las reglas del seed (término o sabor).`)
+    console.warn(`⚠ The menu no longer has "${name}": check the seed rules (doneness or flavor).`)
 
   let db: SqliteDatabase
   try {
@@ -64,8 +64,8 @@ function run(): number {
   } catch (error) {
     console.error(
       error instanceof DatabaseBusyError
-        ? 'No se cargaron los datos: el hub está abierto. Ciérralo y vuelve a correr esto.'
-        : `No se cargaron los datos: ${message(error)}`,
+        ? 'No data was loaded: the hub is open. Close it and run this again.'
+        : `No data was loaded: ${message(error)}`,
     )
     return 1
   }
@@ -73,7 +73,7 @@ function run(): number {
   try {
     const { access, restaurantId, roles, admin, alerts } = prepareAccess(db, dataDir)
     for (const alert of alerts) console.warn(`⚠ ${alert}`)
-    announce('administrador', adminLines(admin))
+    announce('admin', adminLines(admin))
 
     const { sqlTables, pins } = seed(
       db,
@@ -81,23 +81,23 @@ function run(): number {
       { restaurantId, roles, menu, withoutStaff },
       new Date().toISOString(),
     )
-    console.log(`Datos de La Spritzzería cargados en ${dataDir}`)
+    console.log(`Loaded La Spritzzería's data into ${dataDir}`)
     for (const [tableName, c] of Object.entries(sqlTables)) {
       const parts = [
-        `${c.created} nuevos`,
-        `${c.updated} cambiados`,
-        `${c.equal} iguales`,
-        ...(c.respected ? [`${c.respected} respetados`] : []),
-        ...(c.archived ? [`${c.archived} archivados`] : []),
+        `${c.created} new`,
+        `${c.updated} changed`,
+        `${c.equal} unchanged`,
+        ...(c.respected ? [`${c.respected} kept`] : []),
+        ...(c.archived ? [`${c.archived} archived`] : []),
       ]
       console.log(`  ${tableName.padEnd(28)} ${parts.join(', ')}`)
     }
-    if (pins.length > 0) announce('personal', pins.map(lineOf))
-    else if (withoutStaff) console.log('\nSin personal de ejemplo (--no-staff).')
-    else console.log('\nNo se creó personal nuevo: cada quien conserva su PIN.')
+    if (pins.length > 0) announce('staff', pins.map(lineOf))
+    else if (withoutStaff) console.log('\nNo sample staff (--no-staff).')
+    else console.log('\nNo new staff was created: everyone keeps their PIN.')
     return 0
   } catch (error) {
-    console.error(`No se cargaron los datos: ${message(error)}`)
+    console.error(`No data was loaded: ${message(error)}`)
     return 1
   } finally {
     db.close()

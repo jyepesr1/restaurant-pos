@@ -248,7 +248,7 @@ Cumple a la vez la trazabilidad total del brief, la sincronización sin pérdida
 - Aprobar un emparejamiento se hace desde un equipo ya emparejado (la caja); solo el primero de un hub nuevo se aprueba sin token.
 - Sin conexión con el hub no hay inicio de sesión nuevo ni autorizaciones: el dispositivo conserva la sesión abierta y las acciones que piden supervisor esperan a que vuelva la red.
 - Riesgo aceptado: con HTTP (ADR-001) el PIN viaja sin cifrar por el Wi-Fi; por eso debe ser una red solo del personal.
-- Al instalar, el hub crea el usuario «Administrador» y muestra su PIN **una sola vez** en la ventana del hub. Si la salida no es una ventana (servicio de Windows con log a archivo), lo deja en `pin-administrador.txt` en la carpeta de datos, solo legible por el hub, para leerlo y borrarlo.
+- Al instalar, el hub crea el usuario «Administrador» y muestra su PIN **una sola vez** en la ventana del hub. Si la salida no es una ventana (servicio de Windows con log a archivo), lo deja en `admin-pin.txt` en la carpeta de datos, solo legible por el hub, para leerlo y borrarlo.
 - Riesgo conocido: si alguien reemplaza el archivo de la clave por otra clave válida, el hub no lo detecta; ningún PIN funciona y hay que regenerarlos como si se hubiera perdido.
 
 **Implementación (tarea 0.7):** permisos y roles de fábrica en `packages/core/src/access`; emparejamiento, PIN, sesiones, comprobantes y revocación en `apps/hub/src/access` (API HTTP del hub); el hub de sincronización los consulta en cada evento a través de `AccessControl`.
@@ -288,12 +288,13 @@ Más amarre a un proveedor. Los reportes comparativos entre sedes (Fase 5) neces
 
 ## ADR-010 · Idioma: código y commits en inglés; interfaz y documentación en español
 
-**Fecha:** 23-oct-2026, cambiada el 26-oct-2026 · **Estado:** aceptada
+**Fecha:** 23-oct-2026, cambiada el 26-oct-2026 y el 2-nov-2026 · **Estado:** aceptada
 
 **Decisión del dueño (26-oct-2026):** el código va en inglés. Reemplaza la regla anterior («dominio en español, técnica en inglés»).
 
 - **En inglés:** identificadores, nombres de archivos y carpetas, paquetes (`@pos/cloud`) y scripts (`reset-admin`, `test-printer`, `migrate`), tipos de evento y sus campos (`ItemVoided`, `business_day`), tablas y columnas de SQLite y Postgres (en plural: `orders`, `order_items`), roles de Postgres (`faro_data`), rutas de la API (`/api/register/pre-bill`), códigos de error de máquina (`invalid_code`), claves de configuración, de IndexedDB y de localStorage, los tokens de color de `apps/pos/src/styles.css` y sus clases de Tailwind (`--background`, `bg-surface`, `text-muted`, la clase `.dark`, `data-brand`; renombrados el 29-oct-2026 sin cambiar ningún color), comentarios, títulos de las pruebas y mensajes de commit.
-- **En español:** todo lo que ve el personal del restaurante: textos de pantallas, lo que se imprime (comanda, precuenta, cierre Z), los mensajes (`message`) que la API muestra al usuario, los encabezados del CSV, los avisos y la salida de los scripts que corre el dueño. También la documentación (`docs/`, `CLAUDE.md`) y la conversación.
+- **En español:** todo lo que ve el personal del restaurante: textos de pantallas, lo que se imprime (comanda, precuenta, cierre Z), los mensajes (`message`) que la API muestra al usuario, los encabezados del CSV, y los avisos de la app. También la documentación (`docs/`, `CLAUDE.md`) y la conversación.
+- **También en inglés (2-nov-2026):** la salida del hub y de los scripts (`pnpm seed`, `reset-admin`, `admin`, `migrate`, `test-printer`), los logs del hub, de la nube y de la consola del navegador, y los archivos con PIN y contraseñas (`admin-pin.txt`, `pins-….txt`, `reset-….txt`). Los mensajes que la API muestra en pantalla siguen en español.
 - **Un solo nombre por término:** la tabla de `docs/GLOSARIO.md` fija el inglés de cada término del dominio (pedido → `order`, mesa → `table`, caja → `register`, turno → `shift`, precuenta → `preBill`, cuenta → `check`, cobro → `checkout`…), con inglés de producto POS estándar (Toast, Square).
 - **Se quedan como están, a propósito:** el archivo de la carta del piloto (`docs/datos/carta-la-spritzzeria.yaml`) y sus claves, porque es un formato exportado; y el secreto `TOKEN_ADMIN` del Worker.
 

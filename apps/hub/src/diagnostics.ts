@@ -55,7 +55,7 @@ export async function diagnosticsRoutes(
     await mkdir(dataDir, { recursive: true })
     const entry = { receivedAt: new Date().toISOString(), ip: req.ip, data }
     await appendFile(file, `${JSON.stringify(entry)}\n`)
-    req.log.info({ ip: req.ip }, 'Diagnóstico recibido')
+    req.log.info({ ip: req.ip }, 'Diagnostics received')
 
     return { saved: true }
   })

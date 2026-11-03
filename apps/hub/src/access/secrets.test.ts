@@ -64,7 +64,7 @@ describe('hub key', () => {
   it('a damaged key stops startup with a clear message', () => {
     folder = mkdtempSync(join(tmpdir(), 'pos-key-'))
     writeFileSync(join(folder, KEY_FILE), 'corta')
-    expect(() => loadKey(folder)).toThrow(/dañada/)
+    expect(() => loadKey(folder)).toThrow(/damaged/)
   })
 })
 
@@ -106,7 +106,7 @@ describe('wait after failed attempts', () => {
     )
     for (let i = 0; i < FAILURES_FOR_ALERT + 5; i++) attempts.failure(`device-${i % 3}`)
     expect(alerts).toEqual([
-      `${FAILURES_FOR_ALERT} PIN o códigos errados en 10 minutos en el restaurante`,
+      `${FAILURES_FOR_ALERT} wrong PINs or codes in 10 minutes at the restaurant`,
     ])
   })
 })

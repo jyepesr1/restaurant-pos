@@ -76,7 +76,7 @@ Los resultados se envían al hub y quedan en `apps/hub/data/diagnostics.jsonl` (
 
 **Cómo probarlo a mano:**
 
-1. Inicia el hub: `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver `Hub en marcha` y la dirección `http://192.168…:4000`.
+1. Inicia el hub: `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver `Hub running` y la dirección `http://192.168…:4000`.
 2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/diagnostics`. Debes ver **Diagnóstico del dispositivo** y **✓ Conectado** en «Canal en tiempo real».
 3. Sigue los cuatro pasos numerados de la pantalla. Al enviar debes ver **✓ Resultados enviados**.
 
@@ -209,7 +209,7 @@ En el hub:
 pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
-   Debes ver «Base de datos en la versión 1.» (o «Base de datos actualizada a la versión 1.» si la base es nueva).
+   Debes ver «Database at version 1.» (o «Database updated to version 1.» si la base es nueva).
 5. En el PC de la caja entra como administrador. En la barra lateral toca **Cocina e impresoras**. Debes ver Cocina y Barra con «No le llega nada».
 6. Toca **Agregar impresora**. Escribe «Cocina», toca la estación **Cocina**, deja «Cable de red», escribe la IP del paso 2, deja el puerto 9100 y 80 mm, y toca **Guardar**. Debe salir en la lista con «Lista».
 7. Toca **Prueba**. La impresora de la cocina debe sacar una hoja «PRUEBA DE IMPRESIÓN»: la regla de números debe ocupar una sola línea y las tildes y eñes deben verse bien. Si salen símbolos raros, toca **Editar**, elige **Windows (1252)**, guarda y prueba otra vez.
@@ -308,14 +308,14 @@ Decisión del dueño ([ADR-010](DECISIONES.md#adr-010--idioma-código-y-commits-
   - El Worker `faro-api` se volvió a publicar con el mismo Hyperdrive y el mismo secreto `TOKEN_ADMIN`: `/v1/health` responde 200 y las rutas de hub y de administración dan 401.
 - **Comandos renombrados:** `pnpm reset-admin`, `pnpm --filter @pos/hub test-printer`, `pnpm seed --no-staff`, `pnpm --filter @pos/cloud migrate`, `CLOUD_URL=… pnpm --filter @pos/cloud admin restaurant | code | revoke`, `pnpm --filter @pos/cloud run deploy`. La carpeta de datos del hub es `apps/hub/data` y las variables `DATA_DIR`, `APP_DIR`, `DIE_AT`, `CLOUD_URL`.
 
-**Se quedan en español a propósito:** todo lo que ve o imprime el restaurante; la carta del piloto (`docs/datos/carta-la-spritzzeria.yaml`) y sus claves, porque es un formato exportado; los archivos que abre el dueño (`pin-administrador.txt`, `pines-….txt`, `restablecer-….txt`).
+**Se quedan en español a propósito:** todo lo que ve o imprime el restaurante; la carta del piloto (`docs/datos/carta-la-spritzzeria.yaml`) y sus claves, porque es un formato exportado; y los mensajes que la API muestra en pantalla. Desde el 2-nov-2026 la salida del hub y de los scripts (`pnpm seed`, `reset-admin`, `admin`, `migrate`, la impresora de prueba), los logs y los archivos con PIN (`admin-pin.txt`, `pins-….txt`, `reset-….txt`) también van en inglés.
 
 **Cómo probarlo a mano** (la base del hub se crea de nuevo, porque la vieja está en la versión 8 y en español):
 1. Cierra el hub si está abierto (en la ventana donde corre, `Ctrl+C`).
 2. En la carpeta del proyecto, en una terminal: `nvm use 24`.
 3. Borra la carpeta de datos vieja: en Finder, entra a `restaurant-pos/apps/hub/` y manda a la papelera la carpeta **`datos`** (si ya existe una carpeta **`data`** de una prueba anterior, mándala también).
-4. Corre `pnpm seed`. Debes ver una tabla con `products  98 nuevos` y `dining_tables  25 nuevos`, y al final los usuarios y PIN de ejemplo. Quedan también en `apps/hub/data/pines-….txt`.
-5. Corre `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver «Base de datos en la versión 1.» y las direcciones para abrir desde el celular.
+4. Corre `pnpm seed`. Debes ver una tabla con `products  98 new` y `dining_tables  25 new`, y al final los usuarios y PIN de ejemplo. Quedan también en `apps/hub/data/pins-….txt`.
+5. Corre `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver «Database at version 1.» y las direcciones para abrir desde el celular.
 6. Abre `http://localhost:4000` en el navegador. Si el navegador ya había abierto Faro antes, borra los datos del sitio (en Chrome: candado de la barra de direcciones → «Configuración del sitio» → «Borrar datos») y recarga. Debes ver «Escribe tu PIN».
 7. Escribe el PIN de «Mesero 1» del archivo de PIN. Debes ver el salón con 25 mesas libres y arriba «Solo red local».
 8. Toca la mesa 5, agrega un producto y envíalo. Debes ver la mesa «En preparación» en el plano. Todos los textos siguen en español.
@@ -459,7 +459,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigió:
 
 **Publicada el 29-oct-2026:** el Worker `faro-api` quedó con el registro nuevo (versión `102afa3e`), sin cambios en la base. `/v1/health` responde 200; un registro sin el restaurante da 400 y uno con un código inventado da 403 «el código no existe». La sección se llama **Copia en la nube**, decisión del dueño.
 
-**Bases al día (29-oct-2026):** Neon tiene la migración 1 con la misma huella que el código, y no hay migraciones nuevas. La Spritzzería ya está creada en la nube con el mismo id del hub; aún sin PC de caja ni eventos. La base del hub ya tiene la migración 1, y el seed se volvió a correr sin cambios: lo editado a mano en impuestos y datáfonos se respetó. Por eso el paso 1 de abajo debe decir «ya estaba en la nube».
+**Bases al día (29-oct-2026):** Neon tiene la migración 1 con la misma huella que el código, y no hay migraciones nuevas. La Spritzzería ya está creada en la nube con el mismo id del hub; aún sin PC de caja ni eventos. La base del hub ya tiene la migración 1, y el seed se volvió a correr sin cambios: lo editado a mano en impuestos y datáfonos se respetó. Por eso el paso 1 de abajo debe decir «was already in the cloud».
 
 **Queda pendiente:**
 - **Contacto de Faro** (WhatsApp o teléfono) en la pantalla Copia en la nube, para pedir el código y para «avisa a Faro» **(validar con el dueño)**.
@@ -475,7 +475,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigió:
 CLOUD_URL=https://faro-api.johanyepes.workers.dev pnpm --filter @pos/cloud admin restaurant
 ```
 
-   Pega el token de administración (no se ve). Debes ver «Listo: «La Spritzzería» quedó creado en la nube» o «ya estaba en la nube».
+   Pega el token de administración (no se ve). Debes ver «Done: "La Spritzzería" was created in the cloud» o «was already in the cloud».
 2. **Pide un código:**
 
 ```bash
@@ -557,7 +557,7 @@ Revisado por `revisor-codigo` y `qa-pruebas`. Se corrigió:
 pnpm --filter @pos/cloud migrate
 ```
 
-   Pega la cadena cuando la pida (no se ve al pegarla) y presiona Enter. Debes ver «Listo: se aplicaron las migraciones 1».
+   Pega la cadena cuando la pida (no se ve al pegarla) y presiona Enter. Debes ver «Done: applied migrations 1».
 5. **Crea el rol de la API.** En Neon, abre **SQL Editor** y ejecuta esto, cambiando la clave por una larga que generes en tu gestor de contraseñas:
 
 ```sql
@@ -604,7 +604,7 @@ cd apps/cloud && npx wrangler@4.149.0 secret put TOKEN_ADMIN
 CLOUD_URL=https://faro-api.TU-CUENTA.workers.dev pnpm --filter @pos/cloud admin restaurant
 ```
 
-   Pega el token de administración (no se ve). Debes ver «Listo: «La Spritzzería» quedó creado en la nube».
+   Pega el token de administración (no se ve). Debes ver «Done: "La Spritzzería" was created in the cloud».
 10. **Pide el código del PC de caja** (se usará en la 1.11):
 
 ```bash
@@ -1095,7 +1095,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entr
 pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
-   Si el administrador todavía entraba con PIN, la ventana muestra «Administrador (para entrar a la caja)» con su usuario y contraseña. Anótalos.
+   Si el administrador todavía entraba con PIN, la ventana muestra «Admin (to sign in at the register)» con su usuario y contraseña. Anótalos.
 3. En el PC de la caja abre la dirección del hub. Debes ver **Entrar** con Usuario y Contraseña. Escribe una contraseña errada: debe decir «Usuario o contraseña incorrectos» y conservar el usuario. Luego entra con la del administrador: debes ver el salón y el botón **Personal y roles**.
 4. Toca **Personal y roles → Roles → Cajero**. Marca «Anular lo ya enviado a cocina» y «Dar descuentos», y toca **Guardar**. Debe decir «Guardaste el rol Cajero».
 5. En **Personas**, toca **Persona nueva**, escribe «Pedro», deja el rol Mesero y «Con su PIN», y toca **Guardar**. Debe salir el PIN de Pedro en grande. Toca **Ya lo anoté**.
@@ -1156,7 +1156,7 @@ Revisado por `revisor-codigo`, `qa-pruebas`, `revisor-ux` y `auditor-dinero`. Se
 pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
-   Debes ver `Hub en marcha` y las direcciones.
+   Debes ver `Hub running` y las direcciones.
 3. En la caja, entra con el PIN del administrador o del cajero y toca una mesa libre. Debes ver **¿Cuántas personas?** con botones del 1 al 6. Toca **2**: arriba del ticket debe decir «2 personas» y aparecen **Para: Mesa, P1, P2**.
 4. Toca **P1**, luego **Entrada**, y toca dos veces un producto. En el ticket, bajo «Entrada», debe quedar una línea con 2 y «P1 · sin enviar».
 5. Toca **P2**, luego **Fuerte**, y toca otro producto. Debe aparecer bajo «Fuerte».
@@ -1227,7 +1227,7 @@ Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron, entr
 pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
-   Debes ver `Base de datos en la versión 1.` (o `Base de datos actualizada a la versión 1.` si la base es nueva) y `Hub en marcha`.
+   Debes ver `Database at version 1.` (o `Database updated to version 1.` si la base es nueva) y `Hub running`.
 2. En la caja, entra con tu PIN de administrador o de gerente. En el salón debes ver las 25 mesas en cuadrícula. Toca **Editar plano**.
 3. Toca **Nueva zona**, escribe «Terraza» como nombre, toca **Varias a la vez…**, elige **Redonda**, deja 10 y 5 por fila, y toca **Agregar 10**. Debes ver dos filas de mesas redondas con los números 26 a 35.
 4. Arrastra la mesa 26 a otro lugar y toca **Guardar**. Debes ver «Guardaste Terraza».
@@ -1290,7 +1290,7 @@ Revisado por `revisor-codigo`, `qa-pruebas`, `auditor-dinero` y `revisor-ux`. Se
 pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
-   Debes ver `Base de datos en la versión 1.` (o `Base de datos actualizada a la versión 1.` si la base es nueva) y `Hub en marcha`.
+   Debes ver `Database at version 1.` (o `Database updated to version 1.` si la base es nueva) y `Hub running`.
 2. En la caja, entra con tu PIN de administrador o de gerente. En el salón debes ver el botón **Carta**. Tócalo.
 3. Toca **Pinsa**, cambia el precio a `22.900` y toca **Guardar**. Debes ver «Guardaste Pinsa» y el precio nuevo en la lista.
 4. En el celular, abre una mesa: la Pinsa debe decir **$22.900** sin recargar la página.
@@ -1362,9 +1362,9 @@ Revisado por `revisor-codigo`, `qa-pruebas`, `revisor-ux` y `auditor-dinero`. Se
 pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
-   Debes ver `Hub en marcha` y una dirección como `http://192.168…:4000`.
+   Debes ver `Hub running` y una dirección como `http://192.168…:4000`.
 3. En la caja (o en tu computador), abre esa dirección. Debes ver **Emparejar este equipo**.
-4. Toca **Es el primer equipo**, deja el nombre «Caja» y el tipo **Caja**, y escribe el PIN del administrador: el que mostró el hub la primera vez que arrancó (si arrancó sin ventana, está en `apps/hub/data/pin-administrador.txt`). Debes pasar a **Escribe tu PIN**.
+4. Toca **Es el primer equipo**, deja el nombre «Caja» y el tipo **Caja**, y escribe el PIN del administrador: el que mostró el hub la primera vez que arrancó (si arrancó sin ventana, está en `apps/hub/data/admin-pin.txt`). Debes pasar a **Escribe tu PIN**.
 5. Escribe tu PIN (o el del administrador). Debes ver **Salón** con las 25 mesas libres y, arriba, **Solo red local**.
 6. Toca **Aprobar un equipo**, escribe «Celular» como nombre, deja **Celular o tablet de mesero** y escribe el PIN del administrador. Debes ver un código de 8 letras.
 7. En el celular, conectado al mismo Wi-Fi, abre la misma dirección, toca **Tengo un código**, escríbelo y toca **Emparejar**. Debes ver **Escribe tu PIN**. Escribe el PIN de un mesero. Debes ver el mismo salón.
@@ -1449,7 +1449,7 @@ Revisado por `revisor-ux`, `revisor-codigo`, `auditor-dinero` y `qa-pruebas`. Se
 pnpm --filter @pos/app build && pnpm --filter @pos/hub start
 ```
 
-   Debes ver `Hub en marcha` y una dirección como `http://192.168…:4000`.
+   Debes ver `Hub running` y una dirección como `http://192.168…:4000`.
 2. En el celular, conectado al mismo Wi-Fi, abre esa dirección agregando `/mockups`. Debes ver **Bocetos del POS** con seis tarjetas.
 3. Prueba el flujo del mesero: **Plano de mesas** → toca una mesa libre → toca un producto → **Enviar**. Debes volver al plano con la mesa en «En preparación».
 4. Abre **Cocina y barra**, toca **Todo listo** en esa mesa y vuelve al plano: la mesa debe decir «Listo para servir».
@@ -1501,9 +1501,9 @@ Revisado por `revisor-codigo`, `qa-pruebas` (unas 50 pruebas: repetir el seed, v
 pnpm seed
 ```
 
-   Debes ver `Datos de La Spritzzería cargados en …`, una línea por tabla (por ejemplo `products  98 nuevos, 0 cambiados, 0 iguales`) y, al final, `PIN y contraseñas nuevos:` con un PIN de 4 dígitos para cada persona. Anótalos.
+   Debes ver `Loaded La Spritzzería's data into …`, una línea por tabla (por ejemplo `products  98 new, 0 changed, 0 unchanged`) y, al final, `New PINs and passwords:` con un PIN de 4 dígitos para cada persona. Anótalos.
 
-3. Vuelve a correr el mismo comando. Ahora todas las líneas deben decir `0 nuevos, 0 cambiados` y al final `No se creó personal nuevo: cada quien conserva su PIN.`
+3. Vuelve a correr el mismo comando. Ahora todas las líneas deben decir `0 new, 0 changed` y al final `No new staff was created: everyone keeps their PIN.`
 4. Si quieres probarlo sin tocar tu hub, usa una carpeta aparte: `DATA_DIR=/tmp/hub-piloto pnpm seed`.
 
 ### 0.7 — Autenticación con PIN, roles y permisos ✅
@@ -1554,7 +1554,7 @@ pnpm --filter @pos/hub test
 DATA_DIR=/tmp/hub-nuevo pnpm --filter @pos/hub start
 ```
 
-   En la ventana debes ver `PIN del administrador: ` seguido de 4 dígitos, y `Hub en marcha`.
+   En la ventana debes ver `PIN to authorize: ` seguido de 4 dígitos, y `Hub running`.
 
 3. Detén ese hub con Ctrl+C y repite el mismo comando. Esta vez **no** debe aparecer el PIN: se muestra una sola vez.
 
@@ -1616,7 +1616,7 @@ Las pruebas además exigen que toda tabla esté clasificada en una categoría y 
 **Cómo probarlo a mano:**
 
 1. Ejecuta `pnpm --filter @pos/db test`. Debes ver todas las pruebas en verde.
-2. Inicia el hub (`pnpm --filter @pos/app build && pnpm --filter @pos/hub start`). La primera vez debe decir `Base de datos actualizada a la versión 1.`; las siguientes, `Base de datos en la versión 1.`
+2. Inicia el hub (`pnpm --filter @pos/app build && pnpm --filter @pos/hub start`). La primera vez debe decir `Database updated to version 1.`; las siguientes, `Database at version 1.`
 3. La base queda en `apps/hub/data/pos.sqlite`.
 
 ### 0.3 — Documentos vivos ✅
@@ -1642,7 +1642,7 @@ Monorepo pnpm + Turborepo con `apps/pos`, `apps/hub` y `packages/core`; Biome, T
 
 1. En la carpeta del proyecto, ejecuta `pnpm install` y luego `pnpm check`. Debes ver `Tasks: 6 successful, 6 total` al final.
 2. Ejecuta `pnpm test:e2e`. Debes ver `62 passed` y `2 skipped`.
-3. Ejecuta `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver `Hub en marcha` y una o más direcciones `http://192.168…:4000`.
+3. Ejecuta `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Debes ver `Hub running` y una o más direcciones `http://192.168…:4000`.
 4. Abre esa dirección en el navegador del computador. Debes ver "POS" y el indicador verde **✓ Conectado al hub**.
 5. Detén el hub con `Ctrl+C`. En unos 3 segundos el indicador cambia a rojo **✕ Sin conexión con el hub**.
 

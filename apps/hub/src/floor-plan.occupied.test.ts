@@ -54,7 +54,7 @@ function start(env: Record<string, string>): Promise<StartedHub> {
   const finished = new Promise<void>((resolve) => child.once('exit', () => resolve()))
   return new Promise((resolve, reject) => {
     const review = () => {
-      if (!text.includes('Hub en marcha')) return
+      if (!text.includes('Hub running')) return
       child.stdout?.off('data', review)
       resolve({
         child,

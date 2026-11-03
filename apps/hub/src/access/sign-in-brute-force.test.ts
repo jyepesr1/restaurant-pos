@@ -43,7 +43,7 @@ describe('PIN without a token, rotating IPs', () => {
     expect(api.alerts).toEqual([])
     await api.post('/api/sign-in', { pin: pins[FAILURES_FOR_ALERT - 1] }, { ip: ip(99) })
     expect(api.alerts).toHaveLength(1)
-    expect(api.alerts[0]).toMatch(/20 PIN/)
+    expect(api.alerts[0]).toMatch(/20 wrong PINs/)
     // Continuing to guess does not flood the admin with one alert per attempt.
     for (const [i, pin] of pins.slice(FAILURES_FOR_ALERT).entries())
       await api.post('/api/sign-in', { pin }, { ip: ip(100 + i) })
@@ -62,7 +62,7 @@ describe('PIN without a token, rotating IPs', () => {
       if (r.statusCode === 429) api.advance(Number(r.json().wait_ms) + 1)
       else failures++
     }
-    expect(api.alerts.some((a) => /seguidos desde device:/.test(a))).toBe(true)
+    expect(api.alerts.some((a) => /in a row from device:/.test(a))).toBe(true)
   })
 
   it('with the same token, changing IP does not reset the wait: it is counted per device', async () => {
@@ -178,7 +178,7 @@ describe('password without a token', () => {
     expect(api.alerts).toEqual([])
     await api.post('/api/sign-in', badCredentials('persona19', 19), { ip: ip(19) })
     expect(api.alerts).toHaveLength(1)
-    expect(api.alerts[0]).toMatch(/^20 PIN o códigos errados/)
+    expect(api.alerts[0]).toMatch(/^20 wrong PINs or codes/)
   })
 
   it('guessing many different accounts from one IP: the IP waits even if no account repeats', async () => {

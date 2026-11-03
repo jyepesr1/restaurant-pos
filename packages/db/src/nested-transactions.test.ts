@@ -129,7 +129,7 @@ describe('nested transactions', () => {
       inTransaction(db, async () => {
         put(1)
       }),
-    ).toThrow(/asíncronas/)
+    ).toThrow(/async functions/)
     expect(xs()).toEqual([])
   })
 
@@ -140,7 +140,7 @@ describe('nested transactions', () => {
       inTransaction(db, () => {
         inTransaction(db, async () => 1)
       }),
-    ).toThrow(/asíncronas/)
+    ).toThrow(/async functions/)
   })
 
   // BUG (latent): there is no SAVEPOINT. If an inner level fails and the outer one catches the

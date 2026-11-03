@@ -184,21 +184,23 @@ describe('an applied migration is not edited', () => {
     const { sql } = emptyDatabase()
     await migrate(sql)
     await expect(migrate(sql, [{ ...m1, sql: `${m1.sql}\n-- change` }])).rejects.toThrow(
-      /migración 1 .* cambió después de aplicarse/,
+      /Migration 1 .* changed after it was applied/,
     )
   })
 
   it('even an extra space counts as a change', async () => {
     const { sql } = emptyDatabase()
     await migrate(sql)
-    await expect(migrate(sql, [{ ...m1, sql: `${m1.sql} ` }])).rejects.toThrow(/cambió/)
+    await expect(migrate(sql, [{ ...m1, sql: `${m1.sql} ` }])).rejects.toThrow(
+      /changed after it was applied/,
+    )
   })
 
   it('on detecting the edit it applies none of the new migrations that come with it', async () => {
     const { sql, db } = emptyDatabase()
     await migrate(sql, [m1])
     await expect(migrate(sql, [{ ...m1, sql: `${m1.sql}\n-- change` }, m2])).rejects.toThrow(
-      /cambió/,
+      /changed after it was applied/,
     )
     expect(await sqlTables(db)).not.toContain('thing')
     expect((await db.query('SELECT version FROM migrations')).rows).toHaveLength(1)
@@ -208,7 +210,7 @@ describe('an applied migration is not edited', () => {
     const { sql } = emptyDatabase()
     await migrate(sql, [m1, m2, m3])
     await expect(migrate(sql, [m1, { ...m2, sql: `${m2.sql} -- x` }, m3])).rejects.toThrow(
-      /migración 2 .* cambió/,
+      /Migration 2 .* changed/,
     )
   })
 
@@ -230,7 +232,7 @@ describe('an applied migration is not edited', () => {
 describe('numbering', () => {
   const untouched = async (list: CloudMigration[]) => {
     const { sql, db } = emptyDatabase()
-    await expect(migrate(sql, list)).rejects.toThrow(/numeradas 1, 2, 3/)
+    await expect(migrate(sql, list)).rejects.toThrow(/numbered 1, 2, 3/)
     // It failed before touching the database: not even the migrations registry exists.
     expect(await sqlTables(db)).toEqual([])
   }

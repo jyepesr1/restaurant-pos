@@ -127,7 +127,7 @@ describe('tickets: overview', () => {
     const { db } = migrated()
     expect(applyMigrations(db)).toEqual([])
     const edited = [{ ...(MIGRATIONS[0] as object), sql: `${MIGRATIONS[0]?.sql}\n-- x` }]
-    expect(() => applyMigrations(db, edited as never)).toThrow(/cambió después de aplicarse/)
+    expect(() => applyMigrations(db, edited as never)).toThrow(/changed after it was applied/)
   })
 
   it('both printing tables are STRICT and in their category', () => {

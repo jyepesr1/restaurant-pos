@@ -21,7 +21,7 @@ import {
 } from './startup'
 
 const DEFAULT_PORT = 4000
-const ADMIN_PIN_FILE = 'pin-administrador.txt'
+const ADMIN_PIN_FILE = 'admin-pin.txt'
 // They can be changed with environment variables; the e2e tests use their own folders so as not
 // to overwrite the app or the data of a hub that is serving real phones.
 const appDir = process.env.APP_DIR || fileURLToPath(new URL('../../pos/dist', import.meta.url))
@@ -32,7 +32,7 @@ function readPort(): number {
   if (value === undefined) return DEFAULT_PORT
   const port = Number(value)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    console.error(`PUERTO inválido: "${value}". Usa un número entre 1 y 65535.`)
+    console.error(`Invalid PORT: "${value}". Use a number between 1 and 65535.`)
     process.exit(1)
   }
   return port
@@ -56,13 +56,13 @@ function prepareDatabase(): SqliteDatabase {
     const { db: base, appliedMigrations } = openData(dataDir)
     console.log(
       appliedMigrations.length > 0
-        ? `Base de datos actualizada a la versión ${currentVersion(base)}.`
-        : `Base de datos en la versión ${currentVersion(base)}.`,
+        ? `Database updated to version ${currentVersion(base)}.`
+        : `Database at version ${currentVersion(base)}.`,
     )
     return base
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    console.error(`No se pudo abrir la base de datos del hub: ${detail}`)
+    console.error(`Could not open the hub database: ${detail}`)
     process.exit(1)
   }
 }
@@ -77,7 +77,7 @@ function prepareAll(db: SqliteDatabase) {
     const access = prepareAccess(
       db,
       dataDir,
-      (alert) => console.warn(`⚠ Seguridad: ${alert}`),
+      (alert) => console.warn(`⚠ Security: ${alert}`),
       (deviceId, revokedAt) => floor?.revoke(deviceId, revokedAt),
     )
     const timeZone = timeZoneOf(db, access.restaurantId)
@@ -86,7 +86,7 @@ function prepareAll(db: SqliteDatabase) {
       db,
       restaurantId: access.restaurantId,
       onChange: (statuses) => floor?.notifyPrinters(statuses),
-      onFailure: (error) => console.error('Falló la cola de impresión:', error),
+      onFailure: (error) => console.error('The print queue failed:', error),
     })
     const tickets = { db, restaurantId: access.restaurantId, timeZone }
     // Each event the hub saves goes up to the cloud right away; without internet it waits in the
@@ -98,7 +98,7 @@ function prepareAll(db: SqliteDatabase) {
       instance: hubInstance(dataDir),
       url: process.env.CLOUD_URL || undefined,
       onStatus: (status) => floor?.notifyCloud(status),
-      onFailure: (error) => console.error('Falló la subida a la nube:', error),
+      onFailure: (error) => console.error('Uploading to the cloud failed:', error),
       // The menu, the configuration and the staff for the owner's panel (docs/PANEL.md).
       snapshots: () => readSnapshots(db, access.restaurantId),
     })
@@ -107,7 +107,7 @@ function prepareAll(db: SqliteDatabase) {
       dataDir,
       access.restaurantId,
       access.access,
-      (error, id) => console.error(`Un evento hizo fallar al hub y se rechazó (${id}):`, error),
+      (error, id) => console.error(`An event made the hub fail and was rejected (${id}):`, error),
       {
         // Inside the event's transaction; the queue starts once it has been saved.
         onSave: (event, changes) => {
@@ -115,7 +115,7 @@ function prepareAll(db: SqliteDatabase) {
           setImmediate(() => cloud.uploader.wake())
         },
         onSaveFailure: (error, id) => {
-          console.error(`No se pudo armar la comanda del evento ${id}:`, error)
+          console.error(`Could not build the ticket for event ${id}:`, error)
           queue.unbuiltTicket()
         },
       },
@@ -126,7 +126,7 @@ function prepareAll(db: SqliteDatabase) {
     return { ...access, floor, queue, timeZone, cloud }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    console.error(`No se pudo preparar el acceso del hub: ${detail}`)
+    console.error(`Could not prepare the hub's access: ${detail}`)
     process.exit(1)
   }
 }
@@ -138,7 +138,7 @@ const app = createAppServer({
   appDir,
   diagnostics: { dataDir },
   access,
-  sync: { floor, onFailure: (error) => console.error('Falló la sincronización:', error) },
+  sync: { floor, onFailure: (error) => console.error('Sync failed:', error) },
   catalog: {
     db,
     restaurantId,
@@ -186,17 +186,15 @@ try {
   await app.listen({ host: '0.0.0.0', port: port })
 } catch (error) {
   if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
-    console.error(`El puerto ${port} ya está en uso. ¿El hub ya está abierto en otra ventana?`)
+    console.error(`Port ${port} is already in use. Is the hub already open in another window?`)
   } else {
-    console.error('No se pudo iniciar el hub:', error)
+    console.error('Could not start the hub:', error)
   }
   process.exit(1)
 }
 
 if (!existsSync(appDir)) {
-  console.warn(
-    '\n⚠ Falta compilar la app: ejecuta `pnpm --filter @pos/app build` y reinicia el hub.',
-  )
+  console.warn('\n⚠ The app is not built: run `pnpm --filter @pos/app build` and restart the hub.')
 }
 
 for (const alert of alerts) console.warn(`⚠ ${alert}`)
@@ -204,17 +202,17 @@ const adminData = adminLines(admin)
 if (adminData.length > 0)
   showPins(dataDir, {
     consoleLines: [
-      '\nAdministrador (para entrar a la caja):',
+      '\nAdmin (to sign in at the register):',
       ...adminData,
-      'Anótalo en un lugar seguro: no se vuelve a mostrar.',
+      'Write it down somewhere safe: it is not shown again.',
     ],
     file: ADMIN_PIN_FILE,
     content: `${adminData.join('\n')}\n`,
     alert: (route) =>
-      `\nLos datos del administrador quedaron en ${route}: anótalos y borra ese archivo.`,
+      `\nThe admin's sign-in details were saved to ${route}: write them down and delete that file.`,
   })
 
-console.log('\nHub en marcha. Abre en los dispositivos de la misma red:')
+console.log('\nHub running. Open it on the devices on the same network:')
 for (const ip of localIps()) {
   console.log(`  http://${ip}:${port}`)
 }

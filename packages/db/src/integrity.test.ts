@@ -190,7 +190,7 @@ describe('migration runner', () => {
     applyMigrations(db)
     const editedList = MIGRATIONS.map((m, i) => (i === 0 ? { ...m, sql: `${m.sql} ` } : m))
 
-    expect(() => applyMigrations(db, editedList)).toThrow(/cambió después de aplicarse/)
+    expect(() => applyMigrations(db, editedList)).toThrow(/changed after it was applied/)
   })
 
   it('can rebuild a table with foreign keys off and turns them back on', () => {
@@ -232,7 +232,7 @@ describe('migration runner', () => {
       { version: 2, name: 'rompe', withoutForeignKeys: true, sql: 'DELETE FROM parent;' },
     ]
 
-    expect(() => applyMigrations(db, migrations)).toThrow(/referencias rotas/)
+    expect(() => applyMigrations(db, migrations)).toThrow(/broken references/)
     expect(db.prepare('SELECT count(*) AS n FROM parent').get()?.n).toBe(1)
   })
 })
@@ -241,7 +241,7 @@ describe('transactions', () => {
   it('do not accept async functions', () => {
     const db = migratedDatabase()
 
-    expect(() => inTransaction(db, async () => 1)).toThrow(/asíncronas/)
+    expect(() => inTransaction(db, async () => 1)).toThrow(/async functions/)
   })
 
   it('one inside another joins the outer one: if something fails, nothing is left', () => {

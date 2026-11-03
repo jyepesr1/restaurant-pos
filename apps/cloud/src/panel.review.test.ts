@@ -390,7 +390,7 @@ describe('the hub side', () => {
     )
     expect(r.status).toBe(200)
     expect(((await r.json()) as { last_sequence: number }).last_sequence).toBe(1)
-    expect(JSON.stringify(error.mock.calls)).toMatch(/latido/)
+    expect(JSON.stringify(error.mock.calls)).toMatch(/heartbeat/)
     error.mockRestore()
   })
 })

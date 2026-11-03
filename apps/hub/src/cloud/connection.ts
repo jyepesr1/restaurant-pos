@@ -63,11 +63,11 @@ export function checkCloudUrl(url: string): string {
   try {
     parsed = new URL(url)
   } catch {
-    throw new Error(`CLOUD_URL no es una dirección válida: ${url}`)
+    throw new Error(`CLOUD_URL is not a valid address: ${url}`)
   }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)
   if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && local))
-    throw new Error(`CLOUD_URL debe empezar con https:// (es ${parsed.protocol}//)`)
+    throw new Error(`CLOUD_URL must start with https:// (it is ${parsed.protocol}//)`)
   return url.replace(/\/+$/, '')
 }
 

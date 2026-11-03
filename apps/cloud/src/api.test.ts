@@ -71,7 +71,7 @@ describe('cloud migrations', () => {
     const { sql } = await testDatabase()
     expect(await migrate(sql)).toEqual([])
     const edited = CLOUD_MIGRATIONS.map((m) => ({ ...m, sql: `${m.sql}\n-- change` }))
-    await expect(migrate(sql, edited)).rejects.toThrow(/cambió después de aplicarse/)
+    await expect(migrate(sql, edited)).rejects.toThrow(/changed after it was applied/)
   })
 
   it('events are neither changed nor deleted', async () => {

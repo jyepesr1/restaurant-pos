@@ -298,7 +298,7 @@ describe('print queue: edge cases', () => {
 INSERT INTO print_jobs (id, restaurant_id, printer_id, type, content, created_at)
 VALUES ('${newId()}', '${newId()}', '${newId()}', 'ticket', '{}', '${NOW}');`,
     }
-    expect(() => applyMigrations(db, [broken])).toThrow(/referencias rotas/)
+    expect(() => applyMigrations(db, [broken])).toThrow(/broken references/)
     expect(currentVersion(db)).toBe(0)
     // No table was left half made.
     const names = db

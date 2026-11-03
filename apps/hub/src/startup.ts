@@ -53,9 +53,9 @@ export function prepareAccess(
 /** What is new for the admin, to show once; empty if there is nothing new. */
 export function adminLines(admin: Admin): string[] {
   return [
-    ...(admin.user ? [`  Usuario:          ${admin.user}`] : []),
-    ...(admin.password ? [`  Contraseña:       ${admin.password}`] : []),
-    ...(admin.pin ? [`  PIN para autorizar: ${admin.pin}`] : []),
+    ...(admin.user ? [`  Username:         ${admin.user}`] : []),
+    ...(admin.password ? [`  Password:         ${admin.password}`] : []),
+    ...(admin.pin ? [`  PIN to authorize: ${admin.pin}`] : []),
   ]
 }
 

@@ -42,15 +42,15 @@ describe('reset-admin with the hub open', { timeout: 90_000 }, () => {
     try {
       const r = run('src/reset.ts', folder)
       expect(r.code).toBe(1)
-      expect(r.output).toMatch(/el hub está abierto/)
-      expect(r.output).toMatch(/No se cambió nada/)
-      expect(r.output).not.toMatch(/Contraseña:/)
+      expect(r.output).toMatch(/the hub is open/)
+      expect(r.output).toMatch(/Nothing was changed/)
+      expect(r.output).not.toMatch(/Password:/)
       expect(fingerprint()).toBe(fingerprintBefore)
     } finally {
       hub.close()
     }
     // No new password file.
-    expect(readdirSync(folder).filter((f) => /^restablecer-/.test(f))).toEqual([])
+    expect(readdirSync(folder).filter((f) => /^reset-/.test(f))).toEqual([])
     expect(
       readdirSync(folder)
         .sort()

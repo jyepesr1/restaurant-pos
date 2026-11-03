@@ -23,7 +23,7 @@ export function askSecret(question: string): Promise<string> {
 export async function secret(variable: string, question: string): Promise<string> {
   const value = process.env[variable]?.trim() || (await askSecret(question))
   if (!value) {
-    console.error('No escribiste nada. No se hizo ningún cambio.')
+    console.error('Nothing was typed. Nothing was changed.')
     process.exit(1)
   }
   return value

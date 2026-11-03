@@ -23,7 +23,7 @@ const run = (script: string, dataDir: string) => {
 /** The password from a file the process left (without a window, they go to a file). */
 const passwordOf = (dataDir: string, pattern: RegExp) => {
   const file = readdirSync(dataDir).find((f) => pattern.test(f)) as string
-  return /Contraseña:\s+(\S+)/.exec(readFileSync(join(dataDir, file), 'utf8'))?.[1] as string
+  return /Password:\s+(\S+)/.exec(readFileSync(join(dataDir, file), 'utf8'))?.[1] as string
 }
 
 const savedHash = (dataDir: string) => {
@@ -40,12 +40,12 @@ describe('pnpm reset-admin (real process)', { timeout: 60_000 }, () => {
   it('gives the admin a new password; the previous one stops working', () => {
     folder = mkdtempSync(join(tmpdir(), 'pos-reset-'))
     expect(run('src/seed/main.ts', folder).code).toBe(0)
-    const old = passwordOf(folder, /-administrador\.txt$/)
+    const old = passwordOf(folder, /-admin\.txt$/)
 
     const r = run('src/reset.ts', folder)
     expect(r.code).toBe(0)
-    expect(r.output).toMatch(/La contraseña nueva quedó en/)
-    const newPassword = passwordOf(folder, /^restablecer-/)
+    expect(r.output).toMatch(/The new password was saved to/)
+    const newPassword = passwordOf(folder, /^reset-/)
     expect(newPassword).not.toBe(old)
     expect(passwordMatches(newPassword, savedHash(folder))).toBe(true)
     expect(passwordMatches(old, savedHash(folder))).toBe(false)
@@ -57,6 +57,6 @@ describe('pnpm reset-admin (real process)', { timeout: 60_000 }, () => {
     folder = mkdtempSync(join(tmpdir(), 'pos-reset-'))
     const r = run('src/reset.ts', folder)
     expect(r.code).toBe(0)
-    expect(passwordMatches(passwordOf(folder, /^restablecer-/), savedHash(folder))).toBe(true)
+    expect(passwordMatches(passwordOf(folder, /^reset-/), savedHash(folder))).toBe(true)
   })
 })

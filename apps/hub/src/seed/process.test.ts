@@ -27,19 +27,19 @@ describe('pnpm seed (real process)', { timeout: 60_000 }, () => {
     folder = mkdtempSync(join(tmpdir(), 'pos-seed-'))
     const first = seed(folder)
     expect(first.code).toBe(0)
-    expect(first.output).toMatch(/products\s+98 nuevos/)
+    expect(first.output).toMatch(/products\s+98 new/)
     // Without a window, the PINs do not show in the console: they go to a file.
     expect(first.output).not.toMatch(/Mesero 1\s+PIN \d{4}/)
     // One file per run: first the admin one, then the staff one.
-    const files = readdirSync(folder).filter((f) => /^pines-.*\.txt$/.test(f))
+    const files = readdirSync(folder).filter((f) => /^pins-.*\.txt$/.test(f))
     const pins = files.map((f) => readFileSync(join(folder, f), 'utf8')).join('')
-    expect(pins).toMatch(/Contraseña:\s+\S+[\s\S]*PIN para autorizar:\s+\d{4}/)
+    expect(pins).toMatch(/Password:\s+\S+[\s\S]*PIN to authorize:\s+\d{4}/)
     expect(pins).toMatch(/Mesero 3\s+PIN \d{4}/)
 
     const second = seed(folder)
     expect(second.code).toBe(0)
-    expect(second.output).toMatch(/products\s+0 nuevos, 0 cambiados, 98 iguales/)
-    expect(second.output).toContain('No se creó personal nuevo')
+    expect(second.output).toMatch(/products\s+0 new, 0 changed, 98 unchanged/)
+    expect(second.output).toContain('No new staff was created')
   })
 
   it('with the hub open it touches nothing and says so', () => {
@@ -48,7 +48,7 @@ describe('pnpm seed (real process)', { timeout: 60_000 }, () => {
     try {
       const r = seed(folder)
       expect(r.code).toBe(1)
-      expect(r.output).toContain('el hub está abierto')
+      expect(r.output).toContain('the hub is open')
     } finally {
       ;(openHub as unknown as { close(): void }).close()
     }

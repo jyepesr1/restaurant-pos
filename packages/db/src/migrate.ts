@@ -29,7 +29,7 @@ export function currentVersion(db: SqliteDatabase): number {
 function verifyNumbering(migrations: readonly Migration[]) {
   migrations.forEach((migration, index) => {
     if (migration.version !== index + 1) {
-      throw new Error(`Las migraciones deben ir numeradas 1, 2, 3…; falla en "${migration.name}"`)
+      throw new Error(`Migrations must be numbered 1, 2, 3…: "${migration.name}" is out of order`)
     }
   })
 }
@@ -42,7 +42,7 @@ function verifyApplied(db: SqliteDatabase, migrations: readonly Migration[]) {
     const migration = migrations[Number(row.version) - 1]
     if (migration && sqlFingerprint(migration.sql) !== row.hash) {
       throw new Error(
-        `La migración ${row.version} ("${row.name}") cambió después de aplicarse. Las migraciones publicadas no se editan: crea una nueva.`,
+        `Migration ${row.version} ("${row.name}") changed after it was applied. Published migrations are not edited: create a new one.`,
       )
     }
   }
@@ -57,7 +57,7 @@ function applyOne(db: SqliteDatabase, migration: Migration, now: () => string): 
       const violations = db.prepare('PRAGMA foreign_key_check').all()
       if (violations.length > 0) {
         throw new Error(
-          `La migración ${migration.version} deja ${violations.length} referencias rotas`,
+          `Migration ${migration.version} leaves ${violations.length} broken references`,
         )
       }
     }
@@ -85,7 +85,7 @@ export function applyMigrations(
   const current = currentVersion(db)
   if (current > migrations.length) {
     throw new Error(
-      `La base está en la versión ${current}, más nueva que esta aplicación (${migrations.length}). Actualiza el hub.`,
+      `The database is at version ${current}, newer than this app (${migrations.length}). Update the hub.`,
     )
   }
   verifyApplied(db, migrations)

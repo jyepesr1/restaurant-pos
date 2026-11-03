@@ -95,7 +95,7 @@ describe('seed as a real process, with other cases', { timeout: 90_000 }, () => 
 
       const r = seed()
       expect(r.code).toBe(0)
-      expect(r.output).toMatch(/products\s+98 nuevos, 0 cambiados, 0 iguales/)
+      expect(r.output).toMatch(/products\s+98 new, 0 changed, 0 unchanged/)
       for (const tableName of ['dining_tables', 'categories', 'products', 'variants', 'modifiers'])
         expect(check(folder, tableName)).toBe(check(cleanDir, tableName))
     } finally {
@@ -114,30 +114,30 @@ describe('seed as a real process, with other cases', { timeout: 90_000 }, () => 
 
     const r = seed()
     expect(r.code).toBe(0)
-    expect(r.output).toMatch(/users\s+5 nuevos/)
-    expect(r.output).toMatch(/products\s+98 nuevos, 0 cambiados, 0 iguales/)
+    expect(r.output).toMatch(/users\s+5 new/)
+    expect(r.output).toMatch(/products\s+98 new, 0 changed, 0 unchanged/)
     expect(check(folder, 'products')).toBe(98)
     expect(check(folder, 'users')).toBe(6)
     // All 5 reached the staff file: nobody is left without a known PIN or password.
-    const staff = readdirSync(folder).filter((f) => /^pines-.*-personal\.txt$/.test(f))
+    const staff = readdirSync(folder).filter((f) => /^pins-.*-staff\.txt$/.test(f))
     expect(staff).toHaveLength(1)
     const pins = readFileSync(join(folder, staff[0] as string), 'utf8')
     for (const name of ['Mesero 1', 'Mesero 2', 'Mesero 3'])
       expect(pins).toMatch(new RegExp(`${name}\\s+PIN \\d{4}`))
     for (const name of ['Caja', 'Reportes'])
-      expect(pins).toMatch(new RegExp(`${name}\\s+usuario \\S+\\s+contraseña \\S+`))
+      expect(pins).toMatch(new RegExp(`${name}\\s+username \\S+\\s+password \\S+`))
   })
 
   it('with --no-staff it loads the menu without creating sample accounts; they can be added later', () => {
     const first = run('src/seed/main.ts', { DATA_DIR: folder }, ['--no-staff'])
     expect(first.code).toBe(0)
-    expect(first.output).toMatch(/products\s+98 nuevos/)
+    expect(first.output).toMatch(/products\s+98 new/)
     expect(check(folder, 'users')).toBe(1)
-    expect(readdirSync(folder).some((f) => /-personal\.txt$/.test(f))).toBe(false)
+    expect(readdirSync(folder).some((f) => /-staff\.txt$/.test(f))).toBe(false)
 
     const second = seed()
     expect(second.code).toBe(0)
-    expect(second.output).toMatch(/users\s+5 nuevos/)
+    expect(second.output).toMatch(/users\s+5 new/)
     expect(check(folder, 'users')).toBe(6)
   })
 
@@ -158,7 +158,7 @@ describe('seed as a real process, with other cases', { timeout: 90_000 }, () => 
     const r = seed({ MENU_PATH: route })
     expect(r.code).toBe(0)
     for (const name of ['Tagliata di Manzo', 'Té Hatsu', 'Soda Hatsu'])
-      expect(r.output).toContain(`La carta ya no tiene «${name}»`)
+      expect(r.output).toContain(`The menu no longer has "${name}"`)
     expect(check(folder, 'products')).toBe(1)
   })
 
@@ -177,17 +177,17 @@ describe('seed as a real process, with other cases', { timeout: 90_000 }, () => 
         disponible: ${available}
 `
     writeFileSync(route, menu(true))
-    expect(seed({ MENU_PATH: route }).output).toMatch(/products\s+2 nuevos/)
+    expect(seed({ MENU_PATH: route }).output).toMatch(/products\s+2 new/)
     writeFileSync(route, menu(false))
     const r = seed({ MENU_PATH: route })
-    expect(r.output).toMatch(/products\s+0 nuevos, 0 cambiados, 1 iguales, 1 archivados/)
+    expect(r.output).toMatch(/products\s+0 new, 0 changed, 1 unchanged, 1 archived/)
     expect(check(folder, 'products')).toBe(2)
   })
 
   it('a menu that does not exist or is corrupted exits with code 1, a clear message and without creating the database', () => {
     const nonexistent = seed({ MENU_PATH: join(folder, 'no-existe.yaml') })
     expect(nonexistent.code).toBe(1)
-    expect(nonexistent.output).toMatch(/No se cargaron los datos: la carta .* no sirve/)
+    expect(nonexistent.output).toMatch(/No data was loaded: the menu .* is not valid/)
     expect(existsSync(join(folder, 'pos.sqlite'))).toBe(false)
 
     const corrupted = join(folder, 'danada.yaml')
@@ -215,23 +215,20 @@ describe('seed as a real process, with other cases', { timeout: 90_000 }, () => 
   it('the PINs go to two separate files per run, one for the admin and one for the staff, with mode 600', () => {
     const r = seed()
     expect(r.code).toBe(0)
-    const files = readdirSync(folder).filter((f) => /^pines-.*\.txt$/.test(f))
-    expect(files.filter((f) => f.endsWith('-administrador.txt'))).toHaveLength(1)
-    expect(files.filter((f) => f.endsWith('-personal.txt'))).toHaveLength(1)
+    const files = readdirSync(folder).filter((f) => /^pins-.*\.txt$/.test(f))
+    expect(files.filter((f) => f.endsWith('-admin.txt'))).toHaveLength(1)
+    expect(files.filter((f) => f.endsWith('-staff.txt'))).toHaveLength(1)
     expect(files).toHaveLength(2)
     expect(
-      readFileSync(
-        join(folder, files.find((f) => f.endsWith('-administrador.txt')) as string),
-        'utf8',
-      ),
-    ).toMatch(/Contraseña:\s+\S+[\s\S]*PIN para autorizar:\s+\d{4}/)
+      readFileSync(join(folder, files.find((f) => f.endsWith('-admin.txt')) as string), 'utf8'),
+    ).toMatch(/Password:\s+\S+[\s\S]*PIN to authorize:\s+\d{4}/)
     for (const f of files) {
       // On Windows the mode does not apply; on macOS and Linux it does.
       if (process.platform !== 'win32') expect(statSync(join(folder, f)).mode & 0o777).toBe(0o600)
     }
     // A second run without new staff does not leave another file.
     expect(seed().code).toBe(0)
-    expect(readdirSync(folder).filter((f) => /^pines-.*\.txt$/.test(f))).toEqual(files)
+    expect(readdirSync(folder).filter((f) => /^pins-.*\.txt$/.test(f))).toEqual(files)
   })
 
   it('the hub starts after the seed without asking for another PIN and without touching the data', async () => {
@@ -255,7 +252,7 @@ describe('seed as a real process, with other cases', { timeout: 90_000 }, () => 
       await new Promise<void>((resolve, reject) => {
         const onReceive = (t: Buffer) => {
           output += String(t)
-          if (output.includes('Hub en marcha')) resolve()
+          if (output.includes('Hub running')) resolve()
         }
         child.stdout?.on('data', onReceive)
         child.stderr?.on('data', (t) => {
@@ -270,8 +267,8 @@ describe('seed as a real process, with other cases', { timeout: 90_000 }, () => 
       child.kill('SIGKILL')
       await finished
     }
-    expect(output).not.toMatch(/PIN del administrador/)
-    expect(output).not.toMatch(/clave de los PIN/)
+    expect(output).not.toMatch(/Username|PIN to authorize/)
+    expect(output).not.toMatch(/PIN key/)
     expect(photo(folder)).toEqual(before)
   })
 
@@ -282,7 +279,7 @@ describe('seed as a real process, with other cases', { timeout: 90_000 }, () => 
     try {
       const r = seed()
       expect(r.code).toBe(1)
-      expect(r.output).toContain('el hub está abierto')
+      expect(r.output).toContain('the hub is open')
     } finally {
       locked.close()
     }

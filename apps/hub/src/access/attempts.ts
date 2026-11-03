@@ -65,9 +65,9 @@ export class Attempts {
     if (count) this.recentTimes.push(now)
     this.recentTimes = this.recentTimes.filter((t) => now - t < ALERT_WINDOW_MS)
     if (count && this.recentTimes.length === FAILURES_FOR_ALERT)
-      this.onNotify(`${FAILURES_FOR_ALERT} PIN o códigos errados en 10 minutos en el restaurante`)
+      this.onNotify(`${FAILURES_FOR_ALERT} wrong PINs or codes in 10 minutes at the restaurant`)
     if (failures === DEVICE_FAILURES_FOR_ALERT)
-      this.onNotify(`${failures} PIN o códigos errados seguidos desde ${who}`)
+      this.onNotify(`${failures} wrong PINs or codes in a row from ${who}`)
     return delay
   }
 

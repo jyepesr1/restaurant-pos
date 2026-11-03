@@ -227,7 +227,7 @@ describe('hub restarts and crashes', () => {
       expect(after.newKey).toBe(true)
       expect(existsSync(join(folder, 'data', KEY_FILE))).toBe(true)
       expect(after.admin.pin).toMatch(/^\d{4}$/)
-      expect(after.admin.alerts.join(' ')).toMatch(/clave de los PIN/)
+      expect(after.admin.alerts.join(' ')).toMatch(/PIN key/)
       const connection = after.access.authenticate(phone.token) as NonNullable<
         typeof phone.connection
       >

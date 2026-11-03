@@ -192,8 +192,8 @@ export function ensureAdmin(
   if (newKey && Number(credentials?.n) > 0) {
     result.pin = access.regeneratePin(adminId)
     result.alerts.push(
-      'Falta la clave de los PIN (¿se restauró la base sin ella?). Los PIN anteriores ya no sirven:',
-      'se generó uno nuevo para el administrador; con él, regenera el PIN de cada persona.',
+      'The PIN key is missing (was the database restored without it?). The old PINs no longer work:',
+      "a new one was generated for the admin; use it to regenerate each person's PIN.",
     )
   }
   if (!access.hasPassword(adminId)) {
@@ -203,7 +203,7 @@ export function ensureAdmin(
     result.user = user
     result.password = password
     result.alerts.push(
-      'Desde ahora el administrador entra a la caja con usuario y contraseña; su PIN sirve para autorizar.',
+      'From now on the admin signs in at the register with a username and password; their PIN is for authorizing.',
     )
   }
   return result

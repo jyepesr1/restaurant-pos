@@ -40,7 +40,7 @@ describe('startup', () => {
     const r = ensureAdmin(m.db, m.access, m.roles.admin, true)
 
     expect(r.pin).toMatch(/^\d{4}$/)
-    expect(r.alerts.join(' ')).toMatch(/clave de los PIN/)
+    expect(r.alerts.join(' ')).toMatch(/PIN key/)
     expect(
       m.access.createPairing({ pin: m.people.admin.pin, name: 'X', type: 'register' }, null),
     ).toMatchObject({ ok: false })

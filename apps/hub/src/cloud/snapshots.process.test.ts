@@ -137,7 +137,7 @@ function startHub(env: Record<string, string>): Promise<Started> {
   )
   return new Promise((resolve, reject) => {
     const review = () => {
-      if (text.includes('Hub en marcha')) {
+      if (text.includes('Hub running')) {
         child.stdout?.off('data', review)
         resolve({
           child,
@@ -187,13 +187,13 @@ interface Person {
 }
 
 async function signIn(env: Record<string, string>): Promise<Person> {
-  const file = readFileSync(join(env.DATA_DIR as string, 'pin-administrador.txt'), 'utf8')
+  const file = readFileSync(join(env.DATA_DIR as string, 'admin-pin.txt'), 'utf8')
   const datum = (label: string) => new RegExp(`${label}:\\s+(\\S+)`).exec(file)?.[1] as string
   const url = `http://127.0.0.1:${env.PORT}`
   const r = await fetch(`${url}/api/sign-in`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ user: datum('Usuario'), password: datum('Contraseña') }),
+    body: JSON.stringify({ user: datum('Username'), password: datum('Password') }),
   })
   expect(r.status).toBe(201)
   const j = (await r.json()) as { device: { token: string }; session_id: string; secret: string }
@@ -202,8 +202,8 @@ async function signIn(env: Record<string, string>): Promise<Person> {
     token: j.device.token,
     sessionId: j.session_id,
     secret: j.secret,
-    pin: datum('PIN para autorizar'),
-    password: datum('Contraseña'),
+    pin: datum('PIN to authorize'),
+    password: datum('Password'),
   }
 }
 

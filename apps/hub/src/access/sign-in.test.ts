@@ -201,7 +201,7 @@ describe('startup of a hub from before ADR-013', () => {
     expect(r.user).toBe('admin')
     expect(r.password).toMatch(/^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/)
     expect(r.pin).toBeNull()
-    expect(r.alerts.join(' ')).toMatch(/usuario y contraseña/)
+    expect(r.alerts.join(' ')).toMatch(/username and password/)
     const register = m.access.signIn({ user: 'admin', password: r.password as string }, null, 'ip')
     expect(register).toMatchObject({ ok: true, user: { name: 'Administrador' } })
   })
