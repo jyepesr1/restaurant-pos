@@ -1,4 +1,4 @@
-import { type Format, type Line, paragraph, toSides } from './document'
+import { type Format, type Line, paragraph, toSides, widthOf } from './document'
 import type { CodePage } from './encoding'
 
 // The pre-bill on paper (task 1.6, brief §4.5): what the table has ordered, the total, what is
@@ -93,12 +93,10 @@ export function preBillLines(p: PreBill, format: { columns: number; page: CodePa
         pesos(p.tip),
         f,
       ),
-      ...toSides('Total con propina', pesos(p.subtotal + p.tip), f, {
-        large: true,
-      }),
+      ...amountToPay('Con propina', pesos(p.subtotal + p.tip), f),
     )
   } else {
-    lines.push(...toSides('A pagar', pesos(p.subtotal), f, { large: true }))
+    lines.push(...amountToPay('A pagar', pesos(p.subtotal), f))
   }
   lines.push(
     { separator: true },
@@ -106,6 +104,17 @@ export function preBillLines(p: PreBill, format: { columns: number; page: CodePa
     ...paragraph('Esta precuenta no es una factura.', f, { center: true }),
   )
   return lines
+}
+
+/**
+ * What the guest pays, in large font. If the label and the amount do not fit on one large line
+ * (58 mm, or a big amount), the label goes above in bold and the amount alone, on the right: a
+ * wrapped amount on paper looks cut off.
+ */
+function amountToPay(label: string, amount: string, f: Format): Line[] {
+  const width = widthOf(f, { large: true })
+  if (label.length + 1 + amount.length <= width) return toSides(label, amount, f, { large: true })
+  return [...paragraph(label, f, { bold: true }), { text: amount.padStart(width), large: true }]
 }
 
 /** «INC 8 %», «IVA 19 %», «Exento». */

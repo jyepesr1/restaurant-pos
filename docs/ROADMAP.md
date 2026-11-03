@@ -89,6 +89,14 @@ En cada terminal nueva, desde la carpeta del proyecto:
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
 
+### El total de la precuenta ya no se parte (2-nov-2026) ✅
+
+En letra grande caben 24 caracteres (80 mm) o 16 (58 mm). «Total con propina $90.357» no cabía, y el valor bajaba solo a la línea siguiente, como cortado.
+- La línea se llama **«Con propina»**, como en la pantalla de la cuenta, y en 80 mm cabe con el valor.
+- Si aun así no cabe (58 mm, o un valor enorme), la etiqueta va arriba en negrita y el valor entero debajo, grande y a la derecha. Igual con «A pagar».
+
+**Cómo probarlo:** con una impresora de precuentas configurada, toca **Imprimir precuenta** en una mesa. En 80 mm debe salir «Con propina» y el valor en la misma línea grande; en 58 mm, «Con propina» en negrita y el valor grande debajo.
+
 ### La comanda solo lleva lo que usa la cocina (2-nov-2026) ✅
 
 Decisión del dueño ([enmienda a ADR-015](DECISIONES.md#enmienda-del-2-nov-2026-la-comanda-solo-lleva-lo-que-usa-la-cocina)): la comanda la lee la cocina, no el mesero. Ya no se imprime:

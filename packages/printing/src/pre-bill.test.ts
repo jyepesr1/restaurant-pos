@@ -114,7 +114,8 @@ describe('preBillLines: what comes out on paper', () => {
   it('the suggested tip and the total with tip match the amounts received', () => {
     const t = text(preBill)
     expect(t).toMatch(/Propina sugerida \(10 %\) +\$13\.028/)
-    expect(t.replace(/\s+/g, ' ')).toMatch(/TOTAL CON PROPINA \$153\.728/)
+    // One large line: the label and the amount together (80 mm).
+    expect(t).toMatch(/^CON PROPINA +\$153\.728$/m)
     expect(t).not.toContain('A PAGAR')
   })
 
@@ -198,7 +199,7 @@ describe('preBillLines: what comes out on paper', () => {
     const t = text({ ...preBill, tip: 0, tipRate: 0 })
     expect(t).toMatch(/A PAGAR +\$140\.700|A PAGAR/)
     expect(t).not.toContain('Propina sugerida')
-    expect(t).not.toContain('Total con propina')
+    expect(t).not.toMatch(/con propina/i)
     // The voluntary tip notice stays.
     expect(t).toContain('La propina es voluntaria.')
   })
@@ -208,7 +209,7 @@ describe('preBillLines: what comes out on paper', () => {
     expect(t).toMatch(/Propina +\$20\.000/)
     expect(t).not.toContain('sugerida')
     expect(t).not.toContain('NaN')
-    expect(t.replace(/\s+/g, ' ')).toContain('TOTAL CON PROPINA $160.700')
+    expect(t).toMatch(/^CON PROPINA +\$160\.700$/m)
   })
 
   it('a tip rate with decimals uses a comma: 7,5 %', () => {
@@ -321,10 +322,21 @@ describe('preBillLines: 58 mm (32 columns) versus 80 mm (48)', () => {
     expect(t).toContain('$1.234.567')
   })
 
-  it('«Total con propina» (large font) at 58 mm wraps without losing the amount', () => {
-    const t = text(preBill, f58)
-    expect(t.replace(/\s+/g, ' ').toUpperCase()).toContain('TOTAL CON PROPINA')
-    expect(t).toContain('$153.728')
+  it('at 58 mm the amount to pay does not fit beside its label: label above, amount whole', () => {
+    const lines = preBillLines(preBill, f58)
+    const label = lines.findIndex((l) => 'text' in l && l.text === 'Con propina')
+    expect(lines[label]).toMatchObject({ bold: true })
+    expect(lines[label]).not.toHaveProperty('large')
+    // The amount alone, large and right-aligned in the 16 large characters of 58 mm.
+    expect(lines[label + 1]).toEqual({ text: '        $153.728', large: true })
+  })
+
+  it('a large amount at 80 mm also goes whole on its own line, never split', () => {
+    const lines = preBillLines({ ...preBill, subtotal: 1_234_567_000, tip: 890 }, f80)
+    const label = lines.findIndex((l) => 'text' in l && l.text === 'Con propina')
+    expect(lines[label + 1]).toEqual({ text: '$1.234.567.890'.padStart(24), large: true })
+    // Short enough: label and amount share the large line.
+    expect(text({ ...preBill, tip: 0, tipRate: 0 })).toMatch(/^A PAGAR +\$140\.700$/m)
   })
 })
 
