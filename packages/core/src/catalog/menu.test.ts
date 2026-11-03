@@ -72,7 +72,7 @@ describe('convert the menu', () => {
       description: null,
       groups: [
         {
-          name: 'Sabor',
+          name: 'Sabor del té',
           minimum: 1,
           maximum: 1,
           options: [{ name: 'Rojo' }, { name: 'Verde' }],

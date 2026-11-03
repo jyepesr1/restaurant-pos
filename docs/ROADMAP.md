@@ -99,12 +99,12 @@ Pedido del dueño: en la Burrata Spritz, «Grupos de opciones que se piden» no 
 
 Revisado por `revisor-codigo` y `revisor-ux`: se corrigió la lista de solo lectura, que con un grupo borrado podía salir con comas sueltas. 4 pruebas de `groupOptionNames`.
 
-**Queda pendiente:** los dos grupos siguen llamándose «Sabor» (el nombre lo pone el seed). Se pueden renombrar a mano en **Carta → Grupos de opciones**, por ejemplo «Sabor del té» y «Sabor de la soda».
+**Nombres de los grupos:** el seed ahora los llama **«Sabor del té»** y **«Sabor de la soda»** (antes, los dos «Sabor»). En una base ya cargada se renombran en **Carta → Grupos de opciones**, o volviendo a correr `pnpm seed` con el hub cerrado.
 
 **Cómo probarlo:**
 
 1. Con la versión nueva (ver la tarea de arriba), entra como administrador y abre **Carta → Burrata Spritz**.
-2. Baja hasta **Grupos de opciones de este producto**. Debe haber dos tarjetas «Sabor»: una con «Rojo, Amarillo, Blanco» y otra con «Limon, Sandía». Cada una dice «Obligatorio: elige 1».
+2. Baja hasta **Grupos de opciones de este producto**. Deben estar **Sabor del té** (Rojo, Amarillo, Blanco) y **Sabor de la soda** (Limon, Sandía), cada una con «Obligatorio: elige 1».
 
 ### «Cuenta» en el pedido solo cuando ya hay algo que cobrar (2-nov-2026) ✅
 

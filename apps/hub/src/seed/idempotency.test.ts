@@ -399,7 +399,7 @@ describe('menu changes', () => {
       names(
         h,
         `SELECT m.name FROM modifiers m JOIN modifier_groups g ON g.id = m.group_id
-         WHERE g.name = 'Sabor' AND m.active = ${active} AND m.name IN ('Rojo','Amarillo','Blanco','Verde')`,
+         WHERE g.name = 'Sabor del té' AND m.active = ${active} AND m.name IN ('Rojo','Amarillo','Blanco','Verde')`,
       ).sort()
     expect(flavors(1)).toEqual(['Amarillo', 'Rojo', 'Verde'])
     expect(flavors(0)).toEqual(['Blanco'])

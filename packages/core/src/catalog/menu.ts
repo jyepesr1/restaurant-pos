@@ -85,6 +85,11 @@ export const WITH_DONENESS = { sections: ['HAMBURGUESAS'], dishes: ['Tagliata di
  * Explicit list: guessing it from the description's shape would turn ingredients into flavors.
  */
 export const WITH_FLAVOR = ['Té Hatsu', 'Soda Hatsu']
+/** Each flavor group carries its product in the name: two groups called «Sabor» look the same. */
+const FLAVOR_GROUP_NAMES: Record<string, string> = {
+  'Té Hatsu': 'Sabor del té',
+  'Soda Hatsu': 'Sabor de la soda',
+}
 
 const SIZES = ['Copa', 'Botella'] as const
 
@@ -198,7 +203,7 @@ function productsOf(section: z.infer<typeof Section>): MenuProduct[] {
       if (flavors)
         groups.push({
           key: `sabor:${key}`,
-          name: 'Sabor',
+          name: FLAVOR_GROUP_NAMES[name] ?? 'Sabor',
           minimum: 1,
           maximum: 1,
           options: flavors.map((s) => ({ name: s, extraPrice: 0 })),
