@@ -341,5 +341,20 @@ export const groupProducts = (c: EditableCatalog, groupId: string) =>
       p.active && c.links.some((e) => e.group_id === groupId && e.active && e.product_id === p.id),
   )
 
+/**
+ * The group's active options, in order: tells apart two groups with the same name ("Sabor")
+ * where they are chosen for a product.
+ */
+export function groupOptionNames(c: EditableCatalog, groupId: string) {
+  const names = c.modifiers
+    .filter((m) => m.group_id === groupId && m.active)
+    .sort((a, b) => a.position - b.position)
+    .map((m) => m.name)
+  if (names.length === 0) return 'Sin opciones'
+  return names.length <= 6
+    ? names.join(', ')
+    : `${names.slice(0, 5).join(', ')} y ${names.length - 5} más`
+}
+
 export const productsWithGroup = (c: EditableCatalog, groupId: string) =>
   groupProducts(c, groupId).length

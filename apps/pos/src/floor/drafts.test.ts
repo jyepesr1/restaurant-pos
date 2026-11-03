@@ -4,6 +4,7 @@ import {
   groupChanges,
   groupDraft,
   groupIssues,
+  groupOptionNames,
   newGroup,
   newProduct,
   productChanges,
@@ -306,3 +307,54 @@ describe('option group', () => {
     expect(productsWithGroup(c, group)).toBe(0)
   })
 })
+
+describe('the options of a group, to tell apart two with the same name', () => {
+  const doneness = (c: EditableCatalog) => c.groups[0]?.id as string
+  const withOptions = (names: string[]) => {
+    const c = editView()
+    const group = newId()
+    c.groups.push({ ...rowBase, id: group, name: 'Sabor', minimum: 1, maximum: 1 })
+    c.modifiers.push(
+      ...names.map((name, position) => ({
+        ...rowBase,
+        id: newId(),
+        group_id: group,
+        name,
+        extra_price: 0,
+        position,
+      })),
+    )
+    return { c, group }
+  }
+
+  it('lists the active options in their order', () => {
+    const c = editView()
+    expect(groupOptionNames(c, doneness(c))).toBe('Rojo, Medio')
+    const medium = c.modifiers.find((m) => m.name === 'Medio')
+    if (medium) medium.active = false
+    expect(groupOptionNames(c, doneness(c))).toBe('Rojo')
+  })
+
+  it('says so when there are none', () => {
+    const { c, group } = withOptions([])
+    expect(groupOptionNames(c, group)).toBe('Sin opciones')
+    expect(groupOptionNames(c, newId())).toBe('Sin opciones')
+  })
+
+  it('up to 6 in full; beyond that, the first 5 and how many more', () => {
+    expect(groupOptionNames(...pair(withOptions(['A', 'B', 'C', 'D', 'E', 'F'])))).toBe(
+      'A, B, C, D, E, F',
+    )
+    expect(groupOptionNames(...pair(withOptions(['A', 'B', 'C', 'D', 'E', 'F', 'G'])))).toBe(
+      'A, B, C, D, E y 2 más',
+    )
+  })
+
+  it('two groups named «Sabor» read differently', () => {
+    const tea = withOptions(['Rojo', 'Amarillo', 'Blanco'])
+    const soda = withOptions(['Limón', 'Sandía'])
+    expect(groupOptionNames(tea.c, tea.group)).not.toBe(groupOptionNames(soda.c, soda.group))
+  })
+})
+
+const pair = ({ c, group }: { c: EditableCatalog; group: string }) => [c, group] as const

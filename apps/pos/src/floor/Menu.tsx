@@ -15,6 +15,7 @@ import {
   groupChanges,
   groupDraft,
   groupIssues,
+  groupOptionNames,
   groupProducts,
   newGroup,
   newProduct,
@@ -287,12 +288,6 @@ function GroupList({
   onOpen: (id: string) => void
   onCreate: () => void
 }) {
-  const rules = (minimum: number, maximum: number) =>
-    minimum === 0
-      ? `Opcional, hasta ${maximum}`
-      : minimum === maximum
-        ? `Obligatorio: elige ${minimum}`
-        : `Elige de ${minimum} a ${maximum}`
   const groups = [...c.groups].sort((a, b) => Number(b.active) - Number(a.active))
   return (
     <section aria-label="Grupos de opciones">
@@ -322,7 +317,7 @@ function GroupList({
             <Row
               key={g.id}
               title={g.name}
-              detail={`${rules(g.minimum, g.maximum)} · ${whoCan}`}
+              detail={`${groupRule(g.minimum, g.maximum)} · ${whoCan}`}
               archived={!g.active}
               onTap={() => onOpen(g.id)}
             />
@@ -332,6 +327,14 @@ function GroupList({
     </section>
   )
 }
+
+/** How many options are chosen from a group, as the owner reads it. */
+const groupRule = (minimum: number, maximum: number) =>
+  minimum === 0
+    ? `Opcional, hasta ${maximum}`
+    : minimum === maximum
+      ? `Obligatorio: elige ${minimum}`
+      : `Elige de ${minimum} a ${maximum}`
 
 // ── Fields ─────────────────────────────────────────────────────────────
 
@@ -652,22 +655,32 @@ function ProductPanel({
       </fieldset>
 
       <fieldset className="mb-4">
-        <legend className="mb-1 font-semibold">Grupos de opciones que se piden</legend>
+        <legend className="mb-1 font-semibold">Grupos de opciones de este producto</legend>
+        <p className="mb-2 text-sm text-muted">
+          Marca los grupos que el mesero responde al pedir este producto (sabor, término,
+          adicionales). Un grupo puede servir a varios productos; se crean y se cambian en la
+          pestaña Grupos de opciones.
+        </p>
         {groups.length === 0 ? (
-          <p className="text-sm text-muted">
-            Crea grupos (término, sabor, adicionales) en la pestaña Grupos de opciones.
-          </p>
+          <p className="text-sm text-muted">Todavía no hay grupos de opciones.</p>
         ) : !canDoAll ? (
           <p>
-            {b.groups.map((id) => c.groups.find((g) => g.id === id)?.name).join(', ') || 'Ninguno'}
+            {b.groups
+              .flatMap((id) => {
+                const g = c.groups.find((x) => x.id === id)
+                return g ? [`${g.name} (${groupOptionNames(c, g.id)})`] : []
+              })
+              .join('; ') || 'Ninguno'}
           </p>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             {groups.map((g) => {
               const selectedProduct = b.groups.includes(g.id)
               return (
                 <Option
                   key={g.id}
+                  shape="card"
+                  detail={`${g.active ? '' : 'Archivado · '}${groupRule(g.minimum, g.maximum)} · ${groupOptionNames(c, g.id)}`}
                   selected={selectedProduct}
                   onChoose={() =>
                     patch({

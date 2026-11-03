@@ -89,6 +89,23 @@ En cada terminal nueva, desde la carpeta del proyecto:
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
 
+### Grupos de opciones más claros en el editor del producto (2-nov-2026) ✅
+
+Pedido del dueño: en la Burrata Spritz, «Grupos de opciones que se piden» no era claro y salía «Sabor» dos veces. Son dos grupos distintos con el mismo nombre (el del Té Hatsu y el de la Soda Hatsu).
+
+- La sección se llama **«Grupos de opciones de este producto»** y explica para qué sirve.
+- Cada grupo es una tarjeta con su regla y sus opciones: «Sabor · Obligatorio: elige 1 · Rojo, Amarillo, Blanco». Con más de 6 opciones muestra 5 y «y N más». Un grupo archivado que el producto aún usa dice «Archivado».
+- Quien no puede editar ve los grupos separados por «;», cada uno con sus opciones.
+
+Revisado por `revisor-codigo` y `revisor-ux`: se corrigió la lista de solo lectura, que con un grupo borrado podía salir con comas sueltas. 4 pruebas de `groupOptionNames`.
+
+**Queda pendiente:** los dos grupos siguen llamándose «Sabor» (el nombre lo pone el seed). Se pueden renombrar a mano en **Carta → Grupos de opciones**, por ejemplo «Sabor del té» y «Sabor de la soda».
+
+**Cómo probarlo:**
+
+1. Con la versión nueva (ver la tarea de arriba), entra como administrador y abre **Carta → Burrata Spritz**.
+2. Baja hasta **Grupos de opciones de este producto**. Debe haber dos tarjetas «Sabor»: una con «Rojo, Amarillo, Blanco» y otra con «Limon, Sandía». Cada una dice «Obligatorio: elige 1».
+
 ### «Cuenta» en el pedido solo cuando ya hay algo que cobrar (2-nov-2026) ✅
 
 Pedido del dueño: mientras el mesero toma el pedido de una mesa y no ha enviado nada, «Cuenta» estorba al lado de «Enviar».
