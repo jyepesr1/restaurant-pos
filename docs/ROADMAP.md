@@ -89,6 +89,18 @@ En cada terminal nueva, desde la carpeta del proyecto:
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
 
+### Al cerrar una mesa sin cambio, vuelve solo al salón (2-nov-2026) ✅
+
+Pedido del dueño: tras cobrar, la pantalla «Pagado y cerrado» pedía un toque más para volver.
+
+- **Sin cambio que entregar** (tarjeta, transferencia, efectivo exacto): vuelve de inmediato al salón con el aviso «Mesa N: pagada y cerrada».
+- **Con cambio**: se queda en «Pagado y cerrado» con el cambio en grande y «Volver al salón», para que el cajero alcance a leerlo.
+
+**Cómo probarlo:**
+
+1. Con la caja abierta, abre una mesa, agrega un producto, envíalo y toca **Cuenta → Cobrar** con tarjeta. Debe volver al salón con el aviso «Mesa N: pagada y cerrada» y la mesa libre.
+2. Repite cobrando en efectivo con un billete mayor al total. Debe quedarse en «Pagado y cerrado» mostrando «Cambio a entregar».
+
 ### Grupos de opciones más claros en el editor del producto (2-nov-2026) ✅
 
 Pedido del dueño: en la Burrata Spritz, «Grupos de opciones que se piden» no era claro y salía «Sabor» dos veces. Son dos grupos distintos con el mismo nombre (el del Té Hatsu y el de la Soda Hatsu).

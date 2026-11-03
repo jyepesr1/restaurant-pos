@@ -165,11 +165,15 @@ export function Check() {
       await floor.record('SplitUndone', order.id, {})
     })
 
-  /** Closes the order with a 0 balance; the hub confirms before it is shown as closed. */
+  /**
+   * Closes the order with a 0 balance; the hub confirms before it is shown as closed. With change
+   * to hand over the screen stays until the cashier reads it; without it, back to the floor.
+   */
   const close = async (change: number | null) => {
     await floor.recordConfirmed('OrderClosed', order.id, {})
-    setClosed({ title, change })
     notify(`${title}: pagada y cerrada`)
+    if (change !== null && change > 0) setClosed({ title, change })
+    else navigate('/')
   }
 
   // Money is shown as charged only when the hub accepts it: a payment the hub rejects would
