@@ -138,6 +138,20 @@ export const unitsToSend = (status: OrderState) =>
   pendingSend(status).reduce((n, i) => n + i.quantity - i.voidedQuantity, 0)
 
 /**
+ * «Cuenta» on the order: at a table, once something has gone to the kitchen (before that the
+ * waiter is still taking the order); takeout, delivery and bar usually pay first, so from the
+ * first product. Also with a payment already made, and at a table of a restaurant without
+ * stations, where nothing is ever sent.
+ */
+export const showsCheck = (status: OrderState, canSend = true) => {
+  const items = currentItems(status)
+  if (items.length === 0) return false
+  if (status.channel !== 'dine_in' || !canSend || Object.keys(status.payments).length > 0)
+    return true
+  return items.some((i) => i.status !== 'pending' && i.status !== 'held')
+}
+
+/**
  * One ticket per station with what is left to send. The station is the one of the product's
  * category; if it has none, the restaurant's first one. Without stations there is nowhere to send.
  */

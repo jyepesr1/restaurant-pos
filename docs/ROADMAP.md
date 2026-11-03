@@ -89,6 +89,30 @@ En cada terminal nueva, desde la carpeta del proyecto:
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
 
+### «Cuenta» en el pedido solo cuando ya hay algo que cobrar (2-nov-2026) ✅
+
+Pedido del dueño: mientras el mesero toma el pedido de una mesa y no ha enviado nada, «Cuenta» estorba al lado de «Enviar».
+
+- **En mesa**, «Cuenta» aparece cuando al menos un producto salió a cocina o barra. Antes, «Enviar» ocupa todo el ancho.
+- **Para llevar, domicilio y barra**: sigue apareciendo desde el primer producto, porque ahí se suele cobrar antes.
+- **Excepciones en mesa**: también aparece si el restaurante no tiene estaciones (nada se envía nunca) o si el pedido ya tiene un pago.
+
+Revisado por `revisor-codigo`, `qa-pruebas` y `revisor-ux`. Se corrigieron dos casos que dejaban la mesa sin forma de cobrar: sin estaciones y con un pago ya hecho. 25 pruebas de `showsCheck` (enviados, servidos, anulados, movidos, mesas unidas, cursos retenidos, pagos parciales).
+
+**Queda pendiente:** con cursos prendidos, una mesa con solo platos retenidos muestra «Enviar» apagado en la barra del celular; se marchan desde el pedido con «Marchar». Un aviso o un botón «Marchar» ahí sería más claro.
+
+**Cómo probarlo:**
+
+1. Cierra el hub (**Ctrl+C**) y arráncalo con la versión nueva:
+
+```bash
+pnpm --filter @pos/app build && pnpm --filter @pos/hub start
+```
+
+2. En el celular abre una mesa libre y agrega dos productos. Toca **Pedido (2)**: abajo solo debe estar **Enviar 2**, a todo el ancho, sin «Cuenta».
+3. Toca **Enviar 2** y vuelve a abrir la mesa. Ahora debe aparecer **Cuenta**.
+4. Desde el salón abre un pedido **Para llevar** y agrega un producto: **Cuenta** debe estar desde el primero.
+
 ### 1.4 — Comandas impresas y pantalla de cocina ✅
 
 Decisiones del dueño del 25-oct-2026 ([ADR-015](DECISIONES.md#adr-015--comandas-impresas-por-estación-pantalla-de-cocina-opcional-y-entrega-por-el-mesero)). En La Spritzzería la cocina no tiene pantalla: trabaja con la comanda en papel. Las impresoras son **Jaltech POS 80** de red (cable al router).

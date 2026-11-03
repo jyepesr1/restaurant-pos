@@ -32,6 +32,7 @@ import {
   missingSelection,
   movedFrom,
   selectedPrice,
+  showsCheck,
   ticketsByStation,
   unitsToSend,
 } from './order'
@@ -630,14 +631,14 @@ export function OrderEntry() {
     </Button>
   )
   // The pre-bill, split and checkout (task 1.6), on their own screen.
-  const withProducts = order !== null && currentItems(order.status).length > 0
+  const withCheck = order !== null && showsCheck(order.status, catalog.stations.length > 0)
   const goToCheck = () => order && navigate(`/check?order=${order.status.id}`)
   const checkButton = (
     <Button variant="secondary" large icon="receipt" className="w-full" onClick={goToCheck}>
       Cuenta
     </Button>
   )
-  const ticketFooter = withProducts ? (
+  const ticketFooter = withCheck ? (
     <div className="grid grid-cols-[2fr_3fr] gap-2">
       {checkButton}
       {sendButton}
@@ -905,7 +906,7 @@ export function OrderEntry() {
             >
               {`Entregar ${unitsOf(inKitchen)}`}
             </Button>
-          ) : unsentUnits === 0 && withProducts ? (
+          ) : unsentUnits === 0 && withCheck ? (
             checkButton
           ) : (
             sendButton
