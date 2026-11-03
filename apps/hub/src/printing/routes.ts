@@ -4,6 +4,7 @@ import {
   newId,
   PaymentMethod,
   type Permission,
+  PrintLogo,
   type RestaurantConfig,
 } from '@pos/core'
 import { inTransaction, type Row, type SqliteDatabase } from '@pos/db'
@@ -235,6 +236,8 @@ export async function printingRoutes(
       timers: { yellow: config.kitchen_yellow_min, red: config.kitchen_red_min },
       courses_enabled: config.courses_enabled,
       pre_bill_printer_id: config.pre_bill_printer_id,
+      pre_bill_header: config.pre_bill_header,
+      print_logo: config.print_logo,
     }
   })
 
@@ -515,6 +518,22 @@ export async function printingRoutes(
     )
       return invalidData(reply, 'Esa impresora no existe o está archivada')
     updateConfig({ pre_bill_printer_id: id }, author)
+    return reply.code(204).send()
+  })
+
+  // What goes at the top of the pre-bill: the name or the logo, already in black and white.
+  // Without a logo there is nothing to print instead of the name.
+  app.post('/api/register/pre-bill-header', withDevice, async (req, reply) => {
+    const body = Session.extend({
+      header: z.enum(['name', 'logo']),
+      logo: PrintLogo.nullable(),
+    }).safeParse(req.body)
+    if (!body.success) return invalidData(reply)
+    const author = who(req, reply, body.data, ['manage_devices'])
+    if (!author) return reply
+    if (body.data.header === 'logo' && !body.data.logo)
+      return invalidData(reply, 'Sube el logo antes de elegirlo para la precuenta')
+    updateConfig({ pre_bill_header: body.data.header, print_logo: body.data.logo }, author)
     return reply.code(204).send()
   })
 

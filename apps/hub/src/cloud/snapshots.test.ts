@@ -46,9 +46,61 @@ describe('what each snapshot carries', () => {
     const m = setupAccess()
     const s = readSnapshots(m.db, m.restaurantId)
     expect(s.catalog).toEqual(readCatalog(m.db, m.restaurantId))
-    expect(s.config).toEqual({
-      config: configOf({ db: m.db, restaurantId: m.restaurantId }),
-      time_zone: 'America/Bogota',
+    // The pre-bill header fields only go up when they say something (see the logo tests below).
+    const {
+      pre_bill_header: _header,
+      print_logo: _logo,
+      ...config
+    } = configOf({
+      db: m.db,
+      restaurantId: m.restaurantId,
+    })
+    expect(s.config).toEqual({ config, time_zone: 'America/Bogota' })
+  })
+
+  describe('the pre-bill header in the config snapshot', () => {
+    const logo = { width: 16, height: 2, data: Buffer.alloc(4, 0xa5).toString('base64') }
+    const saveConfig = (m: ReturnType<typeof setupAccess>, config: object) =>
+      m.db
+        .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
+        .run(JSON.stringify(config), m.restaurantId)
+    const uploaded = (m: ReturnType<typeof setupAccess>) =>
+      (readSnapshots(m.db, m.restaurantId).config as { config: Record<string, unknown> }).config
+
+    it('a restaurant without a logo uploads neither field (a cloud that does not know them accepts it)', () => {
+      const m = setupAccess()
+      expect(uploaded(m)).not.toHaveProperty('pre_bill_header')
+      expect(uploaded(m)).not.toHaveProperty('print_logo')
+      saveConfig(m, { pre_bill_header: 'name', print_logo: null })
+      expect(uploaded(m)).not.toHaveProperty('pre_bill_header')
+      expect(uploaded(m)).not.toHaveProperty('print_logo')
+    })
+
+    it('with the logo chosen it uploads both, exactly as saved', () => {
+      const m = setupAccess()
+      saveConfig(m, { pre_bill_header: 'logo', print_logo: logo })
+      expect(uploaded(m)).toMatchObject({ pre_bill_header: 'logo', print_logo: logo })
+    })
+
+    it('a saved logo with «name» uploads the logo but not the header', () => {
+      const m = setupAccess()
+      saveConfig(m, { pre_bill_header: 'name', print_logo: logo })
+      expect(uploaded(m)).toMatchObject({ print_logo: logo })
+      expect(uploaded(m)).not.toHaveProperty('pre_bill_header')
+    })
+
+    it('the rest of the config is the same as before', () => {
+      const m = setupAccess()
+      const {
+        pre_bill_header: _h,
+        print_logo: _l,
+        ...rest
+      } = configOf({
+        db: m.db,
+        restaurantId: m.restaurantId,
+      })
+      saveConfig(m, { pre_bill_header: 'logo', print_logo: logo })
+      expect(uploaded(m)).toEqual({ ...rest, pre_bill_header: 'logo', print_logo: logo })
     })
   })
 

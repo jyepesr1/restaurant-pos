@@ -17,7 +17,19 @@ export interface Style {
   center?: boolean
 }
 
-export type Line = ({ text: string } & Style) | { separator: true } | { space: true }
+/** A 1-bit image (a logo): rows of `width / 8` bytes, 1 = black, `data` in base64. */
+export interface RasterImage {
+  width: number
+  height: number
+  data: string
+}
+
+export type Line =
+  | ({ text: string } & Style)
+  | { separator: true }
+  | { space: true }
+  /** Centered, as wide as it came. */
+  | { image: RasterImage }
 
 export interface Format {
   columns: number
@@ -97,6 +109,7 @@ export function asText(lines: readonly Line[], columns: number): string {
     .map((l) => {
       if ('separator' in l) return '-'.repeat(columns)
       if ('space' in l) return ''
+      if ('image' in l) return '[LOGO]'.padStart(Math.floor((columns + 6) / 2))
       let t = l.large ? l.text.toUpperCase() : l.text
       if (l.reversed) t = `[${t}]`
       if (l.center) {

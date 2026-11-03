@@ -1,7 +1,8 @@
-import { METHOD_NAME, type PaymentMethod } from '@pos/core'
-import { useCallback, useEffect, useState } from 'react'
+import { METHOD_NAME, type PaymentMethod, type PrintLogo } from '@pos/core'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../ui/Button'
 import { pesos } from '../ui/format'
+import { Icon } from '../ui/icons'
 import { Label } from '../ui/Label'
 import { Group, Option } from '../ui/Options'
 import { SidePanel } from '../ui/SidePanel'
@@ -15,6 +16,7 @@ import type {
   RegisterConfig,
 } from './engine'
 import { FloorFrame } from './FloorFrame'
+import { blackShare, logoFromFile, logoPreview } from './logo'
 import { fieldClass } from './SignIn'
 
 // «Caja y pagos» (task 1.6): which payment methods the restaurant accepts, where the pre-bill
@@ -255,6 +257,12 @@ export function RegisterSettings() {
               Agrega la impresora en «Cocina e impresoras» y luego elígela aquí.
             </p>
           )}
+          <PreBillHeader
+            printed={selected !== null}
+            header={kitchen.pre_bill_header ?? 'name'}
+            logo={kitchen.print_logo ?? null}
+            onSaved={load}
+          />
         </section>
 
         <section aria-labelledby="title-card-terminals" className="flex flex-col gap-3">
@@ -312,6 +320,164 @@ export function RegisterSettings() {
         onSave={saveCardTerminal}
       />
     </FloorFrame>
+  )
+}
+
+/**
+ * The top of the printed pre-bill: the restaurant's name or its logo. The logo is converted to
+ * black and white here, at the size it prints, and the preview is exactly what comes out. Without
+ * a pre-bill printer it is shown but cannot be chosen: it only applies to paper.
+ */
+function PreBillHeader({
+  printed,
+  header,
+  logo,
+  onSaved,
+}: {
+  printed: boolean
+  header: 'name' | 'logo'
+  logo: PrintLogo | null
+  onSaved: () => void
+}) {
+  const notify = useNotify()
+  const entry = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState<'converting' | 'saving' | null>(null)
+  const preview = useMemo(() => (logo ? logoPreview(logo) : null), [logo])
+  const share = useMemo(() => (logo ? blackShare(logo) : null), [logo])
+  const save = async (
+    h: 'name' | 'logo',
+    l: PrintLogo | null,
+    text: string,
+    undo?: () => Promise<void>,
+  ) => {
+    setBusy('saving')
+    try {
+      await floor.preBillHeader(h, l)
+      notify(text, undo && (() => void undo()))
+      onSaved()
+    } catch (e) {
+      notify(message(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+  const upload = async (file: File | undefined) => {
+    if (!file) return
+    setBusy('converting')
+    let converted: PrintLogo
+    try {
+      converted = await logoFromFile(file)
+    } catch {
+      setBusy(null)
+      notify('No pudimos leer esa imagen. Prueba con una foto en JPG o PNG.')
+      return
+    }
+    await save('logo', converted, 'La precuenta saldrá con el logo')
+  }
+  const choose = (h: 'name' | 'logo') => {
+    if (h === header || !logo) return
+    const before = header
+    void save(
+      h,
+      logo,
+      h === 'logo' ? 'La precuenta saldrá con el logo' : 'La precuenta saldrá con el nombre',
+      () => save(before, logo, 'Volvió como estaba'),
+    )
+  }
+  const locked = busy !== null
+  return (
+    <div className="mt-2 flex flex-col gap-3">
+      <h3 className="font-semibold">Qué sale arriba de la precuenta</h3>
+      {!printed && (
+        <p id="header-without-printer" className="text-sm text-muted">
+          Solo se usa si la precuenta sale impresa. Elige una impresora arriba.
+        </p>
+      )}
+      <Group label="Qué sale arriba de la precuenta" className="flex flex-wrap gap-2">
+        <Option
+          selected={header === 'name'}
+          disabled={!printed || locked}
+          describedBy={printed ? undefined : 'header-without-printer'}
+          onChoose={() => choose('name')}
+        >
+          Nombre del restaurante
+        </Option>
+        <Option
+          selected={header === 'logo'}
+          disabled={!printed || !logo || locked}
+          describedBy={
+            !printed ? 'header-without-printer' : logo ? undefined : 'header-without-logo'
+          }
+          onChoose={() => choose('logo')}
+        >
+          Logo
+        </Option>
+      </Group>
+      {printed && !logo && (
+        <p id="header-without-logo" className="text-sm text-muted">
+          Sube un logo para elegirlo.
+        </p>
+      )}
+      {logo && preview && (
+        <figure className="flex flex-col items-start gap-2">
+          <div className="max-w-full rounded-lg border border-border bg-white p-3">
+            <img
+              src={preview}
+              alt="Vista previa del logo en blanco y negro, como sale impreso"
+              width={logo.width}
+              height={logo.height}
+              className="block h-auto max-w-full [image-rendering:pixelated]"
+            />
+          </div>
+          <figcaption className="text-sm text-muted">
+            Así sale en el papel: la impresora solo imprime negro.
+          </figcaption>
+        </figure>
+      )}
+      {share !== null && (share > 0.55 || share < 0.01) && (
+        <p className="flex items-start gap-2 rounded-xl bg-progress-soft p-3 text-progress-text">
+          <Icon name="warning" className="mt-0.5 size-5 shrink-0" />
+          {share > 0.55
+            ? 'Quedó casi todo negro. Si el logo tiene fondo oscuro, usa una versión con fondo claro.'
+            : 'Casi no se ve nada: el logo es muy claro para el papel. Usa una versión de colores oscuros.'}
+        </p>
+      )}
+      <p className="text-sm text-muted">
+        Usa un logo de colores sólidos, con fondo claro o transparente. Lo pasamos a blanco y negro,
+        como sale en el papel.
+      </p>
+      <p aria-live="polite" className="text-sm text-muted">
+        {busy === 'converting' ? 'Preparando el logo…' : busy === 'saving' ? 'Guardando…' : ''}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button icon="photo" disabled={locked} onClick={() => entry.current?.click()}>
+          {logo ? 'Cambiar el logo' : 'Subir el logo'}
+        </Button>
+        {logo && (
+          <Button
+            variant="ghost"
+            disabled={locked}
+            onClick={() =>
+              void save('name', null, 'Quitaste el logo: la precuenta sale con el nombre', () =>
+                save(header, logo, 'Recuperaste el logo'),
+              )
+            }
+          >
+            Quitar el logo
+          </Button>
+        )}
+      </div>
+      <input
+        ref={entry}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          void upload(e.target.files?.[0])
+          e.target.value = ''
+        }}
+      />
+    </div>
   )
 }
 

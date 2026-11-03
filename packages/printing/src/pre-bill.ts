@@ -1,4 +1,4 @@
-import { type Format, type Line, paragraph, toSides, widthOf } from './document'
+import { type Format, type Line, paragraph, type RasterImage, toSides, widthOf } from './document'
 import type { CodePage } from './encoding'
 
 // The pre-bill on paper (task 1.6, brief §4.5): what the table has ordered, the total, what is
@@ -16,6 +16,8 @@ export interface PreBillLine {
 
 export interface PreBill {
   restaurant: string
+  /** If the restaurant chose to print its logo, it goes instead of the name. */
+  logo?: RasterImage | null
   /** «Mesa 6», «Mesa 5 + 6», «Para llevar». */
   target: string
   order: number | null
@@ -57,7 +59,7 @@ export function preBillLines(p: PreBill, format: { columns: number; page: CodePa
   ].filter((d): d is string => !!d)
 
   const lines: Line[] = [
-    ...paragraph(p.restaurant, f, { large: true, center: true }),
+    ...(p.logo ? [{ image: p.logo }] : paragraph(p.restaurant, f, { large: true, center: true })),
     ...paragraph('PRECUENTA', f, { reversed: true, center: true, bold: true }),
     { space: true },
     ...paragraph(p.target, f, { large: true }),

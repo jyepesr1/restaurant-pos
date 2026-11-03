@@ -21,6 +21,32 @@ export const BRANDS = ['faro', 'la-spritzzeria'] as const
 
 const TimeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Hora en formato HH:MM')
 
+/** Widest logo, in dots: what a 58 mm printer prints (an 80 mm one centers it). */
+export const LOGO_MAX_WIDTH = 384
+/** Tallest logo, in dots (about 3 cm): a header, not a poster. */
+export const LOGO_MAX_HEIGHT = 240
+
+/**
+ * A logo for thermal printers: 1-bit raster as ESC/POS `GS v 0` takes it. Rows of `width / 8`
+ * bytes, most significant bit first, 1 = black; `data` is that in base64.
+ */
+export const PrintLogo = z
+  .object({
+    width: z
+      .int()
+      .min(8)
+      .max(LOGO_MAX_WIDTH)
+      .refine((w) => w % 8 === 0, 'El ancho del logo va en múltiplos de 8'),
+    height: z.int().min(1).max(LOGO_MAX_HEIGHT),
+    data: z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/),
+  })
+  .refine(
+    (l) => l.data.length === 4 * Math.ceil(((l.width / 8) * l.height) / 3),
+    'El logo no trae los puntos que dice su tamaño',
+  )
+
+export type PrintLogo = z.infer<typeof PrintLogo>
+
 export const RestaurantConfig = z.strictObject({
   business_day_start: TimeOfDay.default('06:00'),
   table_lock_by_waiter: z.boolean().default(false),
@@ -97,6 +123,10 @@ export const RestaurantConfig = z.strictObject({
   register_variance_threshold: z.int().min(0).max(1_000_000).default(1000),
   /** Where the printed pre-bill comes out; without a printer, the pre-bill is only on screen. */
   pre_bill_printer_id: Ulid.nullable().default(null),
+  /** What goes at the top of the printed pre-bill: the restaurant's name or its logo. */
+  pre_bill_header: z.enum(['name', 'logo']).default('name'),
+  /** The logo for printing, already in black and white (the device converts it when uploaded). */
+  print_logo: PrintLogo.nullable().default(null),
 })
 
 export type RestaurantConfig = z.infer<typeof RestaurantConfig>

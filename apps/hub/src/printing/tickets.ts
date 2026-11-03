@@ -268,6 +268,7 @@ function preBillJob(
   const suggested = check ? checkPendingTip(check, subtotal) : orderTip(order, subtotal, config)
   const preBill: PreBill = {
     restaurant: String(row?.name ?? ''),
+    logo: config.pre_bill_header === 'logo' ? config.print_logo : null,
     target: targetOf(o, order),
     order: order.dayNumber,
     waiter: waiter ? String(waiter.name) : '',

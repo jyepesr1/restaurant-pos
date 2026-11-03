@@ -187,6 +187,8 @@ Agotado (86) no es un campo editable: son los eventos `ProductSoldOut` / `Produc
 | `brand` | `"faro"` | Con qué marca se ve el POS en todos los equipos (ADR-014): `faro` o una marca preparada (`la-spritzzeria`). La cambia el administrador en «Marca del restaurante». |
 | `payment_methods` | efectivo, tarjeta, Nequi, Daviplata, Bre-B, transferencia | Los que salen al cobrar, en ese orden (tarea 1.6). El efectivo siempre está. Se cambian en «Caja y pagos». |
 | `pre_bill_printer_id` | `null` | Dónde sale la precuenta; sin impresora, solo se ve en pantalla (tarea 1.6). |
+| `pre_bill_header` | `'name'` | Qué sale arriba de la precuenta impresa: el nombre del restaurante o su logo (`'logo'`) (2-nov-2026). |
+| `print_logo` | `null` | El logo para imprimir, ya en blanco y negro: `{ width, height, data }`, raster de 1 bit para `GS v 0` (ancho múltiplo de 8, hasta 384 × 240 puntos, `data` en base64). Lo convierte el equipo al subirlo. Solo sube a la nube cuando hay logo. |
 | `register_variance_threshold` | `1000` | Desde qué diferencia (sobrante o faltante) el cierre de caja pide justificación (tarea 1.7). |
 | `custom_methods` | `[]` | Medios que crea el restaurante, con `id`, `name` y `active` (hasta 20). Un pago con uno de ellos va con `method: 'other'` y `custom_method_id`. |
 

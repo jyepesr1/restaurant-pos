@@ -89,6 +89,35 @@ En cada terminal nueva, desde la carpeta del proyecto:
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
 
+### Logo del restaurante en la precuenta (2-nov-2026) ✅
+
+Pedido del dueño: poder imprimir el logo en vez del nombre arriba de la precuenta.
+
+- En **Caja y pagos → Impresora de precuentas → Qué sale arriba de la precuenta**: «Nombre del restaurante» (por defecto) o «Logo». Sin impresora de precuentas la sección se ve, apagada, porque solo aplica al papel.
+- **Subir el logo**: PNG, JPG o WebP. El equipo lo pasa a blanco y negro al tamaño en que se imprime (hasta 384 × 240 puntos, cabe en 58 y en 80 mm) y muestra la vista previa exacta. Avisa si queda casi todo negro (fondo oscuro) o casi vacío (colores claros). «Quitar el logo» tiene Deshacer.
+- Se imprime como imagen ESC/POS (`GS v 0`), centrada. Se guarda en la configuración del restaurante (`print_logo`, `pre_bill_header`; ver `docs/MODELO_DATOS.md`).
+
+Revisado por `revisor-codigo`, `revisor-ux` y `qa-pruebas` (pruebas nuevas en core, printing, hub y app). Se corrigió:
+- la nube publicada rechazaba la configuración de un PC de caja actualizado, aunque no usara logo: ahora los dos campos solo suben cuando dicen algo;
+- la imagen podía mandar a la impresora más bytes de los anunciados;
+- faltaban los estados «Preparando el logo…» y «Guardando…», un mensaje propio en español si la imagen no se lee, y el aviso de logo negro o vacío.
+
+**Antes de usar el logo en un PC de caja conectado a la nube:** publicar el Worker con esta versión (`pnpm --filter @pos/cloud run deploy`). La nube publicada antes del 2-nov-2026 no conoce los campos del logo y rechazaría la configuración. Sin logo no pasa nada.
+
+**Queda pendiente:**
+- Logos SVG: no se aceptan todavía (el navegador no siempre los convierte); se pide PNG o JPG.
+- Volver a una versión anterior del PC de caja después de cambiar la configuración con esta: la versión vieja no reconoce los campos nuevos.
+- Probar en una impresora real que la imagen sale centrada y nítida (hasta ahora, solo con la impresora de prueba y pruebas automáticas).
+- La prueba «the announcement does not count as a data change» del motor de la app falla a veces por tiempos (1 de cada 3 o 4 corridas), sin relación con este cambio.
+
+**Cómo probarlo:**
+
+1. Publica la nube (paso de arriba) si el PC de caja está conectado, y arranca el hub con la versión nueva.
+2. En **Caja y pagos**, elige una impresora de precuentas (puede ser la de prueba, `pnpm --filter @pos/hub test-printer`).
+3. En «Qué sale arriba de la precuenta», toca **Subir el logo** y elige el logo en PNG o JPG. Debe verse la vista previa en blanco y negro y quedar elegido «Logo».
+4. Abre una mesa con algo enviado y toca **Cuenta → Imprimir precuenta**. En la impresora de prueba debe salir `[logo 384×…]` arriba, en vez del nombre.
+5. Toca **Quitar el logo**: el aviso trae **Deshacer** y la precuenta vuelve a salir con el nombre.
+
 ### El total de la precuenta ya no se parte (2-nov-2026) ✅
 
 En letra grande caben 24 caracteres (80 mm) o 16 (58 mm). «Total con propina $90.357» no cabía, y el valor bajaba solo a la línea siguiente, como cortado.

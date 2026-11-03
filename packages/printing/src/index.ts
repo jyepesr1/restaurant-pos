@@ -4,6 +4,7 @@ export {
   type Format,
   type Line,
   paragraph,
+  type RasterImage,
   type Style,
   toSides,
   type Width,

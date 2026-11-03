@@ -31,7 +31,13 @@ export function readEscpos(bytes: Uint8Array): ReadResult {
       continue
     }
     if (b === 0x1d) {
-      if (bytes[i + 1] === 0x56) {
+      if (bytes[i + 1] === 0x76) {
+        // `GS v 0 m xL xH yL yH` and the image: shown as its size, its dots are skipped.
+        const width = ((bytes[i + 4] as number) + (bytes[i + 5] as number) * 256) * 8
+        const height = (bytes[i + 6] as number) + (bytes[i + 7] as number) * 256
+        lines.push(`[logo ${width}×${height}]`)
+        i += 7 + (width / 8) * height
+      } else if (bytes[i + 1] === 0x56) {
         cuts += 1
         lines.push('✂ ─────────')
         i += 3

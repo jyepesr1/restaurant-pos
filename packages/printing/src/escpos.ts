@@ -1,9 +1,9 @@
-import type { Line } from './document'
+import type { Line, RasterImage } from './document'
 import { CODE_PAGE_NUMBER, type CodePage, encode } from './encoding'
 
 // ESC/POS commands from Epson's basic set, which generic thermal printers understand.
 // Only what every 58 or 80 mm printer has is used: size, bold, reversed, alignment,
-// feed and cut.
+// raster image (the logo), feed and cut.
 
 const ESC = 0x1b
 const GS = 0x1d
@@ -19,6 +19,41 @@ const size = (large: boolean) => [GS, 0x21, large ? 0x11 : 0x00]
 const advance = (n: number) => [ESC, 0x64, n]
 /** Partial cut (leaves a tab): the paper does not fall on the kitchen floor. */
 const cut = [GS, 0x56, 0x42, 0x00]
+/** `GS v 0`: prints a 1-bit raster image (the logo), as wide as it is. */
+const raster = (image: RasterImage) => {
+  const rowBytes = image.width / 8
+  return [
+    GS,
+    0x76,
+    0x30,
+    0,
+    rowBytes & 0xff,
+    rowBytes >> 8,
+    image.height & 0xff,
+    image.height >> 8,
+    // Exactly the bytes the header announces: anything extra would print as garbage.
+    ...fromBase64(image.data).slice(0, rowBytes * image.height),
+  ]
+}
+
+const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+/** Base64 to bytes; by hand, because the package runs without the browser's or Node's APIs. */
+function fromBase64(text: string): number[] {
+  const bytes: number[] = []
+  let bits = 0
+  let pending = 0
+  for (const c of text) {
+    if (c === '=') break
+    bits = ((bits << 6) | BASE64.indexOf(c)) & 0xffff
+    pending += 6
+    if (pending >= 8) {
+      pending -= 8
+      bytes.push((bits >> pending) & 0xff)
+    }
+  }
+  return bytes
+}
 
 /** The document as bytes for the printer, with feed and cut at the end. */
 export function escpos(
@@ -36,6 +71,10 @@ export function escpos(
     }
     if ('space' in line) {
       bytes.push(LF)
+      continue
+    }
+    if ('image' in line) {
+      bytes.push(...align(true), ...raster(line.image), ...align(false))
       continue
     }
     bytes.push(

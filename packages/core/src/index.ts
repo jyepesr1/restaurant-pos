@@ -25,7 +25,14 @@ export {
   WITH_DONENESS,
   WITH_FLAVOR,
 } from './catalog/menu'
-export { BRANDS, fullConfig, RestaurantConfig } from './config'
+export {
+  BRANDS,
+  fullConfig,
+  LOGO_MAX_HEIGHT,
+  LOGO_MAX_WIDTH,
+  PrintLogo,
+  RestaurantConfig,
+} from './config'
 export * from './events/common'
 export {
   Acceptance,

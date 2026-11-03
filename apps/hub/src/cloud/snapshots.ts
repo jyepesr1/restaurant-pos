@@ -8,6 +8,7 @@ import {
   writeSync,
 } from 'node:fs'
 import { join } from 'node:path'
+import type { RestaurantConfig } from '@pos/core'
 import type { SqliteDatabase } from '@pos/db'
 import { fingerprint } from '@pos/sync'
 import { z } from 'zod'
@@ -113,10 +114,27 @@ export function readSnapshots(db: SqliteDatabase, restaurantId: string): Snapsho
     .filter((u) => u.permissions.includes('remote_access'))
   return {
     catalog: readCatalog(db, restaurantId),
-    config: { config: configOf({ db, restaurantId }), time_zone: timeZoneOf(db, restaurantId) },
+    config: {
+      config: forTheCloud(configOf({ db, restaurantId })),
+      time_zone: timeZoneOf(db, restaurantId),
+    },
     people,
     roles,
     remote_users: remoteUsers,
+  }
+}
+
+/**
+ * The config as the cloud takes it. The pre-bill header fields (2-nov-2026) only go when they say
+ * something: a cloud published before them refuses keys it does not know, and a restaurant without
+ * a logo keeps uploading exactly what it did.
+ */
+function forTheCloud(config: RestaurantConfig): Partial<RestaurantConfig> {
+  const { pre_bill_header, print_logo, ...rest } = config
+  return {
+    ...rest,
+    ...(pre_bill_header === 'name' ? {} : { pre_bill_header }),
+    ...(print_logo === null ? {} : { print_logo }),
   }
 }
 

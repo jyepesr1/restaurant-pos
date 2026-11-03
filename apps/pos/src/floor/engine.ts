@@ -6,6 +6,7 @@ import {
   newId,
   type OrderEventType,
   type PaymentMethod,
+  type PrintLogo,
   type Report,
   type ShiftReconciliation,
   signEvent,
@@ -176,6 +177,9 @@ export interface KitchenConfig {
   courses_enabled?: boolean
   /** Where the pre-bill prints (task 1.6); an older hub does not send it. */
   pre_bill_printer_id?: string | null
+  /** The pre-bill's header: the name or the logo; an older hub does not send them. */
+  pre_bill_header?: 'name' | 'logo'
+  print_logo?: PrintLogo | null
 }
 
 export interface CustomMethod {
@@ -741,6 +745,10 @@ export class Floor {
 
   async preBillPrinter(printerId: string | null): Promise<void> {
     await this.withSession('/api/register/pre-bill', { printer_id: printerId })
+  }
+
+  async preBillHeader(header: 'name' | 'logo', logo: PrintLogo | null): Promise<void> {
+    await this.withSession('/api/register/pre-bill-header', { header, logo })
   }
 
   /**

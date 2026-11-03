@@ -24,6 +24,8 @@ describe('restaurant config', () => {
       custom_methods: [],
       register_variance_threshold: 1000,
       pre_bill_printer_id: null,
+      pre_bill_header: 'name',
+      print_logo: null,
     })
   })
 

@@ -324,6 +324,7 @@ describe('properties: reading what was printed returns the text', () => {
         lines.forEach((l, i) => {
           if ('separator' in l) expect(rows[i]).toBe('-'.repeat(format.columns))
           else if ('space' in l) expect(rows[i]).toBe('')
+          else if ('image' in l) expect(rows[i]).toMatch(/^\[logo /)
           else expect(rows[i]).toBe(characters(l.text, p).join(''))
         })
         expect(rows.slice(lines.length, lines.length + 4)).toEqual(['', '', '', ''])
