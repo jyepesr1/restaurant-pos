@@ -102,7 +102,7 @@ Revisado por `revisor-codigo`, `revisor-ux` y `qa-pruebas` (pruebas nuevas en co
 - la imagen podía mandar a la impresora más bytes de los anunciados;
 - faltaban los estados «Preparando el logo…» y «Guardando…», un mensaje propio en español si la imagen no se lee, y el aviso de logo negro o vacío.
 
-**Antes de usar el logo en un PC de caja conectado a la nube:** publicar el Worker con esta versión (`pnpm --filter @pos/cloud run deploy`). La nube publicada antes del 2-nov-2026 no conoce los campos del logo y rechazaría la configuración. Sin logo no pasa nada.
+**Nube:** el Worker `faro-api` con esta versión quedó publicado el 2-nov-2026 (versión `84635e51`), así que ya acepta la configuración con logo. Una nube anterior la rechazaría: si se vuelve a una versión vieja del Worker, quitar el logo antes. Sin logo no pasa nada.
 
 **Queda pendiente:**
 - Logos SVG: no se aceptan todavía (el navegador no siempre los convierte); se pide PNG o JPG.
@@ -112,7 +112,7 @@ Revisado por `revisor-codigo`, `revisor-ux` y `qa-pruebas` (pruebas nuevas en co
 
 **Cómo probarlo:**
 
-1. Publica la nube (paso de arriba) si el PC de caja está conectado, y arranca el hub con la versión nueva.
+1. Arranca el hub con la versión nueva (la nube ya está publicada).
 2. En **Caja y pagos**, elige una impresora de precuentas (puede ser la de prueba, `pnpm --filter @pos/hub test-printer`).
 3. En «Qué sale arriba de la precuenta», toca **Subir el logo** y elige el logo en PNG o JPG. Debe verse la vista previa en blanco y negro y quedar elegido «Logo».
 4. Abre una mesa con algo enviado y toca **Cuenta → Imprimir precuenta**. En la impresora de prueba debe salir `[logo 384×…]` arriba, en vez del nombre.
