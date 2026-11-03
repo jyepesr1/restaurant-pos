@@ -64,7 +64,6 @@ const text = fc.oneof(
 const item = fc.record<TicketItem>({
   quantity: fc.integer({ min: 1, max: 999 }),
   name: text,
-  guest: fc.option(fc.integer({ min: 1, max: 99 }), { nil: null }),
   course: fc.option(fc.constantFrom(...COURSES), { nil: null }),
   options: fc.array(text, { maxLength: 4 }),
   notes: fc.option(text, { nil: null }),
@@ -78,7 +77,6 @@ const ticket = fc.record<Ticket>({
   order: fc.option(fc.integer({ min: 1, max: 99_999 }), { nil: null }),
   waiter: text,
   time: text,
-  guests: fc.option(fc.integer({ min: 1, max: 200 }), { nil: null }),
   items: fc.array(item, { maxLength: 8 }),
   heldCourses: fc.option(fc.subarray(COURSES), { nil: undefined }),
 })
@@ -294,12 +292,10 @@ describe('properties: a text never gives commands to the printer', () => {
       order: 1,
       waiter: '\x10\x04\x01Ana',
       time: '8:00',
-      guests: 2,
       items: [
         {
           quantity: 1,
           name: '\x1b@\x1dV\x42\x00Pizza',
-          guest: null,
           course: null,
           options: ['\x1bp\x01'],
           notes: '\x1b!\xff',
@@ -368,12 +364,10 @@ describe('properties: reading what was printed returns the text', () => {
             order: 3,
             waiter: 'Ana',
             time: '8:42 p. m.',
-            guests: 2,
             items: [
               {
                 quantity,
                 name,
-                guest: 1,
                 course: null,
                 options: [name],
                 notes: `Ñandú ${name}`,
@@ -415,7 +409,6 @@ const f58 = { columns: COLUMNS[58], page: 'pc850' as const }
 const tagliata: TicketItem = {
   quantity: 2,
   name: 'Tagliata',
-  guest: 2,
   course: 'main',
   options: ['Término medio'],
   notes: null,
@@ -428,7 +421,6 @@ const newTicket: Ticket = {
   order: 3,
   waiter: 'Ana',
   time: '8:42 p. m.',
-  guests: 4,
   items: [tagliata],
 }
 const read = (c: Ticket, f = f80) => asText(ticketLines(c, f), f.columns)
@@ -497,8 +489,8 @@ describe('void, modification and reprint', () => {
     expect(read({ ...newTicket, number: null })).toContain('MESA 6')
   })
 
-  it('without order, guests or waiter the data line leaves no stray separators', () => {
-    const text = read({ ...newTicket, order: null, guests: null, waiter: '', time: '9:10 a. m.' })
+  it('without order or waiter the data line leaves no stray separators', () => {
+    const text = read({ ...newTicket, order: null, waiter: '', time: '9:10 a. m.' })
     expect(text).toContain('9:10 a. m.')
     expect(text).not.toContain('Pedido')
     expect(text).not.toContain('pers.')

@@ -525,24 +525,55 @@ describe('data the ticket carries', () => {
     expect(t.content(t.jobs()[0]).target).toBe(target)
   })
 
-  it('with a table it has «Mesa N», the waiter, the order number of the day and the guests', () => {
+  it('with a table it has «Mesa N» and the waiter, but not the order number or the guests', () => {
     const t = setupPrinting()
     withPrinters(t)
     const ana = t.device('waiter')
     const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], t.table('7'))
     t.send(ana, order, items)
-    expect(t.content(t.jobs()[0])).toMatchObject({
+    const content = t.content(t.jobs()[0])
+    expect(content).toMatchObject({
       type: 'new',
       station: 'Cocina',
       target: 'Mesa 7',
       waiter: 'Ana',
-      order: 1,
-      guests: 2,
+      order: null,
       number: 1,
     })
+    expect(content).not.toHaveProperty('guests')
   })
 
-  it('the options, notes, guest and course of each dish travel in the job', () => {
+  it.each([
+    ['takeout', 'Para llevar'],
+    ['delivery', 'Domicilio'],
+    ['bar', 'Barra'],
+  ])(
+    'a %s order without a table keeps its order number of the day on the job',
+    (channel, target) => {
+      const t = setupPrinting()
+      withPrinters(t)
+      const ana = t.device('waiter')
+      const { order, items } = t.orderWith(
+        ana,
+        [{ name: 'Pizza', station: t.kitchen }],
+        null,
+        channel,
+      )
+      t.send(ana, order, items)
+      expect(t.content(t.jobs()[0])).toMatchObject({ target, order: 1 })
+    },
+  )
+
+  it('an order at a table channel but without a table keeps its number: nothing else names it', () => {
+    const t = setupPrinting()
+    withPrinters(t)
+    const ana = t.device('waiter')
+    const { order, items } = t.orderWith(ana, [{ name: 'Pizza', station: t.kitchen }], null)
+    t.send(ana, order, items)
+    expect(t.content(t.jobs()[0])).toMatchObject({ order: 1 })
+  })
+
+  it('the options, notes and course of each dish travel in the job, without the guest', () => {
     const t = setupPrinting()
     withPrinters(t)
     const ana = t.device('waiter')
@@ -562,12 +593,53 @@ describe('data the ticket carries', () => {
       {
         quantity: 2,
         name: 'Tagliata',
-        guest: 3,
         course: 'main',
         options: ['Término medio', 'Sin sal'],
         notes: 'alergia al maní',
       },
     ])
+  })
+
+  it('the printed table ticket has no «Pedido», «pers.» or «P<n>» even with guests and dishes assigned to one', async () => {
+    const t = setupPrinting()
+    const printers = withPrinters(t)
+    const ana = t.device('waiter')
+    const { order, items } = t.orderWith(
+      ana,
+      [
+        { name: 'Tagliata', station: t.kitchen, guest: 1, quantity: 2 },
+        { name: 'Risotto', station: t.kitchen, guest: 2 },
+      ],
+      t.table('7'),
+    )
+    ana.submit(order, 'GuestsChanged', { guests: 4 })
+    t.send(ana, order, items)
+    await t.queue.runOnce()
+    const text = readEscpos(printers.kitchen.paper.received[0] as Uint8Array).text
+    expect(text).toMatch(/MESA 7/i)
+    expect(text).toMatch(/2 x TAGLIATA/i)
+    expect(text).not.toMatch(/Pedido/i)
+    expect(text).not.toMatch(/pers\./)
+    expect(text).not.toMatch(/\bP[0-9]+\b/)
+  })
+
+  it('the printed takeout ticket carries «Pedido N» to name the customer', async () => {
+    const t = setupPrinting()
+    const printers = withPrinters(t)
+    const ana = t.device('waiter')
+    const { order, items } = t.orderWith(
+      ana,
+      [{ name: 'Pizza', station: t.kitchen, guest: 1 }],
+      null,
+      'takeout',
+    )
+    t.send(ana, order, items)
+    await t.queue.runOnce()
+    const text = readEscpos(printers.kitchen.paper.received[0] as Uint8Array).text
+    expect(text).toMatch(/PARA LLEVAR/i)
+    expect(text).toContain('Pedido 1')
+    expect(text).not.toMatch(/pers\./)
+    expect(text).not.toMatch(/\bP[0-9]+\b/)
   })
 
   it('a table that no longer exists does not break the ticket', () => {

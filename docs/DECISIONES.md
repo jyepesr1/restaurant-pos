@@ -488,7 +488,7 @@ Decisiones del dueño del 25-oct-2026. En La Spritzzería la cocina no tiene pan
 - **Comandas impresas**:
   - impresoras térmicas ESC/POS de **red** (cable al router, puerto 9100), de 58 u 80 mm;
   - al aceptar un envío, el hub guarda en **la misma transacción** un trabajo por impresora de la estación: si se va la luz justo después, la comanda igual sale al volver;
-  - la comanda lleva número del día, mesa o canal, número de pedido, mesero, hora, y los productos por persona y curso con las opciones resaltadas y las notas;
+  - la comanda lleva número del día, mesa o canal, mesero, hora, y los productos por curso con las opciones resaltadas y las notas; el número de pedido solo sin mesa (ver la enmienda del 2-nov-2026);
   - también salen las comandas de **reimpresión**, **modificación** y **anulación** cuando existan esos eventos;
   - **cola con reintentos** (espera creciente hasta 30 s, sin rendirse); a los 3 fallos seguidos la comanda pasa a la **impresora de respaldo** si hay una, y todos los equipos ven la alerta «La impresora de Barra no responde»;
   - la caja puede descartar un trabajo atascado (queda registrado, no se borra).
@@ -515,6 +515,15 @@ El brief pide impresoras por estación y KDS, pero en el piloto la cocina no tie
 | «Empezar» y «Listo» en la pantalla | Un toque más por comanda; el piloto no necesita saber qué está en preparación. |
 | La caja marca listo y el mesero entrega | Un paso más en hora pico; queda posible pero no es el flujo normal. |
 | Generar la comanda fuera de la transacción del evento | Un corte entre las dos dejaría un pedido enviado que nunca se imprimió. |
+
+### Enmienda del 2-nov-2026: la comanda solo lleva lo que usa la cocina
+
+- **Por qué:** al ver una comanda de ejemplo, el dueño notó que la cocina recibía datos que solo sirven en sala.
+- **Ya no se imprime:**
+  - **el número de pedido cuando el pedido tiene mesa** («Pedido 9»): la mesa y el número de comanda bastan. Sin mesa (para llevar, domicilio, barra) se sigue imprimiendo, porque identifica al cliente;
+  - **las personas de la mesa** («3 pers.»);
+  - **para quién es cada plato** («P1», «P2»): se sigue viendo en la pantalla del pedido.
+- La precuenta no cambia.
 
 ---
 

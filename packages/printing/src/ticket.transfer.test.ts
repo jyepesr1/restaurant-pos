@@ -11,8 +11,7 @@ const base: Ticket = {
   order: 3,
   waiter: 'Ana',
   time: '8:42 p. m.',
-  guests: 4,
-  items: [{ quantity: 2, name: 'Tagliata', guest: null, course: null, options: [], notes: null }],
+  items: [{ quantity: 2, name: 'Tagliata', course: null, options: [], notes: null }],
   before: 'Mesa 3',
 }
 const format = { columns: COLUMNS[80], page: 'pc850' as const }

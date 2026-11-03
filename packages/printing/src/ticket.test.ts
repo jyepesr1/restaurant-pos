@@ -21,12 +21,10 @@ const ticket: Ticket = {
   order: 3,
   waiter: 'Ana',
   time: '8:42 p. m.',
-  guests: 4,
   items: [
     {
       quantity: 2,
       name: 'Burrata Spritz',
-      guest: 1,
       course: 'starter',
       options: ['Sin rúgula'],
       notes: null,
@@ -34,7 +32,6 @@ const ticket: Ticket = {
     {
       quantity: 1,
       name: 'Tagliata',
-      guest: 2,
       course: 'main',
       options: ['Término medio'],
       notes: 'bien caliente',
@@ -50,11 +47,33 @@ describe('ticket', () => {
     const text = asText(ticketLines(ticket, format80), 48)
     expect(text).toContain('[COCINA]')
     expect(text).toMatch(/MESA 6 +#12/)
-    expect(text).toContain('Pedido 3 · Ana · 8:42 p. m. · 4 pers.')
+    expect(text).toContain('Pedido 3 · Ana · 8:42 p. m.')
     expect(text.indexOf('ENTRADA')).toBeLessThan(text.indexOf('FUERTE'))
     expect(text).toContain('2 X BURRATA SPRITZ')
     expect(text).toContain('> Término medio')
     expect(text).toContain('[NOTA: bien caliente]')
+  })
+
+  it('a table ticket has no «Pedido», «pers.» or «P<n>» beside the dishes', () => {
+    const text = asText(ticketLines({ ...ticket, order: null }, format80), 48)
+    expect(text).toMatch(/MESA 6 +#12/)
+    expect(text).toContain('Ana · 8:42 p. m.')
+    expect(text).not.toContain('Pedido')
+    expect(text).not.toContain('pers.')
+    expect(text).not.toMatch(/\bP[0-9]\b/)
+  })
+
+  it('a dish line is a plain large paragraph with nothing at the right edge', () => {
+    const lines = ticketLines(ticket, format80)
+    const line = lines.find((l) => 'text' in l && l.text.includes('2 x Burrata Spritz'))
+    expect(line).toMatchObject({ large: true })
+    expect(asText(lines, 48)).toMatch(/^2 X BURRATA SPRITZ$/m)
+  })
+
+  it('a takeout ticket keeps «Pedido N» to name the customer', () => {
+    const text = asText(ticketLines({ ...ticket, target: 'Para llevar', order: 9 }, format80), 48)
+    expect(text).toContain('Pedido 9 · Ana · 8:42 p. m.')
+    expect(text).not.toContain('pers.')
   })
 
   it('void and reprint are marked at the top', () => {

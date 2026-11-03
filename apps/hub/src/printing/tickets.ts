@@ -399,7 +399,6 @@ function ticketItem(i: OrderItem): TicketItem {
   return {
     quantity: i.quantity - i.voidedQuantity,
     name: i.name,
-    guest: i.guest,
     course: i.course,
     options: i.modifiers.map((m) => m.name),
     notes: i.notes,
@@ -448,10 +447,11 @@ function ticketData(
     station: station ? String(station.name) : 'Estación',
     number: sent.number,
     target,
-    order: order.dayNumber,
+    // With a table (as `targetOf` prints it), the table and the ticket number say it all; without
+    // one, the order number names the customer.
+    order: order.tableId ? null : order.dayNumber,
     waiter: waiter ? String(waiter.name) : '',
     time: timeOf(o, event.received_at),
-    guests: order.guests > 0 ? order.guests : null,
     items,
     heldCourses: type === 'new' ? order.heldCourses.filter((c) => hasCourse(order, c)) : [],
     // On a void or a change, the order note is a distraction: it already went out with the

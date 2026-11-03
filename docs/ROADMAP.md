@@ -89,6 +89,23 @@ En cada terminal nueva, desde la carpeta del proyecto:
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
 
+### La comanda solo lleva lo que usa la cocina (2-nov-2026) ✅
+
+Decisión del dueño ([enmienda a ADR-015](DECISIONES.md#enmienda-del-2-nov-2026-la-comanda-solo-lleva-lo-que-usa-la-cocina)): la comanda la lee la cocina, no el mesero. Ya no se imprime:
+- el **número de pedido** cuando el pedido tiene mesa (sin mesa se sigue imprimiendo, porque identifica al cliente);
+- las **personas** de la mesa («3 pers.»);
+- **para quién es cada plato** («P1», «P2»), que se sigue viendo en la pantalla del pedido.
+
+La precuenta no cambia. Una comanda que ya estaba en la cola de impresión al actualizar puede salir una vez con «Pedido N».
+
+Revisado por `revisor-codigo` y `qa-pruebas`: el número se decide por si el pedido tiene mesa, igual que el rótulo «Mesa N», no por el canal. Pruebas nuevas en printing (116) y en la cola del hub.
+
+**Cómo probarlo:**
+
+1. Con la impresora de prueba abierta (`pnpm --filter @pos/hub test-printer`) y configurada para Cocina, arranca el hub con la versión nueva.
+2. En una mesa elige personas, asigna un plato a la persona 1 y envía. La comanda debe decir «Mesa N  #M» y debajo solo mesero y hora: sin «Pedido», sin «pers.» y sin «P1».
+3. Abre un pedido **Para llevar**, agrega un plato y envíalo: la comanda sí dice «Pedido N».
+
 ### Etiquetas del cierre de caja que no se parten (2-nov-2026) ✅
 
 En **Caja → Cerrar la caja → Los demás medios**, el campo ocupaba todo el ancho y las etiquetas se partían en pedazos («Llegó / por / Bre- / B»). Ahora el campo mide lo justo y la etiqueta queda en una línea en el computador y en una o dos en el celular.
