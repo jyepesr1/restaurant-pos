@@ -116,6 +116,9 @@ describe('the state of the data', () => {
     const s = dataState({ ...local, pending: 4 }, late, BOGOTA)
     expect(s.kind).toBe('no_news')
     expect(plain(s.text)).toBe('Sin noticias del restaurante desde las 9:41 p. m.')
+    expect(plain(s.detail ?? '')).toBe(
+      'Puede que la caja esté apagada o sin internet. Las cifras son de las 9:41 p. m.',
+    )
     expect(s.tone).toBe('warning')
     expect(s.icon).toBe('cloudOff')
     expect(s.pending).toBeNull()
@@ -132,17 +135,24 @@ describe('the state of the data', () => {
       { failed: true, receivedAt: '2026-10-30T02:40:00.000Z', now: null },
       BOGOTA,
     )
-    expect(plain(s.text)).toBe(
-      'Sin conexión a internet: no llega nada del restaurante. Cifras de las 9:40 p. m.',
-    )
+    expect(plain(s.text)).toBe('Sin conexión a internet: no llegan datos del restaurante')
+    expect(plain(s.detail ?? '')).toBe('Las cifras son de las 9:40 p. m.')
     expect(s.icon).toBe('cloudOff')
+    const other = dataState(
+      local,
+      { failed: true, cause: 'other', receivedAt: '2026-10-30T02:40:00.000Z', now: null },
+      BOGOTA,
+    )
+    expect(plain(`${other.text}. ${other.detail}`)).toBe(
+      'No se pudo actualizar. Las cifras son de las 9:40 p. m.',
+    )
     expect(s.tone).toBe('warning')
   })
 
   it('failed before any answer: only that there is no connection', () => {
-    expect(dataState(null, { failed: true, receivedAt: null, now: null }, BOGOTA).text).toBe(
-      'Sin conexión a internet: no llega nada del restaurante',
-    )
+    const s = dataState(null, { failed: true, receivedAt: null, now: null }, BOGOTA)
+    expect(s.text).toBe('Sin conexión a internet: no llegan datos del restaurante')
+    expect(s.detail).toBeNull()
   })
 
   it('the announcement changes only with the state, not with the time', () => {

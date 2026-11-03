@@ -3,6 +3,7 @@ import {
   businessDay,
   fullConfig,
   type IssueType,
+  isLargeVariance,
   type NewEvent,
   newId,
   type OrderEvent,
@@ -14,6 +15,7 @@ import {
   validateNewEvent,
 } from '@pos/core'
 import { eventFingerprint } from '../fingerprint'
+import { ordersOf } from '../orders'
 import { type DeviceType, type EventResult, type HubMessage, PAGE_SIZE } from '../protocol'
 import {
   type ReportData,
@@ -166,12 +168,7 @@ const REGISTER_VARIANCE_THRESHOLD = fullConfig().register_variance_threshold
 /** Moving and merging require a connection with the hub: they are never a conflict. */
 const ALWAYS_ONLINE = new Set(['ItemsMoved', 'OrdersMerged'])
 
-/** Orders an event touches: its aggregate, the related ones and those the hub put in `affects`. */
-export const ordersOf = (e: {
-  aggregate_id: string
-  related: readonly string[]
-  affects?: readonly string[]
-}) => [...new Set([e.aggregate_id, ...e.related, ...(e.affects ?? [])])]
+export { ordersOf }
 
 /**
  * Orders named by an event that may be malformed (a format rejection must not sink the
@@ -499,7 +496,7 @@ export class HubSync {
         return 'other_methods_mismatch'
       const threshold =
         this.config.checkoutRules?.().varianceThreshold ?? REGISTER_VARIANCE_THRESHOLD
-      const large = (d: number) => Math.abs(d) >= Math.max(1, threshold)
+      const large = (d: number) => isLargeVariance(d, threshold)
       if (
         (large(event.data.variance) || others.some((o) => large(o.variance))) &&
         !event.data.justification

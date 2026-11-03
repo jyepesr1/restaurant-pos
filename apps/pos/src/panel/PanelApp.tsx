@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../ui/Button'
 import { applyBrand, isBrand } from '../ui/brand'
 import { navigate, useRoute } from '../ui/route'
 import { type Me, type PanelApi, PanelError, panelApi, rulesOf, SESSION_CLOSED } from './api'
 import { Dashboard } from './Dashboard'
-import { PanelFrame } from './PanelFrame'
+import { createLive, LiveContext, type LiveFeed, liveUrl } from './live'
+import { PanelAlerts } from './PanelAlerts'
+import { PanelFloor } from './PanelFloor'
+import { PanelFrame, SECTIONS } from './PanelFrame'
+import { PanelKitchen } from './PanelKitchen'
+import { PanelRegister } from './PanelRegister'
 import { CsvButton, PanelReports, useCloudReports } from './PanelReports'
 import { PanelSignIn } from './PanelSignIn'
 
@@ -21,7 +26,14 @@ type Session =
 /** Whether the person can see the dashboard and the reports. */
 export const canViewReports = (me: Me) => me.user.permissions.includes('view_reports')
 
-export function PanelApp({ api: given }: { api?: PanelApi }) {
+export function PanelApp({
+  api: given,
+  live = given === undefined,
+}: {
+  api?: PanelApi
+  /** Opens the live WebSocket (task 1.11c-2); off by default with a given (test) client. */
+  live?: boolean
+}) {
   const [session, setSession] = useState<Session>({ state: 'checking' })
   const api = useMemo(
     () => given ?? panelApi({ onUnauthorized: () => setSession(signedOut(SESSION_CLOSED)) }),
@@ -65,7 +77,7 @@ export function PanelApp({ api: given }: { api?: PanelApi }) {
         }}
       />
     )
-  return (
+  const signedIn = (
     <SignedIn
       api={api}
       me={session.me}
@@ -76,6 +88,43 @@ export function PanelApp({ api: given }: { api?: PanelApi }) {
       }}
     />
   )
+  return live ? (
+    <Live api={api} onSignedOut={() => setSession(signedOut(SESSION_CLOSED))}>
+      {signedIn}
+    </Live>
+  ) : (
+    signedIn
+  )
+}
+
+/**
+ * The tab's live connection while there is a session (docs/PANEL.md#aviso-en-vivo-websocket): the screens below
+ * read again when the cloud says something changed. If the session ended, back to «Entrar».
+ */
+function Live({
+  api,
+  onSignedOut,
+  children,
+}: {
+  api: PanelApi
+  onSignedOut: () => void
+  children: ReactNode
+}) {
+  const current = useRef({ api, onSignedOut })
+  current.current = { api, onSignedOut }
+  const [connection] = useState(() =>
+    createLive({
+      url: liveUrl(),
+      checkSession: () => current.current.api.me(),
+      onSignedOut: () => current.current.onSignedOut(),
+    }),
+  )
+  useEffect(() => {
+    connection.start()
+    return () => connection.stop()
+  }, [connection])
+  const feed: LiveFeed = connection
+  return <LiveContext.Provider value={feed}>{children}</LiveContext.Provider>
 }
 
 const signedOut = (notice: string | null): Session => ({ state: 'signed-out', notice })
@@ -97,6 +146,13 @@ export function Offline({ message, onRetry }: { message: string; onRetry: () => 
   )
 }
 
+/** The section a route opens: `/` is «Hoy», or «Salón» for whoever cannot see the reports. */
+export function sectionOf(route: string, me: Me): string {
+  const known = SECTIONS.some((s) => s.route === route)
+  const section = known ? route : '/'
+  return section === '/' && !canViewReports(me) ? '/floor' : section
+}
+
 function SignedIn({ api, me, onSignOut }: { api: PanelApi; me: Me; onSignOut: () => void }) {
   const { route } = useRoute()
   // The restaurant's brand, as the register shows it: an unknown one is Faro's. It is remembered
@@ -105,25 +161,57 @@ function SignedIn({ api, me, onSignOut }: { api: PanelApi; me: Me; onSignOut: ()
   useEffect(() => {
     applyBrand(isBrand(brand) ? brand : 'faro')
   }, [brand])
-  const section = route === '/reports' ? '/reports' : '/'
+  const section = sectionOf(route, me)
+  // Whoever only sees the floor lands there; the address says so (Back does not return to `/`).
+  useEffect(() => {
+    if (section !== route && location.pathname !== section) history.replaceState(null, '', section)
+  }, [section, route])
   const allowed = canViewReports(me)
-  if (section === '/reports')
-    return allowed ? (
-      <ReportsSection api={api} me={me} onSignOut={onSignOut} />
-    ) : (
-      <PanelFrame me={me} route={section} title="Reportes" onSignOut={onSignOut}>
-        <NoPermission />
-      </PanelFrame>
-    )
-  return (
-    <PanelFrame me={me} route={section} title="Hoy" onSignOut={onSignOut}>
-      {allowed ? (
-        <Dashboard api={api} place={{ timeZone: me.restaurant.time_zone, rules: rulesOf(me) }} />
-      ) : (
-        <NoPermission />
-      )}
+  const frame = (title: string, children: ReactNode) => (
+    <PanelFrame me={me} route={section} title={title} onSignOut={onSignOut}>
+      {children}
     </PanelFrame>
   )
+  const timeZone = me.restaurant.time_zone
+  switch (section) {
+    case '/floor':
+      return frame('Salón', <PanelFloor api={api} timeZone={timeZone} />)
+    case '/kitchen':
+      return frame('Cocina', <PanelKitchen api={api} timeZone={timeZone} />)
+    case '/alerts':
+      return frame(
+        'Alertas',
+        allowed ? (
+          <PanelAlerts api={api} place={{ timeZone, rules: rulesOf(me) }} />
+        ) : (
+          <NoPermission />
+        ),
+      )
+    case '/register':
+      return frame(
+        'Caja',
+        allowed ? (
+          <PanelRegister api={api} place={{ timeZone, rules: rulesOf(me) }} />
+        ) : (
+          <NoPermission />
+        ),
+      )
+    case '/reports':
+      return allowed ? (
+        <ReportsSection api={api} me={me} onSignOut={onSignOut} />
+      ) : (
+        frame('Reportes', <NoPermission />)
+      )
+    default:
+      return frame(
+        'Hoy',
+        allowed ? (
+          <Dashboard api={api} place={{ timeZone, rules: rulesOf(me) }} />
+        ) : (
+          <NoPermission />
+        ),
+      )
+  }
 }
 
 function ReportsSection({ api, me, onSignOut }: { api: PanelApi; me: Me; onSignOut: () => void }) {
@@ -142,14 +230,13 @@ function ReportsSection({ api, me, onSignOut }: { api: PanelApi; me: Me; onSignO
   )
 }
 
-/** The dashboard and the reports ask for «Ver todos los reportes». */
+/** Hoy, Alertas, Caja and Reportes ask for «Ver todos los reportes». */
 export function NoPermission() {
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-divider bg-surface p-5">
-      <h2 className="text-lg font-semibold">Tu rol no tiene permiso para ver los reportes</h2>
+      <h2 className="text-lg font-semibold">Tu rol no puede ver esta sección</h2>
       <p className="text-muted">
-        Para ver las ventas y los reportes, pide al administrador que le dé a tu rol el permiso «Ver
-        todos los reportes».
+        Para verla, pide al administrador que le dé a tu rol el permiso «Ver todos los reportes».
       </p>
       <Button className="self-start" onClick={() => location.reload()}>
         Ya me lo dieron: volver a cargar

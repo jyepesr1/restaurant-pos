@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { type OrderEvent, validateNewEvent } from '../events/order'
 import { newId } from '../id'
 import { cashPaymentData, event } from '../testing/factory'
-import { DENOMINATIONS, shiftReconciliation } from './shift'
+import { DENOMINATIONS, isLargeVariance, shiftReconciliation } from './shift'
 
 // The shift reconciliation (task 1.7, docs/DINERO.md#caja), shared by the hub and the register.
 
@@ -190,5 +190,22 @@ describe('register schemas (task 1.7)', () => {
         }),
       ),
     ).toBe(true)
+  })
+})
+
+describe('isLargeVariance', () => {
+  it('from the threshold up, either way', () => {
+    expect(isLargeVariance(999, 1000)).toBe(false)
+    expect(isLargeVariance(1000, 1000)).toBe(true)
+    expect(isLargeVariance(-1000, 1000)).toBe(true)
+    expect(isLargeVariance(-999, 1000)).toBe(false)
+  })
+
+  it('a threshold of 0 or less counts as 1: any variance is large, none is never', () => {
+    for (const threshold of [0, -50]) {
+      expect(isLargeVariance(0, threshold)).toBe(false)
+      expect(isLargeVariance(1, threshold)).toBe(true)
+      expect(isLargeVariance(-1, threshold)).toBe(true)
+    }
   })
 })

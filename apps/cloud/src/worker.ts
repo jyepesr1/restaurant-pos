@@ -1,6 +1,11 @@
 import { Client } from 'pg'
 import { handle, type RateLimiter } from './api'
+import type { PanelLive } from './live-object'
+import type { LiveRooms } from './live-protocol'
 import { lazySql, sqlFromPg } from './pg'
+
+// The live panel's Durable Object class must be exported by the Worker's main module.
+export { PanelLive } from './live-object'
 
 // The Cloudflare Worker (ADR-016): the cloud API connected to Neon through Hyperdrive. One `pg`
 // client per request, as Cloudflare asks (Hyperdrive keeps the pool), and only if the route
@@ -15,6 +20,20 @@ export interface Env {
   PANEL_LIMITER?: RateLimiter
   /** The panel's address if it is not the Worker's own (a Worker variable); optional. */
   PANEL_ORIGIN?: string
+  /** One Durable Object per location for the live panel (`durable_objects` in wrangler.jsonc). */
+  PANEL_LIVE?: DurableObjectNamespace<PanelLive>
+}
+
+/**
+ * The live rooms over the binding: the WebSocket by `fetch` (as Cloudflare's example), the rest by
+ * RPC. Not exported: the main module exports only the handler and the Durable Object class.
+ */
+function liveRooms(namespace: DurableObjectNamespace<PanelLive>): LiveRooms {
+  return {
+    connect: (room, request) => namespace.getByName(room).fetch(request),
+    notify: (room, reason) => namespace.getByName(room).notify(reason),
+    closeSession: (room, sessionId) => namespace.getByName(room).closeSession(sessionId),
+  }
 }
 
 interface ExecutionContext {
@@ -37,6 +56,8 @@ export default {
         adminToken: environment.TOKEN_ADMIN,
         limiter: environment.PANEL_LIMITER,
         panelOrigin: environment.PANEL_ORIGIN,
+        live: environment.PANEL_LIVE ? liveRooms(environment.PANEL_LIVE) : undefined,
+        waitUntil: (promise) => context.waitUntil(promise),
       })
     } finally {
       const opened = client as Client | null

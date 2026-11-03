@@ -5,7 +5,9 @@ import { periodInWords } from '../floor/periods'
 import { pesos } from '../ui/format'
 import { Icon } from '../ui/icons'
 import { SOFT_TONES } from '../ui/Label'
+import { navigate } from '../ui/route'
 import type { PanelApi, Summary } from './api'
+import { DataStatus, FirstAnswer } from './DataStatus'
 import { usePolling } from './poller'
 import { type Comparison, compare, dataState, EVERY_MS, type Polled, weekdayOf } from './summary'
 
@@ -42,40 +44,23 @@ export function DashboardView({ polled, place }: { polled: Polled<Summary>; plac
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Read aloud only when the state changes, not with every refresh of the time. */}
-      <p aria-live="polite" className="sr-only">
-        {summary || polled.failed ? state.announcement : ''}
-      </p>
-      {(summary || polled.failed) && (
-        <div className="flex flex-col gap-2">
-          <p
-            className={`inline-flex items-center gap-2 self-start rounded-2xl px-3 py-1.5 text-sm font-semibold ${SOFT_TONES[state.tone]}`}
-          >
-            <Icon name={state.icon} className="shrink-0" />
-            {state.text}
-          </p>
-          {state.pending && (
-            <p className="inline-flex items-center gap-2 self-start rounded-2xl bg-progress-soft px-3 py-1.5 text-sm font-semibold text-progress-text">
-              <Icon name="clock" className="shrink-0" />
-              {state.pending}
-            </p>
-          )}
-        </div>
-      )}
+      <DataStatus state={state} shown={Boolean(summary)} onRetry={polled.retry} />
 
-      {!summary &&
-        (polled.failed ? (
-          <p className="rounded-2xl border border-alert-strong bg-alert-soft p-4 text-alert-text">
-            {`${polled.error ?? 'No se pudieron leer las ventas.'} Lo intentamos de nuevo solos cada 15 s.`}
-          </p>
-        ) : (
-          <p className="text-muted">Leyendo las ventas…</p>
-        ))}
+      {!summary && (
+        <FirstAnswer
+          polled={polled}
+          reading="Leyendo las ventas…"
+          failure="No se pudieron leer las ventas."
+        />
+      )}
 
       {summary && <Today summary={summary} rules={place.rules} figuresAt={state.figuresAt} />}
     </div>
   )
 }
+
+/** «El jueves pasado, a esta hora». */
+export const lastWeek = (weekday: string) => `El ${weekday} pasado, a esta hora`
 
 /** The arrow and the percentage; never color alone. */
 function Change({ change }: { change: Comparison }) {
@@ -120,7 +105,9 @@ function Today({
         className="flex flex-col gap-2 rounded-2xl border border-action-strong bg-action-soft p-4 md:p-5"
       >
         <h2 className="text-sm text-action-text">{`Ventas ${until}`}</h2>
-        <p className="figures text-4xl font-bold tracking-tight">{pesos(v.net)}</p>
+        <p className="figures text-3xl font-bold tracking-tight break-words min-[400px]:text-4xl">
+          {pesos(v.net)}
+        </p>
         {sales.direction === 'new' ? (
           <p className="text-sm">{`Ese ${weekday} a esta hora no había ventas`}</p>
         ) : (
@@ -129,10 +116,14 @@ function Today({
             <span className="text-sm">{`frente al ${weekday} pasado a esta hora`}</span>
           </p>
         )}
-        <p className="figures text-sm text-muted first-letter:uppercase">
-          {`${weekday} pasado a esta hora: ${pesos(before.net)} · ese día cerró en ${pesos(full.net)}`}
+        <p className="figures text-sm text-muted">
+          {`${lastWeek(weekday)}: ${pesos(before.net)} · ese día cerró en ${pesos(full.net)}`}
         </p>
       </section>
+
+      {summary.open && <OpenTables open={summary.open} figuresAt={figuresAt} />}
+
+      {summary.alerts !== undefined && <TodayAlerts count={summary.alerts} />}
 
       {noSales && (
         <p className="rounded-2xl border border-divider bg-surface p-4 text-muted">
@@ -219,17 +210,102 @@ function Figure({
   weekday: string
 }) {
   return (
-    <div className="flex flex-col gap-1 rounded-2xl border border-divider bg-surface p-4">
+    <div className="flex min-w-0 flex-col gap-1 rounded-2xl border border-divider bg-surface p-4">
       <dt className="text-sm text-muted">{name}</dt>
-      <dd className="figures text-2xl font-bold tracking-tight sm:text-3xl">{value}</dd>
-      <dd className="figures text-sm text-muted first-letter:uppercase">
-        {`${weekday} pasado a esta hora: ${before}`}
+      {/* Millions fit in half of a 360 px phone. */}
+      <dd className="figures text-xl font-bold tracking-tight break-words min-[400px]:text-2xl sm:text-3xl">
+        {value}
       </dd>
+      <dd className="figures text-sm text-muted">{`${lastWeek(weekday)}: ${before}`}</dd>
       {change.direction !== 'new' && (
         <dd>
           <Change change={change} />
         </dd>
       )}
     </div>
+  )
+}
+
+/**
+ * «Mesas abiertas»: what is being served right now; a tap goes to «Salón» (task 1.11c-2). The total
+ * is what is not in «Ventas» yet: of a reopened account, only what changed since it closed
+ * (docs/KPIS.md). If a reopened account went down (a void, a discount), that total can be
+ * negative: it shows $0 and says what happened, never a confusing minus.
+ */
+export function OpenTables({
+  open,
+  figuresAt,
+}: {
+  open: NonNullable<Summary['open']>
+  figuresAt: string | null
+}) {
+  const what =
+    open.orders === 0
+      ? 'Ninguna mesa abierta'
+      : [
+          `${open.tables} ${open.tables === 1 ? 'mesa' : 'mesas'}`,
+          open.orders !== open.tables
+            ? `${open.orders} ${open.orders === 1 ? 'pedido' : 'pedidos'}`
+            : null,
+          `${open.guests} ${open.guests === 1 ? 'comensal' : 'comensales'}`,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('/floor')}
+      className="flex min-h-18 items-center gap-3 rounded-2xl border border-divider bg-surface p-4 text-left transition-colors hover:border-action-strong focus-visible:outline-3 focus-visible:outline-focus"
+    >
+      <Icon name="floorPlan" className="size-6 shrink-0 text-action-text" />
+      {/* On the phone the total goes under the text; from 640 px, at the right. */}
+      <span className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-sm text-muted">
+            {figuresAt ? `Mesas abiertas a las ${figuresAt}` : 'Mesas abiertas ahora'}
+          </span>
+          <span className="figures text-lg font-semibold">{what}</span>
+        </span>
+        {open.orders > 0 && (
+          <span className="figures flex flex-col sm:text-right">
+            <span className="text-lg font-bold">{pesos(Math.max(0, open.total))}</span>
+            <span className="text-sm text-muted">en cuentas abiertas</span>
+            {open.total < 0 && (
+              <span className="text-sm text-muted">
+                {`Las cuentas reabiertas bajaron ${pesos(-open.total)} de lo que ya está en ventas: se descuenta al cerrarlas.`}
+              </span>
+            )}
+          </span>
+        )}
+      </span>
+      <span className="sr-only">Ver el salón</span>
+      <Icon name="back" className="size-5 shrink-0 rotate-180 text-muted" />
+    </button>
+  )
+}
+
+/** «Alertas de hoy: 3»; a tap goes to «Alertas» (task 1.11c-2). */
+function TodayAlerts({ count }: { count: number }) {
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('/alerts')}
+      className="flex min-h-18 items-center gap-3 rounded-2xl border border-divider bg-surface p-4 text-left transition-colors hover:border-action-strong focus-visible:outline-3 focus-visible:outline-focus"
+    >
+      <Icon
+        name={count > 0 ? 'warning' : 'check'}
+        className={`size-6 shrink-0 ${count > 0 ? 'text-alert-text' : 'text-free-text'}`}
+      />
+      <span className="flex flex-1 flex-col">
+        <span className="text-sm text-muted">
+          Anulaciones, descuentos, devoluciones y descuadres
+        </span>
+        <span className="figures text-lg font-semibold">
+          {count === 0 ? 'Sin alertas hoy' : `Alertas de hoy: ${count}`}
+        </span>
+      </span>
+      <span className="sr-only">Ver las alertas</span>
+      <Icon name="back" className="size-5 shrink-0 rotate-180 text-muted" />
+    </button>
   )
 }

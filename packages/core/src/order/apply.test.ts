@@ -12,7 +12,7 @@ import {
   itemCopy,
   WAITER,
 } from '../testing/factory'
-import { applyEvent, rebuild } from './apply'
+import { applyEvent, rebuild, unappliedEvents } from './apply'
 import type { OrderState } from './state'
 import { checkBalance, orderTotals } from './totals'
 
@@ -930,5 +930,77 @@ describe('reducer guarantees', () => {
       ),
       { numRuns: 2000 },
     )
+  })
+})
+
+describe('unappliedEvents: what the reducer does not apply (the alerts leave it out)', () => {
+  const voidOf = (order: string, itemId: string) =>
+    event(
+      order,
+      'ItemVoided',
+      { item_id: itemId, quantity: 1, already_prepared: false, ticket_id: null },
+      { reason: 'Error' },
+    )
+  const openOf = (order: string) =>
+    event(order, 'OrderOpened', { channel: 'dine_in', table_id: newId(), guests: 2 })
+
+  it('an empty list: nothing', () => {
+    expect(unappliedEvents([])).toEqual(new Set())
+    expect(unappliedEvents([], [newId()])).toEqual(new Set())
+  })
+
+  it('a change of several items that leaves some out (`items_omitted`) counts as applied', () => {
+    const order = newId()
+    const a = itemCopy()
+    const b = itemCopy()
+    const before = [
+      openOf(order),
+      event(order, 'ItemAdded', a),
+      event(order, 'ItemAdded', b),
+      send(order, [a.item_id]),
+    ]
+    const partial = event(order, 'ItemReady', { item_ids: [a.item_id, b.item_id] })
+    // Only b, which was never sent: nothing changes, so it is not applied.
+    const none = event(order, 'ItemReady', { item_ids: [b.item_id] })
+    const events = [...before, partial, none]
+    expect(applyEvent(rebuild(before, order), partial).issue?.type).toBe('items_omitted')
+    expect(unappliedEvents(events)).toEqual(new Set([none.id]))
+  })
+
+  it('an event that touches several orders is replayed in each one', () => {
+    const source = newId()
+    const target = newId()
+    const item = itemCopy()
+    const before = [
+      openOf(source),
+      event(source, 'ItemAdded', item),
+      send(source, [item.item_id]),
+      openOf(target),
+    ]
+    const move = event(source, 'ItemsMoved', {
+      target_order_id: target,
+      items: [{ item, status: 'sent', voided_quantity: 0, added_by: WAITER }],
+    })
+    // The item reaches the target only through the move (named in `related`): voiding it there
+    // applies; voiding it again does not.
+    const first = voidOf(target, item.item_id)
+    const twice = voidOf(target, item.item_id)
+    const events = [...before, move, first, twice]
+    expect(move.related).toEqual([target])
+    expect(unappliedEvents(events)).toEqual(new Set([twice.id]))
+    expect(unappliedEvents(events, [target])).toEqual(new Set([twice.id]))
+    // Only the source is judged: the target's void is not looked at.
+    expect(unappliedEvents(events, [source])).toEqual(new Set())
+  })
+
+  it('an order without its opening among the events is not judged', () => {
+    const order = newId()
+    const item = itemCopy()
+    const opening = openOf(order)
+    const orphan = [voidOf(order, item.item_id), voidOf(order, item.item_id)]
+    expect(unappliedEvents(orphan)).toEqual(new Set())
+    expect(unappliedEvents(orphan, [order])).toEqual(new Set())
+    // With the opening, the same voids of an item that is not there are not applied.
+    expect(unappliedEvents([opening, ...orphan], [order])).toEqual(new Set(orphan.map((e) => e.id)))
   })
 })

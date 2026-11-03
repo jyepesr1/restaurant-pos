@@ -171,13 +171,20 @@ export const normalizeCode = (code: string) => code.replace(/[\s-]/g, '').toUppe
 /**
  * Runs the job inside a single-restaurant transaction: the database's row-level security only
  * lets it see and write that restaurant's rows, even if a query forgets to filter.
+ *
+ * `readOnly`: the panel's reads. The whole transaction sees one snapshot of the database
+ * (REPEATABLE READ: today's report, the open orders and the registers are the same photo even if
+ * the hub uploads in between) and it cannot write. It must be the transaction's first statement.
  */
 export function inRestaurant<T>(
   sql: Sql,
   restaurantId: string,
   job: (tx: Sql) => Promise<T>,
+  options: { readOnly?: boolean } = {},
 ): Promise<T> {
   return sql.transaction(async (tx) => {
+    if (options.readOnly)
+      await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY')
     await tx.query("SELECT set_config('faro.restaurant_id', $1, true)", [restaurantId])
     await tx.query('SET LOCAL ROLE faro_data')
     return job(tx)
@@ -617,14 +624,32 @@ export class Cloud {
   /**
    * The hub called: when, and up to which sequence it has (`x-faro-hub-max`, null if it did not
    * say). With that the panel knows since when there is no news from the location and how much is
-   * left to upload.
+   * left to upload. Returns when it had called before (`previous`, null if never): the API tells the
+   * open panels when the location is back after a silence. Null if the hub is not there any more
+   * (revoked meanwhile): nothing is written and nobody is told.
+   *
+   * The row is locked before reading it: of two calls at the same time, the second waits and sees
+   * the first one's time, so only one of them can be «back after a silence».
    */
-  async heartbeat(hub: AuthenticatedHub, hubMax: number | null): Promise<void> {
-    await this.sql.query(
-      `UPDATE hubs SET last_seen_at = $2, hub_max_sequence = coalesce($3::bigint, hub_max_sequence)
-       WHERE id = $1`,
+  async heartbeat(
+    hub: AuthenticatedHub,
+    hubMax: number | null,
+  ): Promise<{ previous: Date | null } | null> {
+    const [row] = await this.sql.query<{ previous: unknown }>(
+      `WITH before AS (
+         SELECT last_seen_at FROM hubs WHERE id = $1 AND revoked_at IS NULL FOR UPDATE
+       )
+       UPDATE hubs SET last_seen_at = $2, hub_max_sequence = coalesce($3::bigint, hub_max_sequence)
+       FROM before WHERE hubs.id = $1
+       RETURNING before.last_seen_at AS previous`,
       [hub.id, this.clock().toISOString(), hubMax],
     )
+    if (!row) return null
+    const previous = row.previous
+    return {
+      previous:
+        previous === null || previous === undefined ? null : new Date(previous as string | Date),
+    }
   }
 }
 

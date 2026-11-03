@@ -16,6 +16,7 @@ export default defineConfig({
         'src/canonical.ts',
         'src/config.ts',
         'src/time.ts',
+        'src/reports/alerts.ts',
       ],
       exclude: ['**/*.test.ts', 'src/**/index.ts'],
       // Phase 0 plan: at least 90 % in money and in the order reducer.

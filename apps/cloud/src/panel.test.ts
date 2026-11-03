@@ -417,6 +417,10 @@ describe('dashboard and reports', () => {
         last_event_at: '2026-10-26T14:30:00.000Z',
         pending: 4,
       },
+      // Every order is closed: nothing open.
+      open: { orders: 0, tables: 0, guests: 0, total: 0 },
+      // No voids, discounts or variances today.
+      alerts: 0,
     })
     const lastWeek = body.last_week as Record<string, { sales?: unknown }>
     expect(lastWeek.report_until_now).not.toEqual(lastWeek.report_full)

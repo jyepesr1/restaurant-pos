@@ -7,6 +7,14 @@ import { expectedCash } from '../money/register'
 // (to accept the close) and the register (to show it) compute it the same way, from the events.
 // A void or a refund falls in the shift in which it is recorded, not in the payment's.
 
+/**
+ * Whether a register variance (counted − expected, in pesos) is large: from `threshold` pesos up,
+ * either way, it needs a justification at the close and it is an alert. A threshold below 1 counts
+ * as 1, so a variance of 0 is never large (the hub's rule, task 1.7).
+ */
+export const isLargeVariance = (variance: number, threshold: number) =>
+  Math.abs(variance) >= Math.max(1, threshold)
+
 export interface ChargedByMethod {
   method: PaymentMethod
   customMethodId: string | null

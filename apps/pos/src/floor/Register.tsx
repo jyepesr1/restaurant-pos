@@ -1,6 +1,7 @@
 import {
   businessDay,
   DENOMINATIONS,
+  isLargeVariance,
   type MethodReconciliation,
   methodKeyOf,
   newId,
@@ -642,7 +643,7 @@ function Closeout({
   const withCharges = new Set(reconciliation.byMethod.map(methodKeyOf))
   const notEntered = methods.filter((m) => withCharges.has(m.key) && !(reports[m.key] ?? '').trim())
   const threshold = rules?.varianceThreshold ?? 1000
-  const large = (d: number) => d !== 0 && Math.abs(d) >= Math.max(1, threshold)
+  const large = (d: number) => isLargeVariance(d, threshold)
   const requiresJustification = large(variance) || others.some((o) => large(o.variance))
   const hasVariance = variance !== 0 || others.some((o) => o.variance !== 0)
   // The lines over the threshold, to say what has to be explained.

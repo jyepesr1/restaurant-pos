@@ -58,3 +58,17 @@ export {
   PAGE_SIZE,
   type PrinterStatus,
 } from './protocol'
+export {
+  currentItems,
+  type Delay,
+  delay,
+  isCurrent,
+  type KitchenTicket,
+  kitchenTickets,
+  occupiesTable,
+  openOrders,
+  type TableStatus,
+  tableStatus,
+  timersOf,
+  type VisibleOrder,
+} from './views'

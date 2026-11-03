@@ -1,6 +1,7 @@
-import type { Report } from '@pos/core'
+import type { Alert, OrderState, Report, ShiftReconciliation } from '@pos/core'
+import type { Catalog } from '@pos/sync'
 import type { CheckoutRules } from '../floor/checks'
-import type { PeriodReport } from '../floor/engine'
+import type { PeriodReport, ReportClose } from '../floor/engine'
 import type { Period } from '../floor/periods'
 
 // Calls from the owner's panel to the cloud (docs/PANEL.md, task 1.11c). The session travels in an
@@ -56,6 +57,95 @@ export interface Summary {
     /** Changes the hub has that the cloud has not received yet; null if it is not known. */
     pending: number | null
   }
+  /** «Mesas abiertas»: what is open right now (task 1.11c-2). */
+  open?: {
+    /** Open orders that count (not one emptied by moving everything to another table). */
+    orders: number
+    /** Tables they occupy, merged ones too. */
+    tables: number
+    guests: number
+    /** Net of those orders, without tips. */
+    total: number
+  }
+  /** How many alerts today has (task 1.11c-2). */
+  alerts?: number
+}
+
+/** The floor plan the cloud sends (from the hub's catalog). */
+export type FloorPlan = Pick<Catalog, 'zones' | 'tables' | 'elements' | 'stations'>
+
+/** A kitchen card as the cloud sends it: its order travels in `orders`. */
+export interface LiveTicket {
+  key: string
+  ticket_id: string
+  order_id: string
+  station_id: string
+  number: number | null
+  sent_at: string
+  item_ids: string[]
+  /** Everything still pending is ready to take to the table. */
+  ready: boolean
+}
+
+/** The floor and the kitchen right now (`GET /v1/panel/floor`, task 1.11c-2). */
+export interface LiveFloor {
+  server_now: string
+  today: string
+  /** The latest receipt time among the events behind the answer. */
+  as_of: string | null
+  local: Summary['local']
+  /** The version of the plan; it travels again only when it changes. */
+  plan_version: string | null
+  /** Null when the panel already has `plan_version` (or there is no catalog yet). */
+  plan: FloorPlan | null
+  /** Minutes since sending after which a ticket is late and very late. */
+  timers: { yellow: number; red: number }
+  /** The open orders. */
+  orders: OrderState[]
+  tickets: LiveTicket[]
+  /** Names by id: waiters and whoever added each item. */
+  users: Record<string, string>
+}
+
+/** A register open right now: who opened it, when, and how it goes (task 1.11c-2). */
+export interface OpenRegister {
+  shift_id: string
+  /** The register device (the cloud does not know its name). */
+  register_id: string
+  opened_at: string
+  opened_by: string
+  /** As the hub computes it: base, charged by method, movements and the cash there should be. */
+  reconciliation: ShiftReconciliation
+}
+
+/** The registers (`GET /v1/panel/register`, task 1.11c-2). */
+export interface RegisterAnswer {
+  server_now: string
+  today: string
+  as_of: string | null
+  local: Summary['local']
+  /** From how many pesos a variance needs a justification. */
+  threshold: number
+  open: OpenRegister[]
+  /** Today's closes, as the reports list them. */
+  closed: ReportClose[]
+  users: Record<string, string>
+}
+
+/** The alerts of a day (`GET /v1/panel/alerts`, task 1.11c-2). */
+export interface AlertsAnswer {
+  server_now: string
+  today: string
+  /** The business day of the alerts. */
+  day: string
+  as_of: string | null
+  local: Summary['local']
+  threshold: number
+  /** From the newest to the oldest. */
+  alerts: Alert[]
+  users: Record<string, string>
+  /** Table names by id. */
+  tables: Record<string, string>
 }
 
 export type PanelErrorKind =
@@ -138,6 +228,11 @@ export interface PanelApi {
   summary(): Promise<Summary>
   /** Without dates, today's business day. */
   reports(period: Period | null): Promise<PeriodReport>
+  /** With the version of the plan already in hand, it does not come again. */
+  floor(planVersion: string | null): Promise<LiveFloor>
+  register(): Promise<RegisterAnswer>
+  /** Without a day, today's. */
+  alerts(day: string | null): Promise<AlertsAnswer>
 }
 
 /**
@@ -196,6 +291,17 @@ export function panelApi({
     signOut: () => call<void>('POST', '/v1/panel/sign-out', { kind: 'check', empty: true }),
     me: () => call<Me>('GET', '/v1/panel/me', { kind: 'check' }),
     summary: () => call<Summary>('GET', '/v1/panel/summary'),
+    floor: (version) =>
+      call<LiveFloor>(
+        'GET',
+        version ? `/v1/panel/floor?${new URLSearchParams({ plan: version })}` : '/v1/panel/floor',
+      ),
+    register: () => call<RegisterAnswer>('GET', '/v1/panel/register'),
+    alerts: (day) =>
+      call<AlertsAnswer>(
+        'GET',
+        day ? `/v1/panel/alerts?${new URLSearchParams({ day })}` : '/v1/panel/alerts',
+      ),
     reports: (p) =>
       call<PeriodReport>(
         'GET',

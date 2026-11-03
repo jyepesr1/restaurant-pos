@@ -1,6 +1,7 @@
 import type { PGlite } from '@electric-sql/pglite'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ADMIN, batch, createWorld, type World } from './testing/world'
+import { cookieFrom, PANEL_ORIGIN, putSnapshot, remoteUser, slugOf } from './testing/panel'
+import { ADMIN, batch, createWorld, type TestHub, type World } from './testing/world'
 
 // The Cloudflare Worker with a fake `pg.Client` that talks to PGlite: it connects only if the
 // route uses the database, closes the connection when done and leaks nothing if the connection
@@ -45,12 +46,14 @@ vi.mock('pg', () => ({
   },
 }))
 
+import type { PanelLive } from './live-object'
 import worker from './worker'
 
 const CONNECTION_STRING = 'postgres://faro_api:clave-de-la-base@host.neon.tech/faro'
 
 let m: World
 let credential: string
+let testHub: TestHub
 beforeEach(async () => {
   m = await createWorld()
   status.db = m.db
@@ -61,7 +64,8 @@ beforeEach(async () => {
   status.failing = null
   status.failOnEnd = false
   status.failQuery = false
-  credential = (await m.newHub()).credential
+  testHub = await m.newHub()
+  credential = testHub.credential
 })
 
 function makeCall(route: string, options: RequestInit = {}) {
@@ -184,5 +188,108 @@ describe('Worker', () => {
       { waitUntil: (p) => void pendingList.push(p) },
     )
     expect(r.status).toBe(401)
+  })
+})
+
+describe('Worker with the live panel (PANEL_LIVE)', () => {
+  /** A fake Durable Object namespace: records which room each call went to. */
+  function fakeNamespace() {
+    const calls: { room: string; kind: string; arg: unknown }[] = []
+    const upgraded = { status: 101, webSocket: { end: 'client' }, headers: new Headers() }
+    const namespace = {
+      getByName(room: string) {
+        return {
+          fetch: async (request: Request) => {
+            calls.push({ room, kind: 'fetch', arg: request.headers.get('x-faro-session-id') })
+            return upgraded as unknown as Response
+          },
+          notify: async (reason: string) => {
+            calls.push({ room, kind: 'notify', arg: reason })
+            return 1
+          },
+          closeSession: async (sessionId: string) => {
+            calls.push({ room, kind: 'closeSession', arg: sessionId })
+            return 1
+          },
+        }
+      },
+    } as unknown as DurableObjectNamespace<PanelLive>
+    return { calls, upgraded, namespace }
+  }
+
+  const room = () => `${testHub.restaurantId}:${testHub.hub.locationId}`
+
+  async function call(
+    live: ReturnType<typeof fakeNamespace>,
+    route: string,
+    options: RequestInit = {},
+  ) {
+    const pendingList: Promise<unknown>[] = []
+    const r = await worker.fetch(
+      new Request(`${PANEL_ORIGIN}${route}`, options),
+      {
+        HYPERDRIVE: { connectionString: CONNECTION_STRING },
+        TOKEN_ADMIN: ADMIN,
+        PANEL_LIVE: live.namespace,
+      },
+      { waitUntil: (p) => void pendingList.push(p) },
+    )
+    await Promise.all(pendingList)
+    return r
+  }
+
+  it('an uploaded batch tells the location’s Durable Object by RPC, after answering', async () => {
+    const live = fakeNamespace()
+    const r = await call(live, '/v1/events', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${credential}` },
+      body: JSON.stringify({ events: batch(1, 3) }),
+    })
+    expect(r.status).toBe(200)
+    expect(live.calls).toEqual([{ room: room(), kind: 'notify', arg: 'events' }])
+    expect(status.finishedCount).toBe(1)
+  })
+
+  it('the WebSocket goes to the session’s room by `fetch`, and its 101 comes back untouched', async () => {
+    const live = fakeNamespace()
+    const user = remoteUser('ana', 'clave-de-prueba-1', ['remote_access'])
+    expect(await putSnapshot(m, testHub, 'remote_users', [user])).toBe(204)
+    const signIn = await call(live, '/v1/panel/sign-in', {
+      method: 'POST',
+      headers: { origin: PANEL_ORIGIN, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        restaurant: await slugOf(m, testHub.restaurantId),
+        username: 'ana',
+        password: 'clave-de-prueba-1',
+      }),
+    })
+    expect(signIn.status).toBe(200)
+    const cookie = cookieFrom(signIn) as string
+    const r = await call(live, '/v1/panel/live', {
+      headers: {
+        origin: PANEL_ORIGIN,
+        upgrade: 'websocket',
+        cookie: `__Host-faro_panel=${cookie}`,
+      },
+    })
+    expect(r).toBe(live.upgraded)
+    expect(live.calls).toEqual([{ room: room(), kind: 'fetch', arg: cookie.split('.')[0] }])
+
+    live.calls.length = 0
+    const out = await call(live, '/v1/panel/sign-out', {
+      method: 'POST',
+      headers: { origin: PANEL_ORIGIN, cookie: `__Host-faro_panel=${cookie}` },
+    })
+    expect(out.status).toBe(204)
+    expect(live.calls).toEqual([{ room: room(), kind: 'closeSession', arg: cookie.split('.')[0] }])
+  })
+
+  it('without a session the WebSocket never reaches a Durable Object', async () => {
+    const live = fakeNamespace()
+    const r = await call(live, '/v1/panel/live', {
+      headers: { origin: PANEL_ORIGIN, upgrade: 'websocket' },
+    })
+    expect(r.status).toBe(401)
+    expect(live.calls).toEqual([])
   })
 })

@@ -154,6 +154,51 @@ export function rebuild(events: readonly ApplicableEvent[], orderId: string): Or
     .reduce<OrderState | null>((status, event) => applyEvent(status, event).status, null)
 }
 
+/**
+ * The events the order reducer does not apply: those the hub saved as a conflict (an item already
+ * voided, more units than are left, an order already closed…: docs/SYNC.md#rechazos-cuarentena-y-conflictos).
+ * They are stored but change nothing. Today only the owner's alerts leave them out (`alerts`); the
+ * register and the reports still count them (docs/KPIS.md#eventos-guardados-como-conflicto).
+ * Replays, in sequence order, each order whose opening is among the events (`orderIds`: those
+ * orders only; by default every order with an opening) and returns the ids of the events that came
+ * out with an issue other than `items_omitted`. An order without its opening among the events is not
+ * judged: its events are not known to be unapplied (a list with only the payments of a shift).
+ */
+export function unappliedEvents(
+  events: readonly ApplicableEvent[],
+  orderIds?: Iterable<string>,
+): Set<string> {
+  const opened = new Set<string>()
+  for (const e of events)
+    if (e.type === 'OrderOpened' || e.type === 'RescueOrderCreated') opened.add(e.aggregate_id)
+  const wanted = new Set(orderIds ? [...orderIds].filter((id) => opened.has(id)) : opened)
+  // Each order's events, in one pass: its own and those that name it (as `affectsOrder`).
+  const byOrder = new Map<string, ApplicableEvent[]>()
+  for (const e of events)
+    for (const id of new Set([e.aggregate_id, ...e.related, ...(e.affects ?? [])]))
+      if (wanted.has(id)) {
+        const list = byOrder.get(id)
+        if (list) list.push(e)
+        else byOrder.set(id, [e])
+      }
+  const unapplied = new Set<string>()
+  for (const list of byOrder.values()) {
+    const seen = new Set<string>()
+    let status: OrderState | null = null
+    const ordered = list.sort(
+      (a, b) => (a.sequence ?? Number.MAX_SAFE_INTEGER) - (b.sequence ?? Number.MAX_SAFE_INTEGER),
+    )
+    for (const event of ordered) {
+      if (seen.has(event.id)) continue
+      seen.add(event.id)
+      const r = applyEvent(status, event)
+      if (r.issue && r.issue.type !== 'items_omitted') unapplied.add(event.id)
+      status = r.status
+    }
+  }
+  return unapplied
+}
+
 function newItem(copy: ItemCopy, addedBy: string, position: number, status: ItemStatus): OrderItem {
   return {
     id: copy.item_id,

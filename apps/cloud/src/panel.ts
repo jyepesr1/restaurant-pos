@@ -1,10 +1,22 @@
-import { businessDay, newId } from '@pos/core'
-import type { Catalog } from '@pos/sync'
+import { type Alert, alertPeople, alertTables, businessDay, newId } from '@pos/core'
+import type { Catalog, ReportData } from '@pos/sync'
+import { ALERT_DAYS, dayAlerts, tableNames } from './alerts'
 import { currentLocation, inRestaurant, Slug, sha256 } from './cloud'
+import {
+  LIVE_WINDOW_DAYS,
+  type LiveFloor,
+  liveOrders,
+  namedOn,
+  openSummary,
+  readPlan,
+  ticketJson,
+} from './live'
+import { roomOf } from './live-protocol'
 import { DECOY_VERIFIER, normalizeUsername, passwordMatches } from './password'
+import { type OpenRegister, registersNow } from './register'
 import {
   cloudReportData,
-  hubsOfLocation,
+  locationScopes,
   MAX_PANEL_DAYS,
   type PeriodReport,
   periodReport,
@@ -70,6 +82,8 @@ export interface Me {
 /** A checked session: who and which restaurant (without the snapshot details of `Me`). */
 export interface PanelSession {
   sessionId: string
+  /** When the session dies anyway (`expires_at`, ISO): the live socket closes then (docs/PANEL.md). */
+  expiresAt: string
   locationId: string
   user: Me['user']
   restaurant: { id: string; name: string; slug: string }
@@ -143,13 +157,98 @@ const randomSecret = () =>
 
 const COOKIE_VALUE = /^([0-9A-HJKMNP-TV-Z]{26})\.([A-Za-z0-9_-]{43})$/
 
+/** Since when there is no news from the location and what is still to come (`Panel.local`). */
+export interface LocalState {
+  last_seen_at: string | null
+  last_event_at: string | null
+  pending: number | null
+}
+
+/** `GET /v1/panel/register`. */
+export interface RegisterAnswer {
+  server_now: string
+  today: string
+  as_of: string | null
+  local: LocalState
+  /** From how many pesos a variance needs a justification (`register_variance_threshold`). */
+  threshold: number
+  open: OpenRegister[]
+  closed: PeriodReport['closings']
+  users: Record<string, string>
+}
+
+/** `GET /v1/panel/alerts`. */
+export interface AlertsAnswer {
+  server_now: string
+  today: string
+  /** The business day of the alerts. */
+  day: string
+  as_of: string | null
+  local: LocalState
+  threshold: number
+  /** From the newest to the oldest. */
+  alerts: Alert[]
+  users: Record<string, string>
+  /** The names of the tables the alerts name, by id. */
+  tables: Record<string, string>
+}
+
+/**
+ * Last week's day for the dashboard once it is complete in the cloud: it cannot change any more, so
+ * it is kept a while in the isolate (a Worker's memory is per isolate and may be lost at any moment:
+ * it is only a shortcut). Few entries (each one is a day's report data, about 1 MB at the pilot's
+ * volume) and short-lived.
+ */
+class LastWeekCache {
+  private readonly entries = new Map<string, { at: number; value: ReportData }>()
+  static readonly TTL_MS = 10 * 60_000
+  static readonly MAX = 12
+  get(key: string, now: number): ReportData | undefined {
+    const hit = this.entries.get(key)
+    if (!hit || now - hit.at >= LastWeekCache.TTL_MS) return undefined
+    return hit.value
+  }
+  set(key: string, value: ReportData, now: number) {
+    this.entries.delete(key)
+    this.entries.set(key, { at: now, value })
+    while (this.entries.size > LastWeekCache.MAX) {
+      const oldest = this.entries.keys().next().value
+      if (oldest === undefined) break
+      this.entries.delete(oldest)
+    }
+  }
+  clear() {
+    this.entries.clear()
+  }
+}
+
+const lastWeekCache = new LastWeekCache()
+
+/** For the tests: forget the days kept in this isolate. */
+export const clearLastWeekCache = () => lastWeekCache.clear()
+
+export interface PanelOptions {
+  /**
+   * A session was revoked while being checked (the person lost remote_access, changed the password
+   * or is gone): its live sockets must close. `rooms` are those it may have sockets in.
+   */
+  onSessionRevoked?: (ended: { sessionId: string; rooms: string[] }) => void
+}
+
 export class Panel {
   private readonly sql: Sql
   private readonly clock: () => Date
+  private readonly options: PanelOptions
 
-  constructor(sql: Sql, clock: () => Date = () => new Date()) {
+  constructor(sql: Sql, clock: () => Date = () => new Date(), options: PanelOptions = {}) {
     this.sql = sql
     this.clock = clock
+    this.options = options
+  }
+
+  /** A read of the panel: one snapshot of the database for the whole answer, and no writes. */
+  private read<T>(s: PanelSession, job: (tx: Sql) => Promise<T>): Promise<T> {
+    return inRestaurant(this.sql, s.restaurant.id, job, { readOnly: true })
   }
 
   // ── Signing in ──
@@ -192,7 +291,7 @@ export class Panel {
             [restaurant.id, locationId, username],
           )
         : []
-      return { blockedMs: 0, waitMs: charged.waitMs, user: user ?? null }
+      return { blockedMs: 0, waitMs: charged.waitMs, user: user ?? null, locationId }
     })
     if (attempt.blockedMs > 0) return { ok: false, reason: 'wait', waitMs: attempt.blockedMs }
     const user = attempt.user
@@ -224,10 +323,10 @@ export class Panel {
           new Date(now.getTime() + SESSION_MS).toISOString(),
         ],
       )
-      const locationId = await currentLocation(tx, restaurant.id)
+      // The location where the person was found: the session stays there (point 14).
       return {
         user: { id: user.user_id, name: user.name, permissions: [...user.permissions] },
-        restaurant: await this.restaurantInfo(tx, restaurant, locationId),
+        restaurant: await this.restaurantInfo(tx, restaurant, attempt.locationId),
       }
     })
     return { ok: true, cookie: `${sessionId}.${secret}`, me }
@@ -284,7 +383,7 @@ export class Panel {
 
   /** The session's `Me`: who it is and the restaurant with its time zone, brand and methods. */
   me(s: PanelSession): Promise<Me> {
-    return inRestaurant(this.sql, s.restaurant.id, async (tx) => ({
+    return this.read(s, async (tx) => ({
       user: s.user,
       restaurant: await this.restaurantInfo(tx, s.restaurant, s.locationId),
     }))
@@ -330,7 +429,12 @@ export class Panel {
 
   /**
    * The session of a cookie, checked on every request against `remote_users`: if the person lost
-   * the permission, was archived or changed the password (another verifier), the session dies.
+   * the permission, was archived or changed the password (another verifier), the session dies, and
+   * its live sockets close (`onSessionRevoked`).
+   *
+   * Its location is the one of the remote user it signed in as: the row whose verifier is the one
+   * the session remembers (each verifier has its own random salt). It is not recomputed from «the
+   * hub that called last»: a call from another location of the restaurant does not move it.
    */
   async session(cookie: string | null): Promise<PanelSession | null> {
     const m = cookie ? COOKIE_VALUE.exec(cookie) : null
@@ -344,87 +448,112 @@ export class Panel {
     if (!restaurantId) return null
     const now = this.clock()
     const secretHash = await sha256(secret)
-    return inRestaurant(this.sql, restaurantId, async (tx) => {
-      const [s] = await tx.query<{
-        user_id: string
-        secret_hash: string
-        verifier_fingerprint: string
-        last_used_at: unknown
-        expires_at: unknown
-        revoked_at: unknown
-      }>(
-        `SELECT user_id, secret_hash, verifier_fingerprint, last_used_at, expires_at, revoked_at
+    const checked = await inRestaurant(
+      this.sql,
+      restaurantId,
+      async (tx): Promise<PanelSession | { revokedIn: string[] } | null> => {
+        const [s] = await tx.query<{
+          user_id: string
+          secret_hash: string
+          verifier_fingerprint: string
+          last_used_at: unknown
+          expires_at: unknown
+          revoked_at: unknown
+        }>(
+          `SELECT user_id, secret_hash, verifier_fingerprint, last_used_at, expires_at, revoked_at
          FROM panel_sessions WHERE id = $1`,
-        [sessionId],
-      )
-      if (!s || s.secret_hash !== secretHash || s.revoked_at !== null) return null
-      const lastUsed = new Date(s.last_used_at as string).getTime()
-      if (new Date(s.expires_at as string).getTime() <= now.getTime()) return null
-      if (now.getTime() - lastUsed >= IDLE_MS) return null
-      const locationId = await currentLocation(tx, restaurantId)
-      const [user] = locationId
-        ? await tx.query<{ name: string; verifier: string; permissions: string[] }>(
-            `SELECT name, verifier, permissions FROM remote_users
-             WHERE restaurant_id = $1 AND location_id = $2 AND user_id = $3`,
-            [restaurantId, locationId, s.user_id],
+          [sessionId],
+        )
+        if (!s || s.secret_hash !== secretHash || s.revoked_at !== null) return null
+        const lastUsed = new Date(s.last_used_at as string).getTime()
+        if (new Date(s.expires_at as string).getTime() <= now.getTime()) return null
+        if (now.getTime() - lastUsed >= IDLE_MS) return null
+        const rows = await tx.query<{
+          location_id: string
+          name: string
+          verifier: string
+          permissions: string[]
+        }>(
+          `SELECT location_id, name, verifier, permissions FROM remote_users
+         WHERE restaurant_id = $1 AND user_id = $2 ORDER BY location_id`,
+          [restaurantId, s.user_id],
+        )
+        let user: (typeof rows)[number] | undefined
+        for (const row of rows)
+          if ((await sha256(row.verifier)) === s.verifier_fingerprint) {
+            user = row
+            break
+          }
+        if (!user?.permissions.includes(REMOTE_ACCESS)) {
+          await tx.query('UPDATE panel_sessions SET revoked_at = $2 WHERE id = $1', [
+            sessionId,
+            now.toISOString(),
+          ])
+          // Its sockets may be in any of the restaurant's locations (the row is gone).
+          const locations = await tx.query<{ location_id: string }>(
+            'SELECT DISTINCT location_id FROM hubs WHERE restaurant_id = $1',
+            [restaurantId],
           )
-        : []
-      if (
-        !locationId ||
-        !user ||
-        (await sha256(user.verifier)) !== s.verifier_fingerprint ||
-        !user.permissions.includes(REMOTE_ACCESS)
-      ) {
-        await tx.query('UPDATE panel_sessions SET revoked_at = $2 WHERE id = $1', [
+          return { revokedIn: locations.map((l) => roomOf(restaurantId, l.location_id)) }
+        }
+        const locationId = user.location_id
+        if (now.getTime() - lastUsed >= TOUCH_MS)
+          await tx.query('UPDATE panel_sessions SET last_used_at = $2 WHERE id = $1', [
+            sessionId,
+            now.toISOString(),
+          ])
+        const [restaurant] = await tx.query<{ id: string; name: string; slug: string }>(
+          'SELECT id, name, slug FROM restaurants WHERE id = $1',
+          [restaurantId],
+        )
+        if (!restaurant) return null
+        return {
           sessionId,
-          now.toISOString(),
-        ])
-        return null
-      }
-      if (now.getTime() - lastUsed >= TOUCH_MS)
-        await tx.query('UPDATE panel_sessions SET last_used_at = $2 WHERE id = $1', [
-          sessionId,
-          now.toISOString(),
-        ])
-      const [restaurant] = await tx.query<{ id: string; name: string; slug: string }>(
-        'SELECT id, name, slug FROM restaurants WHERE id = $1',
-        [restaurantId],
-      )
-      if (!restaurant) return null
-      return {
-        sessionId,
-        locationId,
-        restaurant,
-        user: { id: s.user_id, name: user.name, permissions: [...user.permissions] },
-      }
-    })
+          expiresAt: new Date(s.expires_at as string).toISOString(),
+          locationId,
+          restaurant,
+          user: { id: s.user_id, name: user.name, permissions: [...user.permissions] },
+        }
+      },
+    )
+    if (checked && !('sessionId' in checked)) {
+      // After the commit: the revocation is already stored when the sockets close.
+      this.options.onSessionRevoked?.({ sessionId, rooms: checked.revokedIn })
+      return null
+    }
+    return checked
   }
 
-  /** Ends the cookie's session, if it has one. */
-  async signOut(cookie: string | null): Promise<void> {
+  /** Ends the cookie's session, if it has one, and says which one it was (null if none). */
+  async signOut(cookie: string | null): Promise<PanelSession | null> {
     const session = await this.session(cookie)
-    if (!session) return
+    if (!session) return null
     await inRestaurant(this.sql, session.restaurant.id, (tx) =>
       tx.query('UPDATE panel_sessions SET revoked_at = $2 WHERE id = $1 AND revoked_at IS NULL', [
         session.sessionId,
         this.clock().toISOString(),
       ]),
     )
+    return session
   }
 
   // ── Reports ──
 
-  /** The location's config, time zone, names and hubs, read once per request. */
+  /**
+   * The location's config, time zone, names and scopes, read once per request: `scope` is every
+   * hub (reports and alerts: history), `live` only what an active hub stands behind (D1: the floor,
+   * the kitchen, the open registers and «Mesas abiertas»).
+   */
   private async context(tx: Sql, s: PanelSession) {
-    const [{ config, timeZone }, people, hubIds] = [
+    const [{ config, timeZone }, people, scopes] = [
       await readConfig(tx, s.restaurant.id, s.locationId),
       await readSnapshot(tx, s.restaurant.id, s.locationId, 'people'),
-      await hubsOfLocation(tx, s.restaurant.id, s.locationId),
+      await locationScopes(tx, s.restaurant.id, s.locationId),
     ]
     const names = new Map((people ?? []).map((p) => [p.id, p.name]))
     const now = this.clock()
     const today = businessDay(now.toISOString(), timeZone, config.business_day_start)
-    return { config, timeZone, names, hubIds, now, today }
+    return { config, timeZone, names, scope: scopes.all, live: scopes.live, now, today }
   }
 
   /**
@@ -438,46 +567,45 @@ export class Panel {
   ): Promise<PeriodReport | { error: string }> {
     if ((from !== undefined && !isDay(from)) || (until !== undefined && !isDay(until)))
       return { error: 'Fecha inválida' }
-    return inRestaurant(this.sql, s.restaurant.id, async (tx) => {
+    return this.read(s, async (tx) => {
       const c = await this.context(tx, s)
       const start = from ?? c.today
       const end = until ?? start
       if (start > end) return { error: 'La fecha inicial va antes de la final' }
       if (daysBetween(start, end) > MAX_PANEL_DAYS)
         return { error: `Elige un período de ${MAX_PANEL_DAYS} días o menos` }
-      const scope: Scope = { restaurantId: s.restaurant.id, hubIds: c.hubIds }
-      const { data } = await cloudReportData(tx, scope, start, end)
+      const { data } = await cloudReportData(tx, c.scope, start, end)
       return periodReport(data, c.config, c.names, c.today)
     })
   }
 
   /**
    * The day's dashboard: today's report so far, the same weekday of the previous week up to the
-   * same time and complete, and how the location is doing (last call, last event, what is left to
-   * upload).
+   * same time and complete, how the location is doing (last call, last event, what is left to
+   * upload), what is open right now and how many alerts today has. Last week's day is read once and
+   * kept while it cannot change (`lastWeek`).
    */
   async summary(s: PanelSession) {
-    return inRestaurant(this.sql, s.restaurant.id, async (tx) => {
+    return this.read(s, async (tx) => {
       const c = await this.context(tx, s)
-      const scope: Scope = { restaurantId: s.restaurant.id, hubIds: c.hubIds }
       const day = addDays(c.today, -7)
-      const today = await cloudReportData(tx, scope, c.today, c.today)
-      // Last week's day is loaded once; «up to this time» is the same events up to the sequence
-      // the hub had at the same local time seven days ago.
-      const full = await cloudReportData(tx, scope, day, day)
-      const weekAgo = sameLocalTimeDaysAgo(c.now, c.timeZone, 7)
-      const cut = await sequenceAt(tx, s.restaurant.id, c.hubIds, weekAgo)
-      const untilNow = await cloudReportData(tx, { ...scope, upTo: cut }, day, day, {
-        store: full.store.upTo(cut),
-      })
-      const reports = [today, untilNow, full].map((r) =>
-        periodReport(r.data, c.config, c.names, c.today),
-      )
-      const [now, lastWeekUntilNow, lastWeekFull] = reports as [
+      const today = await cloudReportData(tx, c.scope, c.today, c.today)
+      const lastWeek = await this.lastWeek(tx, c.scope, s.locationId, day, c.now, c.timeZone)
+      const [now, lastWeekUntilNow, lastWeekFull] = [
+        today.data,
+        lastWeek.untilNow,
+        lastWeek.full,
+      ].map((data) => periodReport(data, c.config, c.names, c.today)) as [
         PeriodReport,
         PeriodReport,
         PeriodReport,
       ]
+      const live = await liveOrders(tx, c.live, addDays(c.today, -LIVE_WINDOW_DAYS))
+      // «Alertas de hoy»: over today's report, already loaded and computed.
+      const todayAlerts = await dayAlerts(tx, c.scope, c.today, c.config, {
+        ...today,
+        report: now.report,
+      })
       return {
         server_now: c.now.toISOString(),
         today: c.today,
@@ -489,15 +617,162 @@ export class Panel {
         },
         users: userNames(
           c.names,
-          reports.flatMap((r) => Object.keys(r.users)),
+          [now, lastWeekUntilNow, lastWeekFull].flatMap((r) => Object.keys(r.users)),
         ),
         local: await this.local(tx, s),
+        /** «Mesas abiertas»: what is open right now and not yet in the sales (D2). */
+        open: openSummary(live.orders, live.closedNet),
+        /** How many alerts today has (task 1.11c-2, `GET /v1/panel/alerts`). */
+        alerts: todayAlerts.alerts.length,
+      }
+    })
+  }
+
+  /**
+   * Last week's day, complete and up to the same local time as now. «Up to this time» is the same
+   * events up to the sequence the hub had at that time seven days ago (`cut`).
+   *
+   * A day's report depends only on the location's events up to the last one of that day (`last`):
+   * the later ones are other days' (a later refund counts on its own day). Once the cloud has every
+   * event up to `last` (some hub uploaded with no gaps past it), the day can no longer change: it is
+   * kept (`lastWeekCache`) by its `last`, and «up to this time» by min(cut, last). An event of that
+   * day that arrives late (an offline device) moves `last` and it is computed again
+   * (review 1.11c-2, point 7: the same numbers, read less often).
+   */
+  private async lastWeek(
+    tx: Sql,
+    scope: Scope,
+    locationId: string,
+    day: string,
+    now: Date,
+    timeZone: string,
+  ): Promise<{ full: ReportData; untilNow: ReportData }> {
+    const cut = await sequenceAt(
+      tx,
+      scope.restaurantId,
+      scope.hubIds,
+      sameLocalTimeDaysAgo(now, timeZone, 7),
+    )
+    const [mark] = await tx.query<{ last: string | number | null; contiguous: unknown }>(
+      `SELECT (SELECT max(e.hub_sequence) FROM events e
+               WHERE e.restaurant_id = $1 AND e.hub_id = ANY($2::text[]) AND e.business_day = $3::date
+              ) AS last,
+              (SELECT max(h.contiguous_sequence) FROM hubs h
+               WHERE h.restaurant_id = $1 AND h.id = ANY($2::text[])) AS contiguous`,
+      [scope.restaurantId, scope.hubIds, day],
+    )
+    const last = Number(mark?.last ?? 0)
+    const complete = last > 0 && Number(mark?.contiguous ?? 0) >= last
+    const base = [scope.restaurantId, locationId, [...scope.hubIds].sort().join(','), day, last]
+    const fullKey = [...base, 'full'].join('|')
+    const cutKey = [...base, Math.min(cut, last)].join('|')
+    const at = now.getTime()
+    let full = complete ? lastWeekCache.get(fullKey, at) : undefined
+    let untilNow = complete ? lastWeekCache.get(cutKey, at) : undefined
+    if (full && untilNow) return { full, untilNow }
+    if (!full) {
+      const loaded = await cloudReportData(tx, scope, day, day)
+      full = loaded.data
+      untilNow ??= (
+        await cloudReportData(tx, { ...scope, upTo: cut }, day, day, {
+          store: loaded.store.upTo(cut),
+        })
+      ).data
+    } else {
+      untilNow = (await cloudReportData(tx, { ...scope, upTo: cut }, day, day)).data
+    }
+    if (complete) {
+      lastWeekCache.set(fullKey, full, at)
+      lastWeekCache.set(cutKey, untilNow, at)
+    }
+    return { full, untilNow }
+  }
+
+  /**
+   * The floor and the kitchen right now (task 1.11c-2, `GET /v1/panel/floor`): the open orders and
+   * the kitchen cards, with the floor plan only if the panel does not have that version yet
+   * (`knownPlan`).
+   */
+  async floor(s: PanelSession, knownPlan: string | null): Promise<LiveFloor> {
+    return this.read(s, async (tx) => {
+      const c = await this.context(tx, s)
+      const live = await liveOrders(tx, c.live, addDays(c.today, -LIVE_WINDOW_DAYS))
+      const plan = await readPlan(tx, s.restaurant.id, s.locationId, knownPlan)
+      return {
+        server_now: c.now.toISOString(),
+        today: c.today,
+        as_of: live.asOf,
+        local: await this.local(tx, s),
+        plan_version: plan.version,
+        plan: plan.plan,
+        timers: plan.timers,
+        orders: live.orders.map((p) => p.status),
+        tickets: live.tickets.map(ticketJson),
+        users: userNames(c.names, namedOn(live.orders)),
+      }
+    })
+  }
+
+  /**
+   * The registers (task 1.11c-2, `GET /v1/panel/register`): the open ones with what they should
+   * have, as the hub computes it, and those closed today, with the variance threshold (today's
+   * value, D3).
+   */
+  async register(s: PanelSession): Promise<RegisterAnswer> {
+    return this.read(s, async (tx) => {
+      const c = await this.context(tx, s)
+      const r = await registersNow(
+        tx,
+        { open: c.live, closed: c.scope },
+        addDays(c.today, -LIVE_WINDOW_DAYS),
+        c.today,
+      )
+      return {
+        server_now: c.now.toISOString(),
+        today: c.today,
+        as_of: r.asOf,
+        local: await this.local(tx, s),
+        threshold: c.config.register_variance_threshold,
+        open: r.open,
+        closed: r.closed,
+        users: userNames(c.names, [
+          ...r.open.map((o) => o.opened_by),
+          ...r.closed.flatMap((x) => [x.openedBy, x.closedBy]),
+        ]),
+      }
+    })
+  }
+
+  /**
+   * The alerts of a business day (task 1.11c-2, `GET /v1/panel/alerts`): today without a day; at
+   * most ALERT_DAYS days back. The variance threshold is today's value, also for an older close
+   * (D3).
+   */
+  async alerts(s: PanelSession, day?: string): Promise<AlertsAnswer | { error: string }> {
+    if (day !== undefined && !isDay(day)) return { error: 'Fecha inválida' }
+    return this.read(s, async (tx) => {
+      const c = await this.context(tx, s)
+      const wanted = day ?? c.today
+      if (wanted > c.today) return { error: 'Ese día todavía no ha llegado' }
+      if (wanted < addDays(c.today, -ALERT_DAYS))
+        return { error: `Las alertas se ven hasta ${ALERT_DAYS} días atrás` }
+      const r = await dayAlerts(tx, c.scope, wanted, c.config)
+      return {
+        server_now: c.now.toISOString(),
+        today: c.today,
+        day: wanted,
+        as_of: r.asOf,
+        local: await this.local(tx, s),
+        threshold: c.config.register_variance_threshold,
+        alerts: r.alerts,
+        users: userNames(c.names, alertPeople(r.alerts)),
+        tables: await tableNames(tx, s.restaurant.id, s.locationId, alertTables(r.alerts)),
       }
     })
   }
 
   /** Since when there is no news from the location and how much is left to upload. */
-  private async local(tx: Sql, s: PanelSession) {
+  async local(tx: Sql, s: PanelSession): Promise<LocalState> {
     const [hub] = await tx.query<{
       last_seen_at: unknown
       hub_max_sequence: unknown

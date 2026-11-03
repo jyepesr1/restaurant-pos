@@ -40,10 +40,11 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ✅ (publicada el 26-oct-2026) |
 | 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja | ✅ (publicada el 29-oct-2026) |
 | 1.11c-1 | Panel del dueño ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia), [PANEL](PANEL.md)): entrar con los usuarios del local (permiso «Entrar desde fuera del local»); tablero del día y todos los reportes ([KPIS](KPIS.md)) de hasta 14 días, actualizados cada 15 s | ✅ (publicada el 2-nov-2026) |
-| 1.11c-2 | Panel en vivo: aviso al instante (Durable Object), salón, cocina, caja, alertas y «sin noticias del local desde…» | ⏳ |
+| 1.11c-2 | Panel en vivo: aviso al instante (Durable Object), salón, cocina, caja, alertas y «sin noticias del local desde…» | ✅ (falta publicarla) |
 | 1.11c-3 | Panel: períodos largos (más de 14 días) y fotos de los productos | ⏳ |
 | 1.11d | Acciones a distancia desde el panel: agotar un producto, autorizar anulaciones, descuentos y cortesías, y cerrar sesiones o bloquear un usuario | ⏳ |
 | 1.11b | Carta, configuración y personal editados en la nube (también desde el panel) y bajando al hub | ⏳ |
+| 1.7b | Dinero de eventos guardados como conflicto: aviso al cajero, renglón aparte en el cierre y el Z, alerta en el panel y veredicto guardado por el hub | ⏳ |
 | 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
 | 1.13 | Hub en el PC de caja (Windows) | ⏳ |
 | 1.14 | Prueba de aceptación: servicio de 2 horas con un corte de internet y la sincronización al volver (y la e2e de la Fase 0) | ⏳ |
@@ -88,6 +89,62 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 1.11c-2 — Panel en vivo: salón, cocina, caja, alertas y aviso al instante ✅
+
+Decisiones del dueño ([enmienda a ADR-017 del 2-nov-2026](DECISIONES.md#enmienda-del-2-nov-2026-cómo-llega-lo-nuevo-al-panel-tarea-111c-2)); contrato completo en [PANEL.md](PANEL.md).
+
+**Qué trae el panel:**
+- **Salón:** el plano (o la lista) con las mesas ocupadas, cuánto llevan, su total y su mesero; al tocar una mesa, su pedido completo de solo lectura (productos y su estado, subtotal, descuentos, pagos, devoluciones, redondeo). Pedidos sin mesa y mesas quitadas del plano con cuenta abierta, aparte.
+- **Cocina:** lo enviado sin entregar, por estación, con la demora en ámbar y rojo (con texto, no solo color) y «Listos para llevar».
+- **Caja:** cajas abiertas (quién y a qué hora, fondo inicial, efectivo esperado con su desglose, lo cobrado por medio) y las cerradas hoy con su diferencia y justificación.
+- **Alertas:** anulaciones, pedidos cancelados, descuentos y cortesías, pagos anulados y devoluciones, cuentas reabiertas y descuadres de caja (efectivo y cada medio, con el umbral de la caja), cada una con quién, quién autorizó, motivo y valor. Filtros por tipo y hasta 14 días atrás. Rojo: salió dinero o la caja no cuadró; ámbar: para revisar.
+- **Hoy:** tarjetas «Mesas abiertas» y «Alertas de hoy».
+- **En vivo:** un Durable Object por sede avisa a los paneles abiertos cuando llegan eventos; el panel vuelve a leer (cada 3 s como mucho en Salón y Cocina, 10 s en lo demás) y sigue consultando cada 60 s (15 s si el aviso se cae). Junto al título: «En vivo» o «Se actualiza cada 15 s».
+- **«Sin noticias del restaurante desde las HH:MM»** a los 2 minutos sin señal del PC de caja; las demoras se congelan a esa hora.
+- **Permisos:** con solo «Entrar desde fuera del local» se ven Salón y Cocina (el pedido completo); Hoy, Caja, Alertas y Reportes piden «Ver todos los reportes». Barra del celular: Hoy · Salón · Cocina · Alertas · Más (Caja y Reportes).
+
+**Decisiones tomadas por Claude con lo recomendado** (3-nov-2026): lo que dejó abierto un PC de caja revocado no sale en vivo (sí en reportes y alertas); una cuenta reabierta suma en «Mesas abiertas» solo lo nuevo; el umbral de descuadre de las alertas es el actual; un pedido abierto hace más de 31 días sin movimiento no sale en el Salón.
+
+Revisado por `revisor-codigo`, `auditor-dinero` (dos veces), `revisor-ux` y `qa-pruebas` (unas 200 pruebas nuevas: historias al azar contra el hub, cortes de red, sesión revocada con el socket abierto, aislamiento entre restaurantes y sedes). Se corrigió, entre otras cosas: alertas que repetían dinero de eventos guardados como conflicto, el descuento restado dos veces en el detalle de una mesa, una cuenta reabierta contada dos veces, lecturas con una sola foto de la base, una segunda sede que cerraba la sesión del dueño, la reconexión en bucle, topes de sockets por sesión y el tablero de Hoy (de 127 a ~62 ms).
+
+**Queda pendiente:**
+- **Publicarla:** la nube con esta versión no está publicada (pide permiso). Es el primer despliegue con Durable Objects: crea la clase `PanelLive`.
+- **Dinero de eventos en conflicto:** tarea 1.7b (abajo, en la tabla). La caja y los reportes todavía cuentan esos eventos; solo las alertas los omiten.
+- **No medido en Cloudflare real:** el tiempo de inactividad del WebSocket (ping cada 25 s es un supuesto), la hibernación y la latencia desde Colombia. `wrangler dev` 4.149.0 no acepta la fecha de compatibilidad de faro-api (2026-10-26); se probó con 2026-10-13.
+- **No cubierto:** revocar un PC de caja no cierra los sockets del panel al instante (la revisión de cada hora lo hace). La marca de demora en el Salón y una tarjeta «Cajas abiertas» en Hoy quedaron para después.
+- Las pruebas del proceso del hub con la nube (`cloud.process`, `snapshots.process`) fallan a veces por tiempos con la máquina cargada; corridas solas pasan.
+
+**Cómo probarlo** (después de publicar la nube):
+
+1. En el PC de caja de prueba, arranca el hub con la versión nueva: `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. En el salón debe decir «Nube al día».
+2. En el celular abre `https://faro-api.johanyepes.workers.dev/r/la-spritzzeria` y entra con tu usuario y contraseña de la caja. Junto al título debe decir **«En vivo»**.
+3. En la caja abre una mesa, agrega dos productos y envíalos. En unos segundos, en el celular: **Salón** muestra la mesa ocupada con su total, y **Cocina** la comanda con su tiempo.
+4. Toca la mesa en Salón: debe verse su pedido completo. En Hoy, «Mesas abiertas» cuenta 1.
+5. En la caja anula un producto con motivo. En **Alertas** debe salir «… anuló 1 …» con el motivo y el valor.
+6. Cobra la mesa con tarjeta. En **Caja** (Más → Caja) cambia lo cobrado; en Salón la mesa queda libre.
+7. Apaga el internet del PC de caja. A los 2 minutos el panel debe decir «Sin noticias del restaurante desde las …». Vuelve a prenderlo: en segundos desaparece el aviso y se pone al día.
+
+### 1.7b — Dinero de eventos guardados como conflicto ⏳
+
+Decisión del dueño (3-nov-2026): tarea propia, aparte de la 1.11c-2. Encontrado por `auditor-dinero` al revisar el panel en vivo.
+
+**El problema:** cuando un equipo desactualizado registra un movimiento de dinero sobre una mesa que otro equipo ya cerró (anulación de pago, devolución, pago), el hub lo guarda como «conflicto» (`order_closed`, también `item_already_voided`, `invalid_quantity`) y el pedido no lo aplica. Hoy:
+- la caja y los reportes **sí** lo cuentan (resta o suma al efectivo esperado y a los medios), aunque el pedido diga otra cosa;
+- el cajero no se entera: su equipo le muestra «hecho»;
+- ninguna pantalla lista los conflictos (KPIS.md y SYNC.md dicen que «aparece en la caja», pero no existe).
+
+Las alertas del panel ya no los cuentan (1.11c-2), para no repetir dinero.
+
+**Qué hacer (propuesta de la auditoría):**
+1. El hub guarda el veredicto al confirmar el evento (marca «no aplicado» en el evento, también al subirlo a la nube) y todos (equipo, hub, nube) filtran por esa marca, en vez de deducirlo reaplicando el reductor (que cambiaría con cada versión).
+2. El equipo avisa al cajero en cuanto se confirma con conflicto: «No se aplicó: no entregues ni recibas dinero; reabre la cuenta».
+3. El cierre de caja y el cierre Z llevan un renglón aparte, fuera del esperado: «Movimientos no aplicados», con medio y monto; si hay alguno en el turno, se exige justificación.
+4. Alerta propia en el panel («dinero no aplicado») con el monto.
+5. No permitir cerrar la caja con eventos de dinero pendientes de confirmar en el turno.
+6. Los cierres ya guardados siguen sumando igual al reimprimirse (regla por fecha de cierre o desglose guardado en `ShiftClosed`).
+7. Documentar en DINERO.md (fórmula de la caja) y corregir KPIS.md y SYNC.md.
+8. Pruebas: el equipo real (`checks.ts`) contra el hub en vivo, tras reinicio, la nube y el cierre guardado, con historias al azar con conflictos; `PaymentRecorded` en conflicto en efectivo y con tarjeta.
 
 ### Logo del restaurante en la precuenta (2-nov-2026) ✅
 
@@ -497,8 +554,8 @@ Todo está corregido y `pnpm check` pasa.
 - revisado en vivo: la pantalla de entrar se ve en el celular, `/v1/panel/me` sin sesión da 401, un `POST` sin `Origin` da 403, una contraseña errada da 401 y al tercer fallo seguido pide esperar (429).
 
 **Queda pendiente:**
-- **Plan de Cloudflare:** entrar usa ~94 ms de CPU. El plan gratuito de Workers permite 10 ms por petición; si la cuenta está en el gratuito, algunas entradas pueden fallar. No se pudo ver el plan desde aquí: revisarlo en el panel de Cloudflare y, si hace falta, pasar a Workers Paid.
-- **Salón, cocina, caja, alertas y aviso al instante:** 1.11c-2. «Mesas abiertas» en el tablero llega con el salón.
+- **Plan de Cloudflare:** entrar usa ~94 ms de CPU, más de los 10 ms del plan gratuito. Resuelto: el dueño confirmó el 2-nov-2026 que la cuenta está en Workers Paid.
+- **Salón, cocina, caja, alertas y aviso al instante:** hechos en la 1.11c-2.
 - **Períodos de más de 14 días y fotos de los productos:** 1.11c-3.
 - **Pruebas de los hooks del panel:** `@pos/app` no tiene entorno DOM, así que se prueban por partes (cliente, sondeo, render) y no montados. Se verá con Playwright en la 1.14.
 - **Contacto de Faro** en la pantalla Copia en la nube: sigue pendiente de 1.11.

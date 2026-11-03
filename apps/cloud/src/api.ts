@@ -1,6 +1,28 @@
 import { z } from 'zod'
-import { Cloud, hubMaxOf, MAX_EVENTS_PER_BATCH, NewRestaurant, Registration, sha256 } from './cloud'
-import { COOKIE_NAME, Panel, type PanelSession, SESSION_MS, VIEW_REPORTS } from './panel'
+import {
+  type AuthenticatedHub,
+  Cloud,
+  hubMaxOf,
+  MAX_EVENTS_PER_BATCH,
+  NewRestaurant,
+  Registration,
+  sha256,
+} from './cloud'
+import {
+  EXPIRES_HEADER,
+  type LiveReason,
+  type LiveRooms,
+  roomOf,
+  SESSION_HEADER,
+} from './live-protocol'
+import {
+  COOKIE_NAME,
+  Panel,
+  type PanelSession,
+  REMOTE_ACCESS,
+  SESSION_MS,
+  VIEW_REPORTS,
+} from './panel'
 import { normalizeUsername } from './password'
 import { isSnapshotKind, MAX_SNAPSHOT_BYTES, saveSnapshot } from './snapshots'
 import type { Sql } from './sql'
@@ -28,7 +50,42 @@ export interface ApiEnv {
   limiter?: RateLimiter
   /** The panel's address, for the `Origin` check. By default, the request's own origin. */
   panelOrigin?: string
+  /**
+   * The live panel's Durable Objects (worker.ts). Without them there is no `GET /v1/panel/live`
+   * and nobody is told; the panels still poll.
+   */
+  live?: LiveRooms
+  /** Keeps a promise going after the response (the Worker's `ctx.waitUntil`). */
+  waitUntil?: (promise: Promise<unknown>) => void
 }
+
+/** A location that said nothing for longer than this is «back» on its next call (as the panel's NO_NEWS_MS). */
+export const BACK_ONLINE_AFTER_MS = 2 * 60_000
+
+/**
+ * Tells the room's panels, after the response and without holding it: a failed notice is only
+ * logged (the panels poll anyway; the truth is in Postgres).
+ */
+function tellLive(
+  environment: ApiEnv,
+  what: string,
+  call: (live: LiveRooms) => Promise<unknown>,
+): void {
+  const live = environment.live
+  if (!live) return
+  const sent = Promise.resolve()
+    .then(() => call(live))
+    .catch((e) => {
+      const { message } = (e ?? {}) as Record<string, unknown>
+      console.error('Could not tell the live panel:', { what, message })
+    })
+  environment.waitUntil?.(sent)
+}
+
+const notify = (environment: ApiEnv, hub: AuthenticatedHub, reason: LiveReason) =>
+  tellLive(environment, reason, (live) =>
+    live.notify(roomOf(hub.restaurantId, hub.locationId), reason),
+  )
 
 /**
  * On every response of the Worker: Static Assets' `_headers` does not apply to what the Worker
@@ -113,7 +170,10 @@ async function isAdmin(req: Request, adminToken: string | undefined) {
 const Batch = z.strictObject({ events: z.array(z.unknown()).min(1).max(MAX_EVENTS_PER_BATCH) })
 
 export async function handle(req: Request, environment: ApiEnv): Promise<Response> {
-  return withSecurityHeaders(await respond(req, environment))
+  const r = await respond(req, environment)
+  // The live panel's 101 carries the WebSocket: a new Response would lose it (and with status 101
+  // it fails). It goes back exactly as the Durable Object gave it.
+  return r.status === 101 ? r : withSecurityHeaders(r)
 }
 
 async function respond(req: Request, environment: ApiEnv): Promise<Response> {
@@ -204,23 +264,42 @@ async function respond(req: Request, environment: ApiEnv): Promise<Response> {
             'invalid_credential',
             'Este PC de caja no está registrado o fue revocado',
           )
+        if (r === 'saved') notify(environment, hub, 'snapshot')
         return noContent()
       }
       // Any call from the hub is a heartbeat; `x-faro-hub-max` says how far it has. It is never
       // what makes uploading fail.
-      await cloud.heartbeat(hub, hubMaxOf(req.headers.get('x-faro-hub-max'))).catch((e) => {
-        const { code, message } = (e ?? {}) as Record<string, unknown>
-        console.error('Could not record the hub heartbeat:', { code, message })
-      })
-      if (route === 'GET /v1/events/last')
-        return json(200, { last_sequence: await cloud.lastSequence(hub) })
+      const previous = await cloud
+        .heartbeat(hub, hubMaxOf(req.headers.get('x-faro-hub-max')))
+        .catch((e) => {
+          const { code, message } = (e ?? {}) as Record<string, unknown>
+          console.error('Could not record the hub heartbeat:', { code, message })
+          return undefined
+        })
+      // Back after a silence (or its first call ever): the panels stop saying «Sin noticias». A
+      // hub that is no longer there (revoked meanwhile) or a heartbeat that failed tells nobody.
+      const seen = previous?.previous
+      const backOnline =
+        previous !== null &&
+        previous !== undefined &&
+        (seen === null ||
+          (seen instanceof Date && clock().getTime() - seen.getTime() > BACK_ONLINE_AFTER_MS))
+      if (route === 'GET /v1/events/last') {
+        const answer = json(200, { last_sequence: await cloud.lastSequence(hub) })
+        if (backOnline) notify(environment, hub, 'back_online')
+        return answer
+      }
       const body = await jsonBody(req)
       if (body === TOO_LARGE) return tooLarge()
       const batch = Batch.safeParse(body)
       if (!batch.success)
         return error(400, 'invalid_data', `Un lote trae de 1 a ${MAX_EVENTS_PER_BATCH} eventos`)
       const results = await cloud.receiveEvents(hub, batch.data.events)
-      return json(200, { results, last_sequence: await cloud.lastSequence(hub) })
+      const answer = json(200, { results, last_sequence: await cloud.lastSequence(hub) })
+      // Only after the commit, and only if something new was stored: one notice per batch.
+      if (results.some((r) => r.status === 'saved')) notify(environment, hub, 'events')
+      else if (backOnline) notify(environment, hub, 'back_online')
+      return answer
     }
 
     return error(404, 'not_found', 'Esa ruta no existe')
@@ -264,8 +343,34 @@ const waitResponse = (waitMs: number) =>
     { 'retry-after': String(Math.ceil(waitMs / 1000)) },
   )
 
+/**
+ * The panel's routes with a session, and the permission each one asks for besides the session
+ * (which already requires `remote_access`). docs/PANEL.md#quién-entra.
+ */
+const PANEL_ROUTES = {
+  'GET /v1/panel/me': null,
+  'GET /v1/panel/summary': VIEW_REPORTS,
+  'GET /v1/panel/reports': VIEW_REPORTS,
+  'GET /v1/panel/floor': REMOTE_ACCESS,
+  'GET /v1/panel/register': VIEW_REPORTS,
+  'GET /v1/panel/alerts': VIEW_REPORTS,
+  'GET /v1/panel/live': REMOTE_ACCESS,
+} as const satisfies Record<string, string | null>
+type PanelRoute = keyof typeof PANEL_ROUTES
+
+const NO_PERMISSION: Record<NonNullable<(typeof PANEL_ROUTES)[PanelRoute]>, string> = {
+  [VIEW_REPORTS]: 'No tienes permiso para ver los reportes',
+  [REMOTE_ACCESS]: 'No tienes permiso para entrar desde fuera del local',
+}
+
 async function panelRoute(req: Request, route: string, environment: ApiEnv): Promise<Response> {
-  const panel = new Panel(environment.sql, environment.clock)
+  const panel = new Panel(environment.sql, environment.clock, {
+    // A session revoked while being checked: its open sockets close too (review 1.11c-2, point 8).
+    onSessionRevoked: ({ sessionId, rooms }) =>
+      tellLive(environment, 'revoked', (live) =>
+        Promise.all(rooms.map((room) => live.closeSession(room, sessionId))),
+      ),
+  })
   const url = new URL(req.url)
 
   if (req.method === 'POST') {
@@ -309,12 +414,19 @@ async function panelRoute(req: Request, route: string, environment: ApiEnv): Pro
   }
 
   if (route === 'POST /v1/panel/sign-out') {
-    await panel.signOut(cookieOf(req))
+    const ended = await panel.signOut(cookieOf(req))
+    // Its open live sockets close too (the others of the person stay).
+    if (ended)
+      tellLive(environment, 'sign-out', (live) =>
+        live.closeSession(roomOf(ended.restaurant.id, ended.locationId), ended.sessionId),
+      )
     return noContent(CLEAR_COOKIE)
   }
 
-  const known = ['GET /v1/panel/me', 'GET /v1/panel/summary', 'GET /v1/panel/reports']
-  if (!known.includes(route)) return error(404, 'not_found', 'Esa ruta no existe')
+  if (route === 'GET /v1/panel/live') return await liveRoute(req, panel, environment)
+
+  if (!Object.hasOwn(PANEL_ROUTES, route)) return error(404, 'not_found', 'Esa ruta no existe')
+  const needs = PANEL_ROUTES[route as PanelRoute]
 
   const cookie = cookieOf(req)
   const session: PanelSession | null = await panel.session(cookie)
@@ -325,14 +437,67 @@ async function panelRoute(req: Request, route: string, environment: ApiEnv): Pro
       'Tu sesión terminó. Vuelve a entrar.',
       cookie === null ? {} : CLEAR_COOKIE,
     )
+  if (needs && !session.user.permissions.includes(needs))
+    return error(403, 'no_permission', NO_PERMISSION[needs])
   if (route === 'GET /v1/panel/me') return json(200, await panel.me(session))
-
-  if (!session.user.permissions.includes(VIEW_REPORTS))
-    return error(403, 'no_permission', 'No tienes permiso para ver los reportes')
   if (route === 'GET /v1/panel/summary') return json(200, await panel.summary(session))
-
   const param = (name: string) => url.searchParams.get(name) || undefined
+  if (route === 'GET /v1/panel/floor') {
+    // The version of the plan the panel already has: if it is the current one, it does not travel.
+    const plan = param('plan')
+    return json(200, await panel.floor(session, plan && plan.length <= 128 ? plan : null))
+  }
+  if (route === 'GET /v1/panel/register') return json(200, await panel.register(session))
+  if (route === 'GET /v1/panel/alerts') {
+    const r = await panel.alerts(session, param('day'))
+    if ('error' in r) return error(400, 'invalid_data', r.error)
+    return json(200, r)
+  }
+
   const r = await panel.report(session, param('from'), param('until'))
   if ('error' in r) return error(400, 'invalid_data', r.error)
   return json(200, r)
+}
+
+/**
+ * `GET /v1/panel/live`: the panel's WebSocket (docs/PANEL.md#aviso-en-vivo-websocket). Everything is checked here,
+ * before touching the Durable Object: the upgrade, the `Origin` (a page from another site can open
+ * a WebSocket with the cookie: CSWSH, OWASP), the session and its permission. The room comes from
+ * the session, never from the address.
+ */
+async function liveRoute(req: Request, panel: Panel, environment: ApiEnv): Promise<Response> {
+  const url = new URL(req.url)
+  if (req.headers.get('upgrade')?.toLowerCase() !== 'websocket')
+    return error(426, 'websocket_expected', 'Esta dirección es solo para el panel en vivo', {
+      upgrade: 'websocket',
+    })
+  const origin = req.headers.get('origin')
+  if (!origin || origin !== (environment.panelOrigin ?? url.origin))
+    return error(403, 'invalid_origin', 'El panel en vivo solo se abre desde el panel')
+  const cookie = cookieOf(req)
+  const session = await panel.session(cookie)
+  if (!session)
+    return error(
+      401,
+      'no_session',
+      'Tu sesión terminó. Vuelve a entrar.',
+      cookie === null ? {} : CLEAR_COOKIE,
+    )
+  const needs = PANEL_ROUTES['GET /v1/panel/live']
+  if (!session.user.permissions.includes(needs))
+    return error(403, 'no_permission', NO_PERMISSION[needs])
+  if (!environment.live)
+    return error(503, 'no_live', 'El panel en vivo no está disponible; se actualiza solo.')
+  // What the Durable Object receives: the browser's handshake without its cookie and without any
+  // `x-faro-*` it made up, plus the session the Worker checked.
+  const headers = new Headers()
+  req.headers.forEach((value, name) => {
+    if (!name.startsWith('x-faro-') && name !== 'cookie') headers.set(name, value)
+  })
+  headers.set(SESSION_HEADER, session.sessionId)
+  headers.set(EXPIRES_HEADER, session.expiresAt)
+  return environment.live.connect(
+    roomOf(session.restaurant.id, session.locationId),
+    new Request(`${url.origin}/v1/panel/live`, { method: 'GET', headers }),
+  )
 }

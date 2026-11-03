@@ -10,6 +10,13 @@ Las fórmulas de cada número de los reportes (tarea 1.9). Todos salen de los **
 - Un **pago**, una **anulación de pago**, un **reembolso** y un **movimiento de caja** cuentan en el día en que se registraron (`business_day` del evento).
 - Una **anulación de producto** y una **cancelación** cuentan en el día en que se registraron.
 
+### Eventos guardados como conflicto
+
+El hub guarda **sin aplicar** lo que un equipo que no estaba al día mandó a un pedido que ya no lo admite: un producto ya anulado o con menos unidades de las que se quieren quitar, un pedido ya cerrado (un pago, una anulación de pago, una devolución, un descuento, una cancelación o un cierre que llegan después de que otro equipo cerró la mesa) ([SYNC.md](SYNC.md#rechazos-cuarentena-y-conflictos)). Queda para que la caja lo revise, pero **no cambió el pedido**.
+
+- **Las alertas del panel no lo cuentan** (tarea 1.11c-2): no es una alerta de anulación, cancelación, descuento, pago anulado, devolución ni reapertura, y un `DiscountRemoved` guardado así no marca el descuento como quitado. `alerts()` de `@pos/core` lo reconoce por sí misma volviendo a aplicar los eventos de cada pedido con el reductor (`unappliedEvents`): el que sale con un problema (distinto de «ítems que no pasaron» al mover) no se aplicó. Un pedido cuya apertura no está entre los eventos leídos no se juzga: su evento sí es alerta.
+- **La caja y los reportes todavía sí lo cuentan**, como antes: el reporte lo lista como anulación o cancelación y lo suma en los medios de pago, y la caja (el hub, el equipo de caja y la nube) lo resta del efectivo esperado. Corregirlo es una **tarea de dinero aparte**, pendiente, que debe cuidar que los cierres Z ya guardados sigan sumando igual al reimprimirse.
+
 ## Ventas
 
 Sobre los cierres de mesa del período (lo que sumó cada uno):
@@ -55,6 +62,15 @@ Por producto y variante, sobre las líneas de los pedidos cerrados: unidades ven
 - **Anulaciones**: cada `ItemVoided` del período, con producto, unidades, valor (unidades × precio con extras, del pedido tal como estaba al anular: el ítem pudo pasar después a otra mesa), motivo, si la cocina ya lo había hecho (merma), quién y quién autorizó.
 - **Cancelaciones**: cada `OrderCanceled` del período, con lo que tenía, el motivo y quién.
 - **Descuentos**: cada descuento aplicado y vigente en los pedidos cerrados, con regla, valor, monto y motivo (quién lo autorizó queda en el evento; el reporte aún no lo muestra).
+
+## Mesas abiertas (panel)
+
+La tarjeta «Mesas abiertas» del tablero de Hoy en el panel del dueño (tarea 1.11c-2) cuenta los pedidos abiertos que ocupan mesa o van sin mesa: cuántos, cuántas mesas (también las unidas), comensales y un **total** de lo que aún **no está en ventas**, en pesos y sin propinas:
+
+- un pedido que nunca se cerró suma su **neto** actual;
+- una **cuenta reabierta** suma solo **su neto actual menos el neto con que cerró la última vez** (decisión D2, 3-nov-2026): lo de ese cierre ya está en las ventas del día en que se cerró. Puede ser negativo (se reabrió para anular algo) o cero (se reabrió y no se ha cambiado nada).
+
+Así «Ventas de hoy» + «Mesas abiertas» no cuenta dos veces lo de una mesa reabierta.
 
 ## Caja
 

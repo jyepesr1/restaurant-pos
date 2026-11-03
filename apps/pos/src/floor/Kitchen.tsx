@@ -1,10 +1,8 @@
-import type { Catalog } from '@pos/sync'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../ui/Button'
 import { ConnectionIndicator } from '../ui/ConnectionIndicator'
-import { minutes } from '../ui/format'
-import { Icon, type IconName } from '../ui/icons'
-import { SOFT_TONES, STRONG_TONES } from '../ui/Label'
+import { Icon } from '../ui/icons'
+import { SOFT_TONES } from '../ui/Label'
 import { useNow } from '../ui/now'
 import { Group, Option } from '../ui/Options'
 import { useTheme } from '../ui/theme'
@@ -12,7 +10,7 @@ import { useNotify } from '../ui/toasts'
 import { floor, useFloor, useLocalView } from './context'
 import type { PendingJob } from './engine'
 import { FloorFrame } from './FloorFrame'
-import { CHANNELS } from './order'
+import { DELAYS, KitchenCard, ticketTarget } from './KitchenCard'
 import { Confirm } from './Staff'
 import { type Delay, delay, type KitchenTicket, timersOf } from './tickets'
 
@@ -20,48 +18,7 @@ import { type Delay, delay, type KitchenTicket, timersOf } from './tickets'
 // not yet delivered, by station, with its time and color; whoever can mark it taps «Listo» when
 // the kitchen calls out. On a kitchen screen it is all there is: big cards and one tap, «Listo».
 
-/**
- * How each delay looks. «A tiempo» has no color, only a border (owner's decision): green in
- * the kitchen is reserved for «Listo para llevar», and what stands out is what is late.
- */
-const DELAYS: Record<
-  Delay,
-  { icon: IconName; text: string; card: string; clock: string; label: string }
-> = {
-  on_time: {
-    icon: 'clock',
-    text: 'A tiempo',
-    card: 'border-border bg-surface text-foreground',
-    clock: 'border-2 border-border bg-surface text-foreground',
-    label: 'border-2 border-border bg-surface text-foreground',
-  },
-  late: {
-    icon: 'clock',
-    text: 'Demorada',
-    card: `border-progress-strong/60 ${SOFT_TONES.progress}`,
-    clock: STRONG_TONES.progress,
-    label: SOFT_TONES.progress,
-  },
-  very_late: {
-    icon: 'warning',
-    text: 'Muy demorada',
-    card: `border-alert-strong ${SOFT_TONES.warning}`,
-    clock: STRONG_TONES.warning,
-    label: SOFT_TONES.warning,
-  },
-}
-
 const ALL = '__all'
-
-function target(catalog: Catalog, c: KitchenTicket): string {
-  const p = c.order.status
-  if (p.tableId) {
-    const table = catalog.tables.find((m) => m.id === p.tableId)
-    return table ? `Mesa ${table.name}` : 'Mesa'
-  }
-  const channel = CHANNELS[p.channel as keyof typeof CHANNELS] ?? 'Pedido'
-  return p.dayNumber ? `${channel} #${p.dayNumber}` : channel
-}
 
 /** «Pedidos en cocina», inside the register frame. */
 export function OrdersInKitchen() {
@@ -295,7 +252,7 @@ function Dashboard({
     try {
       await floor.record('ItemReady', c.order.status.id, { item_ids: ids })
       notify(
-        `${target(catalog, c)}: listo`,
+        `${ticketTarget(catalog, c)}: listo`,
         () =>
           void floor
             .record('ItemReturnedToQueue', c.order.status.id, { item_ids: ids })
@@ -310,7 +267,7 @@ function Dashboard({
       await floor.record('ItemReturnedToQueue', c.order.status.id, {
         item_ids: c.items.map((i) => i.id),
       })
-      notify(`${target(catalog, c)} volvió a la cola`)
+      notify(`${ticketTarget(catalog, c)} volvió a la cola`)
     } catch (e) {
       notify(e instanceof Error ? e.message : 'No se pudo recuperar')
     }
@@ -318,7 +275,7 @@ function Dashboard({
   const reprint = async (c: KitchenTicket) => {
     try {
       await floor.record('TicketReprinted', c.order.status.id, { ticket_id: c.ticketId })
-      notify(`Reimprimiendo ${target(catalog, c)}`)
+      notify(`Reimprimiendo ${ticketTarget(catalog, c)}`)
     } catch (e) {
       notify(e instanceof Error ? e.message : 'No se pudo reimprimir')
     }
@@ -380,7 +337,7 @@ function Dashboard({
         >
           {inProgress.map((c) => (
             <li key={c.key}>
-              <Card
+              <KitchenCard
                 catalog={catalog}
                 ticket={c}
                 now={now}
@@ -403,7 +360,7 @@ function Dashboard({
                       <Button
                         variant="ghost"
                         icon="printer"
-                        aria-label={`Reimprimir ${target(catalog, c)}`}
+                        aria-label={`Reimprimir ${ticketTarget(catalog, c)}`}
                         onClick={() => reprint(c)}
                       >
                         Reimprimir
@@ -429,7 +386,7 @@ function Dashboard({
                 className={`flex min-h-14 items-center gap-3 rounded-2xl py-2 pr-2 pl-4 ${SOFT_TONES.free}`}
               >
                 <Icon name="serve" />
-                <span className="font-semibold">{target(catalog, c)}</span>
+                <span className="font-semibold">{ticketTarget(catalog, c)}</span>
                 <span className="text-sm">
                   {c.items.reduce((s, i) => s + i.quantity - i.voidedQuantity, 0)} prod.
                 </span>
@@ -450,94 +407,6 @@ function Dashboard({
         </section>
       )}
     </div>
-  )
-}
-
-function Card({
-  catalog,
-  ticket: c,
-  now,
-  timers,
-  large,
-  actions,
-}: {
-  catalog: Catalog
-  ticket: KitchenTicket
-  now: number
-  timers: { yellow: number; red: number }
-  large: boolean
-  actions: React.ReactNode
-}) {
-  const d = DELAYS[delay(c.sentAt, now, timers)]
-  const station = catalog.stations.find((e) => e.id === c.stationId)?.name
-  const waiter = catalog.staff.find((u) => u.id === c.order.status.assignedWaiterId)?.name
-  const from = Math.max(0, (now - Date.parse(c.sentAt)) / 60_000)
-  return (
-    <article
-      aria-label={`${target(catalog, c)}, ${d.text}, ${minutes(from)}`}
-      className={`flex h-full flex-col gap-3 rounded-2xl border-2 p-4 ${d.card}`}
-    >
-      <header className="flex items-baseline justify-between gap-2">
-        <span className={`font-bold ${large ? 'text-3xl' : 'text-xl'}`}>{target(catalog, c)}</span>
-        {c.number !== null && (
-          <span className={`figures font-bold ${large ? 'text-3xl' : 'text-lg'}`}>#{c.number}</span>
-        )}
-      </header>
-      <div className={`flex flex-wrap items-center gap-2 ${large ? 'text-lg' : 'text-sm'}`}>
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-full font-bold ${d.clock} ${large ? 'px-3 py-1 text-2xl' : 'px-2.5 py-0.5 text-sm'}`}
-        >
-          <Icon name={d.icon} className={large ? 'size-6' : 'size-4'} />
-          <span className="figures">{minutes(from)}</span>
-        </span>
-        <span>{[station, waiter].filter(Boolean).join(' · ')}</span>
-      </div>
-      {c.order.status.notes && (
-        <p
-          className={`flex items-start gap-2 rounded-lg border-2 border-border bg-surface px-2 py-1 text-foreground ${large ? 'text-xl' : ''}`}
-        >
-          <Icon
-            name="pencil"
-            className={large ? 'mt-0.5 size-6 shrink-0' : 'mt-0.5 size-4 shrink-0'}
-          />
-          <span>
-            <span className="block text-sm font-semibold uppercase">Para todo el pedido</span>
-            <span className="font-bold">{c.order.status.notes}</span>
-          </span>
-        </p>
-      )}
-      <ul className="flex flex-1 flex-col gap-3">
-        {c.items.map((i) => (
-          <li key={i.id} className={large ? 'text-2xl' : ''}>
-            <span className="figures font-bold">{i.quantity - i.voidedQuantity} ×</span>{' '}
-            <span className="font-semibold">{i.name}</span>
-            {i.guest !== null && (
-              <span className={large ? 'text-xl' : 'text-sm'}> · P{i.guest}</span>
-            )}
-            {i.status === 'ready' && (
-              <span className={`font-semibold ${large ? 'text-xl' : 'text-sm'}`}> · listo</span>
-            )}
-            {i.modifiers.length > 0 && (
-              <span className={`block font-bold ${large ? 'text-xl' : ''}`}>
-                {i.modifiers.map((m) => `> ${m.name}`).join('  ')}
-              </span>
-            )}
-            {i.notes && (
-              <span
-                className={`mt-1 flex items-start gap-2 rounded-lg border-2 border-current bg-surface px-2 py-1 font-bold ${large ? 'text-xl' : ''}`}
-              >
-                <Icon
-                  name="warning"
-                  className={large ? 'mt-0.5 size-6 shrink-0' : 'mt-0.5 size-4 shrink-0'}
-                />
-                {i.notes}
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
-      <div className="flex items-center gap-2">{actions}</div>
-    </article>
   )
 }
 
@@ -647,7 +516,7 @@ export function ReadyAlert() {
     const ids = new Set(mine.map((c) => c.key))
     if (knownIds.current) {
       const newlyReady = mine.filter((c) => !knownIds.current?.ids.has(c.key))
-      for (const c of newlyReady) notify(`${target(catalog, c)}: listo para llevar`)
+      for (const c of newlyReady) notify(`${ticketTarget(catalog, c)}: listo para llevar`)
       if (newlyReady.length > 0) navigator.vibrate?.([80, 60, 80])
     }
     knownIds.current = { user: session.user.id, ids }

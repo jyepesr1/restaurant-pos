@@ -6,6 +6,7 @@ import {
   type Rejection,
   type ReportData,
   reportData,
+  type ShiftClose,
 } from '@pos/sync'
 import { aggregatesOf } from './cloud'
 import type { Sql } from './sql'
@@ -49,12 +50,28 @@ export interface Scope {
    * `received_at` up to then (`sequenceAt`), so the cut is the hub's own order, not its clock.
    */
   asOf?: string | null
+  /**
+   * What is live (D1, docs/PANEL.md#pc-de-caja-revocado): only the events of the location's active
+   * hubs, and of a revoked one only those up to `acknowledged` (the furthest an active hub has
+   * uploaded with no gaps: a PC registered again resends the old one's events). Without it, every
+   * hub counts (the reports and the alerts: history).
+   */
+  live?: { activeHubIds: readonly string[]; acknowledged: number }
 }
 
-const bySequence = (a: OrderEvent, b: OrderEvent) => a.sequence - b.sequence
+/** In the hub's order (its `sequence`). */
+export const bySequence = (a: OrderEvent, b: OrderEvent) => a.sequence - b.sequence
+
+/** The latest `received_at` among the events (null without them): the answers' `as_of`. */
+export function latestReceipt(events: Iterable<OrderEvent>): string | null {
+  let latest: string | null = null
+  for (const e of events)
+    if (e.received_at && (!latest || e.received_at > latest)) latest = e.received_at
+  return latest
+}
 
 /** What was asked for and not loaded. */
-interface Missing {
+export interface Missing {
   aggregates: Set<string>
   /** Shift → from which business day its charges are needed. */
   shifts: Map<string, string>
@@ -236,11 +253,23 @@ export class CloudStore implements HubStore {
 
 const contents = (rows: { content: unknown }[]) => rows.map((r) => r.content as OrderEvent)
 
-/** `AND e.hub_sequence <= $n` when the scope stops at a sequence. */
-const asOfFilter = (scope: Scope, n: number) =>
-  scope.upTo === null || scope.upTo === undefined ? '' : ` AND e.hub_sequence <= $${n}::bigint`
-const asOfParam = (scope: Scope) =>
-  scope.upTo === null || scope.upTo === undefined ? [] : [scope.upTo]
+/**
+ * What the scope adds to a query over `events e` whose next parameter is `$n`: `AND
+ * e.hub_sequence <= …` when it stops at a sequence, and only what is live with `live`.
+ */
+export function scopeFilter(scope: Scope, n: number): { sql: string; params: unknown[] } {
+  let sql = ''
+  const params: unknown[] = []
+  if (scope.upTo !== null && scope.upTo !== undefined) {
+    sql += ` AND e.hub_sequence <= $${n + params.length}::bigint`
+    params.push(scope.upTo)
+  }
+  if (scope.live) {
+    sql += ` AND (e.hub_id = ANY($${n + params.length}::text[]) OR e.hub_sequence <= $${n + params.length + 1}::bigint)`
+    params.push(scope.live.activeHubIds, scope.live.acknowledged)
+  }
+  return { sql, params }
+}
 
 /**
  * The highest sequence of the location that the hub had received by that instant (0 if none). Each
@@ -273,25 +302,33 @@ async function loadPeriod(
   from: string,
   until: string,
 ) {
+  const f = scopeFilter(scope, 6)
   const rows = await tx.query<{ content: unknown }>(
     `SELECT e.content FROM events e
      WHERE e.restaurant_id = $1 AND e.hub_id = ANY($2::text[]) AND e.type = ANY($3::text[])
-       AND e.business_day BETWEEN $4::date AND $5::date${asOfFilter(scope, 6)}`,
-    [scope.restaurantId, scope.hubIds, types, from, until, ...asOfParam(scope)],
+       AND e.business_day BETWEEN $4::date AND $5::date${f.sql}`,
+    [scope.restaurantId, scope.hubIds, types, from, until, ...f.params],
   )
   store.add(contents(rows))
   store.markPeriod(types, from, until)
 }
 
-async function loadAggregates(tx: Sql, scope: Scope, store: CloudStore, ids: readonly string[]) {
+/** Every event of those aggregates (orders or shifts), through `event_aggregates`. */
+export async function loadAggregates(
+  tx: Sql,
+  scope: Scope,
+  store: CloudStore,
+  ids: readonly string[],
+) {
   if (ids.length === 0) return
+  const f = scopeFilter(scope, 4)
   const rows = await tx.query<{ content: unknown }>(
     `SELECT e.content FROM events e
      WHERE e.restaurant_id = $1 AND e.id IN (
        SELECT a.event_id FROM event_aggregates a
        WHERE a.restaurant_id = $1 AND a.hub_id = ANY($2::text[]) AND a.aggregate_id = ANY($3::text[])
-     )${asOfFilter(scope, 4)}`,
-    [scope.restaurantId, scope.hubIds, ids, ...asOfParam(scope)],
+     )${f.sql}`,
+    [scope.restaurantId, scope.hubIds, ids, ...f.params],
   )
   store.add(contents(rows))
   store.markAggregates(ids)
@@ -306,13 +343,14 @@ async function loadShiftCharges(
   if (shifts.size === 0) return
   const from = [...shifts.values()].sort()[0] as string
   // The types are written out so the events_by_shift index (migration 2) applies.
+  const f = scopeFilter(scope, 5)
   const rows = await tx.query<{ content: unknown }>(
     `SELECT e.content FROM events e
      WHERE e.restaurant_id = $1 AND e.hub_id = ANY($2::text[])
        AND e.type IN ('PaymentRecorded', 'PaymentVoided', 'RefundRecorded')
        AND (e.content #>> '{data,register_shift_id}') = ANY($3::text[])
-       AND e.business_day >= $4::date${asOfFilter(scope, 5)}`,
-    [scope.restaurantId, scope.hubIds, [...shifts.keys()], from, ...asOfParam(scope)],
+       AND e.business_day >= $4::date${f.sql}`,
+    [scope.restaurantId, scope.hubIds, [...shifts.keys()], from, ...f.params],
   )
   store.add(contents(rows))
   for (const id of shifts.keys()) store.markShift(id, from)
@@ -347,31 +385,97 @@ export async function cloudReportData(
     await loadPeriod(tx, scope, store, PERIOD_TYPES, from, until)
     await loadAggregates(tx, scope, store, store.allAggregates())
   }
+  const { result: data, rounds } = await untilComplete(
+    store,
+    maxRounds,
+    () => reportData(store, from, until),
+    (missing) => loadMissing(tx, scope, store, missing),
+  )
+  return { data, rounds, events: store.size, store }
+}
+
+/**
+ * Loads what the store noted as missing: the periods, the shifts' charges and the aggregates. False
+ * when there is nowhere to load from (a location without hubs).
+ */
+export async function loadMissing(
+  tx: Sql,
+  scope: Scope,
+  store: CloudStore,
+  { aggregates, shifts, periods }: Missing,
+): Promise<boolean> {
+  if (scope.hubIds.length === 0) return false
+  for (const p of periods) await loadPeriod(tx, scope, store, p.types, p.from, p.until)
+  await loadShiftCharges(tx, scope, store, shifts)
+  await loadAggregates(tx, scope, store, [...aggregates])
+  return true
+}
+
+/**
+ * Runs `compute` over the store until it asks for nothing it does not have: each time it asks
+ * for something (another order's events, a shift's charges, a period), `fetch` loads it and it
+ * runs again, at most `maxRounds` times. `fetch` returns false when there is nowhere to load from.
+ * It is the reports' loop (task 1.11c-1), shared with the live floor (`live.ts`).
+ */
+export async function untilComplete<T>(
+  store: CloudStore,
+  maxRounds: number,
+  compute: () => T,
+  fetch: (missing: Missing) => Promise<boolean>,
+  /** What is being computed, for the error (it goes to the log, never to the panel). */
+  what = 'El reporte',
+): Promise<{ result: T; rounds: number }> {
   for (let round = 1; ; round++) {
     store.resetMissing()
-    const data = reportData(store, from, until)
-    if (store.isComplete()) return { data, rounds: round, events: store.size, store }
-    if (round >= maxRounds || scope.hubIds.length === 0)
-      throw new Error(`El reporte necesitó más de ${maxRounds} lecturas de la base`)
-    const { aggregates, shifts, periods } = store.missing
-    for (const p of periods) await loadPeriod(tx, scope, store, p.types, p.from, p.until)
-    await loadShiftCharges(tx, scope, store, shifts)
-    await loadAggregates(tx, scope, store, [...aggregates])
+    const result = compute()
+    if (store.isComplete()) return { result, rounds: round }
+    if (round >= maxRounds || !(await fetch(store.missing)))
+      throw new Error(`${what} necesitó más de ${maxRounds} lecturas de la base`)
   }
 }
 
-/** The hub's location hubs (all of them: a revoked one's events still count). */
+/** The hub's location hubs (all of them: a revoked one's events still count in the reports). */
 export async function hubsOfLocation(
   tx: Sql,
   restaurantId: string,
   locationId: string,
 ): Promise<string[]> {
-  return (
-    await tx.query<{ id: string }>(
-      'SELECT id FROM hubs WHERE restaurant_id = $1 AND location_id = $2',
-      [restaurantId, locationId],
-    )
-  ).map((r) => r.id)
+  return (await locationHubs(tx, restaurantId, locationId)).map((r) => r.id)
+}
+
+async function locationHubs(tx: Sql, restaurantId: string, locationId: string) {
+  return tx.query<{ id: string; revoked: boolean; contiguous: string | number }>(
+    `SELECT id, revoked_at IS NOT NULL AS revoked, contiguous_sequence AS contiguous FROM hubs
+     WHERE restaurant_id = $1 AND location_id = $2`,
+    [restaurantId, locationId],
+  )
+}
+
+/**
+ * The location's two scopes, from one read of its hubs: `all` is every hub (the reports and the
+ * alerts: history); `live` is what is live (D1): only what an active hub stands behind
+ * (`Scope.live`). Without an active hub nothing is live: a revoked PC's open orders and shifts are
+ * not on the floor nor at the register, though they stay in the reports.
+ */
+export async function locationScopes(
+  tx: Sql,
+  restaurantId: string,
+  locationId: string,
+): Promise<{ all: Scope; live: Scope }> {
+  const hubs = await locationHubs(tx, restaurantId, locationId)
+  const active = hubs.filter((h) => !h.revoked)
+  const all: Scope = { restaurantId, hubIds: hubs.map((h) => h.id) }
+  if (active.length === 0) return { all, live: { restaurantId, hubIds: [] } }
+  return {
+    all,
+    live: {
+      ...all,
+      live: {
+        activeHubIds: active.map((h) => h.id),
+        acknowledged: Math.max(...active.map((h) => Number(h.contiguous))),
+      },
+    },
+  }
 }
 
 // ── The response, with the same shape as the hub's /api/reports ──────────
@@ -398,22 +502,27 @@ export function periodReport(
   return {
     today,
     report: result,
-    closings: data.registerClosings.map((c) => ({
-      shiftId: c.reconciliation.shiftId,
-      businessDay: c.businessDay,
-      openedAt: c.reconciliation.openedAt,
-      openedBy: c.openedBy,
-      closedBy: c.closedBy,
-      base: c.reconciliation.base,
-      byMethod: c.reconciliation.byMethod,
-      closed: c.reconciliation.closed,
-    })),
+    closings: data.registerClosings.map(closingJson),
     users,
     printer: false,
   }
 }
 
 export type PeriodReport = ReturnType<typeof periodReport>
+
+/** A register close as the hub's `/api/reports` lists it (`ReportClose` in apps/pos). */
+export const closingJson = (c: ShiftClose) => ({
+  shiftId: c.reconciliation.shiftId,
+  businessDay: c.businessDay,
+  openedAt: c.reconciliation.openedAt,
+  openedBy: c.openedBy,
+  closedBy: c.closedBy,
+  base: c.reconciliation.base,
+  byMethod: c.reconciliation.byMethod,
+  closed: c.reconciliation.closed,
+})
+
+export type ClosingJson = ReturnType<typeof closingJson>
 
 /** People's names, by id (those who are gone keep their name), as the hub's `userNames`. */
 export function userNames(names: ReadonlyMap<string, string>, ids: Iterable<string>) {

@@ -25,6 +25,14 @@
       "simple": { "limit": 10, "period": 60 }
     }
   ],
+  // The live panel (task 1.11c-2, docs/PANEL.md#en-vivo): one Durable Object per location keeps
+  // the panels' WebSockets open (Hibernation API) and tells them when something changed. New
+  // classes must use SQLite storage (docs/integraciones/panel-cloudflare.md, section 1); the
+  // `migrations` array is used, not `exports` (the two cannot be mixed).
+  "durable_objects": {
+    "bindings": [{ "name": "PANEL_LIVE", "class_name": "PanelLive" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PanelLive"] }],
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",

@@ -245,6 +245,16 @@ Fuente: [Rate Limiting en Workers](https://developers.cloudflare.com/workers/run
 - **Idempotencia:** el aviso del DO es una pista, no un dato. Si se duplica o se pierde, la relectura desde Postgres lo corrige.
 - **Retraso del aviso:** No documentado. El DO está en la ubicación más cercana a la primera solicitud o, para `sam`, en América del Norte oriental; sin cifras para Colombia.
 
+### 8.1 Probado en local con `wrangler dev` (2-nov-2026, tarea 1.11c-2)
+
+**Medición propia**, en el Mac de desarrollo con Wrangler 4.149.0 y `--local` (workerd en el equipo, nada desplegado). No dice nada del comportamiento en la red de Cloudflare:
+
+- **El workerd de Wrangler 4.149.0 acepta fechas de compatibilidad solo hasta 2026-10-13.** Con la de `faro-api` (2026-10-26), `wrangler dev` no arranca («the newest date supported by this server binary is 2026-10-13»). Se probó con `--compatibility-date 2026-10-13`, que sigue teniendo `web_socket_auto_reply_to_close` (desde 2026-04-07). `wrangler deploy` no usa ese binario; no se probó aquí.
+- El Worker real (`apps/cloud/wrangler.jsonc`, con el binding `PANEL_LIVE`, la migración `v1` y una cadena de Hyperdrive falsa): arranca y lista el binding; `GET /v1/panel/live` responde 426 sin `Upgrade`, 403 sin `Origin`, con `null` o con otro sitio, y 401 sin cookie.
+- La clase `PanelLive` real, detrás de un Worker de prueba sin sesión (en el scratchpad, no en el repo): `ping` → `pong` por la respuesta automática; `notify` llega como `{"type":"changed","reason":"events"}` a los 4 sockets abiertos; una sesión vencida se cierra con 4401 en el siguiente aviso y las demás lo reciben; `closeSession` cierra las 2 pestañas de esa sesión con 4401 y deja abierta la otra; un mensaje distinto de `ping` no tiene respuesta; el 101 del objeto llega al navegador por `stub.fetch`.
+- **No medido:** el tiempo de inactividad del WebSocket (el workerd local no imita el corte de la red de Cloudflare), la hibernación real ni la latencia. El ping de 25 s queda como supuesto con margen hasta medirlo en producción.
+- **No probado de punta a punta en local:** subir un evento y ver el aviso en un panel con sesión, porque eso pide un Postgres para Hyperdrive y no había uno local. Ese recorrido sí está en Vitest (`apps/cloud/src/live-route.test.ts`, con la clase real sobre un `ctx` falso y PGlite).
+
 ## 9. Preguntas abiertas para Cloudflare
 
 1. ¿Sigue vigente el tope de **100.000 iteraciones de PBKDF2** en producción? ¿Aplica igual a `node:crypto.pbkdf2` y `scrypt`? ¿Cuánta CPU consume un `scrypt` N=2^15, r=8, p=3?

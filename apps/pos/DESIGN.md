@@ -75,14 +75,19 @@ Es otra entrada de la app, con su propio marco (`src/panel/PanelFrame.tsx`) y si
   - modo oscuro;
   - «Salir», con texto visible también en el celular.
 - **Celular (< 768 px):** las secciones van en una **barra inferior fija**, al alcance del pulgar:
-  - «Hoy» y «Reportes», con ícono y texto, de 56 px de alto;
+  - **Hoy · Salón · Cocina · Alertas · Más**, con ícono y texto, de 56 px de alto («Más» abre Caja y Reportes en un cajón; cada pestaña muestra solo si el rol tiene su permiso);
+  - un nombre largo se corta (`truncate`) en vez de empujar las otras pestañas fuera de la pantalla;
   - respeta la zona segura del teléfono (`env(safe-area-inset-bottom)`);
   - el contenido deja espacio abajo para que la barra no lo tape.
 - **Desde 768 px:** las mismas secciones van como pestañas en la barra superior y la inferior desaparece.
-- **Estado de los datos:** una línea arriba de las cifras:
+- **Estado de los datos:** un bloque `rounded-xl` arriba de las cifras (no una pastilla: en el celular angosto el texto largo se parte bien):
   - «Actualizado 9:41 p. m.» en neutro;
   - «Faltan N datos del local por llegar» en ámbar;
-  - «Sin noticias del restaurante desde…» o «Sin conexión a internet…» en rojo, con la nube tachada y las cifras fechadas («Ventas hasta las 9:38 p. m.»).
+  - «Sin noticias del restaurante desde…» con una segunda línea («Puede que la caja esté apagada o sin internet. Las cifras son de las 9:38 p. m.»), o «Sin conexión a internet: no llegan datos del restaurante», en rojo, con la nube tachada y las cifras fechadas («Ventas hasta las 9:38 p. m.»);
+  - cuando la lectura falla, «Intentar ahora» (48 px) en el mismo bloque;
+  - antes de la primera respuesta, «Leyendo…» y, a los 5 s, «Tarda más de lo normal»; si falla, el aviso va una sola vez (sin la línea de estado encima).
+- **«En vivo»:** pequeño y en gris junto al título: «En vivo» con un punto del color del texto, «Conectando…» o «Se actualiza cada 15 s». Nunca en verde (verde es libre y listo).
+- **Alertas:** cada fila lleva su tipo en palabras («Anulación», «Cortesía»…). Rojo para lo que sacó dinero o descuadró la caja; ámbar, «para revisar», para descuentos, cortesías y cuentas reabiertas. Una leyenda arriba de la lista lo dice.
 - **Comparación con el mismo día de la semana pasada a la misma hora:** flecha y porcentaje. La subida va en verde; la bajada, en neutro con su flecha (no es una alarma).
 
 ## Pantallas

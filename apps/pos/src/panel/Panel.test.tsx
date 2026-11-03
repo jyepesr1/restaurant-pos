@@ -50,12 +50,11 @@ describe('the dashboard', () => {
     expect(t).toContain('$1.250.000')
     expect(t).toContain('Ventas hasta ahora')
     expect(t).toContain('+25 % frente al jueves pasado a esta hora')
-    // The first letter goes in capitals by CSS.
-    expect(t).toContain('jueves pasado a esta hora: $1.000.000 · ese día cerró en $1.800.000')
+    expect(t).toContain('El jueves pasado, a esta hora: $1.000.000 · ese día cerró en $1.800.000')
     expect(t).toContain('Ticket promedio')
     expect(t).toContain('$89.286')
     // The secondary figures with their own difference: 31 against 25 guests.
-    expect(t).toContain('jueves pasado a esta hora: 25 +24 %')
+    expect(t).toContain('El jueves pasado, a esta hora: 25 +24 %')
     expect(t).toContain('Actualizado 9:41 p. m.')
     expect(t).toContain('Comensales 31')
     expect(t).toContain('Propinas $112.000')
@@ -118,6 +117,9 @@ describe('the dashboard', () => {
     const page = renderToStaticMarkup(<DashboardView polled={answered(s)} place={place} />)
     const t = text(page)
     expect(t).toMatch(/Sin noticias del restaurante desde las 9:38 p\. m\./)
+    expect(t).toMatch(
+      /Puede que la caja esté apagada o sin internet\. Las cifras son de las 9:38 p\. m\./,
+    )
     expect(t).toMatch(/Ventas hasta las 9:38 p\. m\./)
     expect(t).not.toContain('por llegar')
     expect(page).toContain('bg-alert-soft')
@@ -126,7 +128,7 @@ describe('the dashboard', () => {
   it('when the cloud stops answering it keeps the numbers and says from when they are', () => {
     const t = dashboard({ ...answered(), failed: true, error: 'Sin conexión a internet.' })
     expect(t).toMatch(
-      /Sin conexión a internet: no llega nada del restaurante\. Cifras de las 9:41 p\. m\./,
+      /Sin conexión a internet: no llegan datos del restaurante Las cifras son de las 9:41 p\. m\./,
     )
     expect(t).toMatch(/Ventas hasta las 9:41 p\. m\./)
     expect(t).toContain('$1.250.000')
@@ -136,15 +138,48 @@ describe('the dashboard', () => {
     for (const errorKind of ['unauthorized', 'server']) {
       const t = dashboard({ ...answered(), failed: true, error: 'x', errorKind })
       expect(t).not.toContain('Sin conexión a internet')
-      expect(t).toMatch(/No se pudieron actualizar las cifras\. Cifras de las 9:41 p\. m\./)
+      expect(t).toMatch(/No se pudo actualizar Las cifras son de las 9:41 p\. m\./)
     }
     const offline = dashboard({ ...answered(), failed: true, error: 'x', errorKind: 'offline' })
     expect(offline).toContain('Sin conexión a internet')
   })
 
-  it('failing before any answer it explains and says it keeps trying', () => {
+  it('failing before any answer it explains and says it keeps trying, only once', () => {
     const t = dashboard({ ...EMPTY, failed: true, error: 'Sin conexión a internet.' })
     expect(t).toContain('Sin conexión a internet. Lo intentamos de nuevo solos cada 15 s.')
+    // The status line is not shown too: the notice is said once.
+    expect(t.match(/Sin conexión a internet/g)).toHaveLength(1)
+    // Without a way to ask again (a test's answer) there is no button.
+    expect(t).not.toContain('Intentar ahora')
+  })
+
+  it('«Intentar ahora» asks again at once, before the first answer and after a failure', () => {
+    const retry = vi.fn()
+    const first = renderToStaticMarkup(
+      <DashboardView
+        polled={{ ...EMPTY, failed: true, error: 'Sin conexión a internet.', retry }}
+        place={place}
+      />,
+    )
+    expect(text(first)).toContain('Intentar ahora')
+    // A button of the design system: 48 px at least.
+    expect(first).toMatch(/<button[^>]*min-h-12[^>]*>(?:(?!<\/button>).)*Intentar ahora/)
+    const later = dashboard({ ...answered(), failed: true, error: 'x', retry })
+    expect(later).toContain('Intentar ahora')
+    // Up to date, there is nothing to try.
+    expect(dashboard({ ...answered(), retry })).not.toContain('Intentar ahora')
+  })
+
+  it('reading for more than 5 s says it is taking longer than usual', async () => {
+    const { FirstAnswer, SLOW_READ_MS } = await import('./DataStatus')
+    expect(SLOW_READ_MS).toBe(5000)
+    const slow = text(
+      renderToStaticMarkup(
+        <FirstAnswer polled={EMPTY} reading="Leyendo las ventas…" failure="x" slow />,
+      ),
+    )
+    expect(slow).toContain('Leyendo las ventas… Tarda más de lo normal')
+    expect(dashboard(EMPTY)).not.toContain('Tarda más de lo normal')
   })
 
   it('announces only the state (a hidden live region), not the visible time', () => {
@@ -164,9 +199,9 @@ describe('permissions', () => {
   it('the dashboard and the reports ask for «Ver todos los reportes»', () => {
     expect(canViewReports(me())).toBe(true)
     expect(canViewReports(me(['remote_access']))).toBe(false)
-    expect(text(renderToStaticMarkup(<NoPermission />))).toContain(
-      'Tu rol no tiene permiso para ver los reportes',
-    )
+    const t = text(renderToStaticMarkup(<NoPermission />))
+    expect(t).toContain('Tu rol no puede ver esta sección')
+    expect(t).toContain('«Ver todos los reportes»')
   })
 })
 

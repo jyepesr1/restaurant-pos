@@ -226,5 +226,5 @@ pnpm --filter @pos/hub start
 ## Pendiente para esta guía
 
 - **Contacto de Faro** (WhatsApp o teléfono) para pedir códigos y para «avisa a Faro»: falta definirlo **(validar con el dueño)**.
-- **Planes de pago antes de clientes reales:** Workers Paid (USD 5 al mes), porque entrar al panel usa más CPU de la que permite el plan gratuito, y Neon Launch, con 7 días para restaurar.
+- **Planes de pago antes de clientes reales:** Workers Paid (USD 5 al mes; la cuenta ya lo tiene desde el 2-nov-2026), porque el panel usa más CPU de la que permite el plan gratuito y necesita Durable Objects para el aviso en vivo; y Neon Launch, con 7 días para restaurar.
 - **Instalador para Windows** (1.13): reemplaza los pasos 1 y 4 y el «Cada día».

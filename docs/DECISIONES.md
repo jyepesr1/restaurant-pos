@@ -610,7 +610,7 @@ Decisión del dueño del 29-oct-2026. Quiere ver en vivo lo que pasa en el resta
 
 ### Por definir al implementar
 
-- Cómo llega lo nuevo al panel (WebSocket o consultas cada pocos segundos) y el camino nube → hub para las acciones. Antes de escribir código, `investigador-integraciones` revisa la documentación oficial de Cloudflare **(validar)**.
+- ~~Cómo llega lo nuevo al panel~~: resuelto en la enmienda del 2-nov-2026 (abajo). Queda el camino nube → hub para las acciones (1.11d). Antes de escribir código, `investigador-integraciones` revisa la documentación oficial de Cloudflare **(validar)**.
 - Dónde se publica el panel y con qué dirección. Va junto con el dominio propio pendiente de la 1.10.
 - El costo adicional por restaurante **(validar)**.
 
@@ -618,3 +618,15 @@ Decisión del dueño del 29-oct-2026. Quiere ver en vivo lo que pasa en el resta
 
 - Hay una entrada a la nube con usuario y contraseña, aparte de la del hub. Las cuentas del panel se crean por restaurante.
 - Las tareas 1.11c (ver) y 1.11d (acciones) van antes de la 1.11b. Esta reutiliza el camino nube → hub de la 1.11d para bajar la carta.
+
+### Enmienda del 2-nov-2026: cómo llega lo nuevo al panel (tarea 1.11c-2)
+
+- **Se resuelve «WebSocket o consultas»:** las dos cosas.
+  - **Aviso al instante:** un **Durable Object** por sede (`PanelLive`) mantiene abiertas las conexiones WebSocket de los paneles, con la API de hibernación. Cuando la nube guarda eventos, una instantánea o el local vuelve después de estar callado, le avisa al objeto y este manda «cambió» a los paneles. El panel vuelve a pedir los datos a la API, que lee Postgres con su seguridad por fila: **el aviso nunca lleva datos del restaurante**.
+  - **Respaldo:** el panel sigue consultando cada 60 s con el aviso vivo y cada 15 s sin él.
+  - **Ritmo:** como mucho una relectura cada 3 s en Salón y Cocina, y cada 10 s en Hoy, Caja, Alertas y Reportes.
+- **«Sin noticias del restaurante desde…»** aparece a los **2 minutos** sin señal del PC de caja (el latido es cada 30 s). Mientras tanto el panel muestra lo último que recibió y congela las demoras a esa hora.
+- **Alertas** (decisión del dueño): anulaciones de productos, pedidos cancelados, descuentos y cortesías, pagos anulados y devoluciones, cuentas reabiertas, y descuadres de caja en efectivo y en cada medio con el umbral de la caja. Se ven hasta 14 días atrás.
+- **Quién ve qué:** con solo «Entrar desde fuera del local» se ven Salón y Cocina, y el pedido completo de cada mesa (también pagos y descuentos). Hoy, Caja, Alertas y Reportes piden «Ver todos los reportes».
+- **Requisito:** plan Workers Paid de Cloudflare (la cuenta ya lo tiene). Con Durable Objects de SQLite y la hibernación, el costo extra por restaurante es de centavos al mes.
+- **Límite aceptado:** un pedido abierto hace más de 31 días sin ningún movimiento no aparece en el Salón (`LIVE_WINDOW_DAYS`). Si llega a hacer falta, se resuelve con una tabla derivada en Postgres.

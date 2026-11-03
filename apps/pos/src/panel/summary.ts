@@ -55,6 +55,8 @@ export interface Polled<T> {
   error: string | null
   /** What kind of failure (`PanelError.kind`: 'offline', 'unauthorized'…), if known. */
   errorKind?: string | null
+  /** Asks again now («Intentar ahora»), where the screen has one. */
+  retry?: () => void
 }
 
 /**
@@ -67,6 +69,8 @@ export interface DataState {
   kind: 'up_to_date' | 'no_news' | 'offline' | 'failed' | 'nothing_yet'
   /** The main line: «Actualizado 9:41 p. m.», «Sin noticias del restaurante desde…». */
   text: string
+  /** A second line that explains it: «Puede que la caja esté apagada…». */
+  detail: string | null
   tone: Tone
   icon: 'cloud' | 'cloudOff' | 'warning'
   /** «Faltan 3 datos del local por llegar», if the hub still has some (and is in touch). */
@@ -107,28 +111,30 @@ export function dataState(
   },
   timeZone: string,
 ): DataState {
+  /** «Las cifras son de las 9:38 p. m.» */
+  const figuresOf = (at: string | null) =>
+    // «p. m.» already ends the sentence: never «p. m..».
+    at ? `Las cifras son de las ${at}${at.endsWith('.') ? '' : '.'}` : null
   if (failed && cause === 'other') {
     // Internet works but the figures did not come (the session closed, an error of the server).
     const at = receivedAt ? timeOf(receivedAt, timeZone) : null
     return {
       kind: 'failed',
-      text: at
-        ? `No se pudieron actualizar las cifras. Cifras de las ${at}`
-        : 'No se pudieron actualizar las cifras',
+      text: 'No se pudo actualizar',
+      detail: figuresOf(at),
       tone: 'warning',
       icon: 'warning',
       pending: null,
       figuresAt: at,
-      announcement: 'No se pudieron actualizar las cifras',
+      announcement: 'No se pudo actualizar',
     }
   }
   if (failed) {
     const at = receivedAt ? timeOf(receivedAt, timeZone) : null
     return {
       kind: 'offline',
-      text: at
-        ? `Sin conexión a internet: no llega nada del restaurante. Cifras de las ${at}`
-        : 'Sin conexión a internet: no llega nada del restaurante',
+      text: 'Sin conexión a internet: no llegan datos del restaurante',
+      detail: figuresOf(at),
       tone: 'warning',
       icon: 'cloudOff',
       pending: null,
@@ -142,6 +148,7 @@ export function dataState(
     return {
       kind: 'nothing_yet',
       text: 'El restaurante todavía no ha enviado datos',
+      detail: null,
       tone: 'neutral',
       icon: 'cloud',
       pending,
@@ -155,6 +162,7 @@ export function dataState(
     return {
       kind: 'no_news',
       text: `Sin noticias del restaurante desde las ${at}`,
+      detail: `Puede que la caja esté apagada o sin internet. ${figuresOf(at)}`,
       tone: 'warning',
       icon: 'cloudOff',
       // What it had to upload is not known any more: it is not shown.
@@ -165,6 +173,7 @@ export function dataState(
   return {
     kind: 'up_to_date',
     text: `Actualizado ${at}`,
+    detail: null,
     // What is still to come has its own amber line.
     tone: 'neutral',
     icon: 'cloud',
