@@ -89,6 +89,12 @@ En cada terminal nueva, desde la carpeta del proyecto:
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
 
+### Etiquetas del cierre de caja que no se parten (2-nov-2026) ✅
+
+En **Caja → Cerrar la caja → Los demás medios**, el campo ocupaba todo el ancho y las etiquetas se partían en pedazos («Llegó / por / Bre- / B»). Ahora el campo mide lo justo y la etiqueta queda en una línea en el computador y en una o dos en el celular.
+
+**Cómo probarlo:** abre la caja, toca **Cerrar la caja** y baja a **Los demás medios**: «Cierre de Bold (total con propinas)», «Llegó por Bre-B» y «Llegó por Transferencia» deben leerse enteras a la izquierda de su campo.
+
 ### Al cerrar una mesa sin cambio, vuelve solo al salón (2-nov-2026) ✅
 
 Pedido del dueño: tras cobrar, la pantalla «Pagado y cerrado» pedía un toque más para volver.

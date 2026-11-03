@@ -843,14 +843,15 @@ function Closeout({
                 {`Escribe el total del cierre del datáfono (en su app o en el papel del cierre) y lo que llegó a cada app, desde las ${dayStart} de hoy. Si solo hubo devoluciones, empieza con «-».`}
               </p>
               {methods.map((m, j) => (
-                <label key={m.key} className="flex items-center gap-2">
-                  <span className="flex-1">{m.label}</span>
+                <label key={m.key} className="flex items-center gap-3">
+                  <span className="min-w-0 flex-1">{m.label}</span>
                   <input
                     ref={(el) => {
                       fields.current[DENOMINATIONS.length + j] = el
                     }}
                     inputMode="numeric"
-                    className={`${fieldClass} figures w-40 text-right`}
+                    // The shared field is full width: here it gives way so the label fits on one line.
+                    className={`${fieldClass} figures w-40! shrink-0 text-right`}
                     value={reports[m.key] ?? ''}
                     placeholder={withCharges.has(m.key) ? 'Escríbelo' : '0'}
                     onFocus={(e) => e.currentTarget.select()}
