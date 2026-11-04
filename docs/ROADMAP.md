@@ -44,7 +44,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.11c-3 | Panel: períodos largos (más de 14 días) y fotos de los productos | ⏳ |
 | 1.11d | Acciones a distancia desde el panel: agotar un producto, autorizar anulaciones, descuentos y cortesías, y cerrar sesiones o bloquear un usuario | ⏳ |
 | 1.11b | Carta, configuración y personal editados en la nube (también desde el panel) y bajando al hub | ⏳ |
-| 1.7b | Dinero de eventos guardados como conflicto: aviso al cajero, renglón aparte en el cierre, alerta en el panel y veredicto guardado por el hub | ✅ (falta publicarla) |
+| 1.7b | Dinero de eventos guardados como conflicto: aviso al cajero, renglón aparte en el cierre, alerta en el panel y veredicto guardado por el hub | ✅ (nube publicada el 4-nov-2026; falta actualizar el hub) |
 | 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
 | 1.13 | Hub en el PC de caja (Windows) | ⏳ |
 | 1.14 | Prueba de aceptación: servicio de 2 horas con un corte de internet y la sincronización al volver (y la e2e de la Fase 0) | ⏳ |
@@ -142,7 +142,7 @@ Encontrado por `auditor-dinero` en la 1.11c-2; el dueño la dejó como tarea pro
 Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas` (historias al azar con tres cajas que se desconectan, reinicios del hub, la nube con PGlite, reenvío tras restaurar, un equipo que intenta poner la marca, base vieja migrada a 0002).
 
 **Queda pendiente:**
-- **Publicar:** primero la nube (`pnpm --filter @pos/cloud run deploy`, pide permiso), después el hub, y recargar cada equipo (app 0.11). Una app vieja en caché sigue contando ese dinero: el hub le rechaza el cierre («la caja no coincide») hasta recargarla.
+- **Nube publicada** el 4-nov-2026 (versión `5eaff590`): responde, sirve el panel con la alerta nueva y rechaza sin sesión. **Falta el hub:** en el PC de caja, actualizarlo y recargar cada equipo (app 0.11). Una app vieja en caché sigue contando ese dinero: el hub le rechaza el cierre («la caja no coincide») hasta recargarla.
 - **Borrar `unappliedEvents`** (respaldo de las alertas para eventos sin marca) cuando pasen 14 días desde la publicación del hub.
 - `pnpm check` no pasa completo por dos pruebas del hub con la nube (`cloud.process` «a restarted hub keeps the link…» y `snapshots.process` «a restarted hub does not send again…»): desde el 4-nov-2026 fallan siempre, también en el commit anterior a esta tarea sin sus cambios, así que no las causa la 1.7b. Queda para revisarlas aparte. `restaurants.test` «a PIN from B…» falló una vez por un PIN al azar repetido y pasa sola.
 - Un hub restaurado de un respaldo vuelve a juzgar los eventos que no tenía: el veredicto puede cambiar; la nube guarda la primera copia y la otra queda en `divergent_events`.
