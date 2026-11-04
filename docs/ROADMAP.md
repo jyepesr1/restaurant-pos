@@ -40,7 +40,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.10 | Nube ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)): base Postgres en Neon y API en Cloudflare Workers; restaurantes y hubs con credencial; recibir eventos sin duplicar | ✅ (publicada el 26-oct-2026) |
 | 1.11 | Subida hub → nube: cola, reintentos y «cambios por subir» en la caja | ✅ (publicada el 29-oct-2026) |
 | 1.11c-1 | Panel del dueño ([ADR-017](DECISIONES.md#adr-017--panel-del-dueño-en-la-nube-en-vivo-y-con-acciones-a-distancia), [PANEL](PANEL.md)): entrar con los usuarios del local (permiso «Entrar desde fuera del local»); tablero del día y todos los reportes ([KPIS](KPIS.md)) de hasta 14 días, actualizados cada 15 s | ✅ (publicada el 2-nov-2026) |
-| 1.11c-2 | Panel en vivo: aviso al instante (Durable Object), salón, cocina, caja, alertas y «sin noticias del local desde…» | ✅ (falta publicarla) |
+| 1.11c-2 | Panel en vivo: aviso al instante (Durable Object), salón, cocina, caja, alertas y «sin noticias del local desde…» | ✅ (publicada el 3-nov-2026) |
 | 1.11c-3 | Panel: períodos largos (más de 14 días) y fotos de los productos | ⏳ |
 | 1.11d | Acciones a distancia desde el panel: agotar un producto, autorizar anulaciones, descuentos y cortesías, y cerrar sesiones o bloquear un usuario | ⏳ |
 | 1.11b | Carta, configuración y personal editados en la nube (también desde el panel) y bajando al hub | ⏳ |
@@ -109,7 +109,7 @@ Decisiones del dueño ([enmienda a ADR-017 del 2-nov-2026](DECISIONES.md#enmiend
 Revisado por `revisor-codigo`, `auditor-dinero` (dos veces), `revisor-ux` y `qa-pruebas` (unas 200 pruebas nuevas: historias al azar contra el hub, cortes de red, sesión revocada con el socket abierto, aislamiento entre restaurantes y sedes). Se corrigió, entre otras cosas: alertas que repetían dinero de eventos guardados como conflicto, el descuento restado dos veces en el detalle de una mesa, una cuenta reabierta contada dos veces, lecturas con una sola foto de la base, una segunda sede que cerraba la sesión del dueño, la reconexión en bucle, topes de sockets por sesión y el tablero de Hoy (de 127 a ~62 ms).
 
 **Queda pendiente:**
-- **Publicarla:** la nube con esta versión no está publicada (pide permiso). Es el primer despliegue con Durable Objects: crea la clase `PanelLive`.
+- **Publicada:** el Worker `faro-api` con esta versión quedó publicado el 3-nov-2026 (versión `f1ec7281`), el primer despliegue con Durable Objects (clase `PanelLive`). Comprobado: `/v1/health` responde, `/v1/panel/live` rechaza sin `Upgrade` (426), sin `Origin` (403) y sin sesión (401). Falta medir con el celular cuánto aguanta la conexión sin mensajes y la demora desde Colombia.
 - **Dinero de eventos en conflicto:** tarea 1.7b (abajo, en la tabla). La caja y los reportes todavía cuentan esos eventos; solo las alertas los omiten.
 - **No medido en Cloudflare real:** el tiempo de inactividad del WebSocket (ping cada 25 s es un supuesto), la hibernación y la latencia desde Colombia. `wrangler dev` 4.149.0 no acepta la fecha de compatibilidad de faro-api (2026-10-26); se probó con 2026-10-13.
 - **No cubierto:** revocar un PC de caja no cierra los sockets del panel al instante (la revisión de cada hora lo hace). La marca de demora en el Salón y una tarjeta «Cajas abiertas» en Hoy quedaron para después.
