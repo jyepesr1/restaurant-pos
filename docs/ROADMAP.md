@@ -113,7 +113,7 @@ Revisado por `revisor-codigo`, `auditor-dinero` (dos veces), `revisor-ux` y `qa-
 - **Dinero de eventos en conflicto:** resuelto en la tarea 1.7b (abajo).
 - **No medido en Cloudflare real:** el tiempo de inactividad del WebSocket (ping cada 25 s es un supuesto), la hibernación y la latencia desde Colombia. `wrangler dev` 4.149.0 no acepta la fecha de compatibilidad de faro-api (2026-10-26); se probó con 2026-10-13.
 - **No cubierto:** revocar un PC de caja no cierra los sockets del panel al instante (la revisión de cada hora lo hace). La marca de demora en el Salón y una tarjeta «Cajas abiertas» en Hoy quedaron para después.
-- Las pruebas del proceso del hub con la nube (`cloud.process`, `snapshots.process`) fallan a veces por tiempos con la máquina cargada; corridas solas pasan.
+- Las pruebas del proceso del hub con la nube (`cloud.process`, `snapshots.process`) fallaban por carreras de la propia prueba: corregidas el 4-nov-2026 (esperan a que el hub anote la respuesta y a que termine la revisión de instantáneas). Otras pruebas pueden seguir tardando de más con la máquina muy cargada.
 
 **Cómo probarlo** (después de publicar la nube):
 
@@ -144,7 +144,6 @@ Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas` (hi
 **Queda pendiente:**
 - **Nube publicada** el 4-nov-2026 (versión `5eaff590`): responde, sirve el panel con la alerta nueva y rechaza sin sesión. **Falta el hub:** en el PC de caja, actualizarlo y recargar cada equipo (app 0.11). Una app vieja en caché sigue contando ese dinero: el hub le rechaza el cierre («la caja no coincide») hasta recargarla.
 - **Borrar `unappliedEvents`** (respaldo de las alertas para eventos sin marca) cuando pasen 14 días desde la publicación del hub.
-- `pnpm check` no pasa completo por dos pruebas del hub con la nube (`cloud.process` «a restarted hub keeps the link…» y `snapshots.process` «a restarted hub does not send again…»): desde el 4-nov-2026 fallan siempre, también en el commit anterior a esta tarea sin sus cambios, así que no las causa la 1.7b. Queda para revisarlas aparte. `restaurants.test` «a PIN from B…» falló una vez por un PIN al azar repetido y pasa sola.
 - Un hub restaurado de un respaldo vuelve a juzgar los eventos que no tenía: el veredicto puede cambiar; la nube guarda la primera copia y la otra queda en `divergent_events`.
 
 **Cómo probarlo** (con el hub y la app nuevos):

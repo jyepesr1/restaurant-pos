@@ -12,7 +12,8 @@ export default defineConfig({
   },
   test: {
     // Several tests start a new embedded Postgres (PGlite), which takes a few seconds: with
-    // `pnpm check` running all packages at once they exceed the default 5 s.
-    testTimeout: 30_000,
+    // `pnpm check` running all packages at once they exceed the default 5 s, and at times even 30 s.
+    testTimeout: 120_000,
+    hookTimeout: 120_000,
   },
 })

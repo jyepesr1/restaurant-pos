@@ -204,23 +204,29 @@ describe('the same PIN in two restaurants', () => {
     const m = twoRestaurants()
     const waiterA = m.accessA.createUser({ name: 'Mesera A', roleId: m.a.roles.waiter })
     const waiterB = m.accessB.createUser({ name: 'Mesera B', roleId: m.rolesB.waiter })
+    // The fixture's people have random PINs: the shared one must be free in A, or it breaks the
+    // restaurant's unique PIN (1 run in about 2,000).
+    const taken = Object.values(m.a.people).map((p) => p.pin)
+    let code = 4821
+    while (taken.includes(String(code))) code++
+    const pin = String(code)
     const setFor = (restaurant: string, userId: string) =>
       m.db
         .prepare('UPDATE user_credentials SET pin_hash = ? WHERE user_id = ?')
-        .run(pinHash(KEY, restaurant, '4821'), userId)
+        .run(pinHash(KEY, restaurant, pin), userId)
     setFor(m.idA, waiterA.userId)
     setFor(m.idB, waiterB.userId)
-    return { ...m, waiterA, waiterB }
+    return { ...m, waiterA, waiterB, pin }
   }
 
   it("the PIN leads to the person of that restaurant, and one's fingerprint is not the other's", () => {
     const m = samePin()
-    expect(pinHash(KEY, m.idA, '4821')).not.toBe(pinHash(KEY, m.idB, '4821'))
-    expect(m.accessA.signIn({ pin: '4821' }, null, '10.0.1.1')).toMatchObject({
+    expect(pinHash(KEY, m.idA, m.pin)).not.toBe(pinHash(KEY, m.idB, m.pin))
+    expect(m.accessA.signIn({ pin: m.pin }, null, '10.0.1.1')).toMatchObject({
       ok: true,
       user: { name: 'Mesera A' },
     })
-    expect(m.accessB.signIn({ pin: '4821' }, null, '10.0.1.2')).toMatchObject({
+    expect(m.accessB.signIn({ pin: m.pin }, null, '10.0.1.2')).toMatchObject({
       ok: true,
       user: { name: 'Mesera B' },
     })
@@ -237,7 +243,7 @@ describe('the same PIN in two restaurants', () => {
       m.a.people.waiter2.pin,
       m.a.people.cashier.pin,
       m.a.people.manager.pin,
-      '4821',
+      m.pin,
     ]
     if (!ownerInA.includes(onlyB.pin)) expect(inA).toMatchObject({ ok: false, code: 'wrong_pin' })
   })
@@ -245,14 +251,14 @@ describe('the same PIN in two restaurants', () => {
   it('archiving the person in A frees the PIN in A and does not touch the one in B', () => {
     const m = samePin()
     m.accessA.archiveUser(m.waiterA.userId)
-    expect(m.accessA.signIn({ pin: '4821' }, null, '10.0.1.4')).toMatchObject({ ok: false })
-    expect(m.accessB.signIn({ pin: '4821' }, null, '10.0.1.5')).toMatchObject({ ok: true })
+    expect(m.accessA.signIn({ pin: m.pin }, null, '10.0.1.4')).toMatchObject({ ok: false })
+    expect(m.accessB.signIn({ pin: m.pin }, null, '10.0.1.5')).toMatchObject({ ok: true })
   })
 
   it('regenerating the PIN in A does not change the one in B', () => {
     const m = samePin()
     m.accessA.regeneratePin(m.waiterA.userId)
-    expect(m.accessB.signIn({ pin: '4821' }, null, '10.0.1.6')).toMatchObject({
+    expect(m.accessB.signIn({ pin: m.pin }, null, '10.0.1.6')).toMatchObject({
       ok: true,
       user: { name: 'Mesera B' },
     })
@@ -260,7 +266,7 @@ describe('the same PIN in two restaurants', () => {
 
   it('the authorization PIN of an admin in B does not authorize in A', () => {
     const m = samePin()
-    const entry = m.accessA.signIn({ pin: '4821' }, null, '10.0.1.7')
+    const entry = m.accessA.signIn({ pin: m.pin }, null, '10.0.1.7')
     if (!entry.ok || !entry.device) throw new Error('did not sign in')
     const connection = m.accessA.authenticate(entry.device.token)
     if (!connection) throw new Error('no connection')

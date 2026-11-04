@@ -322,7 +322,8 @@ describe('the hub process uploads the snapshots for the panel', () => {
     hub = await startHub(env)
     const again = await signIn(env)
     // A barrier instead of a wait: a new person (PIN only) changes `people` and the catalog's
-    // version, and the checks go one at a time, so once that arrives, any earlier check is done.
+    // version, and the checks go one at a time, so once both arrive, any earlier check is done.
+    // `catalog` is the last kind of a check: waiting only for `people` would look before it goes.
     const staff = (await (await call(again, '/api/staff/read')).json()) as {
       roles: { id: string; name: string }[]
     }
@@ -341,6 +342,10 @@ describe('the hub process uploads the snapshots for the panel', () => {
               (p.content as { name: string }[]).some((x) => x.name === 'Barrera'),
           ),
       'the barrier reaching the cloud',
+    )
+    await until(
+      () => cloud.state.puts.slice(sent).some((p) => p.kind === 'catalog'),
+      'the end of that check',
     )
     // Nothing else was sent again: not the users, nor the roles, nor the configuration.
     expect(new Set(cloud.kinds().slice(sent))).toEqual(new Set(['people', 'catalog']))

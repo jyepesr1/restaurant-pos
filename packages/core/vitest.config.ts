@@ -2,9 +2,9 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    // Property tests run through thousands of random cases; with coverage on and on the CI
-    // server they exceed the default 5 s.
-    testTimeout: 30_000,
+    // Property tests run through thousands of random cases; with coverage on, on the CI server or
+    // with every package testing at once (`pnpm check`) they exceed the default 5 s, and even 30 s.
+    testTimeout: 120_000,
     coverage: {
       provider: 'v8',
       include: [

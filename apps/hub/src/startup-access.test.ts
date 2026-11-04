@@ -158,6 +158,10 @@ describe('access with the real hub process', () => {
     rmSync(join(dataDir(), KEY_FILE))
 
     hub = await startHub({ ...env, PORT: String(await freePort()) })
+    // The alert goes through another stream than the ready line: it may arrive just after.
+    const end = Date.now() + 5_000
+    while (!/The PIN key is missing/.test(hub.output()) && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 10))
     expect(hub.output()).toMatch(/The PIN key is missing/)
     const newer = fileData()
     expect(newer.pin).toMatch(/^\d{4}$/)

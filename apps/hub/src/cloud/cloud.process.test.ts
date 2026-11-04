@@ -327,6 +327,12 @@ describe('the hub process with the cloud', () => {
     await call(admin, '/api/cloud/register', { code: 'AAAA-BBBB-CCCC' })
     screen.open()
     await until(() => cloud.state.events.size === 1, 'the first event in the cloud')
+    // Not only in the cloud: the hub wrote down the answer. Killed before that, it rightly still
+    // counts the event as pending and sends it again.
+    await until(
+      () => screen.latest()?.state === 'up_to_date' && screen.latest()?.pending === 0,
+      'the hub knowing the cloud has it',
+    )
     screen.ws.close()
 
     // The PC loses power and the internet at the same time.
