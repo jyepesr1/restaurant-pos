@@ -20,6 +20,7 @@ const HUB_FIELDS = [
   'assignments',
   'affects',
   'authorized_by_id',
+  'unapplied',
 ]
 
 /** When moving or merging, an item's copy does not carry the catalog fields of ItemAdded. */

@@ -10,6 +10,8 @@ import { checkBalance, hasCurrentPayments, itemTotals, orderTotals, pricePerUnit
  */
 export type IssueType =
   | 'foreign_event'
+  /** The hub already judged it as not applicable (`unapplied`, task 1.7b). */
+  | 'unapplied'
   | 'not_in_order'
   | 'event_already_applied'
   | 'order_not_found'
@@ -128,6 +130,9 @@ export function applyEvent(status: OrderState | null, event: ApplicableEvent): R
     if (status && event.sequence !== undefined && event.sequence <= status.lastSequence) {
       return unchanged(status, 'event_already_applied', 'El evento ya estaba aplicado')
     }
+    // The hub's verdict, saved with the event (task 1.7b): it already found it does not apply. It
+    // only marks events this reducer itself rejects, so a replay gives the same state with it.
+    if (event.unapplied) return unchanged(status, 'unapplied', 'El PC de caja no lo aplicó')
     const result = apply(status, event)
     if (result.status && result.status !== status && event.sequence !== undefined) {
       result.status.lastSequence = Math.max(result.status.lastSequence, event.sequence)
@@ -157,8 +162,10 @@ export function rebuild(events: readonly ApplicableEvent[], orderId: string): Or
 /**
  * The events the order reducer does not apply: those the hub saved as a conflict (an item already
  * voided, more units than are left, an order already closed…: docs/SYNC.md#rechazos-cuarentena-y-conflictos).
- * They are stored but change nothing. Today only the owner's alerts leave them out (`alerts`); the
- * register and the reports still count them (docs/KPIS.md#eventos-guardados-como-conflicto).
+ * They are stored but change nothing. Since task 1.7b the hub marks them (`unapplied`) and the
+ * register, the reports and the alerts read the mark; this replay is only the alerts' fallback for
+ * events saved before the mark (it finds the marked ones too, since the reducer skips them). It can
+ * go once no business day inside the alerts' window (ALERT_DAYS) predates the mark.
  * Replays, in sequence order, each order whose opening is among the events (`orderIds`: those
  * orders only; by default every order with an opening) and returns the ids of the events that came
  * out with an issue other than `items_omitted`. An order without its opening among the events is not

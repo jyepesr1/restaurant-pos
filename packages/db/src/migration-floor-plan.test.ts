@@ -98,8 +98,8 @@ describe('floor plan elements on a migrated database', () => {
     const db = openDatabase(':memory:')
     expect(MIGRATIONS[0]?.name).toBe('initial')
     expect(currentVersion(db)).toBe(0)
-    expect(applyMigrations(db)).toEqual([1])
-    expect(currentVersion(db)).toBe(1)
+    expect(applyMigrations(db)).toEqual([1, 2])
+    expect(currentVersion(db)).toBe(2)
     expect(
       db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'floor_plan_elements'").get(),
     ).toBeDefined()
@@ -216,7 +216,7 @@ describe('floor plan elements on a migrated database', () => {
       db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'floor_plan_elements'").get(),
     ).toBeUndefined()
     // And it can be retried with the good one.
-    expect(applyMigrations(db)).toEqual([1])
+    expect(applyMigrations(db)).toEqual([1, 2])
   })
 })
 

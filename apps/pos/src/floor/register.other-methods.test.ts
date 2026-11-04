@@ -35,6 +35,7 @@ const reconciliationWith = (byMethod: ChargedByMethod[] = []): ShiftReconciliati
   byMethod,
   movements: [],
   cashCounts: [],
+  unapplied: [],
   cash: { charged: 0, refunds: 0, cashIn: 0, cashOut: 0, tipPayouts: 0, expected: 0 },
   closed: null,
 })

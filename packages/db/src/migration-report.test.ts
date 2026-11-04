@@ -44,7 +44,7 @@ describe('report print jobs', () => {
     const before = rows(db)
     expect(MIGRATIONS[0]?.name).toBe('initial')
     expect(applyMigrations(db)).toEqual([])
-    expect(currentVersion(db)).toBe(1)
+    expect(currentVersion(db)).toBe(2)
     expect(rows(db)).toEqual(before)
   })
 

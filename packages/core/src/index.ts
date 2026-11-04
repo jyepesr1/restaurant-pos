@@ -103,6 +103,8 @@ export {
   type ShiftMovement,
   type ShiftReconciliation,
   shiftReconciliation,
+  type UnappliedMovement,
+  unappliedMoney,
 } from './register/shift'
 export {
   ALERT_EVENT_TYPES,

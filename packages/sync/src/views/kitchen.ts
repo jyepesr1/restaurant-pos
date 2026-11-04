@@ -35,7 +35,9 @@ export function kitchenTickets(
   for (const p of orders) for (const id of Object.keys(p.status.items)) whereIs.set(id, p)
   const tickets: KitchenTicket[] = []
   for (const l of locals) {
-    if (!isCurrent(l) || l.event.type !== 'ItemsSent') continue
+    // A send the hub saved without applying (task 1.7b) put nothing in the kitchen: its dishes had
+    // already gone out with another ticket, which is the card.
+    if (!isCurrent(l) || l.event.type !== 'ItemsSent' || l.event.unapplied) continue
     const numbers = l.event.assignments?.ticket_numbers
     for (const c of l.event.data.tickets) {
       const byOrder = new Map<VisibleOrder, OrderItem[]>()

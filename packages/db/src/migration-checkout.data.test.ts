@@ -267,17 +267,17 @@ describe('print queue with jobs in every status', () => {
 describe('print queue: edge cases', () => {
   it('with an empty queue, re-running also works and leaves it empty', () => {
     const db = openDatabase(':memory:')
-    expect(applyMigrations(db)).toEqual([1])
+    expect(applyMigrations(db)).toEqual([1, 2])
     seed(db)
     expect(applyMigrations(db)).toEqual([])
     expect(rows(db)).toEqual([])
   })
 
-  it('a new database gets the single migration', () => {
+  it('a new database gets every migration', () => {
     const db = openDatabase(':memory:')
     expect(applyMigrations(db)).toEqual(MIGRATIONS.map((m) => m.version))
     expect(applyMigrations(db)).toEqual([])
-    expect(currentVersion(db)).toBe(1)
+    expect(currentVersion(db)).toBe(2)
   })
 
   it('re-running the migrations does nothing and does not touch the jobs', () => {

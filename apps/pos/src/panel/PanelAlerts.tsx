@@ -15,8 +15,8 @@ import { dataState, EVERY_MS, type Polled, timeOf, weekdayOf } from './summary'
 
 // «Alertas» in the owner's panel (task 1.11c-2): what someone did that takes money away or changes
 // what was charged (voids, cancellations, discounts and courtesies, voided payments, refunds,
-// reopened orders and register variances), one sentence each, from the newest. By kind and by
-// day, up to 14 days back.
+// reopened orders, register variances and, since task 1.7b, money the hub did not apply), one
+// sentence each, from the newest. By kind and by day, up to 14 days back.
 
 /** How many days back the alerts can be seen (the cloud's `ALERT_DAYS`). */
 export const ALERT_DAYS = 14

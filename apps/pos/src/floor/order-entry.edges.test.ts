@@ -190,6 +190,34 @@ describe('moreOrders with rejected events and other edge cases', () => {
     expect(moreOrders([])).toEqual([])
   })
 
+  it('what the hub saved without applying does not add up nor subtract (task 1.7b)', () => {
+    const p = newId()
+    const [lemonade, beer] = [newId(), newId()]
+    const lemonadeLine = item({ product_id: lemonade, quantity: 2 })
+    const unapplied = (l: LocalEvent): LocalEvent => ({
+      ...l,
+      event: { ...l.event, unapplied: true } as ApplicableEvent,
+    })
+    const locals = [
+      local('OrderOpened', p, opening),
+      local('ItemAdded', p, lemonadeLine),
+      local('ItemAdded', p, item({ product_id: beer, quantity: 1 })),
+      // Added to the order once closed: it was not sold.
+      unapplied(local('ItemAdded', p, item({ product_id: beer, quantity: 9 }))),
+      // A late void of more than there was, and a late change: neither touched the line.
+      unapplied(
+        local('ItemVoided', p, {
+          item_id: lemonadeLine.item_id,
+          quantity: 2,
+          already_prepared: false,
+          ticket_id: null,
+        }),
+      ),
+      unapplied(local('ItemChanged', p, { item_id: lemonadeLine.item_id, quantity: 0 })),
+    ]
+    expect(moreOrders(locals)).toEqual([lemonade, beer])
+  })
+
   it('the default cap is 12 products', () => {
     const p = newId()
     const locals = Array.from({ length: 15 }, (_, i) =>

@@ -12,6 +12,7 @@ import { navigate, useRoute } from '../ui/route'
 import { useTheme } from '../ui/theme'
 import { cloudLabel, SEES_CLOUD } from './cloud'
 import { floor, useFloor } from './context'
+import type { UnappliedNotice } from './engine'
 
 // The frame of the operation screens (task 1.3c): a sidebar with the sections the role can use,
 // and at the top the title, the connection and dark mode. On the register and the tablet the
@@ -138,8 +139,16 @@ export function FloorFrame({
   children: ReactNode
 }) {
   const { dark, select } = useTheme()
-  const { connection, pendingList, session, simulatingOffline, catalog, printers, cloud } =
-    useFloor()
+  const {
+    connection,
+    pendingList,
+    session,
+    simulatingOffline,
+    catalog,
+    printers,
+    cloud,
+    unappliedNotices,
+  } = useFloor()
   const downPrinters = printers.filter((i) => i.status === 'failed')
   const { route } = useRoute()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -385,6 +394,15 @@ export function FloorFrame({
               </div>
             </div>
             <div className="brand-signature" aria-hidden="true" />
+            {session && (
+              <UnappliedNotices
+                notices={unappliedNotices}
+                nameOf={(id) =>
+                  catalog?.staff.find((p) => p.id === id)?.name ??
+                  (session.user.id === id ? session.user.name : null)
+                }
+              />
+            )}
           </header>
           <main className="flex-1">{children}</main>
         </div>
@@ -431,5 +449,66 @@ export function FloorFrame({
         </div>
       )}
     </div>
+  )
+}
+
+/** The band with what the hub did not apply: a screen focuses it after a failed charge. */
+export const UNAPPLIED_NOTICE_ID = 'unapplied-notice'
+
+/** Takes the focus to the notice of what the hub did not apply, if there is one on screen. */
+export const focusUnappliedNotice = () => document.getElementById(UNAPPLIED_NOTICE_ID)?.focus()
+
+/**
+ * What this device did that the hub saved without applying (task 1.7b): in the top bar (it stays
+ * in view while scrolling), on every screen, one at a time («1 de 3»): «Entendido» shows the next
+ * one. Unlike a toast it does not go away by itself: it may be money to hand back.
+ */
+function UnappliedNotices({
+  notices,
+  nameOf,
+}: {
+  notices: readonly UnappliedNotice[]
+  /** The name of whoever did it, if this device knows it. */
+  nameOf: (userId: string) => string | null
+}) {
+  const band = useRef<HTMLElement>(null)
+  const [notice] = notices
+  if (!notice) return null
+  const who = nameOf(notice.userId)
+  return (
+    <section
+      ref={band}
+      id={UNAPPLIED_NOTICE_ID}
+      tabIndex={-1}
+      aria-label="Lo que no se aplicó"
+      className="border-t-2 border-alert-strong bg-alert-soft px-3 py-2 text-alert-text md:px-5"
+    >
+      {/* A new notice is a new alert: the screen reader reads it when it shows. */}
+      <div key={notice.eventId} role="alert" className="flex flex-wrap items-center gap-3">
+        <Icon name="warning" className="size-6 shrink-0 self-start" />
+        <p className="min-w-0 flex-1 basis-56">
+          <span className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <span className="font-semibold">
+              {who ? `No se aplicó (lo hizo ${who})` : 'No se aplicó'}
+            </span>
+            {notices.length > 1 && (
+              <span className="figures text-sm">{`1 de ${notices.length}`}</span>
+            )}
+          </span>
+          {notice.text}
+        </p>
+        <Button
+          className="ml-auto"
+          aria-label={`Entendido: ${notice.text}`}
+          onClick={() => {
+            void floor.acknowledgeUnapplied(notice.eventId)
+            // The next one shows in the same place: the focus stays on it.
+            if (notices.length > 1) band.current?.focus()
+          }}
+        >
+          Entendido
+        </Button>
+      </div>
+    </section>
   )
 }

@@ -3,15 +3,23 @@ import type { ApplicableEvent } from '../events/order'
 import { rebuild, unappliedEvents } from '../order/apply'
 import type { OrderState } from '../order/state'
 import { orderTotals } from '../order/totals'
-import { isLargeVariance, methodKeyOf, type ShiftReconciliation } from '../register/shift'
+import {
+  isLargeVariance,
+  methodKeyOf,
+  type ShiftReconciliation,
+  type UnappliedMovement,
+} from '../register/shift'
 import type { Cancellation, VoidEntry } from './report'
 
 // The owner's alerts for a business day (task 1.11c-2, docs/PANEL.md#alertas): what someone did
 // that takes money away or changes what was already charged, with who did it, who authorized it,
-// why and for how much. Product voids and canceled orders come from `report()`; the rest comes from
-// the day's events. An event the hub saved as a conflict (its order did not apply it) is never an
-// alert, though `report()` still counts it (docs/KPIS.md#eventos-guardados-como-conflicto). Only
-// computes: whoever calls it gathers the events.
+// why and for how much. Product voids, canceled orders and money the hub did not apply come from
+// `report()`; the rest comes from the day's events. An event the hub saved as a conflict (its order
+// did not apply it) is never the alert of what it tried to do: money of that kind is its own alert
+// (`unapplied_money`, task 1.7b), the rest is no alert. The hub marks such events (`unapplied`);
+// those saved before the mark are found by replaying their order (`unappliedEvents`)
+// (docs/KPIS.md#eventos-guardados-como-conflicto). Only computes: whoever calls it gathers the
+// events.
 
 export const ALERT_TYPES = [
   'item_voided',
@@ -21,6 +29,7 @@ export const ALERT_TYPES = [
   'refund',
   'order_reopened',
   'register_variance',
+  'unapplied_money',
 ] as const
 
 export type AlertType = (typeof ALERT_TYPES)[number]
@@ -112,6 +121,15 @@ export type Alert = AlertBase &
         counted: number
         openedBy: string
       }
+    | {
+        /** A payment, voided payment or refund the hub did not apply (task 1.7b). */
+        type: 'unapplied_money'
+        /** `UnappliedMovement.amount`: + charged, − returned; null without the payment. */
+        value: number | null
+        kind: UnappliedMovement['type']
+        method: PaymentMethod | null
+        customMethodId: string | null
+      }
   )
 
 /** A register close of the day (the hub's `ShiftClose` has these fields). */
@@ -137,6 +155,8 @@ export interface AlertsInput {
   orders: ReadonlyMap<string, readonly ApplicableEvent[]>
   /** The register closes of the day. */
   registerClosings: readonly AlertClosing[]
+  /** `report().unapplied` of that day: the money the hub did not apply. */
+  unapplied: readonly UnappliedMovement[]
   /** From how many pesos a variance is an alert (`register_variance_threshold`). */
   threshold: number
 }
@@ -172,8 +192,9 @@ export function alerts(entry: AlertsInput): Alert[] {
       : { id, number, tableId: null, channel: null }
 
   // What the hub saved as a conflict (an item already voided, an order already closed…) changed
-  // nothing: no alert. `report()` still lists such a void or cancellation (docs/KPIS.md), so it is
-  // left out here, from each order's own events.
+  // nothing: no alert of what it tried. The hub marks it (`unapplied`); one saved before the mark
+  // is found by replaying its order's own events (and `report()` still lists such a void or
+  // cancellation, so it is left out here too).
   const unappliedOf = new Map<string, ReadonlySet<string>>()
   const unapplied = (orderId: string): ReadonlySet<string> => {
     let set = unappliedOf.get(orderId)
@@ -221,7 +242,7 @@ export function alerts(entry: AlertsInput): Alert[] {
     for (const e of list) {
       // Each event once, from its own order, and only those recorded on the day.
       if (e.aggregate_id !== orderId || e.business_day !== day || seen.has(e.id)) continue
-      if (!ALERT_EVENTS.has(e.type) || skipped.has(e.id)) continue
+      if (!ALERT_EVENTS.has(e.type) || e.unapplied || skipped.has(e.id)) continue
       seen.add(e.id)
       const state = before(orderId, e.id)
       const common = {
@@ -241,6 +262,7 @@ export function alerts(entry: AlertsInput): Alert[] {
         const removal = list.find(
           (x) =>
             x.type === 'DiscountRemoved' &&
+            !x.unapplied &&
             !skipped.has(x.id) &&
             x.data.discount_id === d.discount_id &&
             (x.sequence ?? 0) > (e.sequence ?? 0),
@@ -286,6 +308,25 @@ export function alerts(entry: AlertsInput): Alert[] {
         })
       }
     }
+  }
+
+  // Money the hub did not apply (a payment on an order already closed…): it counts nowhere, so the
+  // owner sees it apart, with what it would have moved.
+  for (const m of entry.unapplied) {
+    const e = eventById.get(m.eventId)
+    out.push({
+      type: 'unapplied_money',
+      id: m.eventId,
+      time: m.time,
+      order: orderOf(before(m.orderId, m.eventId), m.orderId),
+      userId: m.userId,
+      authorizedById: e?.authorized_by_id ?? null,
+      reason: e?.reason ?? null,
+      value: m.amount,
+      kind: m.type,
+      method: m.method,
+      customMethodId: m.customMethodId,
+    })
   }
 
   for (const c of entry.registerClosings) {

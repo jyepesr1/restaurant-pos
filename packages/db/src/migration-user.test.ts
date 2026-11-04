@@ -40,8 +40,8 @@ describe('username and password', () => {
   it('someone with only a PIN has no username (still signs in with the PIN), also after re-running', () => {
     const { db, applied, ana } = migratedDatabase()
     expect(MIGRATIONS[0]?.name).toBe('initial')
-    expect(applied).toEqual([1])
-    expect(currentVersion(db)).toBe(1)
+    expect(applied).toEqual([1, 2])
+    expect(currentVersion(db)).toBe(2)
     const credential = () => db.prepare('SELECT * FROM user_credentials WHERE user_id = ?').get(ana)
     expect(credential()).toMatchObject({
       pin_hash: 'huella-ana',

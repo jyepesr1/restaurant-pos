@@ -87,7 +87,7 @@ En `apps/cloud/src/migrations.ts`, con el mismo estilo de la 1: seguridad por fi
 
 - **Período máximo:** 14 días en la 1.11c-1: 31 días al volumen del piloto cargan unos 35 MB de eventos de una vez, cerca de los 128 MB de un Worker. Los períodos largos vienen con la 1.11c-3.
 - **Prueba:** el panel y el hub dan **el mismo número** con las mismas historias de pedidos.
-- **Eventos guardados como conflicto:** los reportes todavía los cuentan, igual en el hub y en la nube (corregirlo es una tarea de dinero aparte); solo las alertas los dejan por fuera ([KPIS.md](KPIS.md#eventos-guardados-como-conflicto)).
+- **Eventos guardados como conflicto:** desde la tarea 1.7b el hub los marca (`unapplied`) y los reportes no los cuentan, igual en el hub y en la nube; su dinero va aparte en `Report.unapplied`. Uno guardado antes de la marca todavía cuenta ([KPIS.md](KPIS.md#eventos-guardados-como-conflicto)).
 - **Una sola foto:** cada lectura del panel (`me`, el tablero, los reportes, el salón, la caja y las alertas) es una transacción `REPEATABLE READ, READ ONLY` (`inRestaurant(…, { readOnly: true })`): el reporte de hoy, los pedidos abiertos y las cajas salen de la misma foto de la base aunque el hub suba algo en medio, y la lectura no puede escribir.
 
 ### Rutas del panel (sesión por cookie)
@@ -176,7 +176,7 @@ Las cajas abiertas salen de los eventos, como los pedidos abiertos (`apps/cloud/
 
 La nube no tiene el nombre de la caja: el panel la identifica por quién la abrió.
 
-Un pago, una anulación de pago o una devolución guardados como conflicto (llegaron a un pedido ya cerrado) todavía cuentan en lo cobrado y en el efectivo esperado, igual que en el hub y en el equipo de caja; corregirlo es una tarea de dinero aparte ([KPIS.md](KPIS.md#eventos-guardados-como-conflicto)).
+Un pago, una anulación de pago o una devolución que el hub marcó como no aplicados (llegaron a un pedido ya cerrado, tarea 1.7b) **no cuentan** en lo cobrado ni en el efectivo esperado, igual que en el hub y en el equipo de caja: van en `reconciliation.unapplied`, con su medio y su monto con signo ([DINERO.md](DINERO.md#movimientos-no-aplicados-tarea-17b)). Uno guardado antes de la marca todavía cuenta, como antes.
 
 **D3 (3-nov-2026):** el umbral de descuadre (`threshold`, y el que decide qué cierre es alerta) es **el valor actual** de `register_variance_threshold`, también para un cierre de otro día: si el dueño lo baja, un cierre viejo con una diferencia menor que el umbral de entonces pasa a ser alerta (y al revés). La justificación que el hub exigió al cerrar fue con el umbral de ese momento.
 
@@ -205,10 +205,13 @@ GET /v1/panel/register
 | `refund` | `RefundRecorded` del día | `sale_amount + tip_amount` |
 | `order_reopened` | `OrderReopened` del día | el neto con que había cerrado; `null` sin los eventos anteriores del pedido |
 | `register_variance` | los cierres de caja del día: el efectivo y cada otro medio (datáfono, apps) con `isLargeVariance(diferencia, register_variance_threshold)`, con el umbral **actual** (D3) | la diferencia, contado − esperado (negativa: faltó) |
+| `unapplied_money` (tarea 1.7b) | `report().unapplied` del día: cada pago, anulación de pago o devolución que el hub guardó sin aplicar; `kind` dice cuál, con `method` y `customMethodId` | lo que habría movido la caja, con signo: + cobrado (monto + ajuste + propina), − devuelto; `null` (y `method` null) en una anulación cuyo pago no está entre los eventos |
 
-Cada alerta lleva `id`, `time`, `order` (`{ id, number, tableId, channel }` como estaba justo antes; null en un descuadre), `userId` (quien lo hizo; en un descuadre, quien cerró), `authorizedById`, `reason` (en un descuadre, la justificación del cajero) y `value` en pesos, más los campos de su tipo. `value` es `number | null`: null solo en `payment_voided` y `order_reopened` cuando no se puede saber (el panel dice «monto no disponible», nunca un 0 inventado). Van de la más nueva a la más vieja. Un `DiscountRemoved` de un descuento puesto otro día no es alerta (quitar un descuento no le quita plata al restaurante).
+Cada alerta lleva `id`, `time`, `order` (`{ id, number, tableId, channel }` como estaba justo antes; null en un descuadre), `userId` (quien lo hizo; en un descuadre, quien cerró), `authorizedById`, `reason` (en un descuadre, la justificación del cajero) y `value` en pesos, más los campos de su tipo. `value` es `number | null`: null solo en `payment_voided`, `order_reopened` y `unapplied_money` cuando no se puede saber (el panel dice «monto no disponible», nunca un 0 inventado). Van de la más nueva a la más vieja. Un `DiscountRemoved` de un descuento puesto otro día no es alerta (quitar un descuento no le quita plata al restaurante).
 
-Un evento **guardado como conflicto** (no lo aplicó el pedido: llegó a una mesa ya cerrada, anuló un producto ya anulado) **no es alerta**: `alerts()` lo deja por fuera por sí misma, también la anulación o cancelación que `report()` todavía lista; un `DiscountRemoved` guardado así no marca el descuento como quitado. Para eso la nube le pasa también todos los eventos de los pedidos de las anulaciones y cancelaciones del día; sin la apertura del pedido, el evento sí es alerta ([KPIS.md](KPIS.md#eventos-guardados-como-conflicto)).
+Un evento **guardado como conflicto** (no lo aplicó el pedido: llegó a una mesa ya cerrada, anuló un producto ya anulado) **no es alerta de lo que intentó**; si es dinero (un pago, una anulación de pago, una devolución), es una alerta **`unapplied_money`**, «Dinero no aplicado» en el panel, en rojo, con monto, medio, mesa y quién: alguien pudo recibir o entregar ese dinero y no está en la caja. Una anulación de producto, una cancelación o un descuento no aplicados no son alerta (no movieron dinero; el equipo que los mandó ya avisó). Un evento guardado antes de la marca se reconoce volviendo a aplicar su pedido: `alerts()` lo deja por fuera por sí misma, también la anulación o cancelación que `report()` todavía lista, y un `DiscountRemoved` guardado así no marca el descuento como quitado. Para eso la nube le pasa también todos los eventos de los pedidos de las anulaciones, las cancelaciones y el dinero no aplicado del día; sin la apertura del pedido, el evento viejo sí es alerta ([KPIS.md](KPIS.md#eventos-guardados-como-conflicto)).
+
+En la pantalla, «Dinero no aplicado» va en el filtro por tipo y en rojo, con la leyenda «Rojo: salió dinero, la caja no cuadró o hubo dinero que no se aplicó».
 
 ```
 GET /v1/panel/alerts?day=YYYY-MM-DD

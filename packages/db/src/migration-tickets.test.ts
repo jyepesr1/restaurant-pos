@@ -114,8 +114,8 @@ describe('tickets: overview', () => {
     const db = openDatabase(':memory:')
     expect(MIGRATIONS[0]?.name).toBe('initial')
     expect(currentVersion(db)).toBe(0)
-    expect(applyMigrations(db)).toEqual([1])
-    expect(currentVersion(db)).toBe(1)
+    expect(applyMigrations(db)).toEqual([1, 2])
+    expect(currentVersion(db)).toBe(2)
     const entry = db.prepare('SELECT * FROM migrations WHERE version = 1').get()
     expect(entry).toMatchObject({
       name: 'initial',
@@ -126,7 +126,10 @@ describe('tickets: overview', () => {
   it('re-running does nothing, and editing it after it was applied is rejected by its hash', () => {
     const { db } = migrated()
     expect(applyMigrations(db)).toEqual([])
-    const edited = [{ ...(MIGRATIONS[0] as object), sql: `${MIGRATIONS[0]?.sql}\n-- x` }]
+    const edited = [
+      { ...(MIGRATIONS[0] as object), sql: `${MIGRATIONS[0]?.sql}\n-- x` },
+      ...MIGRATIONS.slice(1),
+    ]
     expect(() => applyMigrations(db, edited as never)).toThrow(/changed after it was applied/)
   })
 
@@ -154,9 +157,9 @@ describe('tickets: nothing is lost', () => {
     const rolesBefore = base.db.prepare('SELECT * FROM roles ORDER BY id').all()
     expect(before.users).toBe(2)
     expect(before.devices).toBe(2)
-    expect(before.migrations).toBe(1)
+    expect(before.migrations).toBe(MIGRATIONS.length)
     applyMigrations(base.db)
-    // Every table keeps its count, `migrations` included (still one row).
+    // Every table keeps its count, `migrations` included (one row per migration).
     for (const t of TABLES_BEFORE) expect(count(base.db, t)).toBe(before[t])
     expect(base.db.prepare('SELECT * FROM users ORDER BY id').all()).toEqual(rowsBefore)
     expect(base.db.prepare('SELECT * FROM devices ORDER BY id').all()).toEqual(devicesBefore)

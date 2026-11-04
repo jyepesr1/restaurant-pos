@@ -48,7 +48,8 @@ export function soldOutIds(locals: readonly LocalEvent[]): Set<string> {
 /**
  * The products ordered most on this device (what it has seen), from most to least. It counts
  * the units left on each line: what was added to an identical line (`ItemChanged`) counts, what
- * was removed or voided does not.
+ * was removed or voided does not. What the hub saved without applying (`unapplied`, task 1.7b:
+ * a product added to a closed order, a void of an already voided one) changed nothing: skipped.
  */
 export function moreOrders(locals: readonly LocalEvent[], howMany = 12): string[] {
   const lines = new Map<string, { product: string; quantity: number }>()
@@ -58,6 +59,7 @@ export function moreOrders(locals: readonly LocalEvent[], howMany = 12): string[
     'ItemRemoved',
     'ItemVoided',
   ])) {
+    if (e.unapplied) continue
     if (e.type === 'ItemAdded') {
       lines.set(e.data.item_id, { product: e.data.product_id, quantity: e.data.quantity })
     } else if (e.type === 'ItemChanged' || e.type === 'ItemRemoved' || e.type === 'ItemVoided') {

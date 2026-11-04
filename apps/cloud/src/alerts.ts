@@ -20,8 +20,9 @@ import {
 import type { Sql } from './sql'
 
 // The day's alerts for the owner's panel (task 1.11c-2, docs/PANEL.md#alertas): `alerts()` of
-// @pos/core over the hub's report of the day (its voids, cancellations and register closes) and the
-// day's discounts, voided payments, refunds and reopened orders, with every event of their orders.
+// @pos/core over the hub's report of the day (its voids, cancellations, register closes and the
+// money the hub did not apply, task 1.7b) and the day's discounts, voided payments, refunds and
+// reopened orders, with every event of their orders.
 
 /** How many days back the panel can look at the alerts (the reports' longest period). */
 export const ALERT_DAYS = 14
@@ -48,6 +49,12 @@ export async function dayAlerts(
 ): Promise<DayAlerts> {
   if (scope.hubIds.length === 0) return { alerts: [], asOf: null }
   const { data, store } = loaded ?? (await cloudReportData(tx, scope, day, day))
+  const r =
+    loaded?.report ??
+    report({
+      ...data,
+      config: { sales_by_waiter: config.sales_by_waiter, rounding_mode: config.rounding_mode },
+    })
   const { result: orders } = await untilComplete(
     store,
     MAX_ROUNDS,
@@ -55,17 +62,13 @@ export async function dayAlerts(
       const ids = new Set<string>()
       for (const e of store.periodEvents(ALERT_EVENT_TYPES, day, day)) ids.add(e.aggregate_id)
       for (const e of data.events) if (REPORTED.has(e.type)) ids.add(e.aggregate_id)
+      // The unapplied money: its order says where it was (the table) and who authorized it.
+      for (const u of r.unapplied) ids.add(u.orderId)
       return new Map<string, OrderEvent[]>([...ids].map((id) => [id, store.aggregateEvents(id)]))
     },
     (missing) => loadMissing(tx, scope, store, missing),
     'Las alertas',
   )
-  const r =
-    loaded?.report ??
-    report({
-      ...data,
-      config: { sales_by_waiter: config.sales_by_waiter, rounding_mode: config.rounding_mode },
-    })
   return {
     alerts: alerts({
       day,
@@ -73,6 +76,7 @@ export async function dayAlerts(
       cancellations: r.cancellations,
       orders,
       registerClosings: data.registerClosings,
+      unapplied: r.unapplied,
       threshold: config.register_variance_threshold,
     }),
     asOf: latestReceipt(store.eventsSince(0, Number.MAX_SAFE_INTEGER)),

@@ -1,6 +1,6 @@
 import { newId, type OrderState, orderTaxes, orderTotals } from '@pos/core'
 import type { Catalog } from '@pos/sync'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '../ui/Button'
 import { digitsOnly, pesos, withDots } from '../ui/format'
 import { Label } from '../ui/Label'
@@ -21,9 +21,10 @@ import {
   trimAssignments,
 } from './checks'
 import { floor, useFloor, useLocalView } from './context'
-import { FloorFrame } from './FloorFrame'
+import { FloorFrame, focusUnappliedNotice } from './FloorFrame'
 import { CHANNELS, unitsToSend } from './order'
 import { fieldClass } from './SignIn'
+import { NOT_CHARGED, NOT_VOIDED, UnappliedError } from './unapplied'
 
 // The check for an order (task 1.6, brief §4.5): the pre-bill on screen and on paper, splitting it
 // (into equal parts or by products) and charging each part. The BALANCE is split: what was already
@@ -66,6 +67,12 @@ export function Check() {
   const [taken, setTaken] = useState(false)
   const [selectedTip, setSelectedTip] = useState<number | null>(null)
   const [editingTip, setEditingTip] = useState(false)
+  // What the hub saved without applying (task 1.7b): said here, the details in the notice above.
+  const [notApplied, setNotApplied] = useState<string | null>(null)
+  // The notice at the top is where to look: the focus goes there.
+  useEffect(() => {
+    if (notApplied) focusUnappliedNotice()
+  }, [notApplied])
 
   if (closed)
     return (
@@ -94,7 +101,10 @@ export function Check() {
   if (!visibleOrder)
     return (
       <FloorFrame title="Cuenta" back="/">
-        <p className="p-6 text-muted">Este pedido ya no está abierto.</p>
+        <div className="flex flex-col gap-3 p-6">
+          {notApplied && <NotApplied text={notApplied} />}
+          <p className="text-muted">Este pedido ya no está abierto.</p>
+        </div>
       </FloorFrame>
     )
   const order = visibleOrder.status
@@ -130,14 +140,25 @@ export function Check() {
   const payments = Object.values(order.payments).filter((p) => !p.voided)
   const unsent = unitsToSend(order)
 
-  /** A job that records events: one at a time, and the error is reported. */
-  const act = async (job: () => Promise<void>) => {
+  /**
+   * A job that records events: one at a time, and the error is reported. `whenUnapplied` is what
+   * the check says if the hub saves it without applying it.
+   */
+  const act = async (job: () => Promise<void>, whenUnapplied = NOT_CHARGED) => {
     if (taken) return
     setTaken(true)
+    setNotApplied(null)
     try {
       await job()
     } catch (e) {
-      notify(message(e))
+      // The hub saved it without applying it (the order was already closed): the panel closes,
+      // since doing it again would not apply either, and the notice at the top stays until
+      // «Entendido»; a toast that goes away is not enough for money.
+      if (e instanceof UnappliedError) {
+        setCharging(null)
+        setVoiding(null)
+        setNotApplied(whenUnapplied)
+      } else notify(message(e))
     } finally {
       setTaken(false)
     }
@@ -211,7 +232,7 @@ export function Check() {
       )
       setVoiding(null)
       notify('Pago anulado')
-    })
+    }, NOT_VOIDED)
 
   // Why checkout is not possible here, if it is not.
   const noCheckout = !canCharge
@@ -253,6 +274,7 @@ export function Check() {
   return (
     <FloorFrame title={`Cuenta · ${title}`} back={backToOrder}>
       <div className="mx-auto grid max-w-5xl gap-4 p-3 pb-28 md:grid-cols-[1fr_24rem] md:p-5">
+        {notApplied && <NotApplied text={notApplied} className="md:col-span-2" />}
         <section
           className="rounded-2xl border border-divider bg-surface shadow-float"
           aria-label="Precuenta"
@@ -814,5 +836,17 @@ function VoidPaymentPanel({
         )}
       </div>
     </SidePanel>
+  )
+}
+
+/** What the check says when the hub saved a charge or a void without applying it (task 1.7b). */
+export function NotApplied({ text, className = '' }: { text: string; className?: string }) {
+  return (
+    <p
+      role="status"
+      className={`rounded-2xl border-2 border-alert-strong bg-alert-soft p-3 font-semibold text-alert-text ${className}`}
+    >
+      {text}
+    </p>
   )
 }

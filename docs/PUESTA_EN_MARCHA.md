@@ -209,6 +209,9 @@ pnpm --filter @pos/hub start
 1. `git pull`
 2. `pnpm install`
 3. Prende Faro con el comando del paso 4, el que compila (`pnpm --filter @pos/app build && pnpm --filter @pos/hub start`).
+4. **Recarga Faro en cada equipo** (la caja, cada celular y cada tablet, también la pantalla de cocina): abre el navegador donde está Faro y desliza hacia abajo en el celular, o pulsa **F5** en el PC. Así cada equipo toma la versión nueva. Uno que no se recargue puede sumar mal la caja: por ejemplo, contar un pago que el PC de caja no aplicó y no dejar cerrar la caja.
+
+   Debes ver la pantalla de Faro como siempre. Si un equipo muestra el botón «Recargar la app», tócalo.
 
 ## Si algo falla
 
@@ -222,6 +225,8 @@ pnpm --filter @pos/hub start
 | La barra dice en rojo «N cambios sin subir · avisa a Faro» | La nube rechazó un cambio. Todo sigue guardado en el PC. Avisa a Faro |
 | El panel dice «Usuario o contraseña incorrectos» | Revisa el usuario de la caja y que su rol tenga «Entrar desde fuera del local». Tras varios intentos fallidos pide esperar unos segundos |
 | El panel dice «Sin noticias del restaurante» | El PC de caja está apagado, Faro está cerrado o el local no tiene internet |
+| Un equipo muestra en rojo «No se aplicó…» con «Entendido» | Otro equipo ya había cerrado esa cuenta. Haz lo que dice el aviso con el dinero (por ejemplo, si ya recibiste ese pago, devuélvelo al cliente) y toca «Entendido»; si hay varios, sale el siguiente («1 de 3»). Al cerrar la caja sale en «Movimientos no aplicados» y hay que escribir qué pasó |
+| Al cerrar la caja dice «Esperando a que el PC de caja confirme N movimientos» | El equipo de caja tiene pagos o movimientos que el PC de caja aún no recibió. Revisa que esté conectado al Wi-Fi y que el PC de caja esté encendido; en cuanto los confirme, sigue el cierre. Si a los 20 segundos sigue igual, dice «Todavía no confirma»: mira el contador «sin confirmar» arriba y, si no baja, avisa al dueño |
 
 ## Pendiente para esta guía
 

@@ -59,6 +59,11 @@ export function jobsForEvent(
       return 0
     }
   }
+  // What the hub saved without applying (task 1.7b) changed nothing in the order, so the kitchen has
+  // nothing to be told: a stale void or cancellation would otherwise print «ANULAR» from the state
+  // before it. No printing event needs to get past this: the pre-bill and the reprint are valid on
+  // any order (the reducer never rejects them) and the register close does not go through it.
+  if (event.unapplied) return 0
   const change = changes[0]
   const before = change?.before ?? null
   const after = change?.after ?? null

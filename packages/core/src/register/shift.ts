@@ -85,6 +85,28 @@ export interface ShiftCashCount {
   time: string
 }
 
+/**
+ * A money event of the shift the hub saved as not applied (`unapplied`, task 1.7b): it stays out
+ * of the expected amount and the methods, and is shown apart at close (DINERO.md#caja).
+ */
+export interface UnappliedMovement {
+  eventId: string
+  orderId: string
+  type: 'PaymentRecorded' | 'PaymentVoided' | 'RefundRecorded'
+  /** Null only in a voided payment whose payment is not among the events. */
+  method: PaymentMethod | null
+  customMethodId: string | null
+  /**
+   * In pesos, with the sign it would have moved the register: + charged (amount, rounding
+   * adjustment and tip), − returned. Null only like `method`.
+   */
+  amount: number | null
+  /** The part of `amount` that is tip, with the same sign (null like `amount`). */
+  tip: number | null
+  userId: string
+  time: string
+}
+
 export interface ShiftReconciliation {
   shiftId: string
   registerId: string
@@ -93,6 +115,8 @@ export interface ShiftReconciliation {
   byMethod: ChargedByMethod[]
   movements: ShiftMovement[]
   cashCounts: ShiftCashCount[]
+  /** Money events of the shift the hub did not apply: outside `cash` and `byMethod`. */
+  unapplied: UnappliedMovement[]
   cash: {
     /** What was charged in cash: amount, rounding and tip. */
     charged: number
@@ -123,7 +147,7 @@ interface ShiftPayment {
   tip: number
 }
 
-/** The payments named by the events, by id (to reverse a void). */
+/** The payments named by the events, by id (to reverse a void), applied or not. */
 function paymentsById(events: readonly ApplicableEvent[]): Map<string, ShiftPayment> {
   const payments = new Map<string, ShiftPayment>()
   for (const e of events)
@@ -159,7 +183,7 @@ type CheckoutEvent = Extract<
  * What was charged per payment method with the checkout events that `check` accepts (those of a
  * shift, those of some days): each payment adds; each void or refund subtracts from its payment's
  * method. The payments they reverse may be among the events even if they don't count (they belong
- * to another shift or day).
+ * to another shift or day). Those the hub did not apply (`unapplied`) do not count.
  */
 export function chargedBy(
   events: readonly ApplicableEvent[],
@@ -189,6 +213,7 @@ export function chargedBy(
   for (const e of events) {
     if (
       (e.type !== 'PaymentRecorded' && e.type !== 'PaymentVoided' && e.type !== 'RefundRecorded') ||
+      e.unapplied ||
       !check(e)
     )
       continue
@@ -216,6 +241,66 @@ export function chargedBy(
   return [...byMethod.values()].filter((m) => m.payments !== 0 || m.sale !== 0 || m.tip !== 0)
 }
 
+/** −n without a −0 (it would not survive JSON and breaks equality between nodes). */
+const minus = (n: number) => (n === 0 ? 0 : -n)
+
+/** A checkout event the hub did not apply, with the sign it would have moved the register. */
+function unappliedMovement(
+  e: CheckoutEvent,
+  payments: ReadonlyMap<string, ShiftPayment>,
+): UnappliedMovement {
+  const base = { eventId: e.id, orderId: e.aggregate_id, userId: e.user_id, time: timeOf(e) }
+  if (e.type === 'PaymentRecorded') {
+    const d = e.data
+    return {
+      ...base,
+      type: e.type,
+      method: d.method,
+      customMethodId: d.custom_method_id ?? null,
+      amount: d.amount + d.rounding_adjustment + d.tip,
+      tip: d.tip,
+    }
+  }
+  const payment = payments.get(e.data.payment_id)
+  if (e.type === 'PaymentVoided')
+    return {
+      ...base,
+      type: e.type,
+      method: payment?.method ?? null,
+      customMethodId: payment?.customMethodId ?? null,
+      amount: payment ? minus(payment.amount + payment.adjustment + payment.tip) : null,
+      tip: payment ? minus(payment.tip) : null,
+    }
+  return {
+    ...base,
+    type: e.type,
+    method: e.data.method,
+    customMethodId: payment?.customMethodId ?? null,
+    amount: minus(e.data.sale_amount + e.data.tip_amount),
+    tip: minus(e.data.tip_amount),
+  }
+}
+
+/**
+ * The checkout events that `check` accepts and the hub did not apply (`unapplied`, task 1.7b), in
+ * the order of the events: they count nowhere else and are shown apart (DINERO.md#caja).
+ */
+export function unappliedMoney(
+  events: readonly ApplicableEvent[],
+  check: (e: CheckoutEvent) => boolean,
+): UnappliedMovement[] {
+  const payments = paymentsById(events)
+  const list: UnappliedMovement[] = []
+  for (const e of events)
+    if (
+      (e.type === 'PaymentRecorded' || e.type === 'PaymentVoided' || e.type === 'RefundRecorded') &&
+      e.unapplied &&
+      check(e)
+    )
+      list.push(unappliedMovement(e, payments))
+  return list
+}
+
 /**
  * The shift reconciliation from the events that touch it (in the order they were applied).
  * Without its `ShiftOpened`, null.
@@ -233,6 +318,8 @@ export function shiftReconciliation(
   let closed: ShiftReconciliation['closed'] = null
 
   for (const e of events) {
+    // Money the hub did not apply goes apart (`unapplied`), never into the expected cash.
+    if (e.unapplied) continue
     switch (e.type) {
       case 'PaymentRecorded':
         if (e.data.register_shift_id === shiftId && e.data.method === 'cash')
@@ -307,6 +394,7 @@ export function shiftReconciliation(
     byMethod: chargedInShift(events, shiftId),
     movements,
     cashCounts,
+    unapplied: unappliedMoney(events, (e) => e.data.register_shift_id === shiftId),
     cash: {
       ...cash,
       expected: expectedCash({

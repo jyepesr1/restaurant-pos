@@ -44,7 +44,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.11c-3 | Panel: períodos largos (más de 14 días) y fotos de los productos | ⏳ |
 | 1.11d | Acciones a distancia desde el panel: agotar un producto, autorizar anulaciones, descuentos y cortesías, y cerrar sesiones o bloquear un usuario | ⏳ |
 | 1.11b | Carta, configuración y personal editados en la nube (también desde el panel) y bajando al hub | ⏳ |
-| 1.7b | Dinero de eventos guardados como conflicto: aviso al cajero, renglón aparte en el cierre y el Z, alerta en el panel y veredicto guardado por el hub | ⏳ |
+| 1.7b | Dinero de eventos guardados como conflicto: aviso al cajero, renglón aparte en el cierre, alerta en el panel y veredicto guardado por el hub | ✅ (falta publicarla) |
 | 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
 | 1.13 | Hub en el PC de caja (Windows) | ⏳ |
 | 1.14 | Prueba de aceptación: servicio de 2 horas con un corte de internet y la sincronización al volver (y la e2e de la Fase 0) | ⏳ |
@@ -110,7 +110,7 @@ Revisado por `revisor-codigo`, `auditor-dinero` (dos veces), `revisor-ux` y `qa-
 
 **Queda pendiente:**
 - **Publicada:** el Worker `faro-api` con esta versión quedó publicado el 3-nov-2026 (versión `f1ec7281`), el primer despliegue con Durable Objects (clase `PanelLive`). Comprobado: `/v1/health` responde, `/v1/panel/live` rechaza sin `Upgrade` (426), sin `Origin` (403) y sin sesión (401). Falta medir con el celular cuánto aguanta la conexión sin mensajes y la demora desde Colombia.
-- **Dinero de eventos en conflicto:** tarea 1.7b (abajo, en la tabla). La caja y los reportes todavía cuentan esos eventos; solo las alertas los omiten.
+- **Dinero de eventos en conflicto:** resuelto en la tarea 1.7b (abajo).
 - **No medido en Cloudflare real:** el tiempo de inactividad del WebSocket (ping cada 25 s es un supuesto), la hibernación y la latencia desde Colombia. `wrangler dev` 4.149.0 no acepta la fecha de compatibilidad de faro-api (2026-10-26); se probó con 2026-10-13.
 - **No cubierto:** revocar un PC de caja no cierra los sockets del panel al instante (la revisión de cada hora lo hace). La marca de demora en el Salón y una tarjeta «Cajas abiertas» en Hoy quedaron para después.
 - Las pruebas del proceso del hub con la nube (`cloud.process`, `snapshots.process`) fallan a veces por tiempos con la máquina cargada; corridas solas pasan.
@@ -125,26 +125,36 @@ Revisado por `revisor-codigo`, `auditor-dinero` (dos veces), `revisor-ux` y `qa-
 6. Cobra la mesa con tarjeta. En **Caja** (Más → Caja) cambia lo cobrado; en Salón la mesa queda libre.
 7. Apaga el internet del PC de caja. A los 2 minutos el panel debe decir «Sin noticias del restaurante desde las …». Vuelve a prenderlo: en segundos desaparece el aviso y se pone al día.
 
-### 1.7b — Dinero de eventos guardados como conflicto ⏳
+### 1.7b — Dinero de eventos guardados como conflicto ✅
 
-Decisión del dueño (3-nov-2026): tarea propia, aparte de la 1.11c-2. Encontrado por `auditor-dinero` al revisar el panel en vivo.
+Encontrado por `auditor-dinero` en la 1.11c-2; el dueño la dejó como tarea propia (3-nov-2026). Decisiones del dueño (4-nov-2026) y diseño en la [enmienda a ADR-007](DECISIONES.md).
 
-**El problema:** cuando un equipo desactualizado registra un movimiento de dinero sobre una mesa que otro equipo ya cerró (anulación de pago, devolución, pago), el hub lo guarda como «conflicto» (`order_closed`, también `item_already_voided`, `invalid_quantity`) y el pedido no lo aplica. Hoy:
-- la caja y los reportes **sí** lo cuentan (resta o suma al efectivo esperado y a los medios), aunque el pedido diga otra cosa;
-- el cajero no se entera: su equipo le muestra «hecho»;
-- ninguna pantalla lista los conflictos (KPIS.md y SYNC.md dicen que «aparece en la caja», pero no existe).
+**El problema:** un equipo desactualizado registra un cambio sobre una cuenta que otro equipo ya cambió o cerró (un pago, una anulación de pago o una devolución en una cuenta cerrada, un producto ya anulado…). El hub lo guarda como conflicto y el pedido no lo aplica, pero la caja y los reportes sí lo contaban, y el cajero veía «hecho».
 
-Las alertas del panel ya no los cuentan (1.11c-2), para no repetir dinero.
+**Qué cambió:**
+- **El hub guarda el veredicto** en el evento: marca «no aplicado» (`unapplied`, columna nueva en la migración `0002_event_verdict`). Viaja a los equipos y a la nube con el evento, y todos filtran por esa marca: el efectivo esperado, lo cobrado por medio, el fondo de propinas, las anulaciones y cancelaciones del informe y las alertas dejan esos movimientos fuera. Un equipo no puede poner la marca: el hub la quita si llega.
+- **Al cajero:** un aviso rojo fijo arriba que no se quita solo («Entendido»), uno a la vez («1 de 3»), con quién lo hizo y qué hacer con el dinero; sobrevive a reiniciar la app y se quita solo si un hub restaurado termina aplicándolo. El cobro dice «No se cobró: la cuenta ya estaba cerrada» y no cierra la mesa.
+- **Al cerrar la caja:** renglón aparte «Movimientos no aplicados» (medio y monto, fuera de «Debería haber»); si hay alguno, se exige justificación (también en el hub: `missing_justification`). No se deja guardar el conteo ni cerrar mientras el equipo tenga movimientos de dinero del turno sin confirmar.
+- **Al dueño:** alerta «Dinero no aplicado» en el panel, en rojo, con monto, mesa y quién.
+- **Cocina:** una anulación, cancelación o envío no aplicado ya no imprime ni dibuja comandas de más.
+- **Lo viejo no cambia:** los eventos de antes de la marca siguen contando igual, sin rellenar desde la tabla `conflicts`; los cierres y Z guardados se reimprimen idénticos. El Z impreso no lleva renglón nuevo (decisión del dueño).
 
-**Qué hacer (propuesta de la auditoría):**
-1. El hub guarda el veredicto al confirmar el evento (marca «no aplicado» en el evento, también al subirlo a la nube) y todos (equipo, hub, nube) filtran por esa marca, en vez de deducirlo reaplicando el reductor (que cambiaría con cada versión).
-2. El equipo avisa al cajero en cuanto se confirma con conflicto: «No se aplicó: no entregues ni recibas dinero; reabre la cuenta».
-3. El cierre de caja y el cierre Z llevan un renglón aparte, fuera del esperado: «Movimientos no aplicados», con medio y monto; si hay alguno en el turno, se exige justificación.
-4. Alerta propia en el panel («dinero no aplicado») con el monto.
-5. No permitir cerrar la caja con eventos de dinero pendientes de confirmar en el turno.
-6. Los cierres ya guardados siguen sumando igual al reimprimirse (regla por fecha de cierre o desglose guardado en `ShiftClosed`).
-7. Documentar en DINERO.md (fórmula de la caja) y corregir KPIS.md y SYNC.md.
-8. Pruebas: el equipo real (`checks.ts`) contra el hub en vivo, tras reinicio, la nube y el cierre guardado, con historias al azar con conflictos; `PaymentRecorded` en conflicto en efectivo y con tarjeta.
+Revisado por `revisor-codigo`, `auditor-dinero`, `revisor-ux` y `qa-pruebas` (historias al azar con tres cajas que se desconectan, reinicios del hub, la nube con PGlite, reenvío tras restaurar, un equipo que intenta poner la marca, base vieja migrada a 0002).
+
+**Queda pendiente:**
+- **Publicar:** primero la nube (`pnpm --filter @pos/cloud run deploy`, pide permiso), después el hub, y recargar cada equipo (app 0.11). Una app vieja en caché sigue contando ese dinero: el hub le rechaza el cierre («la caja no coincide») hasta recargarla.
+- **Borrar `unappliedEvents`** (respaldo de las alertas para eventos sin marca) cuando pasen 14 días desde la publicación del hub.
+- `pnpm check` no pasa completo por dos pruebas del hub con la nube (`cloud.process` «a restarted hub keeps the link…» y `snapshots.process` «a restarted hub does not send again…»): desde el 4-nov-2026 fallan siempre, también en el commit anterior a esta tarea sin sus cambios, así que no las causa la 1.7b. Queda para revisarlas aparte. `restaurants.test` «a PIN from B…» falló una vez por un PIN al azar repetido y pasa sola.
+- Un hub restaurado de un respaldo vuelve a juzgar los eventos que no tenía: el veredicto puede cambiar; la nube guarda la primera copia y la otra queda en `divergent_events`.
+
+**Cómo probarlo** (con el hub y la app nuevos):
+
+1. En el PC de caja: `pnpm --filter @pos/app build && pnpm --filter @pos/hub start`. Abre la Mesa 5 desde un celular de mesero, agrega un producto y envíalo.
+2. En ese celular pon **modo avión**. Agrega otro producto a la Mesa 5 y toca **Enviar** (queda pendiente: la barra dice que hay cambios por subir).
+3. En la caja cobra la Mesa 5 completa y ciérrala.
+4. Quita el modo avión del celular. En segundos debe salir arriba un **aviso rojo** «No se aplicó (lo hizo …)»: ese producto no se agregó a la Mesa 5 porque la cuenta ya estaba cerrada, con qué hacer y **Entendido**. En cocina no debe salir comanda nueva.
+5. Cierra y abre la app del celular sin tocar Entendido: el aviso sigue. Toca **Entendido**: desaparece y no vuelve.
+6. El caso con dinero (dos cajas que cobran la misma mesa casi a la vez) es difícil de provocar a mano: lo cubren las pruebas automáticas. Si pasa, al cerrar esa caja debe salir «Movimientos no aplicados» y pedir explicación, y en el panel la alerta «Dinero no aplicado».
 
 ### Logo del restaurante en la precuenta (2-nov-2026) ✅
 

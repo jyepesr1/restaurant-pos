@@ -134,6 +134,22 @@ En el cierre (tarea 1.8), cada medio que no es efectivo se compara con lo que di
 
 Un `PaymentVoided` o reembolso cae en el turno en que se registra, no en el del pago original. La reversa en efectivo de un pago anulado es lo que se cobró: `amount + rounding_adjustment + tip`.
 
+### Movimientos no aplicados (tarea 1.7b)
+
+Un pago, una anulación de pago o una devolución que el hub **guardó sin aplicar** (llegó de un equipo que no estaba al día a un pedido ya cerrado: lleva la marca `unapplied`, [SYNC.md](SYNC.md#rechazos-cuarentena-y-conflictos)) **no entra en ninguna sumatoria** de arriba: ni en `esperado_efectivo`, ni en `esperado_otro_medio`, ni en lo cobrado por medio, ni en el fondo de propinas. Va en un **renglón aparte**, «Movimientos no aplicados», con lo que habría movido la caja:
+
+```
+monto_no_aplicado = + (amount + rounding_adjustment + tip)   un pago
+                    − (amount + rounding_adjustment + tip)   una anulación de pago (del pago anulado; sin el pago a mano, «monto no disponible»)
+                    − (sale_amount + tip_amount)             una devolución
+```
+
+- El cierre de la caja **exige justificación** cuando el turno tiene alguno, con la misma regla que un descuadre grande (sin PIN de supervisor extra): el cajero explica qué pasó con ese dinero. El hub rechaza el cierre sin ella con `missing_justification`.
+- El equipo de caja **no deja guardar el conteo** mientras tenga movimientos de dinero del turno (pagos, anulaciones, devoluciones, entradas y salidas) sin confirmar por el hub: «Esperando a que el PC de caja confirme N movimientos». Así lo esperado no cambia después de contar porque el hub no aplicó uno.
+- **El cierre Z impreso no cambia** (decisión del dueño): no lleva el renglón.
+- Un evento guardado **antes** de la marca (sin `unapplied`) sigue contando como antes; no se rejuzga, para que los cierres y Z ya guardados se reimpriman igual.
+- Pruebas: `packages/core` (`shiftReconciliation` y `report()` con eventos marcados), `packages/sync` (el hub rechaza el cierre sin justificación), `apps/cloud/src/conflicts.test.ts` (la nube da lo mismo que el hub, con y sin la marca) y `apps/pos/src/floor/engine.unapplied.test.ts` (el equipo lo deja aparte y el cierre pide explicarlo).
+
 ## Fondo de propinas
 
 - Todas las propinas del día, de todos los medios, van a un fondo común (decisión del dueño).

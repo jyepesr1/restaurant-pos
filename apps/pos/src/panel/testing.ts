@@ -33,6 +33,7 @@ export function reportOf(sales: Partial<Report['sales']> = {}, day = '2026-10-29
     cancellations: [],
     discounts: [],
     tipPool: { tips: 0, paidOut: 0, balance: 0 },
+    unapplied: [],
   }
 }
 
@@ -218,6 +219,7 @@ export function reconciliationOf(over: Partial<ShiftReconciliation> = {}): Shift
     ],
     movements: [],
     cashCounts: [],
+    unapplied: [],
     cash: {
       charged: 480_000,
       refunds: 0,
@@ -398,6 +400,52 @@ export const ALERTS: Alert[] = [
     name: 'Pinsa',
     units: 1,
     alreadyPrepared: true,
+  },
+]
+
+/**
+ * Money the hub did not apply (task 1.7b), one of each kind, from the newest: a payment and a
+ * refund with their method, and a voided payment whose payment is not among the events.
+ */
+export const UNAPPLIED_ALERTS: Alert[] = [
+  {
+    type: 'unapplied_money',
+    id: 'u3',
+    time: '2026-10-30T02:35:00.000Z',
+    order,
+    userId: CASHIER,
+    authorizedById: OWNER,
+    reason: 'Plato frío',
+    value: -12_000,
+    kind: 'RefundRecorded',
+    method: 'other',
+    customMethodId: 'qr',
+  },
+  {
+    type: 'unapplied_money',
+    id: 'u2',
+    time: '2026-10-30T02:34:00.000Z',
+    order,
+    userId: CASHIER,
+    authorizedById: null,
+    reason: 'Cobro duplicado',
+    value: null,
+    kind: 'PaymentVoided',
+    method: null,
+    customMethodId: null,
+  },
+  {
+    type: 'unapplied_money',
+    id: 'u1',
+    time: '2026-10-30T02:33:00.000Z',
+    order,
+    userId: CASHIER,
+    authorizedById: null,
+    reason: null,
+    value: 44_900,
+    kind: 'PaymentRecorded',
+    method: 'cash',
+    customMethodId: null,
   },
 ]
 

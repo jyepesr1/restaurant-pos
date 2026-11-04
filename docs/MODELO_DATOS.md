@@ -196,7 +196,9 @@ Agotado (86) no es un campo editable: son los eventos `ProductSoldOut` / `Produc
 
 ### Tabla `events`
 
-Una sola tabla para todos los eventos. Columnas = el sobre de [SYNC.md](SYNC.md#sobre-del-evento): `id`, `type`, `schema_version`, `aggregate_type` (`order`, `table`, `product`, `catalog`, `register_shift`, `user`, `system`; desde la Fase 1 también `card_terminal`, `reconciliation` y, en la Fase 2, `document`), `aggregate_id`, `related`, `data`, `session_id`, `user_id`, `device_id`, `authorization_id`, `reason`, `device_time`, `hub_estimated_time`, `base_sequence`, y lo que agrega el hub: `sequence`, `received_at`, `business_day`, `assignments`, `affects` (pedidos a los que se aplica, resuelto por el hub) y `authorized_by_id`.
+Una sola tabla para todos los eventos. Columnas = el sobre de [SYNC.md](SYNC.md#sobre-del-evento): `id`, `type`, `schema_version`, `aggregate_type` (`order`, `table`, `product`, `catalog`, `register_shift`, `user`, `system`; desde la Fase 1 también `card_terminal`, `reconciliation` y, en la Fase 2, `document`), `aggregate_id`, `related`, `data`, `session_id`, `user_id`, `device_id`, `authorization_id`, `reason`, `device_time`, `hub_estimated_time`, `base_sequence`, y lo que agrega el hub: `sequence`, `received_at`, `business_day`, `assignments`, `affects` (pedidos a los que se aplica, resuelto por el hub), `authorized_by_id` y `unapplied`.
+
+`unapplied` (tarea 1.7b, migración `0002_event_verdict`): `INTEGER NOT NULL DEFAULT 0 CHECK (unapplied IN (0, 1))`. Vale 1 cuando el hub guardó el evento como conflicto que su pedido **no aplica** (un pago a un pedido ya cerrado, la anulación de un producto ya anulado…); en el evento viaja como `unapplied: true` y solo cuando vale 1, así el JSON de los eventos viejos no cambia ni un byte ([SYNC.md](SYNC.md#la-marca-unapplied-tarea-17b)). La migración no rejuzga los eventos ya guardados: quedan en 0. La tabla sigue siendo solo de agregar (`UPDATE`/`DELETE` abortan).
 
 `reason` vive solo en el sobre (no dentro de `data`). Los eventos que emite el propio hub usan el usuario y dispositivo `system`.
 
@@ -256,7 +258,7 @@ Tipos de conflicto (solo situaciones causadas por un dispositivo desactualizado)
 ### Reglas de aplicación
 
 - `applyEvent(status, event)` (`packages/core/src/order/apply.ts`) es **total y determinista**: nunca lanza error y da el mismo resultado en celular, hub y nube. Cuando no puede aplicar un evento devuelve el estado sin cambios y un `issue` (`IssueType`); con eso el hub decide si es rechazo o conflicto.
-- Un evento válido que no se puede aplicar al estado (por ejemplo anular un ítem ya anulado) **no cambia la proyección**, se guarda igual y el hub emite un `ConflictoDetectado`.
+- Un evento válido que no se puede aplicar al estado (por ejemplo anular un ítem ya anulado) **no cambia la proyección**, se guarda igual con la marca `unapplied` y el hub emite un `ConflictoDetectado`. El reductor salta un evento con la marca (`issue: 'unapplied'`) sin volver a juzgarlo, y su dinero no cuenta en la caja ni en los reportes ([DINERO.md](DINERO.md#movimientos-no-aplicados-tarea-17b)).
 - Un ítem agregado a un pedido que ya estaba cerrado va a un **pedido de rescate**: el hub emite `RescueOrderCreated` y pone el rescate en `affects` del evento, con conflicto `order_closed`; no cuenta como venta hasta cobrarse.
 - Un evento sobre un ítem que se movió a otro pedido se aplica donde esté el ítem: el hub lo resuelve y lo pone en `affects`, con conflicto informativo `item_moved`.
 - Con descuentos en la línea o el pedido dividido, cambiar cantidad, anular, mover o agregar extras con precio exige antes `DiscountRemoved` o `SplitUndone`.

@@ -65,6 +65,7 @@ Los tonos `free`, `progress` y `alert` **no cambian con la marca**.
 - **Tablet (768 a 1023 px):** la misma barra, solo con íconos (80 px).
 - **Celular:** barra superior con menú; la barra lateral se abre como cajón desde la izquierda.
 - **Barra superior:** título de la pantalla, conexión y pendientes, acciones de la pantalla y modo oscuro. En el celular cabe en una fila: «Solo red local» se abrevia «Local»; el modo oscuro también está en el menú.
+- **Lo que no se aplicó** (tarea 1.7b): una franja roja al pie de la barra superior (es parte de ella, así que no se va al bajar), en todas las pantallas (`alert-soft` con borde superior `alert-strong`, ícono de advertencia, «No se aplicó (lo hizo Ana)» y el texto), con lo que este equipo hizo y el PC de caja guardó sin aplicar. **De a uno**: si hay varios dice «1 de 3» y al tocar «Entendido» sale el siguiente en el mismo lugar (el foco se queda en la franja). No se va solo (no es un aviso de 5 s): es dinero que quizá haya que devolver. Vuelve si se cierra la app sin tocarlo, y se quita solo si el PC de caja (restaurado de un respaldo) al final sí lo aplicó. Tras un cobro o una anulación de pago que no se aplicó, la cuenta dice «No se cobró: la cuenta ya estaba cerrada. Mira el aviso de arriba.» («No se anuló el pago…» para una anulación) y el foco va a la franja.
 
 ## Panel del dueño en la nube (`panel.html`, tarea 1.11c)
 
@@ -87,7 +88,7 @@ Es otra entrada de la app, con su propio marco (`src/panel/PanelFrame.tsx`) y si
   - cuando la lectura falla, «Intentar ahora» (48 px) en el mismo bloque;
   - antes de la primera respuesta, «Leyendo…» y, a los 5 s, «Tarda más de lo normal»; si falla, el aviso va una sola vez (sin la línea de estado encima).
 - **«En vivo»:** pequeño y en gris junto al título: «En vivo» con un punto del color del texto, «Conectando…» o «Se actualiza cada 15 s». Nunca en verde (verde es libre y listo).
-- **Alertas:** cada fila lleva su tipo en palabras («Anulación», «Cortesía»…). Rojo para lo que sacó dinero o descuadró la caja; ámbar, «para revisar», para descuentos, cortesías y cuentas reabiertas. Una leyenda arriba de la lista lo dice.
+- **Alertas:** cada fila lleva su tipo en palabras («Anulación», «Cortesía», «No aplicado»…). Rojo para lo que sacó dinero, descuadró la caja o es dinero que el PC de caja no aplicó; ámbar, «para revisar», para descuentos, cortesías y cuentas reabiertas. Una leyenda arriba de la lista lo dice.
 - **Comparación con el mismo día de la semana pasada a la misma hora:** flecha y porcentaje. La subida va en verde; la bajada, en neutro con su flecha (no es una alarma).
 
 ## Pantallas

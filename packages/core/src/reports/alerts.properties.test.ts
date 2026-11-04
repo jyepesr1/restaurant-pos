@@ -95,6 +95,7 @@ function closing(n: number, variance: number): AlertClosing {
       byMethod: [],
       movements: [],
       cashCounts: [],
+      unapplied: [],
       cash: { charged: 0, refunds: 0, cashIn: 0, cashOut: 0, tipPayouts: 0, expected: 100_000 },
       closed: {
         expected: 100_000,
@@ -119,6 +120,7 @@ describe('alerts() does not depend on the order it is handed things', () => {
       orders: new Map(orders.map((o) => [o.id, o.events])),
       registerClosings: closings,
       threshold: 1_000,
+      unapplied: [],
     })
     expect(base.map((a) => a.type).sort()).toEqual(
       [...Array(4).fill('discount'), 'register_variance', 'register_variance'].sort(),
@@ -135,6 +137,7 @@ describe('alerts() does not depend on the order it is handed things', () => {
             orders: new Map(o.map((x) => [x.id, x.events])),
             registerClosings: c,
             threshold: 1_000,
+            unapplied: [],
           })
           expect(list).toEqual(base)
           expect(new Set(list.map((a) => a.id)).size).toBe(list.length)
@@ -153,6 +156,7 @@ describe('alerts() does not depend on the order it is handed things', () => {
       orders: new Map([[o.id, o.events]]),
       registerClosings: [],
       threshold: 0,
+      unapplied: [],
     })
     expect(forward).toHaveLength(1)
     const reversed = alerts({
@@ -162,6 +166,7 @@ describe('alerts() does not depend on the order it is handed things', () => {
       orders: new Map([[o.id, [...o.events].reverse()]]),
       registerClosings: [],
       threshold: 0,
+      unapplied: [],
     })
     expect(reversed).toHaveLength(1)
     expect(reversed[0]?.value).toBe(2_000)

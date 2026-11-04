@@ -193,6 +193,23 @@ interface Identified {
   issue: string | null
 }
 
+/**
+ * The event without the hub's verdict (`unapplied`, task 1.7b), if a device sends it: only the hub
+ * gives it (an app cached from before resends what it stored after a restore). Without it the
+ * event keeps its fingerprint, so it is recognized as the same one.
+ */
+function withoutVerdict(raw: unknown): unknown {
+  if (
+    typeof raw !== 'object' ||
+    raw === null ||
+    Array.isArray(raw) ||
+    !Object.hasOwn(raw, 'unapplied')
+  )
+    return raw
+  const { unapplied: _u, ...rest } = raw as Record<string, unknown>
+  return rest
+}
+
 function identify(raw: unknown): Identified {
   const candidate = (raw as { id?: unknown } | null)?.id
   const id = typeof candidate === 'string' && candidate.length <= 100 ? candidate : ''
@@ -313,7 +330,8 @@ export class HubSync {
     const rejectedList = new Set<string>()
     const results: EventResult[] = []
     const acceptedEvents: OrderEvent[] = []
-    for (const raw of events) {
+    for (const sent of events) {
+      const raw = withoutVerdict(sent)
       const data = identify(raw)
       let processed: { result: EventResult; accepted: OrderEvent | null }
       try {
@@ -468,8 +486,16 @@ export class HubSync {
       // With the latest count, made after the shift's last cash movement.
       if (reconciliation.cashCounts.at(-1)?.id !== cashCount.id) return 'cash_count_not_latest'
       const events = this.shiftEvents.get(shift.id) ?? []
+      // Only what moves this shift's expected cash: not money the hub did not apply (task 1.7b),
+      // nor another shift's payment brought in for a void recorded here (that void is what moves
+      // it). A count made before them is still current, as the register screen sees it.
       const placement = (types: readonly string[]) =>
-        events.findLastIndex((e) => types.includes(e.type))
+        events.findLastIndex(
+          (e) =>
+            types.includes(e.type) &&
+            !e.unapplied &&
+            (e.type !== 'PaymentRecorded' || e.data.register_shift_id === shift.id),
+        )
       if (
         placement(['PaymentRecorded', 'PaymentVoided', 'RefundRecorded', 'CashMovementRecorded']) >
         placement(['CashCountRecorded'])
@@ -497,8 +523,12 @@ export class HubSync {
       const threshold =
         this.config.checkoutRules?.().varianceThreshold ?? REGISTER_VARIANCE_THRESHOLD
       const large = (d: number) => isLargeVariance(d, threshold)
+      // Money of the shift the hub did not apply (task 1.7b) also asks for a justification: the
+      // cashier says what happened with it (DINERO.md#caja).
       if (
-        (large(event.data.variance) || others.some((o) => large(o.variance))) &&
+        (large(event.data.variance) ||
+          others.some((o) => large(o.variance)) ||
+          reconciliation.unapplied.length > 0) &&
         !event.data.justification
       )
         return 'missing_justification'
@@ -636,6 +666,9 @@ export class HubSync {
         return this.reject(connection, data, issue.type, receivedAt)
       }
       conflict = { type, description: issue.description, aggregateId: event.aggregate_id }
+      // Saved, but its order does not apply it: the verdict goes with the event (task 1.7b), so its
+      // money counts nowhere and every node skips it the same way.
+      candidate.unapplied = true
     }
     const table = issue
       ? null
@@ -751,6 +784,7 @@ export class HubSync {
         assignments,
         affects,
         authorized_by_id,
+        ...(event.unapplied ? { unapplied: true as const } : {}),
       },
       conflict: this.store.conflictOf(event.id)?.type ?? null,
     }

@@ -12,10 +12,16 @@ Las fórmulas de cada número de los reportes (tarea 1.9). Todos salen de los **
 
 ### Eventos guardados como conflicto
 
-El hub guarda **sin aplicar** lo que un equipo que no estaba al día mandó a un pedido que ya no lo admite: un producto ya anulado o con menos unidades de las que se quieren quitar, un pedido ya cerrado (un pago, una anulación de pago, una devolución, un descuento, una cancelación o un cierre que llegan después de que otro equipo cerró la mesa) ([SYNC.md](SYNC.md#rechazos-cuarentena-y-conflictos)). Queda para que la caja lo revise, pero **no cambió el pedido**.
+El hub guarda **sin aplicar** lo que un equipo que no estaba al día mandó a un pedido que ya no lo admite: un producto ya anulado o con menos unidades de las que se quieren quitar, un pedido ya cerrado (un pago, una anulación de pago, una devolución, un descuento, una cancelación o un cierre que llegan después de que otro equipo cerró la mesa) ([SYNC.md](SYNC.md#rechazos-cuarentena-y-conflictos)). Queda guardado, pero **no cambió el pedido**.
 
-- **Las alertas del panel no lo cuentan** (tarea 1.11c-2): no es una alerta de anulación, cancelación, descuento, pago anulado, devolución ni reapertura, y un `DiscountRemoved` guardado así no marca el descuento como quitado. `alerts()` de `@pos/core` lo reconoce por sí misma volviendo a aplicar los eventos de cada pedido con el reductor (`unappliedEvents`): el que sale con un problema (distinto de «ítems que no pasaron» al mover) no se aplicó. Un pedido cuya apertura no está entre los eventos leídos no se juzga: su evento sí es alerta.
-- **La caja y los reportes todavía sí lo cuentan**, como antes: el reporte lo lista como anulación o cancelación y lo suma en los medios de pago, y la caja (el hub, el equipo de caja y la nube) lo resta del efectivo esperado. Corregirlo es una **tarea de dinero aparte**, pendiente, que debe cuidar que los cierres Z ya guardados sigan sumando igual al reimprimirse.
+Desde la tarea 1.7b el hub lo **marca** al guardarlo (`unapplied: true` en el evento, [SYNC.md](SYNC.md#rechazos-cuarentena-y-conflictos)) y nada lo cuenta:
+
+- **Reportes:** no está en ventas, medios de pago, propinas ni fondo de propinas; una anulación de producto o una cancelación marcada **no se lista** en anulaciones ni cancelaciones; un cierre marcado no es un cierre más. El dinero va aparte en `Report.unapplied` (pagos, anulaciones de pago y devoluciones, con el signo de [DINERO.md](DINERO.md#movimientos-no-aplicados-tarea-17b)).
+- **Caja:** no entra en el efectivo esperado ni en los demás medios; el cierre lo muestra aparte y exige justificación. El cierre Z impreso no cambia.
+- **Alertas del panel:** el dinero marcado es una alerta propia, **«Dinero no aplicado»**, con monto, mesa y quién ([PANEL.md](PANEL.md#alertas)); lo demás (una anulación de producto, una cancelación, un descuento, una reapertura) no es alerta, y un `DiscountRemoved` así no marca el descuento como quitado.
+- **El equipo** que lo mandó avisa a quien lo hizo, con un aviso que no se quita solo.
+
+Un evento guardado **antes** de la marca (sin `unapplied`) se juzga como antes: la caja y los reportes **todavía lo cuentan** (no se rejuzga, para que los cierres y Z ya guardados sumen igual al reimprimirse), y las alertas lo reconocen volviendo a aplicar los eventos de su pedido con el reductor (`unappliedEvents`): el que sale con un problema (distinto de «ítems que no pasaron» al mover) no es alerta. Un pedido cuya apertura no está entre los eventos leídos no se juzga: su evento sí es alerta. Ese respaldo se quita pasados 14 días (los de las alertas) desde la publicación de la 1.7b.
 
 ## Ventas
 
@@ -39,7 +45,7 @@ Identidad: `neto = Σ (amount − reembolso de venta)` de los pagos de esos pedi
 
 ## Por medio de pago
 
-Sobre los pagos **registrados** en el período (no los de los pedidos cerrados): por medio (los propios por su nombre), venta = Σ (monto + ajuste de redondeo) y propina = Σ propina, menos las anulaciones y reembolsos registrados en el período. Por eso puede diferir del neto: un abono de una mesa que se cierra mañana cuenta hoy aquí y mañana en ventas.
+Sobre los pagos **registrados** en el período (no los de los pedidos cerrados): por medio (los propios por su nombre), venta = Σ (monto + ajuste de redondeo) y propina = Σ propina, menos las anulaciones y reembolsos registrados en el período. Por eso puede diferir del neto: un abono de una mesa que se cierra mañana cuenta hoy aquí y mañana en ventas. Lo que el hub no aplicó (`unapplied`) no está aquí ([arriba](#eventos-guardados-como-conflicto)).
 
 ## Por mesero
 
@@ -59,8 +65,8 @@ Por producto y variante, sobre las líneas de los pedidos cerrados: unidades ven
 
 ## Anulaciones y cancelaciones
 
-- **Anulaciones**: cada `ItemVoided` del período, con producto, unidades, valor (unidades × precio con extras, del pedido tal como estaba al anular: el ítem pudo pasar después a otra mesa), motivo, si la cocina ya lo había hecho (merma), quién y quién autorizó.
-- **Cancelaciones**: cada `OrderCanceled` del período, con lo que tenía, el motivo y quién.
+- **Anulaciones**: cada `ItemVoided` del período que el hub aplicó (el marcado `unapplied` no se lista: el producto ya estaba anulado), con producto, unidades, valor (unidades × precio con extras, del pedido tal como estaba al anular: el ítem pudo pasar después a otra mesa), motivo, si la cocina ya lo había hecho (merma), quién y quién autorizó.
+- **Cancelaciones**: cada `OrderCanceled` del período que el hub aplicó, con lo que tenía, el motivo y quién.
 - **Descuentos**: cada descuento aplicado y vigente en los pedidos cerrados, con regla, valor, monto y motivo (quién lo autorizó queda en el evento; el reporte aún no lo muestra).
 
 ## Mesas abiertas (panel)

@@ -1,6 +1,11 @@
 import type { ShiftReconciliation } from '@pos/core'
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { registerReconciliation, shiftOfRegister, type VisibleShift } from './checks'
+import {
+  pendingMoneyOf,
+  registerReconciliation,
+  shiftOfRegister,
+  type VisibleShift,
+} from './checks'
 import { Floor, type Snapshot } from './engine'
 import { moreOrders, openOrders, soldOutIds, type VisibleOrder } from './projection'
 import { type KitchenTicket, kitchenTickets } from './tickets'
@@ -25,6 +30,8 @@ export interface LocalView {
   shift: VisibleShift | null
   /** That shift's reconciliation: what was charged per method, movements, counts and expected. */
   reconciliation: ShiftReconciliation | null
+  /** That shift's money events this device still has to get confirmed by the hub (task 1.7b). */
+  pendingMoney: number
 }
 
 /** What comes out of the events saved here; it is reread every time something changes. */
@@ -48,6 +55,7 @@ export function useLocalView(): LocalView | null {
           tickets: kitchenTickets(locals, orders),
           shift,
           reconciliation: shift ? registerReconciliation(locals, shift.id) : null,
+          pendingMoney: shift ? pendingMoneyOf(locals, shift.id) : 0,
         })
       })
       .catch((error) => console.error('Could not read the orders:', error))

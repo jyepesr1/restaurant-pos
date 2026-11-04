@@ -211,7 +211,7 @@ Cumple a la vez la trazabilidad total del brief, la sincronización sin pérdida
 
 ## ADR-007 · Sincronización propia, con el mismo protocolo en dos niveles
 
-**Fecha:** 23-oct-2026 · **Estado:** aceptada · **Detalle:** [SYNC.md](SYNC.md)
+**Fecha:** 23-oct-2026 · **Estado:** aceptada; enmendada el 4-nov-2026 ([el dinero de lo guardado como conflicto](#enmienda-de-adr-007-del-4-nov-2026-el-dinero-de-lo-guardado-como-conflicto-tarea-17b)) · **Detalle:** [SYNC.md](SYNC.md)
 
 ### Decisión
 
@@ -630,3 +630,38 @@ Decisión del dueño del 29-oct-2026. Quiere ver en vivo lo que pasa en el resta
 - **Quién ve qué:** con solo «Entrar desde fuera del local» se ven Salón y Cocina, y el pedido completo de cada mesa (también pagos y descuentos). Hoy, Caja, Alertas y Reportes piden «Ver todos los reportes».
 - **Requisito:** plan Workers Paid de Cloudflare (la cuenta ya lo tiene). Con Durable Objects de SQLite y la hibernación, el costo extra por restaurante es de centavos al mes.
 - **Límite aceptado:** un pedido abierto hace más de 31 días sin ningún movimiento no aparece en el Salón (`LIVE_WINDOW_DAYS`). Si llega a hacer falta, se resuelve con una tabla derivada en Postgres.
+
+---
+
+## Enmienda de ADR-007 del 4-nov-2026: el dinero de lo guardado como conflicto (tarea 1.7b)
+
+**Contexto:** un equipo que no estaba al día (sin red, o con la pantalla vieja) manda un pago, una anulación de pago o una devolución a un pedido que otra caja ya cerró. El hub lo **guarda como conflicto** ([ADR-007](#adr-007--sincronización-propia-con-el-mismo-protocolo-en-dos-niveles)): no cambia el pedido, pero hasta ahora la caja y los reportes lo seguían contando, y el cajero veía «Pago registrado». El efectivo esperado quedaba mal y nadie se enteraba de que había dinero que devolver.
+
+### Decisión
+
+- **El hub marca su veredicto en el evento:** `unapplied: true` cuando lo guarda como conflicto que su pedido no aplica (`item_not_found`, `item_already_sent`, `item_already_voided`, `order_closed`). Viaja con el evento al equipo y a la nube; en el hub es la columna `events.unapplied`. Lo que se aplica aunque tenga conflicto (`duplicate_table`, `price_mismatch`) no lo lleva. Detalle en [SYNC.md](SYNC.md#la-marca-unapplied-tarea-17b).
+- **Nada cuenta lo no aplicado:** el reductor lo salta; la caja (hub, equipo de caja y nube) y los reportes dejan su dinero fuera de lo esperado, de los medios y de las propinas, y lo muestran **aparte** ([DINERO.md](DINERO.md#movimientos-no-aplicados-tarea-17b)). Las anulaciones de producto y cancelaciones no aplicadas dejan de listarse.
+- **Cierre de caja** (decisiones del dueño, 4-nov-2026):
+  - renglón aparte «Movimientos no aplicados» (medio y monto) y **se exige justificación**, con la misma regla que un descuadre grande y sin PIN de supervisor extra; el hub rechaza el cierre sin ella (`missing_justification`);
+  - **no se deja cerrar** mientras ese equipo tenga movimientos de dinero del turno sin confirmar por el hub: «Esperando a que el PC de caja confirme N movimientos»;
+  - el **cierre Z impreso no cambia**.
+- **Avisos** (decisión del dueño):
+  - **al cajero en su equipo**, con un aviso que no se quita solo y dice qué hacer con el dinero, hasta tocar «Entendido» (sobrevive a cerrar la app); el cobro no dice «Pago registrado» ni cierra la mesa solo;
+  - **al dueño en el panel**, con una alerta propia, «Dinero no aplicado», con monto, mesa y quién ([PANEL.md](PANEL.md#alertas)).
+- Decidido por Claude: las alertas del panel son **solo de dinero** (pagos, pagos anulados, devoluciones); una anulación de producto, una cancelación o un descuento no aplicados simplemente dejan de contarse, y el equipo que los mandó avisa.
+- **Sin rejuzgar el pasado:** un evento guardado antes de la marca sigue contando como antes; no se rellena desde la tabla `conflicts`. Así los cierres y Z ya guardados se reimprimen igual. Las alertas conservan, por 14 días, el respaldo que reconoce esos eventos viejos volviendo a aplicar su pedido.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Que cada lector vuelva a aplicar el pedido para saber qué no se aplicó | Cuesta en cada reporte y cada cierre, y la nube y el hub podrían juzgar distinto si les faltan eventos del pedido. El veredicto es del hub, que lo tomó con todo a la vista. |
+| Rechazar el pago en lugar de guardarlo | El equipo sin red ya pudo haber recibido el dinero: un rechazo lo borra de la cuenta sin dejar rastro de que hubo que devolverlo. Guardado y marcado, queda la constancia y el aviso. |
+| Ponerlo en el cierre Z impreso | El dueño no lo eligió: el Z queda como estaba; el renglón va en la pantalla del cierre y en el panel. |
+| Rellenar la marca en los eventos viejos desde `conflicts` | Cambiaría lo que suman cierres ya impresos. |
+
+### Consecuencias
+
+- **Publicación en orden:** primero la nube, después el hub y al final **recargar cada equipo** ([PUESTA_EN_MARCHA.md](PUESTA_EN_MARCHA.md)). La app sube a la versión 0.11.
+- **Riesgo aceptado:** una app vieja en caché sigue contando el dinero no aplicado; el hub rechaza su cierre (`expected_mismatch`) y no avisa al cajero. Se mitiga recargando los equipos al actualizar.
+- **Riesgo aceptado:** un hub restaurado de un respaldo vuelve a juzgar lo que los equipos reenvían y el veredicto puede cambiar; la nube conserva la primera copia y la otra va a `divergent_events` para revisión.

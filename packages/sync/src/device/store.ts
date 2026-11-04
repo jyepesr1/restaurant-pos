@@ -91,6 +91,8 @@ export function withoutAcceptance(event: ApplicableEvent): NewEvent {
     assignments: _a,
     affects: _f,
     authorized_by_id: _p,
+    // The hub's verdict (task 1.7b) is its own: a resend after a restore is judged again.
+    unapplied: _u,
     ...fresh
   } = event as ApplicableEvent & Partial<AcceptanceData>
   return fresh as NewEvent

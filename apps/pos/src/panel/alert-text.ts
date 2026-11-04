@@ -1,5 +1,5 @@
-import type { Alert, AlertOrder, AlertType, PaymentMethod } from '@pos/core'
-import { type CheckoutRules, methodName } from '../floor/checks'
+import type { Alert, AlertOrder, AlertType } from '@pos/core'
+import { type CheckoutRules, methodInSentence } from '../floor/checks'
 import { CHANNELS } from '../floor/order'
 import { pointsAsPercent } from '../floor/periods'
 import { pesos } from '../ui/format'
@@ -12,9 +12,10 @@ import type { Tone } from '../ui/Label'
 
 /**
  * How each kind of alert is shown: its name in the filters, the label on each row, its icon and its
- * color. The rule is simple and goes in a legend on the screen: red for what took money away or
- * left the register off (voids, cancellations, voided payments, refunds, variances); amber for
- * what is worth a look but may be fine (discounts and courtesies, reopened accounts).
+ * color. The rule is simple and goes in a legend on the screen: red for what took money away, left
+ * the register off or was not applied (voids, cancellations, voided payments, refunds, variances,
+ * unapplied money); amber for what is worth a look but may be fine (discounts and courtesies,
+ * reopened accounts).
  */
 export const ALERT_KINDS: Record<
   AlertType,
@@ -47,11 +48,17 @@ export const ALERT_KINDS: Record<
     icon: 'bill',
     tone: 'warning',
   },
+  unapplied_money: {
+    name: 'Dinero no aplicado',
+    one: 'Dinero no aplicado',
+    icon: 'warning',
+    tone: 'warning',
+  },
 }
 
 /** The legend of the colors, as the screen shows it. */
 export const ALERT_LEGEND = {
-  warning: 'Rojo: salió dinero o la caja no cuadró',
+  warning: 'Rojo: salió dinero, la caja no cuadró o hubo dinero que no se aplicó',
   progress: 'Ámbar: para revisar',
 } as const
 
@@ -104,17 +111,6 @@ const units = (n: number, name: string) => `${n} ${name}`
 
 /** «+$50» or «-$50». */
 const signed = (n: number) => `${n > 0 ? '+' : '-'}${pesos(Math.abs(n))}`
-
-/** Common nouns go in lowercase inside a sentence («en efectivo»); names stay («en Nequi»). */
-const COMMON_NOUNS = new Set(['cash', 'card', 'transfer', 'voucher'])
-const methodInSentence = (
-  method: PaymentMethod,
-  customMethodId: string | null,
-  rules: CheckoutRules | null,
-) => {
-  const name = methodName(method, customMethodId, rules)
-  return COMMON_NOUNS.has(method) ? name.toLowerCase() : name
-}
 
 export function alertText(a: Alert, place: AlertPlace): AlertText {
   const who = (id: string) => place.users[id] ?? 'Alguien'
@@ -175,6 +171,21 @@ export function alertText(a: Alert, place: AlertPlace): AlertText {
             : `según el sistema ${pesos(a.expected)} · según su cierre ${pesos(a.counted)}`,
         )
         return `En la caja de ${who(a.openedBy)} ${a.value < 0 ? 'faltaron' : 'sobraron'} ${pesos(Math.abs(a.value))} en ${method}`
+      }
+      case 'unapplied_money': {
+        // The PC de caja saved it but did not apply it (the order was already closed): it counts
+        // neither in the register nor in the sales, and someone may have received or handed over
+        // that money.
+        details.push('no cuenta en la caja: revisa si ese dinero se recibió o se entregó')
+        const amount = a.value === null ? null : pesos(Math.abs(a.value))
+        const method = a.method
+          ? ` en ${methodInSentence(a.method, a.customMethodId, place.rules)}`
+          : ''
+        if (a.kind === 'PaymentRecorded')
+          return `${who(a.userId)} cobró ${amount ?? 'un pago'}${method} ${where}, pero no se aplicó`
+        if (a.kind === 'RefundRecorded')
+          return `${who(a.userId)} devolvió ${amount ?? 'dinero'}${method} ${ofOrder(a.order, place.tables)}, pero no se aplicó`
+        return `${who(a.userId)} anuló un pago${method} (${amount ?? 'monto no disponible'}) ${where}, pero no se aplicó`
       }
     }
   })()

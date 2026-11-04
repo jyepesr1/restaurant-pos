@@ -9,16 +9,17 @@ import {
   otherMethodsReconciliation,
   type PaymentMethod,
   type ShiftReconciliation,
+  type UnappliedMovement,
 } from '@pos/core'
 import type { Catalog } from '@pos/sync'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Button } from '../ui/Button'
 import { digitsOnly, pesos, withDots } from '../ui/format'
 import { Group, Option } from '../ui/Options'
 import { navigate } from '../ui/route'
 import { SidePanel } from '../ui/SidePanel'
 import { useNotify } from '../ui/toasts'
-import { type CheckoutRules, methodName, rulesOf } from './checks'
+import { type CheckoutRules, methodName, registerReconciliation, rulesOf } from './checks'
 import { pendingOnClose } from './cloud'
 import { floor, useFloor, useLocalView } from './context'
 import { FloorFrame } from './FloorFrame'
@@ -46,8 +47,9 @@ const REASONS: Record<Exclude<Movement, 'tip_payout'>, string[]> = {
 /** What the schema accepts per denomination. */
 const MAX_QUANTITY = 100_000
 
-const NO_NETWORK =
-  'Sin conexión con el hub del local: no se pueden registrar movimientos ni cerrar la caja hasta que vuelva. Revisa el cable o el Wi-Fi.'
+/** Why nothing of the register can be done now, and what to check. */
+export const NO_NETWORK =
+  'Sin conexión con el hub del local: no se pueden registrar movimientos ni cerrar la caja hasta que vuelva. Revisa el cable o el Wi-Fi, o que el PC de caja esté encendido.'
 
 const message = (e: unknown) => (e instanceof Error ? e.message : 'Algo falló. Intenta de nuevo.')
 
@@ -221,6 +223,7 @@ export function Register() {
               .filter((m) => m.balance > 0)}
             noNetwork={noNetwork}
             online={online}
+            pendingMoney={view.pendingMoney}
             onBack={() => setClosing(false)}
             onClose={(c) => {
               setClosing(false)
@@ -589,7 +592,7 @@ function MovementPanel({
  * first is not erased). At the register you count with the keyboard: the number and Enter move to
  * the next denomination.
  */
-function Closeout({
+export function Closeout({
   reconciliation,
   rules,
   quantities,
@@ -600,6 +603,7 @@ function Closeout({
   openTables,
   noNetwork,
   online,
+  pendingMoney,
   onBack,
   onClose,
 }: {
@@ -614,6 +618,8 @@ function Closeout({
   openTables: { id: string; name: string; balance: number }[]
   noNetwork: React.ReactNode
   online: boolean
+  /** This shift's money events the hub has not confirmed yet: the count waits for them. */
+  pendingMoney: number
   onBack: () => void
   onClose: (reconciliation: ShiftReconciliation) => void
 }) {
@@ -633,6 +639,7 @@ function Closeout({
   const save = useRef<HTMLButtonElement>(null)
   const justificationText = useRef<HTMLTextAreaElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
+  const justificationId = useId()
   const key = (d: (typeof DENOMINATIONS)[number]) => `${d.type}${d.value}`
   const quantityOf = (d: (typeof DENOMINATIONS)[number]) => quantities[key(d)] ?? 0
   const counted = DENOMINATIONS.reduce((a, d) => a + d.value * quantityOf(d), 0)
@@ -644,14 +651,17 @@ function Closeout({
   const notEntered = methods.filter((m) => withCharges.has(m.key) && !(reports[m.key] ?? '').trim())
   const threshold = rules?.varianceThreshold ?? 1000
   const large = (d: number) => isLargeVariance(d, threshold)
-  const requiresJustification = large(variance) || others.some((o) => large(o.variance))
+  // What the hub did not apply is always explained (task 1.7b): it stays out of the expected amount.
+  const unapplied = reconciliation.unapplied.length > 0
+  const requiresJustification =
+    large(variance) || others.some((o) => large(o.variance)) || unapplied
   const hasVariance = variance !== 0 || others.some((o) => o.variance !== 0)
   // The lines over the threshold, to say what has to be explained.
   const otherName = (o: MethodReconciliation) =>
     methods.find((m) => m.key === methodKeyOf(o))?.name ??
     methodName(o.method, o.customMethodId, rules)
   const unexplained = [
-    ...(large(variance) ? ['cash'] : []),
+    ...(large(variance) ? ['efectivo'] : []),
     ...others.filter((o) => large(o.variance)).map(otherName),
   ]
   const dayStart = rules?.businessDayStart ?? '06:00'
@@ -694,8 +704,13 @@ function Closeout({
         counted_cash: counted,
         others: reportedMethods,
       })
+      // What the hub confirmed while the count was going (a payment it did not apply…) counts:
+      // the reconciliation is read again, not the one from before saving.
+      const fresh =
+        registerReconciliation((await floor.sync?.locals()) ?? [], reconciliation.shiftId) ??
+        reconciliation
       setOthers(
-        otherMethodsReconciliation(reconciliation, {
+        otherMethodsReconciliation(fresh, {
           id,
           tally: [],
           counted,
@@ -707,7 +722,7 @@ function Closeout({
           time: '',
         }),
       )
-      setExpectedAtCount(reconciliation.cash.expected)
+      setExpectedAtCount(fresh.cash.expected)
       setConfirming(false)
       setCashCountId(id)
     })
@@ -880,11 +895,12 @@ function Closeout({
             </p>
           )}
           {noNetwork}
+          {online && pendingMoney > 0 && <WaitingForHub pending={pendingMoney} />}
           <Button
             ref={save}
             variant="main"
             large
-            disabled={taken || !online || notEntered.length > 0}
+            disabled={taken || !online || notEntered.length > 0 || pendingMoney > 0}
             onClick={saveCount}
           >
             {taken ? 'Guardando…' : 'Guardar el conteo'}
@@ -915,33 +931,57 @@ function Closeout({
               Entró un pago o un movimiento después del conteo: vuelve a contar.
             </p>
           )}
-          {hasVariance && (
-            <label>
-              <span className="font-semibold">
-                {requiresJustification
-                  ? `Explica por qué no cuadra: ${unexplained.join(', ')}`
-                  : '¿Por qué no cuadra? (opcional)'}
-              </span>
+          {(hasVariance || unapplied) && (
+            <div>
+              <label htmlFor={justificationId} className="font-semibold">
+                {unexplained.length > 0 && unapplied
+                  ? `Explica por qué no cuadra (${unexplained.join(', ')}) y qué pasó con los movimientos no aplicados`
+                  : unapplied
+                    ? 'Explica qué pasó con los movimientos no aplicados'
+                    : requiresJustification
+                      ? `Explica por qué no cuadra: ${unexplained.join(', ')}`
+                      : '¿Por qué no cuadra? (opcional)'}
+              </label>
               {requiresJustification && (
-                <span className="block text-sm text-muted">
-                  {threshold <= 1
-                    ? 'Toda diferencia se explica; queda en el informe.'
-                    : `Desde ${pesos(threshold)} de diferencia hay que explicarla; queda en el informe.`}
+                <span id={`${justificationId}-hint`} className="block text-sm text-muted">
+                  {unexplained.length === 0
+                    ? 'Si se recibió o se entregó ese dinero, di qué se hizo con él; queda en el informe.'
+                    : threshold <= 1
+                      ? 'Toda diferencia se explica; queda en el informe.'
+                      : `Desde ${pesos(threshold)} de diferencia hay que explicarla; queda en el informe.`}
                 </span>
               )}
               <textarea
+                id={justificationId}
                 ref={justificationText}
                 className={`${fieldClass} mt-1 min-h-24 py-2`}
                 maxLength={500}
+                // What has to be explained and what is missing to close, read with the field.
+                aria-describedby={
+                  [
+                    requiresJustification && `${justificationId}-hint`,
+                    requiresJustification && !justification.trim() && `${justificationId}-missing`,
+                  ]
+                    .filter(Boolean)
+                    .join(' ') || undefined
+                }
+                placeholder={
+                  unapplied ? 'Ej.: el cliente pagó y ya le devolvimos el dinero' : undefined
+                }
                 value={justification}
                 onChange={(e) => setJustification(e.target.value)}
               />
-            </label>
+            </div>
           )}
           {noNetwork}
           {requiresJustification && !justification.trim() && (
-            <p className="text-sm text-muted">Para cerrar, falta explicar la diferencia.</p>
+            <p id={`${justificationId}-missing`} className="text-sm text-muted">
+              {unexplained.length === 0
+                ? 'Para cerrar, falta explicar los movimientos no aplicados.'
+                : 'Para cerrar, falta explicar la diferencia.'}
+            </p>
           )}
+          {online && pendingMoney > 0 && <WaitingForHub pending={pendingMoney} />}
           {confirming ? (
             <div
               className="rounded-2xl border-2 border-action-strong bg-action-soft p-3 text-action-text"
@@ -987,6 +1027,7 @@ function Closeout({
                   taken ||
                   !online ||
                   changedAfter ||
+                  pendingMoney > 0 ||
                   (requiresJustification && !justification.trim())
                 }
                 onClick={() => setConfirming(true)}
@@ -1002,7 +1043,7 @@ function Closeout({
 }
 
 /** How the register ended (or ends): expected, counted, variance and the other methods. */
-function Result({
+export function Result({
   reconciliation,
   rules,
   title = 'Cómo quedó la caja',
@@ -1080,6 +1121,7 @@ function Result({
           </div>
         )
       )}
+      <Unapplied list={reconciliation.unapplied} rules={rules} />
       {c.justification && (
         <p className="border-t border-divider pt-2 text-sm">
           <span className="font-semibold">Por qué no cuadra: </span>
@@ -1087,5 +1129,84 @@ function Result({
         </p>
       )}
     </section>
+  )
+}
+
+/** How each unapplied money event is named in the close. */
+const UNAPPLIED_KIND: Record<UnappliedMovement['type'], string> = {
+  PaymentRecorded: 'Pago',
+  PaymentVoided: 'Pago anulado',
+  RefundRecorded: 'Devolución',
+}
+
+/** «+$44.900» or «-$5.000». */
+const signed = (n: number) => `${n < 0 ? '-' : '+'}${pesos(Math.abs(n))}`
+
+/**
+ * The money events of the shift the hub saved without applying (task 1.7b, DINERO.md#caja): apart
+ * from what there should be, with their method and the amount they would have moved.
+ */
+function Unapplied({
+  list,
+  rules,
+}: {
+  list: readonly UnappliedMovement[]
+  rules: CheckoutRules | null
+}) {
+  if (list.length === 0) return null
+  return (
+    <div className="rounded-xl bg-alert-soft p-3 text-alert-text">
+      <h3 className="font-semibold">Movimientos no aplicados</h3>
+      <p className="text-sm">
+        Se registraron, pero no cambiaron la caja: la cuenta ya estaba cerrada. No van en «Debería
+        haber».
+      </p>
+      <ul className="figures mt-2 flex flex-col gap-1">
+        {list.map((m) => (
+          <li key={m.eventId} className="flex flex-wrap justify-between gap-x-3">
+            <span>
+              {m.method
+                ? `${UNAPPLIED_KIND[m.type]} · ${methodName(m.method, m.customMethodId, rules)}`
+                : UNAPPLIED_KIND[m.type]}
+            </span>
+            <span className="font-semibold">
+              {m.amount === null ? 'monto no disponible' : signed(m.amount)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** How long the close waits for the hub before saying what to look at. */
+export const SLOW_HUB_MS = 20_000
+
+/**
+ * The count waits until the hub confirms this device's money events of the shift (task 1.7b). If
+ * it takes long (`slowAfterMs`), it says where to look and whom to tell: it is not a dead end.
+ */
+export function WaitingForHub({
+  pending,
+  slowAfterMs = SLOW_HUB_MS,
+}: {
+  pending: number
+  slowAfterMs?: number
+}) {
+  const [slow, setSlow] = useState(slowAfterMs <= 0)
+  useEffect(() => {
+    if (slowAfterMs <= 0) return
+    const timer = setTimeout(() => setSlow(true), slowAfterMs)
+    return () => clearTimeout(timer)
+  }, [slowAfterMs])
+  return (
+    <p role="status" className="rounded-xl bg-progress-soft p-3 text-progress-text">
+      {`Esperando a que el PC de caja confirme ${pending === 1 ? '1 movimiento' : `${pending} movimientos`}. Cuando los confirme, sigue el cierre.`}
+      {slow && (
+        <span className="mt-1 block font-semibold">
+          Todavía no confirma. Mira el contador de pendientes arriba; si no baja, avisa al dueño.
+        </span>
+      )}
+    </p>
   )
 }

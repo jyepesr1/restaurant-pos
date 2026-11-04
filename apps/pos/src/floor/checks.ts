@@ -66,6 +66,19 @@ export const methodName = (
     ...(rules?.archivedCustomMethods ?? []),
   ])
 
+/** Common nouns go in lowercase inside a sentence («en efectivo»); names stay («en Nequi»). */
+const COMMON_NOUNS: ReadonlySet<PaymentMethod> = new Set(['cash', 'card', 'transfer', 'voucher'])
+
+/** A method's name inside a sentence: «en efectivo», «en Nequi», «en QR Bancolombia». */
+export function methodInSentence(
+  method: PaymentMethod,
+  customMethodId: string | null | undefined,
+  rules: CheckoutRules | null,
+): string {
+  const name = methodName(method, customMethodId, rules)
+  return COMMON_NOUNS.has(method) ? name.toLowerCase() : name
+}
+
 /** «INC 8 %», «IVA 19 %», «Exento» (the same name as the printed pre-bill). */
 export function taxName(type: 'inc' | 'iva' | 'exempt', rate: number): string {
   if (type === 'exempt' || rate === 0) return 'Exento'
@@ -372,3 +385,26 @@ export const registerReconciliation = (locals: readonly LocalEvent[], shiftId: s
 
 const currentOf = (locals: readonly LocalEvent[]) =>
   locals.filter((l) => l.status === 'confirmed' || l.status === 'pending').map((l) => l.event)
+
+/** The money events that belong to a shift: payments, voids, refunds and drawer movements. */
+const SHIFT_MONEY: ReadonlySet<string> = new Set([
+  'PaymentRecorded',
+  'PaymentVoided',
+  'RefundRecorded',
+  'CashMovementRecorded',
+])
+
+/**
+ * How many money events of the shift this device has not had confirmed by the hub yet (task
+ * 1.7b): the register is not closed while there are any, since the hub may still not apply one
+ * and the expected amount would change.
+ */
+export function pendingMoneyOf(locals: readonly LocalEvent[], shiftId: string): number {
+  return locals.filter((l) => {
+    if (!l.own || l.status !== 'pending' || !SHIFT_MONEY.has(l.event.type)) return false
+    const e = l.event
+    return e.type === 'CashMovementRecorded'
+      ? e.aggregate_id === shiftId
+      : 'register_shift_id' in e.data && e.data.register_shift_id === shiftId
+  }).length
+}

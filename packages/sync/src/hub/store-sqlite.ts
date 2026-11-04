@@ -34,6 +34,8 @@ function toEvent(f: Row): OrderEvent {
     assignments: JSON.parse(String(f.assignments)),
     affects: JSON.parse(String(f.affects)),
     authorized_by_id: text(f.authorized_by_id),
+    // Only when set (task 1.7b): an event from before reads back exactly as it was saved.
+    ...(Number(f.unapplied) === 1 ? { unapplied: true } : {}),
   } as OrderEvent
 }
 
@@ -187,8 +189,8 @@ export class SqliteStore implements HubStore {
         `INSERT INTO events (restaurant_id, id, type, schema_version, aggregate_type, aggregate_id,
            related, data, session_id, user_id, device_id, authorization_id, authorized_by_id,
            reason, device_time, hub_estimated_time, base_sequence, sequence, received_at,
-           business_day, assignments, affects, content_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           business_day, assignments, affects, content_hash, unapplied)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         this.restaurantId,
@@ -214,6 +216,7 @@ export class SqliteStore implements HubStore {
         JSON.stringify(e.assignments),
         JSON.stringify(e.affects),
         fingerprint,
+        e.unapplied ? 1 : 0,
       )
     const index = this.db.prepare(
       'INSERT INTO event_aggregates (restaurant_id, aggregate_id, sequence, event_id) VALUES (?, ?, ?, ?)',

@@ -123,11 +123,14 @@ export function reportData(store: HubStore, from: string, until: string): Report
   // reopened on another day does not change what was already reported
   // (DINERO.md#día-operativo-e-informes).
   const closings: OrderClose[] = []
+  // A close the hub did not apply (`unapplied`: the order was already closed or canceled, task
+  // 1.7b) is not a close.
   for (const c of store.periodEvents(['OrderClosed'], from, until)) {
+    if (c.unapplied) continue
     const after = stateUntil(c.aggregate_id, c.sequence)
     if (!after) continue
     const previous = eventsOf(c.aggregate_id)
-      .filter((x) => x.type === 'OrderClosed' && x.aggregate_id === c.aggregate_id)
+      .filter((x) => x.type === 'OrderClosed' && x.aggregate_id === c.aggregate_id && !x.unapplied)
       .filter((x) => x.sequence < c.sequence)
       .at(-1)
     closings.push({

@@ -1,7 +1,7 @@
 import type { Alert } from '@pos/core'
 import { describe, expect, it } from 'vitest'
 import { ALERT_KINDS, type AlertPlace, alertText, kindLabel } from './alert-text'
-import { ALERTS, rules } from './testing'
+import { ALERTS, rules, UNAPPLIED_ALERTS } from './testing'
 
 // How each alert reads for the owner (task 1.11c-2).
 
@@ -203,6 +203,27 @@ describe('alertText', () => {
       'Devoluciones',
       'Cuentas reabiertas',
       'Descuadres de caja',
+      'Dinero no aplicado',
     ])
+  })
+
+  it('unapplied money: what was tried, with its method and amount, and what to check', () => {
+    const [refund, voided, payment] = UNAPPLIED_ALERTS as [Alert, Alert, Alert]
+    expect(read(payment)).toBe(
+      'Carla cobró $44.900 en efectivo en la Mesa 3, pero no se aplicó · no cuenta en la caja: revisa si ese dinero se recibió o se entregó',
+    )
+    // A return is said without its minus sign: «devolvió $12.000».
+    expect(read(refund)).toBe(
+      'Carla devolvió $12.000 en QR Bancolombia de la Mesa 3, pero no se aplicó · autorizó Luis · no cuenta en la caja: revisa si ese dinero se recibió o se entregó · Motivo: Plato frío',
+    )
+    // Without its payment among the events: neither method nor a made-up amount.
+    expect(read(voided)).toBe(
+      'Carla anuló un pago (monto no disponible) en la Mesa 3, pero no se aplicó · no cuenta en la caja: revisa si ese dinero se recibió o se entregó · Motivo: Cobro duplicado',
+    )
+    expect(read({ ...voided, value: -44_900, method: 'cash' } as Alert)).toContain(
+      'anuló un pago en efectivo ($44.900) en la Mesa 3, pero no se aplicó',
+    )
+    expect(kindLabel(payment)).toBe('Dinero no aplicado')
+    expect(ALERT_KINDS.unapplied_money.tone).toBe('warning')
   })
 })

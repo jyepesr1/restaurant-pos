@@ -310,6 +310,7 @@ function build(c: Case): PeriodReport {
         { orderId: 'x', orderNumber: null, rule: 'value', value: n5, amount: n5, reason: null },
       ],
       tipPool: { tips: n5, paidOut: n6, balance: n7 },
+      unapplied: [],
     },
   }
 }
@@ -489,6 +490,7 @@ describe('CSV: the whole report', () => {
         cancellations: [],
         discounts: [],
         tipPool: { tips: 0, paidOut: 0, balance: 0 },
+        unapplied: [],
       },
     }
     const csv = reportCsv(empty, period, null, '')

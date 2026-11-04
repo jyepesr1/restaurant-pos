@@ -21,17 +21,19 @@ import {
   type ErrorCode,
   type Handlers,
   type HubMessage,
+  type LocalEvent,
   type PrinterStatus,
   SyncClient,
 } from '@pos/sync'
 import { ApiError, makeCall, NO_HUB } from './api'
 import { DeviceDatabase, IndexedDbStore } from './store'
+import { needsNotice, UnappliedError, unappliedText } from './unapplied'
 
 // The app engine on the device: the device credentials, the session (PIN or password), the
 // saved catalog and sync (SyncClient over IndexedDB and a WebSocket kept by
 // ConnectionManager). The screen reads it with `useFloor` and creates events with `record`.
 
-export const VERSION_APP = '0.10'
+export const VERSION_APP = '0.11'
 
 export interface Device {
   deviceId: string
@@ -253,6 +255,17 @@ export interface EventOptions {
   authorizes?: { pin: string; permission: string }
 }
 
+/**
+ * Something this device did that the hub saved without applying (task 1.7b): it stays on screen
+ * until someone taps «Entendido», even after closing the app.
+ */
+export interface UnappliedNotice {
+  eventId: string
+  text: string
+  /** Who did it (the event's user): the notice says «(lo hizo Ana)» on a shared device. */
+  userId: string
+}
+
 export interface Snapshot {
   loaded: boolean
   device: Device | null
@@ -272,6 +285,8 @@ export interface Snapshot {
   printers: PrinterStatus[]
   /** How the upload to the cloud is going, according to the hub (task 1.11); null if unknown. */
   cloud: CloudStatus | null
+  /** This device's events the hub did not apply, until someone taps «Entendido» (task 1.7b). */
+  unappliedNotices: UnappliedNotice[]
 }
 
 const DEFAULT_MINUTES = 30
@@ -318,7 +333,13 @@ export function completeCatalog(c: Catalog): Catalog {
 
 /** A background job failed (IndexedDB full or closed): it stays in the console. */
 const notifyFailure = (error: unknown) => console.error('Device:', error)
-const KEYS = { device: 'device', session: 'session', catalog: 'catalog' }
+const KEYS = {
+  device: 'device',
+  session: 'session',
+  catalog: 'catalog',
+  /** The ids of the unapplied events whose notice someone already acknowledged. */
+  unappliedSeen: 'unappliedSeen',
+}
 
 function openWebSocket(m: Handlers): Channel {
   const schema = location.protocol === 'https:' ? 'wss' : 'ws'
@@ -365,7 +386,10 @@ export class Floor {
     hubError: null,
     printers: [],
     cloud: null,
+    unappliedNotices: [],
   }
+  /** Notices already acknowledged («Entendido»): they do not come back on restart. */
+  private unappliedSeen = new Set<string>()
   private readonly listeners = new Set<() => void>()
   /** How many `cloud` notices came over the WebSocket (see `askCloud`). */
   private cloudNotices = 0
@@ -400,11 +424,13 @@ export class Floor {
   }
 
   private async doLoad() {
-    const [device, session, catalog] = await Promise.all([
+    const [device, session, catalog, seen] = await Promise.all([
       this.db.readSetting<Device>(KEYS.device),
       this.db.readSetting<Session>(KEYS.session),
       this.db.readSetting<Catalog>(KEYS.catalog),
+      this.db.readSetting<string[]>(KEYS.unappliedSeen),
     ])
+    this.unappliedSeen = new Set(Array.isArray(seen) ? seen : [])
     this.patch({
       loaded: true,
       device: device ?? null,
@@ -851,6 +877,8 @@ export class Floor {
         this.patch({ hubError: { code, message } })
       },
       onFailure: (error) => console.error('Sync:', error),
+      // The hub confirmed one of ours without applying it: the notice shows at once.
+      onUnapplied: (local) => void this.noticeUnapplied(local).catch(notifyFailure),
     })
     const connectionManager = new ConnectionManager({
       open: this.open,
@@ -880,13 +908,83 @@ export class Floor {
     this.connectionManager = connectionManager
     await client.begin()
     if (this.connectionManager !== connectionManager) return
+    await this.restoreUnappliedNotices(client)
+    if (this.connectionManager !== connectionManager) return
     if (!this.status.simulatingOffline) connectionManager.begin()
     await this.onDataChange()
   }
 
   private async onDataChange() {
     const pendingList = (await this.client?.pendingList()) ?? 0
+    // Only with notices on screen: a confirmation without the mark may have taken one back.
+    if (this.status.unappliedNotices.length > 0)
+      this.pruneUnappliedNotices((await this.client?.locals()) ?? [])
     this.patch({ pendingList, changes: this.status.changes + 1 })
+  }
+
+  // ── Unapplied events (task 1.7b) ─────────────────────────────────────
+
+  /** The notice of an own event the hub did not apply, if it deserves one and is not shown yet. */
+  private async noticeUnapplied(local: LocalEvent) {
+    const { event } = local
+    const shown = () => this.status.unappliedNotices.some((n) => n.eventId === event.id)
+    if (!local.own || !event.unapplied || !needsNotice(event)) return
+    if (this.unappliedSeen.has(event.id) || shown()) return
+    const text = await this.unappliedTextOf(local)
+    if (this.unappliedSeen.has(event.id) || shown()) return
+    const notice = { eventId: event.id, text, userId: event.user_id }
+    this.patch({ unappliedNotices: [...this.status.unappliedNotices, notice] })
+  }
+
+  /**
+   * Notices whose event the hub no longer has as unapplied go away (a hub restored from a backup
+   * judges again, and its confirmation comes without the mark): nothing is left to do about them.
+   */
+  private pruneUnappliedNotices(locals: readonly LocalEvent[]) {
+    const notices = this.status.unappliedNotices
+    if (notices.length === 0) return
+    const byId = new Map(locals.map((l) => [l.event.id, l]))
+    // Waiting for the hub again (resent after a restore) it keeps its notice until judged anew.
+    const judgedApplied = (id: string) => {
+      const l = byId.get(id)
+      return !l || (l.status !== 'pending' && !(l.status === 'confirmed' && l.event.unapplied))
+    }
+    const kept = notices.filter((n) => !judgedApplied(n.eventId))
+    if (kept.length !== notices.length) this.patch({ unappliedNotices: kept })
+  }
+
+  /**
+   * On opening the app: the notices nobody acknowledged come back, from the own events the hub
+   * confirmed as unapplied. Acknowledged ids whose event is no longer here are forgotten.
+   */
+  private async restoreUnappliedNotices(client: SyncClient) {
+    const locals = await client.locals()
+    const here = new Set(locals.map((l) => l.event.id))
+    const kept = [...this.unappliedSeen].filter((id) => here.has(id))
+    if (kept.length !== this.unappliedSeen.size) {
+      this.unappliedSeen = new Set(kept)
+      await this.db.saveSetting(KEYS.unappliedSeen, kept)
+    }
+    this.pruneUnappliedNotices(locals)
+    for (const l of locals) if (l.status === 'confirmed') await this.noticeUnapplied(l)
+  }
+
+  private async unappliedTextOf(local: LocalEvent): Promise<string> {
+    const { event } = local
+    const order =
+      event.aggregate_type === 'order'
+        ? ((await this.client?.order(event.aggregate_id)) ?? null)
+        : null
+    return unappliedText(event, { catalog: this.status.catalog, order, conflict: local.conflict })
+  }
+
+  /** «Entendido»: the notice goes away and does not come back, not even on restart. */
+  async acknowledgeUnapplied(eventId: string) {
+    this.unappliedSeen.add(eventId)
+    this.patch({
+      unappliedNotices: this.status.unappliedNotices.filter((n) => n.eventId !== eventId),
+    })
+    await this.db.saveSetting(KEYS.unappliedSeen, [...this.unappliedSeen])
   }
 
   /** For the demo: cuts the connection to the hub as if the Wi-Fi dropped, and restores it. */
@@ -974,8 +1072,9 @@ export class Floor {
   /**
    * Like `record`, but waits for the hub to accept it: for money (charging, closing the table)
    * saving it here is not enough, because a payment the hub rejects disappears from the check. If
-   * the hub rejects it, it fails with the reason in words; if it does not answer in time, it fails
-   * saying it stayed pending (do not charge again).
+   * the hub rejects it, it fails with the reason in words; if it saves it without applying it (the
+   * order was already closed, task 1.7b), it fails with `UnappliedError` and what to do; if it does
+   * not answer in time, it fails saying it stayed pending (do not charge again).
    */
   async recordConfirmed<T extends OrderEventType>(
     type: T,
@@ -988,7 +1087,14 @@ export class Floor {
     const limit = Date.now() + waitMs
     for (;;) {
       const local = (await this.client?.locals())?.find((l) => l.event.id === event.id)
-      if (local?.status === 'confirmed') return event
+      if (local?.status === 'confirmed') {
+        if (local.event.unapplied && needsNotice(local.event)) {
+          // The notice stays on screen even if the sync callback has not shown it yet.
+          await this.noticeUnapplied(local)
+          throw new UnappliedError(await this.unappliedTextOf(local))
+        }
+        return event
+      }
       if (local?.status === 'rejected') throw new Error(reasonInWords(local.reason))
       if (Date.now() > limit)
         throw new Error(
@@ -1029,7 +1135,8 @@ function reasonInWords(reason: string | undefined): string {
     counted_mismatch: 'Lo contado no coincide con el conteo guardado: vuelve a contar.',
     expected_mismatch:
       'La caja registró algo que este equipo aún no tenía: espera un momento y vuelve a contar.',
-    missing_justification: 'Escribe por qué no cuadra la caja.',
+    missing_justification:
+      'Falta explicar por qué no cuadra la caja o qué pasó con los movimientos no aplicados.',
     cash_count_not_latest: 'La caja se cierra con el último conteo: vuelve a contar.',
     stale_cash_count: 'Hubo pagos o movimientos después del conteo: vuelve a contar.',
     other_methods_mismatch:

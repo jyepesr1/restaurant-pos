@@ -377,7 +377,9 @@ describe('end to end: open shift → checkout → cash in → tips → cash coun
     const without = await resolve(
       floor.recordConfirmed('ShiftClosed', shift, closeData(cashCount, 100_000, 98_000)),
     )
-    expect(message(without)).toBe('Escribe por qué no cuadra la caja.')
+    expect(message(without)).toBe(
+      'Falta explicar por qué no cuadra la caja o qué pasó con los movimientos no aplicados.',
+    )
     // The shift stays open here and in the hub, and the rejected close stays in view.
     expect(h.hub.openShift(e.deviceId)).not.toBeNull()
     const savedList = await locals(floor)

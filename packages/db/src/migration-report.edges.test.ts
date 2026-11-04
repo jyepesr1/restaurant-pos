@@ -41,7 +41,7 @@ describe('print queue: what it keeps', () => {
   it('re-running does nothing and the database has no broken keys', () => {
     const { db, applied, job } = migratedDatabase()
     job()
-    expect(applied).toEqual([1])
+    expect(applied).toEqual([1, 2])
     expect(applyMigrations(db)).toEqual([])
     expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
     expect(db.prepare('SELECT count(*) AS n FROM print_jobs').get()?.n).toBe(1)

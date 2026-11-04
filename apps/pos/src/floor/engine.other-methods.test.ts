@@ -386,7 +386,9 @@ describe('end to end (1.8): open shift → charge by card and Nequi → count wi
       variance: -5_000,
     })
     expect(without.closeout.ok).toBe(false)
-    expect(message(without.closeout)).toBe('Escribe por qué no cuadra la caja.')
+    expect(message(without.closeout)).toBe(
+      'Falta explicar por qué no cuadra la caja o qué pasó con los movimientos no aplicados.',
+    )
     // The shift stays open here and in the hub; the rejected close stays visible.
     expect(h.hub.openShift(e.deviceId)).not.toBeNull()
     let savedList = await locals(floor)
@@ -471,7 +473,9 @@ describe('end to end (1.8): open shift → charge by card and Nequi → count wi
       reported: 12_000,
       variance: 12_000,
     })
-    expect(message(r.closeout)).toBe('Escribe por qué no cuadra la caja.')
+    expect(message(r.closeout)).toBe(
+      'Falta explicar por qué no cuadra la caja o qué pasó con los movimientos no aplicados.',
+    )
   })
 
   it('a close with the lines of another count (stale): other_methods_mismatch, said in words', async () => {

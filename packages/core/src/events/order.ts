@@ -490,6 +490,13 @@ export const Acceptance = z.strictObject({
   }),
   affects: z.array(Ulid).max(20),
   authorized_by_id: Ulid.nullable(),
+  /**
+   * The hub saved it as a conflict its order does not apply (an order already closed, an item
+   * already voided…): it is stored, but it changes nothing and its money does not count (task
+   * 1.7b, docs/SYNC.md#rechazos-cuarentena-y-conflictos). Absent: applied, as every event from
+   * before this field.
+   */
+  unapplied: z.literal(true).optional(),
 })
 
 function variant<T extends OrderEventType>(type: T) {

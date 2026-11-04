@@ -933,7 +933,7 @@ describe('reducer guarantees', () => {
   })
 })
 
-describe('unappliedEvents: what the reducer does not apply (the alerts leave it out)', () => {
+describe('unappliedEvents: what the reducer does not apply (the alerts’ fallback for history before the mark)', () => {
   const voidOf = (order: string, itemId: string) =>
     event(
       order,
@@ -947,6 +947,20 @@ describe('unappliedEvents: what the reducer does not apply (the alerts leave it 
   it('an empty list: nothing', () => {
     expect(unappliedEvents([])).toEqual(new Set())
     expect(unappliedEvents([], [newId()])).toEqual(new Set())
+  })
+
+  it('an event the hub marked (`unapplied`) is found too, and the next one is judged without it', () => {
+    const order = newId()
+    const item = itemCopy()
+    const before = [openOf(order), event(order, 'ItemAdded', item), send(order, [item.item_id])]
+    const first = voidOf(order, item.item_id)
+    const twice = { ...voidOf(order, item.item_id), unapplied: true as const }
+    // A void marked as not applied left the item as it was: the next void of it applies.
+    const third = voidOf(order, item.item_id)
+    const marked = { ...first, unapplied: true as const }
+    expect(unappliedEvents([...before, first, twice])).toEqual(new Set([twice.id]))
+    expect(unappliedEvents([...before, marked, third])).toEqual(new Set([marked.id]))
+    expect(rebuild([...before, marked, third], order)?.items[item.item_id]?.voidedQuantity).toBe(1)
   })
 
   it('a change of several items that leaves some out (`items_omitted`) counts as applied', () => {

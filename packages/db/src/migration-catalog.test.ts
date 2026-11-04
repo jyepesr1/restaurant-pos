@@ -121,8 +121,8 @@ describe('catalog history on a migrated database', () => {
     const db = openDatabase(':memory:')
     expect(MIGRATIONS[0]?.name).toBe('initial')
     expect(currentVersion(db)).toBe(0)
-    expect(applyMigrations(db)).toEqual([1])
-    expect(currentVersion(db)).toBe(1)
+    expect(applyMigrations(db)).toEqual([1, 2])
+    expect(currentVersion(db)).toBe(2)
     expect(
       db
         .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'catalog_changes'")
@@ -241,7 +241,7 @@ describe('catalog history on a migrated database', () => {
 
   it('a new database without a catalog starts with an empty history', () => {
     const db = openDatabase(':memory:')
-    expect(applyMigrations(db)).toEqual([1])
+    expect(applyMigrations(db)).toEqual([1, 2])
     expect(history(db)).toEqual([])
   })
 
@@ -274,7 +274,7 @@ describe('catalog history on a migrated database', () => {
     const { db, restaurant } = catalogDatabase()
     insertVersioned(db, 'stations', restaurant, { name: 'Repetida', version: 1 })
     expect(() => recordAllHistory(db)).toThrow(/no se reemplazan/)
-    expect(currentVersion(db)).toBe(1)
+    expect(currentVersion(db)).toBe(2)
     expect(history(db)).toEqual([])
   })
 })

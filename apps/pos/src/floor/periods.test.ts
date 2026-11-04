@@ -88,6 +88,7 @@ describe('CSV', () => {
       cancellations: [],
       discounts: [],
       tipPool: { tips: 5_000, paidOut: 0, balance: 5_000 },
+      unapplied: [],
     },
   }
 

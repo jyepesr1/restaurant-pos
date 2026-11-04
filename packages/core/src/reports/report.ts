@@ -8,7 +8,12 @@ import {
   pricePerUnit,
   taxesOfOrders,
 } from '../order/totals'
-import { type ChargedByMethod, chargedBy } from '../register/shift'
+import {
+  type ChargedByMethod,
+  chargedBy,
+  type UnappliedMovement,
+  unappliedMoney,
+} from '../register/shift'
 
 // The basic reports (task 1.9), with the formulas in docs/KPIS.md. The hub gathers the period's
 // orders and events; here we only compute, so the screen, the CSV and the Z report always say the
@@ -122,6 +127,11 @@ export interface Report {
   cancellations: Cancellation[]
   discounts: ReportDiscount[]
   tipPool: { tips: number; paidOut: number; balance: number }
+  /**
+   * Money events of the period the hub did not apply (task 1.7b): outside every other figure
+   * (docs/KPIS.md#eventos-guardados-como-conflicto).
+   */
+  unapplied: UnappliedMovement[]
 }
 
 /** a ÷ b rounded to pesos with the restaurant's mode; 0 if b is 0. Symmetric for negative a. */
@@ -230,7 +240,8 @@ export function report(entry: ReportInput): Report {
   const cancellations: Cancellation[] = []
   let paidOut = 0
   for (const e of entry.events) {
-    if (!fromPeriod(e)) continue
+    // What the hub did not apply changed nothing: a void or cancellation of it would count twice.
+    if (!fromPeriod(e) || e.unapplied) continue
     if (e.type === 'ItemVoided') {
       const order = entry.onVoid?.get(e.id) ?? ordersById.get(e.aggregate_id)
       const item = order?.items[e.data.item_id]
@@ -306,5 +317,6 @@ export function report(entry: ReportInput): Report {
       paidOut,
       balance: recordedTips - paidOut,
     },
+    unapplied: unappliedMoney(entry.events, fromPeriod),
   }
 }

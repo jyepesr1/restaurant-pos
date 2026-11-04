@@ -93,6 +93,6 @@ Requiere Node 24 (`.nvmrc`) y pnpm por corepack (`corepack enable pnpm`). En una
 
 Biome no formatea los archivos Markdown (están excluidos en `biome.json`).
 
-Base de datos: los cambios de esquema van en una migración **nueva** en `packages/db/src/migrations/` (nunca se edita una publicada; hoy hay una sola, `0001_initial.ts`), con la tabla agregada a su categoría en `packages/db/src/schema.ts`. Las tablas van en plural y en inglés (`orders`, `order_items`, `dining_tables`). Toda tabla es `STRICT`.
+Base de datos: los cambios de esquema van en una migración **nueva** en `packages/db/src/migrations/` (nunca se edita una publicada; hoy hay dos: `0001_initial.ts` y `0002_event_verdict.ts`), con la tabla agregada a su categoría en `packages/db/src/schema.ts`. Las tablas van en plural y en inglés (`orders`, `order_items`, `dining_tables`). Toda tabla es `STRICT`.
 
 Las dependencias que ejecutan scripts al instalarse deben aprobarse con `pnpm approve-builds <paquete>`; quedan en `allowBuilds` de `pnpm-workspace.yaml`.

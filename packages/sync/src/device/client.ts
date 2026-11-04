@@ -29,7 +29,20 @@ export interface ClientOptions {
   onFailure?: (error: unknown) => void
   /** Something stored may have changed (a new event, a confirmed one…): the screen rereads. */
   onChange?: () => void
+  /**
+   * An own event was just confirmed as not applied (`unapplied`, task 1.7b): the hub saved it but
+   * it changes nothing (a payment on an order another device had already closed…). Called once per
+   * event, with what was stored, after storing it.
+   */
+  onUnapplied?: (local: LocalEvent) => void
 }
+
+/** Whether an own event comes out of this store confirmed as not applied, and was not before. */
+const newlyUnapplied = (before: LocalEvent, after: LocalEvent) =>
+  after.own &&
+  after.status === 'confirmed' &&
+  after.event.unapplied === true &&
+  !(before.status === 'confirmed' && before.event.unapplied === true)
 
 /**
  * Device side of sync (docs/SYNC.md#flujo-de-una-acción): stores each event as pending, sends it
@@ -48,6 +61,7 @@ export class SyncClient {
   private readonly onHubError: ClientOptions['onHubError']
   private readonly onFailure: ClientOptions['onFailure']
   private readonly onChange: ClientOptions['onChange']
+  private readonly onUnapplied: ClientOptions['onUnapplied']
 
   private connected = false
   private generation = 0
@@ -68,6 +82,7 @@ export class SyncClient {
     this.onHubError = o.onHubError
     this.onFailure = o.onFailure
     this.onChange = o.onChange
+    this.onUnapplied = o.onUnapplied
   }
 
   /**
@@ -257,14 +272,16 @@ export class SyncClient {
           const local = await this.store.get(r.id)
           if (!local) continue
           if (r.status === 'confirmed') {
-            await this.store.save([
-              {
-                ...local,
-                status: 'confirmed',
-                event: { ...local.event, ...r.acceptance },
-                conflict: r.conflict,
-              },
-            ])
+            // The hub's fields replace the stored ones whole: a verdict (`unapplied`) from before a
+            // restore does not survive a confirmation that no longer carries it.
+            const confirmed: LocalEvent = {
+              ...local,
+              status: 'confirmed',
+              event: { ...withoutAcceptance(local.event), ...r.acceptance },
+              conflict: r.conflict,
+            }
+            await this.store.save([confirmed])
+            if (newlyUnapplied(local, confirmed)) this.onUnapplied?.(confirmed)
             continue
           }
           // What the hub already confirmed (arrived via `events` or `new`) is not undone.
@@ -304,15 +321,24 @@ export class SyncClient {
    */
   private async incorporate(events: readonly OrderEvent[], generation: number) {
     const newer: LocalEvent[] = []
+    const unapplied: LocalEvent[] = []
     for (const event of events) {
       const local = await this.store.get(event.id)
-      newer.push(
-        local
-          ? { ...local, event: { ...local.event, ...event }, status: 'confirmed' }
-          : { event, status: 'confirmed', own: false, position: await this.position() },
-      )
+      if (!local) {
+        newer.push({ event, status: 'confirmed', own: false, position: await this.position() })
+        continue
+      }
+      // The hub's copy, with only its fields (an old verdict does not stay behind).
+      const confirmed: LocalEvent = {
+        ...local,
+        event: { ...withoutAcceptance(local.event), ...event },
+        status: 'confirmed',
+      }
+      newer.push(confirmed)
+      if (newlyUnapplied(local, confirmed)) unapplied.push(confirmed)
     }
     await this.store.save(newer)
+    for (const local of unapplied) this.onUnapplied?.(local)
     // If the batch response was lost but its events already came back confirmed, move on.
     const batch = this.inFlightBatch
     if (batch && generation === this.generation) {

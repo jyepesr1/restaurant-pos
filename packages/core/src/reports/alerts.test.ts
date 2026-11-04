@@ -62,6 +62,7 @@ const input = (over: Partial<AlertsInput> = {}): AlertsInput => ({
   orders: new Map(),
   registerClosings: [],
   threshold: 1_000,
+  unapplied: [],
   ...over,
 })
 
@@ -81,6 +82,7 @@ function closing(closed: NonNullable<ShiftReconciliation['closed']> | null): Ale
       byMethod: [],
       movements: [],
       cashCounts: [],
+      unapplied: [],
       cash: { charged: 0, refunds: 0, cashIn: 0, cashOut: 0, tipPayouts: 0, expected: 100_000 },
       closed,
     },
@@ -590,8 +592,9 @@ describe('alerts: order', () => {
 describe('alerts: events saved as a conflict do not count', () => {
   // The hub saves, without applying, what an out-of-date device sent to an order already closed or
   // about an item already voided (docs/SYNC.md#rechazos-cuarentena-y-conflictos). It changed
-  // nothing, so it is not an alert, a void or a payment either (docs/KPIS.md).
-  it('a discount, a payment void and a refund after the close, and a second void of the same item', () => {
+  // nothing, so it is not the alert of what it tried (docs/KPIS.md). Since task 1.7b the hub marks
+  // it (`unapplied`); these first cases are history saved before the mark, found by replaying.
+  it('a discount, a payment void and a refund after the close, and a second void of the same item (saved before the mark)', () => {
     const a = order()
     const card = a.record(event(a.id, 'PaymentRecorded', cardPaymentData(40_900)))
     a.record(event(a.id, 'OrderClosed', {}))
@@ -643,8 +646,9 @@ describe('alerts: events saved as a conflict do not count', () => {
     expect(unappliedEvents([...a.events, ...b.events])).toEqual(
       new Set([...late.map((e) => e.id), twice.id]),
     )
-    // The report is given every event, as the hub's `reportData` gathers them: it still lists the
-    // second void (a task of its own); the alerts leave it out by themselves.
+    // The report is given every event, as the hub's `reportData` gathers them: without the mark it
+    // still lists the second void and the late money, as it always did; the alerts leave them out
+    // by themselves, and there is no money apart.
     const r = report({
       from: DAY,
       until: DAY,
@@ -653,10 +657,114 @@ describe('alerts: events saved as a conflict do not count', () => {
       config: CONFIG,
     })
     expect(r.voids.map((v) => v.eventId)).toContain(twice.id)
+    expect(r.unapplied).toEqual([])
+    expect(r.byMethod).toEqual([
+      { method: 'card', customMethodId: null, sale: -1_000, tip: 0, payments: 0 },
+    ])
     const list = alerts(
-      input({ voids: r.voids, cancellations: r.cancellations, orders: ordersOf(a, b) }),
+      input({
+        voids: r.voids,
+        cancellations: r.cancellations,
+        orders: ordersOf(a, b),
+        unapplied: r.unapplied,
+      }),
     )
     expect(list.map((x) => x.id)).toEqual([first.id])
+  })
+
+  it('the same events marked by the hub: the money apart, one alert each; the second void out of the report', () => {
+    const a = order()
+    const card = a.record(event(a.id, 'PaymentRecorded', cardPaymentData(40_900)))
+    a.record(event(a.id, 'OrderClosed', {}))
+    const mark = { reason: 'Tarde', unapplied: true } as const
+    const late = [
+      event(
+        a.id,
+        'DiscountApplied',
+        {
+          discount_id: newId(),
+          scope: 'order',
+          rule: 'value',
+          value: 5_000,
+          unit_count: null,
+          amounts: [{ item_id: a.item.item_id, amount: 5_000 }],
+        },
+        mark,
+      ),
+      event(
+        a.id,
+        'PaymentVoided',
+        { payment_id: card.data.payment_id, register_shift_id: SHIFT },
+        {
+          ...mark,
+          user_id: CARLOS,
+        },
+      ),
+      event(
+        a.id,
+        'RefundRecorded',
+        {
+          payment_id: card.data.payment_id,
+          refund_id: newId(),
+          sale_amount: 1_000,
+          tip_amount: 0,
+          method: 'card',
+          register_shift_id: SHIFT,
+        },
+        mark,
+      ),
+    ]
+    for (const e of late) a.record(e)
+    const b = order()
+    const voidOf = (quantity: number, extras = {}) =>
+      event(
+        b.id,
+        'ItemVoided',
+        { item_id: b.item.item_id, quantity, already_prepared: false, ticket_id: null },
+        { reason: 'Otro mesero ya lo anuló', ...extras },
+      )
+    const first = b.record(voidOf(1))
+    b.record(voidOf(1, { unapplied: true }))
+    const r = report({
+      from: DAY,
+      until: DAY,
+      related: [a, b].map((o) => rebuild(o.events, o.id)).filter((p) => p !== null),
+      events: [...a.events, ...b.events],
+      config: CONFIG,
+    })
+    expect(r.voids.map((v) => v.eventId)).toEqual([first.id])
+    expect(r.byMethod).toEqual([
+      { method: 'card', customMethodId: null, sale: 40_900, tip: 0, payments: 1 },
+    ])
+    expect(r.unapplied.map((u) => [u.eventId, u.amount])).toEqual([
+      [late[1]?.id, -40_900],
+      [late[2]?.id, -1_000],
+    ])
+    const list = alerts(
+      input({
+        voids: r.voids,
+        cancellations: r.cancellations,
+        orders: ordersOf(a, b),
+        unapplied: r.unapplied,
+      }),
+    )
+    expect(list.map((x) => [x.type, x.id])).toEqual(
+      expect.arrayContaining([
+        ['item_voided', first.id],
+        ['unapplied_money', late[1]?.id],
+        ['unapplied_money', late[2]?.id],
+      ]),
+    )
+    expect(list).toHaveLength(3)
+    expect(list.find((x) => x.id === late[1]?.id)).toMatchObject({
+      type: 'unapplied_money',
+      kind: 'PaymentVoided',
+      value: -40_900,
+      method: 'card',
+      userId: CARLOS,
+      reason: 'Tarde',
+      order: { id: a.id, number: 12, tableId: TABLE, channel: 'dine_in' },
+    })
   })
 
   it('a cancellation saved as a conflict (the order was already closed) is not an alert', () => {

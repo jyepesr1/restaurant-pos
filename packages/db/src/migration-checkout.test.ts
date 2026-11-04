@@ -46,8 +46,8 @@ describe('checkout', () => {
   it('the initial migration is applied and recorded with its name and hash', () => {
     const { db, applied } = migratedDatabase()
     expect(MIGRATIONS[0]?.name).toBe('initial')
-    expect(applied).toEqual([1])
-    expect(currentVersion(db)).toBe(1)
+    expect(applied).toEqual([1, 2])
+    expect(currentVersion(db)).toBe(2)
     expect(db.prepare('SELECT name, hash FROM migrations WHERE version = 1').get()).toEqual({
       name: 'initial',
       hash: sqlFingerprint(MIGRATIONS[0]?.sql as string),

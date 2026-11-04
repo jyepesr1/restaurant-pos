@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { ORDER_EVENT_TYPES, PRODUCT_EVENT_TYPES, SHIFT_EVENT_TYPES } from '../events/order'
 import { shuffle } from '../testing/freeze'
 import { type Action, actionArb, Service } from '../testing/simulator'
-import { rebuild } from './apply'
+import { applyEvent, rebuild, unappliedEvents } from './apply'
 import type { OrderState } from './state'
 import { checkBalance, itemTotals, orderTotals } from './totals'
 
@@ -187,6 +187,37 @@ describe('reducer properties with two orders', () => {
         }
       }),
       { ...CONFIG, seed: 20_261_026 },
+    )
+  })
+
+  it('the hub’s verdict (`unapplied`) only where the reducer already rejects: rebuilding gives the same', () => {
+    fc.assert(
+      fc.property(sequence, fc.integer({ min: 0, max: 2 ** 31 }), (actions, seedValue) => {
+        const service = execute(actions)
+        // What the hub would mark: what the reducer does not apply on the orders it touches.
+        const rejected = unappliedEvents(service.log)
+        const marked = service.log.map((e) =>
+          rejected.has(e.id) ? { ...e, unapplied: true as const } : e,
+        )
+        expect(unappliedEvents(marked)).toEqual(rejected)
+        for (const p of [0, 1] as const) {
+          const id = service.orders[p]
+          expect(rebuild(marked, id)).toEqual(rebuild(service.log, id))
+          expect(rebuild(shuffle(marked, seedValue), id)).toEqual(service.statuses[p])
+          // Step by step, too: a marked event leaves each state as it was.
+          let plain: OrderState | null = null
+          let withVerdict: OrderState | null = null
+          for (const [i, e] of service.log.entries()) {
+            const m = marked[i] ?? e
+            const r = applyEvent(withVerdict, m)
+            if (m !== e) expect(r.status).toBe(withVerdict)
+            plain = applyEvent(plain, e).status
+            withVerdict = r.status
+            expect(withVerdict).toEqual(plain)
+          }
+        }
+      }),
+      { ...CONFIG, seed: 20_261_104 },
     )
   })
 })

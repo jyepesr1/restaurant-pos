@@ -1,6 +1,6 @@
 import { type NewEvent, newId, type OrderEventType } from '@pos/core'
 import { SyncClient } from '../device/client'
-import { MemoryDeviceStore } from '../device/store'
+import { type LocalEvent, MemoryDeviceStore } from '../device/store'
 import type { FloorSync } from '../hub/floor'
 import type { Connection } from '../hub/hub'
 import type { DeviceMessage, HubMessage } from '../protocol'
@@ -30,6 +30,8 @@ export class NetNode {
   toDevice: HubMessage[] = []
   link: { receive: (raw: unknown) => void; close: () => void } | null = null
   rules: Rule[] = []
+  /** What `onUnapplied` reported: own events the hub confirmed as not applied (task 1.7b). */
+  readonly unapplied: LocalEvent[] = []
   private readonly network: SimulatedNetwork
 
   constructor(
@@ -50,6 +52,7 @@ export class NetNode {
       send: (m) => {
         if (this.link) this.toHub.push(overNetwork(m))
       },
+      onUnapplied: (local) => this.unapplied.push(local),
     })
   }
 

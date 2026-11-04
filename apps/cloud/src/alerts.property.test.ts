@@ -77,6 +77,7 @@ function inHub(events: readonly OrderEvent[], day: string, config: RestaurantCon
         ['ItemVoided', 'OrderCanceled', 'PaymentVoided', 'RefundRecorded'].includes(e.type),
       )
       .map((e) => e.aggregate_id),
+    ...r.unapplied.map((u) => u.orderId),
   ])
   return alerts({
     day,
@@ -84,6 +85,7 @@ function inHub(events: readonly OrderEvent[], day: string, config: RestaurantCon
     cancellations: r.cancellations,
     orders: new Map([...ids].map((id) => [id, store.aggregateEvents(id)])),
     registerClosings: data.registerClosings,
+    unapplied: r.unapplied,
     threshold: config.register_variance_threshold,
   })
 }

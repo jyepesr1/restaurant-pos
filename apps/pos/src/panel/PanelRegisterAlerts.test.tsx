@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AlertsAnswer, RegisterAnswer } from './api'
 import { EMPTY } from './poller'
 import { NO_NEWS_MS, type Polled } from './summary'
-import { alertsAnswerOf, registerAnswerOf, rules, summaryOf } from './testing'
+import { alertsAnswerOf, registerAnswerOf, rules, summaryOf, UNAPPLIED_ALERTS } from './testing'
 
 // «Caja», «Alertas» and «Alertas de hoy» in the owner's panel (task 1.11c-2), rendered on the
 // server (no browser).
@@ -146,7 +146,7 @@ describe('«Alertas»', () => {
   it('a legend says what the colors mean, and each row says its kind in words', () => {
     const html = alertsOf(answered(alertsAnswerOf()))
     const t = text(html)
-    expect(t).toContain('Rojo: salió dinero o la caja no cuadró')
+    expect(t).toContain('Rojo: salió dinero, la caja no cuadró o hubo dinero que no se aplicó')
     expect(t).toContain('Ámbar: para revisar')
     for (const label of [
       'Descuadre',
@@ -175,6 +175,19 @@ describe('«Alertas»', () => {
     )
     expect(few).toContain('Todas (1)')
     expect(few).not.toContain('Descuadres de caja')
+  })
+
+  it('unapplied money: in red with its label, and its own filter', () => {
+    const answer = alertsAnswerOf({ alerts: [...UNAPPLIED_ALERTS, ...alertsAnswerOf().alerts] })
+    const html = alertsOf(answered(answer))
+    const t = text(html)
+    expect(t).toContain('Todas (10)')
+    expect(t).toContain('Dinero no aplicado (3)')
+    expect(t).toContain('Carla cobró $44.900 en efectivo en la Mesa 3, pero no se aplicó')
+    expect(html).toMatch(/bg-alert-soft[^>]*>Dinero no aplicado</)
+    const only = text(alertsOf(answered(answer), null, 'unapplied_money'))
+    expect(only).toContain('devolvió $12.000')
+    expect(only).not.toContain('anuló 1 Pinsa')
   })
 
   it('a kind chosen shows only those', () => {
