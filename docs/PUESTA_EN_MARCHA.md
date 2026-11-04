@@ -176,7 +176,7 @@ https://faro-api.johanyepes.workers.dev/r/la-spritzzeria
 2. Escribe el usuario y la contraseña del administrador (los mismos de la caja) y toca **Entrar**. Debes ver **Hoy**, con las ventas del día comparadas con el mismo día de la semana pasada a esta hora.
 3. En **Reportes** están los mismos informes de la caja, de hasta 14 días.
 
-El panel se actualiza cada 15 s. Si el local lleva más de 2 minutos sin enviar datos, dice «Sin noticias del restaurante desde las…».
+El panel se actualiza solo, en segundos, cuando algo cambia en el local (Salón, Cocina, Caja y Alertas). Si el local lleva más de 2 minutos sin enviar datos, dice «Sin noticias del restaurante desde las…».
 
 ## 9. Prueba antes del primer servicio
 
