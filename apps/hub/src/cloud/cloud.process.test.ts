@@ -38,7 +38,8 @@ async function until(condition: () => boolean, what: string, limitMs = 8_000) {
 /** A cloud that registers hubs, keeps events by sequence and can go down or hang. */
 async function fakeCloud() {
   const state = {
-    mode: 'up' as 'up' | 'down' | 'hang',
+    /** `cut_after_saving`: the next batch is saved but its answer never leaves (then, `down`). */
+    mode: 'up' as 'up' | 'down' | 'hang' | 'cut_after_saving',
     credential: 'credencial-del-proceso',
     events: new Map<number, { id: string; sequence: number }>(),
     requests: [] as { method: string; url: string; authorization: string | null }[],
@@ -79,6 +80,10 @@ async function fakeCloud() {
         for (const e of body.events) {
           state.sent.push(e.sequence)
           state.events.set(e.sequence, e)
+        }
+        if (state.mode === 'cut_after_saving') {
+          state.mode = 'down'
+          return req.socket.destroy()
         }
         return answer(200, { results: [], last_sequence: contiguous() })
       }
@@ -325,14 +330,18 @@ describe('the hub process with the cloud', () => {
     const admin = await signIn(env)
     let screen = await listen(admin)
     await call(admin, '/api/cloud/register', { code: 'AAAA-BBBB-CCCC' })
+    await until(() => screen.latest()?.state === 'up_to_date', 'the connection')
+    const before = screen.latest()?.last_upload_at
     screen.open()
     await until(() => cloud.state.events.size === 1, 'the first event in the cloud')
-    // Not only in the cloud: the hub wrote down the answer. Killed before that, it rightly still
-    // counts the event as pending and sends it again.
+    // Not only in the cloud: the hub wrote down the answer (killed before that is the next test).
+    // «Up to date, 0 pending» could still be the status from before this event, which does not
+    // change it while it uploads; the time of the last upload only changes after writing it down.
     await until(
-      () => screen.latest()?.state === 'up_to_date' && screen.latest()?.pending === 0,
+      () => screen.latest()?.last_upload_at !== before,
       'the hub knowing the cloud has it',
     )
+    expect(screen.latest()?.pending).toBe(0)
     screen.ws.close()
 
     // The PC loses power and the internet at the same time.
@@ -353,6 +362,39 @@ describe('the hub process with the cloud', () => {
     await until(() => screen.latest()?.state === 'up_to_date', 'the up-to-date status')
     // Nothing already in the cloud was sent again.
     expect(cloud.state.sent).toEqual([1, 2, 3])
+  })
+
+  it('a hub killed after the cloud saved an event but before hearing it counts it as pending and does not send it again', async () => {
+    const env = await environment()
+    hub = await startHub(env)
+    const admin = await signIn(env)
+    let screen = await listen(admin)
+    await call(admin, '/api/cloud/register', { code: 'AAAA-BBBB-CCCC' })
+    await until(() => screen.latest()?.state === 'up_to_date', 'the connection')
+    cloud.state.mode = 'cut_after_saving'
+    screen.open()
+    await until(() => cloud.state.events.size === 1, 'the event saved in the cloud')
+    screen.ws.close()
+    await hub.stop()
+    const asked = () => cloud.state.requests.filter((r) => r.url === '/v1/events/last').length
+    const askedBefore = asked()
+
+    hub = await startHub(env)
+    screen = await listen(admin)
+    // A hub starts as offline, so that status alone does not prove it tried while the cloud was down.
+    await until(
+      () => asked() > askedBefore && screen.latest()?.state === 'offline',
+      'the restarted hub failing to reach the cloud',
+    )
+    // Without internet it cannot know: it says pending rather than claim the cloud has it.
+    expect(screen.latest()).toMatchObject({ state: 'offline', pending: 1 })
+
+    cloud.state.mode = 'up'
+    await until(
+      () => screen.latest()?.state === 'up_to_date' && screen.latest()?.pending === 0,
+      'the up-to-date status',
+    )
+    expect(cloud.state.sent).toEqual([1])
   })
 
   it('a device that connects later is told the status right after the welcome', async () => {

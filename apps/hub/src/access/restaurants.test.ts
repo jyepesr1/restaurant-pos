@@ -199,23 +199,38 @@ describe('the same user in two restaurants', () => {
 })
 
 describe('the same PIN in two restaurants', () => {
+  type TwoRestaurants = ReturnType<typeof twoRestaurants>
+
+  /**
+   * A PIN nobody has in either restaurant: the fixtures' PINs are random, and forcing one someone
+   * already holds breaks the restaurant's unique PIN or makes it someone else's (B's admin too).
+   */
+  function unusedPin(m: TwoRestaurants) {
+    const held = (restaurant: string, pin: string) =>
+      m.db
+        .prepare(
+          'SELECT 1 FROM user_credentials WHERE restaurant_id = ? AND pin_hash = ? AND current = 1',
+        )
+        .get(restaurant, pinHash(KEY, restaurant, pin))
+    for (let code = 4821; ; code++) {
+      const pin = String(code)
+      if (!held(m.idA, pin) && !held(m.idB, pin)) return pin
+    }
+  }
+
+  const setPin = (m: TwoRestaurants, restaurant: string, userId: string, pin: string) =>
+    m.db
+      .prepare('UPDATE user_credentials SET pin_hash = ? WHERE user_id = ?')
+      .run(pinHash(KEY, restaurant, pin), userId)
+
   /** Forces two people from different restaurants to have the same 4 digits. */
   function samePin() {
     const m = twoRestaurants()
     const waiterA = m.accessA.createUser({ name: 'Mesera A', roleId: m.a.roles.waiter })
     const waiterB = m.accessB.createUser({ name: 'Mesera B', roleId: m.rolesB.waiter })
-    // The fixture's people have random PINs: the shared one must be free in A, or it breaks the
-    // restaurant's unique PIN (1 run in about 2,000).
-    const taken = Object.values(m.a.people).map((p) => p.pin)
-    let code = 4821
-    while (taken.includes(String(code))) code++
-    const pin = String(code)
-    const setFor = (restaurant: string, userId: string) =>
-      m.db
-        .prepare('UPDATE user_credentials SET pin_hash = ? WHERE user_id = ?')
-        .run(pinHash(KEY, restaurant, pin), userId)
-    setFor(m.idA, waiterA.userId)
-    setFor(m.idB, waiterB.userId)
+    const pin = unusedPin(m)
+    setPin(m, m.idA, waiterA.userId, pin)
+    setPin(m, m.idB, waiterB.userId, pin)
     return { ...m, waiterA, waiterB, pin }
   }
 
@@ -236,16 +251,16 @@ describe('the same PIN in two restaurants', () => {
     const m = samePin()
     const onlyB = m.accessB.createUser({ name: 'Solo B', roleId: m.rolesB.waiter })
     expect(onlyB.pin).toMatch(/^\d{4}$/)
-    // With 10,000 possible PINs it may match one in A by chance; it is compared against A.
-    const inA = m.accessA.signIn({ pin: onlyB.pin }, null, '10.0.1.3')
-    const ownerInA = [
-      m.a.people.waiter.pin,
-      m.a.people.waiter2.pin,
-      m.a.people.cashier.pin,
-      m.a.people.manager.pin,
-      m.pin,
-    ]
-    if (!ownerInA.includes(onlyB.pin)) expect(inA).toMatchObject({ ok: false, code: 'wrong_pin' })
+    const pin = unusedPin(m)
+    setPin(m, m.idB, onlyB.userId, pin)
+    expect(m.accessA.signIn({ pin }, null, '10.0.1.3')).toMatchObject({
+      ok: false,
+      code: 'wrong_pin',
+    })
+    expect(m.accessB.signIn({ pin }, null, '10.0.1.8')).toMatchObject({
+      ok: true,
+      user: { name: 'Solo B' },
+    })
   })
 
   it('archiving the person in A frees the PIN in A and does not touch the one in B', () => {
@@ -266,6 +281,8 @@ describe('the same PIN in two restaurants', () => {
 
   it('the authorization PIN of an admin in B does not authorize in A', () => {
     const m = samePin()
+    const adminPin = unusedPin(m)
+    setPin(m, m.idB, m.adminB.userId, adminPin)
     const entry = m.accessA.signIn({ pin: m.pin }, null, '10.0.1.7')
     if (!entry.ok || !entry.device) throw new Error('did not sign in')
     const connection = m.accessA.authenticate(entry.device.token)
@@ -273,14 +290,13 @@ describe('the same PIN in two restaurants', () => {
     const r = m.accessA.authorize(connection, {
       sessionId: entry.sessionId,
       secret: entry.secret,
-      pin: m.adminB.pin,
+      pin: adminPin,
       action: 'void_sent_item',
       aggregateId: '0'.repeat(26),
       eventId: '1'.repeat(26),
       fingerprint: 'a'.repeat(64),
     })
-    expect(r).toMatchObject({ ok: false })
-    if (!m.a.people.admin.pin.includes(m.adminB.pin)) expect(r).toMatchObject({ code: 'wrong_pin' })
+    expect(r).toMatchObject({ ok: false, code: 'wrong_pin' })
   })
 })
 
