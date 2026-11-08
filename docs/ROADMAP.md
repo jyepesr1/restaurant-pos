@@ -104,7 +104,7 @@ Decisiones del dueño (8-nov-2026): el PC del piloto es Windows 11; las versione
 - **Impresoras USB** por la cola de Windows y **cajón monedero** que se abre solo al cobrar en efectivo (y al devolver o mover efectivo), configurado en **Caja y pagos**.
 
 **Queda pendiente:**
-- **Publicar la nube antes de elegir el cajón:** el Worker publicado no conoce `cash_drawer_printer_id` y rechazaría la configuración del PC de caja (deja de subir la copia de la configuración al panel). Orden: nube (`pnpm --filter @pos/cloud run deploy`) → instalador en el PC de caja.
+- ~~Publicar la nube antes de elegir el cajón~~: publicada el 8-nov-2026 (versión `d6a8fede`); ya acepta `cash_drawer_printer_id`.
 - **Probado solo en el Mac:** el hub empaquetado arranca, sirve la app, entrega los datos del administrador y se detiene limpio (prueba automática), y el instalador compila sin advertencias. **Falta instalarlo en un Windows real** (el PC del piloto) y probar la impresora USB y el cajón con el equipo de verdad.
 - **Abrir el cajón sin venta** (con registro y permiso «Abrir el cajón sin venta»): tarea aparte, necesita un evento auditado.
 - **Anular un pago en efectivo no abre el cajón** (solo cobrar, devolver y las entradas o salidas de caja): si al anular hay que devolver billetes, se abre con la llave o, más adelante, con «Abrir el cajón sin venta».
