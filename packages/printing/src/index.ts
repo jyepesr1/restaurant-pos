@@ -20,7 +20,7 @@ export {
   decode,
   encode,
 } from './encoding'
-export { escpos } from './escpos'
+export { drawerPulse, escpos } from './escpos'
 export {
   type PreBill,
   type PreBillLine,

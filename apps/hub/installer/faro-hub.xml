@@ -1,0 +1,27 @@
+<!--
+  The Windows service that keeps the hub running on the register PC (ADR-003), for WinSW 2.12.
+  It starts with Windows, restarts after a crash and keeps a rolling log. %BASE% is the install
+  folder (where faro-hub.exe lives); the data stays in ProgramData so reinstalling keeps it.
+-->
+<service>
+  <id>faro-hub</id>
+  <name>Faro (PC de caja)</name>
+  <description>Atiende a los celulares, las impresoras y la copia en la nube de Faro en el local.</description>
+  <executable>%BASE%\node\node.exe</executable>
+  <arguments>--disable-warning=ExperimentalWarning --enable-source-maps "%BASE%\hub\hub.mjs"</arguments>
+  <env name="DATA_DIR" value="%ProgramData%\Faro\data"/>
+  <env name="APP_DIR" value="%BASE%\app"/>
+  <env name="NODE_ENV" value="production"/>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <!-- Longer than a stuck USB print (30 s), so the hub still closes the database. -->
+  <stoptimeout>40 sec</stoptimeout>
+  <logpath>%ProgramData%\Faro\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+</service>

@@ -44,3 +44,6 @@ apps/hub/data/
 # Old hub data folder (before the English rewrite) and Vitest JSON output
 apps/hub/datos/
 .vitest/
+
+# Windows installer of the hub: downloads cache and output
+apps/hub/installer/.cache/

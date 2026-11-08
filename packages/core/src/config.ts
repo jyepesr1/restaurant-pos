@@ -127,6 +127,11 @@ export const RestaurantConfig = z.strictObject({
   pre_bill_header: z.enum(['name', 'logo']).default('name'),
   /** The logo for printing, already in black and white (the device converts it when uploaded). */
   print_logo: PrintLogo.nullable().default(null),
+  /**
+   * The printer the cash drawer is wired to (task 1.13): the hub opens it when cash goes in or
+   * out. Without one, nothing opens on its own.
+   */
+  cash_drawer_printer_id: Ulid.nullable().default(null),
 })
 
 export type RestaurantConfig = z.infer<typeof RestaurantConfig>

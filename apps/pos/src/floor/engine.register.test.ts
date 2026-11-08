@@ -103,6 +103,20 @@ describe('«Caja y pagos» methods: route, token and session', () => {
       (s: Floor) => s.preBillPrinter(null),
       { printer_id: null },
     ],
+    [
+      'cashDrawerPrinter',
+      '/api/register/cash-drawer',
+      (s: Floor) => s.cashDrawerPrinter('I'.repeat(26)),
+      { printer_id: 'I'.repeat(26) },
+    ],
+    [
+      'cashDrawerPrinter (clear)',
+      '/api/register/cash-drawer',
+      (s: Floor) => s.cashDrawerPrinter(null),
+      { printer_id: null },
+    ],
+    ['testCashDrawer', '/api/register/cash-drawer/test', (s: Floor) => s.testCashDrawer(), {}],
+    ['windowsPrinters', '/api/printers/windows', (s: Floor) => s.windowsPrinters(), {}],
   ])('%s calls %s with the device token and the session', async (_n, route, makeCall, extra) => {
     const calls = fakeHub(() =>
       json({ payment_methods: [], suggested_tip: 1000, custom_methods: [], cardTerminals: [] }),
@@ -128,6 +142,25 @@ describe('«Caja y pagos» methods: route, token and session', () => {
     fakeHub(() => json(response))
     const { floor } = await open()
     await expect(floor.registerConfig()).resolves.toEqual(response)
+  })
+
+  it('windowsPrinters returns what the hub answers', async () => {
+    const response = {
+      available: true,
+      printers: [{ name: 'POS-80', port: 'USB001', driver: 'POS-80C' }],
+    }
+    fakeHub(() => json(response))
+    const { floor } = await open()
+    await expect(floor.windowsPrinters()).resolves.toEqual(response)
+  })
+
+  it('a drawer that does not open arrives as an error with the hub message', async () => {
+    fakeHub(() => json({ error: 'printer_failed', message: 'La impresora no responde' }, 502))
+    const { floor } = await open()
+    await expect(floor.testCashDrawer()).rejects.toMatchObject({
+      code: 'printer_failed',
+      message: 'La impresora no responde',
+    })
   })
 
   it('saveCardTerminal sends the card terminal and returns the new list', async () => {
@@ -190,6 +223,9 @@ describe('«Caja y pagos» methods: route, token and session', () => {
       () => floor.savePaymentMethods(['cash']),
       () => floor.suggestedTip(0),
       () => floor.preBillPrinter(null),
+      () => floor.cashDrawerPrinter(null),
+      () => floor.testCashDrawer(),
+      () => floor.windowsPrinters(),
       () => floor.saveCardTerminal({ name: 'B', provider: 'other', active: true }),
       () => floor.saveCustomMethod({ name: 'S', active: true }),
     ])

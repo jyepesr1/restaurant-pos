@@ -46,7 +46,7 @@ Orden aprobado por el dueño el 24-oct-2026.
 | 1.11b | Carta, configuración y personal editados en la nube (también desde el panel) y bajando al hub | ⏳ |
 | 1.7b | Dinero de eventos guardados como conflicto: aviso al cajero, renglón aparte en el cierre, alerta en el panel y veredicto guardado por el hub | ✅ (nube publicada el 4-nov-2026; falta actualizar el hub) |
 | 1.12 | Restaurar un hub desde la nube (PC nuevo) y respaldos | ⏳ |
-| 1.13 | Hub en el PC de caja (Windows) | ⏳ |
+| 1.13 | Hub en el PC de caja (Windows): instalador, servicio, impresora USB y cajón | ✅ (falta probarlo en el PC piloto) |
 | 1.14 | Prueba de aceptación: servicio de 2 horas con un corte de internet y la sincronización al volver (y la e2e de la Fase 0) | ⏳ |
 
 **Cambio de arquitectura (26-oct-2026):** el dueño decidió que Faro funcione principalmente en línea, con la base oficial en Postgres (Neon) y el PC de caja como puente local para no detenerse sin internet ([ADR-016](DECISIONES.md#adr-016--nube-primero-postgres-en-neon-como-base-oficial-y-el-pc-de-caja-como-puente-local)). Por eso se agregan las tareas 1.10 a 1.12 antes del instalador del hub (antes 1.10, ahora 1.13) y de la prueba de aceptación (antes 1.11, ahora 1.14).
@@ -89,6 +89,42 @@ En cada terminal nueva, desde la carpeta del proyecto:
 
 1. Escribe `nvm use 24`. Debes ver `Now using node v24…`.
 2. Solo la primera vez: escribe `corepack enable pnpm`. No muestra nada; es normal.
+
+### 1.13 — Hub en el PC de caja (Windows) ✅
+
+Decisiones del dueño (8-nov-2026): el PC del piloto es Windows 11; las versiones nuevas se instalan a mano con el instalador nuevo; el instalador va **sin firma digital** por ahora; los datos del Mac se traen al PC de Windows; la impresora USB de la caja imprime precuentas y el cierre Z y abre el cajón al cobrar en efectivo. Diseño en [ADR-003](DECISIONES.md#adr-003--el-hub-es-un-servicio-de-windows-en-el-pc-de-caja).
+
+**Qué trae:**
+- **Instalador `Faro-PC-de-caja-<versión>.exe`** (`pnpm --filter @pos/hub installer`, armado en el Mac con NSIS): deja Faro como **servicio de Windows** que arranca solo con el PC, sin ventana, y se reinicia si se cae. Instalar encima es la actualización: conserva los datos.
+- **Datos de otro PC de caja:** en una instalación nueva, el instalador pregunta si se empieza de cero o se trae la carpeta `data` de otro equipo (la base, la llave de los PIN, la identidad del hub, la conexión a la nube y las fotos; nunca los archivos con PIN o contraseñas).
+- **Primera vez:** el instalador muestra una sola vez el usuario y la contraseña del administrador y borra el archivo.
+- **La caja** abre Faro en su propia ventana de Edge (ícono en el escritorio y, si se elige, al iniciar sesión). **«Nueva contraseña del administrador»** y **«Registros de Faro»** en el menú Inicio.
+- **El PC no se duerme** con corriente (opcional, marcado) y el **firewall** deja entrar a los celulares solo desde la red local.
+- **«Para conectar un celular»** en **Personal y roles → Equipos**: la dirección que antes salía en la ventana del hub.
+- **Impresoras USB** por la cola de Windows y **cajón monedero** que se abre solo al cobrar en efectivo (y al devolver o mover efectivo), configurado en **Caja y pagos**.
+
+**Queda pendiente:**
+- **Publicar la nube antes de elegir el cajón:** el Worker publicado no conoce `cash_drawer_printer_id` y rechazaría la configuración del PC de caja (deja de subir la copia de la configuración al panel). Orden: nube (`pnpm --filter @pos/cloud run deploy`) → instalador en el PC de caja.
+- **Probado solo en el Mac:** el hub empaquetado arranca, sirve la app, entrega los datos del administrador y se detiene limpio (prueba automática), y el instalador compila sin advertencias. **Falta instalarlo en un Windows real** (el PC del piloto) y probar la impresora USB y el cajón con el equipo de verdad.
+- **Abrir el cajón sin venta** (con registro y permiso «Abrir el cajón sin venta»): tarea aparte, necesita un evento auditado.
+- **Anular un pago en efectivo no abre el cajón** (solo cobrar, devolver y las entradas o salidas de caja): si al anular hay que devolver billetes, se abre con la llave o, más adelante, con «Abrir el cajón sin venta».
+- **Revisado por** `revisor-codigo`, `revisor-ux` y `qa-pruebas` (unas 350 pruebas nuevas: el hub empaquetado como el servicio, datos traídos de otro PC, nombres de impresora hostiles, el cajón con eventos repetidos, viejos o de otro restaurante, la nube con PGlite). `auditor-dinero` no, porque no cambia ningún cálculo de dinero. Se corrigió: el cajón que se abría media hora después con la impresora USB apagada, nombres de impresoras compartidas por otro PC, la contraseña del administrador perdida en una instalación silenciosa, tildes cortadas en la lista de impresoras de Windows y una prueba de PIN que fallaba al azar.
+- **Impresora USB apagada:** Windows guarda el trabajo y lo imprime al volver; Faro lo cuenta como impreso y no usa la de respaldo. El pulso del cajón no: si Windows no lo entrega en 3 s, lo saca de la cola (un cajón que se abre solo media hora después es peor).
+- **Por medir en el PC piloto:** cada impresión USB abre PowerShell y compila su parte en C# (1 a 2 s más por papel); revisar también que no se acumulen archivos en `C:\Windows\Temp`. Si pesa, se deja un PowerShell abierto o se precompila.
+- **Firma digital** del instalador antes de vender a otros restaurantes, y **actualizar solo desde la nube**, para después.
+
+**Cómo probarlo** (en el PC de Windows del piloto; los pasos completos están en [PUESTA_EN_MARCHA.md](PUESTA_EN_MARCHA.md#1-instalar-faro-en-el-pc-de-caja-una-sola-vez)):
+
+1. En el Mac: cierra el hub (**Ctrl+C**) y copia `apps/hub/data` a una memoria USB. Arma el instalador: `pnpm --filter @pos/hub installer`. Al final debe decir `Installer: …/Faro-PC-de-caja-0.11.exe` con su SHA-256. Cópialo a la memoria.
+2. En el PC de Windows, abre el instalador: «Windows protegió su PC» → **Más información → Ejecutar de todas formas** → **Sí**.
+3. **Siguiente** → «Traer los datos de otro PC de caja» → **Buscar…** → la carpeta `data` de la memoria → **Siguiente** → **Instalar** → **Finalizar**. Debe abrirse Faro en su propia ventana, con la pantalla para entrar.
+4. Entra como administrador. Debes ver el salón de La Spritzzería y, arriba, **«Nube al día»**.
+5. **Personal y roles → Equipos**: debe salir «Para conectar un celular» con `http://192.168.…:4000`. Ábrela en un celular conectado al Wi-Fi: debe salir el teclado del PIN.
+6. **Reinicia el PC** sin iniciar sesión: desde el celular, recarga. Debe volver a conectarse a la caja apenas Windows termina de arrancar.
+7. Cierra la ventana de Faro en la caja: el celular sigue funcionando. Ábrela otra vez con el ícono **Faro** del escritorio.
+8. **Impresora USB:** con el driver de la impresora instalado en Windows, en **Cocina e impresoras → Agregar impresora** elige **USB** y la impresora de la lista; toca **Guardar** e **Imprimir prueba**. Debe salir la hoja de prueba.
+9. **Cajón:** en **Caja y pagos**, elige en «Cajón monedero» la impresora USB y toca **Probar el cajón**: debe abrirse. Cobra una mesa en efectivo: el cajón se abre solo; con tarjeta, no.
+10. **Actualizar:** vuelve a abrir el mismo instalador. No pregunta por los datos; al terminar, todo sigue igual.
 
 ### 1.11c-2 — Panel en vivo: salón, cocina, caja, alertas y aviso al instante ✅
 

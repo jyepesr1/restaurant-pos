@@ -125,16 +125,17 @@ export function readSnapshots(db: SqliteDatabase, restaurantId: string): Snapsho
 }
 
 /**
- * The config as the cloud takes it. The pre-bill header fields (2-nov-2026) only go when they say
- * something: a cloud published before them refuses keys it does not know, and a restaurant without
- * a logo keeps uploading exactly what it did.
+ * The config as the cloud takes it. The pre-bill header fields (2-nov-2026) and the cash drawer
+ * (task 1.13) only go when they say something: a cloud published before them refuses keys it does
+ * not know, and a restaurant without a logo or a drawer keeps uploading exactly what it did.
  */
 function forTheCloud(config: RestaurantConfig): Partial<RestaurantConfig> {
-  const { pre_bill_header, print_logo, ...rest } = config
+  const { pre_bill_header, print_logo, cash_drawer_printer_id, ...rest } = config
   return {
     ...rest,
     ...(pre_bill_header === 'name' ? {} : { pre_bill_header }),
     ...(print_logo === null ? {} : { print_logo }),
+    ...(cash_drawer_printer_id === null ? {} : { cash_drawer_printer_id }),
   }
 }
 

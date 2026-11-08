@@ -91,3 +91,11 @@ export function escpos(
   bytes.push(...size(false), ...bold(false), ...align(false), ...advance(4), ...cut)
   return Uint8Array.from(bytes)
 }
+
+/**
+ * `ESC p 0 25 250`: a pulse on pin 2 of the drawer port (the RJ11/RJ12 on the back of the
+ * printer), 50 ms on and 500 ms off. It opens the cash drawer wired to it and prints nothing.
+ */
+export function drawerPulse(): Uint8Array {
+  return Uint8Array.from([ESC, 0x70, 0, 25, 250])
+}

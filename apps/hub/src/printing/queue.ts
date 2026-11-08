@@ -12,7 +12,7 @@ import {
   zReportLines,
 } from '@pos/printing'
 import type { PrinterStatus } from '@pos/sync'
-import { type Send, sendOverNetwork } from './transport'
+import { type Send, sendToPrinter } from './transport'
 
 // The hub's print queue (ADR-015). Jobs live in `print_jobs` and survive a restart. Each
 // printer prints its own in order, one at a time. If it fails, it retries with a growing wait up
@@ -62,7 +62,7 @@ export class PrintQueue {
   private unbuiltSince: number | null = null
 
   constructor(o: QueueOptions) {
-    this.o = { send: sendOverNetwork, clock: Date.now, ...o }
+    this.o = { send: sendToPrinter, clock: Date.now, ...o }
   }
 
   /** There is new work (or a printer changed): print whatever can be printed now. */

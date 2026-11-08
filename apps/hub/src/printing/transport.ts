@@ -1,22 +1,25 @@
 import { Socket } from 'node:net'
+import { PrinterError } from './printer-error'
+import { sendOverUsb } from './windows-print'
+
+export { PrinterError }
 
 // How the bytes reach the printer. Over the network it is a direct TCP connection to the printer's
-// port (9100, "RAW"): open, write and close. USB goes through the Windows queue and comes with
-// the installer (task 1.10).
+// port (9100, "RAW"): open, write and close. USB goes through the Windows print queue in RAW mode
+// (`windows-print.ts`), with the hub installed on the register PC (task 1.13).
 
 export interface Target {
   connection: 'network' | 'usb'
   address: string
   port: number | null
+  /** Over USB, a job Windows would keep queued (printer off) is dropped: for the drawer pulse. */
+  nowOrNever?: boolean
 }
 
 export type Send = (target: Target, bytes: Uint8Array) => Promise<void>
 
 export const PRINTER_PORT = 9100
 const WAIT_MS = 5000
-
-/** A printing failure in words for the register. */
-export class PrinterError extends Error {}
 
 const MESSAGES: Record<string, string> = {
   ECONNREFUSED: 'La impresora rechazó la conexión: revisa el puerto (casi siempre 9100).',
@@ -28,14 +31,17 @@ const MESSAGES: Record<string, string> = {
   EPIPE: 'La impresora cortó la conexión: revisa que tenga papel y la tapa cerrada.',
 }
 
+/** Each printer by its own way: the network one over TCP, the USB one through Windows. */
+export const sendToPrinter: Send = (target, bytes) =>
+  target.connection === 'usb'
+    ? sendOverUsb(target.address, bytes, { nowOrNever: target.nowOrNever })
+    : sendOverNetwork(target, bytes)
+
 /** Sends over TCP. Fails with `PrinterError` if it does not connect or finish within 5 s. */
 export const sendOverNetwork: Send = (target, bytes) => {
+  // A USB printer's address is its Windows name, not a host: never dialed.
   if (target.connection === 'usb')
-    return Promise.reject(
-      new PrinterError(
-        'Las impresoras USB llegan con el programa de instalación para Windows: por ahora, conéctala con cable de red.',
-      ),
-    )
+    return Promise.reject(new PrinterError('Esta impresora es USB: no se conecta por la red.'))
   return new Promise((resolve, reject) => {
     const socket = new Socket()
     let finished = false

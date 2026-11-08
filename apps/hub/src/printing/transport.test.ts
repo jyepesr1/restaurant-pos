@@ -77,7 +77,7 @@ describe('sendOverNetwork', () => {
     expect(p.received).toHaveLength(1)
   })
 
-  it('USB printers cannot be used yet and say so', async () => {
+  it('never dials the Windows name of a USB printer (those go through windows-print)', async () => {
     const error = await sendOverNetwork(
       { connection: 'usb', address: 'POS-80', port: null },
       testBytes(),

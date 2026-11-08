@@ -361,6 +361,72 @@ export function Confirm({
   )
 }
 
+/**
+ * Where the phones open Faro: the hub runs as a Windows service with no window that shows it
+ * (task 1.13), so it is here, next to the devices.
+ */
+function PhoneAddress() {
+  // `false`: the hub did not answer. The app comes from the same hub, so the route always exists.
+  const [addresses, setAddresses] = useState<string[] | false | null>(null)
+  const [search, setSearch] = useState(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `search` asks the hub again.
+  useEffect(() => {
+    let current = true
+    floor
+      .phoneAddresses()
+      .then((a) => current && setAddresses(a))
+      .catch(() => current && setAddresses(false))
+    return () => {
+      current = false
+    }
+  }, [search])
+  if (addresses === null) return null
+  if (addresses === false)
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="text-alert-text" role="alert">
+          No pudimos leer la dirección para los celulares.
+        </p>
+        <Button variant="secondary" className="self-start" onClick={() => setSearch((n) => n + 1)}>
+          Intentar de nuevo
+        </Button>
+      </div>
+    )
+  return <PhoneAddressCard addresses={addresses} />
+}
+
+export function PhoneAddressCard({ addresses }: { addresses: string[] }) {
+  return (
+    <section
+      aria-labelledby="title-phone-address"
+      className="flex flex-col gap-1 rounded-xl border border-border bg-surface px-4 py-3"
+    >
+      <h3 id="title-phone-address" className="font-semibold">
+        Para conectar un celular
+      </h3>
+      {addresses.length === 0 ? (
+        <span className="text-muted">
+          El PC de caja no está en la red del local: revisa su cable o su Wi-Fi.
+        </span>
+      ) : (
+        <>
+          <span className="text-muted">Conéctalo al Wi-Fi del personal y abre:</span>
+          {addresses.map((a) => (
+            <span key={a} className="figures select-all text-2xl font-semibold">
+              {a}
+            </span>
+          ))}
+          {addresses.length > 1 && (
+            <span className="text-sm text-muted">
+              Usa la que empieza igual que la dirección de las impresoras.
+            </span>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
 function Devices({
   devices,
   own,
@@ -375,6 +441,7 @@ function Devices({
   const [error, setError] = useState<string | null>(null)
   return (
     <section aria-label="Equipos" className="flex flex-col gap-2">
+      <PhoneAddress />
       <p className="text-muted">
         Cada celular, tablet o computador queda aquí la primera vez que alguien entra en él. Si se
         pierde o se lo roban, retíralo: deja de recibir el salón y nadie puede entrar en él.

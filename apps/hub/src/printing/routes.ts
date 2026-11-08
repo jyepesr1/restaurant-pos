@@ -14,7 +14,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { insertVersioned, updateVersioned } from '../access/records'
 import type { AccessService } from '../access/service'
+import { CashDrawer } from './cash-drawer'
 import type { PrintQueue, PrintTest } from './queue'
+import { PrinterError } from './transport'
+import { listWindowsPrinters, type WindowsPrinter } from './windows-print'
 
 // Kitchen and printers (ADR-015): which printer and which screen each station gets, the test
 // page, the queue of what has not printed and turning a device into a kitchen screen. Everything
@@ -37,6 +40,10 @@ export interface PrintingOptions {
   allowLocal?: boolean
   /** Whether the request comes from the hub's own PC (that machine is not turned into a screen). */
   isHubDevice?: (ip: string) => boolean
+  /** The cash drawer (task 1.13); by default, one that sends like the queue does. */
+  drawer?: CashDrawer
+  /** The printers installed in Windows, or `null` if the hub is not on Windows. */
+  windowsPrinters?: () => Promise<WindowsPrinter[] | null>
 }
 
 /**
@@ -58,6 +65,22 @@ export function validAddress(address: string, port: number | null, locals: boole
   const p = port ?? 9100
   if (!locals && (p < 9100 || p > 9109))
     return 'Las impresoras de red usan el puerto 9100 (hasta 9109)'
+  return null
+}
+
+/**
+ * A USB printer goes by its name in Windows, written as it appears there. It only travels to
+ * Windows in an environment variable, so it just has to be a name: no control characters.
+ */
+export function validWindowsName(name: string): string | null {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it rejects
+  if (/[\u0000-\u001f\u007f]/.test(name) || name.length > 220)
+    return 'Escribe el nombre de la impresora como aparece en Windows'
+  // A local printer's name never has `\` or `,` (Windows forbids them). With them, OpenPrinter would
+  // reach a printer shared by another PC (`\\host\name`: the hub, as SYSTEM, would sign in to it)
+  // or a port monitor (`,XcvPort`).
+  if (/[\\,]/.test(name))
+    return 'Elige la impresora conectada por USB a este PC: no una compartida por otro equipo'
   return null
 }
 
@@ -153,9 +176,16 @@ export async function printingRoutes(
     clock = () => new Date().toISOString(),
     allowLocal = false,
     isHubDevice = () => false,
+    drawer = new CashDrawer({ db, restaurantId }),
+    windowsPrinters = () => listWindowsPrinters(),
   }: PrintingOptions,
 ) {
   const { connectionOf, withDevice, invalidData, who } = deviceGuards(access)
+  /** An active printer of this restaurant (for the pre-bill and the drawer). */
+  const isActivePrinter = (id: string) =>
+    !!db
+      .prepare('SELECT 1 FROM printers WHERE restaurant_id = ? AND id = ? AND active = 1')
+      .get(restaurantId, id)
 
   const activeStations = () =>
     db
@@ -238,6 +268,22 @@ export async function printingRoutes(
       pre_bill_printer_id: config.pre_bill_printer_id,
       pre_bill_header: config.pre_bill_header,
       print_logo: config.print_logo,
+      cash_drawer_printer_id: config.cash_drawer_printer_id,
+    }
+  })
+
+  // The printers installed in Windows, to choose a USB one by tapping instead of typing its name.
+  // Off Windows (or if Windows does not answer) the name is typed.
+  app.post('/api/printers/windows', withDevice, async (req, reply) => {
+    const body = Session.safeParse(req.body)
+    if (!body.success) return invalidData(reply)
+    if (!who(req, reply, body.data, ['manage_devices'])) return reply
+    try {
+      const printers = await windowsPrinters()
+      return printers ? { available: true, printers } : { available: false, printers: [] }
+    } catch (error) {
+      req.log.warn({ err: error }, 'Could not list the Windows printers')
+      return { available: false, printers: [] }
     }
   })
 
@@ -247,10 +293,11 @@ export async function printingRoutes(
     const author = who(req, reply, body.data, ['manage_devices'])
     if (!author) return reply
     const i = body.data.printer
-    if (i.connection === 'network') {
-      const issue = validAddress(i.address, i.port, allowLocal)
-      if (issue) return invalidData(reply, issue)
-    }
+    const issue =
+      i.connection === 'network'
+        ? validAddress(i.address, i.port, allowLocal)
+        : validWindowsName(i.address)
+    if (issue) return invalidData(reply, issue)
     const stationIds = stationsOf(i.station_ids)
     if (!stationIds) return invalidData(reply, 'Esa estación no existe')
     const current: Row | undefined = i.id
@@ -510,14 +557,38 @@ export async function printingRoutes(
     const author = who(req, reply, body.data, ['manage_devices'])
     if (!author) return reply
     const id = body.data.printer_id
-    if (
-      id &&
-      !db
-        .prepare('SELECT 1 FROM printers WHERE restaurant_id = ? AND id = ? AND active = 1')
-        .get(restaurantId, id)
-    )
+    if (id && !isActivePrinter(id))
       return invalidData(reply, 'Esa impresora no existe o está archivada')
     updateConfig({ pre_bill_printer_id: id }, author)
+    return reply.code(204).send()
+  })
+
+  // Which printer the cash drawer is wired to (task 1.13); without one, nothing opens on its own.
+  app.post('/api/register/cash-drawer', withDevice, async (req, reply) => {
+    const body = Session.extend({ printer_id: Id.nullable() }).safeParse(req.body)
+    if (!body.success) return invalidData(reply)
+    const author = who(req, reply, body.data, ['manage_devices'])
+    if (!author) return reply
+    const id = body.data.printer_id
+    if (id && !isActivePrinter(id))
+      return invalidData(reply, 'Esa impresora no existe o está archivada')
+    updateConfig({ cash_drawer_printer_id: id }, author)
+    return reply.code(204).send()
+  })
+
+  // «Probar el cajón»: opens it now, and says why if it does not.
+  app.post('/api/register/cash-drawer/test', withDevice, async (req, reply) => {
+    const body = Session.safeParse(req.body)
+    if (!body.success) return invalidData(reply)
+    if (!who(req, reply, body.data, ['manage_devices'])) return reply
+    if (!drawer.connected())
+      return invalidData(reply, 'Elige primero a qué impresora está conectado el cajón monedero')
+    try {
+      await drawer.open()
+    } catch (error) {
+      if (!(error instanceof PrinterError)) throw error
+      return reply.code(502).send({ error: 'printer_failed', message: error.message })
+    }
     return reply.code(204).send()
   })
 

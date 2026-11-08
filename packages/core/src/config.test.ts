@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BRANDS, fullConfig, RestaurantConfig } from './config'
+import { newId } from './id'
 import { chargedInCash } from './money/cash'
 import { suggestedTip } from './money/tip'
 
@@ -26,6 +27,7 @@ describe('restaurant config', () => {
       pre_bill_printer_id: null,
       pre_bill_header: 'name',
       print_logo: null,
+      cash_drawer_printer_id: null,
     })
   })
 
@@ -41,6 +43,14 @@ describe('restaurant config', () => {
     it('the pre-bill printer is a ULID or nothing', () => {
       expect(fullConfig({ pre_bill_printer_id: null }).pre_bill_printer_id).toBeNull()
       expect(() => fullConfig({ pre_bill_printer_id: 'impresora' })).toThrow()
+    })
+
+    it('the cash drawer printer is a ULID or nothing, and a config without it has none', () => {
+      const id = newId()
+      expect(fullConfig({}).cash_drawer_printer_id).toBeNull()
+      expect(fullConfig({ cash_drawer_printer_id: id }).cash_drawer_printer_id).toBe(id)
+      for (const wrong of ['cajón', '', 7, {}, [id], `${id}X`])
+        expect(RestaurantConfig.safeParse({ cash_drawer_printer_id: wrong }).success).toBe(false)
     })
   })
 

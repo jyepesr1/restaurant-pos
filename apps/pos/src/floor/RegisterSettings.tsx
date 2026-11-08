@@ -48,6 +48,7 @@ export function RegisterSettings() {
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<CardTerminal | null>(null)
   const [editingMethod, setEditingMethod] = useState<CustomMethod | null>(null)
+  const [testingDrawer, setTestingDrawer] = useState(false)
 
   const load = useCallback(() => {
     Promise.all([floor.registerConfig(), floor.kitchenConfig()])
@@ -119,6 +120,35 @@ export function RegisterSettings() {
       notify(message(e))
     }
   }
+
+  // With its printer archived the hub does not open it: shown as no drawer.
+  const drawer = printers.find((i) => i.id === kitchen.cash_drawer_printer_id)?.id ?? null
+  const archivedDrawer =
+    drawer === null && kitchen.cash_drawer_printer_id
+      ? kitchen.printers.find((i) => i.id === kitchen.cash_drawer_printer_id)
+      : undefined
+  const selectDrawer = async (id: string | null) => {
+    try {
+      await floor.cashDrawerPrinter(id)
+      notify(id ? 'El cajón se abrirá solo al mover efectivo' : 'Sin cajón monedero')
+      load()
+    } catch (e) {
+      notify(message(e))
+    }
+  }
+  const testDrawer = async () => {
+    setTestingDrawer(true)
+    try {
+      await floor.testCashDrawer()
+      notify('Se envió la señal. Si el cajón no se abre, revisa su cable a la impresora.')
+    } catch (e) {
+      notify(message(e))
+    } finally {
+      setTestingDrawer(false)
+    }
+  }
+  const printerDetail = (i: (typeof printers)[number]) =>
+    i.connection === 'network' ? i.address : `USB · ${i.address}`
 
   const saveMethod = async (m: CustomMethod) => {
     try {
@@ -246,7 +276,7 @@ export function RegisterSettings() {
                 shape="card"
                 selected={selected === i.id}
                 onChoose={() => selectPrinter(i.id)}
-                detail={i.connection === 'network' ? i.address : 'USB'}
+                detail={printerDetail(i)}
               >
                 {i.name}
               </Option>
@@ -263,6 +293,47 @@ export function RegisterSettings() {
             logo={kitchen.print_logo ?? null}
             onSaved={load}
           />
+        </section>
+
+        <section aria-labelledby="title-drawer" className="flex flex-col gap-3">
+          <h2 id="title-drawer" className="text-xl font-bold tracking-tight">
+            Cajón monedero
+          </h2>
+          <p className="text-muted">
+            A qué impresora va conectado con su cable. Se abre solo al cobrar o devolver en efectivo
+            y al registrar una entrada o salida de caja.
+          </p>
+          {archivedDrawer && (
+            <Label tone="progress" icon="warning">
+              {`El cajón estaba conectado a «${archivedDrawer.name}», que está archivada: elige otra impresora o «Sin cajón»`}
+            </Label>
+          )}
+          <Group label="Cajón monedero" className="flex flex-col gap-2">
+            <Option shape="card" selected={drawer === null} onChoose={() => selectDrawer(null)}>
+              Sin cajón
+            </Option>
+            {printers.map((i) => (
+              <Option
+                key={i.id}
+                shape="card"
+                selected={drawer === i.id}
+                onChoose={() => selectDrawer(i.id)}
+                detail={printerDetail(i)}
+              >
+                {`Conectado a ${i.name}`}
+              </Option>
+            ))}
+          </Group>
+          {printers.length === 0 && (
+            <p className="text-sm text-muted">
+              Agrega la impresora en «Cocina e impresoras» y luego elígela aquí.
+            </p>
+          )}
+          {drawer !== null && (
+            <Button className="self-start" disabled={testingDrawer} onClick={testDrawer}>
+              {testingDrawer ? 'Probando…' : 'Probar el cajón'}
+            </Button>
+          )}
         </section>
 
         <section aria-labelledby="title-card-terminals" className="flex flex-col gap-3">

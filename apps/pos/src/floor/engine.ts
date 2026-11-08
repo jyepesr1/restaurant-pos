@@ -182,6 +182,21 @@ export interface KitchenConfig {
   /** The pre-bill's header: the name or the logo; an older hub does not send them. */
   pre_bill_header?: 'name' | 'logo'
   print_logo?: PrintLogo | null
+  /** The printer the cash drawer is wired to (task 1.13); an older hub does not send it. */
+  cash_drawer_printer_id?: string | null
+}
+
+/** A printer installed in Windows on the register PC, to choose a USB one (task 1.13). */
+export interface WindowsPrinter {
+  name: string
+  port: string | null
+  driver: string | null
+}
+
+/** What `POST /api/printers/windows` returns: `available` is false off Windows. */
+export interface WindowsPrinters {
+  available: boolean
+  printers: WindowsPrinter[]
 }
 
 export interface CustomMethod {
@@ -699,6 +714,11 @@ export class Floor {
     await this.withSession('/api/printers/test', { printer_id: printerId })
   }
 
+  /** The printers installed in Windows on the register PC, to choose a USB one. */
+  windowsPrinters(): Promise<WindowsPrinters> {
+    return this.withSession('/api/printers/windows', {})
+  }
+
   pendingPrints(): Promise<PendingJob[]> {
     return this.withSession('/api/printing/pending', {})
   }
@@ -777,6 +797,16 @@ export class Floor {
     await this.withSession('/api/register/pre-bill-header', { header, logo })
   }
 
+  /** Which printer the cash drawer is wired to; `null`: no drawer. */
+  async cashDrawerPrinter(printerId: string | null): Promise<void> {
+    await this.withSession('/api/register/cash-drawer', { printer_id: printerId })
+  }
+
+  /** Opens the cash drawer now, to check it is wired right. */
+  async testCashDrawer(): Promise<void> {
+    await this.withSession('/api/register/cash-drawer/test', {})
+  }
+
   /**
    * Opens this device's register with the cash base (`ShiftOpened`). The screen only allows it
    * online, like checkout: the hub rejects a second shift of the same register.
@@ -816,6 +846,12 @@ export class Floor {
   /** Removes a device (lost, stolen): it stops syncing and nobody can sign in on it. */
   async removeDevice(deviceId: string): Promise<void> {
     await this.withSession(`/api/devices/${encodeURIComponent(deviceId)}/revoke`, {})
+  }
+
+  /** Where the phones open the hub on the local network (`http://<ip>:<port>`), task 1.13. */
+  async phoneAddresses(): Promise<string[]> {
+    const r = await this.api<{ addresses?: unknown }>('GET', '/api/addresses')
+    return Array.isArray(r.addresses) ? r.addresses.filter((a) => typeof a === 'string') : []
   }
 
   /** A call with the open session. If the hub says it is no longer valid, asks to sign in again. */

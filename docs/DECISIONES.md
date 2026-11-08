@@ -116,6 +116,24 @@ Si el hub cae, el salón se detiene (no imprimen comandas ni llega nada al KDS).
 
 Un corte de luz sin UPS apaga todo el salón. SQLite en modo WAL protege la base, pero no la operación.
 
+### Cómo se instala (tarea 1.13, 8-nov-2026)
+
+- **Un instalador `.exe` (NSIS)** que se arma en macOS o Linux con `pnpm --filter @pos/hub installer`. Lleva la app compilada, el hub en un solo archivo (esbuild) y el **Node oficial para Windows**, con su versión y su huella SHA-256 fijadas en `apps/hub/installer/build.ts`. `node:sqlite` viene en Node, así que no hay módulos nativos que compilar.
+- **El servicio lo maneja WinSW 2.12** (`faro-hub.exe` con `faro-hub.xml`): arranca con Windows sin que nadie inicie sesión, se reinicia solo si se cae (a los 5, 10 y 30 s) y guarda registros rotativos en `ProgramData\Faro\logs`. Para detenerlo manda Ctrl+C, que Node recibe como SIGINT: el hub termina lo que imprime y cierra la base.
+- **Programa en `Program Files\Faro` y datos en `ProgramData\Faro\data`.** La carpeta de datos queda solo para Windows (SYSTEM) y los administradores, porque guarda la llave de los PIN y la credencial de la nube. Desinstalar no la borra; instalar encima es la actualización.
+- **El firewall** deja entrar al puerto 4000 solo desde la red local, en cualquier perfil de red: el Wi-Fi del local suele quedar marcado como público.
+- **La caja abre Faro en Edge con `--app`** (una ventana sin barra de direcciones), desde el escritorio y, si se elige, al iniciar sesión. Cerrar esa ventana no apaga el hub.
+- **Datos de otro PC de caja:** el instalador puede traer la carpeta de datos de otro equipo (la base, la llave de los PIN, la identidad del hub, la conexión a la nube y las fotos), nunca los archivos con PIN o contraseñas. El equipo viejo no debe volver a abrir Faro con esos datos.
+- **Decisiones del dueño para el piloto:** el instalador **no lleva firma digital** (Windows muestra «Windows protegió su PC» una vez; la firma se compra antes de vender a otros restaurantes) y **las versiones nuevas se instalan a mano** con el instalador nuevo, después del cierre. Actualizar solo desde la nube queda para después.
+- **Impresoras USB** por la cola de Windows en modo RAW, desde PowerShell con la API de impresión de Windows (sin módulos nativos). Si la impresora está apagada, Windows guarda el trabajo y lo imprime al volver: Faro lo cuenta como impreso y no usa la de respaldo.
+- **El cajón monedero** se abre solo al cobrar en efectivo, con un pulso ESC/POS a la impresora donde está conectado. Abrirlo sin venta, con registro, queda para una tarea aparte.
+
+| Alternativa | Por qué no |
+|---|---|
+| node-windows o NSSM | node-windows también usa WinSW por dentro, con más piezas; NSSM no tiene versiones nuevas desde 2017. |
+| Inno Setup o MSI (WiX) | Solo se arman en Windows; NSIS se arma desde el Mac donde se desarrolla. |
+| Node empaquetado en un solo `.exe` (SEA) | Sigue en desarrollo activo en Node 24 y agrega un paso de armado; el Node oficial al lado del archivo es más simple. |
+
 ---
 
 ## ADR-004 · Dinero en pesos enteros; decimales solo dentro del cálculo fiscal

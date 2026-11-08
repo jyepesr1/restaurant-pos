@@ -7,9 +7,11 @@ import { item, OPEN_ORDER } from '../access/hub-setup'
 import { insertVersioned, SYSTEM } from '../access/records'
 import { setupAccess } from '../access/setup'
 import { createAppServer } from '../server'
+import { CashDrawer } from './cash-drawer'
 import { PrintQueue, type QueueOptions } from './queue'
 import { jobsForEvent } from './tickets'
 import { PrinterError, type Send, type Target } from './transport'
+import type { WindowsPrinter } from './windows-print'
 
 // Test setup for task 1.4 (ADR-015): the hub with access, a network of fake printers (no
 // sockets, at will: on, off, slow), the print queue with a manual clock, the `HubSync` with the
@@ -37,6 +39,8 @@ export interface SetupOptions {
   timeZone?: string
   allowLocal?: boolean
   isHubDevice?: (ip: string) => boolean
+  /** The printers Windows would list; by default the hub is not on Windows (`null`). */
+  windowsPrinters?: () => Promise<WindowsPrinter[] | null>
 }
 
 export function setupPrinting(options: SetupOptions = {}) {
@@ -134,6 +138,16 @@ export function setupPrinting(options: SetupOptions = {}) {
       ...extra,
     })
   const queue = createQueue()
+  // The cash drawer over the same fake network, with a short retry.
+  const drawerFailures: unknown[] = []
+  const drawer = new CashDrawer({
+    db: m.db,
+    restaurantId: m.restaurantId,
+    send: sendBytes,
+    clock,
+    retryMs: 5,
+    onFailure: (e) => drawerFailures.push(e),
+  })
 
   const ticketOptions = { db: m.db, restaurantId: m.restaurantId, timeZone }
   const saveFailures: { error: unknown; id: string }[] = []
@@ -173,6 +187,8 @@ export function setupPrinting(options: SetupOptions = {}) {
       clock: m.clock,
       allowLocal: options.allowLocal,
       isHubDevice: options.isHubDevice,
+      drawer,
+      windowsPrinters: options.windowsPrinters ?? (async () => null),
     },
   })
   const post = (url: string, body: unknown, token?: string) =>
@@ -305,6 +321,8 @@ export function setupPrinting(options: SetupOptions = {}) {
     newPrinter,
     queue,
     createQueue,
+    drawer,
+    drawerFailures,
     notifiedStatuses,
     queueFailures,
     hub,

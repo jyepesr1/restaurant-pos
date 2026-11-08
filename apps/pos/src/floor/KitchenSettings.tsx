@@ -7,7 +7,7 @@ import { navigate } from '../ui/route'
 import { SidePanel } from '../ui/SidePanel'
 import { useNotify } from '../ui/toasts'
 import { floor, useFloor } from './context'
-import type { KitchenConfig, KitchenPrinter } from './engine'
+import type { KitchenConfig, KitchenPrinter, WindowsPrinters } from './engine'
 import { FloorFrame } from './FloorFrame'
 import { fieldClass } from './SignIn'
 import { Confirm } from './Staff'
@@ -151,8 +151,8 @@ export function KitchenSettings() {
           {config.printers.length === 0 && (
             <div className="rounded-2xl border border-dashed border-border p-6 text-center">
               <p className="text-muted">
-                Todavía no hay impresoras. Agrega la de cocina y la de barra con su dirección de
-                red.
+                Todavía no hay impresoras. Agrega la de cocina y la de barra (por cable de red) y la
+                de la caja (por cable de red o USB).
               </p>
               <Button
                 variant="main"
@@ -178,7 +178,7 @@ export function KitchenSettings() {
                     <span className="figures text-sm text-muted">
                       {i.connection === 'network'
                         ? `${i.address}:${i.port ?? 9100} · ${i.width} mm`
-                        : `USB · ${i.width} mm`}
+                        : `USB · ${i.address} · ${i.width} mm`}
                       {i.station_ids.length > 0 &&
                         ` · ${i.station_ids.map(stationName).join(', ')}`}
                     </span>
@@ -286,12 +286,15 @@ function EditPrinter({
     if (!data.name.trim()) return setError('Ponle un nombre, por ejemplo «Cocina»')
     if (data.connection === 'network' && !data.address.trim())
       return setError('Escribe la IP de la impresora (sale en su hoja de configuración)')
+    if (data.connection === 'usb' && !data.address.trim())
+      return setError('Elige la impresora de Windows a la que está conectada por USB')
     setTaken(true)
     try {
       await floor.savePrinter({
         ...data,
         name: data.name.trim(),
         address: data.address.trim(),
+        port: data.connection === 'usb' ? null : data.port,
       })
       notify(data.active ? `Guardaste ${data.name.trim()}` : `Archivaste ${data.name.trim()}`)
       onSave()
@@ -382,59 +385,75 @@ function EditPrinter({
           <Group label="Conexión" className="flex flex-wrap gap-2">
             <Option
               selected={b.connection === 'network'}
-              onChoose={() => patch({ connection: 'network' })}
+              onChoose={() =>
+                b.connection !== 'network' &&
+                patch({
+                  connection: 'network',
+                  address: initial.connection === 'network' ? initial.address : '',
+                  port: initial.port ?? 9100,
+                })
+              }
             >
               Cable de red
             </Option>
+            <Option
+              selected={b.connection === 'usb'}
+              onChoose={() =>
+                b.connection !== 'usb' &&
+                patch({
+                  connection: 'usb',
+                  address: initial.connection === 'usb' ? initial.address : '',
+                  port: null,
+                })
+              }
+            >
+              USB
+            </Option>
           </Group>
           <span className="text-sm text-muted">
-            Por USB, próximamente (con el programa de instalación para Windows). Por ahora, conecta
-            la impresora con su cable de red al router.
+            {b.connection === 'network'
+              ? 'Conectada con su cable de red al router del local.'
+              : 'Conectada con su cable USB al PC de la caja y ya instalada en Windows.'}
           </span>
         </div>
 
         {b.connection === 'network' ? (
-          <div className="flex gap-3">
-            <label className="flex flex-1 flex-col gap-1">
-              <span className="font-semibold">Dirección de red (IP)</span>
-              <input
-                className={`${fieldClass} figures`}
-                value={b.address}
-                inputMode="decimal"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                placeholder="192.168.1.50"
-                onChange={(e) => patch({ address: e.target.value })}
-              />
-            </label>
-            <label className="flex w-28 flex-col gap-1">
-              <span className="font-semibold">Puerto</span>
-              <input
-                className={`${fieldClass} figures`}
-                value={b.port ?? ''}
-                inputMode="numeric"
-                onChange={(e) => {
-                  const n = Number(e.target.value.replace(/\D/g, ''))
-                  patch({ port: n > 0 ? Math.min(n, 65535) : null })
-                }}
-              />
-            </label>
-          </div>
+          <>
+            <div className="flex gap-3">
+              <label className="flex flex-1 flex-col gap-1">
+                <span className="font-semibold">Dirección de red (IP)</span>
+                <input
+                  className={`${fieldClass} figures`}
+                  value={b.address}
+                  inputMode="decimal"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="192.168.1.50"
+                  onChange={(e) => patch({ address: e.target.value })}
+                />
+              </label>
+              <label className="flex w-28 flex-col gap-1">
+                <span className="font-semibold">Puerto</span>
+                <input
+                  className={`${fieldClass} figures`}
+                  value={b.port ?? ''}
+                  inputMode="numeric"
+                  onChange={(e) => {
+                    const n = Number(e.target.value.replace(/\D/g, ''))
+                    patch({ port: n > 0 ? Math.min(n, 65535) : null })
+                  }}
+                />
+              </label>
+            </div>
+            <p className="-mt-3 text-sm text-muted">
+              La IP sale al imprimir la hoja de configuración: con la impresora apagada, mantén
+              presionado el botón de avance de papel y préndela.
+            </p>
+          </>
         ) : (
-          <label className="flex flex-col gap-1">
-            <span className="font-semibold">Nombre de la impresora en Windows</span>
-            <input
-              className={fieldClass}
-              value={b.address}
-              onChange={(e) => patch({ address: e.target.value })}
-            />
-          </label>
+          <WindowsPrinterChoice name={b.address} onChange={(address) => patch({ address })} />
         )}
-        <p className="-mt-3 text-sm text-muted">
-          La IP sale al imprimir la hoja de configuración: con la impresora apagada, mantén
-          presionado el botón de avance de papel y préndela.
-        </p>
 
         <div className="flex flex-col gap-2">
           <span className="font-semibold">Ancho del papel</span>
@@ -489,6 +508,105 @@ function EditPrinter({
         </div>
       </div>
     </SidePanel>
+  )
+}
+
+/**
+ * The USB printer, by its name in Windows: chosen from the ones installed on the register PC with
+ * one tap. If the hub is not on Windows (or Windows does not answer), the name is typed as it
+ * appears there.
+ */
+function WindowsPrinterChoice({
+  name,
+  onChange,
+}: {
+  name: string
+  onChange: (name: string) => void
+}) {
+  // `failed`: the hub did not answer (network, session); not the same as a hub without Windows.
+  const [found, setFound] = useState<(WindowsPrinters & { failed?: boolean }) | null>(null)
+  const [search, setSearch] = useState(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `search` asks Windows again.
+  useEffect(() => {
+    let current = true
+    setFound(null)
+    floor
+      .windowsPrinters()
+      .then((r) => current && setFound(r))
+      .catch(() => current && setFound({ available: false, printers: [], failed: true }))
+    return () => {
+      current = false
+    }
+  }, [search])
+  const again = (
+    <Button variant="secondary" className="self-start" onClick={() => setSearch((n) => n + 1)}>
+      Buscar de nuevo
+    </Button>
+  )
+
+  if (!found)
+    return (
+      <p className="text-muted" role="status">
+        Buscando las impresoras instaladas en Windows…
+      </p>
+    )
+  const listed = found.printers.some((p) => p.name === name)
+  if (found.available && found.printers.length > 0)
+    return (
+      <div className="flex flex-col gap-2">
+        <span className="font-semibold">Impresora en Windows</span>
+        {name && !listed && (
+          <Label tone="progress" icon="warning">
+            {`Windows ya no muestra «${name}»: revisa que esté conectada o elige otra`}
+          </Label>
+        )}
+        <Group label="Impresora en Windows" className="flex flex-col gap-2">
+          {found.printers.map((p) => (
+            <Option
+              key={p.name}
+              shape="card"
+              selected={p.name === name}
+              onChoose={() => onChange(p.name)}
+              detail={[p.port, p.driver].filter(Boolean).join(' · ') || undefined}
+            >
+              {p.name}
+            </Option>
+          ))}
+        </Group>
+        <span className="text-sm text-muted">
+          ¿No aparece? Instala en el PC de la caja el driver de la impresora (por ejemplo, el de
+          Jaltech) y toca «Buscar de nuevo».
+        </span>
+        {again}
+      </div>
+    )
+  return (
+    <div className="flex flex-col gap-2">
+      {found.failed && (
+        <p className="text-alert-text" role="alert">
+          No pudimos leer las impresoras de Windows. Toca «Buscar de nuevo» o escribe el nombre.
+        </p>
+      )}
+      <label className="flex flex-col gap-1">
+        <span className="font-semibold">Nombre de la impresora en Windows</span>
+        <input
+          className={fieldClass}
+          value={name}
+          maxLength={220}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          placeholder="POS-80"
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <span className="text-sm text-muted">
+          {found.available
+            ? 'Windows no tiene impresoras instaladas: instala en el PC de la caja el driver de la impresora (por ejemplo, el de Jaltech) y toca «Buscar de nuevo».'
+            : 'Cópialo tal cual de Configuración → Impresoras y escáneres, en el PC de la caja.'}
+        </span>
+      </label>
+      {(found.available || found.failed) && again}
+    </div>
   )
 }
 

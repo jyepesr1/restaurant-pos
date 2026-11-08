@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs'
-import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { currentVersion, type SqliteDatabase } from '@pos/db'
 import type { FloorSync } from '@pos/sync'
+import { phoneAddresses } from './addresses'
 import { CloudConnection } from './cloud/connection'
 import { readSnapshots } from './cloud/snapshots'
+import { CashDrawer } from './printing/cash-drawer'
 import { PrintQueue } from './printing/queue'
 import { jobsForEvent } from './printing/tickets'
 import { createAppServer } from './server'
@@ -36,18 +37,6 @@ function readPort(): number {
     process.exit(1)
   }
   return port
-}
-
-const isPrivateIp = (ip: string) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)
-
-/** Private IPv4 addresses of this machine: the ones the phones should open on the local network. */
-function localIps(): string[] {
-  return Object.values(networkInterfaces())
-    .flat()
-    .filter(
-      (network) => network?.family === 'IPv4' && !network.internal && isPrivateIp(network.address),
-    )
-    .map((network) => network?.address as string)
 }
 
 /** Opens the database exclusively (one hub per data folder) and brings it to the latest version. */
@@ -89,6 +78,12 @@ function prepareAll(db: SqliteDatabase) {
       onFailure: (error) => console.error('The print queue failed:', error),
     })
     const tickets = { db, restaurantId: access.restaurantId, timeZone }
+    // The cash drawer opens on its own when cash goes in or out (task 1.13).
+    const drawer = new CashDrawer({
+      db,
+      restaurantId: access.restaurantId,
+      onFailure: (error) => console.error('The cash drawer did not open:', error),
+    })
     // Each event the hub saves goes up to the cloud right away; without internet it waits in the
     // hub and goes up when it comes back (ADR-016).
     const cloud = new CloudConnection({
@@ -113,6 +108,8 @@ function prepareAll(db: SqliteDatabase) {
         onSave: (event, changes) => {
           if (jobsForEvent(tickets, event, changes) > 0) setImmediate(() => queue.wake())
           setImmediate(() => cloud.uploader.wake())
+          // Once saved: the drawer must not open for a payment that was not stored.
+          setImmediate(() => drawer.afterSave(event))
         },
         onSaveFailure: (error, id) => {
           console.error(`Could not build the ticket for event ${id}:`, error)
@@ -123,7 +120,7 @@ function prepareAll(db: SqliteDatabase) {
     queue.wake()
     floor.notifyCloud(cloud.status())
     cloud.uploader.wake()
-    return { ...access, floor, queue, timeZone, cloud }
+    return { ...access, floor, queue, drawer, timeZone, cloud }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     console.error(`Could not prepare the hub's access: ${detail}`)
@@ -133,7 +130,8 @@ function prepareAll(db: SqliteDatabase) {
 
 const port = readPort()
 const db = prepareDatabase()
-const { access, restaurantId, floor, queue, timeZone, cloud, admin, alerts } = prepareAll(db)
+const { access, restaurantId, floor, queue, drawer, timeZone, cloud, admin, alerts } =
+  prepareAll(db)
 const app = createAppServer({
   appDir,
   diagnostics: { dataDir },
@@ -162,11 +160,13 @@ const app = createAppServer({
       floor.notifyCatalog(version)
       cloud.checkSnapshots()
     },
+    drawer,
     allowLocal: process.env.TEST_PRINTER === '1',
     isHubDevice: (ip) => ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1',
   },
   cloud: { access, cloud },
   dbVersion: currentVersion(db),
+  addresses: () => phoneAddresses(port),
   logger: true,
 })
 
@@ -175,7 +175,8 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     queue.stop()
     cloud.stop()
     await app.close()
-    await queue.ready()
+    // Together: a stuck USB print and a drawer pulse must fit in the service's stop time.
+    await Promise.all([queue.ready(), drawer.idle()])
     await cloud.idle()
     db.close()
     process.exit(0)
@@ -213,6 +214,4 @@ if (adminData.length > 0)
   })
 
 console.log('\nHub running. Open it on the devices on the same network:')
-for (const ip of localIps()) {
-  console.log(`  http://${ip}:${port}`)
-}
+for (const address of phoneAddresses(port)) console.log(`  ${address}`)

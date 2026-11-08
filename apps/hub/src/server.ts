@@ -29,6 +29,8 @@ export interface ServerOptions {
   cloud?: CloudRouteOptions
   /** Database version, to show it in the health check. */
   dbVersion?: number
+  /** Where the phones open the hub (`http://<ip>:<port>`), for the register to show them. */
+  addresses?: () => string[]
   logger?: boolean
 }
 
@@ -41,6 +43,7 @@ export function createAppServer({
   printOptions,
   cloud,
   dbVersion,
+  addresses,
   logger = false,
 }: ServerOptions = {}): FastifyInstance {
   const app = Fastify({ logger })
@@ -87,6 +90,10 @@ export function createAppServer({
     time: new Date().toISOString(),
     ...(dbVersion === undefined ? {} : { db_version: dbVersion }),
   }))
+
+  if (addresses) {
+    app.get('/api/addresses', async () => ({ addresses: addresses() }))
+  }
 
   if (appDir && existsSync(appDir)) {
     app.register(fastifyStatic, { root: appDir })

@@ -27,6 +27,10 @@ export function readEscpos(bytes: Uint8Array): ReadResult {
       } else if (position === 0x64) {
         for (let n = 0; n < (bytes[i + 2] as number); n++) lines.push('')
         i += 2
+      } else if (position === 0x70) {
+        // `ESC p m t1 t2`: the cash drawer pulse, shown as such.
+        lines.push('[cajón]')
+        i += 4
       } else i += 2
       continue
     }

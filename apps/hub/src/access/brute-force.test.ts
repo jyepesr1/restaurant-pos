@@ -6,7 +6,9 @@ import { setupAccess } from './setup'
 
 // Brute force against the PIN and the pairing code (ADR-008, docs/SYNC.md#seguridad).
 
-const BAD_VALUES = ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008']
+// Trivial PINs (all digits the same): the hub never generates them, so no one in the test has one
+// and they always fail. '0001'… could match a random PIN now and then.
+const BAD_VALUES = ['0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777']
 
 describe('pairing: approve with the admin PIN', () => {
   const request = (m: ReturnType<typeof setupAccess>, connection: Connection | null, pin: string) =>

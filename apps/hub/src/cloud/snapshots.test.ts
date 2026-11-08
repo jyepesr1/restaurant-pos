@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PERMISSIONS } from '@pos/core'
+import { newId, PERMISSIONS } from '@pos/core'
 import { fingerprint } from '@pos/sync'
 import { afterEach, describe, expect, it } from 'vitest'
 import { setupAccess } from '../access/setup'
@@ -46,10 +46,12 @@ describe('what each snapshot carries', () => {
     const m = setupAccess()
     const s = readSnapshots(m.db, m.restaurantId)
     expect(s.catalog).toEqual(readCatalog(m.db, m.restaurantId))
-    // The pre-bill header fields only go up when they say something (see the logo tests below).
+    // The pre-bill header fields and the drawer only go up when they say something (see the logo
+    // and drawer tests below).
     const {
       pre_bill_header: _header,
       print_logo: _logo,
+      cash_drawer_printer_id: _drawer,
       ...config
     } = configOf({
       db: m.db,
@@ -94,6 +96,7 @@ describe('what each snapshot carries', () => {
       const {
         pre_bill_header: _h,
         print_logo: _l,
+        cash_drawer_printer_id: _d,
         ...rest
       } = configOf({
         db: m.db,
@@ -101,6 +104,29 @@ describe('what each snapshot carries', () => {
       })
       saveConfig(m, { pre_bill_header: 'logo', print_logo: logo })
       expect(uploaded(m)).toEqual({ ...rest, pre_bill_header: 'logo', print_logo: logo })
+    })
+  })
+
+  describe('the cash drawer in the config snapshot (task 1.13)', () => {
+    const uploaded = (m: ReturnType<typeof setupAccess>) =>
+      (readSnapshots(m.db, m.restaurantId).config as { config: Record<string, unknown> }).config
+
+    it('without a drawer the key does not go up (a cloud that does not know it accepts it)', () => {
+      const m = setupAccess()
+      expect(uploaded(m)).not.toHaveProperty('cash_drawer_printer_id')
+      m.db
+        .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
+        .run(JSON.stringify({ cash_drawer_printer_id: null }), m.restaurantId)
+      expect(uploaded(m)).not.toHaveProperty('cash_drawer_printer_id')
+    })
+
+    it('with a drawer chosen it goes up as saved', () => {
+      const m = setupAccess()
+      const id = newId()
+      m.db
+        .prepare('UPDATE restaurants SET config = ? WHERE id = ?')
+        .run(JSON.stringify({ cash_drawer_printer_id: id }), m.restaurantId)
+      expect(uploaded(m)).toMatchObject({ cash_drawer_printer_id: id })
     })
   })
 
